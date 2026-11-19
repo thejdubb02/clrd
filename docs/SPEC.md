@@ -137,7 +137,9 @@ the session cookie (same-origin only) as well as a Bearer token.
   for this browser, with the same scopes and topics, and sets it as the
   `clrd_session` cookie. It is named `name`, else from the User-Agent ("Firefox
   on Linux"), so each browser is its own device. Revoking the token typed in
-  also revokes the browsers signed in with it. `DELETE /api/v1/session` revokes
+  also revokes the browsers signed in with it. One token keeps at most 20
+  browsers signed in: the 21st sign-in revokes the one used least recently.
+  `DELETE /api/v1/session` revokes
   the browser's token and clears the cookie. The cookie works on `/api/v1/*`
   only, never on the ntfy-style GET publish webhooks.
 - Setup: with no admin token in the database the server logs

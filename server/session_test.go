@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -157,7 +158,9 @@ func TestRevokeParentEndsSessions(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if _, _, err := ws.c.Read(ctx); websocket.CloseStatus(err) != websocket.StatusTryAgainLater {
+	// "token revoked", not "fell behind": the stream knows the session is gone (revoked.Store), not just woken.
+	var ce websocket.CloseError
+	if _, _, err := ws.c.Read(ctx); !errors.As(err, &ce) || ce.Code != websocket.StatusTryAgainLater || ce.Reason != "token revoked" {
 		t.Fatalf("session stream after parent revoke: %v", err)
 	}
 	if code, _ := call(t, ts, "DELETE", "/api/v1/tokens/nope", admin, nil); code != 404 {
@@ -229,5 +232,30 @@ func TestSessionForRevokedParent(t *testing.T) {
 	}
 	if ids := tokenIDs(t, ts, admin); len(ids) != 1 {
 		t.Fatalf("half-made session left behind: %v", ids)
+	}
+}
+
+// Issue #50: a sign-in loop with one token keeps at most maxSessions browsers.
+func TestSessionCap(t *testing.T) {
+	s, ts, admin := newTest(t)
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	var first, last *http.Cookie
+	for i := 0; i < maxSessions+3; i++ {
+		_, _, last = signIn(t, ts, `{"token":"`+typed+`"}`, firefoxLinux, nil)
+		if i == 0 {
+			first = last
+		}
+	}
+	n := 0
+	for _, name := range tokenIDs(t, ts, admin) {
+		if name == "Firefox on Linux" {
+			n++
+		}
+	}
+	if n != maxSessions {
+		t.Fatalf("%d browsers signed in, want %d", n, maxSessions)
+	}
+	if withCookie(t, ts, "GET", "/api/v1/topics", first) != 401 || withCookie(t, ts, "GET", "/api/v1/topics", last) != 200 {
+		t.Fatal("want the oldest browser signed out and the newest still in")
 	}
 }

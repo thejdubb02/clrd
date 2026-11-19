@@ -187,7 +187,6 @@ func (s *Server) Tokens(ctx context.Context, seenSince time.Time) ([]*Token, err
 	return out, rows.Err()
 }
 
-// DeleteToken revokes a token.
 // DeleteToken revokes a token and every web session signed in with it.
 func (s *Server) DeleteToken(ctx context.Context, id string) error {
 	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE k(id) AS
@@ -385,8 +384,37 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *To
 		}
 		return nil, err
 	}
+	s.capSessions(ctx, parent.ID)
 	s.setCookie(w, r, raw, 365*24*3600)
 	return st, nil
+}
+
+// maxSessions is how many browsers one token may have signed in at once.
+// ponytail: fixed cap; make it an option if someone needs more.
+const maxSessions = 20
+
+// capSessions revokes the least recently used browsers of parent past
+// maxSessions, so a sign-in loop cannot grow the token table (issue #50).
+func (s *Server) capSessions(ctx context.Context, parent string) {
+	rows, err := s.db.QueryContext(ctx, `SELECT token_id FROM sessions JOIN tokens ON id = token_id
+	  WHERE parent_id = ? ORDER BY COALESCE(last_seen_at, created_at) DESC, tokens.rowid DESC LIMIT -1 OFFSET ?`, parent, maxSessions)
+	if err != nil {
+		s.log.Warn("cap sessions", "err", err)
+		return
+	}
+	var old []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			old = append(old, id)
+		}
+	}
+	rows.Close()
+	for _, id := range old {
+		if err := s.DeleteToken(ctx, id); err != nil && !isNotFound(err) {
+			s.log.Warn("cap sessions", "err", err)
+		}
+	}
 }
 
 // endSession revokes the token in this browser's cookie, only when sign-in
