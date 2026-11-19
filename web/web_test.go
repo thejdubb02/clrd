@@ -133,6 +133,12 @@ func TestUnauthorized(t *testing.T) {
 	if _, body := get(t, Handler(deny{}, ""), "/app?topic=home&auth=clrd_old"); !strings.Contains(body, `value="/app?topic=home"`) || strings.Contains(body, `role="alert"`) {
 		t.Error("next must keep the filters and drop auth, with no error shown")
 	}
+	if _, body := get(t, Handler(deny{}, ""), "/app?error=token&topic=home&name=work+%22laptop%22"); !strings.Contains(body, `placeholder="work laptop" value="work &#34;laptop&#34;">`) || !strings.Contains(body, `value="/app?topic=home"`) {
+		t.Errorf("failed sign-in: the typed device name is not kept, or leaks into next")
+	}
+	if _, body := get(t, Handler(deny{}, ""), "/app?name=evil"); strings.Contains(body, `value="evil"`) {
+		t.Errorf("a name in a plain link prefills the sign-in form")
+	}
 	if _, body := get(t, Handler(deny{}, ""), "/app?error=token&topic=home"); !strings.Contains(body, `role="alert"`) || !strings.Contains(body, `value="/app?topic=home"`) {
 		t.Error("a bad token must show the error, and next must drop it")
 	}

@@ -340,6 +340,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 		}
 		q := u.Query()
 		q.Set("error", "token")
+		if in.Name != "" {
+			q.Set("name", in.Name) // the page fills it back in (issue #33)
+		}
 		u.RawQuery = q.Encode()
 		http.Redirect(w, r, u.String(), http.StatusSeeOther)
 		return nil
