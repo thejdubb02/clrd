@@ -32,7 +32,8 @@ Fixed, Removed, Security), as one line a user can understand.
   real tool where one can run (Gatus, Uptime Kuma, Alertmanager, Grafana,
   Apprise, the ntfy CLI, Claude Code and Claude Desktop). The integrations
   table says what each one checks. The Gatus guide now sets an alert
-  description, so the notification is not blank.
+  description, so the notification is not blank, and the Apprise guide no
+  longer claims priority, tags and click URL work (#130).
 - Server: files on notifications. Upload a file with the publish (multipart, or
   ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL
   (`attachment`, or ntfy's `X-Attach`). Downloads need a token that can read the

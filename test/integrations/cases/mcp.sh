@@ -15,3 +15,5 @@ check "$(res wait_for_reply)" '.reply == "acknowledged" and .answer == "yes"' "w
 ok "wait_for_reply returns the tapped answer"
 expect agents deploy-1 '.state == "acknowledged" and .reply == "yes" and .message == "OK to deploy?"' "send with actions, answered"
 expect agents job-2 '.state == "resolved"' "resolve by topic + external_id"
+expect agents job-3 '.state == "acknowledged"' "ack by id"
+expect agents job-4 '.state == "snoozed"' "snooze by id"

@@ -43,4 +43,10 @@ await waited;
 // Auto-resolve: send with an id, resolve by topic + external_id.
 await call("send", { topic: "agents", message: "Migrating", id: "job-2" });
 await call("resolve", { topic: "agents", external_id: "job-2" });
+
+// ack and snooze by server id.
+const a = await call("send", { topic: "agents", message: "Disk full", id: "job-3" });
+await call("ack", { id: a.id });
+const z = await call("send", { topic: "agents", message: "Later", id: "job-4" });
+await call("snooze", { id: z.id, for: "1h" });
 child.kill();
