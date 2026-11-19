@@ -266,6 +266,22 @@ func TestEpoch(t *testing.T) {
 	if got := epochs(ts3, admin); got != first {
 		t.Fatalf("restart changed the epoch: %q, was %q", got, first)
 	}
+	// A database from before epochs gets one when it is opened.
+	call(t, ts3, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "old"})
+	if _, err := again.db.Exec(`DELETE FROM meta WHERE key = 'epoch'`); err != nil {
+		t.Fatal(err)
+	}
+	ts3.Close()
+	again.Close()
+	old, err := New(s.opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts4 := httptest.NewServer(old)
+	t.Cleanup(func() { ts4.Close(); old.Close() })
+	if got := epochs(ts4, admin); got == first {
+		t.Fatalf("pre-epoch database reused %q", got)
+	}
 }
 
 func TestSnoozeWakes(t *testing.T) {

@@ -34,7 +34,7 @@ Fixed, Removed, Security), as one line a user can understand.
 - Integration guides for curl, GitHub Actions, MCP clients, Home Assistant,
   Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise and ntfy clients.
 - Docker image build and a Compose file for self-hosting.
-- Server: every sync cursor (`ready`, the events poll and the notification list)
-  carries an `epoch` naming the database, so a client can tell when the server
-  was reinstalled or started on a new database and fetch fresh. Clients do not
-  act on it yet, and a restored backup keeps its old epoch.
+- Server: `ready`, the events poll and the notification list carry an `epoch`
+  naming the database, so a client can tell when the server was reinstalled or
+  started on a new database and fetch fresh. Clients do not act on it yet, and a
+  restored backup keeps its old epoch.
