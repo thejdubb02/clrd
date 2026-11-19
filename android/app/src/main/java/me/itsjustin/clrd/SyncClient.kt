@@ -48,7 +48,7 @@ class SyncClient(
     private var ws: WebSocket? = null
     private var gen = 0 // bumps on every new socket; callbacks from an old one are ignored
     private var attempt = 0
-    private var stopped = false
+    @Volatile private var stopped = false
     private var retryTask: ScheduledFuture<*>? = null
     private var flushRetry: ScheduledFuture<*>? = null
 
@@ -57,13 +57,17 @@ class SyncClient(
     private var bufferSeq = 0L
 
     /** Run on [exec]. Calls from outside can race [stop]; after it they are dropped, never thrown. */
-    private fun post(f: () -> Unit) { runCatching { exec.execute(f) } }
+    /** Runs on the sync thread unless stopped. Once stop() has run, calls are dropped, never thrown. */
+    private fun post(f: () -> Unit) { runCatching { exec.execute { if (!stopped) f() } } }
+
+    private fun later(ms: Long, f: () -> Unit) = runCatching { exec.schedule(f, ms, TimeUnit.MILLISECONDS) }.getOrNull()
 
     fun start() = post { connect() }
 
     /** Safe to call more than once, from any thread. */
     fun stop() {
-        post { stopped = true; gen++; ws?.close(1000, null); ws = null }
+        stopped = true // set here, not on the thread, so nothing queued after this call can send
+        runCatching { exec.execute { gen++; ws?.close(1000, null); ws = null } }
         exec.shutdown()
     }
 
@@ -82,7 +86,7 @@ class SyncClient(
                 flush()
             } catch (e: IOException) {
                 // A rejected token will not fix itself; the next connect reports it as AUTH_FAILED.
-                if (!stopped && !(e is HttpError && e.isAuth)) flushRetry = exec.schedule({ flushSoon() }, flushRetryMs, TimeUnit.MILLISECONDS)
+                if (!stopped && !(e is HttpError && e.isAuth)) flushRetry = later(flushRetryMs) { flushSoon() }
             }
         }
     }
@@ -107,7 +111,7 @@ class SyncClient(
             }
         })
         // A server that never says `ready` must not leave events stuck in the buffer.
-        exec.schedule({ if (myGen == gen && replaying) endReplay() }, 5, TimeUnit.SECONDS)
+        later(5_000) { if (myGen == gen && replaying) endReplay() }
     }
 
     private fun onThread(myGen: Int, f: () -> Unit) {
@@ -179,7 +183,7 @@ class SyncClient(
         onStatus(Status.OFFLINE)
         val delay = minOf(60_000L, baseDelayMs shl minOf(attempt, 6))
         attempt++
-        retryTask = exec.schedule({ connect() }, delay / 2 + Random.nextLong(delay / 2 + 1), TimeUnit.MILLISECONDS)
+        retryTask = later(delay / 2 + Random.nextLong(delay / 2 + 1)) { connect() }
     }
 }
 
