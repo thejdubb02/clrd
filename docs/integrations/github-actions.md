@@ -53,11 +53,11 @@ resolve instead of send).
         run: |
           curl -sSf -X POST https://clrd.itsjustin.me/api/v1/notifications \
             -H "Authorization: Bearer $CLRD_TOKEN" -H "Content-Type: application/json" \
-            -d "{\"topic\":\"ci\",\"external_id\":\"$GITHUB_REPOSITORY-$GITHUB_REF_NAME\",\"title\":\"Build failed\",\"message\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\",\"priority\":4}"
+            -d "{\"topic\":\"ci\",\"external_id\":\"$GITHUB_REPOSITORY-$GITHUB_WORKFLOW-$GITHUB_REF_NAME\",\"title\":\"Build failed\",\"message\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\",\"priority\":4}"
       - if: success()
         env:
           CLRD_TOKEN: ${{ secrets.CLRD_TOKEN }}
         run: |
           curl -sS -o /dev/null -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
-            "https://clrd.itsjustin.me/ci/$(jq -rn --arg v "$GITHUB_REPOSITORY-$GITHUB_REF_NAME" '$v|@uri')/resolve"
+            "https://clrd.itsjustin.me/ci/$(jq -rn --arg v "$GITHUB_REPOSITORY-$GITHUB_WORKFLOW-$GITHUB_REF_NAME" '$v|@uri')/resolve"
 ```

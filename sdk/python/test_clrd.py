@@ -15,7 +15,11 @@ class Fake(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n)) if n else None
         seen.append((self.command, self.path, body, self.headers.get("Authorization")))
-        if self.path.startswith("/missing"):
+        if self.path.startswith("/redirect"):
+            self.send_response(302)
+            self.send_header("Location", "/elsewhere")
+            out = {}
+        elif self.path.startswith("/missing"):
             self.send_response(404)
             out = {"error": "no open notification", "code": "not_found"}
         else:
@@ -75,6 +79,13 @@ class T(unittest.TestCase):
         with self.assertRaises(clrd.ClrdError) as e:
             c.resolve("infra", "nope")
         self.assertEqual((e.exception.status, e.exception.code), (404, "not_found"))
+
+    def test_no_redirect(self):
+        c = clrd.Client(self.url + "/redirect", "clrd_test")
+        with self.assertRaises(clrd.ClrdError) as e:
+            c.resolve("infra", "x")
+        self.assertEqual(e.exception.status, 302)
+        self.assertFalse(any(p == "/elsewhere" for _, p, _, _ in seen))
 
     def test_cli(self):
         import os

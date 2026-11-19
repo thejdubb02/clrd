@@ -58,3 +58,17 @@ test("errors carry status and code", async () => {
   const bad = new Client({ url: url + "/missing", token: "clrd_test" });
   await assert.rejects(bad.resolve("infra", "nope"), (e) => e instanceof ClrdError && e.status === 404 && e.code === "not_found");
 });
+
+test("default fetch is called unbound-safe", async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = function (u) {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    return Promise.resolve(new Response('{"id":"01J"}'));
+  };
+  try {
+    const n = await new Client({ url: "http://x", token: "t" }).ack("01J");
+    assert.equal(n.id, "01J");
+  } finally {
+    globalThis.fetch = real;
+  }
+});

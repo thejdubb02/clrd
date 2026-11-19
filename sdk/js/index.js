@@ -16,7 +16,7 @@ export class Client {
   constructor({ url, token, fetch: f } = {}) {
     this.url = (url ?? env("CLRD_URL") ?? "https://clrd.itsjustin.me").replace(/\/+$/, "");
     this.token = token ?? env("CLRD_TOKEN");
-    this.fetch = f ?? globalThis.fetch;
+    this.fetch = f ?? ((...a) => globalThis.fetch(...a)); // unbound native fetch throws in browsers
   }
 
   async #req(method, path, body) {

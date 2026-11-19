@@ -73,6 +73,23 @@ func callTool(t *testing.T, h http.Handler, name string, args map[string]any) (t
 	return res["content"].([]any)[0].(map[string]any)["text"].(string), res["isError"].(bool)
 }
 
+func TestForeignOriginRejected(t *testing.T) {
+	req := httptest.NewRequest("POST", "http://clrd.example/mcp", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer clrd_good")
+	req.Header.Set("Origin", "https://evil.example")
+	rec := httptest.NewRecorder()
+	New(&fakeAPI{}).ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("got %d", rec.Code)
+	}
+	req.Header.Set("Origin", "http://clrd.example")
+	rec = httptest.NewRecorder()
+	New(&fakeAPI{}).ServeHTTP(rec, req)
+	if rec.Code == 403 {
+		t.Fatal("same origin rejected")
+	}
+}
+
 func TestAuthRequired(t *testing.T) {
 	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
@@ -184,7 +201,7 @@ func TestWaitForReply(t *testing.T) {
 	if isErr || !strings.Contains(text, `"reply":"acknowledged"`) || !strings.Contains(text, `"by":"pixel-9"`) {
 		t.Fatalf("got %s", text)
 	}
-	f.state = "active"
+	f.state = "snoozed" // snooze means "later": keep waiting
 	text, _ = callTool(t, h, "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 0.05})
 	if !strings.Contains(text, `"reply":"timeout"`) {
 		t.Fatalf("want timeout, got %s", text)

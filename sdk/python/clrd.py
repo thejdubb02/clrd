@@ -28,6 +28,15 @@ class ClrdError(Exception):
         self.status, self.message, self.code = status, message, code
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    # Never follow redirects: urllib would resend the Bearer token to the new host.
+    def redirect_request(self, *_):
+        return None
+
+
+_open = urllib.request.build_opener(_NoRedirect).open
+
+
 class Client:
     def __init__(self, url=None, token=None, timeout=10):
         self.url = (url or os.environ.get("CLRD_URL") or "https://clrd.itsjustin.me").rstrip("/")
@@ -42,7 +51,7 @@ class Client:
         if self.token:
             req.add_header("Authorization", "Bearer " + self.token)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            with _open(req, timeout=self.timeout) as r:
                 raw = r.read()
         except urllib.error.HTTPError as e:
             raw = e.read()

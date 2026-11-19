@@ -8,6 +8,9 @@ uses its `fingerprint` as `external_id`, and an alert with `"status":
 "resolved"` resolves that row on every device instead of posting "resolved".
 
 ```yaml
+route:
+  receiver: clrd   # or add a child route that matches the alerts you want
+
 receivers:
   - name: clrd
     webhook_configs:

@@ -13,7 +13,7 @@ Tools:
 | `ack` | `id` | Acknowledge by server id. |
 | `resolve` | `id` or `topic + external_id` | Clear it everywhere. |
 | `snooze` | `id, for` | Snooze, e.g. `for: "1h"`. |
-| `wait_for_reply` | `id, timeout_s?` | Block until a human acks, snoozes or dismisses it (or it is resolved). Returns `reply` = the new state, or `timeout`. Default 60 s, max 300 s. |
+| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`. Default 60 s, max 300 s. |
 
 `wait_for_reply` is how an agent asks a human "OK to deploy?" and waits:
 `send`, then `wait_for_reply` with the returned `id`. Ack means yes, dismiss means no.

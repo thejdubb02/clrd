@@ -58,6 +58,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"bearer token required","code":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
+	// MCP transport rule against DNS rebinding: a browser Origin must match the host.
+	if o := r.Header.Get("Origin"); o != "" {
+		if u, err := url.Parse(o); err != nil || u.Host != r.Host {
+			http.Error(w, `{"error":"origin not allowed","code":"forbidden"}`, http.StatusForbidden)
+			return
+		}
+	}
 	if r.Method != http.MethodPost {
 		// No server-initiated stream: stateless server.
 		w.Header().Set("Allow", "POST")
@@ -258,7 +265,7 @@ func (h *Handler) wait(r *http.Request, id string, a map[string]any) (any, error
 		if err != nil {
 			return nil, err
 		}
-		if st := str(n, "state"); st != "active" {
+		if st := str(n, "state"); st != "active" && st != "snoozed" { // snoozed = "ask me later", keep waiting
 			return map[string]any{"reply": st, "by": n["state_by"], "notification": n}, nil
 		}
 		select {
@@ -306,6 +313,6 @@ var tools = []map[string]any{
 		})},
 	{"name": "snooze", "description": "Snooze a notification by server id.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id"), "for": p("string", "Duration, e.g. 30m or 1h")}, "id", "for")},
-	{"name": "wait_for_reply", "description": "Block until a human acknowledges, snoozes, dismisses or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout.",
+	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "timeout_s": map[string]any{"type": "number", "description": "Seconds to wait, default 60, max 300"}}, "id")},
 }
