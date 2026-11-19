@@ -22,7 +22,8 @@ docker run -d --name clrd -p 127.0.0.1:8080:8080 -v clrd-data:/data \
   -e CLRD_BASE_URL=https://clrd.example.com clrd
 ```
 
-Both publish the port on localhost only, so tokens reach clrd through your
+Both publish the port on localhost only (Docker 28 or newer keeps that
+from other machines on the same network), so tokens reach clrd through your
 HTTPS proxy and never cross the network in plain HTTP. If the proxy runs on
 another machine, publish the port on a private interface instead.
 

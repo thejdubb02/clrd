@@ -189,9 +189,14 @@ func ntfyDelay(v string) (*time.Time, error) {
 	return nil, errf(400, "bad_request", "invalid delay %q: use a unix time or a duration like 30m", v)
 }
 
+var errNoCache = errf(400, "bad_request", "Cache: no is not supported: clrd stores every notification so it can sync")
+
 func parseDuration(v string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(v, "d"); ok {
 		n, err := strconv.Atoi(days)
+		if err == nil && (n < 0 || n > 36500) { // bounded so the multiply cannot overflow
+			err = errors.New("days out of range")
+		}
 		return time.Duration(n) * 24 * time.Hour, err
 	}
 	return time.ParseDuration(v)
@@ -204,7 +209,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		return errf(405, "bad_request", "use GET, PUT or POST to publish")
 	}
 	if strings.EqualFold(param(r, "Cache"), "no") { // ntfy drops these after delivery; clrd keeps every notification
-		return errf(400, "bad_request", "Cache: no is not supported: clrd stores every notification so it can sync")
+		return errNoCache
 	}
 	tok := s.auth(r, false)
 	if t := r.URL.Query().Get("template"); t != "" && r.Method != http.MethodGet {
@@ -265,9 +270,13 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		SequenceID string       `json:"sequence_id"`
 		ExternalID string       `json:"external_id"`
 		Status     string       `json:"status"`
+		Cache      string       `json:"cache"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
+	}
+	if strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no") {
+		return errNoCache
 	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status}
@@ -295,12 +304,7 @@ func (s *Server) ntfyAct(action string) func(http.ResponseWriter, *http.Request)
 		tok, topic, sid := s.auth(r, false), r.PathValue("topic"), r.PathValue("sid")
 		n, err := s.ActByKey(r.Context(), tok, topic, sid, action)
 		if isNotFound(err) {
-			if n, err = s.Get(r.Context(), tok, sid); err == nil && n.Topic != topic {
-				return errf(404, "not_found", "no open notification %q in %q", sid, topic)
-			}
-			if err == nil {
-				n, err = s.Act(r.Context(), tok, sid, action, nil)
-			}
+			n, err = s.act(r.Context(), tok, action, nil, false, `id = ? AND topic = ?`, sid, topic)
 		}
 		if err != nil {
 			return err
