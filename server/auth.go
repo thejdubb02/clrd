@@ -330,7 +330,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	}
 	// Parse first: a control character fails url.Parse, http.Redirect then
 	// skips its cleaning, and a browser strips "/\t/evil.com" to "//evil.com".
-	// No backslash anywhere: http.Redirect cleans "/./\\evil.com" to "/\\evil.com".
+	// No backslash anywhere: http.Redirect cleans "/./\evil.com" to "/\evil.com".
 	next := in.Next
 	if u, err := url.Parse(next); err != nil || u.Scheme != "" || u.Host != "" ||
 		!strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\") {
