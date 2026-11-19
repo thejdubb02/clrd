@@ -166,6 +166,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = io.NopCloser(bytes.NewReader(b))
 	}
 	p := r.URL.Path
+	if r.Method == http.MethodOptions && !strings.HasPrefix(p, "/api/") {
+		// CORS preflight for the ntfy routes, answered on any path like ntfy.
+		// "*" does not cover Authorization, so it is named.
+		h := w.Header()
+		h.Set("Access-Control-Allow-Origin", "*")
+		h.Set("Access-Control-Allow-Methods", "GET, PUT, POST, PATCH, DELETE")
+		h.Set("Access-Control-Allow-Headers", "*, Authorization")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	for _, m := range s.mounts {
 		if m.prefix == "/" && r.Method != http.MethodGet && r.Method != http.MethodHead {
 			continue // POST / is ntfy's JSON publish

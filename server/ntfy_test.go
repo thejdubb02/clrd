@@ -237,9 +237,34 @@ func TestNtfySubscribe(t *testing.T) {
 	}
 	defer sres.Body.Close()
 	ssc := bufio.NewScanner(sres.Body)
-	ssc.Scan()
-	if ssc.Text() != "event: open" {
-		t.Fatalf("sse first line %q", ssc.Text())
+	// sse reads one SSE frame: its event line (if any) and its data.
+	sse := func() (string, ntfyMsg) {
+		t.Helper()
+		event := ""
+		for ssc.Scan() {
+			if l := ssc.Text(); strings.HasPrefix(l, "event: ") {
+				event = l
+			} else if d, ok := strings.CutPrefix(l, "data: "); ok {
+				return event, ntfyDecode(t, d)
+			}
+		}
+		t.Fatalf("sse stream ended: %v", ssc.Err())
+		return "", ntfyMsg{}
+	}
+	if ev, m := sse(); ev != "event: open" || m.Event != "open" {
+		t.Fatalf("sse open: %q %+v", ev, m)
+	}
+	_, n = call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "over sse"})
+	if ev, m := sse(); ev != "" || m.Event != "message" || m.Message != "over sse" {
+		t.Fatalf("sse message: %q %+v", ev, m)
+	}
+	call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/ack", admin, nil)
+	if ev, m := sse(); ev != "" || m.Event != "message_clear" {
+		t.Fatalf("sse clear: %q %+v", ev, m)
+	}
+	call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/dismiss", admin, nil)
+	if ev, m := sse(); ev != "" || m.Event != "message_delete" {
+		t.Fatalf("sse delete: %q %+v", ev, m)
 	}
 
 	// WebSocket: open, then a message.
@@ -264,6 +289,58 @@ func TestNtfySubscribe(t *testing.T) {
 	raw(t, "POST", ts.URL+"/alerts", admin, "over ws", nil)
 	if m := read(); m.Message != "over ws" {
 		t.Fatalf("ws message: %+v", m)
+	}
+}
+
+// ntfy's subscribe filters, each one alone excluding the same message.
+func TestNtfyFilters(t *testing.T) {
+	_, ts, admin := newTest(t)
+	_, out := raw(t, "POST", ts.URL+"/f", admin, "keep", map[string]string{"Title": "disk", "Priority": "high", "Tags": "a,b"})
+	keep := ntfyDecode(t, out).ID
+	raw(t, "POST", ts.URL+"/f", admin, "drop", map[string]string{"Title": "cpu", "Priority": "low", "Tags": "a"})
+	for _, q := range []string{"id=" + keep, "message=keep", "m=keep", "title=disk", "t=disk", "priority=high", "p=4,5", "prio=max,high",
+		"tags=a,b", "ta=b", "tag=b"} {
+		code, out := raw(t, "GET", ts.URL+"/f/json?poll=1&"+q, admin, "", nil)
+		if l := lines(out); code != 200 || len(l) != 1 || ntfyDecode(t, l[0]).Message != "keep" {
+			t.Errorf("%s: %d %v", q, code, l)
+		}
+	}
+	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1", admin, "", nil); len(lines(out)) != 2 {
+		t.Fatalf("no filter: %v", lines(out))
+	}
+	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1", admin, "", map[string]string{"X-Title": "cpu"}); len(lines(out)) != 1 || ntfyDecode(t, lines(out)[0]).Message != "drop" {
+		t.Errorf("filter by header: %v", lines(out))
+	}
+	if code, _ := raw(t, "GET", ts.URL+"/f/json?poll=1&p=7", admin, "", nil); code != 400 {
+		t.Errorf("bad priority filter: %d", code)
+	}
+}
+
+// The ntfy routes answer any origin, errors included, and a preflight needs
+// no token. The native API does not.
+func TestNtfyCORS(t *testing.T) {
+	_, ts, _ := newTest(t)
+	do := func(method, path string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest(method, ts.URL+path, nil)
+		req.Header.Set("Origin", "https://elsewhere.example")
+		req.Header.Set("Access-Control-Request-Method", "POST")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res
+	}
+	if res := do("GET", "/alerts/json?poll=1"); res.StatusCode != 401 || res.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Errorf("subscribe without token: %d, allow-origin %q", res.StatusCode, res.Header.Get("Access-Control-Allow-Origin"))
+	}
+	res := do("OPTIONS", "/alerts")
+	if res.StatusCode != 204 || res.Header.Get("Access-Control-Allow-Origin") != "*" || !strings.Contains(res.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
+		t.Errorf("preflight: %d %v", res.StatusCode, res.Header)
+	}
+	if res := do("OPTIONS", "/api/v1/notifications"); res.StatusCode == 204 || res.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("native API preflight allowed: %d", res.StatusCode)
 	}
 }
 
