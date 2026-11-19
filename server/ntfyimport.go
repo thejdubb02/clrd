@@ -353,7 +353,7 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 	}
 	defer rows.Close()
 	open := map[[2]string]*Notification{}
-	var skipped, badTopic, markdown, files, external, dropped, badActions, dismissedOld int
+	var skipped, badTopic, files, external, dropped, badActions, dismissedOld int
 	cutoff := time.Time{}
 	if in.ClearOlderThan > 0 {
 		cutoff = now().Add(-in.ClearOlderThan)
@@ -434,8 +434,9 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 		if n.Actions == nil {
 			n.Actions = []Action{}
 		}
+		n.Format = FormatText // as ntfy showed it
 		if ctype == "text/markdown" {
-			markdown++
+			n.Format = FormatMarkdown
 		}
 		n.Attachment, n.file = nil, ""
 		if aName != "" {
@@ -499,9 +500,6 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 	rep.skip(badTopic, "messages on topics clrd reserves or cannot name")
 	rep.skip(badActions, "action lists clrd cannot read")
 	rep.skip(skipped, "other events (clears of unknown messages, keepalives)")
-	if markdown > 0 {
-		rep.line("  shown as plain text: %d markdown messages", markdown)
-	}
 	return maxSeq, copied, nil
 }
 

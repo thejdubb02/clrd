@@ -24,7 +24,7 @@ What does not carry over, and the dry run lists each one with a count:
 tiers and their limits, topic reservations (the access they give is kept,
 the ownership is not), phone numbers, email addresses, billing, web push
 subscriptions (browsers subscribe again), and web app sign-ins (tokens that
-expire; sign in again). Markdown messages show as plain text.
+expire; sign in again).
 
 ## 1. Look first
 
@@ -74,7 +74,7 @@ when it suits you to get dismissals that sync across devices.
 
 ## After the switch
 
-clrd ignores some ntfy publish options (email, calls, markdown, Firebase,
+clrd ignores some ntfy publish options (email, calls, Firebase,
 UnifiedPush, poll requests) and any unknown JSON field. Each one it receives
 is counted at `GET /api/v1/ntfy/ignored` (admin token; open it in a signed-in
 browser for a table), so you can see which services rely on something clrd

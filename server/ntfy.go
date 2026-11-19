@@ -395,10 +395,10 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 // ntfyJSONKeys are the JSON publish fields clrd reads; any other key is logged as ignored.
 var ntfyJSONKeys = map[string]bool{"topic": true, "message": true, "title": true, "priority": true, "tags": true,
 	"click": true, "icon": true, "attach": true, "filename": true, "actions": true, "delay": true, "id": true,
-	"sequence_id": true, "external_id": true, "status": true, "cache": true}
+	"sequence_id": true, "external_id": true, "status": true, "cache": true, "markdown": true}
 
 // ntfyIgnoredParams are ntfy publish options clrd accepts but does not act on.
-var ntfyIgnoredParams = [][]string{{"Markdown", "Md"}, {"Email", "E-Mail", "Mail", "E"}, {"Call"},
+var ntfyIgnoredParams = [][]string{{"Email", "E-Mail", "Mail", "E"}, {"Call"},
 	{"Firebase"}, {"UnifiedPush", "Up"}, {"Poll-Id"}}
 
 var ignoredName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,40}$`)

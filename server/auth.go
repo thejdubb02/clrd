@@ -83,6 +83,11 @@ func (t *Token) may(scope, topic string) bool {
 	return len(t.Topics) == 0 || slices.Contains(t.Topics, topic)
 }
 
+// Allows reports whether the token may use topic at all, read or publish.
+func (t *Token) Allows(topic string) bool {
+	return t.may(ScopeRead, topic) || t.may(ScopePublish, topic)
+}
+
 // Has reports whether the token holds scope (admin holds all).
 func (t *Token) Has(scope string) bool {
 	return slices.Contains(t.Scopes, scope) || slices.Contains(t.Scopes, ScopeAdmin)

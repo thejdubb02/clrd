@@ -101,7 +101,7 @@ func TestNtfyImportDryRun(t *testing.T) {
 }
 
 func TestNtfyImport(t *testing.T) {
-	s, u, toks, rep := importFixture(t, NtfyImport{})
+	s, u, toks, _ := importFixture(t, NtfyImport{})
 	boss, pixel, web := toks[""], toks["pixel"], toks["web"]
 
 	// A second import is refused.
@@ -234,8 +234,11 @@ func TestNtfyImport(t *testing.T) {
 	if st := state("Later"); st != "snoozed" {
 		t.Errorf("delayed: %q", st)
 	}
-	if !strings.Contains(rep, "1 markdown") {
-		t.Errorf("report:\n%s", rep)
+	var md, plain string
+	s.db.QueryRow(`SELECT format FROM notifications WHERE message = '**bold** news'`).Scan(&md)
+	s.db.QueryRow(`SELECT format FROM notifications WHERE message = 'Hello anyone'`).Scan(&plain)
+	if md != FormatMarkdown || plain != FormatText {
+		t.Errorf("formats: markdown %q, plain %q", md, plain)
 	}
 
 	// The uploaded file is copied and served; the external link is kept.
@@ -292,7 +295,7 @@ func TestNtfyIgnoredLog(t *testing.T) {
 	raw(t, "POST", ts.URL+"/alerts?md=1", pub, "hi", nil)
 	raw(t, "POST", ts.URL+"/", pub, `{"topic":"alerts","message":"hi","markdown":true,"call":"yes","<b>":1}`, nil)
 	c, b := bearer(t, "GET", ts.URL+"/api/v1/ntfy/ignored", admin, "")
-	for _, want := range []string{`"name":"Markdown","count":2`, `"name":"Email","count":1`, `"json:markdown"`, `"json:call"`, `"json:(other)"`} {
+	for _, want := range []string{`"name":"Email","count":1`, `"json:call"`, `"json:(other)"`} {
 		if c != 200 || !strings.Contains(b, want) {
 			t.Errorf("lacks %s: %d %s", want, c, b)
 		}
