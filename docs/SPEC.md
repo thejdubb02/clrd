@@ -37,6 +37,7 @@ A **notification**:
   "external_id": "bk-nightly", // optional, sender's key, unique per topic among non-final rows; max 256 chars, not . or ..
   "title": "Nightly backup failed",
   "message": "restic exited 1 after 4m 12s.",
+  "format": "markdown",        // or "text"; section 2.1. Missing in old events = markdown
   "priority": 4,               // 1..5, ntfy scale. 5 = urgent (Signal orange)
   "tags": ["backup"],
   "click": "https://...",      // optional
@@ -117,6 +118,63 @@ sends the title, the message and `click` (if set) to the platform's share
 sheet (Web Share API, Android `ACTION_SEND`). Copy puts the same text on the
 clipboard: the title, a blank line, the message, then `click` on its own line.
 
+## 2.1 Message formatting
+
+**Format.** Each notification has `format`: `markdown` (default) or `text`.
+Publish sets it with `"format"`, or ntfy style with `"markdown": false` (JSON)
+or `X-Markdown: no` (header, also `Markdown`, `md`, and `?markdown=` on a
+GET publish). `format` wins when both are given. A re-publish under the same
+`external_id` sets it again like every other field. Clients show `text`
+exactly as sent. `markdown` is a subset: bold, italic, underline (`<u>` or
+`++text++`, the only raw HTML allowed; all other HTML is escaped),
+strikethrough, code, code blocks, lists, quotes, headings (shown small) and
+links. Never images inside the body, scripts, iframes or styles. ntfy output carries
+`content_type: "text/markdown"` for `markdown` and leaves it out for `text`,
+so ntfy apps render the same way. Events logged before this field existed
+have no `format`: clients treat that as `markdown`.
+
+**Display settings.** One set per server, stored on the server so every device
+shows messages the same way:
+
+```json
+{"render_formatting": true, "autolink": true, "favicons": true, "link_previews": false,
+ "topic_previews": {"news": true}}
+```
+
+`render_formatting` off shows Markdown as plain text. `autolink` turns bare
+http(s) URLs into links. `favicons` shows a site icon next to links.
+`link_previews` shows a card for links, and `topic_previews` overrides it per
+topic. `GET /api/v1/settings` reads them and `PUT` changes only the fields
+given (a topic mapped to `null` drops its override); both need scope read. A
+token limited to some topics sees and sets only those topics' overrides and
+cannot change the four switches (403). Every change goes to every open
+WebSocket and SSE stream as a `settings` message (section 3).
+
+**Fetchers.** Clients never contact a linked site; the server does, so the
+viewer's IP stays private.
+
+- `GET /api/v1/favicon?host=<hostname>`: tries `https://host/favicon.ico`,
+  then the page's `<link rel="icon">`. Only raster images (PNG, JPEG, GIF,
+  WebP, ICO, BMP) are served; anything else, and every failure, returns the
+  same fallback SVG. Cached on disk 7 days (a failure 1 hour).
+- `GET /api/v1/preview?url=<url>&topic=<topic>`: 403 unless previews are on
+  for that topic (or globally with no topic). Returns `{"url","title",
+  "description","site_name","image"}` from Open Graph tags (falling back to
+  `<title>` and `<meta name="description">`); `image` is a `data:` URL (raster,
+  at most 512 KB). A page that cannot be fetched returns only `url`. Cached 24 h.
+
+Both are scope read and share one guard: http and https only, ports 80 and
+443 only, no user info in the URL, no proxy. Every connection, including each
+redirect hop (at most 5), is checked after DNS resolves, and is refused if the
+address is loopback, private (RFC 1918, `fc00::/7`), link-local (including
+`169.254.169.254`), multicast, unspecified, CGNAT `100.64.0.0/10`, or another
+special-use range (`0.0.0.0/8`, `192.0.0.0/24`, documentation nets,
+`198.18.0.0/15`, `240.0.0.0/4`, `64:ff9b::/96`, `64:ff9b:1::/48`,
+`2001::/32`, `2002::/16`). IPv4-mapped IPv6 addresses are checked as IPv4.
+Each fetch has a 5 s timeout and a 1 MB cap, sends `User-Agent: clrd/1
+(+https://github.com/thejdubb02/clrd)`, and at most 8 run at once. Cache files
+live in `cache/` next to the database and are swept hourly.
+
 ## 3. Events and sync
 
 Every change is an append-only **event** with a global, gap-free, monotonic
@@ -136,9 +194,11 @@ conflict resolution, last write on the server wins.
 
 ### WebSocket `GET /api/v1/ws?since=<seq>&topics=a,b`
 
-1. Server sends every event with `seq > since` (replay), then
+1. Server sends every event with `seq > since` (replay), then the display
+   settings `{"type":"settings","settings":{...}}` (section 2.1), then
    `{"type":"ready","seq":<current>,"epoch":"<id>"}`.
-2. Then live events as they happen.
+2. Then live events as they happen, and a new `settings` message whenever a
+   device changes the settings. Clients ignore message types they do not know.
 3. Server pings every 30 s; client reconnects with backoff and its last seq.
 4. If `since` is older than retention, server sends `{"type":"reset"}` and the
    client fetches `GET /api/v1/notifications?state=open` fresh.
@@ -164,8 +224,8 @@ from a backup keeps the epoch it had, so this alone does not catch a restore
 Also `GET /api/v1/events?since=<seq>&limit=500` for clients that poll: returns
 `{"events":[...],"seq":<current>,"epoch":"<id>"}`, or HTTP 410 with code `reset`. SSE at
 `GET /api/v1/events/sse?since=<seq>` sends the same JSON objects as the
-WebSocket (events, `ready`, `reset`), one per `data:` line, and honours
-`Last-Event-ID`.
+WebSocket (events, `settings`, `ready`, `reset`), one per `data:` line, and
+honours `Last-Event-ID` (`settings` and `reset` carry no `id:`).
 
 Browsers cannot set headers on a WebSocket, so the WebSocket and SSE accept
 the session cookie (same-origin only) as well as a Bearer token.
@@ -238,6 +298,9 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
 | PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
 | DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
+| GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
+| GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
+| GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
 | GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices". |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin). |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
@@ -259,7 +322,8 @@ By external id (what scripts and monitors use):
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
   is dropped), `X-Filename`/`Filename`/`File`/`f` (with it, the body is the
   file and the message comes from `X-Message`/`Message`/`m`, default "You
-  received a file: <name>"), `X-Markdown` and `X-Email` (ignored, documented),
+  received a file: <name>"), `X-Markdown`/`Markdown`/`md` (`no`/`false`/`0` publishes
+  plain text, section 2.1), `X-Email` (ignored, documented),
   plus clrd's own `X-Id` = `external_id`. A body over 4096 bytes without a file
   name is still a 413; clrd does not turn it into an attachment. ntfy output
   carries `icon` and `attachment` (`name`, `url`, `type`, `size`, with `url`
@@ -313,7 +377,8 @@ is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.
 - Tests: `go test ./...` must cover publish, external_id upsert, each state
   change, replay from seq, and the two-client sync proof (issue #1).
-- No outbound calls. No telemetry.
+- No telemetry. The only outbound calls are the favicon and link preview
+  fetches of section 2.1, made when a client asks for them.
 
 ## 8. Android
 

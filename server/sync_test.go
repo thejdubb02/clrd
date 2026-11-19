@@ -176,10 +176,13 @@ func TestStreamResetAndPoll(t *testing.T) {
 		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": fmt.Sprint(i)})
 	}
 
-	// since ahead of the server (a wiped server): reset, then ready, then live.
+	// since ahead of the server (a wiped server): reset, settings, ready, then live.
 	c := dialWS(t, ts.URL, admin, 999)
 	if m := c.next(); m.Type != "reset" {
 		t.Fatalf("want reset, got %+v", m)
+	}
+	if m := c.next(); m.Type != "settings" {
+		t.Fatalf("want settings, got %+v", m)
 	}
 	if m := c.next(); m.Type != "ready" || m.Seq != 3 {
 		t.Fatalf("want ready 3, got %+v", m)
@@ -219,6 +222,11 @@ func TestStreamResetAndPoll(t *testing.T) {
 	}
 	defer res.Body.Close()
 	sc := bufio.NewScanner(res.Body)
+	sc.Scan()
+	if !strings.HasPrefix(sc.Text(), `data: {"type":"settings"`) { // no id: settings are not in the event log
+		t.Fatalf("sse settings: %q", sc.Text())
+	}
+	sc.Scan()
 	sc.Scan()
 	if sc.Text() != "id: 3" { // ready moves the browser's cursor too (matters after a reset)
 		t.Fatalf("sse first line: %q", sc.Text())

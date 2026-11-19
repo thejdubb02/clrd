@@ -20,6 +20,14 @@ Fixed, Removed, Security), as one line a user can understand.
   and Jira signatures, and takes a template you save for any other service's
   JSON (`/api/v1/topics/{topic}/templates`). See
   [docs/integrations/custom-webhooks.md](docs/integrations/custom-webhooks.md).
+- Server: message formatting. Each notification is Markdown or plain text
+  (`format`, or ntfy's `X-Markdown: no`); the default is Markdown, so ntfy apps
+  now render clrd messages as Markdown unless sent with `X-Markdown: no`.
+  Display settings (formatting, links, site icons, link previews, per-topic
+  previews) are stored on the server and sync to every device. New site icon
+  and link preview endpoints fetch pages for your devices, refuse private
+  network addresses, and cache results. The web inbox and Android app do not
+  use them yet. See docs/formatting.md.
 - Server: files on notifications. Upload a file with the publish (multipart, or
   ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL
   (`attachment`, or ntfy's `X-Attach`). Downloads need a token that can read the

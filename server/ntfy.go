@@ -45,6 +45,9 @@ type ntfyMsg struct {
 	Icon       string       `json:"icon,omitempty"`
 	Actions    []ntfyAction `json:"actions,omitempty"`
 	Attachment *ntfyAttach  `json:"attachment,omitempty"`
+
+	// ContentType is ntfy's Markdown flag: "text/markdown", or empty for plain text.
+	ContentType string `json:"content_type,omitempty"`
 }
 
 type ntfyAttach struct {
@@ -74,6 +77,9 @@ func (s *Server) ntfyMessage(n *Notification, seq int64) ntfyMsg {
 		return m
 	}
 	m.Title, m.Message, m.Priority, m.Tags, m.Click, m.Icon = n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon
+	if n.Format != FormatText {
+		m.ContentType = "text/markdown"
+	}
 	if a := n.Attachment; a != nil {
 		m.Attachment = &ntfyAttach{Name: a.Name, Type: a.Type, Size: a.Size, URL: a.URL}
 		if strings.HasPrefix(a.URL, "/") { // ours: ntfy clients want it absolute
@@ -293,6 +299,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	in.Status = param(r, "Status")
+	in.Markdown = ntfyMarkdown(param(r, "Markdown", "Md"))
 	if file != "" {
 		n, err := s.PublishFile(r.Context(), tok, in, file, r.Body)
 		if err != nil {
@@ -335,6 +342,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		ExternalID string          `json:"external_id"`
 		Status     string          `json:"status"`
 		Cache      string          `json:"cache"`
+		Markdown   *bool           `json:"markdown"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
@@ -343,7 +351,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		return errNoCache
 	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
-		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status}
+		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown}
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
 	p.Icon = ntfyIcon(icon)
