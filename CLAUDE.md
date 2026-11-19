@@ -15,3 +15,10 @@ Public open-source project: self-hosted notification server + Android app (F-Dro
 
 - CI runs only on self-hosted cezar1 runners (`runs-on: [self-hosted, cezar1]`).
 - Work tracked as GitHub issues on thejdubb02/clrd.
+
+## The contract
+
+`docs/SPEC.md` is the shared contract (API, sync, states, auth, MCP, brand
+tokens, directory ownership). Read it first. Public instance host:
+`clrd.itsjustin.me`. Parallel threads each own one area (server, web,
+android, integrations); stay in yours and open a PR to `main`.

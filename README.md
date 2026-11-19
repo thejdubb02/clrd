@@ -6,7 +6,9 @@ Send an alert with one HTTP call. It shows up on your Android phone, your tablet
 
 clrd is a notification server, not a chat app. No rooms, no messages back and forth, no accounts on someone else's service.
 
-> Status: early design. Nothing to install yet.
+> Dismiss once. Gone everywhere.
+>
+> Status: being built. The contract every part builds against is [docs/SPEC.md](docs/SPEC.md).
 
 ## Why
 
@@ -28,10 +30,10 @@ clrd is a notification server, not a chat app. No rooms, no messages back and fo
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
   -d '{"topic":"infra","title":"Disk full","message":"vps1 at 95%","priority":4,"external_id":"disk-vps1"}' \
-  https://clrd.example.com/api/v1/notifications
+  https://clrd.itsjustin.me/api/v1/notifications
 
 # ntfy style also works
-curl -d "Disk full" https://clrd.example.com/infra
+curl -d "Disk full" https://clrd.itsjustin.me/infra
 ```
 
 ## License
