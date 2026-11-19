@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -78,22 +79,31 @@ func ntfyEvent(event, topic string) ntfyMsg {
 }
 
 func (s *Server) ntfyRoutes() {
+	// ntfy answers any origin, so web pages elsewhere can publish and
+	// subscribe with a token. No cookies are read on these routes, so this
+	// grants nothing a token holder could not already do.
+	route := func(pattern string, h func(http.ResponseWriter, *http.Request) error) {
+		s.route(pattern, func(w http.ResponseWriter, r *http.Request) error {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			return h(w, r)
+		})
+	}
 	for _, m := range []string{"PUT", "POST"} {
-		s.route(m+" /{topic}", s.ntfyPublish)
-		s.route(m+" /{topic}/{sid}", s.ntfyPublish) // publish or update by sequence id
+		route(m+" /{topic}", s.ntfyPublish)
+		route(m+" /{topic}/{sid}", s.ntfyPublish) // publish or update by sequence id
 		for _, a := range []string{"clear", "read"} {
-			s.route(m+" /{topic}/{sid}/"+a, s.ntfyAct("ack"))
+			route(m+" /{topic}/{sid}/"+a, s.ntfyAct("ack"))
 		}
 	}
-	s.route("DELETE /{topic}/{sid}", s.ntfyAct("resolve"))
-	s.route("POST /{$}", s.ntfyPublishJSON)
+	route("DELETE /{topic}/{sid}", s.ntfyAct("resolve"))
+	route("POST /{$}", s.ntfyPublishJSON)
 	for _, p := range []string{"publish", "send", "trigger"} {
-		s.route("GET /{topic}/"+p, s.ntfyPublish)
+		route("GET /{topic}/"+p, s.ntfyPublish)
 	}
 	for _, f := range []string{"json", "sse", "raw", "ws"} {
-		s.route("GET /{topics}/"+f, s.ntfySubscribe(f))
+		route("GET /{topics}/"+f, s.ntfySubscribe(f))
 	}
-	s.route("GET /{topics}/auth", func(w http.ResponseWriter, r *http.Request) error {
+	route("GET /{topics}/auth", func(w http.ResponseWriter, r *http.Request) error {
 		tok := s.auth(r, false)
 		if err := tok.need(ScopeRead, ""); err != nil {
 			return err
@@ -106,7 +116,7 @@ func (s *Server) ntfyRoutes() {
 		writeJSON(w, 200, map[string]bool{"success": true})
 		return nil
 	})
-	s.route("GET /v1/health", func(w http.ResponseWriter, r *http.Request) error {
+	route("GET /v1/health", func(w http.ResponseWriter, r *http.Request) error {
 		writeJSON(w, 200, map[string]bool{"healthy": s.db.PingContext(r.Context()) == nil})
 		return nil
 	})
@@ -116,7 +126,11 @@ func (s *Server) ntfyRoutes() {
 // trying each alias in turn.
 func param(r *http.Request, names ...string) string {
 	for _, n := range names {
-		for _, v := range []string{r.Header.Get("X-" + n), r.Header.Get(n), r.URL.Query().Get(strings.ToLower(n))} {
+		h := r.Header.Get(n)
+		if n == "Priority" && (strings.Contains(h, "u=") || h == "i") {
+			h = "" // browsers send RFC 9218 "Priority: u=3, i" on HTTP/2 and 3; not ours
+		}
+		for _, v := range []string{r.Header.Get("X-" + n), h, r.URL.Query().Get(strings.ToLower(n))} {
 			if v != "" {
 				return v
 			}
@@ -398,11 +412,16 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		if err != nil {
 			return err
 		}
+		f, err := ntfyFilters(r)
+		if err != nil {
+			return err
+		}
 
 		var write func(m ntfyMsg) error
 		ctx := r.Context()
 		if format == "ws" {
-			c, err := websocket.Accept(w, r, nil)
+			// Any origin, like the other ntfy routes: auth here is a token, never a cookie.
+			c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 			if err != nil {
 				return nil
 			}
@@ -425,7 +444,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				switch {
 				case format == "json":
 					b = append(b, '\n')
-				case format == "sse" && m.Event == "message":
+				case format == "sse" && strings.HasPrefix(m.Event, "message"): // ntfy sends message, message_clear and message_delete without an event line
 					b = fmt.Appendf(nil, "data: %s\n\n", b)
 				case format == "sse":
 					b = fmt.Appendf(nil, "event: %s\ndata: %s\n\n", m.Event, b)
@@ -467,6 +486,9 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				if err := json.Unmarshal(raw, &e); err != nil {
 					return err
 				}
+				if !f.pass(e.Notification, ntfyID(seq)) {
+					return nil
+				}
 				return write(ntfyMessage(e.Notification, seq))
 			}, func() error { return write(ntfyEvent("keepalive", joined)) })
 			if err != errPruned {
@@ -479,6 +501,43 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			since = max(since, oldest)
 		}
 	}
+}
+
+// ntfyFilter is ntfy's subscribe filters: id, message and title match
+// exactly, priority is any of a list, tags must all be there. Clear and
+// delete events are matched on the notification they clear.
+type ntfyFilter struct {
+	id, message, title string
+	prio               []int
+	tags               []string
+}
+
+func ntfyFilters(r *http.Request) (f ntfyFilter, err error) {
+	f.id, f.message, f.title = param(r, "Id"), param(r, "Message", "M"), param(r, "Title", "T")
+	f.tags = splitList(param(r, "Tags", "Tag", "Ta"))
+	for _, v := range splitList(param(r, "Priority", "Prio", "P")) {
+		p, err := ntfyPriority(v)
+		if err != nil {
+			return f, err
+		}
+		f.prio = append(f.prio, p)
+	}
+	return f, nil
+}
+
+func (f ntfyFilter) pass(n *Notification, id string) bool {
+	if f.id != "" && f.id != id || f.message != "" && f.message != n.Message || f.title != "" && f.title != n.Title {
+		return false
+	}
+	if len(f.prio) > 0 && !slices.Contains(f.prio, n.Priority) {
+		return false
+	}
+	for _, t := range f.tags {
+		if !slices.Contains(n.Tags, t) {
+			return false
+		}
+	}
+	return true
 }
 
 // ntfySince maps ntfy's since= to an event seq to replay after: "" or

@@ -175,6 +175,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if r.Method == http.MethodOptions && !strings.HasPrefix(p, "/api/") {
+		// CORS preflight for the ntfy routes, answered on any path a mount does not own, like ntfy.
+		// "*" does not cover Authorization, so it is named.
+		h := w.Header()
+		h.Set("Access-Control-Allow-Origin", "*")
+		h.Set("Access-Control-Allow-Methods", "GET, PUT, POST, PATCH, DELETE")
+		h.Set("Access-Control-Allow-Headers", "*, Authorization")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	s.mux.ServeHTTP(w, r)
 }
 

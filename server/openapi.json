@@ -2578,6 +2578,21 @@
        "type": "string"
       },
       "description": "1: send what is stored, then close"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterId"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterMessage"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterTitle"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterPriority"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterTags"
      }
     ]
    }
@@ -2636,6 +2651,21 @@
        "type": "string"
       },
       "description": "1: send what is stored, then close"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterId"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterMessage"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterTitle"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterPriority"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterTags"
      }
     ]
    }
@@ -2694,6 +2724,21 @@
        "type": "string"
       },
       "description": "1: send what is stored, then close"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterId"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterMessage"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterTitle"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterPriority"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterTags"
      }
     ]
    }
@@ -2745,6 +2790,21 @@
        "type": "string"
       },
       "description": "1: send what is stored, then close"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterId"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterMessage"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterTitle"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterPriority"
+     },
+     {
+      "$ref": "#/components/parameters/NtfyFilterTags"
      }
     ]
    }
@@ -3194,6 +3254,53 @@
     "required": [
      "topic"
     ]
+   }
+  },
+  "parameters": {
+   "NtfyFilterId": {
+    "name": "id",
+    "in": "query",
+    "required": false,
+    "schema": {
+     "type": "string"
+    },
+    "description": "Only the message with this ntfy id. Also read from the X-Id or Id header."
+   },
+   "NtfyFilterMessage": {
+    "name": "message",
+    "in": "query",
+    "required": false,
+    "schema": {
+     "type": "string"
+    },
+    "description": "Only messages with exactly this body (alias m). Also read from the X-Message or Message header."
+   },
+   "NtfyFilterTitle": {
+    "name": "title",
+    "in": "query",
+    "required": false,
+    "schema": {
+     "type": "string"
+    },
+    "description": "Only messages with exactly this title (alias t). Also read from the X-Title or Title header."
+   },
+   "NtfyFilterPriority": {
+    "name": "priority",
+    "in": "query",
+    "required": false,
+    "schema": {
+     "type": "string"
+    },
+    "description": "Comma list of priorities (1-5 or min, low, default, high, max); a message matches any of them (aliases prio, p). Also read from the X-Priority or Priority header."
+   },
+   "NtfyFilterTags": {
+    "name": "tags",
+    "in": "query",
+    "required": false,
+    "schema": {
+     "type": "string"
+    },
+    "description": "Comma list of tags; a message must have all of them (aliases tag, ta). Also read from the X-Tags or Tags header."
    }
   }
  }
