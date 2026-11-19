@@ -74,6 +74,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -121,11 +122,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val label: String, val icon: ImageVector) {
-    Inbox("Inbox", Icons.Filled.Notifications),
-    Snoozed("Snoozed", Icons.Filled.DateRange),
-    Cleared("Cleared", Icons.Filled.CheckCircle),
-    Settings("Settings", Icons.Filled.Settings),
+private enum class Tab(val label: Int, val icon: ImageVector) {
+    Inbox(R.string.tab_inbox, Icons.Filled.Notifications),
+    Snoozed(R.string.tab_snoozed, Icons.Filled.DateRange),
+    Cleared(R.string.tab_cleared, Icons.Filled.CheckCircle),
+    Settings(R.string.tab_settings, Icons.Filled.Settings),
 }
 
 @Composable
@@ -136,12 +137,13 @@ private fun Home(app: App, battery: Intent?) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val dao = app.db.dao()
+    val ctx = LocalContext.current
 
     // Clear with an Undo toast, as on the web inbox.
     val clear: (Notif) -> Unit = { n ->
         app.act(n.id, "dismiss")
         scope.launch {
-            if (snackbar.showSnackbar("Cleared everywhere", "Undo", duration = androidx.compose.material3.SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+            if (snackbar.showSnackbar(ctx.getString(R.string.cleared_everywhere), ctx.getString(R.string.undo), duration = androidx.compose.material3.SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
                 app.act(n.id, "reopen")
             }
         }
@@ -155,7 +157,7 @@ private fun Home(app: App, battery: Intent?) {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
                         selected = tab == t, onClick = { tab = t },
-                        icon = { Icon(t.icon, null) }, label = { Text(t.label) },
+                        icon = { Icon(t.icon, null) }, label = { Text(stringResource(t.label)) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = b.ink, selectedTextColor = b.ink, indicatorColor = b.line,
                             unselectedIconColor = b.slate, unselectedTextColor = b.slate,
@@ -181,12 +183,12 @@ private fun Home(app: App, battery: Intent?) {
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(shown, key = { it.id }) { n ->
-                            if (tab == Tab.Cleared) Card(n) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text("Restore", color = b.ink) } }
+                            if (tab == Tab.Cleared) Card(n) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text(stringResource(R.string.restore), color = b.ink) } }
                             else Swipeable(n, onClear = { clear(n) }) {
                                 Card(n) {
-                                    if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text("Ack", color = b.ink) }
-                                    if (tab == Tab.Inbox) TextButton(onClick = { app.act(n.id, "snooze", """{"for":"1h"}""") }) { Text("Snooze 1h", color = b.ink) }
-                                    TextButton(onClick = { clear(n) }) { Text("Clear", color = b.clear, fontWeight = FontWeight.SemiBold) }
+                                    if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text(stringResource(R.string.ack), color = b.ink) }
+                                    if (tab == Tab.Inbox) TextButton(onClick = { app.act(n.id, "snooze", """{"for":"1h"}""") }) { Text(stringResource(R.string.snooze_1h), color = b.ink) }
+                                    TextButton(onClick = { clear(n) }) { Text(stringResource(R.string.clear), color = b.clear, fontWeight = FontWeight.SemiBold) }
                                 }
                             }
                         }
@@ -202,19 +204,19 @@ private fun Header(app: App) {
     val b = LocalBrand.current
     val status by app.status.collectAsState()
     val (dot, label) = when {
-        !app.configured -> b.slate to "Not set up"
-        status == SyncClient.Status.CONNECTED -> b.clear to "In sync"
-        status == SyncClient.Status.CONNECTING -> b.snooze to "Connecting"
-        status == SyncClient.Status.AUTH_FAILED -> b.signal to "Token rejected"
-        status == SyncClient.Status.BUSY -> b.snooze to "Server busy"
-        else -> b.slate to "Offline"
+        !app.configured -> b.slate to R.string.status_not_set_up
+        status == SyncClient.Status.CONNECTED -> b.clear to R.string.status_in_sync
+        status == SyncClient.Status.CONNECTING -> b.snooze to R.string.status_connecting
+        status == SyncClient.Status.AUTH_FAILED -> b.signal to R.string.status_token_rejected
+        status == SyncClient.Status.BUSY -> b.snooze to R.string.status_busy
+        else -> b.slate to R.string.status_offline
     }
     Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("clrd", style = Wordmark, color = b.ink)
+        Text(stringResource(R.string.app_name), style = Wordmark, color = b.ink)
         Spacer(Modifier.weight(1f))
         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
         Spacer(Modifier.width(6.dp))
-        Text(label, style = Mono, color = b.slate)
+        Text(stringResource(label), style = Mono, color = b.slate)
     }
 }
 
@@ -225,7 +227,7 @@ private fun Pills(topics: List<String>, selected: String?, onPick: (String?) -> 
         items(listOf<String?>(null) + topics) { t ->
             val on = t == selected
             Text(
-                t ?: "All",
+                t ?: stringResource(R.string.all_topics),
                 color = if (on) b.paper else b.ink,
                 fontSize = 14.sp,
                 modifier = Modifier
@@ -258,7 +260,7 @@ private fun Swipeable(n: Notif, onClear: () -> Unit, content: @Composable () -> 
             ) {
                 Icon(Icons.Filled.Check, null, tint = b.paper)
                 Spacer(Modifier.width(8.dp))
-                Text("Clear", color = b.paper, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.clear), color = b.paper, fontWeight = FontWeight.SemiBold)
             }
         },
         content = { content() },
@@ -289,7 +291,7 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
                 Text(n.message, color = b.body, fontSize = 15.sp, maxLines = 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 8.dp))
             }
             Spacer(Modifier.height(8.dp))
-            Text(meta(n), style = Mono, color = b.slate, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(meta(LocalContext.current, n), style = Mono, color = b.slate, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) { actions() }
         }
     }
@@ -300,27 +302,42 @@ private fun StateChip(state: String) {
     val b = LocalBrand.current
     val (bg, fg) = chip(state)
     Text(
-        state, style = Mono, color = fg,
+        stateLabel(state)?.let { stringResource(it) } ?: state, style = Mono, color = fg,
         modifier = Modifier.clip(RoundedCornerShape(50)).background(bg)
             .border(1.dp, if (bg == Color.Transparent) b.line else bg, RoundedCornerShape(50))
             .padding(horizontal = 8.dp, vertical = 2.dp),
     )
 }
 
-private fun meta(n: Notif): String {
-    val parts = mutableListOf(n.topic, ago(n.createdAt))
+/** The chip text for a state the server sends; an unknown one shows as sent. */
+private fun stateLabel(state: String): Int? = when (state) {
+    Notif.ACKNOWLEDGED -> R.string.state_acknowledged
+    Notif.SNOOZED -> R.string.state_snoozed
+    Notif.DISMISSED -> R.string.state_dismissed
+    Notif.RESOLVED -> R.string.state_resolved
+    else -> null
+}
+
+private fun meta(ctx: Context, n: Notif): String {
+    val parts = mutableListOf(n.topic, ago(ctx, n.createdAt))
+    val by = n.stateBy ?: ctx.getString(R.string.unknown_device)
     when (n.state) {
-        Notif.ACKNOWLEDGED -> parts += "acked on ${n.stateBy ?: "?"}"
-        Notif.SNOOZED -> n.snoozeUntil?.let { parts += "until " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) }
-        Notif.DISMISSED -> parts += "cleared on ${n.stateBy ?: "?"}"
-        Notif.RESOLVED -> parts += "resolved"
+        Notif.ACKNOWLEDGED -> parts += ctx.getString(R.string.acked_on, by)
+        Notif.SNOOZED -> n.snoozeUntil?.let { parts += ctx.getString(R.string.snoozed_until, DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it))) }
+        Notif.DISMISSED -> parts += ctx.getString(R.string.cleared_on, by)
+        Notif.RESOLVED -> parts += ctx.getString(R.string.state_resolved)
     }
     return parts.joinToString("  ·  ")
 }
 
-private fun ago(t: Long): String {
+private fun ago(ctx: Context, t: Long): String {
     val m = (System.currentTimeMillis() - t) / 60_000
-    return when { m < 1 -> "now"; m < 60 -> "${m}m"; m < 1440 -> "${m / 60}h"; else -> "${m / 1440}d" }
+    return when {
+        m < 1 -> ctx.getString(R.string.ago_now)
+        m < 60 -> ctx.getString(R.string.ago_minutes, m.toInt())
+        m < 1440 -> ctx.getString(R.string.ago_hours, (m / 60).toInt())
+        else -> ctx.getString(R.string.ago_days, (m / 1440).toInt())
+    }
 }
 
 @Composable
@@ -330,7 +347,7 @@ private fun Empty(tab: Tab) {
         Icon(Icons.Filled.CheckCircle, null, tint = b.clear, modifier = Modifier.size(48.dp))
         Spacer(Modifier.height(12.dp))
         Text(
-            when (tab) { Tab.Inbox -> "Nothing needs you."; Tab.Snoozed -> "Nothing snoozed."; else -> "Nothing cleared yet." },
+            stringResource(when (tab) { Tab.Inbox -> R.string.empty_inbox; Tab.Snoozed -> R.string.empty_snoozed; else -> R.string.empty_cleared }),
             color = b.slate, fontSize = 15.sp,
         )
     }
@@ -347,19 +364,19 @@ private fun SettingsScreen(app: App, battery: Intent?) {
     val topics by app.db.dao().topics().collectAsState(emptyList())
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Server", color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.server), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
-            url, { url = it }, label = { Text("Server URL") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            url, { url = it }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
-        if (url.trim().startsWith("http://", ignoreCase = true)) Text("Plain http sends your token unencrypted. Use https outside your home network.", color = b.signal, fontSize = 13.sp)
+        if (url.trim().startsWith("http://", ignoreCase = true)) Text(stringResource(R.string.plain_http_warning), color = b.signal, fontSize = 13.sp)
         OutlinedTextField(
-            token, { token = it }, label = { Text("Token") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            token, { token = it }, label = { Text(stringResource(R.string.token)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             visualTransformation = PasswordVisualTransformation(),
         )
         Button(
             onClick = {
-                result = "Testing"
+                result = ctx.getString(R.string.testing)
                 val newUrl = url.trim().trimEnd('/')
                 val newToken = token.trim()
                 app.io.execute {
@@ -385,30 +402,30 @@ private fun SettingsScreen(app: App, battery: Intent?) {
                     result = try {
                         app.api().get("/api/v1/topics")
                         SyncService.start(ctx, restart = true)
-                        "Connected. Syncing now."
+                        ctx.getString(R.string.test_ok)
                     } catch (e: HttpError) {
-                        if (e.isAuth) "Server reached, but it rejected the token." else "Server answered ${e.code}."
+                        if (e.isAuth) ctx.getString(R.string.test_token_rejected) else ctx.getString(R.string.test_http_error, e.code)
                     } catch (e: Exception) {
-                        "Could not reach the server: ${e.message}"
+                        ctx.getString(R.string.test_unreachable, e.message)
                     }
                 }
             },
             colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),
-        ) { Text("Save and test connection") }
+        ) { Text(stringResource(R.string.save_and_test)) }
         result?.let { Text(it, color = b.body, fontSize = 14.sp) }
         battery?.takeIf { app.configured }?.let { prompt ->
-            Text("This phone may pause clrd in the background, and then clears from other devices arrive late.", color = b.slate, fontSize = 13.sp)
-            TextButton(onClick = { openBattery(ctx, prompt) }) { Text("Let clrd run in the background", color = b.ink) }
+            Text(stringResource(R.string.battery_explain), color = b.slate, fontSize = 13.sp)
+            TextButton(onClick = { openBattery(ctx, prompt) }) { Text(stringResource(R.string.battery_button), color = b.ink) }
         }
 
         if (topics.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            Text("Topics", color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            Text("A muted topic stays in the inbox but never pops up on this phone.", color = b.slate, fontSize = 13.sp)
+            Text(stringResource(R.string.topics), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.topics_explain), color = b.slate, fontSize = 13.sp)
             topics.forEach { t ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text(t, color = b.ink, modifier = Modifier.weight(1f))
-                    Text(if (t in muted) "muted" else "on", style = Mono, color = b.slate)
+                    Text(stringResource(if (t in muted) R.string.topic_muted else R.string.topic_on), style = Mono, color = b.slate)
                     Spacer(Modifier.width(8.dp))
                     Switch(checked = t !in muted, onCheckedChange = { on ->
                         muted = if (on) muted - t else muted + t
@@ -419,6 +436,6 @@ private fun SettingsScreen(app: App, battery: Intent?) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text("clrd ${BuildConfig.VERSION_NAME}. No tracking, no Google services.", style = Mono, color = b.slate)
+        Text(stringResource(R.string.about, BuildConfig.VERSION_NAME), style = Mono, color = b.slate)
     }
 }
