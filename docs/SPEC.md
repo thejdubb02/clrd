@@ -197,8 +197,11 @@ By external id (what scripts and monitors use):
   `X-Attach`, `X-Email` (ignored, documented), plus clrd's own `X-Id` = `external_id`.
 - `POST /` with ntfy JSON body (`topic`, `message`, `title`, `priority`, `tags`, ...).
 - `GET /{topic}/json`, `/{topic}/sse`, `/{topic}/ws`, `/{topic}/raw` with `since=`
-  (`all`, unix time, duration, message id) and `poll=1`. Output in ntfy's
-  message format so the ntfy Android app and ntfy CLI work unchanged.
+  (`all`, unix time, duration, message id) and `poll=1`, and ntfy's filters
+  `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
+  list). Output in ntfy's message format so the ntfy Android app and ntfy CLI
+  work unchanged. The ntfy routes answer any origin (CORS); no cookie is read
+  there, so this grants nothing a token holder could not already do.
 - Webhook-friendly: `GET /{topic}/publish?message=...` and `/{topic}/trigger`.
 - Alertmanager/Grafana/Gatus: a payload with `status: resolved` and a stable
   key (alert fingerprint / `X-Id`) resolves instead of creating. Mapping in `docs/integrations/`.
