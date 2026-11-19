@@ -348,18 +348,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	if t == nil {
 		return errf(401, "unauthorized", "invalid token")
 	}
-	// Each browser gets its own token (issue #30): its own name in the device
-	// list and in state_by, revocable alone, and gone when its parent is.
-	s.endSession(r)
-	st, raw, err := s.CreateToken(r.Context(), deviceName(in.Name, r.UserAgent()), t.Scopes, t.Topics)
+	st, err := s.startSession(w, r, t, in.Name)
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(r.Context(), `INSERT INTO sessions (token_id, parent_id) VALUES (?, ?)`, st.ID, t.ID); err != nil {
-		s.DeleteToken(r.Context(), st.ID)
-		return err
-	}
-	s.setCookie(w, r, raw, 365*24*3600)
 	if isForm {
 		http.Redirect(w, r, next, http.StatusSeeOther)
 		return nil
@@ -368,20 +360,54 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// endSession revokes the token in this browser's cookie, only when sign-in
-// minted it. Older cookies and the setup cookie hold a real token; keep those.
-func (s *Server) endSession(r *http.Request) {
-	c, err := r.Cookie(sessionCookie)
-	if err != nil {
-		return
+// startSession signs this browser in with its own token (issue #30): same
+// scopes and topics as parent, its own name in the device list and in
+// state_by, revocable alone, and revoked with its parent.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *Token, name string) (*Token, error) {
+	if err := s.endSession(r); err != nil {
+		return nil, err
 	}
-	var id string
-	if s.db.QueryRowContext(r.Context(), `SELECT token_id FROM sessions JOIN tokens ON id = token_id WHERE hash = ?`,
-		hashToken(c.Value)).Scan(&id) == nil {
-		if err := s.DeleteToken(r.Context(), id); err != nil {
-			s.log.Warn("end session", "err", err)
+	ctx := context.WithoutCancel(r.Context()) // never leave a half-made session
+	st, raw, err := s.CreateToken(ctx, deviceName(name, r.UserAgent()), parent.Scopes, parent.Topics)
+	if err != nil {
+		return nil, err
+	}
+	// Only while the parent exists, so a racing revoke cannot miss this one.
+	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id) SELECT ?, id FROM tokens WHERE id = ?`, st.ID, parent.ID)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n == 0 {
+			err = errf(401, "unauthorized", "token revoked")
 		}
 	}
+	if err != nil {
+		if derr := s.DeleteToken(ctx, st.ID); derr != nil {
+			s.log.Warn("drop half-made session", "err", derr)
+		}
+		return nil, err
+	}
+	s.setCookie(w, r, raw, 365*24*3600)
+	return st, nil
+}
+
+// endSession revokes the token in this browser's cookie, only when sign-in
+// minted it. Cookies set before #30 hold a real token; keep those.
+func (s *Server) endSession(r *http.Request) error {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil {
+		return nil
+	}
+	var id string
+	err = s.db.QueryRowContext(r.Context(), `SELECT token_id FROM sessions JOIN tokens ON id = token_id WHERE hash = ?`,
+		hashToken(c.Value)).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err == nil {
+		if err = s.DeleteToken(r.Context(), id); isNotFound(err) { // a racing sign-out got it first
+			err = nil
+		}
+	}
+	return err
 }
 
 // deviceName is the name a signed-in browser shows as: the one given, else
@@ -413,7 +439,9 @@ func deviceName(name, ua string) string {
 }
 
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) error {
-	s.endSession(r)
+	if err := s.endSession(r); err != nil {
+		return err // keep the cookie so a retry can still revoke its token
+	}
 	s.setCookie(w, r, "", -1)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
@@ -484,7 +512,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.setupCode = ""
-	s.setCookie(w, r, raw, 365*24*3600)
+	// The browser gets its own token too, so signing out never revokes the
+	// admin token shown below. If that fails, still show the admin token.
+	if _, err := s.startSession(w, r, t, ""); err != nil {
+		s.log.Warn("setup sign-in", "err", err)
+	}
 	return setupPage.Execute(w, map[string]string{"Token": raw, "Name": t.Name})
 }
 

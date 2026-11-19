@@ -3,8 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -169,5 +172,55 @@ func TestDeviceName(t *testing.T) {
 	}
 	if got := deviceName(strings.Repeat("é", 100), ""); len([]rune(got)) != 64 {
 		t.Errorf("long name not capped: %d", len([]rune(got)))
+	}
+}
+
+// Setup signs the browser in with its own token, so signing out there never
+// revokes the admin token the page showed.
+func TestSetupSignOutKeepsAdmin(t *testing.T) {
+	s, ts, _ := newTest(t)
+	if _, err := s.db.Exec(`DELETE FROM tokens`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.bootstrap(context.Background()); err != nil || s.setupCode == "" {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	res, err := http.PostForm(ts.URL+"/setup", url.Values{"code": {s.setupCode}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	admin := regexp.MustCompile(`clrd_[A-Za-z0-9_-]+`).FindString(string(b))
+	c := res.Cookies()[0]
+	if admin == "" || c.Value == admin {
+		t.Fatalf("setup: admin %q, cookie is the admin token: %v", admin, c.Value == admin)
+	}
+	if code := withCookie(t, ts, "DELETE", "/api/v1/session", c); code != 204 {
+		t.Fatalf("sign-out: %d", code)
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/tokens", admin, nil); code != 200 {
+		t.Fatalf("admin token after setup sign-out: %d", code)
+	}
+	if withCookie(t, ts, "GET", "/api/v1/topics", c) != 401 {
+		t.Fatal("setup browser token survives sign-out")
+	}
+}
+
+// A sign-in that loses the race with its parent's revoke leaves nothing usable.
+func TestSessionForRevokedParent(t *testing.T) {
+	s, ts, admin := newTest(t)
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	parent := s.lookupToken(context.Background(), typed)
+	if err := s.DeleteToken(context.Background(), parent.ID); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/api/v1/session", nil)
+	w := httptest.NewRecorder()
+	if st, err := s.startSession(w, r, parent, ""); err == nil || st != nil || len(w.Result().Cookies()) != 0 {
+		t.Fatalf("session for a revoked parent: %v %v", st, err)
+	}
+	if ids := tokenIDs(t, ts, admin); len(ids) != 1 {
+		t.Fatalf("half-made session left behind: %v", ids)
 	}
 }
