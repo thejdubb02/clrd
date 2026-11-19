@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   hash TEXT NOT NULL UNIQUE,
   scopes TEXT NOT NULL,
   topics TEXT NOT NULL DEFAULT '',
+  grants TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   last_seen_at INTEGER
 );
@@ -93,6 +94,16 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '');
 -- Webhook templates a topic owner saved (webhooks.go); spec is the Webhook as JSON.
 CREATE TABLE IF NOT EXISTS webhook_templates (topic TEXT NOT NULL, name TEXT NOT NULL, spec TEXT NOT NULL, PRIMARY KEY (topic, name));
+-- ntfy passwords (issue #117): each user signs in as its own token, on ntfy routes only.
+CREATE TABLE IF NOT EXISTS users (
+  name TEXT PRIMARY KEY,
+  hash TEXT NOT NULL,
+  token_id TEXT NOT NULL REFERENCES tokens(id) ON DELETE CASCADE
+);
+-- ntfy message ids from an import, so since=<id> carries on where a phone left off.
+CREATE TABLE IF NOT EXISTS ntfy_mids (mid TEXT PRIMARY KEY, seq INTEGER NOT NULL);
+-- ntfy headers, params and JSON fields received but ignored, for the admin page.
+CREATE TABLE IF NOT EXISTS ntfy_ignored (name TEXT PRIMARY KEY, count INTEGER NOT NULL, last_seen INTEGER NOT NULL);
 -- A web sign-in mints its own token; parent_id is the token typed in.
 CREATE TABLE IF NOT EXISTS sessions (
   token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
@@ -195,6 +206,11 @@ func openDB(path string) (*sql.DB, error) {
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
 		return nil, fmt.Errorf("add format column: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN grants TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add grants column: %w", err)
 	}
 	// After the loop: an old database only has the column once it ran.
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS notifications_file ON notifications(file) WHERE file != ''`); err != nil {
@@ -867,14 +883,21 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 		}
 	}
 	topics := lq.Topics
-	if len(tok.Topics) > 0 {
-		if len(topics) == 0 {
-			topics = tok.Topics
+	for _, t := range topics {
+		if !tok.may(ScopeRead, t) {
+			return nil, errf(403, "forbidden", "token may not read topic %q", t)
 		}
-		for _, t := range topics {
-			if !tok.Allows(t) {
-				return nil, errf(403, "forbidden", "token may not read topic %q", t)
-			}
+	}
+	if len(topics) == 0 && tok.limited() {
+		all, err := s.Topics(ctx, tok)
+		if err != nil {
+			return nil, err
+		}
+		for _, t := range all {
+			topics = append(topics, t.Topic)
+		}
+		if len(topics) == 0 {
+			return []*Notification{}, nil
 		}
 	}
 	if len(topics) > 0 {
@@ -947,7 +970,7 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon); err != nil {
 			return nil, err
 		}
-		if tok.Allows(t.Topic) {
+		if tok.may(ScopeRead, t.Topic) {
 			out = append(out, t)
 		}
 	}

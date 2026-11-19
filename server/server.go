@@ -557,6 +557,7 @@ func (s *Server) routesSetup() {
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	})
+	s.api("GET /api/v1/ntfy/ignored", s.handleNtfyIgnored)
 	s.api("GET /api/v1/ws", s.handleWS)
 	s.api("GET /api/v1/events", s.handleEvents)
 	s.api("GET /api/v1/events/sse", s.handleSSE)

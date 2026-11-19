@@ -45,6 +45,10 @@ offline catches up the moment it reconnects.
   it by that ID when the fault clears.
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
+- **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
+  tokens, per-topic access rules, message history and attachments, so you can
+  swap the hostname and keep every credential. See
+  [Switch from ntfy](docs/migrate-from-ntfy.md).
   Email is not supported.
 - **Files and icons.** Agents and scripts can attach a file or an icon to a
   notification. The server stores and serves them and the Android app shows

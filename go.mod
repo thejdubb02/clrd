@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/yuin/goldmark v1.8.7
+	golang.org/x/crypto v0.31.0
 	modernc.org/sqlite v1.38.2
 )
 

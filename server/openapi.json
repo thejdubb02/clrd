@@ -1371,6 +1371,53 @@
     ]
    }
   },
+  "/api/v1/ntfy/ignored": {
+   "get": {
+    "summary": "ntfy options received but ignored",
+    "description": "Admin only. Counts of ntfy publish headers, query parameters and JSON fields clrd accepted but did not act on, so a service moved from ntfy can be checked. HTML when the request accepts text/html. At most 200 names.",
+    "tags": [
+     "admin"
+    ],
+    "responses": {
+     "200": {
+      "description": "Ignored options, most frequent first.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "ignored": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "name": {
+              "type": "string"
+             },
+             "count": {
+              "type": "integer"
+             },
+             "last_seen": {
+              "type": "string",
+              "format": "date-time"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/ws": {
    "get": {
     "summary": "WebSocket sync stream",
@@ -3724,6 +3771,30 @@
       "type": "array",
       "items": {
        "type": "string"
+      }
+     },
+     "grants": {
+      "type": "array",
+      "description": "Per-topic rules, first match decides (spec section 4). Set only on tokens imported from ntfy. A topic no grant matches is denied.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "topic": {
+         "type": "string",
+         "description": "Topic name or pattern with *; matched ignoring case."
+        },
+        "scopes": {
+         "type": "array",
+         "items": {
+          "type": "string",
+          "enum": [
+           "read",
+           "publish"
+          ]
+         },
+         "description": "Empty means deny."
+        }
+       }
       }
      },
      "created_at": {

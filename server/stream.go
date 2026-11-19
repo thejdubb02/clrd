@@ -86,7 +86,7 @@ func msgReady(seq int64, epoch string) []byte {
 }
 
 func visible(tok *Token, topics []string, topic string) bool {
-	return tok.Allows(topic) && (len(topics) == 0 || slices.Contains(topics, topic))
+	return tok.may(ScopeRead, topic) && (len(topics) == 0 || slices.Contains(topics, topic))
 }
 
 // follow is the sync loop every stream shares: replay events after since,

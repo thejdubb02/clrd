@@ -8,11 +8,14 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
+	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -27,20 +30,56 @@ const (
 )
 
 const tokenPrefix = "clrd_"
+
+// ntfyTokenPrefix: tokens imported from ntfy keep working (issue #117).
+const ntfyTokenPrefix = "tk_"
+
+func isToken(raw string) bool {
+	return strings.HasPrefix(raw, tokenPrefix) || strings.HasPrefix(raw, ntfyTokenPrefix)
+}
+
 const sessionCookie = "clrd_session"
+
+// Grant is one per-topic rule (spec section 4). Topic is a name or a
+// pattern with *, matched ignoring case; Scopes is read and/or publish, empty
+// for deny. The first grant that matches decides.
+type Grant struct {
+	Topic  string   `json:"topic"`
+	Scopes []string `json:"scopes"`
+}
 
 // Token is an API token. Name is the device name shown as state_by.
 type Token struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
 	Scopes     []string   `json:"scopes"`
-	Topics     []string   `json:"topics"` // empty = every topic
+	Topics     []string   `json:"topics"`           // empty = every topic
+	Grants     []Grant    `json:"grants,omitempty"` // set = only these, in order
 	CreatedAt  time.Time  `json:"created_at"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 }
 
-// Allows reports whether the token's topic allow-list admits topic.
-func (t *Token) Allows(topic string) bool {
+// limited reports whether the token is held to some topics.
+func (t *Token) limited() bool { return len(t.Topics) > 0 || len(t.Grants) > 0 }
+
+// may reports whether the token may use scope on topic. Topic "" asks only
+// about the scope. Every topic check goes through here.
+func (t *Token) may(scope, topic string) bool {
+	if !t.Has(scope) {
+		return false
+	}
+	if topic == "" {
+		return true
+	}
+	if len(t.Grants) > 0 {
+		lt := strings.ToLower(topic)
+		for _, g := range t.Grants {
+			if ok, _ := path.Match(strings.ToLower(g.Topic), lt); ok {
+				return slices.Contains(g.Scopes, scope)
+			}
+		}
+		return false
+	}
 	return len(t.Topics) == 0 || slices.Contains(t.Topics, topic)
 }
 
@@ -49,9 +88,12 @@ func (t *Token) Has(scope string) bool {
 	return slices.Contains(t.Scopes, scope) || slices.Contains(t.Scopes, ScopeAdmin)
 }
 
-// need checks scope and, when topic is set, the allow-list.
-// seesAll: a topic-limited token only learns about devices limited to its own topics.
+// seesAll: a topic-limited token only learns about devices limited to its
+// own topics; a token with grants only about itself.
 func (t *Token) seesAll(o *Token) bool {
+	if len(t.Grants) > 0 || len(o.Grants) > 0 {
+		return !t.limited() || o.ID == t.ID
+	}
 	if len(t.Topics) == 0 {
 		return true
 	}
@@ -59,7 +101,7 @@ func (t *Token) seesAll(o *Token) bool {
 		return false
 	}
 	for _, topic := range o.Topics {
-		if !t.Allows(topic) {
+		if !slices.Contains(t.Topics, topic) {
 			return false
 		}
 	}
@@ -73,8 +115,8 @@ func (t *Token) need(scope, topic string) error {
 	if !t.Has(scope) {
 		return errf(403, "forbidden", "token lacks the %s scope", scope)
 	}
-	if topic != "" && !t.Allows(topic) {
-		return errf(403, "forbidden", "token may not use topic %q", topic)
+	if !t.may(scope, topic) {
+		return errf(403, "forbidden", "token may not %s topic %q", scope, topic)
 	}
 	return nil
 }
@@ -84,10 +126,71 @@ func (t *Token) needFullAdmin() error {
 	if err := t.need(ScopeAdmin, ""); err != nil {
 		return err
 	}
-	if len(t.Topics) > 0 {
+	if t.limited() {
 		return errf(403, "forbidden", "managing tokens needs an admin token without a topic list")
 	}
 	return nil
+}
+
+var grantPattern = regexp.MustCompile(`^[A-Za-z0-9_*-]{1,64}$`)
+
+// checkToken validates a token before it is stored.
+func checkToken(t *Token) error {
+	if t.Name == "" {
+		return errf(400, "bad_request", "name required")
+	}
+	if len(t.Scopes) == 0 {
+		return errf(400, "bad_request", "at least one scope required")
+	}
+	for _, sc := range t.Scopes {
+		if sc != ScopePublish && sc != ScopeRead && sc != ScopeAdmin {
+			return errf(400, "bad_request", "unknown scope %q", sc)
+		}
+	}
+	for _, tp := range t.Topics {
+		if err := validTopic(tp); err != nil {
+			return err
+		}
+	}
+	if len(t.Grants) == 0 {
+		return nil
+	}
+	if len(t.Topics) > 0 || slices.Contains(t.Scopes, ScopeAdmin) {
+		return errf(400, "bad_request", "grants cannot go with topics or the admin scope")
+	}
+	for _, g := range t.Grants {
+		if !grantPattern.MatchString(g.Topic) {
+			return errf(400, "bad_request", "bad grant topic %q", g.Topic)
+		}
+		for _, sc := range g.Scopes {
+			if (sc != ScopePublish && sc != ScopeRead) || !slices.Contains(t.Scopes, sc) {
+				return errf(400, "bad_request", "grant scope %q must be read or publish and held by the token", sc)
+			}
+		}
+	}
+	return nil
+}
+
+// insertToken stores t with the hash of its secret.
+func insertToken(ctx context.Context, db execer, t *Token, hash string) error {
+	if err := checkToken(t); err != nil {
+		return err
+	}
+	if t.Topics == nil {
+		t.Topics = []string{}
+	}
+	grants := ""
+	if len(t.Grants) > 0 {
+		b, _ := json.Marshal(t.Grants)
+		grants = string(b)
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, grants, created_at) VALUES (?,?,?,?,?,?,?)`,
+		t.ID, t.Name, hash, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), grants, ms(t.CreatedAt))
+	return err
+}
+
+type execer interface {
+	ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error)
 }
 
 func randomString(n int) string {
@@ -121,41 +224,32 @@ func splitList(s string) []string {
 // CreateToken stores a new token and returns it with its secret value,
 // which is shown once and never stored.
 func (s *Server) CreateToken(ctx context.Context, name string, scopes, topics []string) (*Token, string, error) {
-	if name == "" {
-		return nil, "", errf(400, "bad_request", "name required")
-	}
-	if len(scopes) == 0 {
-		return nil, "", errf(400, "bad_request", "at least one scope required")
-	}
-	for _, sc := range scopes {
-		if sc != ScopePublish && sc != ScopeRead && sc != ScopeAdmin {
-			return nil, "", errf(400, "bad_request", "unknown scope %q", sc)
-		}
-	}
-	for _, t := range topics {
-		if err := validTopic(t); err != nil {
-			return nil, "", err
-		}
-	}
-	raw := tokenPrefix + randomString(32)
-	t := &Token{ID: randomString(12), Name: name, Scopes: scopes, Topics: topics, CreatedAt: now()}
-	if t.Topics == nil {
-		t.Topics = []string{}
-	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, created_at) VALUES (?,?,?,?,?,?)`,
-		t.ID, t.Name, hashToken(raw), strings.Join(scopes, ","), strings.Join(t.Topics, ","), ms(t.CreatedAt))
-	return t, raw, err
+	return s.createToken(ctx, &Token{Name: name, Scopes: scopes, Topics: topics})
 }
 
-const tokenCols = `id, name, scopes, topics, created_at, last_seen_at`
+func (s *Server) createToken(ctx context.Context, t *Token) (*Token, string, error) {
+	raw := tokenPrefix + randomString(32)
+	t.ID, t.CreatedAt = randomString(12), now()
+	if err := insertToken(ctx, s.db, t, hashToken(raw)); err != nil {
+		return nil, "", err
+	}
+	return t, raw, nil
+}
+
+const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at`
 
 func scanToken(r scanner) (*Token, error) {
 	var t Token
-	var scopes, topics string
+	var scopes, topics, grants string
 	var created int64
 	var seen sql.NullInt64
-	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &created, &seen); err != nil {
+	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen); err != nil {
 		return nil, err
+	}
+	if grants != "" {
+		if err := json.Unmarshal([]byte(grants), &t.Grants); err != nil || len(t.Grants) == 0 {
+			return nil, fmt.Errorf("token %s: bad grants", t.ID) // never fall back to no limits
+		}
 	}
 	t.Scopes, t.Topics, t.CreatedAt = splitList(scopes), splitList(topics), fromMS(created)
 	if seen.Valid {
@@ -215,7 +309,7 @@ func (s *Server) DeleteToken(ctx context.Context, id string) error {
 }
 
 func (s *Server) lookupToken(ctx context.Context, raw string) *Token {
-	if !strings.HasPrefix(raw, tokenPrefix) {
+	if !isToken(raw) {
 		return nil
 	}
 	t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE hash = ?`, hashToken(raw)))
@@ -242,15 +336,7 @@ func (s *Server) touch(ctx context.Context, t *Token) {
 // token as password or user), ?auth= (ntfy: base64 of an Authorization
 // header value), then, when cookie is true, the session cookie.
 func rawToken(r *http.Request, cookie bool) (raw string, fromCookie bool) {
-	h := r.Header.Get("Authorization")
-	if a := r.URL.Query().Get("auth"); h == "" && a != "" {
-		for _, enc := range []*base64.Encoding{base64.RawURLEncoding, base64.URLEncoding, base64.StdEncoding, base64.RawStdEncoding} {
-			if b, err := enc.DecodeString(a); err == nil {
-				h = string(b)
-				break
-			}
-		}
-	}
+	h := authHeader(r)
 	scheme, v, _ := strings.Cut(h, " ")
 	if strings.EqualFold(scheme, "Bearer") {
 		return strings.TrimSpace(v), false
@@ -268,6 +354,19 @@ func rawToken(r *http.Request, cookie bool) (raw string, fromCookie bool) {
 		return c.Value, true
 	}
 	return "", false
+}
+
+// authHeader is the Authorization header, or ntfy's ?auth= (base64 of one).
+func authHeader(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if a := r.URL.Query().Get("auth"); h == "" && a != "" {
+		for _, enc := range []*base64.Encoding{base64.RawURLEncoding, base64.URLEncoding, base64.StdEncoding, base64.RawStdEncoding} {
+			if b, err := enc.DecodeString(a); err == nil {
+				return string(b)
+			}
+		}
+	}
+	return h
 }
 
 // Authenticate returns the token behind the request (Bearer, Basic,
@@ -367,14 +466,14 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 }
 
 // startSession signs this browser in with its own token (issue #30): same
-// scopes and topics as parent, its own name in the device list and in
+// scopes, topics and grants as parent, its own name in the device list and in
 // state_by, revocable alone, and revoked with its parent.
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *Token, name string) (*Token, error) {
 	if err := s.endSession(r); err != nil {
 		return nil, err
 	}
 	ctx := context.WithoutCancel(r.Context()) // never leave a half-made session
-	st, raw, err := s.CreateToken(ctx, deviceName(name, r.UserAgent()), parent.Scopes, parent.Topics)
+	st, raw, err := s.createToken(ctx, &Token{Name: deviceName(name, r.UserAgent()), Scopes: parent.Scopes, Topics: parent.Topics, Grants: parent.Grants})
 	if err != nil {
 		return nil, err
 	}

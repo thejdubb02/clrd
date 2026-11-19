@@ -3,6 +3,7 @@
 //	clrd [serve]
 //	clrd token create --name pixel-9 --scope read,publish [--topics a,b]
 //	clrd token list
+//	clrd import ntfy --auth-file user.db --cache-file cache.db --attachment-dir DIR --default-access deny-all [--clear-older-than 72h] [--dry-run]
 //	clrd health
 package main
 
@@ -53,8 +54,10 @@ func run(args []string) error {
 		return tokenCmd(opt, args)
 	case "health":
 		return health(opt)
+	case "import":
+		return importCmd(opt, args)
 	}
-	return fmt.Errorf("unknown command %q (want serve, token or health)", cmd)
+	return fmt.Errorf("unknown command %q (want serve, token, import or health)", cmd)
 }
 
 func tokenCmd(opt server.Options, args []string) error {
@@ -91,12 +94,43 @@ func tokenCmd(opt server.Options, args []string) error {
 			if t.LastSeenAt != nil {
 				seen = t.LastSeenAt.Format(time.RFC3339)
 			}
-			fmt.Printf("%s\t%s\t%s\ttopics=%s\tseen=%s\n", t.ID, t.Name, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), seen)
+			grants := ""
+			for _, g := range t.Grants {
+				grants += fmt.Sprintf(" %s=%s", g.Topic, strings.Join(g.Scopes, "+"))
+			}
+			fmt.Printf("%s\t%s\t%s\ttopics=%s\tgrants=%s\tseen=%s\n", t.ID, t.Name, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), strings.TrimSpace(grants), seen)
 		}
 	default:
 		return fmt.Errorf("unknown token command %q", args[0])
 	}
 	return nil
+}
+
+// importCmd copies another server's data in. Only ntfy for now (issue #117).
+func importCmd(opt server.Options, args []string) error {
+	if len(args) == 0 || args[0] != "ntfy" {
+		return fmt.Errorf("want import ntfy")
+	}
+	fs := flag.NewFlagSet("import ntfy", flag.ContinueOnError)
+	var in server.NtfyImport
+	fs.StringVar(&in.AuthFile, "auth-file", "", "ntfy's auth-file (user.db)")
+	fs.StringVar(&in.CacheFile, "cache-file", "", "ntfy's cache-file (cache.db)")
+	fs.StringVar(&in.AttachmentDir, "attachment-dir", "", "ntfy's attachment-cache-dir")
+	fs.StringVar(&in.DefaultAccess, "default-access", "", "ntfy's auth-default-access: read-write, read-only, write-only or deny-all")
+	fs.DurationVar(&in.ClearOlderThan, "clear-older-than", 0, "messages older than this arrive dismissed (0 keeps all open)")
+	fs.BoolVar(&in.DryRun, "dry-run", false, "print what maps and what does not, change nothing")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if in.AuthFile == "" && in.CacheFile == "" {
+		return fmt.Errorf("want --auth-file, --cache-file or both")
+	}
+	s, err := server.New(opt)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	return s.ImportNtfy(context.Background(), in, os.Stdout)
 }
 
 // health is for container health checks (distroless has no curl).

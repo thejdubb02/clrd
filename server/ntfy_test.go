@@ -24,13 +24,7 @@ func raw(t *testing.T, method, url, tok, body string, hdr map[string]string) (in
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
-	b, _ := io.ReadAll(res.Body)
-	return res.StatusCode, string(b)
+	return send(t, req)
 }
 
 func ntfyDecode(t *testing.T, s string) ntfyMsg {
