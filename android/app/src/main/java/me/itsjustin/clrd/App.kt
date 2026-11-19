@@ -51,6 +51,14 @@ class App : Application() {
         get() = prefs.getStringSet("muted", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("muted", v).apply()
 
+    /**
+     * The server database the saved seq belongs to. Saved after the rows, not with them: a crash
+     * in between only means one more reset on the next connect.
+     */
+    var epoch: String
+        get() = prefs.getString("epoch", "").orEmpty()
+        set(v) = prefs.edit().putString("epoch", v).apply()
+
     val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
 
     fun api() = Api(http, serverUrl, token)
@@ -137,10 +145,15 @@ class RoomStore(private val app: App) : Store {
         dao.prune(System.currentTimeMillis() - 7 * 24 * 3600_000L)
     }
 
-    override fun replaceAll(open: List<Notif>, seq: Long) = ifMine {
+    override fun replaceAll(open: List<Notif>, seq: Long, epoch: String) = ifMine {
         val waiting = waiting()
-        app.tray.reconcile(dao.replaceAll(open, seq).filter { it.id !in waiting }, app.muted)
+        val sameDb = epoch.isEmpty() || app.epoch.isEmpty() || epoch == app.epoch
+        app.tray.reconcile(dao.replaceAll(open, seq, sameDb).filter { it.id !in waiting }, app.muted)
+        if (epoch.isNotEmpty()) app.epoch = epoch
     }
+
+    override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here
+    override fun saveEpoch(epoch: String) = ifMine { app.epoch = epoch }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
     /**

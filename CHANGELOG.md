@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: the app notices a server that was reinstalled or moved to a fresh
+  database and reloads its list, instead of showing notifications from the old one.
 - Server: one Go binary with SQLite. Native publish API, notification states
   (dismiss, acknowledge, resolve, snooze) synced to every device over WebSocket
   and SSE, with catch-up from the last seen event after a reconnect.
