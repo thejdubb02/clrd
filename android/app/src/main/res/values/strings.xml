@@ -16,6 +16,11 @@
     <string name="ack">Ack</string>
     <string name="snooze_1h">Snooze 1h</string>
     <string name="clear">Clear</string>
+    <string name="share">Share</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
+    <string name="download">Download %1$s</string>
+    <string name="downloading">Downloading %1$s</string>
     <string name="all_topics">All</string>
     <string name="empty_inbox">Nothing needs you.</string>
     <string name="empty_snoozed">Nothing snoozed.</string>

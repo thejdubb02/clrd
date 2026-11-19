@@ -18,6 +18,7 @@ class App : Application() {
             .build()
     }
     val tray by lazy { Tray(this) }
+    val images by lazy { Images(this) }
     val prefs by lazy { getSharedPreferences("clrd", Context.MODE_PRIVATE) }
     val io = Executors.newSingleThreadExecutor()
     /** User actions only, and they never wait on the network, so a tray tap is saved within its goAsync() deadline. */

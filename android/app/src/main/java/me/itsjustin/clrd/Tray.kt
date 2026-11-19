@@ -11,6 +11,7 @@ import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** What the phone tray should do for one notification. Pure, so it is unit tested on the JVM. */
 sealed interface TrayStep {
@@ -127,10 +128,34 @@ class Tray(private val ctx: Context) {
             .setContentIntent(open(n))
             .setDeleteIntent(action(n, ACTION_DISMISS)) // swipe away here = dismiss everywhere
         if (n.priority >= 5) b.setColor(0xFFC2410C.toInt())
+        // Pictures never hold up a post: one not loaded yet is fetched in the background, then the tray is redrawn.
+        val images = App.of(ctx).images
+        n.icon.takeIf { it.isNotEmpty() }?.let { url ->
+            images.cached(url, Images.ICON_PX)?.let(b::setLargeIcon) ?: images.prefetch(url, Images.ICON_PX, ::redraw)
+        }
+        n.file?.takeIf { it.isImage }?.let { f ->
+            images.cached(f.url, Images.PICTURE_PX)?.let { b.setStyle(NotificationCompat.BigPictureStyle().bigPicture(it).setSummaryText(n.message)) }
+                ?: images.prefetch(f.url, Images.PICTURE_PX, ::redraw)
+        }
         TrayButton.pick(n).forEach {
             b.addAction(0, if (it.res != 0) ctx.getString(it.res) else it.label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) } ?: action(n, it.action!!))
         }
         nm.notify(n.id, 0, b.build())
+    }
+
+    private val redrawing = AtomicBoolean()
+
+    /**
+     * A picture arrived: redraw the tray from Room, quietly. reconcile re-plans every row under the config lock,
+     * so a notification cleared while its picture loaded stays gone. Many pictures at once make one redraw.
+     */
+    private fun redraw() {
+        if (!redrawing.compareAndSet(false, true)) return
+        val app = App.of(ctx)
+        app.io.execute {
+            redrawing.set(false)
+            RoomStore(app).reconcile()
+        }
     }
 
     private fun open(n: Notif): PendingIntent {

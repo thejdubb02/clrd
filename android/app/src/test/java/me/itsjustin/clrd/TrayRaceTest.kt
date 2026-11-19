@@ -376,4 +376,30 @@ class TrayRaceTest {
             db.close()
         }
     }
+
+    /** A tray picture loads after the post. When it arrives the tray is redrawn from Room, so a row cleared meanwhile stays gone. */
+    @Test fun aLatePictureNeverBringsBackAClearedRow() {
+        MockWebServer().use { s ->
+            val gate = CountDownLatch(1)
+            val png = java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+            s.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    gate.await(10, TimeUnit.SECONDS)
+                    return MockResponse().setBody(okio.Buffer().write(png))
+                }
+            }
+            val icon = s.url("/i.png").toString()
+            val store = RoomStore(app)
+            bg { store.apply(listOf(row("a", Notif.ACTIVE, 1).copy(icon = icon), row("b", Notif.ACTIVE, 1).copy(icon = icon)), 1) }
+            assertNull(tray("a")!!.getLargeIcon()) // posted at once, without waiting for the picture
+            bg { store.apply(listOf(row("a", Notif.DISMISSED, 2).copy(icon = icon)), 2) }
+            assertNull(tray("a"))
+            gate.countDown()
+            val until = System.currentTimeMillis() + 10_000
+            while (tray("b")?.getLargeIcon() == null && System.currentTimeMillis() < until) Thread.sleep(50)
+            assertTrue("the picture reached the row still open", tray("b")?.getLargeIcon() != null)
+            drainIo()
+            assertNull(tray("a"))
+        }
+    }
 }

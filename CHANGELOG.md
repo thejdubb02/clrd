@@ -11,16 +11,19 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: Share and Copy on each notification. Icons show in the tray and the
+  list, picture attachments show as a preview, and other files get a Download
+  button.
 - Server: files on notifications. Upload a file with the publish (multipart, or
   ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL
   (`attachment`, or ntfy's `X-Attach`). Downloads need a token that can read the
   topic. Files are capped at 15 MB each and 5 GB in total, and go away with
-  their notification. The web inbox and Android app do not show them yet.
+  their notification. The web inbox does not show them yet.
 - Android: the app notices a server that was reinstalled or moved to a fresh
   database and reloads its list, instead of showing notifications from the old one.
 - Server: an icon on each notification (`icon`, or ntfy's `X-Icon`), and a
   default icon per topic so each service gets its own picture. The web inbox
-  and Android app do not show it yet.
+  does not show it yet.
 - Server: one Go binary with SQLite. Native publish API, notification states
   (dismiss, acknowledge, resolve, snooze) synced to every device over WebSocket
   and SSE, with catch-up from the last seen event after a reconnect.

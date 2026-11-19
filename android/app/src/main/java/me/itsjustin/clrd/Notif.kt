@@ -25,8 +25,19 @@ data class Notif(
     val updatedAt: Long, // epoch ms
     val seq: Long,
     @ColumnInfo(defaultValue = "") val reply: String = "", // the reply action tapped, "" until someone answers
+    @ColumnInfo(defaultValue = "") val icon: String = "", // http(s) image URL, "" if none
+    @ColumnInfo(defaultValue = "") val attachment: String = "", // raw JSON object, "" if none
 ) {
     val isFinal get() = state == DISMISSED || state == RESOLVED
+
+    /** The one file this notification carries, or null (docs/SPEC.md section 2, "Attachments"). */
+    val file: Attachment? get() = Attachment.parse(attachment)
+
+    /** Copy: the title, a blank line, the message, then click on its own line (docs/SPEC.md section 2). Empty parts are left out. */
+    fun copyText() = listOf(title, message).filter { it.isNotEmpty() }.joinToString("\n\n") + (click?.takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: "")
+
+    /** Share: the subject carries the title, so the text is the message plus click. */
+    fun shareText() = listOfNotNull(message.takeIf { it.isNotEmpty() }, click?.takeIf { it.isNotEmpty() }).joinToString("\n")
 
     companion object {
         const val ACTIVE = "active"
@@ -51,12 +62,32 @@ data class Notif(
             updatedAt = o.str("updated_at")?.let(::millis) ?: 0,
             seq = o.optLong("seq"),
             reply = o.str("reply") ?: "",
+            icon = o.str("icon") ?: "", // events logged before the server had icons leave it out
+            attachment = o.optJSONObject("attachment")?.toString() ?: "",
         )
 
         private fun millis(s: String) = OffsetDateTime.parse(s).toInstant().toEpochMilli()
 
         /** optString turns JSON null into "null"; this returns a real null. */
         private fun JSONObject.str(k: String): String? = if (isNull(k)) null else optString(k)
+    }
+}
+
+/** A file on a notification. A [url] starting with one "/" is on our server and needs the token; anything else is an outside link. */
+data class Attachment(val name: String, val url: String, val type: String, val size: Long) {
+    val isOurs get() = Images.isServerPath(url)
+    val isImage get() = type in IMAGES
+
+    companion object {
+        /** The types the server shows inline (docs/SPEC.md section 2); everything else is a download. */
+        private val IMAGES = setOf("image/png", "image/jpeg", "image/gif", "image/webp")
+
+        fun parse(raw: String): Attachment? {
+            val o = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+            val url = o.optString("url")
+            if (!Images.isServerPath(url) && !url.startsWith("https://", true) && !url.startsWith("http://", true)) return null
+            return Attachment(o.optString("name").ifEmpty { "attachment" }, url, o.optString("type"), o.optLong("size"))
+        }
     }
 }
 
