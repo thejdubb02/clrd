@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -220,20 +221,34 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, tok *Token) er
 	return nil
 }
 
+// streamWriteTimeout bounds one write to an SSE or ntfy stream. Without it a
+// client that stops reading holds the stream open on a blocked write, past a revoke.
+var streamWriteTimeout = 10 * time.Second
+
+// boundEnd bounds the write net/http does after the handler returns (the end of the chunked body).
+func boundEnd(rc *http.ResponseController) { rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout)) }
+
+func flushWrite(rc *http.ResponseController, w io.Writer, b []byte) error {
+	rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout))
+	defer rc.SetWriteDeadline(time.Time{})
+	if _, err := w.Write(b); err != nil {
+		return err
+	}
+	return rc.Flush()
+}
+
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, tok *Token) error {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return err
 	}
 	rc := http.NewResponseController(w)
+	defer boundEnd(rc)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(200)
 	write := func(format string, args ...any) error {
-		if _, err := fmt.Fprintf(w, format, args...); err != nil {
-			return err
-		}
-		return rc.Flush()
+		return flushWrite(rc, w, fmt.Appendf(nil, format, args...))
 	}
 	s.follow(r.Context(), tok, sinceParam(r), splitList(r.URL.Query().Get("topics")),
 		func(msg []byte, seq int64) error {
