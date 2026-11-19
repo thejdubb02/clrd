@@ -1,0 +1,1 @@
+{"issue":{"id":"99291","self":"https://your-domain.atlassian.net/rest/api/2/issue/99291","key":"JRA-20002","fields":{"summary":"I feel the need for speed"}},"user":{"displayName":"Bryan Rollins [Atlassian]"},"timestamp":1606480436302,"webhookEvent":"jira:issue_updated","issue_event_type_name":"issue_generic"}
