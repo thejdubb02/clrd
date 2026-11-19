@@ -283,13 +283,31 @@ func TestSessionCookieAndSetup(t *testing.T) {
 	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode || cookie.Secure { // Secure only over https
 		t.Fatalf("session cookie flags: %+v", cookie)
 	}
+	// next stays on this site: a tab that url.Parse rejects would reach the
+	// browser uncleaned, and the browser drops it into "//evil.example".
+	for next, want := range map[string]string{"/\t/evil.example": "/app", "/\\evil.example": "/app", "/./\\evil.example": "/app", "//evil.example": "/app",
+		"https://evil.example/app": "/app", "/app?topic=infra": "/app?topic=infra"} {
+		res, err := noRedirect.PostForm(ts.URL+"/api/v1/session", url.Values{"token": {raw}, "next": {next}})
+		if err != nil { // Go's client refuses a Location with a tab; a browser follows it
+			t.Errorf("next %q: %v", next, err)
+		} else if res.StatusCode != 303 || res.Header.Get("Location") != want {
+			t.Errorf("next %q: %d %q, want %q", next, res.StatusCode, res.Header.Get("Location"), want)
+		}
+	}
+	// Behind a TLS proxy the cookie is Secure.
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/session", strings.NewReader(url.Values{"token": {raw}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	if res, _ := noRedirect.Do(req); res.StatusCode != 303 || len(res.Cookies()) != 1 || !res.Cookies()[0].Secure {
+		t.Errorf("cookie behind TLS proxy: %d %+v", res.StatusCode, res.Cookies())
+	}
 	// A wrong token on the form goes back to the page with a flag, not to raw JSON.
 	res, _ = noRedirect.PostForm(ts.URL+"/api/v1/session", url.Values{"token": {"clrd_nope"}, "next": {"/app?topic=infra"}})
 	if res.StatusCode != 303 || res.Header.Get("Location") != "/app?error=token&topic=infra" || len(res.Cookies()) != 0 {
 		t.Fatalf("bad token on form: %d %q", res.StatusCode, res.Header.Get("Location"))
 	}
 	// Login forgery: another site cannot sign this browser in as someone else.
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/session", strings.NewReader(url.Values{"token": {raw}}.Encode()))
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/session", strings.NewReader(url.Values{"token": {raw}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "https://evil.example")
 	if res, _ := noRedirect.Do(req); res.StatusCode != 403 || len(res.Cookies()) != 0 {
