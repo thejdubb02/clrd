@@ -31,7 +31,8 @@ s.Run(ctx)
 
 Rules:
 
-- `"/"` matches only the exact root. Any other prefix matches itself and
+- `"/"` matches only the exact root, and only GET and HEAD (`POST /` is the
+  ntfy JSON publish). Any other prefix matches itself and
   everything under it (`/docs` gets `/docs/x`, not `/docsx`).
 - Longest prefix wins. Mounts are checked before the server's own routes.
 - `/api`, `/healthz`, `/openapi.json` and `/setup` belong to the server;

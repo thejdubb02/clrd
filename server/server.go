@@ -134,6 +134,9 @@ func (s *Server) Mount(prefix string, h http.Handler) {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	for _, m := range s.mounts {
+		if m.prefix == "/" && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			continue // POST / is ntfy's JSON publish
+		}
 		if p == m.prefix || (m.prefix != "/" && strings.HasPrefix(p, m.prefix+"/")) {
 			m.h.ServeHTTP(w, r)
 			return

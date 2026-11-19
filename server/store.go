@@ -288,6 +288,9 @@ type PublishInput struct {
 	Click       string     `json:"click"`
 	Actions     []Action   `json:"actions"`
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
+	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
+	// notification with this external_id instead of creating one; 404 if none.
+	Status string `json:"status,omitempty"`
 }
 
 // Publish creates a notification, or updates the open one with the same
@@ -298,6 +301,12 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	}
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
 		return nil, err
+	}
+	if in.Status == "resolved" {
+		if in.ExternalID == "" {
+			return nil, errf(400, "bad_request", "status resolved needs an external_id")
+		}
+		return s.ActByKey(ctx, tok, in.Topic, in.ExternalID, "resolve")
 	}
 	if in.Priority == 0 {
 		in.Priority = 3
