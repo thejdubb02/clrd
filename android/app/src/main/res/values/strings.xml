@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Every word the app shows. Translations go in values-<lang>/strings.xml with the same names. -->
+<resources>
+    <string name="app_name" translatable="false">clrd</string>
+
+    <!-- Tabs -->
+    <string name="tab_inbox">Inbox</string>
+    <string name="tab_snoozed">Snoozed</string>
+    <string name="tab_cleared">Cleared</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Inbox -->
+    <string name="cleared_everywhere">Cleared everywhere</string>
+    <string name="undo">Undo</string>
+    <string name="restore">Restore</string>
+    <string name="ack">Ack</string>
+    <string name="snooze_1h">Snooze 1h</string>
+    <string name="clear">Clear</string>
+    <string name="all_topics">All</string>
+    <string name="empty_inbox">Nothing needs you.</string>
+    <string name="empty_snoozed">Nothing snoozed.</string>
+    <string name="empty_cleared">Nothing cleared yet.</string>
+
+    <!-- Notification states, on the chip and in the line under each one. %1$s is a device name. -->
+    <string name="state_acknowledged">acknowledged</string>
+    <string name="state_snoozed">snoozed</string>
+    <string name="state_dismissed">dismissed</string>
+    <string name="state_resolved">resolved</string>
+    <string name="acked_on">acked on %1$s</string>
+    <string name="cleared_on">cleared on %1$s</string>
+    <string name="snoozed_until">until %1$s</string>
+    <string name="unknown_device">?</string>
+
+    <!-- How long ago, kept short -->
+    <string name="ago_now">now</string>
+    <string name="ago_minutes">%1$dm</string>
+    <string name="ago_hours">%1$dh</string>
+    <string name="ago_days">%1$dd</string>
+
+    <!-- Connection status in the header -->
+    <string name="status_not_set_up">Not set up</string>
+    <string name="status_in_sync">In sync</string>
+    <string name="status_connecting">Connecting</string>
+    <string name="status_token_rejected">Token rejected</string>
+    <string name="status_busy">Server busy</string>
+    <string name="status_offline">Offline</string>
+
+    <!-- Connection status in the always-on notification -->
+    <string name="service_offline">Offline, retrying</string>
+    <string name="service_busy">Server busy, retrying later</string>
+    <string name="service_token_rejected">Token rejected. Check Settings.</string>
+
+    <!-- Settings -->
+    <string name="server">Server</string>
+    <string name="server_url">Server URL</string>
+    <string name="plain_http_warning">Plain http sends your token unencrypted. Use https outside your home network.</string>
+    <string name="token">Token</string>
+    <string name="save_and_test">Save and test connection</string>
+    <string name="testing">Testing</string>
+    <string name="test_ok">Connected. Syncing now.</string>
+    <string name="test_token_rejected">Server reached, but it rejected the token.</string>
+    <string name="test_http_error">Server answered %1$d.</string>
+    <string name="test_unreachable">Could not reach the server: %1$s</string>
+    <string name="battery_explain">This phone may pause clrd in the background, and then clears from other devices arrive late.</string>
+    <string name="battery_button">Let clrd run in the background</string>
+    <string name="topics">Topics</string>
+    <string name="topics_explain">A muted topic stays in the inbox but never pops up on this phone.</string>
+    <string name="topic_muted">muted</string>
+    <string name="topic_on">on</string>
+    <string name="about">clrd %1$s. No tracking, no Google services.</string>
+
+    <!-- Android notification channels (shown in the system notification settings) -->
+    <string name="channel_p1">Min priority</string>
+    <string name="channel_p2">Low priority</string>
+    <string name="channel_p3">Default priority</string>
+    <string name="channel_p4">High priority</string>
+    <string name="channel_p5">Urgent</string>
+    <string name="channel_service">Sync connection</string>
+</resources>

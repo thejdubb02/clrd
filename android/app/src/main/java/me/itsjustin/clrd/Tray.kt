@@ -66,12 +66,12 @@ class Tray(private val ctx: Context) {
     fun createChannels() {
         nm.createNotificationChannels(
             listOf(
-                NotificationChannel("p1", "Min priority", NotificationManager.IMPORTANCE_MIN),
-                NotificationChannel("p2", "Low priority", NotificationManager.IMPORTANCE_LOW),
-                NotificationChannel("p3", "Default priority", NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel("p4", "High priority", NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel("p5", "Urgent", NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel(SERVICE_CHANNEL, "Sync connection", NotificationManager.IMPORTANCE_MIN),
+                NotificationChannel("p1", ctx.getString(R.string.channel_p1), NotificationManager.IMPORTANCE_MIN),
+                NotificationChannel("p2", ctx.getString(R.string.channel_p2), NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel("p3", ctx.getString(R.string.channel_p3), NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel("p4", ctx.getString(R.string.channel_p4), NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel("p5", ctx.getString(R.string.channel_p5), NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(SERVICE_CHANNEL, ctx.getString(R.string.channel_service), NotificationManager.IMPORTANCE_MIN),
             ),
         )
     }

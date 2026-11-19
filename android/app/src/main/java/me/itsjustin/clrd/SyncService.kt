@@ -24,7 +24,7 @@ class SyncService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        foreground("Connecting")
+        foreground(R.string.status_connecting)
         // Store and credentials are read together, so a Settings switch cannot pair one server's store with another's API.
         val (store, api) = synchronized(app.configLock) { if (app.configured) RoomStore(app) to app.api() else null to null }
         if (store == null || api == null) {
@@ -60,21 +60,21 @@ class SyncService : Service() {
         app.status.value = s
         foreground(
             when (s) {
-                SyncClient.Status.CONNECTING -> "Connecting"
-                SyncClient.Status.CONNECTED -> "In sync"
-                SyncClient.Status.OFFLINE -> "Offline, retrying"
-                SyncClient.Status.BUSY -> "Server busy, retrying later"
-                SyncClient.Status.AUTH_FAILED -> "Token rejected. Check Settings."
+                SyncClient.Status.CONNECTING -> R.string.status_connecting
+                SyncClient.Status.CONNECTED -> R.string.status_in_sync
+                SyncClient.Status.OFFLINE -> R.string.service_offline
+                SyncClient.Status.BUSY -> R.string.service_busy
+                SyncClient.Status.AUTH_FAILED -> R.string.service_token_rejected
             },
         )
     }
 
-    private fun foreground(text: String) {
+    private fun foreground(text: Int) {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val n = NotificationCompat.Builder(this, Tray.SERVICE_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_clrd)
-            .setContentTitle("clrd")
-            .setContentText(text)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(text))
             .setOngoing(true)
             .setSilent(true)
             .setContentIntent(open)
