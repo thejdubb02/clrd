@@ -23,12 +23,15 @@ class SyncClientTest {
     private val statuses = CopyOnWriteArrayList<SyncClient.Status>()
     private val wsSince = CopyOnWriteArrayList<String>()
     private val posts = CopyOnWriteArrayList<String>()
+    private val log = CopyOnWriteArrayList<String>() // POSTs and WebSocket connects, in arrival order
     private val serverSockets = CopyOnWriteArrayList<WebSocket>()
 
     /** What the fake server sends on each WebSocket connect, by connect number. */
     private var onConnect: (Int, WebSocket) -> Unit = { _, _ -> }
     private var wsResponse: () -> MockResponse? = { null }
-    private var open = "[]"
+    private val lists = CopyOnWriteArrayList<String>()
+    /** Open list page by `before` cursor (null = first page). */
+    private var open: (String?) -> String = { """{"notifications":[],"seq":0}""" }
     private var client: SyncClient? = null
 
     @Before fun setUp() {
@@ -38,16 +41,21 @@ class SyncClientTest {
                 return when {
                     path.startsWith("/api/v1/ws") -> {
                         wsSince += request.requestUrl!!.queryParameter("since")!!
+                        log += "ws"
                         val n = wsSince.size
                         wsResponse() ?: MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) { serverSockets += webSocket; onConnect(n, webSocket) }
                         })
                     }
-                    path == "/healthz" -> MockResponse().setBody("""{"ok":true,"seq":50}""")
-                    path.startsWith("/api/v1/notifications?state=open") -> MockResponse().setBody(open)
+                    path.startsWith("/api/v1/notifications?state=open") -> {
+                        lists += path
+                        MockResponse().setBody(open(request.requestUrl!!.queryParameter("before")))
+                    }
                     request.method == "POST" -> {
                         posts += path
-                        if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
+                        log += path
+                        if (path.contains("flaky") && posts.count { it == path } == 1) MockResponse().setResponseCode(503)
+                        else if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
                         else MockResponse().setBody("{}")
                     }
                     else -> MockResponse().setResponseCode(500)
@@ -65,7 +73,7 @@ class SyncClientTest {
 
     private fun start() {
         val api = Api(http, server.url("/").toString().trimEnd('/'), "tok")
-        client = SyncClient(http, api, store, onStatus = { statuses += it }, baseDelayMs = 20).also { it.start() }
+        client = SyncClient(http, api, store, onStatus = { statuses += it }, baseDelayMs = 20, flushRetryMs = 50).also { it.start() }
     }
 
     @Test fun replayIsCoalescedAndSeqSaved() {
@@ -111,12 +119,20 @@ class SyncClientTest {
 
     @Test fun resetReplacesEverythingWithOpenList() {
         store.rows["stale"] = notif("stale", "active", 1)
-        open = """{"notifications":[${notifJson("fresh", "active", 40)}]}"""
+        // A full first page (500) means the client must ask for the next one with before=<last id>.
+        val page1 = (1..Api.PAGE).joinToString(",") { notifJson("p$it", "active", 40) }
+        open = { before ->
+            if (before == null) """{"notifications":[$page1],"seq":50}"""
+            else """{"notifications":[${notifJson("last", "active", 41)}],"seq":51}"""
+        }
         onConnect = { n, ws -> if (n == 1) ws.send("""{"type":"reset"}""") else ws.send("""{"type":"ready","seq":50}""") }
         start()
         await { wsSince.size >= 2 }
-        assertEquals(setOf("fresh"), store.rows.keys)
-        assertEquals("50", wsSince[1]) // seq read from /healthz before the list
+        assertEquals(Api.PAGE + 1, store.rows.size)
+        assertTrue(!store.rows.containsKey("stale") && store.rows.containsKey("last"))
+        assertEquals(2, lists.size)
+        assertTrue(lists[1], lists[1].endsWith("before=p${Api.PAGE}"))
+        assertEquals("50", wsSince[1]) // seq from the first page, read by the server before its query
     }
 
     @Test fun queuedActionsGoOutBeforeTheSocketAndA404IsDropped() {
@@ -125,8 +141,19 @@ class SyncClientTest {
         onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
         start()
         await { SyncClient.Status.CONNECTED in statuses }
-        assertEquals(listOf("/api/v1/notifications/a/dismiss", "/api/v1/notifications/gone/ack"), posts)
+        assertEquals(listOf("/api/v1/notifications/a/dismiss", "/api/v1/notifications/gone/ack", "ws"), log)
         assertTrue(store.queue.isEmpty())
+    }
+
+    @Test fun failedSendWhileConnectedRetriesOnItsOwn() {
+        onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
+        start()
+        await { SyncClient.Status.CONNECTED in statuses }
+        store.queue += Pending(1, "flaky", "dismiss")
+        client!!.flushSoon() // first POST gets 503 while the socket stays up
+        await { store.queue.isEmpty() }
+        assertEquals(2, posts.size)
+        assertEquals(1, wsSince.size) // no reconnect was needed
     }
 
     @Test fun badTokenStopsRetrying() {

@@ -40,6 +40,7 @@ class SyncClient(
     private val store: Store,
     private val onStatus: (Status) -> Unit = {},
     private val baseDelayMs: Long = 1_000,
+    private val flushRetryMs: Long = 30_000,
     private val exec: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(),
 ) {
     enum class Status { CONNECTING, CONNECTED, OFFLINE, AUTH_FAILED }
@@ -49,6 +50,7 @@ class SyncClient(
     private var attempt = 0
     private var stopped = false
     private var retryTask: ScheduledFuture<*>? = null
+    private var flushRetry: ScheduledFuture<*>? = null
 
     private var replaying = false
     private val buffer = LinkedHashMap<String, Notif>()
@@ -68,8 +70,18 @@ class SyncClient(
         }
     }
 
-    /** A user action was queued: try to send it now. Failures stay queued for the next connect. */
-    fun flushSoon() { exec.execute { runCatching { flush() } } }
+    /** A user action was queued: try to send it now. A failure retries every 30 s, and on every connect. */
+    fun flushSoon() {
+        if (exec.isShutdown) return
+        exec.execute {
+            flushRetry?.cancel(false)
+            try {
+                flush()
+            } catch (e: IOException) {
+                if (!stopped) flushRetry = exec.schedule({ flushSoon() }, flushRetryMs, TimeUnit.MILLISECONDS)
+            }
+        }
+    }
 
     private fun connect() {
         if (stopped) return
@@ -132,14 +144,18 @@ class SyncClient(
         buffer.clear()
     }
 
-    /** The server no longer has events back to our seq: take its open list as the truth. */
+    /**
+     * The server no longer has events back to our seq: take its open list as the truth.
+     * The spec lets the socket stay open after `reset`, but a fresh connect from the list's seq
+     * is simpler and also right for servers that close it.
+     */
     private fun reset() {
         gen++
         ws?.close(1000, null)
         ws = null
         try {
-            val seq = api.currentSeq() // read first, so nothing between here and the list is missed
-            store.replaceAll(api.listOpen(), seq)
+            val (open, seq) = api.listOpen()
+            store.replaceAll(open, seq)
         } catch (e: IOException) {
             return fail(e)
         }

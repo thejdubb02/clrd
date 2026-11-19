@@ -141,8 +141,9 @@ private fun Home(app: App) {
                     val flow = when (tab) { Tab.Inbox -> dao.inbox(); Tab.Snoozed -> dao.snoozed(); else -> dao.cleared() }
                     val rows by remember(tab) { flow }.collectAsState(emptyList())
                     val topics = rows.map { it.topic }.distinct().sorted()
-                    if (topics.size > 1) Pills(topics, topic) { topic = it }
-                    val shown = rows.filter { topic == null || it.topic == topic }
+                    val picked = topic?.takeIf { it in topics }
+                    if (topics.size > 1) Pills(topics, picked) { topic = it }
+                    val shown = rows.filter { picked == null || it.topic == picked }
                     if (shown.isEmpty()) Empty(tab) else LazyColumn(
                         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -318,7 +319,7 @@ private fun SettingsScreen(app: App) {
             url, { url = it }, label = { Text("Server URL") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
-        if (url.startsWith("http://")) Text("Plain http sends your token unencrypted. Use https outside your home network.", color = b.signal, fontSize = 13.sp)
+        if (url.trim().startsWith("http://", ignoreCase = true)) Text("Plain http sends your token unencrypted. Use https outside your home network.", color = b.signal, fontSize = 13.sp)
         OutlinedTextField(
             token, { token = it }, label = { Text("Token") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             visualTransformation = PasswordVisualTransformation(),
@@ -326,9 +327,17 @@ private fun SettingsScreen(app: App) {
         Button(
             onClick = {
                 result = "Testing"
+                val changed = url != app.serverUrl || token != app.token
                 app.serverUrl = url
                 app.token = token
                 app.io.execute {
+                    if (changed) {
+                        // ponytail: the old client may still land one in-flight event after this; the next reset clears it.
+                        app.sync?.stop()
+                        app.sync = null
+                        app.db.dao().forget()
+                        app.tray.reconcile(emptyList(), app.muted)
+                    }
                     // /api/v1/topics needs the read scope, so this checks the URL and the token together.
                     result = try {
                         app.api().get("/api/v1/topics")

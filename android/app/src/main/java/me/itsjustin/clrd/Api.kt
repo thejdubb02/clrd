@@ -27,15 +27,22 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
 
     fun action(p: Pending) = post("/api/v1/notifications/${p.notifId}/${p.action}", p.body)
 
-    /** Current event seq, from /healthz. */
-    fun currentSeq(): Long = JSONObject(get("/healthz")).getLong("seq")
-
-    // ponytail: one page of 1000 open rows. Paginate with `before` if anyone has more.
-    fun listOpen(): List<Notif> {
-        // The spec does not fix the envelope yet: accept a bare array or {"notifications": [...]}.
-        val text = get("/api/v1/notifications?state=open&limit=1000").trim()
-        val a = if (text.startsWith("[")) JSONArray(text) else JSONObject(text).optJSONArray("notifications") ?: return emptyList()
-        return (0 until a.length()).map { Notif.fromJson(a.getJSONObject(it)) }
+    /**
+     * Every open row plus the seq to resume the WebSocket from (docs/SPEC.md section 5).
+     * The seq comes from the first page: the server reads it before querying, so nothing is missed.
+     */
+    fun listOpen(): Pair<List<Notif>, Long> {
+        val rows = mutableListOf<Notif>()
+        var seq = -1L
+        var before = ""
+        while (true) {
+            val o = JSONObject(get("/api/v1/notifications?state=open&limit=$PAGE" + if (before.isEmpty()) "" else "&before=$before"))
+            if (seq < 0) seq = o.getLong("seq")
+            val a = o.getJSONArray("notifications")
+            for (i in 0 until a.length()) rows += Notif.fromJson(a.getJSONObject(i))
+            if (a.length() < PAGE) return rows to seq
+            before = rows.last().id
+        }
     }
 
     fun wsRequest(since: Long): Request = req("/api/v1/ws?since=$since").build()
@@ -50,5 +57,6 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
 
     companion object {
         private val JSON = "application/json".toMediaType()
+        const val PAGE = 500 // server max
     }
 }

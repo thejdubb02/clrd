@@ -64,6 +64,17 @@ interface NotifDao {
         if (seq > (lastSeq() ?: 0)) putMeta(Meta("seq", seq))
     }
 
+    @Query("DELETE FROM pending")
+    fun clearPending()
+
+    /** A different server or token: nothing cached belongs to it. */
+    @Transaction
+    fun forget() {
+        clearAll()
+        clearPending()
+        putMeta(Meta("seq", 0))
+    }
+
     @Transaction
     fun replaceAll(open: List<Notif>, seq: Long) {
         clearAll()
