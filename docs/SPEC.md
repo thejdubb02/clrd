@@ -431,13 +431,13 @@ Rules: no gradients, flat fills, 1px hairlines, radius 12 to 20, pills for
 state, orange only when something needs you, green means it went away. Dark
 mode swaps paper and ink, same accents. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
 
-Logo (placeholder "A", final pick pending; keep it in `assets/logo.svg` so a swap is one file):
+Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every surface uses one file). The three lines end on one circle around the disc, so every gap to the disc is the same:
 
 ```svg
-<svg viewBox="0 0 96 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M8 22h30M16 32h24M24 42h18" stroke="#0F1114" stroke-width="6" stroke-linecap="round"/>
-  <circle cx="68" cy="32" r="20" fill="#0B7A55"/>
-  <path d="M59 32l6 6 12-12" stroke="#F5F3EE" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<svg viewBox="0 0 70 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M2.5 10H24.38M7.5 20H22.5M12.5 30H24.38" stroke="#0F1114" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="50" cy="20" r="20" fill="#0B7A55"/>
+  <path d="M41 20.5l6 6l12-12" stroke="#F5F3EE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 ```
 
