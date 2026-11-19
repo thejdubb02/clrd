@@ -250,7 +250,7 @@ func TestSnoozeWakes(t *testing.T) {
 
 	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "later"})
 	id := n["id"].(string)
-	until := time.Now().Add(500 * time.Millisecond).Format(time.RFC3339Nano)
+	until := time.Now().Add(2 * time.Second).Format(time.RFC3339Nano) // room for a loaded CI box
 	if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/snooze", admin, map[string]string{"until": until}); code != 200 || n["state"] != Snoozed {
 		t.Fatalf("snooze: %d %v", code, n)
 	}
