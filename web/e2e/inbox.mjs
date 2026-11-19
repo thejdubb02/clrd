@@ -104,6 +104,31 @@ try {
   await cut.close();
   console.log('ok: offline notice after 3 minutes, gone on reconnect');
 
+  // The server came back on another database: its epoch differs from the one
+  // this page was rendered with, so the page reloads once, like a reset.
+  const moved = await (await browser.newContext()).newPage();
+  let swapped = false, loads = 0, loaded;
+  const firstLoad = new Promise(r => { loaded = r; });
+  moved.on('load', () => loads++);
+  await moved.routeWebSocket(/\/api\/v1\/ws/, ws => {
+    const srv = ws.connectToServer();
+    srv.onMessage(msg => {
+      const m = JSON.parse(msg);
+      // Held until the first load, so the reload cannot race it.
+      if (m.type === 'ready' && !swapped) { swapped = true; m.epoch = 'another-db'; firstLoad.then(() => ws.send(JSON.stringify(m))); }
+      else ws.send(msg);
+    });
+  });
+  await moved.goto(`${base}/app?auth=${link}`);
+  loaded();
+  for (let i = 0; loads < 2 && i < 50; i++) await moved.waitForTimeout(100);
+  assert.equal(loads, 2, 'page kept its old seq after the epoch changed');
+  await moved.locator('.is-live').waitFor();
+  await moved.waitForTimeout(500);
+  assert.equal(loads, 2, 'page reloaded again with the same epoch');
+  await moved.context().close();
+  console.log('ok: a new server epoch reloads the page once');
+
   // Snooze menu: Tomorrow 09:00 means 09:00 where the reader is, not on the server.
   const d = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Cert renews soon', message: '7 days left' });
   await page.reload();

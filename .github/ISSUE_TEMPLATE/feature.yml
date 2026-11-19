@@ -1,0 +1,22 @@
+name: Feature request
+description: Something clrd should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+      description: How it could work. Mention it if ntfy or another tool already does this.
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part
+      multiple: true
+      options: [Server, Web inbox, Android app, SDK or GitHub Action, Integration, Docs]

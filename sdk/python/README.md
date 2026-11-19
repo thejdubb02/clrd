@@ -3,8 +3,9 @@
 Stdlib only, Python 3.8+.
 
 ```sh
-pip install clrd
-export CLRD_URL=https://clrd.itsjustin.me CLRD_TOKEN=clrd_...
+# not on PyPI yet; install from GitHub
+pip install "git+https://github.com/thejdubb02/clrd#subdirectory=sdk/python"
+export CLRD_URL=https://clrd.example.com CLRD_TOKEN=clrd_...
 ```
 
 ```python
@@ -18,7 +19,7 @@ clrd.ack(n["id"])                         # by server id
 clrd.snooze(n["id"], "1h")
 clrd.list("infra")                        # open notifications
 
-c = clrd.Client("https://clrd.itsjustin.me", "clrd_...")  # explicit config
+c = clrd.Client("https://clrd.example.com", "clrd_...")  # explicit config
 ```
 
 Command line:

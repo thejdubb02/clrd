@@ -33,11 +33,11 @@ sealed interface TrayStep {
 }
 
 /** One tray button: a sender link or reply (docs/SPEC.md section 2), or one of ours, by its [Tray] action. */
-data class TrayButton(val label: String, val url: String? = null, val action: String? = null, val reply: String? = null) {
+data class TrayButton(val label: String = "", val res: Int = 0, val url: String? = null, val action: String? = null, val reply: String? = null) {
     companion object {
-        val ACK = TrayButton("Ack", action = Tray.ACTION_ACK)
-        val SNOOZE = TrayButton("Snooze 1h", action = Tray.ACTION_SNOOZE)
-        val CLEAR = TrayButton("Clear", action = Tray.ACTION_DISMISS)
+        val ACK = TrayButton(res = R.string.tray_ack, action = Tray.ACTION_ACK)
+        val SNOOZE = TrayButton(res = R.string.tray_snooze, action = Tray.ACTION_SNOOZE)
+        val CLEAR = TrayButton(res = R.string.tray_clear, action = Tray.ACTION_DISMISS)
 
         /**
          * Android shows 3 buttons at most. The sender's replies come first (at most 3, until someone answers),
@@ -56,7 +56,7 @@ data class TrayButton(val label: String, val url: String? = null, val action: St
                 // Web links only, and short: a huge URL would not fit through Binder and would crash the post.
                 if (url.length > 2048 || (!url.startsWith("https://", true) && !url.startsWith("http://", true))) null
                 // Android matches intent schemes case-sensitively, so HTTPS://x must become https://x
-                else TrayButton(o.optString("label").ifBlank { "Open" }, url = url.substringBefore(':').lowercase() + url.substring(url.indexOf(':')))
+                else TrayButton(o.optString("label"), if (o.optString("label").isBlank()) R.string.tray_open else 0, url.substringBefore(':').lowercase() + url.substring(url.indexOf(':')))
             }.take(minOf(2, 3 - replies.size))
             val ours = listOfNotNull(ACK.takeIf { n.state != Notif.ACKNOWLEDGED }, CLEAR, SNOOZE).take(3 - replies.size - links.size)
             return replies + links + listOf(ACK, SNOOZE, CLEAR).filter { it in ours } // ours keep their usual order
@@ -71,12 +71,12 @@ class Tray(private val ctx: Context) {
     fun createChannels() {
         nm.createNotificationChannels(
             listOf(
-                NotificationChannel("p1", "Min priority", NotificationManager.IMPORTANCE_MIN),
-                NotificationChannel("p2", "Low priority", NotificationManager.IMPORTANCE_LOW),
-                NotificationChannel("p3", "Default priority", NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel("p4", "High priority", NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel("p5", "Urgent", NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel(SERVICE_CHANNEL, "Sync connection", NotificationManager.IMPORTANCE_MIN),
+                NotificationChannel("p1", ctx.getString(R.string.channel_p1), NotificationManager.IMPORTANCE_MIN),
+                NotificationChannel("p2", ctx.getString(R.string.channel_p2), NotificationManager.IMPORTANCE_LOW),
+                NotificationChannel("p3", ctx.getString(R.string.channel_p3), NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel("p4", ctx.getString(R.string.channel_p4), NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel("p5", ctx.getString(R.string.channel_p5), NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(SERVICE_CHANNEL, ctx.getString(R.string.channel_service), NotificationManager.IMPORTANCE_MIN),
             ),
         )
     }
@@ -113,8 +113,8 @@ class Tray(private val ctx: Context) {
             .setStyle(NotificationCompat.BigTextStyle().bigText(n.message))
             .setSubText(
                 when {
-                    n.reply.isNotEmpty() -> "Answered ${n.reply} on ${n.stateBy ?: "another device"}"
-                    n.state == Notif.ACKNOWLEDGED -> "Acknowledged on ${n.stateBy ?: "another device"}"
+                    n.reply.isNotEmpty() -> ctx.getString(R.string.tray_answered, n.reply, n.stateBy ?: ctx.getString(R.string.tray_another_device))
+                    n.state == Notif.ACKNOWLEDGED -> ctx.getString(R.string.tray_acked, n.stateBy ?: ctx.getString(R.string.tray_another_device))
                     else -> n.topic
                 },
             )
@@ -128,7 +128,7 @@ class Tray(private val ctx: Context) {
             .setDeleteIntent(action(n, ACTION_DISMISS)) // swipe away here = dismiss everywhere
         if (n.priority >= 5) b.setColor(0xFFC2410C.toInt())
         TrayButton.pick(n).forEach {
-            b.addAction(0, it.label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) } ?: action(n, it.action!!))
+            b.addAction(0, if (it.res != 0) ctx.getString(it.res) else it.label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) } ?: action(n, it.action!!))
         }
         nm.notify(n.id, 0, b.build())
     }
