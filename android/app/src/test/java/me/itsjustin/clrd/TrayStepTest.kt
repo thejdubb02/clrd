@@ -59,7 +59,7 @@ class TrayStepTest {
     @Test fun twoLinksOnAnAckedOneThenClear() = assertEquals(listOf("L1", "L2", "Clear"), labels("acknowledged", links(2)))
 
     @Test fun onlyWebLinksBecomeButtons() {
-        val actions = """[{"label":"Bad","url":"intent://x#Intent;end"},{"label":"","url":"HTTPS://x.example"},{"label":"No url"}]"""
+        val actions = """[{"label":"Bad","url":"intent://x#Intent;end"},{"label":"","url":"HTTPS://x.example"},{"label":"No url"},{"label":"Huge","url":"https://x.example/${"a".repeat(2048)}"}]"""
         val b = TrayButton.pick(event("active", actions = actions))
         assertEquals(listOf("Open", "Ack", "Clear"), b.map { it.label })
         assertEquals("https://x.example", b[0].url)

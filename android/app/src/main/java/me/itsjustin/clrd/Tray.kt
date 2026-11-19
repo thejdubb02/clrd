@@ -48,7 +48,8 @@ data class TrayButton(val label: String, val url: String? = null, val action: St
             val a = runCatching { JSONArray(n.actions) }.getOrNull() ?: JSONArray()
             val links = (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { o ->
                 val url = o.optString("url")
-                if (!url.startsWith("https://", true) && !url.startsWith("http://", true)) null
+                // Web links only, and short: a huge URL would not fit through Binder and would crash the post.
+                if (url.length > 2048 || (!url.startsWith("https://", true) && !url.startsWith("http://", true))) null
                 // Android matches intent schemes case-sensitively, so HTTPS://x must become https://x
                 else TrayButton(o.optString("label").ifBlank { "Open" }, url = url.substringBefore(':').lowercase() + url.substring(url.indexOf(':')))
             }.take(2)
@@ -127,7 +128,12 @@ class Tray(private val ctx: Context) {
 
     /** A sender link opens in the browser. The URL itself makes the PendingIntent unique. */
     private fun link(url: String) =
-        PendingIntent.getActivity(ctx, 0, Intent(Intent.ACTION_VIEW, Uri.parse(url)), PendingIntent.FLAG_IMMUTABLE)
+        PendingIntent.getActivity(
+            ctx, 0,
+            // BROWSABLE: only apps that accept links from a browser may open it, as if tapped on a web page.
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
 
     private fun action(n: Notif, action: String): PendingIntent {
         val i = Intent(ctx, ActionReceiver::class.java)
