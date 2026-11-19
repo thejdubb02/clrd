@@ -55,6 +55,7 @@ class SyncClientTest {
                         posts += path
                         log += path
                         if (path.contains("flaky") && posts.count { it == path } == 1) MockResponse().setResponseCode(503)
+                        else if (path.contains("slow")) MockResponse().setHeadersDelay(300, java.util.concurrent.TimeUnit.MILLISECONDS).setBody("{}")
                         else if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
                         else MockResponse().setBody("{}")
                     }
@@ -154,6 +155,16 @@ class SyncClientTest {
         await { store.queue.isEmpty() }
         assertEquals(2, posts.size)
         assertEquals(1, wsSince.size) // no reconnect was needed
+    }
+
+    @Test fun stopDuringFirstFlushNeverOpensTheSocket() {
+        store.queue += Pending(1, "slow", "dismiss")
+        start()
+        await { posts.isNotEmpty() } // the send is in flight
+        client!!.stop()
+        Thread.sleep(600)
+        assertTrue(log.toString(), "ws" !in log)
+        assertTrue(statuses.toString(), SyncClient.Status.CONNECTED !in statuses)
     }
 
     @Test fun badTokenStopsRetrying() {
