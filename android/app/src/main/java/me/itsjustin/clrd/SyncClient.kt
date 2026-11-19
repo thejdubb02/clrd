@@ -19,8 +19,9 @@ interface Store {
     /**
      * Save these rows and the new last seq in one go, then update the tray for the rows that were kept.
      * A row older than the one already saved is dropped. `seq = 0` leaves the cursor where it is.
+     * [quiet] posts to the tray without a sound (part of a replay that is not finished).
      */
-    fun apply(notifs: Collection<Notif>, seq: Long)
+    fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false)
 
     /** After a `reset`: the open list from the server replaces everything known. */
     fun replaceAll(open: List<Notif>, seq: Long)
@@ -35,7 +36,8 @@ interface Store {
  * Every connect opens `/api/v1/ws?since=<last seq>` and sends queued user actions alongside, on their
  * own thread, so a send that hangs or keeps failing never holds back events from other devices.
  * Replayed events are coalesced per notification until `ready`, so a phone that was
- * offline does not buzz for things that were already cleared elsewhere.
+ * offline does not buzz for things that were already cleared elsewhere. A replay too long to
+ * hold (500 rows, or 5 s) is saved in parts without a sound; only `ready` reports "in sync".
  * Socket state is touched only on [exec], one thread, so there are no locks.
  */
 class SyncClient(
@@ -45,9 +47,10 @@ class SyncClient(
     private val onStatus: (Status) -> Unit = {},
     private val baseDelayMs: Long = 1_000,
     private val flushRetryMs: Long = 30_000,
+    private val replayQuietMs: Long = 5_000,
     private val exec: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(),
 ) {
-    enum class Status { CONNECTING, CONNECTED, OFFLINE, AUTH_FAILED }
+    enum class Status { CONNECTING, CONNECTED, OFFLINE, BUSY, AUTH_FAILED }
 
     private var ws: WebSocket? = null
     private var gen = 0 // bumps on every new socket; callbacks from an old one are ignored
@@ -56,6 +59,8 @@ class SyncClient(
     private var retryTask: ScheduledFuture<*>? = null
     private val sender = Executors.newSingleThreadExecutor() // sends queued actions, in order
     private var flushRetry: ScheduledFuture<*>? = null // touched only on [sender]
+    private var flushNotBefore = 0L // System.nanoTime(); a busy server's Retry-After for sends, touched only on [sender]
+    private var connectNotBefore = 0L // the same for the socket, touched only on [exec]
 
     private var replaying = false
     private val buffer = LinkedHashMap<String, Notif>()
@@ -76,10 +81,19 @@ class SyncClient(
         sender.shutdown()
     }
 
-    /** The network came back: skip the rest of the backoff wait. */
-    fun kick() {
+    /**
+     * The network came back: skip the rest of the backoff wait. [force] also drops a live socket,
+     * for a switch (Wi-Fi to cellular) that leaves the old one half open.
+     */
+    fun kick(force: Boolean = false) {
         post {
-            if (!stopped && ws == null) { retryTask?.cancel(false); attempt = 0; connect() }
+            if (ws != null && !force) return@post
+            if (ws == null && System.nanoTime() < connectNotBefore) return@post // the server asked us to wait
+            ws?.cancel()
+            ws = null
+            retryTask?.cancel(false)
+            attempt = 0
+            connect()
         }
     }
 
@@ -87,13 +101,15 @@ class SyncClient(
     fun flushSoon() {
         runCatching {
             sender.execute {
-                if (stopped) return@execute
+                if (stopped || System.nanoTime() < flushNotBefore) return@execute // a retry is already set for then
                 flushRetry?.cancel(false)
                 try {
                     flushPending(store, api) { !stopped }
                 } catch (e: IOException) {
                     // A rejected token will not fix itself; the next connect reports it as AUTH_FAILED.
-                    if (!stopped && !(e is HttpError && e.isAuth)) flushRetry = later(flushRetryMs) { flushSoon() }
+                    val wait = maxOf(flushRetryMs, (e as? HttpError)?.retryAfterMs ?: 0)
+                    flushNotBefore = System.nanoTime() + ((e as? HttpError)?.retryAfterMs ?: 0) * 1_000_000
+                    if (!stopped && !(e is HttpError && e.isAuth)) flushRetry = later(wait) { flushSoon() }
                 }
             }
         }
@@ -106,16 +122,24 @@ class SyncClient(
         val myGen = ++gen
         replaying = true
         buffer.clear()
+        bufferSeq = 0 // or a silent new socket would save the dropped replay's cursor with none of its rows
         ws = http.newWebSocket(api.wsRequest(store.lastSeq()), object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, text: String) = onThread(myGen) { handle(text) }
+            override fun onMessage(webSocket: WebSocket, text: String) = onThread(myGen) {
+                // A frame we cannot read must not be skipped: the cursor would move past it. Reconnect and replay.
+                try { handle(text) } catch (e: Exception) { fail(e as? IOException ?: IOException("bad frame", e)) }
+            }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, null) }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = onThread(myGen) { fail(IOException("closed $code")) }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = onThread(myGen) {
-                fail(response?.let { HttpError(it.code, "ws upgrade") } ?: IOException(t))
+                fail(response?.let { HttpError(it.code, "ws upgrade", retryAfterMs(it)) } ?: IOException(t))
             }
         })
-        // A server that never says `ready` must not leave events stuck in the buffer.
-        later(5_000) { if (myGen == gen && replaying) endReplay() }
+        saveReplaySoon(myGen)
+    }
+
+    /** A slow replay, or a server that never says `ready`, must not leave events stuck in the buffer. */
+    private fun saveReplaySoon(myGen: Int) {
+        later(replayQuietMs) { if (myGen == gen && replaying) { saveReplaySoon(myGen); applyBuffer(quiet = true) } } // re-armed first, so a failed save is retried
     }
 
     private fun onThread(myGen: Int, f: () -> Unit) {
@@ -123,7 +147,7 @@ class SyncClient(
     }
 
     private fun handle(text: String) {
-        val o = runCatching { JSONObject(text) }.getOrNull() ?: return
+        val o = JSONObject(text)
         when (o.optString("type")) {
             "created", "updated", "state" -> {
                 val n = Notif.fromJson(o.getJSONObject("notification"))
@@ -132,7 +156,7 @@ class SyncClient(
                     buffer.remove(n.id) // re-insert so order follows the latest event
                     buffer[n.id] = n
                     bufferSeq = maxOf(bufferSeq, seq)
-                    if (buffer.size >= 500) applyBuffer()
+                    if (buffer.size >= 500) applyBuffer(quiet = true) // a later event in the replay may still clear these
                 } else {
                     store.apply(listOf(n), seq)
                 }
@@ -155,9 +179,9 @@ class SyncClient(
         onStatus(Status.CONNECTED)
     }
 
-    private fun applyBuffer() {
+    private fun applyBuffer(quiet: Boolean = false) {
         if (buffer.isEmpty() && bufferSeq <= store.lastSeq()) return
-        store.apply(buffer.values.toList(), bufferSeq)
+        store.apply(buffer.values.toList(), bufferSeq, quiet)
         buffer.clear()
     }
 
@@ -175,11 +199,12 @@ class SyncClient(
             store.replaceAll(open, seq)
         } catch (e: IOException) {
             return fail(e)
-        }
+        } // a malformed list throws past here to onMessage, which reconnects
         connect()
     }
 
     private fun fail(e: IOException) {
+        ws?.cancel() // still open after a bad frame
         ws = null
         gen++
         if (stopped) return
@@ -187,10 +212,13 @@ class SyncClient(
             onStatus(Status.AUTH_FAILED) // a bad token will not fix itself; Settings restarts us
             return
         }
-        onStatus(Status.OFFLINE)
+        val busy = e is HttpError && e.isBusy
+        onStatus(if (busy) Status.BUSY else Status.OFFLINE)
         val delay = minOf(60_000L, baseDelayMs shl minOf(attempt, 6))
         attempt++
-        retryTask = later(delay / 2 + Random.nextLong(delay / 2 + 1)) { connect() }
+        val wait = delay / 2 + Random.nextLong(delay / 2 + 1)
+        connectNotBefore = System.nanoTime() + ((e as? HttpError)?.retryAfterMs ?: 0) * 1_000_000
+        retryTask = later(maxOf(wait, (e as? HttpError)?.retryAfterMs ?: 0)) { connect() } // never sooner than the server asked
     }
 }
 

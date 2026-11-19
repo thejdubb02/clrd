@@ -206,6 +206,7 @@ private fun Header(app: App) {
         status == SyncClient.Status.CONNECTED -> b.clear to "In sync"
         status == SyncClient.Status.CONNECTING -> b.snooze to "Connecting"
         status == SyncClient.Status.AUTH_FAILED -> b.signal to "Token rejected"
+        status == SyncClient.Status.BUSY -> b.snooze to "Server busy"
         else -> b.slate to "Offline"
     }
     Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -61,6 +61,14 @@ class TrayRaceTest {
         assertEquals(listOf("Snooze 1h", "Clear"), buttons(tray("a")!!)) // still no Ack button: the tray did not go back
     }
 
+    @Test fun aQuietSaveDoesNotBuzz() {
+        val store = RoomStore(app)
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1)), 1, quiet = true) } // part of a long replay
+        bg { store.apply(listOf(row("b", Notif.ACTIVE, 2)), 2) }
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("a")!!.groupAlertBehavior) // how a silent notification is built
+        assertEquals(Notification.GROUP_ALERT_ALL, tray("b")!!.groupAlertBehavior)
+    }
+
     @Test fun reconcileWaitsForSyncWrites() {
         bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
         val store = RoomStore(app)

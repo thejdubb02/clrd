@@ -115,13 +115,14 @@ class RoomStore(private val app: App) : Store {
 
     override fun lastSeq() = dao.lastSeq() ?: 0
 
-    override fun apply(notifs: Collection<Notif>, seq: Long) = ifMine {
+    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
         val kept = dao.applyAll(notifs, seq)
         val muted = app.muted
         val waiting = waiting()
         for (n in kept) {
-            app.tray.apply(if (n.id in waiting) TrayStep.Cancel(n.id) else TrayStep.plan(n, muted))
+            val step = if (n.id in waiting) TrayStep.Cancel(n.id) else TrayStep.plan(n, muted)
+            app.tray.apply(if (quiet && step is TrayStep.Show) step.copy(silent = true) else step)
         }
         dao.prune(System.currentTimeMillis() - 7 * 24 * 3600_000L)
     }
