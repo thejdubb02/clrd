@@ -565,6 +565,7 @@ func (s *Server) routesSetup() {
 			return nil
 		})
 	}
+	s.webhookRoutes()
 	s.ntfyRoutes()
 }
 

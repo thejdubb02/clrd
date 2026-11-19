@@ -249,7 +249,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	}
 	tok := s.auth(r, false)
 	if t := r.URL.Query().Get("template"); t != "" && r.Method != http.MethodGet {
-		return s.ntfyTemplate(w, r, tok, t)
+		return s.webhookIn(w, r, tok, t) // webhooks.go
 	}
 	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid")}
 	if in.ExternalID == "" {
@@ -384,52 +384,6 @@ func (s *Server) ntfyAct(action string) func(http.ResponseWriter, *http.Request)
 		writeJSON(w, 200, s.ntfyMessage(n, n.Seq))
 		return nil
 	}
-}
-
-// ntfyTemplate turns an Alertmanager or Grafana webhook into one
-// notification per alert, keyed by fingerprint, so a resolved alert
-// resolves its notification instead of adding another.
-func (s *Server) ntfyTemplate(w http.ResponseWriter, r *http.Request, tok *Token, name string) error {
-	if name != "alertmanager" && name != "grafana" {
-		return errf(400, "bad_request", "unknown template %q (want alertmanager or grafana)", name)
-	}
-	var in struct {
-		Alerts []struct {
-			Status       string            `json:"status"`
-			Fingerprint  string            `json:"fingerprint"`
-			Labels       map[string]string `json:"labels"`
-			Annotations  map[string]string `json:"annotations"`
-			GeneratorURL string            `json:"generatorURL"`
-		} `json:"alerts"`
-	}
-	if err := decodeJSON(r, &in); err != nil {
-		return err
-	}
-	prio, err := ntfyPriority(param(r, "Priority", "Prio", "P"))
-	if err != nil {
-		return err
-	}
-	var created, resolved int
-	for _, a := range in.Alerts {
-		p := PublishInput{Topic: r.PathValue("topic"), ExternalID: a.Fingerprint, Status: a.Status, Priority: prio,
-			Title: a.Labels["alertname"], Message: a.Annotations["summary"], Click: a.GeneratorURL,
-			Tags: splitList(param(r, "Tags", "Tag", "Ta"))}
-		if p.Message == "" {
-			p.Message = a.Annotations["description"]
-		}
-		_, err := s.Publish(r.Context(), tok, p)
-		switch {
-		case a.Status == "resolved" && isNotFound(err): // already cleared, nothing to do
-		case err != nil:
-			return err
-		case a.Status == "resolved":
-			resolved++
-		default:
-			created++
-		}
-	}
-	writeJSON(w, 200, map[string]int{"published": created, "resolved": resolved})
-	return nil
 }
 
 var (

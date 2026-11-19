@@ -3087,6 +3087,178 @@
     },
     "security": []
    }
+  },
+  "/api/v1/topics/{topic}/webhooks": {
+   "get": {
+    "summary": "List the webhook templates saved for a topic, and the built-in names",
+    "description": "Scope publish on the topic. Secrets are never returned; has_secret says whether one is set.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "webhooks": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "builtin": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/topics/{topic}/webhooks/{name}": {
+   "put": {
+    "summary": "Save a webhook template for a topic, used by POST /{topic}?template=<name>",
+    "description": "Scope publish on the topic. Replaces the whole template. Saving under a built-in name sets its secret and overrides only the fields given.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "description": "Each field but each and secret is a Go text/template run over the sender's JSON. See docs/integrations/custom-webhooks.md.",
+        "properties": {
+         "each": {
+          "type": "string",
+          "description": "Dotted path to a list in the JSON: one notification per item."
+         },
+         "title": {
+          "type": "string"
+         },
+         "message": {
+          "type": "string"
+         },
+         "priority": {
+          "type": "string",
+          "description": "Renders to 1-5 or min, low, default, high, urgent."
+         },
+         "tags": {
+          "type": "string",
+          "description": "Renders to a comma separated list."
+         },
+         "click": {
+          "type": "string"
+         },
+         "id": {
+          "type": "string",
+          "description": "Renders to the external_id: the same id updates one notification."
+         },
+         "resolve": {
+          "type": "string",
+          "description": "Renders to \"true\" to resolve the notification with that id."
+         },
+         "secret": {
+          "type": "string",
+          "description": "Write only. Checked as the service's signature (github, jira, sentry, stripe) or as X-Clrd-Secret / ?secret= for the rest."
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Delete a saved webhook template",
+    "description": "Scope publish on the topic.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "deleted": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
