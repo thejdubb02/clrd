@@ -825,6 +825,9 @@
              },
              "open": {
               "type": "integer"
+             },
+             "icon": {
+              "type": "string"
              }
             }
            }
@@ -844,6 +847,74 @@
       "$ref": "#/components/responses/Error"
      }
     }
+   }
+  },
+  "/api/v1/topics/{topic}": {
+   "put": {
+    "summary": "Set the icon new notifications in a topic get when their sender gives none",
+    "description": "Scope publish on the topic. An empty icon removes it. Notifications already published keep their icon.",
+    "tags": [
+     "notifications"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "icon"
+        ],
+        "properties": {
+         "icon": {
+          "type": "string",
+          "format": "uri",
+          "description": "http(s) image URL, at most 2048 characters."
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "topic": {
+           "type": "string"
+          },
+          "icon": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
    }
   },
   "/api/v1/devices": {
@@ -2980,6 +3051,14 @@
      "click": {
       "type": "string"
      },
+     "icon": {
+      "type": "string",
+      "description": "http(s) image URL; the topic's icon when the sender gave none. Empty if unset."
+     },
+     "image": {
+      "type": "string",
+      "description": "http(s) image URL shown large. Empty if unset."
+     },
      "actions": {
       "type": "array",
       "items": {
@@ -3049,6 +3128,16 @@
      },
      "click": {
       "type": "string"
+     },
+     "icon": {
+      "type": "string",
+      "format": "uri",
+      "description": "http(s) image URL, at most 2048 characters."
+     },
+     "image": {
+      "type": "string",
+      "format": "uri",
+      "description": "http(s) image URL, at most 2048 characters."
      },
      "actions": {
       "type": "array",
@@ -3181,6 +3270,20 @@
      "click": {
       "type": "string"
      },
+     "icon": {
+      "type": "string"
+     },
+     "attachment": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string"
+       },
+       "url": {
+        "type": "string"
+       }
+      }
+     },
      "actions": {
       "type": "array",
       "items": {
@@ -3229,6 +3332,14 @@
      },
      "click": {
       "type": "string"
+     },
+     "icon": {
+      "type": "string",
+      "description": "Kept when an http(s) URL, else dropped."
+     },
+     "attach": {
+      "type": "string",
+      "description": "Kept as the image when an http(s) URL ending .png, .jpg, .jpeg, .gif or .webp, else dropped."
      },
      "actions": {
       "type": "array",

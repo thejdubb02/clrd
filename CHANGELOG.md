@@ -13,6 +13,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 - Android: the app notices a server that was reinstalled or moved to a fresh
   database and reloads its list, instead of showing notifications from the old one.
+- Server: icons and images on notifications (`icon`, `image`, ntfy's `X-Icon`
+  and image `X-Attach`), and a default icon per topic so each service gets
+  its own picture. The web inbox and Android app do not show them yet.
 - Server: one Go binary with SQLite. Native publish API, notification states
   (dismiss, acknowledge, resolve, snooze) synced to every device over WebSocket
   and SSE, with catch-up from the last seen event after a reconnect.

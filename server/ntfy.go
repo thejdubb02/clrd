@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -32,17 +34,19 @@ type ntfyAction struct {
 }
 
 type ntfyMsg struct {
-	ID         string       `json:"id"`
-	Time       int64        `json:"time"`
-	Event      string       `json:"event"`
-	Topic      string       `json:"topic"`
-	SequenceID string       `json:"sequence_id,omitempty"`
-	Title      string       `json:"title,omitempty"`
-	Message    string       `json:"message,omitempty"`
-	Priority   int          `json:"priority,omitempty"`
-	Tags       []string     `json:"tags,omitempty"`
-	Click      string       `json:"click,omitempty"`
-	Actions    []ntfyAction `json:"actions,omitempty"`
+	ID         string          `json:"id"`
+	Time       int64           `json:"time"`
+	Event      string          `json:"event"`
+	Topic      string          `json:"topic"`
+	SequenceID string          `json:"sequence_id,omitempty"`
+	Title      string          `json:"title,omitempty"`
+	Message    string          `json:"message,omitempty"`
+	Priority   int             `json:"priority,omitempty"`
+	Tags       []string        `json:"tags,omitempty"`
+	Click      string          `json:"click,omitempty"`
+	Icon       string          `json:"icon,omitempty"`
+	Attachment *ntfyAttachment `json:"attachment,omitempty"`
+	Actions    []ntfyAction    `json:"actions,omitempty"`
 }
 
 // ntfyID maps an event seq to a ntfy message id and back ("s" + 11 digits,
@@ -64,7 +68,10 @@ func ntfyMessage(n *Notification, seq int64) ntfyMsg {
 		m.Event = "message_delete"
 		return m
 	}
-	m.Title, m.Message, m.Priority, m.Tags, m.Click = n.Title, n.Message, n.Priority, n.Tags, n.Click
+	m.Title, m.Message, m.Priority, m.Tags, m.Click, m.Icon = n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon
+	if n.Image != "" {
+		m.Attachment = &ntfyAttachment{Name: path.Base(n.Image), URL: n.Image}
+	}
 	for i, a := range n.Actions {
 		if a.URL != "" { // ntfy has no reply button; an http action would need our token
 			m.Actions = append(m.Actions, ntfyAction{ID: strconv.Itoa(i), Action: "view", Label: a.Label, URL: a.URL})
@@ -254,6 +261,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	in.Title = param(r, "Title", "Ti", "T")
 	in.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
 	in.Click = param(r, "Click")
+	in.Icon, in.Image = ntfyImages(param(r, "Icon"), param(r, "Attach", "A"))
 	if in.Priority, err = ntfyPriority(param(r, "Priority", "Prio", "P")); err != nil {
 		return err
 	}
@@ -285,6 +293,8 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		Priority   int          `json:"priority"`
 		Tags       []string     `json:"tags"`
 		Click      string       `json:"click"`
+		Icon       string       `json:"icon"`
+		Attach     string       `json:"attach"`
 		Actions    []ntfyAction `json:"actions"`
 		Delay      string       `json:"delay"`
 		ID         string       `json:"id"`
@@ -301,6 +311,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status}
+	p.Icon, p.Image = ntfyImages(in.Icon, in.Attach)
 	for _, id := range []string{in.SequenceID, in.ID} {
 		if p.ExternalID == "" {
 			p.ExternalID = id
@@ -582,4 +593,27 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		return 0, nil
 	}
 	return 0, errf(400, "bad_request", "invalid since %q", v)
+}
+
+type ntfyAttachment struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// ntfyImages keeps an http(s) icon, and an attach URL only when it names an
+// image file: clrd stores no files. Anything else is dropped, never a 400,
+// so a publish ntfy accepts still succeeds.
+func ntfyImages(icon, attach string) (string, string) {
+	if checkImageURL("icon", icon) != nil {
+		icon = ""
+	}
+	u, err := url.Parse(attach)
+	if checkImageURL("attach", attach) != nil || err != nil {
+		return icon, ""
+	}
+	switch strings.ToLower(path.Ext(u.Path)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp":
+		return icon, attach
+	}
+	return icon, ""
 }

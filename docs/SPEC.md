@@ -40,6 +40,8 @@ A **notification**:
   "priority": 4,               // 1..5, ntfy scale. 5 = urgent (Signal orange)
   "tags": ["backup"],
   "click": "https://...",      // optional
+  "icon": "https://.../disk.png",   // optional http(s) image URL, max 2048; "" if none
+  "image": "https://.../graph.png", // optional http(s) image URL shown large; "" if none
   "actions": [{"label": "Open draft", "url": "https://..."}, {"label": "Yes", "reply": "yes"}],
   "reply": "",                 // the reply action tapped, "" until someone answers
   "state": "active",
@@ -76,6 +78,19 @@ gets 409. An `acknowledged` notification with a non-empty `reply` is answered,
 and `state_by` is who tapped. The first answer wins: a second one gets 409.
 Any later state change except dismiss and resolve (reopen, snooze, a plain
 ack) clears `reply`. Reply actions are not sent to ntfy subscribers.
+
+**Icons and images:** `icon` and `image` are absolute `http` or `https` URLs
+(at most 2048 characters); anything else is a 400. Clients load them straight
+from that URL, so the image host sees the viewer's IP address. Each topic can
+have its own icon (`PUT /api/v1/topics/{topic}`): a publish that gives no
+`icon` gets the topic's icon copied in at publish time, so changing the topic's
+icon later leaves notifications already sent as they were. clrd stores no
+image files.
+
+**Share and copy (client guidance):** each card offers Share and Copy. Share
+sends the title, the message and `click` (if set) to the platform's share
+sheet (Web Share API, Android `ACTION_SEND`). Copy puts the same text on the
+clipboard: the title, a blank line, the message, then `click` on its own line.
 
 ## 3. Events and sync
 
@@ -192,7 +207,8 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | POST | `/api/v1/notifications/{id}/resolve` | Sender clears it. |
 | POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). |
 | POST | `/api/v1/notifications/clear` | Bulk dismiss, body `{"topic":"infra"}` or `{"ids":[...]}`. |
-| GET | `/api/v1/topics` | Topics with open counts. |
+| GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
+| PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. Scope publish on the topic. |
 | GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices". |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin). |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
@@ -210,9 +226,14 @@ By external id (what scripts and monitors use):
 
 - `PUT|POST /{topic}` with the body as the message. Headers `X-Title`/`Title`/`t`,
   `X-Priority`/`Priority`/`p` (1-5 or min/low/default/high/urgent),
-  `X-Tags`/`Tags`, `X-Click`, `X-Actions`, `X-Delay`, `X-Markdown`, `X-Icon`,
-  `X-Attach`, `X-Email` (ignored, documented), plus clrd's own `X-Id` = `external_id`.
-- `POST /` with ntfy JSON body (`topic`, `message`, `title`, `priority`, `tags`, ...).
+  `X-Tags`/`Tags`, `X-Click`, `X-Actions`, `X-Delay`, `X-Icon` (sets `icon`),
+  `X-Attach` (sets `image` when it is an http(s) URL ending `.png`, `.jpg`,
+  `.jpeg`, `.gif` or `.webp`), `X-Markdown` and `X-Email` (ignored, documented),
+  plus clrd's own `X-Id` = `external_id`. A bad icon or a non-image attach is
+  dropped, not refused, so a publish ntfy accepts still works. ntfy output
+  carries `icon`, and `image` as `attachment: {"name","url"}`.
+- `POST /` with ntfy JSON body (`topic`, `message`, `title`, `priority`, `tags`,
+  `icon`, `attach`, ...).
 - `GET /{topic}/json`, `/{topic}/sse`, `/{topic}/ws`, `/{topic}/raw` with `since=`
   (`all`, unix time, duration, message id) and `poll=1`, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a

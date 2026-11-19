@@ -408,6 +408,19 @@ func (s *Server) routesSetup() {
 		writeJSON(w, 200, map[string]any{"topics": ts})
 		return nil
 	})
+	s.api("PUT /api/v1/topics/{topic}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		var in struct {
+			Icon string `json:"icon"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if err := s.SetTopicIcon(r.Context(), tok, r.PathValue("topic"), in.Icon); err != nil {
+			return err
+		}
+		writeJSON(w, 200, map[string]string{"topic": r.PathValue("topic"), "icon": in.Icon})
+		return nil
+	})
 	s.api("GET /api/v1/devices", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		if err := tok.need(ScopeRead, ""); err != nil {
 			return err

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -42,6 +43,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   priority INTEGER NOT NULL DEFAULT 3,
   tags TEXT NOT NULL DEFAULT '[]',
   click TEXT NOT NULL DEFAULT '',
+  icon TEXT NOT NULL DEFAULT '',
+  image TEXT NOT NULL DEFAULT '',
   actions TEXT NOT NULL DEFAULT '[]',
   reply TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL,
@@ -73,6 +76,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   last_seen_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '');
 -- A web sign-in mints its own token; parent_id is the token typed in.
 CREATE TABLE IF NOT EXISTS sessions (
   token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
@@ -98,6 +102,8 @@ type Notification struct {
 	Priority    int        `json:"priority"`
 	Tags        []string   `json:"tags"`
 	Click       string     `json:"click"`
+	Icon        string     `json:"icon"`  // http(s) image URL; the topic's icon when the sender gave none
+	Image       string     `json:"image"` // http(s) image URL shown large
 	Actions     []Action   `json:"actions"`
 	Reply       string     `json:"reply"` // the reply action tapped, "" until one is
 	State       string     `json:"state"`
@@ -150,7 +156,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "image"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -171,7 +177,7 @@ func nullMS(t *time.Time) any {
 	return ms(*t)
 }
 
-const notifCols = `id, topic, external_id, title, message, priority, tags, click, actions, reply,
+const notifCols = `id, topic, external_id, title, message, priority, tags, click, icon, image, actions, reply,
   state, state_by, state_by_id, snooze_until, created_at, updated_at, seq`
 
 type scanner interface{ Scan(...any) error }
@@ -182,7 +188,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	var snooze sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Priority, &tags, &n.Click,
-		&actions, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq)
+		&n.Icon, &n.Image, &actions, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq)
 	if err != nil {
 		return nil, err
 	}
@@ -200,12 +206,12 @@ func scanNotification(r scanner) (*Notification, error) {
 func saveNotification(tx *sql.Tx, n *Notification) error {
 	tags, _ := json.Marshal(n.Tags)
 	actions, _ := json.Marshal(n.Actions)
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message,
-		priority=excluded.priority, tags=excluded.tags, click=excluded.click, actions=excluded.actions,
+		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, image=excluded.image, actions=excluded.actions,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
 		updated_at=excluded.updated_at, seq=excluded.seq`,
-		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Priority, string(tags), n.Click, string(actions),
+		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Priority, string(tags), n.Click, n.Icon, n.Image, string(actions),
 		n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
@@ -308,6 +314,8 @@ type PublishInput struct {
 	Priority    int        `json:"priority"`
 	Tags        []string   `json:"tags"`
 	Click       string     `json:"click"`
+	Icon        string     `json:"icon"`  // http(s) image URL; the topic's icon when the sender gave none
+	Image       string     `json:"image"` // http(s) image URL shown large
 	Actions     []Action   `json:"actions"`
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
 	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
@@ -357,13 +365,25 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err := checkActions(in.Actions); err != nil {
 		return nil, err
 	}
+	if err := checkImageURL("icon", in.Icon); err != nil {
+		return nil, err
+	}
+	if err := checkImageURL("image", in.Image); err != nil {
+		return nil, err
+	}
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		if in.Icon == "" { // the topic's icon, copied so a later change leaves old rows alone
+			if err := tx.QueryRowContext(ctx, `SELECT icon FROM topics WHERE topic = ?`, in.Topic).Scan(&in.Icon); err != nil &&
+				!errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+		}
 		if in.ExternalID != "" {
 			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 				in.Topic, in.ExternalID)
 			if err == nil {
-				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Actions, n.Reply =
-					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Actions, "" // a new question starts unanswered
+				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Image, n.Actions, n.Reply =
+					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Icon, in.Image, in.Actions, "" // a new question starts unanswered
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -381,7 +401,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		}
 		t := now()
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
-			Message: in.Message, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Actions: in.Actions,
+			Message: in.Message, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Image: in.Image, Actions: in.Actions,
 			State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
@@ -725,6 +745,7 @@ func (s *Server) Get(ctx context.Context, tok *Token, id string) (*Notification,
 type TopicCount struct {
 	Topic string `json:"topic"`
 	Open  int    `json:"open"`
+	Icon  string `json:"icon"`
 }
 
 // Topics lists topics tok may read, with open counts.
@@ -732,8 +753,9 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(state IN ('active', 'acknowledged', 'snoozed'))
-		FROM notifications GROUP BY topic ORDER BY topic`)
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon) FROM (
+		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon FROM notifications
+		UNION ALL SELECT topic, 0, icon FROM topics) GROUP BY topic ORDER BY topic`)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +763,7 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	out := []TopicCount{}
 	for rows.Next() {
 		var t TopicCount
-		if err := rows.Scan(&t.Topic, &t.Open); err != nil {
+		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon); err != nil {
 			return nil, err
 		}
 		if tok.Allows(t.Topic) {
@@ -749,6 +771,39 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 		}
 	}
 	return out, rows.Err()
+}
+
+// SetTopicIcon sets the icon new notifications in topic get when their
+// sender gives none. "" removes it. Rows already published keep theirs.
+func (s *Server) SetTopicIcon(ctx context.Context, tok *Token, topic, icon string) error {
+	if err := validTopic(topic); err != nil {
+		return err
+	}
+	if err := tok.need(ScopePublish, topic); err != nil {
+		return err
+	}
+	if err := checkImageURL("icon", icon); err != nil {
+		return err
+	}
+	if icon == "" {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ?`, topic)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO topics (topic, icon) VALUES (?, ?)
+		ON CONFLICT(topic) DO UPDATE SET icon = excluded.icon`, topic, icon)
+	return err
+}
+
+// checkImageURL accepts "" or an absolute http(s) URL: clients load it as an
+// image, so no javascript:, data: or relative paths.
+func checkImageURL(field, v string) error {
+	if v == "" {
+		return nil
+	}
+	if u, err := url.Parse(v); len(v) > 2048 || err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return errf(400, "bad_request", "%s must be an http(s) URL of at most 2048 characters", field)
+	}
+	return nil
 }
 
 // eventsAfter returns up to limit logged events with seq > since, oldest

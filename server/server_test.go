@@ -528,9 +528,13 @@ func TestReplyColumnAdded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := strings.Replace(schema, "  reply TEXT NOT NULL DEFAULT '',\n", "", 1)
-	if old == schema {
-		t.Fatal("schema has no reply line to drop")
+	old := schema
+	for _, col := range []string{"reply", "icon", "image"} {
+		line := "  " + col + " TEXT NOT NULL DEFAULT '',\n"
+		if !strings.Contains(old, line) {
+			t.Fatalf("schema has no %s line to drop", col)
+		}
+		old = strings.Replace(old, line, "", 1)
 	}
 	if _, err := db.Exec(old); err != nil {
 		t.Fatal(err)
@@ -542,9 +546,82 @@ func TestReplyColumnAdded(t *testing.T) {
 			t.Fatalf("start %d: %v", i, err)
 		}
 		tok, _, _ := s.CreateToken(context.Background(), "a", []string{ScopeAdmin}, nil)
-		if _, err := s.Publish(context.Background(), tok, PublishInput{Topic: "infra", Message: "m"}); err != nil {
+		if n, err := s.Publish(context.Background(), tok, PublishInput{Topic: "infra", Message: "m",
+			Icon: "https://example.com/i.png"}); err != nil || n.Icon != "https://example.com/i.png" {
 			t.Fatalf("publish on start %d: %v", i, err)
 		}
 		s.Close()
+	}
+}
+
+func TestIconsAndImages(t *testing.T) {
+	s, ts, admin := newTest(t)
+	reader := mkToken(t, s, "reader", []string{ScopeRead}, nil)
+	other := mkToken(t, s, "other", []string{ScopePublish}, []string{"other"})
+	const icon, img = "https://example.com/disk.png", "https://example.com/graph.jpg"
+
+	for _, tc := range []struct {
+		tok   string
+		topic string
+		body  any
+		want  int
+	}{
+		{reader, "infra", map[string]string{"icon": icon}, 403},
+		{other, "infra", map[string]string{"icon": icon}, 403},
+		{admin, "infra", map[string]string{"icon": "javascript:alert(1)"}, 400},
+		{admin, "infra", map[string]string{"icon": "data:image/png;base64,AA=="}, 400},
+		{admin, "infra", map[string]string{"icon": "/rel.png"}, 400},
+		{admin, "infra", map[string]string{"icon": "javascript://example.com/%0aalert(1)"}, 400},
+		{admin, "infra", map[string]string{"icon": icon}, 200},
+	} {
+		if code, out := call(t, ts, "PUT", "/api/v1/topics/"+tc.topic, tc.tok, tc.body); code != tc.want {
+			t.Fatalf("PUT topic icon %v: %d %v", tc.body, code, out)
+		}
+	}
+	_, out := call(t, ts, "GET", "/api/v1/topics", admin, nil)
+	if ts := out["topics"].([]any); len(ts) != 1 || ts[0].(map[string]any)["icon"] != icon {
+		t.Fatalf("topic list: %v", out)
+	}
+
+	// The topic's icon fills in; an explicit one wins; image is kept.
+	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "a", "external_id": "k"})
+	if n["icon"] != icon {
+		t.Fatalf("default icon: %v", n)
+	}
+	_, n = call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "b", "external_id": "k",
+		"icon": "https://example.com/own.png", "image": img})
+	if n["icon"] != "https://example.com/own.png" || n["image"] != img {
+		t.Fatalf("explicit icon and image: %v", n)
+	}
+	_, n = call(t, ts, "GET", "/api/v1/notifications/"+n["id"].(string), admin, nil)
+	if n["icon"] != "https://example.com/own.png" || n["image"] != img {
+		t.Fatalf("upsert did not store icon and image: %v", n)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "c",
+		"image": "javascript:x"}); code != 400 {
+		t.Fatalf("bad image: %d", code)
+	}
+
+	// ntfy: X-Icon and an image X-Attach map over; a bad icon or a non-image attach is dropped, not refused.
+	code, body := raw(t, "PUT", ts.URL+"/infra", admin, "m", map[string]string{"X-Icon": "https://example.com/n.png", "X-Attach": img})
+	m := ntfyDecode(t, body)
+	if code != 200 || m.Icon != "https://example.com/n.png" || m.Attachment == nil || m.Attachment.URL != img {
+		t.Fatalf("ntfy icon and attach: %d %s", code, body)
+	}
+	code, body = raw(t, "PUT", ts.URL+"/infra", admin, "m", map[string]string{"X-Icon": "javascript:x", "X-Attach": "https://example.com/log.txt"})
+	m = ntfyDecode(t, body)
+	if code != 200 || m.Icon != icon || m.Attachment != nil {
+		t.Fatalf("ntfy dropped fields: %d %s", code, body)
+	}
+	code, body = raw(t, "POST", ts.URL+"/", admin, `{"topic":"infra","message":"m","icon":"https://example.com/j.png","attach":"`+img+`"}`, nil)
+	m = ntfyDecode(t, body)
+	if code != 200 || m.Icon != "https://example.com/j.png" || m.Attachment == nil {
+		t.Fatalf("ntfy JSON icon and attach: %d %s", code, body)
+	}
+
+	// Removing the topic's icon stops the fill.
+	call(t, ts, "PUT", "/api/v1/topics/infra", admin, map[string]string{"icon": ""})
+	if _, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "d"}); n["icon"] != "" {
+		t.Fatalf("icon after removal: %v", n)
 	}
 }
