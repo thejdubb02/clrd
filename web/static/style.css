@@ -202,7 +202,7 @@ pre { margin: 0 0 1em; padding: 16px 18px; overflow-x: auto; background: var(--s
 .search input, .signin-form input { width: 240px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); font: 400 14px var(--sans); }
 .search input:focus-visible, .signin-form input:focus-visible { outline-offset: 0; border-color: var(--clear); }
 
-.list { display: grid; gap: 10px; }
+.list { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
 .card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }
 .card > * { grid-column: 1; }
 .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -220,6 +220,7 @@ pre { margin: 0 0 1em; padding: 16px 18px; overflow-x: auto; background: var(--s
 .snooze > summary { list-style: none; }
 .snooze > summary::-webkit-details-marker { display: none; }
 .snooze-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; display: grid; gap: 6px; min-width: 180px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
+.snooze:not([open]) > .snooze-menu { display: none; } /* a closed menu still widens the page on a phone */
 .snooze-custom { display: flex; gap: 6px; }
 .snooze-custom input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; background: var(--bg); color: var(--text); font: 13.5px var(--sans); }
 
@@ -269,8 +270,8 @@ pre { margin: 0 0 1em; padding: 16px 18px; overflow-x: auto; background: var(--s
   .bar { flex-wrap: wrap; }
   .search { order: 3; flex: 1 1 100%; margin: 0; }
   .search input { width: 100%; }
-  .card { grid-template-columns: 1fr; padding: 14px 16px; }
-  .actions { grid-column: 1; grid-row: auto; margin: 12px 0 0 18px; }
+  .card { grid-template-columns: minmax(0, 1fr); padding: 14px 16px; }
+  .actions { grid-column: 1; grid-row: auto; margin: 12px 0 0 18px; flex-wrap: wrap; }
   .snooze-menu { right: auto; left: 0; }
 }
 @media (max-width: 560px) {

@@ -1,0 +1,145 @@
+/* clrd tokens on shadcn names, so Basecoat components take the brand.
+   Replaces Basecoat's base.css (zinc palette, .dark class). Dark follows the
+   system setting; there is no toggle. Values: docs/SPEC.md section 10. */
+
+@custom-variant dark (@media (prefers-color-scheme: dark));
+
+@font-face { font-family: "Geist"; src: url("/assets/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/assets/fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+
+:root {
+  color-scheme: light dark;
+  --radius: 0.5rem;
+  --background: #F5F3EE;          /* paper */
+  --foreground: #0F1114;          /* ink */
+  --card: #FFFFFF;
+  --card-foreground: #0F1114;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F1114;
+  --primary: #0F1114;
+  --primary-foreground: #F5F3EE;
+  --secondary: #ECE9E2;
+  --secondary-foreground: #0F1114;
+  --muted: #ECE9E2;
+  --muted-foreground: #5B6470;    /* slate */
+  --accent: #ECE9E2;
+  --accent-foreground: #0F1114;
+  --destructive: #C2410C;         /* signal */
+  --border: #DEDAD1;              /* hairline */
+  --input: #D3CEC3;
+  --ring: #0B7A55;
+  --clear: #0B7A55;               /* the only accent: means cleared */
+  --clear-foreground: #F5F3EE;
+  --body: #3D444D;
+  --sidebar: #F5F3EE;
+  --sidebar-foreground: #0F1114;
+  --sidebar-primary: #0F1114;
+  --sidebar-primary-foreground: #F5F3EE;
+  --sidebar-accent: #ECE9E2;
+  --sidebar-accent-foreground: #0F1114;
+  --sidebar-border: #DEDAD1;
+  --sidebar-ring: #0B7A55;
+  --sidebar-width: 15rem;
+  --sidebar-mobile-width: 18rem;
+  /* State chips: tinted fill, dark text. Each passes 4.5:1. */
+  --chip-active-bg: #FCE9DF; --chip-active: #9A3412;
+  --chip-ack-bg: #E9E6DE;    --chip-ack: #3D444D;
+  --chip-res-bg: #DDF1E8;    --chip-res: #065F42;
+  --chip-snz-bg: #F7EBD3;    --chip-snz: #7A4D0B;
+  --chevron-down-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%235B6470" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  --chevron-down-icon-50: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%235B647080" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  --check-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%235B6470" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+}
+
+@media (prefers-color-scheme: dark) {
+  /* Paper and ink swap. Accents lift where the light value fails contrast on ink. */
+  :root {
+    --background: #0F1114;
+    --foreground: #F5F3EE;
+    --card: #171A1E;
+    --card-foreground: #F5F3EE;
+    --popover: #1C2025;
+    --popover-foreground: #F5F3EE;
+    --primary: #F5F3EE;
+    --primary-foreground: #0F1114;
+    --secondary: #22262B;
+    --secondary-foreground: #F5F3EE;
+    --muted: #22262B;
+    --muted-foreground: #98A1AC;
+    --accent: #22262B;
+    --accent-foreground: #F5F3EE;
+    --destructive: #F97316;
+    --border: #2C3036;
+    --input: #34393F;
+    --ring: #3DDC97;
+    --clear: #3DDC97;
+    --clear-foreground: #0F1114;
+    --body: #C9CED4;
+    --sidebar: #0F1114;
+    --sidebar-foreground: #F5F3EE;
+    --sidebar-primary: #F5F3EE;
+    --sidebar-primary-foreground: #0F1114;
+    --sidebar-accent: #22262B;
+    --sidebar-accent-foreground: #F5F3EE;
+    --sidebar-border: #2C3036;
+    --sidebar-ring: #3DDC97;
+    --chip-active-bg: #3A1C0F; --chip-active: #FDBA8C;
+    --chip-ack-bg: #24282D;    --chip-ack: #C9CED4;
+    --chip-res-bg: #0F3326;    --chip-res: #7FE3B6;
+    --chip-snz-bg: #382A10;    --chip-snz: #F2C66D;
+    --chevron-down-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+    --chevron-down-icon-50: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+    --check-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+  }
+}
+
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 4px);
+  --radius-4xl: calc(var(--radius) - 2px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-clear: var(--clear);
+  --color-clear-foreground: var(--clear-foreground);
+  --color-body: var(--body);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground font-sans antialiased; font-feature-settings: "ss01"; }
+  /* Numbers that change (times, counts, seq) never shift the line. */
+  time, .num, kbd, code { font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  hr:where([aria-orientation='vertical']) { flex-shrink: 0; align-self: stretch; inline-size: 1px; block-size: auto; margin: 0; border-block-start-width: 0; border-inline-start-width: 1px; }
+  .no-js .js-only { display: none !important; }
+  [hidden] { display: none !important; }
+}

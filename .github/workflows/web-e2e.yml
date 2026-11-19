@@ -19,6 +19,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: app.css matches its source
+        run: |
+          web/ui/build.sh
+          git diff --exit-code -- web/static/app.css || { echo "web/static/app.css is stale: run web/ui/build.sh and commit it"; exit 1; }
       - name: build
         run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
       - name: inbox in Chromium
@@ -27,3 +31,18 @@ jobs:
             -v "$PWD/web/e2e:/pw/e2e:ro" -v "$RUNNER_TEMP/clrd:/usr/local/bin/clrd:ro" \
             mcr.microsoft.com/playwright:v1.48.0-jammy \
             sh -c 'cd /pw && npm i --silent --no-audit --no-fund playwright@1.48.0 && node e2e/inbox.mjs'
+      - name: screenshots, axe and console errors
+        run: |
+          mkdir -p "$RUNNER_TEMP/shots"
+          docker run --rm --network host --init \
+            -v "$PWD/web/e2e:/pw/e2e:ro" -v "$RUNNER_TEMP/clrd:/usr/local/bin/clrd:ro" -v "$RUNNER_TEMP/shots:/shots" \
+            -e OUT=/shots -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            mcr.microsoft.com/playwright:v1.48.0-jammy \
+            sh -c 'cd /pw && npm i --silent --no-audit --no-fund playwright@1.48.0 @axe-core/playwright@4.10.1 && node e2e/screens.mjs; rc=$?; chown -R "$HOST_UID:$HOST_GID" /shots; exit $rc'
+      - name: upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore

@@ -43,7 +43,7 @@
     <div>
       <h3>No clocks, no conflicts</h3>
       <p>Every change is an event with a number. Each device remembers the last number it saw and asks for everything after it when it reconnects.</p>
-      <pre class="log" aria-label="Example event log"><code><span>48211</span>  created    backups  Nightly backup failed
+      <pre class="log" tabindex="0" aria-label="Example event log"><code><span>48211</span>  created    backups  Nightly backup failed
 <span>48212</span>  dismissed  backups  by pixel-9</code></pre>
       <p>A tablet that was off overnight asks for everything after 48211 and drops the alert before you look at it.</p>
     </div>
@@ -68,13 +68,13 @@
     <div class="split">
       <div>
         <h3>curl</h3>
-<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+<pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"infra","title":"Disk full",
        "message":"web-1 at 95%","priority":4,
        "external_id":"disk-web-1"}' \
   https://clrd.itsjustin.me/api/v1/notifications</code></pre>
         <p>When the disk has room again, the sender clears it everywhere:</p>
-<pre><code>curl -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
+<pre tabindex="0"><code>curl -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
   https://clrd.itsjustin.me/infra/disk-web-1/resolve</code></pre>
       </div>
       <div>
@@ -107,7 +107,7 @@
     <div>
       <h2 id="ntfy">Already on ntfy?</h2>
       <p>Point your scripts at clrd and keep going. Same publish endpoint, same headers, same JSON body, same subscribe streams.</p>
-<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+<pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -H "Title: Disk full" -H "Priority: high" \
   -d "web-1 at 95%" https://clrd.itsjustin.me/infra</code></pre>
       <p class="quiet">Supported: <code>PUT</code> and <code>POST /{topic}</code>, the Title, Priority, Tags, Click and Actions headers, JSON publish to <code>/</code>, and <code>/json</code>, <code>/sse</code>, <code>/ws</code> and <code>/raw</code> subscriptions with <code>since=</code>.</p>
@@ -135,7 +135,7 @@
       <p class="quiet">A Docker image and compose file ship with the first release. Until then, build from source with Go 1.23 or newer.</p>
     </div>
     <div>
-<pre><code>git clone https://github.com/thejdubb02/clrd
+<pre tabindex="0"><code>git clone https://github.com/thejdubb02/clrd
 cd clrd &amp;&amp; go build -o clrd ./server/cmd/clrd
 
 CLRD_DB=./clrd.db \

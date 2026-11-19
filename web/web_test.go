@@ -35,6 +35,7 @@ func TestPages(t *testing.T) {
 		"/app":                       {`data-view="inbox"`, "Nightly backup failed", "Urgent", "Acknowledged on pixel-9", "In sync on 3 devices", `data-act="dismiss"`},
 		"/app/snoozed":               {"TLS certificate renews in 7 days", "Snoozed until"},
 		"/app/cleared":               {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
+		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css"`, `data-variant="clear"`, `class="command-dialog"`},
 		"/app/settings":              {"Devices in sync", "pixel-9", "https://clrd.example.com/api/v1/notifications"},
 		"/app?q=disk":                {"Disk 91% full on web-1"},
 		"/app?topic=home":            {"Front door open", `<span class="in-topic">in home</span>`},

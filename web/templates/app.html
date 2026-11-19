@@ -44,7 +44,7 @@
     <div class="empty"{{if .Snap.Items}} hidden{{end}} data-empty>
       {{if .Q}}<p>No notifications match "{{.Q}}".</p>
       {{else if eq .View "inbox"}}<h2>All clear</h2><p>New alerts land here the moment they are sent.</p>
-<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+<pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"test","message":"Hello from clrd"}' \
   {{.Base}}/api/v1/notifications</code></pre>
       {{else if eq .View "snoozed"}}<p>Nothing snoozed. Snoozed alerts wait here until their time comes.</p>
@@ -109,7 +109,7 @@
 <section class="panel" aria-labelledby="send-h">
   <h2 id="send-h">Send a test notification</h2>
   <p>Run this with a token that has the publish scope. It should appear on every device within a second.</p>
-<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+<pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"test","message":"Hello from clrd"}' \
   {{.Base}}/api/v1/notifications</code></pre>
 </section>

@@ -1,0 +1,259 @@
+{{define "ui-head"}}<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F5F3EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1114" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/assets/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/app.css">
+{{end}}
+
+{{define "ui"}}{{template "ui-head" .}}<script src="/static/vendor/basecoat.min.js" defer></script>
+<script src="/static/vendor/command.min.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to components</a>
+<header class="border-b">
+  <div class="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
+    <a href="/app" class="wordmark text-lg">clrd</a>
+    <span class="text-muted-foreground text-sm">Components</span>
+  </div>
+</header>
+<main id="main" class="mx-auto grid max-w-5xl gap-12 px-4 py-8">
+  <section aria-labelledby="h-intro" class="grid gap-2">
+    <h1 id="h-intro" class="text-2xl font-semibold tracking-tight">Components</h1>
+    <p class="text-body max-w-prose text-sm">Every part the web app is built from, in every state. Change a token or a component and check it here first, in light and dark.</p>
+  </section>
+
+  <section aria-labelledby="h-color" class="grid gap-4">
+    <h2 id="h-color" class="text-lg font-semibold">Colour</h2>
+    <ul class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <li class="grid gap-1.5"><span class="bg-background h-12 rounded-lg border"></span>Paper <code class="meta">background</code></li>
+      <li class="grid gap-1.5"><span class="bg-card h-12 rounded-lg border"></span>Card <code class="meta">card</code></li>
+      <li class="grid gap-1.5"><span class="bg-muted h-12 rounded-lg border"></span>Muted <code class="meta">muted</code></li>
+      <li class="grid gap-1.5"><span class="bg-foreground h-12 rounded-lg border"></span>Ink <code class="meta">foreground</code></li>
+      <li class="grid gap-1.5"><span class="bg-clear h-12 rounded-lg border"></span>Clear <code class="meta">clear</code></li>
+      <li class="grid gap-1.5"><span class="bg-destructive h-12 rounded-lg border"></span>Urgent <code class="meta">destructive</code></li>
+      <li class="grid gap-1.5"><span class="bg-border h-12 rounded-lg border"></span>Hairline <code class="meta">border</code></li>
+      <li class="grid gap-1.5"><span class="bg-muted-foreground h-12 rounded-lg border"></span>Quiet text <code class="meta">muted-foreground</code></li>
+    </ul>
+    <p class="text-muted-foreground text-sm">Green means cleared and nothing else.</p>
+  </section>
+
+  <section aria-labelledby="h-type" class="grid gap-3">
+    <h2 id="h-type" class="text-lg font-semibold">Type</h2>
+    <p class="text-2xl font-semibold tracking-tight">Nightly backup failed</p>
+    <p class="text-lg font-semibold">Disk 91% on web-1</p>
+    <p class="text-body text-sm">restic exited 1 after 4m 12s: repository is locked by another process.</p>
+    <p class="meta">infra <time datetime="2026-11-19T14:02:00Z">14:02</time> seq 1048</p>
+    <p class="text-muted-foreground text-sm">Geist for text, Geist Mono for times, counts and ids. Numbers are tabular so columns line up.</p>
+  </section>
+
+  <section aria-labelledby="h-btn" class="grid gap-4">
+    <h2 id="h-btn" class="text-lg font-semibold">Buttons</h2>
+    <div class="flex flex-wrap items-center gap-2">
+      <button class="btn" data-variant="clear">{{template "i-check"}}Clear</button>
+      <button class="btn" data-variant="primary">Save</button>
+      <button class="btn" data-variant="secondary">Snooze</button>
+      <button class="btn" data-variant="outline">Ack</button>
+      <button class="btn" data-variant="ghost">Restore</button>
+      <button class="btn" data-variant="link">Open logs</button>
+      <button class="btn" data-variant="destructive">Revoke token</button>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button class="btn" data-variant="outline" data-size="xs">Extra small</button>
+      <button class="btn" data-variant="outline" data-size="sm">Small</button>
+      <button class="btn" data-variant="outline">Default</button>
+      <button class="btn" data-variant="outline" data-size="lg">Large</button>
+      <button class="btn" data-variant="ghost" data-size="icon" aria-label="Settings">{{template "i-settings"}}</button>
+      <button class="btn" data-variant="outline" data-size="icon-sm" aria-label="Copy">{{template "i-copy"}}</button>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button class="btn" data-variant="clear" disabled>Clear</button>
+      <button class="btn" data-variant="outline" disabled>Ack</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-chip" class="grid gap-4">
+    <h2 id="h-chip" class="text-lg font-semibold">State chips</h2>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="badge" data-state="active">Urgent</span>
+      <span class="badge" data-state="acknowledged">Acknowledged on pixel-9</span>
+      <span class="badge" data-state="snoozed">Snoozed until <time datetime="2026-11-20T09:00:00Z">09:00</time></span>
+      <span class="badge" data-state="dismissed">Cleared on laptop</span>
+      <span class="badge" data-state="resolved">Resolved by monitor</span>
+      <span class="badge" data-variant="outline">{{template "i-hash"}}restic</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-form" class="grid gap-4">
+    <h2 id="h-form" class="text-lg font-semibold">Fields</h2>
+    <form class="grid max-w-md gap-5" method="get" action="#">
+      <div class="field">
+        <label for="f-name">Device name</label>
+        <input type="text" id="f-name" placeholder="work laptop" autocomplete="off">
+        <p>Shown when this device clears something.</p>
+      </div>
+      <div class="field">
+        <label for="f-val">Topic</label>
+        <input type="text" id="f-val" value="backups">
+      </div>
+      <div class="field" data-disabled>
+        <label for="f-dis">Server</label>
+        <input type="text" id="f-dis" value="clrd.example.com" disabled>
+      </div>
+      <div class="field" data-invalid="true">
+        <label for="f-bad">Token</label>
+        <input type="text" id="f-bad" value="clrd_abc" aria-invalid="true" aria-describedby="f-bad-err">
+        <p id="f-bad-err" role="alert">That token is not valid. Copy it again from the server log.</p>
+      </div>
+      <div class="field">
+        <label for="f-msg">Message</label>
+        <textarea id="f-msg" rows="3">Cycle finished at 40 degrees.</textarea>
+      </div>
+      <div class="field">
+        <label for="f-until">Snooze until</label>
+        <input type="datetime-local" id="f-until" class="input" value="2026-11-20T09:00">
+      </div>
+      <label class="label"><input type="checkbox" class="input" checked> Send to every device</label>
+      <label class="label"><input type="checkbox" role="switch" class="input" checked> Live updates</label>
+      <label class="label"><input type="checkbox" role="switch" class="input"> Sound on urgent</label>
+    </form>
+    <form class="input-group max-w-md" role="search" method="get" action="#">
+      <label for="f-q" class="sr-only">Search notifications</label>
+      <input type="search" id="f-q" class="input" placeholder="Search" autocomplete="off">
+      <span data-align="inline-start">{{template "i-search"}}</span>
+      <kbd class="kbd" data-align="inline-end">/</kbd>
+    </form>
+    <p class="text-sm">Keys: <kbd class="kbd">C</kbd> clear, <kbd class="kbd">A</kbd> ack, <kbd class="kbd">S</kbd> snooze, <kbd class="kbd">Ctrl</kbd> <kbd class="kbd">K</kbd> commands.</p>
+  </section>
+
+  <section aria-labelledby="h-alert" class="grid gap-4">
+    <h2 id="h-alert" class="text-lg font-semibold">Alerts</h2>
+    <div class="alert">
+      {{template "i-smartphone"}}
+      <h3>In sync on 3 devices</h3>
+      <section>Last change reached every device in 0.4 s.</section>
+    </div>
+    <div class="alert" data-variant="destructive" role="alert">
+      {{template "i-wifi-off"}}
+      <h3>Lost the live connection</h3>
+      <section>This page may be out of date. Still trying. <a href="" class="underline">Reload</a></section>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-table" class="grid gap-4">
+    <h2 id="h-table" class="text-lg font-semibold">Table</h2>
+    <div class="overflow-x-auto rounded-lg border">
+      <table class="table">
+        <caption class="sr-only">Devices in sync</caption>
+        <thead><tr><th scope="col">Device</th><th scope="col">Last seen</th><th scope="col" class="text-right">Seq</th></tr></thead>
+        <tbody>
+          <tr><td>pixel-9</td><td class="meta"><time datetime="2026-11-19T14:02:00Z">just now</time></td><td class="meta text-right">1048</td></tr>
+          <tr><td>work laptop</td><td class="meta"><time datetime="2026-11-19T13:57:00Z">5 min ago</time></td><td class="meta text-right">1047</td></tr>
+          <tr><td>kitchen tablet</td><td class="meta"><time datetime="2026-11-19T11:30:00Z">2 h ago</time></td><td class="meta text-right">998</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-empty" class="grid gap-4">
+    <h2 id="h-empty" class="text-lg font-semibold">Empty and loading</h2>
+    <div class="empty rounded-lg border">
+      <header>
+        <figure>{{template "i-check-check"}}</figure>
+        <h3>All clear</h3>
+        <p>New alerts land here the moment they are sent.</p>
+      </header>
+    </div>
+    <div class="grid gap-3 rounded-lg border p-4" aria-label="Loading notifications" role="status">
+      <div class="skeleton h-4 w-2/5"></div>
+      <div class="skeleton h-3 w-4/5"></div>
+      <div class="skeleton h-3 w-1/4"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-over" class="grid gap-4">
+    <h2 id="h-over" class="text-lg font-semibold">Overlays</h2>
+    <div class="flex flex-wrap items-center gap-2">
+      <button type="button" class="btn" data-variant="outline" popovertarget="confirm">Clear all</button>
+      <button type="button" class="btn" data-variant="outline" command="show-modal" commandfor="palette">{{template "i-command"}}Commands</button>
+      <span data-tooltip="Clears on every device" data-side="top"><button type="button" class="btn" data-variant="clear">Clear</button></span>
+      <details class="popover">
+        <summary class="btn" data-variant="outline">{{template "i-clock"}}Snooze</summary>
+        <div data-popover class="grid gap-1">
+          <button type="button" class="btn justify-start" data-variant="ghost" data-size="sm">1 hour</button>
+          <button type="button" class="btn justify-start" data-variant="ghost" data-size="sm">4 hours</button>
+          <button type="button" class="btn justify-start" data-variant="ghost" data-size="sm">Tonight <span class="meta ms-auto">20:00</span></button>
+          <button type="button" class="btn justify-start" data-variant="ghost" data-size="sm">Tomorrow <span class="meta ms-auto">09:00</span></button>
+        </div>
+      </details>
+    </div>
+
+    <div id="confirm" popover class="dialog" aria-labelledby="confirm-t">
+      <div>
+        <header>
+          <h2 id="confirm-t">Clear 6 notifications?</h2>
+          <p>They clear on every device. Restore any of them from Cleared.</p>
+        </header>
+        <footer>
+          <button type="button" class="btn" data-variant="outline" popovertarget="confirm" popovertargetaction="hide">Cancel</button>
+          <button type="button" class="btn" data-variant="clear" popovertarget="confirm" popovertargetaction="hide">Clear all</button>
+        </footer>
+      </div>
+    </div>
+
+    <div class="command max-w-md rounded-lg border" aria-label="Command menu, static">
+      <header>
+        {{template "i-search"}}
+        <input type="text" id="cmd-static-input" placeholder="Type a command or search..." autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="true" aria-controls="cmd-static-menu">
+      </header>
+      {{template "ui-command-menu" "cmd-static"}}
+    </div>
+
+    <dialog id="palette" class="command-dialog" aria-label="Command menu">
+      <div class="command">
+        <header>
+          {{template "i-search"}}
+          <input type="text" id="palette-input" placeholder="Type a command or search..." autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="true" aria-controls="palette-menu">
+        </header>
+        {{template "ui-command-menu" "palette"}}
+      </div>
+    </dialog>
+
+    <div class="toaster ui-static" data-align="start">
+      <div class="toast" role="status" aria-atomic="true">
+        <div class="toast-content">
+          {{template "i-check"}}
+          <section><h2>Cleared on 3 devices</h2></section>
+          <footer><button type="button" class="btn" data-variant="outline" data-toast-action>Undo</button></footer>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "ui-command-menu"}}<div role="menu" id="{{.}}-menu" aria-orientation="vertical" data-empty="No results.">
+  <div role="group" aria-labelledby="{{.}}-go">
+    <span data-heading id="{{.}}-go">Go to</span>
+    <a role="menuitem" href="/app" data-keywords="inbox home">{{template "i-inbox"}}Inbox <kbd class="kbd" data-shortcut>G I</kbd></a>
+    <a role="menuitem" href="/app/snoozed" data-keywords="later">{{template "i-clock"}}Snoozed <kbd class="kbd" data-shortcut>G S</kbd></a>
+    <a role="menuitem" href="/app/cleared" data-keywords="done history">{{template "i-check-check"}}Cleared <kbd class="kbd" data-shortcut>G C</kbd></a>
+    <a role="menuitem" href="/app/settings" data-keywords="devices tokens">{{template "i-settings"}}Settings</a>
+  </div>
+  <hr role="separator">
+  <div role="group" aria-labelledby="{{.}}-act">
+    <span data-heading id="{{.}}-act">Selected notification</span>
+    <div role="menuitem">{{template "i-check"}}Clear <kbd class="kbd" data-shortcut>C</kbd></div>
+    <div role="menuitem">{{template "i-reply"}}Ack <kbd class="kbd" data-shortcut>A</kbd></div>
+    <div role="menuitem">{{template "i-clock"}}Snooze 1 hour <kbd class="kbd" data-shortcut>S</kbd></div>
+  </div>
+</div>{{end}}

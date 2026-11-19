@@ -15,6 +15,8 @@ Fixed, Removed, Security), as one line a user can understand.
   code, lists, quotes, headings and tappable links) in the list, and bold and
   italic in the system notification. A message sent as plain text is shown
   exactly as sent.
+- Web: a component guide at `/app/ui` showing every button, chip, field, menu
+  and dialog in light and dark. It is the start of one look for every screen.
 - Android: Share and Copy on each notification. Icons show in the tray and the
   list, picture attachments show as a preview, and other files get a Download
   button.
@@ -93,6 +95,9 @@ Fixed, Removed, Security), as one line a user can understand.
 ### Fixed
 
 - Android: the always-on "in sync" notice no longer puts a dot on the app icon.
+- Web: the inbox no longer scrolls sideways on a phone (long titles, the
+  closed Snooze menu and the action row pushed it wider than the screen), and
+  code blocks and tables that scroll can be scrolled from the keyboard.
 - Android: reopening a notification from the inbox, and the end of a long
   catch-up after being offline, no longer make the phone buzz; with sync off,
   a busy server's retry wait is respected; tray buttons on notifications from

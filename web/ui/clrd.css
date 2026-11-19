@@ -1,0 +1,37 @@
+/* clrd's own parts on top of Basecoat. Keep this short: prefer a Basecoat
+   component with our tokens over a new class. */
+
+@layer components {
+  /* Clear is the one green button. It means "dismiss everywhere". */
+  .btn[data-variant='clear'] {
+    @apply bg-clear text-clear-foreground hover:bg-clear/85 focus-visible:ring-clear/40;
+  }
+
+  /* State chips. Square-ish like every control; never a pill. */
+  .badge { @apply rounded-sm font-normal; }
+  .badge[data-state='active']       { background: var(--chip-active-bg); color: var(--chip-active); }
+  .badge[data-state='acknowledged'] { background: var(--chip-ack-bg);    color: var(--chip-ack); }
+  .badge[data-state='resolved']     { background: var(--chip-res-bg);    color: var(--chip-res); }
+  .badge[data-state='snoozed']      { background: var(--chip-snz-bg);    color: var(--chip-snz); }
+  .badge[data-state='dismissed']    { @apply border-border text-muted-foreground bg-transparent; }
+
+  /* Small mono data: times, counts, seq, device names in meta lines. */
+  .meta { @apply font-mono text-xs text-muted-foreground; font-variant-numeric: tabular-nums; }
+
+  .wordmark { @apply font-semibold tracking-[-0.05em]; }
+
+  .skip { @apply absolute left-3 -top-12 z-50 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground focus:top-3; }
+
+  /* No blur behind overlays: a plain dim reads cleaner on paper. */
+  .dialog::backdrop, .command-dialog::backdrop { @apply backdrop-blur-none bg-foreground/15; }
+
+  /* Style guide only: show a toast in the page flow instead of fixed. */
+  .toaster.ui-static { @apply static p-0; }
+
+  /* The signal orange is too light for small text on a tinted fill; use the
+     urgent chip's ink, which passes AA in both themes. */
+  .btn[data-variant='destructive'], .alert[data-variant='destructive'], .alert[data-variant='destructive'] > section { color: var(--chip-active); }
+
+  /* A closed <details> keeps its absolute menu in layout, which widens a phone page. */
+  details.popover:not([open]) > [data-popover] { display: none; }
+}

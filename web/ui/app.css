@@ -1,0 +1,10 @@
+/* Entry for web/static/app.css. Build: web/ui/build.sh. */
+@import "tailwindcss" source(none);
+@source "../templates";
+@source "../static/*.js";
+@source "../../server/auth.go";
+
+@import "./tokens.css";
+@import "./basecoat/components.css";
+@import "./basecoat/nova.css";
+@import "./clrd.css";
