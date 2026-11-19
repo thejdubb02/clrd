@@ -872,6 +872,188 @@
     }
    }
   },
+  "/api/v1/settings": {
+   "get": {
+    "summary": "Read display settings",
+    "tags": [
+     "settings"
+    ],
+    "description": "Scope read. Also sent as a settings message on the WebSocket and SSE streams, just before ready and again after every change.",
+    "responses": {
+     "200": {
+      "description": "Settings",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Settings"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "summary": "Change display settings",
+    "tags": [
+     "settings"
+    ],
+    "description": "Scope read. Only the fields given change; a topic mapped to null in topic_previews drops its override. The four switches need a token with no topic list; a topic override needs that topic.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "render_formatting": {
+          "type": "boolean"
+         },
+         "autolink": {
+          "type": "boolean"
+         },
+         "favicons": {
+          "type": "boolean"
+         },
+         "link_previews": {
+          "type": "boolean"
+         },
+         "topic_previews": {
+          "type": "object",
+          "additionalProperties": {
+           "type": [
+            "boolean",
+            "null"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Settings after the change",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Settings"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/favicon": {
+   "get": {
+    "summary": "A site's icon",
+    "tags": [
+     "formatting"
+    ],
+    "description": "Scope read. Fetches /favicon.ico, then the page's icon link, over https. Raster images only. Cached 7 days, failures too. Any failure (blocked address, timeout, not found) returns the same fallback SVG.",
+    "parameters": [
+     {
+      "name": "host",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The icon, or the fallback",
+      "content": {
+       "image/png": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       },
+       "image/svg+xml": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/preview": {
+   "get": {
+    "summary": "A link's preview card",
+    "tags": [
+     "formatting"
+    ],
+    "description": "Scope read. 403 unless link previews are on (globally or for topic). Reads Open Graph tags; cached 24 hours, failures too. A page that cannot be fetched returns only url.",
+    "parameters": [
+     {
+      "name": "url",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "topic",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "The notification's topic, so its override applies."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Preview",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Preview"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/topics": {
    "get": {
     "summary": "Topics with open counts",
@@ -3331,6 +3513,14 @@
      "message": {
       "type": "string"
      },
+     "format": {
+      "type": "string",
+      "enum": [
+       "markdown",
+       "text"
+      ],
+      "description": "How clients show message: markdown (default) or plain text. Events from before this field existed have none: treat as markdown."
+     },
      "priority": {
       "type": "integer",
       "minimum": 1,
@@ -3417,6 +3607,18 @@
      },
      "message": {
       "type": "string"
+     },
+     "format": {
+      "type": "string",
+      "enum": [
+       "markdown",
+       "text"
+      ],
+      "description": "Defaults to markdown."
+     },
+     "markdown": {
+      "type": "boolean",
+      "description": "ntfy-style switch: false means format text. format wins if both are given."
      },
      "priority": {
       "type": "integer"
@@ -3623,6 +3825,13 @@
         "type": "string"
        }
       }
+     },
+     "content_type": {
+      "type": "string",
+      "enum": [
+       "text/markdown"
+      ],
+      "description": "Present when the notification's format is markdown; absent for plain text."
      }
     }
    },
@@ -3634,6 +3843,10 @@
      },
      "message": {
       "type": "string"
+     },
+     "markdown": {
+      "type": "boolean",
+      "description": "false publishes plain text. Default true (clrd renders Markdown unless told otherwise)."
      },
      "title": {
       "type": "string"
@@ -3716,6 +3929,66 @@
       "type": "integer"
      }
     }
+   },
+   "Settings": {
+    "type": "object",
+    "description": "Display settings every device follows. One set per server.",
+    "properties": {
+     "render_formatting": {
+      "type": "boolean",
+      "description": "Render Markdown in messages. Default true."
+     },
+     "autolink": {
+      "type": "boolean",
+      "description": "Turn bare URLs into links. Default true."
+     },
+     "favicons": {
+      "type": "boolean",
+      "description": "Show a site icon next to links. Default true."
+     },
+     "link_previews": {
+      "type": "boolean",
+      "description": "Show a preview card for links. Default false."
+     },
+     "topic_previews": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "boolean"
+      },
+      "description": "Per-topic override of link_previews. A token limited to some topics only sees its own."
+     }
+    },
+    "required": [
+     "render_formatting",
+     "autolink",
+     "favicons",
+     "link_previews",
+     "topic_previews"
+    ]
+   },
+   "Preview": {
+    "type": "object",
+    "properties": {
+     "url": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "site_name": {
+      "type": "string"
+     },
+     "image": {
+      "type": "string",
+      "description": "data: URL of the og:image (raster only, at most 512 KB), so the viewer never contacts the site."
+     }
+    },
+    "required": [
+     "url"
+    ]
    }
   },
   "parameters": {

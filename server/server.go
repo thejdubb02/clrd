@@ -89,6 +89,9 @@ type Server struct {
 	setupMu   sync.Mutex
 	setupCode string
 
+	settingsChanged signal // fires after every settings change
+	fetch           *fetcher
+
 	mux    *http.ServeMux
 	routes []string // every pattern registered, checked against openapi.json
 	mounts []mount
@@ -157,6 +160,7 @@ func New(opt Options) (*Server, error) {
 	s.epoch = strconv.FormatInt(epoch, 36)
 	s.seq.Store(seq)
 	s.pruned.Store(pruned)
+	s.fetch = newFetcher(filepath.Join(filepath.Dir(opt.DB), "cache"))
 	s.routesSetup()
 	return s, nil
 }
@@ -268,6 +272,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	go s.every(ctx, "snooze wake", wakeEvery, s.wakeSnoozed)
 	go s.every(ctx, "prune", time.Hour, s.prune)
+	go s.every(ctx, "cache sweep", time.Hour, s.fetch.sweep)
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }} // ends open streams on shutdown
 	errc := make(chan error, 1)
@@ -376,6 +381,8 @@ func (s *Server) routesSetup() {
 	s.route("GET /setup", s.handleSetup)
 	s.route("POST /setup", s.handleSetup)
 	s.route("POST /api/v1/session", s.handleSession)
+	s.settingsRoutes()
+	s.fetchRoutes()
 	s.route("DELETE /api/v1/session", s.handleSignOut)
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {

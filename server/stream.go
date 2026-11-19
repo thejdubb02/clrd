@@ -95,6 +95,13 @@ func visible(tok *Token, topics []string, topic string) bool {
 // ready carries the seq it is ready at, which can be 0).
 func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []string,
 	send func(msg []byte, seq int64) error, ping func() error) error {
+	return s.followWith(ctx, tok, since, topics, false, send, ping)
+}
+
+// followWith is follow; withSettings also sends a settings message just
+// before ready and again after every change (seq -1, so SSE sets no id).
+func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics []string, withSettings bool,
+	send func(msg []byte, seq int64) error, ping func() error) error {
 	sub := s.hub.subscribe(tok.ID) // first, so nothing committed during replay is missed
 	defer s.hub.unsubscribe(sub)
 	inner := send
@@ -138,6 +145,20 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 			since = e.Seq
 		}
 	}
+	var changed <-chan struct{} // nil blocks forever: no settings
+	sendSettings := func() error {
+		changed = s.settingsChanged.wait() // before reading, so no change is missed
+		msg, err := s.settingsMsg(ctx, tok)
+		if err != nil {
+			return err
+		}
+		return send(msg, -1)
+	}
+	if withSettings {
+		if err := sendSettings(); err != nil {
+			return err
+		}
+	}
 	last = max(last, since)
 	if err := send(msgReady(last, s.epoch), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
 		return err
@@ -148,6 +169,10 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-changed:
+			if err := sendSettings(); err != nil {
+				return err
+			}
 		case <-t.C:
 			if !s.tokenAlive(ctx, tok) {
 				return errRevoked
@@ -206,7 +231,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, tok *Token) er
 	}
 	defer c.CloseNow()
 	ctx := c.CloseRead(r.Context())
-	err = s.follow(ctx, tok, sinceParam(r), splitList(r.URL.Query().Get("topics")),
+	err = s.followWith(ctx, tok, sinceParam(r), splitList(r.URL.Query().Get("topics")), true,
 		func(msg []byte, _ int64) error {
 			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
@@ -252,7 +277,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, tok *Token) e
 	write := func(format string, args ...any) error {
 		return flushWrite(rc, w, fmt.Appendf(nil, format, args...))
 	}
-	s.follow(r.Context(), tok, sinceParam(r), splitList(r.URL.Query().Get("topics")),
+	s.followWith(r.Context(), tok, sinceParam(r), splitList(r.URL.Query().Get("topics")), true,
 		func(msg []byte, seq int64) error {
 			if seq >= 0 { // ready too, so EventSource drops a Last-Event-ID from before a reset
 				return write("id: %d\ndata: %s\n\n", seq, msg)
