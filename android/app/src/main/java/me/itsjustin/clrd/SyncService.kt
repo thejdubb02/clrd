@@ -24,15 +24,16 @@ class SyncService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         foreground("Connecting")
-        if (!app.configured) {
+        // Store and credentials are read together, so a Settings switch cannot pair one server's store with another's API.
+        val (store, api) = synchronized(app.configLock) { if (app.configured) RoomStore(app) to app.api() else null to null }
+        if (store == null || api == null) {
             stopSelf()
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_RESTART) app.sync?.stop()?.also { app.sync = null }
         if (app.sync == null) {
-            val store = RoomStore(app)
             app.io.execute { store.reconcile() } // the tray is empty after a reboot; refill it quietly
-            app.sync = SyncClient(app.http, app.api(), store, onStatus = ::status).also { it.start() }
+            app.sync = SyncClient(app.http, api, store, onStatus = ::status).also { it.start() }
         }
         if (netCallback == null) {
             netCallback = object : ConnectivityManager.NetworkCallback() {

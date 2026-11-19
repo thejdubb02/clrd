@@ -58,8 +58,9 @@ class SyncClient(
 
     fun start() { exec.execute { connect() } }
 
+    /** Safe to call more than once, from any thread. */
     fun stop() {
-        exec.execute { stopped = true; gen++; ws?.close(1000, null); ws = null }
+        runCatching { exec.execute { stopped = true; gen++; ws?.close(1000, null); ws = null } }
         exec.shutdown()
     }
 

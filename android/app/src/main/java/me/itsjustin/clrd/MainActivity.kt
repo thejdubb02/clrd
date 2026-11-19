@@ -332,11 +332,12 @@ private fun SettingsScreen(app: App) {
                 app.io.execute {
                     if (newUrl != app.serverUrl || newToken != app.token) {
                         // Old server's rows, cursor and queue must not reach the new one. Blanking the token
-                        // fences the old client's writes (RoomStore.ifMine) and keeps the service from starting
+                        // and bumping configGen fence the old client (RoomStore.ifMine) and keeps the service from starting
                         // one; a crash before the final save leaves the app unconfigured, never mixed.
-                        synchronized(app.configLock) { app.token = "" }
-                        app.sync?.stop()
+                        synchronized(app.configLock) { app.configGen++; app.token = "" }
+                        val old = app.sync
                         app.sync = null
+                        old?.stop()
                         synchronized(app.configLock) {
                             app.db.dao().forget()
                             app.tray.reconcile(emptyList(), app.muted)

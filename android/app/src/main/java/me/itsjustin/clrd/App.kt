@@ -29,6 +29,9 @@ class App : Application() {
     /** Held while syncing writes rows and while Settings switches server, so the two never interleave. */
     val configLock = Any()
 
+    /** Bumped on every server or token switch. A store made before the bump is fenced off. */
+    @Volatile var configGen = 0
+
     var serverUrl: String
         get() = prefs.getString("url", "").orEmpty()
         set(v) = prefs.edit().putString("url", v.trim().trimEnd('/')).apply()
@@ -83,10 +86,9 @@ class App : Application() {
 class RoomStore(private val app: App) : Store {
     private val dao = app.db.dao()
 
-    /** The server and token this store syncs for. After a switch in Settings its writes are dropped. */
-    private val owner = app.serverUrl to app.token
-    private fun mine() = owner == app.serverUrl to app.token
-    private inline fun ifMine(f: () -> Unit) = synchronized(app.configLock) { if (mine()) f() }
+    /** The settings generation this store syncs for. After a switch in Settings its reads and writes are dropped. */
+    private val gen = app.configGen
+    private inline fun ifMine(f: () -> Unit) = synchronized(app.configLock) { if (gen == app.configGen) f() }
 
     override fun lastSeq() = dao.lastSeq() ?: 0
 
@@ -106,7 +108,7 @@ class RoomStore(private val app: App) : Store {
         app.tray.reconcile(open, app.muted)
     }
 
-    override fun pending() = if (mine()) dao.pending() else emptyList() // never send the new server's queue to the old one
+    override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
     override fun removePending(p: Pending) = dao.removePending(p.key)
 
     fun reconcile() = app.tray.reconcile(dao.openNow(), app.muted)
