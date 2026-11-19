@@ -349,7 +349,7 @@ private fun SettingsScreen(app: App, battery: Intent?) {
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Server", color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
-            url, { url = it }, label = { Text("Server URL") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            url, { url = pastedUrl(it) }, label = { Text("Server URL") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
         if (url.trim().startsWith("http://", ignoreCase = true)) Text("Plain http sends your token unencrypted. Use https outside your home network.", color = b.signal, fontSize = 13.sp)
@@ -360,7 +360,8 @@ private fun SettingsScreen(app: App, battery: Intent?) {
         Button(
             onClick = {
                 result = "Testing"
-                val newUrl = url.trim().trimEnd('/')
+                val newUrl = serverAddress(url)
+                url = newUrl
                 val newToken = token.trim()
                 app.io.execute {
                     if (newUrl != app.serverUrl || newToken != app.token) {
