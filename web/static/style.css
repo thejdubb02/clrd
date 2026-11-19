@@ -173,6 +173,7 @@ pre { margin: 0 0 1em; padding: 16px 18px; overflow-x: auto; background: var(--s
 .prose h3 { font-size: 18px; margin-top: 1.6em; }
 .prose p, .prose li { color: var(--body); }
 .prose table { display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 1.4em; font-size: 14px; }
+.prose code { overflow-wrap: anywhere; } /* long API paths in docs, phone width */
 .prose th, .prose td { text-align: left; padding: 8px 14px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
 .prose th { font-weight: 600; }
 .prose blockquote { margin: 0 0 1em; padding-left: 16px; border-left: 2px solid var(--line); }
