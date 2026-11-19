@@ -14,18 +14,31 @@ import (
 	"github.com/coder/websocket"
 )
 
-// hub fans committed events out to live subscribers.
+// hub fans committed events out to live subscribers, each keyed by the
+// token it streams for so a revoke can cut that token's streams at once.
 type hub struct {
 	mu   sync.Mutex
-	subs map[chan Event]struct{}
+	subs map[chan Event]string
 }
 
-func (h *hub) subscribe() chan Event {
+func (h *hub) subscribe(tokenID string) chan Event {
 	ch := make(chan Event, 256)
 	h.mu.Lock()
-	h.subs[ch] = struct{}{}
+	h.subs[ch] = tokenID
 	h.mu.Unlock()
 	return ch
+}
+
+// drop closes every subscription of one token.
+func (h *hub) drop(tokenID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for ch, id := range h.subs {
+		if id == tokenID {
+			delete(h.subs, ch)
+			close(ch)
+		}
+	}
 }
 
 func (h *hub) unsubscribe(ch chan Event) {
@@ -56,7 +69,7 @@ func (h *hub) publish(e Event) {
 // The channel closes if the reader falls behind. For mounted handlers
 // (MCP wait_for_reply).
 func (s *Server) Subscribe() (<-chan Event, func()) {
-	ch := s.hub.subscribe()
+	ch := s.hub.subscribe("")
 	return ch, func() { s.hub.unsubscribe(ch) }
 }
 
@@ -79,7 +92,7 @@ func visible(tok *Token, topics []string, topic string) bool {
 // pings; ready carries the seq it is ready at).
 func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []string,
 	send func(msg []byte, seq int64) error, ping func() error) error {
-	sub := s.hub.subscribe() // first, so nothing committed during replay is missed
+	sub := s.hub.subscribe(tok.ID) // first, so nothing committed during replay is missed
 	defer s.hub.unsubscribe(sub)
 	inner := send
 	send = func(msg []byte, seq int64) error {
@@ -96,6 +109,9 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 		since = last
 	}
 	for {
+		if _, gone := s.revoked.Load(tok.ID); gone { // a long replay may send nothing visible
+			return errRevoked
+		}
 		evs, err := s.eventsAfter(ctx, since, 500)
 		if err == errReset { // pruned under us mid-replay
 			if err := send(msgReset, 0); err != nil {
@@ -138,6 +154,9 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 			}
 		case e, ok := <-sub:
 			if !ok {
+				if _, gone := s.revoked.Load(tok.ID); gone {
+					return errRevoked
+				}
 				return errDropped
 			}
 			if e.Seq <= last {
