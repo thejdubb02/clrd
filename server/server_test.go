@@ -573,6 +573,8 @@ func TestIcons(t *testing.T) {
 		{admin, map[string]string{"icon": "/rel.png"}, 400},
 		{admin, map[string]string{"icon": "https://:443/x.png"}, 400},
 		{admin, map[string]string{"icon": "https://example.com:65536/x.png"}, 400},
+		{admin, map[string]string{"icon": "https://[example.com]/x.png"}, 400},
+		{admin, map[string]string{"icon": "https://[::1]:8443/x.png"}, 200},
 		{admin, map[string]string{"icon": icon}, 200},
 		{admin, map[string]string{}, 400}, // a missing key must not wipe it
 		{admin, nil, 400},
@@ -619,7 +621,7 @@ func TestIcons(t *testing.T) {
 	if m := ntfyDecode(t, body); code != 200 || m.Icon != "https://example.com/j.png" {
 		t.Fatalf("ntfy JSON icon: %d %s", code, body)
 	}
-	code, body = raw(t, "POST", ts.URL+"/", admin, `{"topic":"infra","message":"m","icon":123}`, nil)
+	code, body = raw(t, "POST", ts.URL+"/", admin, `{"topic":"infra","message":"m","icon":1e400}`, nil)
 	if m := ntfyDecode(t, body); code != 200 || m.Icon != icon {
 		t.Fatalf("ntfy JSON non-string icon: %d %s", code, body)
 	}

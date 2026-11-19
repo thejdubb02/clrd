@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/url"
 	"regexp"
 	"slices"
@@ -799,6 +800,9 @@ func checkImageURL(field, v string) error {
 	if err == nil && u.Port() != "" {
 		// Go accepts any digits as a port; browsers refuse anything over 65535.
 		_, err = strconv.ParseUint(u.Port(), 10, 16)
+	}
+	if err == nil && strings.HasPrefix(u.Host, "[") && net.ParseIP(u.Hostname()) == nil {
+		err = errors.New("bracketed host is not an IP")
 	}
 	if len(v) > 2048 || err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" {
 		return errf(400, "bad_request", "%s must be an http(s) URL of at most 2048 characters", field)

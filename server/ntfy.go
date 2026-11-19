@@ -281,20 +281,20 @@ func (s *Server) ntfyReply(w http.ResponseWriter, ctx context.Context, tok *Toke
 // ntfyPublishJSON: POST / with ntfy's JSON body.
 func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		Topic      string       `json:"topic"`
-		Message    string       `json:"message"`
-		Title      string       `json:"title"`
-		Priority   int          `json:"priority"`
-		Tags       []string     `json:"tags"`
-		Click      string       `json:"click"`
-		Icon       any          `json:"icon"` // any: ntfy drops a bad icon rather than failing the publish
-		Actions    []ntfyAction `json:"actions"`
-		Delay      string       `json:"delay"`
-		ID         string       `json:"id"`
-		SequenceID string       `json:"sequence_id"`
-		ExternalID string       `json:"external_id"`
-		Status     string       `json:"status"`
-		Cache      string       `json:"cache"`
+		Topic      string          `json:"topic"`
+		Message    string          `json:"message"`
+		Title      string          `json:"title"`
+		Priority   int             `json:"priority"`
+		Tags       []string        `json:"tags"`
+		Click      string          `json:"click"`
+		Icon       json.RawMessage `json:"icon"` // raw: ntfy drops a bad icon rather than failing the publish
+		Actions    []ntfyAction    `json:"actions"`
+		Delay      string          `json:"delay"`
+		ID         string          `json:"id"`
+		SequenceID string          `json:"sequence_id"`
+		ExternalID string          `json:"external_id"`
+		Status     string          `json:"status"`
+		Cache      string          `json:"cache"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
@@ -304,7 +304,8 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status}
-	icon, _ := in.Icon.(string)
+	var icon string
+	_ = json.Unmarshal(in.Icon, &icon)
 	p.Icon = ntfyIcon(icon)
 	for _, id := range []string{in.SequenceID, in.ID} {
 		if p.ExternalID == "" {
