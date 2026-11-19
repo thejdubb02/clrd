@@ -60,7 +60,7 @@ class SyncClient(
     /** Runs on the sync thread unless stopped. Once stop() has run, calls are dropped, never thrown. */
     private fun post(f: () -> Unit) { runCatching { exec.execute { if (!stopped) f() } } }
 
-    private fun later(ms: Long, f: () -> Unit) = runCatching { exec.schedule(f, ms, TimeUnit.MILLISECONDS) }.getOrNull()
+    private fun later(ms: Long, f: () -> Unit) = runCatching { exec.schedule({ if (!stopped) f() }, ms, TimeUnit.MILLISECONDS) }.getOrNull()
 
     fun start() = post { connect() }
 
@@ -99,6 +99,7 @@ class SyncClient(
         } catch (e: IOException) {
             return fail(e)
         }
+        if (stopped) return // stop() came in during the flush
         val myGen = ++gen
         replaying = true
         buffer.clear()
