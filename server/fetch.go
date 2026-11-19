@@ -236,7 +236,8 @@ type favicon struct {
 // favicon tries /favicon.ico, then the page's <link rel=icon>.
 func (f *fetcher) favicon(ctx context.Context, host string) favicon {
 	var fi favicon
-	if f.cached("icon", host, faviconTTL, &fi) {
+	// A miss is cached 1 hour, so one timeout does not hide an icon for a week.
+	if f.cached("icon", host, faviconTTL, &fi) && (fi.Type != "" || f.cached("icon", host, time.Hour, &fi)) {
 		return fi
 	}
 	base := &url.URL{Scheme: "https", Host: host, Path: "/"}
