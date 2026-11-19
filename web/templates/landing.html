@@ -90,10 +90,10 @@
       <div><dt>Apprise</dt><dd>Use an <code>ntfys://</code> URL pointed at your clrd server.</dd></div>
       <div><dt>Gatus</dt><dd>Use the ntfy alert provider. When the endpoint recovers, the alert clears itself.</dd></div>
       <div><dt>Uptime Kuma</dt><dd>Pick the ntfy notification type and enter your clrd server URL.</dd></div>
-      <div><dt>Grafana</dt><dd>Add a webhook contact point. Firing alerts open, resolved alerts clear.</dd></div>
+      <div><dt>Grafana</dt><dd>Add a webhook contact point at <code>/{topic}?template=grafana</code>. Firing alerts open, resolved alerts clear.</dd></div>
       <div><dt>Home Assistant</dt><dd>Use the ntfy integration or a <code>rest_command</code>.</dd></div>
       <div><dt>GitHub Actions</dt><dd>One curl step at the end of a job.</dd></div>
-      <div><dt>Alertmanager</dt><dd>Point a webhook receiver at clrd. Resolved alerts clear on every device.</dd></div>
+      <div><dt>Alertmanager</dt><dd>Point a webhook receiver at <code>/{topic}?template=alertmanager</code>. Resolved alerts clear on every device.</dd></div>
       <div><dt>Any ntfy client</dt><dd>The ntfy app, CLI and libraries publish and subscribe unchanged.</dd></div>
     </dl>
   </div>
@@ -104,7 +104,8 @@
     <div>
       <h2 id="ntfy">Already on ntfy?</h2>
       <p>Point your scripts at clrd and keep going. Same publish endpoint, same headers, same JSON body, same subscribe streams.</p>
-<pre><code>curl -H "Title: Disk full" -H "Priority: high" \
+<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+  -H "Title: Disk full" -H "Priority: high" \
   -d "web-1 at 95%" https://clrd.itsjustin.me/infra</code></pre>
       <p class="quiet">Supported: <code>PUT</code> and <code>POST /{topic}</code>, the Title, Priority, Tags, Click and Actions headers, JSON publish to <code>/</code>, and <code>/json</code>, <code>/sse</code>, <code>/ws</code> and <code>/raw</code> subscriptions with <code>since=</code>.</p>
     </div>

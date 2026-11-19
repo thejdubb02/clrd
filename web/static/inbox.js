@@ -47,16 +47,20 @@
   };
 
   // Re-fetch this page and patch it in: cards keyed by id and seq, plus the sidebar.
-  let pending;
+  let pending, gen = 0;
   const refresh = () => { clearTimeout(pending); pending = setTimeout(patch, 250); };
   async function patch() {
     if (list && list.querySelector('.is-leaving')) return refresh();
     let doc;
+    const mine = ++gen; // a slower, older response must not overwrite a newer one
     try {
       const r = await fetch(location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+      if (mine !== gen) return;
       if (r.status === 401) return location.reload(); // signed out: show the sign-in page
       if (!r.ok) throw r.status;
-      doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+      const html = await r.text();
+      if (mine !== gen) return;
+      doc = new DOMParser().parseFromString(html, 'text/html');
     } catch {
       // seq has already moved past this change, so the WebSocket will not
       // replay it: keep trying until the page loads.
@@ -111,7 +115,7 @@
     }
     toast.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toast.hidden = true; }, undoIds ? 10000 : 6000);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, undoIds ? 30000 : 6000);
   }
 
   async function post(url, body) {
