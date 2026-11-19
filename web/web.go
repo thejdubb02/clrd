@@ -95,6 +95,7 @@ type Snapshot struct {
 	Counts  map[string]int // open and recent rows by state
 	Topics  []Topic
 	Devices []Device // seen in the last 10 minutes
+	Me      string   // device name of the signed-in token, the state_by its own actions get
 }
 
 // API is what the server provides. The request is passed so the server can
@@ -280,9 +281,14 @@ func Handler(api API, baseURL string) http.Handler {
 			if errors.Is(err, ErrUnauthorized) {
 				next := *r.URL // keep the filters, drop a stale ?auth= that would beat the new cookie
 				v := next.Query()
+				failed := v.Get("error") == "token" // the server sends a bad token back here
 				v.Del("auth")
+				v.Del("error")
 				next.RawQuery = v.Encode()
-				page(w, "signin", http.StatusUnauthorized, meta{Title: "Sign in: clrd", Path: next.RequestURI(), Base: base(r)})
+				page(w, "signin", http.StatusUnauthorized, struct {
+					meta
+					Failed bool
+				}{meta{Title: "Sign in: clrd", Path: next.RequestURI(), Base: base(r)}, failed})
 				return
 			}
 			if err != nil {

@@ -153,12 +153,19 @@
     }
     const c = b.closest('.card');
     b.disabled = true;
-    const ok = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, act === 'snooze' ? { for: '1h' } : undefined);
+    const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, act === 'snooze' ? { for: '1h' } : undefined);
     b.disabled = false;
-    if (!ok) return;
-    if (act !== 'ack') leave(c, done[act]);
-    if (act === 'dismiss') say('Cleared.', [c.dataset.id]);
-    else say(`${done[act]}.`);
+    if (!r) return;
+    const n = await r.json().catch(() => ({}));
+    if (act === 'dismiss' && !(n.state === 'dismissed' && n.state_by === shell.dataset.me)) {
+      // Another device or the sender got there first: no Undo, it would reopen their change.
+      leave(c, reason(n));
+      say(`${reason(n)}.`);
+    } else {
+      if (act !== 'ack') leave(c, done[act]);
+      if (act === 'dismiss') say('Cleared.', [c.dataset.id]);
+      else say(`${done[act]}.`);
+    }
     refresh();
   });
 

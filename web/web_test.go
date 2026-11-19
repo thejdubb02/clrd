@@ -1,10 +1,12 @@
 package web
 
 import (
+	"html"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -48,30 +50,42 @@ func TestPages(t *testing.T) {
 	if _, body := get(t, h, "/app?q=disk"); strings.Contains(body, "Nightly backup") {
 		t.Error("search did not filter")
 	}
+	if _, body := get(t, h, "/app?topic=home"); strings.Contains(body, "Nightly backup") || strings.Contains(body, "Disk 91%") {
+		t.Error("topic filter shows other topics")
+	}
 	if code, _ := get(t, h, "/docs/nope"); code != 404 {
 		t.Errorf("/docs/nope: %d, want 404", code)
 	}
 }
 
-// Every internal link on every page resolves.
+// Every internal link on every page resolves, relative ones from the page they
+// are on, and every #fragment names an id on the target page.
 func TestLinks(t *testing.T) {
 	h := Handler(NewFake(), "")
-	href := regexp.MustCompile(`(?:href|src)="(/[^"]*)"`)
+	href := regexp.MustCompile(`(?:href|src)="([^"]*)"`)
 	seen := map[string]bool{}
 	for _, page := range []string{"/", "/docs/", "/docs/spec", "/app", "/app/snoozed", "/app/cleared", "/app/settings"} {
 		_, body := get(t, h, page)
 		for _, m := range href.FindAllStringSubmatch(body, -1) {
-			u := strings.ReplaceAll(strings.SplitN(m[1], "#", 2)[0], "&amp;", "&")
-			if u == "" || u == "/assets/og.png" || seen[u] { // og.png is checked in TestAssets
+			ref, err := url.Parse(html.UnescapeString(m[1]))
+			if err != nil || ref.Host != "" || ref.Scheme != "" || ref.String() == "/assets/og.png" { // og.png is checked in TestAssets
 				continue
 			}
-			seen[u] = true
-			if code, _ := get(t, h, u); code != 200 {
+			u := (&url.URL{Path: page}).ResolveReference(ref)
+			if seen[u.String()] {
+				continue
+			}
+			seen[u.String()] = true
+			code, target := get(t, h, u.RequestURI())
+			if code != 200 {
 				t.Errorf("%s links to %s: %d", page, u, code)
+			}
+			if u.Fragment != "" && !strings.Contains(target, `id="`+u.Fragment+`"`) {
+				t.Errorf("%s links to %s: no element with that id", page, u)
 			}
 		}
 	}
-	if len(seen) < 15 {
+	if len(seen) < 25 {
 		t.Errorf("only %d links checked", len(seen))
 	}
 }
@@ -93,8 +107,11 @@ func TestUnauthorized(t *testing.T) {
 			t.Errorf("%T: status %d, page leaked data, rendered the inbox or has no sign-in form", api, code)
 		}
 	}
-	if _, body := get(t, Handler(deny{}, ""), "/app?topic=home&auth=clrd_old"); !strings.Contains(body, `value="/app?topic=home"`) {
-		t.Error("next must keep the filters and drop auth")
+	if _, body := get(t, Handler(deny{}, ""), "/app?topic=home&auth=clrd_old"); !strings.Contains(body, `value="/app?topic=home"`) || strings.Contains(body, `role="alert"`) {
+		t.Error("next must keep the filters and drop auth, with no error shown")
+	}
+	if _, body := get(t, Handler(deny{}, ""), "/app?error=token&topic=home"); !strings.Contains(body, `role="alert"`) || !strings.Contains(body, `value="/app?topic=home"`) {
+		t.Error("a bad token must show the error, and next must drop it")
 	}
 }
 
@@ -145,10 +162,24 @@ func TestAssets(t *testing.T) {
 			t.Errorf("%s: %d", p, code)
 		}
 	}
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
-	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'self'") {
-		t.Errorf("CSP header: %q", csp)
+	want := map[string]string{
+		"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "same-origin",
+	}
+	// The CSP forbids inline script and style, so none may be on a page.
+	inline := regexp.MustCompile(`<script>|<script [^>]*>[^<]|<style|\sstyle="|\son[a-z]+="`)
+	for _, p := range []string{"/", "/docs/", "/docs/spec", "/app", "/app/snoozed", "/app/cleared", "/app/settings"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", p, nil))
+		for k, v := range want {
+			if got := w.Header().Get(k); got != v {
+				t.Errorf("%s: %s is %q, want %q", p, k, got, v)
+			}
+		}
+		if m := inline.FindString(w.Body.String()); m != "" {
+			t.Errorf("%s: inline %q is blocked by the CSP", p, m)
+		}
 	}
 }
 
@@ -167,7 +198,7 @@ func TestNoBannedCharacters(t *testing.T) {
 		check(p, body)
 	}
 	filepath.WalkDir(".", func(p string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && strings.Contains(".go .html .css .js .md .svg", filepath.Ext(p)) {
+		if err == nil && !d.IsDir() && strings.Contains(".go .html .css .js .mjs .md .svg", filepath.Ext(p)) {
 			b, _ := os.ReadFile(p)
 			check(p, string(b))
 		}
