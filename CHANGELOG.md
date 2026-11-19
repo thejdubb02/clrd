@@ -11,6 +11,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: files on notifications. Upload a file with the publish (multipart, or
+  ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL
+  (`attachment`, or ntfy's `X-Attach`). Downloads need a token that can read the
+  topic. Files are capped at 15 MB each and 5 GB in total, and go away with
+  their notification. The web inbox and Android app do not show them yet.
 - Android: the app notices a server that was reinstalled or moved to a fresh
   database and reloads its list, instead of showing notifications from the old one.
 - Server: an icon on each notification (`icon`, or ntfy's `X-Icon`), and a

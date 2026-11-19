@@ -529,7 +529,7 @@ func TestReplyColumnAdded(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := schema
-	for _, col := range []string{"reply", "icon"} {
+	for _, col := range []string{"reply", "icon", "attachment", "file"} {
 		line := "  " + col + " TEXT NOT NULL DEFAULT '',\n"
 		if !strings.Contains(old, line) {
 			t.Fatalf("schema has no %s line to drop", col)
