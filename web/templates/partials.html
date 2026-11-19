@@ -89,6 +89,8 @@ Sitemap: {{.}}/sitemap.xml
   <form class="signin-form" method="post" action="/api/v1/session">
     <label for="token">Token</label>
     <input id="token" name="token" type="password" autocomplete="current-password" required placeholder="clrd_">
+    <label for="device">Name this browser <span class="quiet">(optional, shown in your device list)</span></label>
+    <input id="device" name="name" type="text" autocomplete="off" placeholder="work laptop">
     <input type="hidden" name="next" value="{{.Path}}">
     <button class="btn btn-ink" type="submit">Sign in</button>
   </form>
