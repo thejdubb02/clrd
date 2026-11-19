@@ -399,12 +399,17 @@ is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
   real content with JavaScript off, and AI crawlers must be able to read the
   landing and docs pages.
 - Routes: `/` landing (public), `/docs/*` (public, from `docs/*.md`),
-  `/app` inbox (login), `/app/snoozed`, `/app/cleared`, `/app/settings`.
+  `/app` inbox (login), `/app/snoozed`, `/app/cleared`, `/app/settings`,
+  `/app/ui` (the component guide: every component in every state, no sign-in).
 - Inbox layout per brand: 248 px sidebar (logo, Inbox/Snoozed/Cleared with
   mono counts, TOPICS list, "In sync on N devices" card), cards with priority
   dot, title 17/600, body 15, mono meta 12, Ack / Snooze / Clear (green),
   search, Clear all, Undo toast.
-- Vanilla JS + one CSS file. No framework, no build step unless it pays for itself.
+- Vanilla JS. CSS is Tailwind v4 (standalone CLI, no Node) with the Basecoat
+  components, mapped to the tokens in section 10. Source in `web/ui/`;
+  `web/ui/build.sh` writes `web/static/app.css`, which is committed so a plain
+  `go build` still works. CI rebuilds it and fails if it drifted. Icons are
+  Lucide, inlined as SVG partials in `web/templates/icons.html`.
 - Web Push (VAPID) for browser notifications is a later issue.
 
 ## 10. Brand tokens
@@ -427,8 +432,8 @@ State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
 `#E9E6DE`/`#3D444D`, resolved `#DDF1E8`/`#065F42`, snoozed
 `#F7EBD3`/`#7A4D0B`, dismissed outline `#DEDAD1`/`#5B6470`.
 
-Rules: no gradients, flat fills, 1px hairlines, radius 12 to 20, pills for
-state, orange only when something needs you, green means it went away. Dark
+Rules: no gradients, flat fills, 1px hairlines, radius 6 (chips, inputs), 8
+(buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. Dark
 mode swaps paper and ink, same accents. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
 
 Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every surface uses one file). The three lines end on one circle around the disc, so every gap to the disc is the same:
