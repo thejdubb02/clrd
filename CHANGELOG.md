@@ -47,3 +47,10 @@ Fixed, Removed, Security), as one line a user can understand.
   yet, and a restored backup keeps its old epoch.
 - Web: an open inbox reloads when the server comes back on a different database
   (a new epoch), instead of carrying on from a position that no longer exists.
+
+### Fixed
+
+- Android: reopening a notification from the inbox, and the end of a long
+  catch-up after being offline, no longer make the phone buzz; with sync off,
+  a busy server's retry wait is respected; tray buttons on notifications from
+  older app versions work again.

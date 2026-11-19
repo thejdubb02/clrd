@@ -3,6 +3,7 @@ package me.itsjustin.clrd
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
+import android.content.Intent
 import android.os.Looper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -148,6 +149,55 @@ class TrayRaceTest {
         assertNull(tray("a")) // still hidden while our dismiss is queued
         bg { store.removePending(dao.pending().single()) }
         assertTrue(tray("a") != null)
+    }
+
+    @Test fun aReopenFromTheInboxDoesNotBuzz() {
+        val store = RoomStore(app)
+        bg {
+            store.apply(listOf(row("a", Notif.DISMISSED, 1)), 1)
+            dao.addPending(Pending(notifId = "a", action = "reopen", body = "{}"))
+            dao.setState("a", Notif.ACTIVE)
+            store.removePending(dao.pending().single()) // sent
+        }
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("a")!!.groupAlertBehavior)
+    }
+
+    @Test fun theEventOfOurOwnReopenDoesNotBuzz() {
+        val store = RoomStore(app)
+        bg {
+            store.apply(listOf(row("a", Notif.DISMISSED, 1)), 1)
+            dao.addPending(Pending(notifId = "a", action = "reopen", body = "{}"))
+            store.apply(listOf(row("a", Notif.ACTIVE, 2)), 2) // the live event, before the send's answer
+        }
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("a")!!.groupAlertBehavior)
+    }
+
+    @Test fun aTapOnATrayItemFromBeforeTheServerExtraIsSaved() {
+        bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_DISMISS).putExtra(Tray.EXTRA_ID, "a"))
+        shadowOf(Looper.getMainLooper()).idle()
+        drainIo()
+        assertEquals(listOf("dismiss"), bg { dao.pending().map { it.action } })
+    }
+
+    @Test fun aBusyServerHoldsBackTheNextInlineSend() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "60"))
+        server.enqueue(MockResponse().setBody("{}"))
+        server.start()
+        try {
+            app.serverUrl = server.url("/").toString().trimEnd('/')
+            app.token = "t" // configured, but no sync service, so act sends by itself
+            bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
+            app.act("a", "dismiss", server = app.serverUrl)
+            assertTrue(server.takeRequest(10, TimeUnit.SECONDS) != null) // answered 429, wait 60 s
+            app.act("b", "dismiss", server = app.serverUrl)
+            assertNull(server.takeRequest(2, TimeUnit.SECONDS)) // the next tap waits too
+            assertEquals(listOf("a", "b"), bg { dao.pending().map { it.notifId } })
+        } finally {
+            app.token = ""
+            server.shutdown()
+        }
     }
 
     private fun swipe(id: String) {
