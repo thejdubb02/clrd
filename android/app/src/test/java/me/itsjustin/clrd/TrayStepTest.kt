@@ -46,7 +46,9 @@ class TrayStepTest {
         assertTrue(!n.isFinal)
     }
 
-    private fun labels(state: String, actions: String = "[]") = TrayButton.pick(event(state, actions = actions)).map { it.label }
+    private val ours = mapOf(R.string.tray_ack to "Ack", R.string.tray_snooze to "Snooze 1h", R.string.tray_clear to "Clear", R.string.tray_open to "Open")
+    private fun TrayButton.text() = if (res != 0) ours.getValue(res) else label
+    private fun labels(state: String, actions: String = "[]") = TrayButton.pick(event(state, actions = actions)).map { it.text() }
     private fun links(n: Int) = (1..n).joinToString(",", "[", "]") { """{"label":"L$it","url":"https://x.example/$it"}""" }
 
     @Test fun noSenderLinksKeepsOurThree() = assertEquals(listOf("Ack", "Snooze 1h", "Clear"), labels("active"))
@@ -62,7 +64,7 @@ class TrayStepTest {
     @Test fun onlyWebLinksBecomeButtons() {
         val actions = """[{"label":"Bad","url":"intent://x#Intent;end"},{"label":"","url":"HTTPS://x.example"},{"label":"No url"},{"label":"Huge","url":"https://x.example/${"a".repeat(2048)}"}]"""
         val b = TrayButton.pick(event("active", actions = actions))
-        assertEquals(listOf("Open", "Ack", "Clear"), b.map { it.label })
+        assertEquals(listOf("Open", "Ack", "Clear"), b.map { it.text() })
         assertEquals("https://x.example", b[0].url)
     }
 
@@ -70,7 +72,7 @@ class TrayStepTest {
 
     @Test fun repliesComeFirst() {
         val b = TrayButton.pick(event("active", actions = yesNo))
-        assertEquals(listOf("Yes", "no", "L1"), b.map { it.label }) // an empty label shows the reply itself
+        assertEquals(listOf("Yes", "no", "L1"), b.map { it.text() }) // an empty label shows the reply itself
         assertEquals(listOf("yes", "no", null), b.map { it.reply })
     }
 
@@ -82,6 +84,6 @@ class TrayStepTest {
     @Test fun anAnsweredOneShowsNoReplies() {
         val n = event("acknowledged", actions = yesNo, reply = "yes")
         assertEquals("yes", n.reply)
-        assertEquals(listOf("L1", "Snooze 1h", "Clear"), TrayButton.pick(n).map { it.label })
+        assertEquals(listOf("L1", "Snooze 1h", "Clear"), TrayButton.pick(n).map { it.text() })
     }
 }

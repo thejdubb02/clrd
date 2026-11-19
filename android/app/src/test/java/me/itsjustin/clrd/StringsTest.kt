@@ -9,7 +9,7 @@ import java.io.File
  * This fails when one is typed straight into the screen code again.
  */
 class StringsTest {
-    private val files = listOf("MainActivity.kt", "SyncService.kt")
+    private val files = listOf("MainActivity.kt", "SyncService.kt", "Tray.kt")
 
     @Test fun noInlineUiText() {
         val found = files.flatMap { name ->

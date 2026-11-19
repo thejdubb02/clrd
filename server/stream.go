@@ -81,7 +81,9 @@ var (
 	errRevoked = errf(401, "unauthorized", "token revoked")
 )
 
-func msgReady(seq int64) []byte { return fmt.Appendf(nil, `{"type":"ready","seq":%d}`, seq) }
+func msgReady(seq int64, epoch string) []byte {
+	return fmt.Appendf(nil, `{"type":"ready","seq":%d,"epoch":%q}`, seq, epoch)
+}
 
 func visible(tok *Token, topics []string, topic string) bool {
 	return tok.Allows(topic) && (len(topics) == 0 || slices.Contains(topics, topic))
@@ -137,7 +139,7 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 		}
 	}
 	last = max(last, since)
-	if err := send(msgReady(last), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
+	if err := send(msgReady(last, s.epoch), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
 		return err
 	}
 	t := time.NewTicker(30 * time.Second)
@@ -291,6 +293,6 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 	if len(evs) < limit {
 		next = max(next, cur) // the log is complete up to cur
 	}
-	writeJSON(w, 200, map[string]any{"events": out, "seq": next})
+	writeJSON(w, 200, map[string]any{"events": out, "seq": next, "epoch": s.epoch})
 	return nil
 }

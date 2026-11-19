@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -61,6 +62,7 @@ type Server struct {
 	lastRand [10]byte
 	seq      atomic.Int64 // last committed event seq
 	pruned   atomic.Int64 // events with seq <= pruned are gone
+	epoch    string       // this database's id, sent with every cursor
 	revoked  sync.Map     // token ids deleted while the server runs
 	failing  sync.Map     // background job name -> true while it keeps failing; /healthz reports it
 
@@ -111,6 +113,17 @@ func New(opt Options) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
+	// Minted once per database: seq numbers from another database mean nothing here.
+	var epoch int64
+	if _, err := db.Exec(`INSERT OR IGNORE INTO meta (key, value) VALUES ('epoch', ?)`, rand.Int64()); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := db.QueryRow(`SELECT value FROM meta WHERE key = 'epoch'`).Scan(&epoch); err != nil {
+		db.Close()
+		return nil, err
+	}
+	s.epoch = strconv.FormatInt(epoch, 36)
 	s.seq.Store(seq)
 	s.pruned.Store(pruned)
 	s.routesSetup()
@@ -122,6 +135,9 @@ func (s *Server) Close() error { return s.db.Close() }
 
 // CurrentSeq is the seq of the last committed event.
 func (s *Server) CurrentSeq() int64 { return s.seq.Load() }
+
+// Epoch is this database's id, sent with every seq (see SPEC, Epoch).
+func (s *Server) Epoch() string { return s.epoch }
 
 // Mount serves h for every path under prefix ("/docs" gets /docs and
 // /docs/...; "/" gets only the exact root). Longest prefix wins and mounts
@@ -326,7 +342,7 @@ func (s *Server) routesSetup() {
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, map[string]any{"notifications": ns, "seq": seq})
+		writeJSON(w, 200, map[string]any{"notifications": ns, "seq": seq, "epoch": s.epoch})
 		return nil
 	})
 	s.api("GET /api/v1/notifications/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {

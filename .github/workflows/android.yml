@@ -16,6 +16,8 @@ jobs:
         working-directory: android
     env:
       ANDROID_HOME: /opt/android-sdk
+      # Gradle 8 cannot run on the newer JDK that is now the runner default; the app builds with 17.
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
     steps:
       - uses: actions/checkout@v4
       - run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug assembleRelease
