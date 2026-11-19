@@ -44,6 +44,14 @@ type ntfyMsg struct {
 	Click      string       `json:"click,omitempty"`
 	Icon       string       `json:"icon,omitempty"`
 	Actions    []ntfyAction `json:"actions,omitempty"`
+	Attachment *ntfyAttach  `json:"attachment,omitempty"`
+}
+
+type ntfyAttach struct {
+	Name string `json:"name"`
+	Type string `json:"type,omitempty"`
+	Size int64  `json:"size,omitempty"`
+	URL  string `json:"url"`
 }
 
 // ntfyID maps an event seq to a ntfy message id and back ("s" + 11 digits,
@@ -52,7 +60,7 @@ func ntfyID(seq int64) string { return fmt.Sprintf("s%011d", seq) }
 
 // ntfyMessage renders a notification as of event seq. The ntfy event comes
 // from the state: active shows, acknowledged/snoozed clear, dismissed/resolved delete.
-func ntfyMessage(n *Notification, seq int64) ntfyMsg {
+func (s *Server) ntfyMessage(n *Notification, seq int64) ntfyMsg {
 	m := ntfyMsg{ID: ntfyID(seq), Time: n.UpdatedAt.Unix(), Event: "message", Topic: n.Topic, SequenceID: n.ExternalID}
 	if m.SequenceID == "" {
 		m.SequenceID = n.ID
@@ -66,6 +74,12 @@ func ntfyMessage(n *Notification, seq int64) ntfyMsg {
 		return m
 	}
 	m.Title, m.Message, m.Priority, m.Tags, m.Click, m.Icon = n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon
+	if a := n.Attachment; a != nil {
+		m.Attachment = &ntfyAttach{Name: a.Name, Type: a.Type, Size: a.Size, URL: a.URL}
+		if strings.HasPrefix(a.URL, "/") { // ours: ntfy clients want it absolute
+			m.Attachment.URL = s.opt.BaseURL + a.URL
+		}
+	}
 	for i, a := range n.Actions {
 		if a.URL != "" { // ntfy has no reply button; an http action would need our token
 			m.Actions = append(m.Actions, ntfyAction{ID: strconv.Itoa(i), Action: "view", Label: a.Label, URL: a.URL})
@@ -241,17 +255,30 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if in.ExternalID == "" {
 		in.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, ntfyMaxBody+1))
-	if err != nil {
-		return err
+	file := ntfyFilename(r)
+	if r.Method == http.MethodGet {
+		file = "" // GET /{topic}/publish has no body to be the file
 	}
-	if len(body) > ntfyMaxBody {
-		return errf(413, "too_large", "message longer than %d bytes (attachments are not supported)", ntfyMaxBody)
+	if file == "" {
+		body, err := io.ReadAll(io.LimitReader(r.Body, ntfyMaxBody+1))
+		if err != nil {
+			return err
+		}
+		if len(body) > ntfyMaxBody {
+			return errf(413, "too_large", "message longer than %d bytes (send a file with X-Filename)", ntfyMaxBody)
+		}
+		in.Message = strings.TrimSpace(string(body))
 	}
-	in.Message = strings.TrimSpace(string(body))
 	if in.Message == "" {
 		in.Message = param(r, "Message", "M")
 	}
+	if in.Message == "" && file != "" {
+		in.Message = "You received a file: " + cleanName(file)
+	}
+	if a := ntfyIcon(param(r, "Attach", "A")); a != "" { // same rule as icon: a bad URL is dropped
+		in.Attachment = &Attachment{URL: a}
+	}
+	var err error
 	in.Title = param(r, "Title", "Ti", "T")
 	in.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
 	in.Click = param(r, "Click")
@@ -266,15 +293,26 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	in.Status = param(r, "Status")
+	if file != "" {
+		n, err := s.PublishFile(r.Context(), tok, in, file, r.Body)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, s.ntfyMessage(n, n.Seq))
+		return nil
+	}
 	return s.ntfyReply(w, r.Context(), tok, in)
 }
+
+// ntfyFilename is the file name that makes a ntfy publish body a file.
+func ntfyFilename(r *http.Request) string { return param(r, "Filename", "File", "F") }
 
 func (s *Server) ntfyReply(w http.ResponseWriter, ctx context.Context, tok *Token, in PublishInput) error {
 	n, err := s.Publish(ctx, tok, in)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, 200, ntfyMessage(n, n.Seq))
+	writeJSON(w, 200, s.ntfyMessage(n, n.Seq))
 	return nil
 }
 
@@ -288,6 +326,8 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		Tags       []string        `json:"tags"`
 		Click      string          `json:"click"`
 		Icon       json.RawMessage `json:"icon"` // raw: ntfy drops a bad icon rather than failing the publish
+		Attach     json.RawMessage `json:"attach"`
+		Filename   string          `json:"filename"`
 		Actions    []ntfyAction    `json:"actions"`
 		Delay      string          `json:"delay"`
 		ID         string          `json:"id"`
@@ -307,6 +347,11 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
 	p.Icon = ntfyIcon(icon)
+	var attach string
+	_ = json.Unmarshal(in.Attach, &attach)
+	if attach = ntfyIcon(attach); attach != "" {
+		p.Attachment = &Attachment{URL: attach, Name: in.Filename}
+	}
 	for _, id := range []string{in.SequenceID, in.ID} {
 		if p.ExternalID == "" {
 			p.ExternalID = id
@@ -336,7 +381,7 @@ func (s *Server) ntfyAct(action string) func(http.ResponseWriter, *http.Request)
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, ntfyMessage(n, n.Seq))
+		writeJSON(w, 200, s.ntfyMessage(n, n.Seq))
 		return nil
 	}
 }
@@ -493,7 +538,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				if !f.pass(e.Notification, ntfyID(seq)) {
 					return nil
 				}
-				return write(ntfyMessage(e.Notification, seq))
+				return write(s.ntfyMessage(e.Notification, seq))
 			}, func() error { return write(ntfyEvent("keepalive", joined)) })
 			if err != errPruned {
 				return nil
