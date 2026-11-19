@@ -36,5 +36,5 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: Server log lines around the problem. Remove tokens first.
+      description: Server log lines around the problem. Remove tokens and any /setup link first (a setup link lets anyone create the admin token).
       render: text

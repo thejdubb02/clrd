@@ -14,8 +14,8 @@
 </p>
 
 Send an alert with one HTTP call. It shows up on your Android phone, your tablet
-and the web inbox. Swipe it away on any one of them and it clears on all the
-others. When the problem fixes itself, the sender resolves it and it clears
+and the web inbox. Clear it on any one of them (swipe on a phone, Clear on the
+web) and it clears on all the others. When the problem fixes itself, the sender resolves it and it clears
 everywhere without anyone touching it.
 
 <p align="center">
