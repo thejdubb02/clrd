@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -249,7 +250,7 @@ func TestSnoozeWakes(t *testing.T) {
 
 	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "later"})
 	id := n["id"].(string)
-	until := time.Now().Add(50 * time.Millisecond).Format(time.RFC3339Nano)
+	until := time.Now().Add(500 * time.Millisecond).Format(time.RFC3339Nano)
 	if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/snooze", admin, map[string]string{"until": until}); code != 200 || n["state"] != Snoozed {
 		t.Fatalf("snooze: %d %v", code, n)
 	}
@@ -374,7 +375,9 @@ func TestStalledStreamTimesOut(t *testing.T) {
 	t.Cleanup(ts.Close)
 	big := strings.Repeat("x", 100_000)
 	for range 20 { // 2 MB of replay, far past both socket buffers
-		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": big})
+		if code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": big}); code != 200 {
+			t.Fatalf("publish: %d", code)
+		}
 	}
 	for _, path := range []string{"/api/v1/events/sse", "/t/sse?since=all"} {
 		c, err := net.Dial("tcp", ts.Listener.Addr().String())
@@ -388,8 +391,11 @@ func TestStalledStreamTimesOut(t *testing.T) {
 		// Timed out, the server drops the stream: reading drains to the end.
 		// Without the deadline the stream stays open and the read times out.
 		c.SetReadDeadline(time.Now().Add(5 * time.Second))
-		if _, err := io.Copy(io.Discard, c); errors.Is(err, os.ErrDeadlineExceeded) {
+		b, err := io.ReadAll(c)
+		if errors.Is(err, os.ErrDeadlineExceeded) {
 			t.Errorf("%s: stalled stream still open", path)
+		} else if !bytes.HasPrefix(b, []byte("HTTP/1.1 200")) || !bytes.Contains(b, []byte(big[:1000])) || len(b) > 1_000_000 {
+			t.Errorf("%s: want a 200 stream cut short mid replay, got %d bytes: %.40q", path, len(b), b)
 		}
 	}
 }

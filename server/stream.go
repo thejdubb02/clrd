@@ -225,6 +225,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, tok *Token) er
 // client that stops reading holds the stream open on a blocked write, past a revoke.
 var streamWriteTimeout = 10 * time.Second
 
+// boundEnd bounds the write net/http does after the handler returns (the end of the chunked body).
+func boundEnd(rc *http.ResponseController) { rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout)) }
+
 func flushWrite(rc *http.ResponseController, w io.Writer, b []byte) error {
 	rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout))
 	defer rc.SetWriteDeadline(time.Time{})
@@ -239,6 +242,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, tok *Token) e
 		return err
 	}
 	rc := http.NewResponseController(w)
+	defer boundEnd(rc)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")

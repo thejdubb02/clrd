@@ -435,6 +435,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			}
 		} else {
 			rc := http.NewResponseController(w)
+			defer boundEnd(rc)
 			w.Header().Set("Content-Type", map[string]string{"json": "application/x-ndjson; charset=utf-8",
 				"sse": "text/event-stream; charset=utf-8", "raw": "text/plain; charset=utf-8"}[format])
 			w.Header().Set("Cache-Control", "no-cache")
