@@ -12,6 +12,9 @@ class ServerUrlTest {
     @Test fun normalTypingIsLeftAlone() {
         assertEquals("https://", pastedUrl("https://"))
         assertEquals("https://clrd.exa", pastedUrl("https://clrd.exa"))
+        val nested = "https://a.example/setup?next=https://b.example"
+        assertEquals(nested, pastedUrl(nested))
+        assertEquals("https://a.example", serverAddress(nested))
     }
 
     @Test fun saveCutsALinkDownToTheServer() {
