@@ -56,25 +56,27 @@ class SyncClient(
     private val buffer = LinkedHashMap<String, Notif>()
     private var bufferSeq = 0L
 
-    fun start() { exec.execute { connect() } }
+    /** Run on [exec]. Calls from outside can race [stop]; after it they are dropped, never thrown. */
+    private fun post(f: () -> Unit) { runCatching { exec.execute(f) } }
+
+    fun start() = post { connect() }
 
     /** Safe to call more than once, from any thread. */
     fun stop() {
-        runCatching { exec.execute { stopped = true; gen++; ws?.close(1000, null); ws = null } }
+        post { stopped = true; gen++; ws?.close(1000, null); ws = null }
         exec.shutdown()
     }
 
     /** The network came back: skip the rest of the backoff wait. */
     fun kick() {
-        exec.execute {
+        post {
             if (!stopped && ws == null) { retryTask?.cancel(false); attempt = 0; connect() }
         }
     }
 
     /** A user action was queued: try to send it now. A failure retries every 30 s, and on every connect. */
     fun flushSoon() {
-        if (exec.isShutdown) return
-        exec.execute {
+        post {
             flushRetry?.cancel(false)
             try {
                 flush()
@@ -109,7 +111,7 @@ class SyncClient(
     }
 
     private fun onThread(myGen: Int, f: () -> Unit) {
-        if (!exec.isShutdown) runCatching { exec.execute { if (myGen == gen && !stopped) f() } } // may lose a race with stop()
+        post { if (myGen == gen && !stopped) f() }
     }
 
     private fun handle(text: String) {
