@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: the landing page and README link to a tip page for anyone who wants to
+  support the project.
 - Server: files on notifications. Upload a file with the publish (multipart, or
   ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL
   (`attachment`, or ntfy's `X-Attach`). Downloads need a token that can read the

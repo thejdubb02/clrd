@@ -106,6 +106,11 @@ ntfy clients. Setup for each, and which ones resolve themselves:
 | `docs/` | Self-hosting, spec and integration guides, also served at `/docs` |
 | `assets/` | Logo, icon and fonts |
 
+## Support clrd
+
+clrd is free and has no paid tier. If it is useful to you, you can
+[leave a tip](https://donate.stripe.com/9B614mcl7fm72b0fyQco001). The Sponsor button at the top of this page links to the same place.
+
 ## Contributing
 
 Bug reports, ideas and pull requests are welcome. Start with
