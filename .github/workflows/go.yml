@@ -1,0 +1,29 @@
+name: go
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "server/**"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - ".github/workflows/go.yml"
+
+jobs:
+  test:
+    runs-on: [self-hosted, cezar1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l server)" || { gofmt -l server; exit 1; }
+      - run: go vet ./...
+      - name: test
+        # -race needs a C compiler; run without it if the runner has none.
+        run: go test $(command -v gcc >/dev/null && echo -race) -count=1 ./...
+      - name: static build
+        run: CGO_ENABLED=0 go build -o /dev/null ./server/cmd/clrd

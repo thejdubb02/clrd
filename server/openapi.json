@@ -1,0 +1,3084 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "clrd",
+  "version": "1",
+  "license": {
+   "name": "Apache-2.0",
+   "identifier": "Apache-2.0"
+  },
+  "description": "Self-hosted notifications where a dismissal on one device clears it on every device. See docs/SPEC.md."
+ },
+ "security": [
+  {
+   "bearer": []
+  },
+  {
+   "basic": []
+  }
+ ],
+ "paths": {
+  "/healthz": {
+   "get": {
+    "summary": "Health and current seq",
+    "tags": [
+     "server"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "ok": {
+           "type": "boolean"
+          },
+          "seq": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "security": []
+   }
+  },
+  "/openapi.json": {
+   "get": {
+    "summary": "This document",
+    "tags": [
+     "server"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     }
+    },
+    "security": []
+   }
+  },
+  "/setup": {
+   "get": {
+    "summary": "First-run setup page",
+    "tags": [
+     "auth"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Setup is finished (an admin token exists)."
+     }
+    },
+    "parameters": [
+     {
+      "name": "code",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "One-time setup code printed in the server log."
+     }
+    ],
+    "security": []
+   },
+   "post": {
+    "summary": "Create the first admin token",
+    "tags": [
+     "auth"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "text/html": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Setup is finished."
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "code": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "code"
+        ]
+       }
+      }
+     }
+    },
+    "security": []
+   }
+  },
+  "/api/v1/session": {
+   "post": {
+    "summary": "Web sign-in: swap a token for a session cookie",
+    "tags": [
+     "auth"
+    ],
+    "responses": {
+     "200": {
+      "description": "JSON post: the token's details",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Token"
+        }
+       }
+      }
+     },
+     "303": {
+      "description": "Form post: redirect to next (default /app). A wrong token redirects there too, with error=token added to the query."
+     }
+    },
+    "description": "Must be same-origin. Sets an HttpOnly cookie.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "token": {
+          "type": "string"
+         },
+         "next": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "token"
+        ]
+       }
+      },
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "token": {
+          "type": "string"
+         },
+         "next": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "token"
+        ]
+       }
+      }
+     }
+    },
+    "security": []
+   },
+   "delete": {
+    "summary": "Web sign-out",
+    "tags": [
+     "auth"
+    ],
+    "responses": {
+     "204": {
+      "description": "Cookie cleared"
+     }
+    },
+    "security": []
+   }
+  },
+  "/api/v1/notifications": {
+   "post": {
+    "summary": "Publish (upserts on topic + external_id)",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PublishInput"
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "summary": "List",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "notifications": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Notification"
+           }
+          },
+          "seq": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "state",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "open"
+      },
+      "description": "open (active, acknowledged, snoozed), all, or one state"
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Text search"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "before",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Cursor: id of the last row of the previous page"
+     }
+    ]
+   }
+  },
+  "/api/v1/notifications/{id}": {
+   "get": {
+    "summary": "Get one",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ]
+   }
+  },
+  "/api/v1/notifications/{id}/ack": {
+   "post": {
+    "summary": "Acknowledge",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ]
+   }
+  },
+  "/api/v1/notifications/{id}/dismiss": {
+   "post": {
+    "summary": "Dismiss (user clears it)",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ]
+   }
+  },
+  "/api/v1/notifications/{id}/resolve": {
+   "post": {
+    "summary": "Resolve (sender clears it)",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ]
+   }
+  },
+  "/api/v1/notifications/{id}/reopen": {
+   "post": {
+    "summary": "Reopen (undo a dismiss)",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ]
+   }
+  },
+  "/api/v1/notifications/{id}/snooze": {
+   "post": {
+    "summary": "Snooze",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "description": "Give for (Go duration, d allowed) or until.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "for": {
+          "type": "string",
+          "example": "1h"
+         },
+         "until": {
+          "type": "string",
+          "format": "date-time"
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/notifications/clear": {
+   "post": {
+    "summary": "Bulk dismiss",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "cleared": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "description": "Give topic or ids, not both.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "topic": {
+          "type": "string"
+         },
+         "ids": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/topics": {
+   "get": {
+    "summary": "Topics with open counts",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "topics": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "topic": {
+              "type": "string"
+             },
+             "open": {
+              "type": "integer"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/devices": {
+   "get": {
+    "summary": "Devices seen in the last 10 minutes",
+    "tags": [
+     "sync"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "devices": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "string"
+             },
+             "name": {
+              "type": "string"
+             },
+             "last_seen_at": {
+              "type": [
+               "string",
+               "null"
+              ],
+              "format": "date-time"
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "description": "Scope read. A topic-limited token only sees devices limited to its own topics."
+   }
+  },
+  "/api/v1/tokens": {
+   "get": {
+    "summary": "List tokens",
+    "tags": [
+     "auth"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "tokens": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Token"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "description": "Admin with no topic limit."
+   },
+   "post": {
+    "summary": "Create a token (secret shown once)",
+    "tags": [
+     "auth"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "allOf": [
+          {
+           "$ref": "#/components/schemas/Token"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "token": {
+             "type": "string"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "description": "Admin with no topic limit.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "scopes": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "enum": [
+            "read",
+            "publish",
+            "admin"
+           ]
+          }
+         },
+         "topics": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        },
+        "required": [
+         "name",
+         "scopes"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/tokens/{id}": {
+   "delete": {
+    "summary": "Revoke a token (open streams close at once)",
+    "tags": [
+     "auth"
+    ],
+    "responses": {
+     "204": {
+      "description": "Revoked"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/ws": {
+   "get": {
+    "summary": "WebSocket sync stream",
+    "tags": [
+     "sync"
+    ],
+    "responses": {
+     "101": {
+      "description": "Upgrade. Frames are Event JSON: replay after since, then {\"type\":\"ready\",\"seq\":N}, then live. {\"type\":\"reset\"} means the cursor is gone: drop local state and fetch GET /api/v1/notifications?state=open, keeping the connection."
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Last seq the client has; replay starts after it. Default 0."
+     },
+     {
+      "name": "topics",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Optional comma list of topics to filter to."
+     }
+    ]
+   }
+  },
+  "/api/v1/events": {
+   "get": {
+    "summary": "Poll the event log",
+    "tags": [
+     "sync"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "events": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Event"
+           }
+          },
+          "seq": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "410": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "description": "410 with code reset when since is older than the log or ahead of the server.",
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Last seq the client has; replay starts after it. Default 0."
+     },
+     {
+      "name": "topics",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Optional comma list of topics to filter to."
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Max 500"
+     }
+    ]
+   }
+  },
+  "/api/v1/events/sse": {
+   "get": {
+    "summary": "Server-sent events sync stream",
+    "tags": [
+     "sync"
+    ],
+    "responses": {
+     "200": {
+      "description": "Same messages as the WebSocket, one per data: line, with id: seq.",
+      "content": {
+       "text/event-stream": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Last seq the client has; replay starts after it. Default 0."
+     },
+     {
+      "name": "topics",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Optional comma list of topics to filter to."
+     },
+     {
+      "name": "Last-Event-ID",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Wins over since"
+     }
+    ]
+   }
+  },
+  "/{topic}/{external_id}/resolve": {
+   "post": {
+    "summary": "Resolve the open row with this external_id",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "external_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/{topic}/{external_id}/ack": {
+   "post": {
+    "summary": "Ack the open row with this external_id",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "external_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/{topic}": {
+   "put": {
+    "summary": "ntfy publish (body is the message)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "The message, or counts with template",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/NtfyMessage"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "published": {
+             "type": "integer"
+            },
+            "resolved": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Title",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Title, t"
+     },
+     {
+      "name": "Priority",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+     },
+     {
+      "name": "Tags",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Comma list. Also X-Tags, ta"
+     },
+     {
+      "name": "Click",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Click"
+     },
+     {
+      "name": "Actions",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Only view actions are kept. Also X-Actions"
+     },
+     {
+      "name": "Delay",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+     },
+     {
+      "name": "X-Id",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "External id: a second publish updates the same notification. Also Id, Sequence-Id"
+     },
+     {
+      "name": "Status",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "resolved: resolve the open row with this id instead of creating one"
+     },
+     {
+      "name": "template",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "alertmanager",
+        "grafana"
+       ]
+      },
+      "description": "Read an Alertmanager or Grafana webhook body: one notification per alert, keyed by fingerprint; resolved alerts resolve."
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "text/plain": {
+       "schema": {
+        "type": "string",
+        "maxLength": 4096
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "ntfy publish (body is the message)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "The message, or counts with template",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/NtfyMessage"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "published": {
+             "type": "integer"
+            },
+            "resolved": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "Title",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Title, t"
+     },
+     {
+      "name": "Priority",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+     },
+     {
+      "name": "Tags",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Comma list. Also X-Tags, ta"
+     },
+     {
+      "name": "Click",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Click"
+     },
+     {
+      "name": "Actions",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Only view actions are kept. Also X-Actions"
+     },
+     {
+      "name": "Delay",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+     },
+     {
+      "name": "X-Id",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "External id: a second publish updates the same notification. Also Id, Sequence-Id"
+     },
+     {
+      "name": "Status",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "resolved: resolve the open row with this id instead of creating one"
+     },
+     {
+      "name": "template",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "alertmanager",
+        "grafana"
+       ]
+      },
+      "description": "Read an Alertmanager or Grafana webhook body: one notification per alert, keyed by fingerprint; resolved alerts resolve."
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "text/plain": {
+       "schema": {
+        "type": "string",
+        "maxLength": 4096
+       }
+      }
+     }
+    }
+   }
+  },
+  "/{topic}/{sid}": {
+   "put": {
+    "summary": "ntfy publish with a sequence id (upsert)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "The message, or counts with template",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/NtfyMessage"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "published": {
+             "type": "integer"
+            },
+            "resolved": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Becomes external_id"
+     },
+     {
+      "name": "Title",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Title, t"
+     },
+     {
+      "name": "Priority",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+     },
+     {
+      "name": "Tags",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Comma list. Also X-Tags, ta"
+     },
+     {
+      "name": "Click",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Click"
+     },
+     {
+      "name": "Actions",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Only view actions are kept. Also X-Actions"
+     },
+     {
+      "name": "Delay",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+     },
+     {
+      "name": "X-Id",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "External id: a second publish updates the same notification. Also Id, Sequence-Id"
+     },
+     {
+      "name": "Status",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "resolved: resolve the open row with this id instead of creating one"
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "text/plain": {
+       "schema": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "ntfy publish with a sequence id (upsert)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "The message, or counts with template",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/NtfyMessage"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "published": {
+             "type": "integer"
+            },
+            "resolved": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Becomes external_id"
+     },
+     {
+      "name": "Title",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Title, t"
+     },
+     {
+      "name": "Priority",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+     },
+     {
+      "name": "Tags",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Comma list. Also X-Tags, ta"
+     },
+     {
+      "name": "Click",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Click"
+     },
+     {
+      "name": "Actions",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Only view actions are kept. Also X-Actions"
+     },
+     {
+      "name": "Delay",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+     },
+     {
+      "name": "X-Id",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "External id: a second publish updates the same notification. Also Id, Sequence-Id"
+     },
+     {
+      "name": "Status",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "resolved: resolve the open row with this id instead of creating one"
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "text/plain": {
+       "schema": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "ntfy delete: resolve by sequence id",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NtfyMessage"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "external_id or notification id"
+     }
+    ]
+   }
+  },
+  "/{topic}/{sid}/clear": {
+   "put": {
+    "summary": "ntfy clear: acknowledge by sequence id",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NtfyMessage"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "external_id or notification id"
+     }
+    ]
+   },
+   "post": {
+    "summary": "ntfy clear: acknowledge by sequence id",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NtfyMessage"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "external_id or notification id"
+     }
+    ]
+   }
+  },
+  "/{topic}/{sid}/read": {
+   "put": {
+    "summary": "ntfy clear: acknowledge by sequence id",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NtfyMessage"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "external_id or notification id"
+     }
+    ]
+   },
+   "post": {
+    "summary": "ntfy clear: acknowledge by sequence id",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NtfyMessage"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "external_id or notification id"
+     }
+    ]
+   }
+  },
+  "/": {
+   "post": {
+    "summary": "ntfy JSON publish",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "The message, or counts with template",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/NtfyMessage"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "published": {
+             "type": "integer"
+            },
+            "resolved": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NtfyPublish"
+       }
+      }
+     }
+    }
+   }
+  },
+  "/{topic}/publish": {
+   "get": {
+    "summary": "ntfy publish by GET (webhook style)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "The message, or counts with template",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/NtfyMessage"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "published": {
+             "type": "integer"
+            },
+            "resolved": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "message",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also m"
+     },
+     {
+      "name": "title",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also t"
+     },
+     {
+      "name": "priority",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also p"
+     },
+     {
+      "name": "tags",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also ta"
+     }
+    ]
+   }
+  },
+  "/{topic}/send": {
+   "get": {
+    "summary": "ntfy publish by GET (webhook style)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "The message, or counts with template",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/NtfyMessage"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "published": {
+             "type": "integer"
+            },
+            "resolved": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "message",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also m"
+     },
+     {
+      "name": "title",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also t"
+     },
+     {
+      "name": "priority",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also p"
+     },
+     {
+      "name": "tags",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also ta"
+     }
+    ]
+   }
+  },
+  "/{topic}/trigger": {
+   "get": {
+    "summary": "ntfy publish by GET (webhook style)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "The message, or counts with template",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/NtfyMessage"
+          },
+          {
+           "type": "object",
+           "properties": {
+            "published": {
+             "type": "integer"
+            },
+            "resolved": {
+             "type": "integer"
+            }
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "message",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also m"
+     },
+     {
+      "name": "title",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also t"
+     },
+     {
+      "name": "priority",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also p"
+     },
+     {
+      "name": "tags",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also ta"
+     }
+    ]
+   }
+  },
+  "/{topics}/json": {
+   "get": {
+    "summary": "ntfy subscribe (json)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "One NtfyMessage per line",
+      "content": {
+       "application/x-ndjson": {
+        "schema": {
+         "$ref": "#/components/schemas/NtfyMessage"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topics",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "One topic or a comma list"
+     },
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "all, latest, none, a message id, a unix time or a duration (10m)"
+     },
+     {
+      "name": "poll",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "1: send what is stored, then close"
+     }
+    ]
+   }
+  },
+  "/{topics}/sse": {
+   "get": {
+    "summary": "ntfy subscribe (sse)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "data: lines; open and keepalive also get an event: line",
+      "content": {
+       "text/event-stream": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topics",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "One topic or a comma list"
+     },
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "all, latest, none, a message id, a unix time or a duration (10m)"
+     },
+     {
+      "name": "poll",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "1: send what is stored, then close"
+     }
+    ]
+   }
+  },
+  "/{topics}/raw": {
+   "get": {
+    "summary": "ntfy subscribe (raw)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "Message text only, one per line",
+      "content": {
+       "text/plain": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topics",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "One topic or a comma list"
+     },
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "all, latest, none, a message id, a unix time or a duration (10m)"
+     },
+     {
+      "name": "poll",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "1: send what is stored, then close"
+     }
+    ]
+   }
+  },
+  "/{topics}/ws": {
+   "get": {
+    "summary": "ntfy subscribe (WebSocket)",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "101": {
+      "description": "One NtfyMessage JSON per frame. Auth by header or ?auth= (base64 of an Authorization value)."
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topics",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "One topic or a comma list"
+     },
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "all, latest, none, a message id, a unix time or a duration (10m)"
+     },
+     {
+      "name": "poll",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "1: send what is stored, then close"
+     }
+    ]
+   }
+  },
+  "/{topics}/auth": {
+   "get": {
+    "summary": "ntfy auth check",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "success": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topics",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/v1/health": {
+   "get": {
+    "summary": "ntfy health",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "healthy": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "security": []
+   }
+  }
+ },
+ "components": {
+  "securitySchemes": {
+   "bearer": {
+    "type": "http",
+    "scheme": "bearer"
+   },
+   "basic": {
+    "type": "http",
+    "scheme": "basic",
+    "description": "ntfy style: the token as password (or user)."
+   }
+  },
+  "responses": {
+   "Error": {
+    "description": "Error",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/Error"
+      }
+     }
+    }
+   }
+  },
+  "schemas": {
+   "Error": {
+    "type": "object",
+    "properties": {
+     "error": {
+      "type": "string"
+     },
+     "code": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "error",
+     "code"
+    ]
+   },
+   "Action": {
+    "type": "object",
+    "properties": {
+     "label": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "label",
+     "url"
+    ]
+   },
+   "Notification": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "topic": {
+      "type": "string"
+     },
+     "external_id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "message": {
+      "type": "string"
+     },
+     "priority": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "click": {
+      "type": "string"
+     },
+     "actions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Action"
+      }
+     },
+     "state": {
+      "type": "string",
+      "enum": [
+       "active",
+       "acknowledged",
+       "snoozed",
+       "dismissed",
+       "resolved"
+      ]
+     },
+     "state_by": {
+      "type": "string"
+     },
+     "snooze_until": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "seq": {
+      "type": "integer"
+     }
+    }
+   },
+   "PublishInput": {
+    "type": "object",
+    "properties": {
+     "topic": {
+      "type": "string"
+     },
+     "external_id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "message": {
+      "type": "string"
+     },
+     "priority": {
+      "type": "integer"
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "click": {
+      "type": "string"
+     },
+     "actions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Action"
+      }
+     },
+     "snooze_until": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "resolved"
+      ]
+     }
+    },
+    "required": [
+     "topic"
+    ]
+   },
+   "Event": {
+    "type": "object",
+    "properties": {
+     "seq": {
+      "type": "integer"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "created",
+       "updated",
+       "state",
+       "ready",
+       "reset"
+      ]
+     },
+     "notification": {
+      "$ref": "#/components/schemas/Notification"
+     }
+    },
+    "required": [
+     "seq",
+     "type"
+    ]
+   },
+   "Token": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "scopes": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "topics": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_seen_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     }
+    }
+   },
+   "NtfyMessage": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "time": {
+      "type": "integer"
+     },
+     "event": {
+      "type": "string",
+      "enum": [
+       "open",
+       "keepalive",
+       "message",
+       "message_clear",
+       "message_delete"
+      ]
+     },
+     "topic": {
+      "type": "string"
+     },
+     "sequence_id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "message": {
+      "type": "string"
+     },
+     "priority": {
+      "type": "integer"
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "click": {
+      "type": "string"
+     },
+     "actions": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "action": {
+         "type": "string"
+        },
+        "label": {
+         "type": "string"
+        },
+        "url": {
+         "type": "string"
+        },
+        "clear": {
+         "type": "boolean"
+        }
+       }
+      }
+     }
+    }
+   },
+   "NtfyPublish": {
+    "type": "object",
+    "properties": {
+     "topic": {
+      "type": "string"
+     },
+     "message": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "priority": {
+      "type": "integer"
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "click": {
+      "type": "string"
+     },
+     "actions": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "action": {
+         "type": "string"
+        },
+        "label": {
+         "type": "string"
+        },
+        "url": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "delay": {
+      "type": "string"
+     },
+     "id": {
+      "type": "string"
+     },
+     "sequence_id": {
+      "type": "string"
+     },
+     "external_id": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "topic"
+    ]
+   }
+  }
+ }
+}
