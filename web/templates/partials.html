@@ -85,6 +85,7 @@ Sitemap: {{.}}/sitemap.xml
 <main id="main" class="wrap narrow signin">
   <h1>Sign in to see your inbox</h1>
   <p>Your notifications are private to your clrd server. Paste a token to sign in on this browser. On a new server, open the setup link it printed to its log first.</p>
+  {{if .Failed}}<p class="signin-error" role="alert">That token did not work. Check it and try again.</p>{{end}}
   <form class="signin-form" method="post" action="/api/v1/session">
     <label for="token">Token</label>
     <input id="token" name="token" type="password" autocomplete="current-password" required placeholder="clrd_">

@@ -67,7 +67,7 @@ func (f *Fake) put(n Notification) {
 func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s := Snapshot{Seq: f.seq, Counts: map[string]int{}, Items: []Notification{}}
+	s := Snapshot{Seq: f.seq, Counts: map[string]int{}, Items: []Notification{}, Me: "web"}
 	topics := map[string]int{}
 	needle := strings.ToLower(q.Q)
 	for _, n := range f.items {
