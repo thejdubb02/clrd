@@ -125,8 +125,10 @@ Publish sets it with `"format"`, or ntfy style with `"markdown": false` (JSON)
 or `X-Markdown: no` (header, also `Markdown`, `md`, and `?markdown=` on a
 GET publish). `format` wins when both are given. A re-publish under the same
 `external_id` sets it again like every other field. Clients show `text`
-exactly as sent; `markdown` is CommonMark without raw HTML, images or
-autolinked schemes other than http, https and mailto. ntfy output carries
+exactly as sent. `markdown` is a subset: bold, italic, underline (`<u>` or
+`++text++`, the only raw HTML allowed; all other HTML is escaped),
+strikethrough, code, code blocks, lists, quotes, headings (shown small) and
+links. Never images inside the body, scripts, iframes or styles. ntfy output carries
 `content_type: "text/markdown"` for `markdown` and leaves it out for `text`,
 so ntfy apps render the same way. Events logged before this field existed
 have no `format`: clients treat that as `markdown`.
