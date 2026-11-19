@@ -35,7 +35,7 @@ Rules:
   ntfy JSON publish). Any other prefix matches itself and
   everything under it (`/docs` gets `/docs/x`, not `/docsx`).
 - Longest prefix wins. Mounts are checked before the server's own routes.
-- `/api`, `/healthz`, `/openapi.json` and `/setup` belong to the server;
+- `/api`, `/healthz`, `/openapi.json`, `/setup` and `/v1` (ntfy health) belong to the server;
   mounting there panics at startup.
 - Call `Mount` before `Run`. The handler sees the full, unstripped path; use
   `http.StripPrefix` if you want it stripped.

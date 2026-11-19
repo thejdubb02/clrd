@@ -315,3 +315,31 @@ func TestSessionCookieAndSetup(t *testing.T) {
 		t.Errorf("bad session token: %d", code)
 	}
 }
+
+// TestOpenAPIMatchesRoutes keeps openapi.json honest: every route the server
+// registers is documented, and nothing documented is missing.
+func TestOpenAPIMatchesRoutes(t *testing.T) {
+	s, ts, _ := newTest(t)
+	code, doc := call(t, ts, "GET", "/openapi.json", "", nil)
+	if code != 200 {
+		t.Fatalf("openapi.json: %d", code)
+	}
+	documented := map[string]bool{}
+	for path, ops := range doc["paths"].(map[string]any) {
+		for method := range ops.(map[string]any) {
+			if path == "/" {
+				path = "/{$}"
+			}
+			documented[strings.ToUpper(method)+" "+path] = true
+		}
+	}
+	for _, r := range s.routes {
+		if !documented[r] {
+			t.Errorf("route %q is not in openapi.json", r)
+		}
+		delete(documented, r)
+	}
+	for r := range documented {
+		t.Errorf("openapi.json documents %q, which the server does not serve", r)
+	}
+}

@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,9 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+//go:embed openapi.json
+var openapiJSON []byte
 
 // Options configure a Server. ConfigFromEnv fills them from CLRD_* variables.
 type Options struct {
@@ -121,7 +125,7 @@ func (s *Server) CurrentSeq() int64 { return s.seq.Load() }
 // are checked before the server's own routes. Call before Run.
 func (s *Server) Mount(prefix string, h http.Handler) {
 	prefix = "/" + strings.Trim(prefix, "/")
-	for _, own := range []string{"/api", "/healthz", "/openapi.json", "/setup"} {
+	for _, own := range []string{"/api", "/healthz", "/openapi.json", "/setup", "/v1"} {
 		if prefix == own || strings.HasPrefix(prefix, own+"/") {
 			panic("clrd: Mount: " + prefix + " belongs to the server")
 		}
@@ -231,6 +235,11 @@ func (s *Server) routesSetup() {
 		}
 		writeJSON(w, 200, map[string]any{"ok": true, "seq": s.CurrentSeq()})
 		return nil
+	})
+	s.route("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) error {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write(openapiJSON)
+		return err
 	})
 	s.route("GET /setup", s.handleSetup)
 	s.route("POST /setup", s.handleSetup)
