@@ -308,7 +308,7 @@ func (s *Server) https(r *http.Request) bool {
 
 func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: value, Path: "/", MaxAge: maxAge, HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, Secure: s.https(r)})
+		SameSite: http.SameSiteLaxMode, Secure: s.https(r) || r.Header.Get("X-Forwarded-Proto") == "https"}) // behind a TLS proxy; a spoofed header only adds Secure
 }
 
 // handleSession signs a browser in: JSON {"token"} or a form post with
@@ -328,8 +328,12 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	} else if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
+	// Parse first: a control character fails url.Parse, http.Redirect then
+	// skips its cleaning, and a browser strips "/\t/evil.com" to "//evil.com".
+	// No backslash anywhere: http.Redirect cleans "/./\\evil.com" to "/\\evil.com".
 	next := in.Next
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
+	if u, err := url.Parse(next); err != nil || u.Scheme != "" || u.Host != "" ||
+		!strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\") {
 		next = "/app"
 	}
 	t := s.lookupToken(r.Context(), strings.TrimSpace(in.Token))
