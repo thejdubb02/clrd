@@ -148,3 +148,12 @@ func convert(from, to any) error {
 	}
 	return json.Unmarshal(b, to)
 }
+
+func (a webAPI) Act(r *http.Request, id, action string, until *time.Time) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.Act(r.Context(), tok, id, action, until)
+	return err
+}
