@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONArray
 
 /** What the phone tray should do for one notification. Pure, so it is unit tested on the JVM. */
 sealed interface TrayStep {
@@ -27,6 +28,33 @@ sealed interface TrayStep {
             n.state == Notif.ACTIVE -> Show(n, silent = false)
             n.state == Notif.ACKNOWLEDGED -> Show(n, silent = true)
             else -> Cancel(n.id)
+        }
+    }
+}
+
+/** One tray button: a sender link (docs/SPEC.md section 2) or one of ours, by its [Tray] action. */
+data class TrayButton(val label: String, val url: String? = null, val action: String? = null) {
+    companion object {
+        val ACK = TrayButton("Ack", action = Tray.ACTION_ACK)
+        val SNOOZE = TrayButton("Snooze 1h", action = Tray.ACTION_SNOOZE)
+        val CLEAR = TrayButton("Clear", action = Tray.ACTION_DISMISS)
+
+        /**
+         * Android shows 3 buttons at most. Up to 2 sender links come first (http and https only),
+         * then ours fill what is left in this order: Ack (unless acked already), Clear, Snooze.
+         * A swipe still clears, so Clear is never the only way out. Pure, so it is unit tested on the JVM.
+         */
+        fun pick(n: Notif): List<TrayButton> {
+            val a = runCatching { JSONArray(n.actions) }.getOrNull() ?: JSONArray()
+            val links = (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { o ->
+                val url = o.optString("url")
+                // Web links only, and short: a huge URL would not fit through Binder and would crash the post.
+                if (url.length > 2048 || (!url.startsWith("https://", true) && !url.startsWith("http://", true))) null
+                // Android matches intent schemes case-sensitively, so HTTPS://x must become https://x
+                else TrayButton(o.optString("label").ifBlank { "Open" }, url = url.substringBefore(':').lowercase() + url.substring(url.indexOf(':')))
+            }.take(2)
+            val ours = listOfNotNull(ACK.takeIf { n.state != Notif.ACKNOWLEDGED }, CLEAR, SNOOZE).take(3 - links.size)
+            return links + listOf(ACK, SNOOZE, CLEAR).filter { it in ours } // ours keep their usual order
         }
     }
 }
@@ -88,9 +116,7 @@ class Tray(private val ctx: Context) {
             .setContentIntent(open(n))
             .setDeleteIntent(action(n, ACTION_DISMISS)) // swipe away here = dismiss everywhere
         if (n.priority >= 5) b.setColor(0xFFC2410C.toInt())
-        if (n.state != Notif.ACKNOWLEDGED) b.addAction(0, "Ack", action(n, ACTION_ACK))
-        b.addAction(0, "Snooze 1h", action(n, ACTION_SNOOZE))
-        b.addAction(0, "Clear", action(n, ACTION_DISMISS))
+        TrayButton.pick(n).forEach { b.addAction(0, it.label, if (it.url != null) link(it.url) else action(n, it.action!!)) }
         nm.notify(n.id, 0, b.build())
     }
 
@@ -99,6 +125,15 @@ class Tray(private val ctx: Context) {
             ?: Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         return PendingIntent.getActivity(ctx, n.id.hashCode(), i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
+
+    /** A sender link opens in the browser. The URL itself makes the PendingIntent unique. */
+    private fun link(url: String) =
+        PendingIntent.getActivity(
+            ctx, 0,
+            // BROWSABLE: only apps that accept links from a browser may open it, as if tapped on a web page.
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
 
     private fun action(n: Notif, action: String): PendingIntent {
         val server = App.of(ctx).serverUrl // a tap after a server switch must not reach the new server
