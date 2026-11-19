@@ -45,6 +45,7 @@ func run(args []string) error {
 		}
 		defer s.Close()
 		s.Mount("/mcp", mcp.New(s))
+		mountWeb(s, opt.BaseURL)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		return s.Run(ctx)
