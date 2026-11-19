@@ -319,7 +319,8 @@ func TestNtfyFilters(t *testing.T) {
 // The ntfy routes answer any origin, errors included, and a preflight needs
 // no token. The native API does not.
 func TestNtfyCORS(t *testing.T) {
-	_, ts, _ := newTest(t)
+	s, ts, _ := newTest(t)
+	s.Mount("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(405) }))
 	do := func(method, path string) *http.Response {
 		t.Helper()
 		req, _ := http.NewRequest(method, ts.URL+path, nil)
@@ -341,6 +342,9 @@ func TestNtfyCORS(t *testing.T) {
 	}
 	if res := do("OPTIONS", "/api/v1/notifications"); res.StatusCode == 204 || res.Header.Get("Access-Control-Allow-Origin") != "" {
 		t.Errorf("native API preflight allowed: %d", res.StatusCode)
+	}
+	if res := do("OPTIONS", "/mcp"); res.StatusCode != 405 {
+		t.Errorf("preflight took a mounted path: %d", res.StatusCode)
 	}
 }
 
