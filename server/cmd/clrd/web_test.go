@@ -43,8 +43,8 @@ func TestWebOnRealServer(t *testing.T) {
 	// the name it acts as. Sign in through the form the page renders, first
 	// with a bad token.
 	_, page := get("/app?topic=home")
-	if code, body := submit(t, c, ts.URL, page, "clrd_wrong", ""); code != 401 || !strings.Contains(body, `role="alert"`) || !strings.Contains(body, `value="/app?topic=home"`) {
-		t.Fatalf("bad token: %d, want 401 with the error shown and next kept without error=", code)
+	if code, body := submit(t, c, ts.URL, page, "clrd_wrong", "kitchen tablet"); code != 401 || !strings.Contains(body, `role="alert"`) || !strings.Contains(body, `value="/app?topic=home"`) || !strings.Contains(body, `value="kitchen tablet"`) {
+		t.Fatalf("bad token: %d, want 401 with the error shown, next kept without error= and the typed name kept", code)
 	}
 	if _, body := get("/app?topic=home"); strings.Contains(body, `role="alert"`) {
 		t.Fatal("error shown before any sign-in attempt")
