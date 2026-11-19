@@ -156,7 +156,7 @@ viewer's IP stays private.
 - `GET /api/v1/favicon?host=<hostname>`: tries `https://host/favicon.ico`,
   then the page's `<link rel="icon">`. Only raster images (PNG, JPEG, GIF,
   WebP, ICO, BMP) are served; anything else, and every failure, returns the
-  same fallback SVG. Cached on disk 7 days, failures too.
+  same fallback SVG. Cached on disk 7 days (a failure 1 hour).
 - `GET /api/v1/preview?url=<url>&topic=<topic>`: 403 unless previews are on
   for that topic (or globally with no topic). Returns `{"url","title",
   "description","site_name","image"}` from Open Graph tags (falling back to
