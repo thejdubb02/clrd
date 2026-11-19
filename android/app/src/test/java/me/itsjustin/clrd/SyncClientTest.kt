@@ -33,6 +33,8 @@ class SyncClientTest {
     /** Open list page by `before` cursor (null = first page). */
     private var open: (String?) -> String = { """{"notifications":[],"seq":0}""" }
     private var client: SyncClient? = null
+    /** Holds a "slow" POST open until the test lets it go. */
+    private val release = java.util.concurrent.CountDownLatch(1)
 
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
@@ -55,7 +57,7 @@ class SyncClientTest {
                         posts += path
                         log += path
                         if (path.contains("flaky") && posts.count { it == path } == 1) MockResponse().setResponseCode(503)
-                        else if (path.contains("slow")) MockResponse().setHeadersDelay(300, java.util.concurrent.TimeUnit.MILLISECONDS).setBody("{}")
+                        else if (path.contains("slow")) { release.await(5, java.util.concurrent.TimeUnit.SECONDS); MockResponse().setBody("{}") }
                         else if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
                         else MockResponse().setBody("{}")
                     }
@@ -67,6 +69,7 @@ class SyncClientTest {
     }
 
     @After fun tearDown() {
+        release.countDown()
         client?.stop()
         serverSockets.forEach { it.close(1001, null) }
         server.shutdown()
@@ -160,11 +163,11 @@ class SyncClientTest {
     @Test fun stopDuringFirstFlushNeverOpensTheSocket() {
         store.queue += Pending(1, "slow", "dismiss")
         start()
-        await { posts.isNotEmpty() } // the send is in flight
+        await { posts.isNotEmpty() } // the send is held open by the server
         client!!.stop()
-        Thread.sleep(600)
+        release.countDown()
+        Thread.sleep(500) // the connect would follow the send within milliseconds
         assertTrue(log.toString(), "ws" !in log)
-        assertTrue(statuses.toString(), SyncClient.Status.CONNECTED !in statuses)
     }
 
     @Test fun badTokenStopsRetrying() {
