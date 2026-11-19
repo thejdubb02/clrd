@@ -1,0 +1,106 @@
+{{define "app"}}{{template "head" .}}<meta name="robots" content="noindex">
+<script src="/static/inbox.js" defer></script>
+</head>
+<body class="app">
+<a class="skip" href="#main">Skip to notifications</a>
+<div class="shell" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}">
+  <aside class="side">
+    {{template "brand" "/app"}}
+    <nav class="views" aria-label="Views" data-live="views">
+      <a href="/app"{{if eq .View "inbox"}} aria-current="page"{{end}}>Inbox <span class="count">{{.Inbox}}</span></a>
+      <a href="/app/snoozed"{{if eq .View "snoozed"}} aria-current="page"{{end}}>Snoozed <span class="count">{{.Snoozed}}</span></a>
+      <a href="/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>Cleared <span class="count">{{.Cleared}}</span></a>
+      <a href="/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>Settings</a>
+    </nav>
+    <nav class="topics" aria-labelledby="topics-h" data-live="topics"{{if not .Snap.Topics}} hidden{{end}}>
+      <h2 id="topics-h">Topics</h2>
+      {{$base := "/app"}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "/app/%s" .View}}{{end}}
+      <a href="{{$base}}"{{if and (not .Topic) (ne .View "settings")}} aria-current="true"{{end}}>All topics</a>
+      {{range .Snap.Topics}}<a href="{{$base}}?topic={{.Name}}"{{if eq .Name $.Topic}} aria-current="true"{{end}}>{{.Name}} <span class="count">{{.Open}}</span></a>
+      {{end}}
+    </nav>
+    <div class="sync" id="sync">
+      <span class="sync-dot" aria-hidden="true"></span>
+      <span data-live="devices">In sync on {{len .Snap.Devices}} {{plural (len .Snap.Devices) "device" "devices"}}</span>
+      <span class="sync-state" data-conn></span>
+    </div>
+  </aside>
+
+  <main id="main" class="main">
+    {{if eq .View "settings"}}{{template "settings" .}}{{else}}
+    <header class="bar">
+      <h1>{{.Heading}}{{with .Topic}} <span class="in-topic">in {{.}}</span>{{end}}</h1>
+      <form class="search" role="search" method="get">
+        {{with .Topic}}<input type="hidden" name="topic" value="{{.}}">{{end}}
+        <label class="sr-only" for="q">Search notifications</label>
+        <input id="q" type="search" name="q" value="{{.Q}}" placeholder="Search" autocomplete="off">
+      </form>
+      {{if eq .View "inbox"}}<button type="button" class="btn btn-quiet js-only" data-act="clear-all"{{if not .Snap.Items}} hidden{{end}}>Clear all</button>{{end}}
+    </header>
+    <div class="list" data-list>
+      {{range .Snap.Items}}{{template "card" (card . $.View)}}{{end}}
+    </div>
+    <div class="empty"{{if .Snap.Items}} hidden{{end}} data-empty>
+      {{if .Q}}<p>No notifications match "{{.Q}}".</p>
+      {{else if eq .View "inbox"}}<h2>All clear</h2><p>New alerts land here the moment they are sent.</p>
+<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+  -d '{"topic":"test","message":"Hello from clrd"}' \
+  {{.Base}}/api/v1/notifications</code></pre>
+      {{else if eq .View "snoozed"}}<p>Nothing snoozed. Snoozed alerts wait here until their time comes.</p>
+      {{else}}<p>Nothing cleared yet. Cleared and resolved alerts stay here for a while so you can restore them.</p>{{end}}
+    </div>
+    {{end}}
+  </main>
+</div>
+<div class="toast" role="status" aria-live="polite" data-toast hidden></div>
+<p class="sr-only" aria-live="polite" data-announce></p>
+</body>
+</html>
+{{end}}
+
+{{define "card"}}{{$n := .N}}
+<article class="card prio-{{$n.Priority}}" data-id="{{$n.ID}}" data-seq="{{$n.Seq}}" data-state="{{$n.State}}" aria-labelledby="t-{{$n.ID}}">
+  <div class="card-head">
+    <span class="dot{{if ge $n.Priority 5}} dot-urgent{{else if eq $n.Priority 4}} dot-high{{end}}" aria-hidden="true"></span>
+    <h2 class="card-title" id="t-{{$n.ID}}">{{if $n.Click}}<a href="{{$n.Click}}" rel="noopener noreferrer">{{$n.Heading}}</a>{{else}}{{$n.Heading}}{{end}}</h2>
+    {{if eq $n.State "acknowledged"}}<span class="chip chip-acknowledged">Acknowledged{{with $n.StateBy}} on {{.}}{{end}}</span>
+    {{else if eq $n.State "snoozed"}}<span class="chip chip-snoozed">Snoozed{{with $n.SnoozeUntil}} until <time datetime="{{iso .}}">{{clock .}}</time>{{end}}</span>
+    {{else if eq $n.State "dismissed"}}<span class="chip chip-dismissed">Cleared{{with $n.StateBy}} on {{.}}{{end}}</span>
+    {{else if eq $n.State "resolved"}}<span class="chip chip-resolved">Resolved{{with $n.StateBy}} by {{.}}{{end}}</span>
+    {{else if ge $n.Priority 5}}<span class="chip chip-active">Urgent</span>{{end}}
+  </div>
+  {{with $n.Body}}<p class="card-body">{{.}}</p>{{end}}
+  <p class="meta"><a href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{range $n.Tags}}<span>#{{.}}</span>{{end}}</p>
+  {{if $n.Actions}}<p class="links">{{range $n.Actions}}<a href="{{.URL}}" rel="noopener noreferrer">{{.Label}}</a>{{end}}</p>{{end}}
+  <div class="actions js-only">
+    {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button type="button" class="btn btn-quiet" data-act="reopen">Restore</button>{{end}}
+    {{else}}
+      {{if ne $n.State "acknowledged"}}<button type="button" class="btn btn-quiet" data-act="ack">Ack</button>{{end}}
+      {{if ne $n.State "snoozed"}}<button type="button" class="btn btn-quiet" data-act="snooze" title="Snooze for 1 hour">Snooze</button>{{end}}
+      <button type="button" class="btn btn-clear" data-act="dismiss">Clear</button>
+    {{end}}
+  </div>
+</article>
+{{end}}
+
+{{define "settings"}}
+<header class="bar"><h1>Settings</h1></header>
+<section class="panel" aria-labelledby="dev-h">
+  <h2 id="dev-h">Devices in sync</h2>
+  {{if .Snap.Devices}}<ul class="devices-list">
+    {{range .Snap.Devices}}<li><span>{{.Name}}</span><span class="meta">seen <time datetime="{{iso .LastSeen}}">{{clock .LastSeen}}</time></span></li>{{end}}
+  </ul>
+  {{else}}<p>No devices connected in the last 10 minutes.</p>{{end}}
+</section>
+<section class="panel" aria-labelledby="send-h">
+  <h2 id="send-h">Send a test notification</h2>
+  <p>Run this with a token that has the publish scope. It should appear on every device within a second.</p>
+<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+  -d '{"topic":"test","message":"Hello from clrd"}' \
+  {{.Base}}/api/v1/notifications</code></pre>
+</section>
+<section class="panel" aria-labelledby="look-h">
+  <h2 id="look-h">Appearance</h2>
+  <p>The inbox follows your system's light or dark setting.</p>
+</section>
+{{end}}

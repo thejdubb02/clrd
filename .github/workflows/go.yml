@@ -6,6 +6,10 @@ on:
   pull_request:
     paths:
       - "server/**"
+      - "web/**"
+      - "docs/**"
+      - "assets/**"
+      - "embed.go"
       - "go.mod"
       - "go.sum"
       - "Dockerfile"
@@ -20,7 +24,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: gofmt
-        run: test -z "$(gofmt -l server)" || { gofmt -l server; exit 1; }
+        run: test -z "$(gofmt -l server web)" || { gofmt -l server web; exit 1; }
       - run: go vet ./...
       - name: test
         # -race needs a C compiler; run without it if the runner has none.

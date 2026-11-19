@@ -1,0 +1,175 @@
+{{define "landing"}}{{template "head" .}}</head>
+<body class="site">
+{{template "site-header" .}}
+<main id="main">
+
+<section class="hero wrap">
+  <div class="hero-text">
+    <h1>Dismiss once. Gone everywhere.</h1>
+    <p class="lede">clrd is a self-hosted notification server. Send an alert with one HTTP call. It lands on your phone, your tablet and the web inbox. Swipe it away on any of them and it clears on all the others.</p>
+    <p class="cta">
+      <a class="btn btn-ink" href="#self-host">Self-host clrd</a>
+      <a class="btn btn-quiet" href="/docs/">Read the docs</a>
+    </p>
+    <p class="status">In early development. The API is settling; expect changes before 1.0.</p>
+  </div>
+
+  <figure class="demo" aria-labelledby="demo-cap">
+    <div class="devices">
+      <div class="device phone">
+        <p class="device-name">pixel-9</p>
+        <div class="mini swipe">
+          {{template "mini"}}
+        </div>
+      </div>
+      {{template "follower" "web inbox"}}
+      {{template "follower" "tablet"}}
+    </div>
+    <figcaption id="demo-cap">Swiped away on the phone. The web inbox and the tablet clear in the same second.</figcaption>
+  </figure>
+</section>
+
+<section class="band" aria-labelledby="how">
+  <div class="wrap split">
+    <div>
+      <h2 id="how">How it works</h2>
+      <ol class="steps">
+        <li><strong>Send.</strong> A script, a monitor or an AI agent posts an alert to a topic.</li>
+        <li><strong>It arrives everywhere.</strong> Every phone, tablet and browser signed in to that topic shows it.</li>
+        <li><strong>Clear it anywhere.</strong> Swipe it on the phone, click Clear on the web, or let the sender resolve it when the fault is fixed.</li>
+        <li><strong>Every device follows.</strong> The server owns the state, so the alert leaves every inbox and every phone tray.</li>
+      </ol>
+    </div>
+    <div>
+      <h3>No clocks, no conflicts</h3>
+      <p>Every change is an event with a number. Each device remembers the last number it saw and asks for everything after it when it reconnects.</p>
+      <pre class="log" aria-label="Example event log"><code><span>48211</span>  created    backups  Nightly backup failed
+<span>48212</span>  dismissed  backups  by pixel-9</code></pre>
+      <p>A tablet that was off overnight asks for everything after 48211 and drops the alert before you look at it.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" aria-labelledby="states">
+  <h2 id="states">More than read and unread</h2>
+  <p class="section-lede">Four states, all synced, all with the device that set them.</p>
+  <dl class="states">
+    <div><dt><span class="chip chip-dismissed">Cleared</span></dt><dd>You swiped it away. Gone from every device.</dd></div>
+    <div><dt><span class="chip chip-acknowledged">Acknowledged</span></dt><dd>Someone is on it. It stays in the inbox and stops buzzing.</dd></div>
+    <div><dt><span class="chip chip-resolved">Resolved</span></dt><dd>The sender cleared it because the fault is fixed. Monitors close their own alerts by id.</dd></div>
+    <div><dt><span class="chip chip-snoozed">Snoozed</span></dt><dd>Hidden until a time you pick, then it comes back and notifies again.</dd></div>
+  </dl>
+</section>
+
+<section class="band" aria-labelledby="plug">
+  <div class="wrap">
+    <h2 id="plug">Plug it into what you already run</h2>
+    <p class="section-lede">One HTTP call to send. One more to clear it when the problem goes away.</p>
+    <div class="split">
+      <div>
+        <h3>curl</h3>
+<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+  -d '{"topic":"infra","title":"Disk full",
+       "message":"web-1 at 95%","priority":4,
+       "external_id":"disk-web-1"}' \
+  https://clrd.itsjustin.me/api/v1/notifications</code></pre>
+        <p>When the disk has room again, the sender clears it everywhere:</p>
+<pre><code>curl -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
+  https://clrd.itsjustin.me/infra/disk-web-1/resolve</code></pre>
+      </div>
+      <div>
+        <h3>AI agents (MCP)</h3>
+        <p>clrd serves MCP at <code>/mcp</code>. Agents can send, list, acknowledge and resolve, and <code>wait_for_reply</code> lets an agent ask you a yes or no question and wait for your tap.</p>
+        <h3>SDKs</h3>
+        <p>Thin clients for Python, JavaScript and Go wrap the same API. The <a href="/docs/spec">API reference</a> lists every endpoint.</p>
+      </div>
+    </div>
+
+    <h3 class="tools-h">Works with</h3>
+    <dl class="tools">
+      <div><dt>Apprise</dt><dd>Use an <code>ntfys://</code> URL pointed at your clrd server.</dd></div>
+      <div><dt>Gatus</dt><dd>Use the ntfy alert provider. When the endpoint recovers, the alert clears itself.</dd></div>
+      <div><dt>Uptime Kuma</dt><dd>Pick the ntfy notification type and enter your clrd server URL.</dd></div>
+      <div><dt>Grafana</dt><dd>Add a webhook contact point at <code>/{topic}?template=grafana</code>. Firing alerts open, resolved alerts clear.</dd></div>
+      <div><dt>Home Assistant</dt><dd>Use the ntfy integration or a <code>rest_command</code>.</dd></div>
+      <div><dt>GitHub Actions</dt><dd>One curl step at the end of a job.</dd></div>
+      <div><dt>Alertmanager</dt><dd>Point a webhook receiver at <code>/{topic}?template=alertmanager</code>. Resolved alerts clear on every device.</dd></div>
+      <div><dt>Any ntfy client</dt><dd>The ntfy app, CLI and libraries publish and subscribe unchanged.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section class="wrap" aria-labelledby="ntfy">
+  <div class="split">
+    <div>
+      <h2 id="ntfy">Already on ntfy?</h2>
+      <p>Point your scripts at clrd and keep going. Same publish endpoint, same headers, same JSON body, same subscribe streams.</p>
+<pre><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+  -H "Title: Disk full" -H "Priority: high" \
+  -d "web-1 at 95%" https://clrd.itsjustin.me/infra</code></pre>
+      <p class="quiet">Supported: <code>PUT</code> and <code>POST /{topic}</code>, the Title, Priority, Tags, Click and Actions headers, JSON publish to <code>/</code>, and <code>/json</code>, <code>/sse</code>, <code>/ws</code> and <code>/raw</code> subscriptions with <code>since=</code>.</p>
+    </div>
+    <div>
+      <h3>What changes</h3>
+      <table class="compare">
+        <thead><tr><th scope="col"><span class="sr-only">Situation</span></th><th scope="col">ntfy</th><th scope="col">clrd</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">You swipe an alert away on one device</th><td>The others keep it</td><td class="yes">Gone everywhere</td></tr>
+          <tr><th scope="row">The sender clears an alert</th><td class="yes">Gone everywhere</td><td class="yes">Gone everywhere</td></tr>
+          <tr><th scope="row">Someone takes an alert</th><td>No shared state</td><td class="yes">Acknowledged, with who</td></tr>
+          <tr><th scope="row">A phone was offline</th><td>Catches up on messages</td><td class="yes">Catches up on messages and clears</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="band" aria-labelledby="self-host">
+  <div class="wrap split">
+    <div>
+      <h2 id="self-host">Self-host it</h2>
+      <p>One Go binary and one SQLite file. No Redis, no message broker, no account on anyone else's service. clrd makes no outbound calls and sends no telemetry.</p>
+      <p class="quiet">A Docker image and compose file ship with the first release. Until then, build from source with Go 1.23 or newer.</p>
+    </div>
+    <div>
+<pre><code>git clone https://github.com/thejdubb02/clrd
+cd clrd &amp;&amp; go build -o clrd ./server/cmd/clrd
+
+CLRD_DB=./clrd.db \
+CLRD_BASE_URL=https://notify.example.com \
+./clrd</code></pre>
+      <p class="quiet">On first start, clrd prints a one-time admin setup link to its log.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap split" aria-labelledby="android">
+  <div>
+    <h2 id="android">The Android app</h2>
+    <p>Built for F-Droid. No Google Play Services, so it runs on GrapheneOS, LineageOS and any phone without Google. It keeps one connection to your server and removes an alert from the tray the moment it is cleared anywhere else.</p>
+    <p class="quiet">Not released yet. Follow the <a href="https://github.com/thejdubb02/clrd">GitHub repository</a> for the first build.</p>
+  </div>
+  <div>
+    <h2 id="source">Open source</h2>
+    <p>Apache 2.0. The server, the web inbox and the Android app live in one repository, built against one written contract.</p>
+    <p><a class="btn btn-quiet" href="https://github.com/thejdubb02/clrd">View on GitHub</a></p>
+  </div>
+</section>
+
+</main>
+{{template "site-footer" .}}
+</body>
+</html>
+{{end}}
+
+{{define "mini"}}<p class="mini-title"><span class="dot dot-urgent" aria-hidden="true"></span>Nightly backup failed</p>
+          <p class="mini-body">restic exited 1 after 4m 12s.</p>
+          <p class="meta">backups</p>{{end}}
+
+{{define "follower"}}<div class="device {{if eq . "tablet"}}tablet{{else}}web{{end}}">
+        <p class="device-name">{{.}}</p>
+        <div class="mini follow">
+          {{template "mini"}}
+        </div>
+        <p class="mini-cleared">Cleared on pixel-9</p>
+      </div>{{end}}

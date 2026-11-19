@@ -1,0 +1,98 @@
+{{define "head"}}<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+{{with .Desc}}<meta name="description" content="{{.}}">{{end}}
+<link rel="canonical" href="{{.URL}}">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F5F3EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1114" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/assets/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/style.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="clrd">
+<meta property="og:title" content="{{.Title}}">
+{{with .Desc}}<meta property="og:description" content="{{.}}">{{end}}
+<meta property="og:url" content="{{.URL}}">
+<meta property="og:image" content="{{.Base}}/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="clrd logo and the line: Dismiss once. Gone everywhere.">
+<meta name="twitter:card" content="summary_large_image">
+{{end}}
+
+{{define "brand"}}<a class="brand" href="{{.}}"><img src="/assets/logo.svg" alt="" width="36" height="24"><span class="wordmark">clrd</span></a>{{end}}
+
+{{define "site-header"}}
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap row">
+    {{template "brand" "/"}}
+    <nav aria-label="Site">
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/thejdubb02/clrd">GitHub</a>
+      <a class="btn btn-quiet" href="/app">Open inbox</a>
+    </nav>
+  </div>
+</header>
+{{end}}
+
+{{define "site-footer"}}
+<footer class="site-footer">
+  <div class="wrap row">
+    {{template "brand" "/"}}
+    <p>Open source under the Apache 2.0 license. Self-hosted, no telemetry.</p>
+    <nav aria-label="Footer">
+      <a href="/docs/">Docs</a>
+      <a href="/docs/spec">Spec</a>
+      <a href="https://github.com/thejdubb02/clrd">GitHub</a>
+    </nav>
+  </div>
+</footer>
+{{end}}
+
+{{define "robots.txt"}}User-agent: *
+Allow: /
+Disallow: /app
+Disallow: /api/
+
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: PerplexityBot
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /app
+Disallow: /api/
+
+Sitemap: {{.}}/sitemap.xml
+{{end}}
+
+{{define "sitemap.xml"}}<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>{{.Base}}/</loc></url>
+<url><loc>{{.Base}}/docs/</loc></url>
+{{range .Docs}}<url><loc>{{$.Base}}/docs/{{.Key}}</loc></url>
+{{end}}</urlset>
+{{end}}
+
+{{define "signin"}}{{template "head" .}}<meta name="robots" content="noindex">
+</head>
+<body>
+{{template "site-header" .}}
+<main id="main" class="wrap narrow signin">
+  <h1>Sign in to see your inbox</h1>
+  <p>Your notifications are private to your clrd server. Paste a token to sign in on this browser. On a new server, open the setup link it printed to its log first.</p>
+  <form class="signin-form" method="post" action="/api/v1/session">
+    <label for="token">Token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" required placeholder="clrd_">
+    <input type="hidden" name="next" value="{{.Path}}">
+    <button class="btn btn-ink" type="submit">Sign in</button>
+  </form>
+  <p class="quiet">Make a token with <code>clrd token create --name laptop --scope read</code>. <a href="/docs/spec">How sign-in works</a></p>
+</main>
+</body>
+</html>
+{{end}}
