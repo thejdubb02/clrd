@@ -44,7 +44,6 @@ CREATE TABLE IF NOT EXISTS notifications (
   tags TEXT NOT NULL DEFAULT '[]',
   click TEXT NOT NULL DEFAULT '',
   icon TEXT NOT NULL DEFAULT '',
-  image TEXT NOT NULL DEFAULT '',
   actions TEXT NOT NULL DEFAULT '[]',
   reply TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL,
@@ -102,8 +101,7 @@ type Notification struct {
 	Priority    int        `json:"priority"`
 	Tags        []string   `json:"tags"`
 	Click       string     `json:"click"`
-	Icon        string     `json:"icon"`  // http(s) image URL; the topic's icon when the sender gave none
-	Image       string     `json:"image"` // http(s) image URL shown large
+	Icon        string     `json:"icon"` // http(s) image URL; the topic's icon when the sender gave none
 	Actions     []Action   `json:"actions"`
 	Reply       string     `json:"reply"` // the reply action tapped, "" until one is
 	State       string     `json:"state"`
@@ -156,7 +154,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "image"} {
+	for _, col := range []string{"reply", "state_by_id", "icon"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -177,7 +175,7 @@ func nullMS(t *time.Time) any {
 	return ms(*t)
 }
 
-const notifCols = `id, topic, external_id, title, message, priority, tags, click, icon, image, actions, reply,
+const notifCols = `id, topic, external_id, title, message, priority, tags, click, icon, actions, reply,
   state, state_by, state_by_id, snooze_until, created_at, updated_at, seq`
 
 type scanner interface{ Scan(...any) error }
@@ -188,7 +186,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	var snooze sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Priority, &tags, &n.Click,
-		&n.Icon, &n.Image, &actions, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq)
+		&n.Icon, &actions, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq)
 	if err != nil {
 		return nil, err
 	}
@@ -206,12 +204,12 @@ func scanNotification(r scanner) (*Notification, error) {
 func saveNotification(tx *sql.Tx, n *Notification) error {
 	tags, _ := json.Marshal(n.Tags)
 	actions, _ := json.Marshal(n.Actions)
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message,
-		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, image=excluded.image, actions=excluded.actions,
+		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
 		updated_at=excluded.updated_at, seq=excluded.seq`,
-		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Priority, string(tags), n.Click, n.Icon, n.Image, string(actions),
+		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
@@ -314,8 +312,7 @@ type PublishInput struct {
 	Priority    int        `json:"priority"`
 	Tags        []string   `json:"tags"`
 	Click       string     `json:"click"`
-	Icon        string     `json:"icon"`  // http(s) image URL; the topic's icon when the sender gave none
-	Image       string     `json:"image"` // http(s) image URL shown large
+	Icon        string     `json:"icon"` // http(s) image URL; the topic's icon when the sender gave none
 	Actions     []Action   `json:"actions"`
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
 	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
@@ -333,6 +330,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		return nil, err
 	}
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
+		return nil, err
+	}
+	if err := checkImageURL("icon", in.Icon); err != nil {
 		return nil, err
 	}
 	if in.Status == "resolved" {
@@ -365,12 +365,6 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err := checkActions(in.Actions); err != nil {
 		return nil, err
 	}
-	if err := checkImageURL("icon", in.Icon); err != nil {
-		return nil, err
-	}
-	if err := checkImageURL("image", in.Image); err != nil {
-		return nil, err
-	}
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		if in.Icon == "" { // the topic's icon, copied so a later change leaves old rows alone
 			if err := tx.QueryRowContext(ctx, `SELECT icon FROM topics WHERE topic = ?`, in.Topic).Scan(&in.Icon); err != nil &&
@@ -382,8 +376,8 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 				in.Topic, in.ExternalID)
 			if err == nil {
-				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Image, n.Actions, n.Reply =
-					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Icon, in.Image, in.Actions, "" // a new question starts unanswered
+				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
+					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -401,7 +395,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		}
 		t := now()
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
-			Message: in.Message, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Image: in.Image, Actions: in.Actions,
+			Message: in.Message, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions,
 			State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
@@ -800,7 +794,7 @@ func checkImageURL(field, v string) error {
 	if v == "" {
 		return nil
 	}
-	if u, err := url.Parse(v); len(v) > 2048 || err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+	if u, err := url.Parse(v); len(v) > 2048 || err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" {
 		return errf(400, "bad_request", "%s must be an http(s) URL of at most 2048 characters", field)
 	}
 	return nil

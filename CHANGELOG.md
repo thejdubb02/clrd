@@ -16,6 +16,9 @@ Fixed, Removed, Security), as one line a user can understand.
 - Server: icons and images on notifications (`icon`, `image`, ntfy's `X-Icon`
   and image `X-Attach`), and a default icon per topic so each service gets
   its own picture. The web inbox and Android app do not show them yet.
+- Server: an icon on each notification (`icon`, or ntfy's `X-Icon`), and a
+  default icon per topic so each service gets its own picture. The web inbox
+  and Android app do not show it yet.
 - Server: one Go binary with SQLite. Native publish API, notification states
   (dismiss, acknowledge, resolve, snooze) synced to every device over WebSocket
   and SSE, with catch-up from the last seen event after a reconnect.

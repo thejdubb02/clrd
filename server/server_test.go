@@ -529,7 +529,7 @@ func TestReplyColumnAdded(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := schema
-	for _, col := range []string{"reply", "icon", "image"} {
+	for _, col := range []string{"reply", "icon"} {
 		line := "  " + col + " TEXT NOT NULL DEFAULT '',\n"
 		if !strings.Contains(old, line) {
 			t.Fatalf("schema has no %s line to drop", col)
@@ -554,27 +554,29 @@ func TestReplyColumnAdded(t *testing.T) {
 	}
 }
 
-func TestIconsAndImages(t *testing.T) {
+func TestIcons(t *testing.T) {
 	s, ts, admin := newTest(t)
 	reader := mkToken(t, s, "reader", []string{ScopeRead}, nil)
 	other := mkToken(t, s, "other", []string{ScopePublish}, []string{"other"})
-	const icon, img = "https://example.com/disk.png", "https://example.com/graph.jpg"
+	const icon = "https://example.com/disk.png"
 
 	for _, tc := range []struct {
-		tok   string
-		topic string
-		body  any
-		want  int
+		tok  string
+		body any
+		want int
 	}{
-		{reader, "infra", map[string]string{"icon": icon}, 403},
-		{other, "infra", map[string]string{"icon": icon}, 403},
-		{admin, "infra", map[string]string{"icon": "javascript:alert(1)"}, 400},
-		{admin, "infra", map[string]string{"icon": "data:image/png;base64,AA=="}, 400},
-		{admin, "infra", map[string]string{"icon": "/rel.png"}, 400},
-		{admin, "infra", map[string]string{"icon": "javascript://example.com/%0aalert(1)"}, 400},
-		{admin, "infra", map[string]string{"icon": icon}, 200},
+		{reader, map[string]string{"icon": icon}, 403},
+		{other, map[string]string{"icon": icon}, 403},
+		{admin, map[string]string{"icon": "javascript:alert(1)"}, 400},
+		{admin, map[string]string{"icon": "javascript://example.com/%0aalert(1)"}, 400},
+		{admin, map[string]string{"icon": "data:image/png;base64,AA=="}, 400},
+		{admin, map[string]string{"icon": "/rel.png"}, 400},
+		{admin, map[string]string{"icon": "https://:443/x.png"}, 400},
+		{admin, map[string]string{"icon": icon}, 200},
+		{admin, map[string]string{}, 400}, // a missing key must not wipe it
+		{admin, nil, 400},
 	} {
-		if code, out := call(t, ts, "PUT", "/api/v1/topics/"+tc.topic, tc.tok, tc.body); code != tc.want {
+		if code, out := call(t, ts, "PUT", "/api/v1/topics/infra", tc.tok, tc.body); code != tc.want {
 			t.Fatalf("PUT topic icon %v: %d %v", tc.body, code, out)
 		}
 	}
@@ -583,40 +585,38 @@ func TestIconsAndImages(t *testing.T) {
 		t.Fatalf("topic list: %v", out)
 	}
 
-	// The topic's icon fills in; an explicit one wins; image is kept.
+	// The topic's icon fills in; an explicit one wins, and an upsert stores it.
 	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "a", "external_id": "k"})
 	if n["icon"] != icon {
 		t.Fatalf("default icon: %v", n)
 	}
 	_, n = call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "b", "external_id": "k",
-		"icon": "https://example.com/own.png", "image": img})
-	if n["icon"] != "https://example.com/own.png" || n["image"] != img {
-		t.Fatalf("explicit icon and image: %v", n)
-	}
+		"icon": "https://example.com/own.png"})
 	_, n = call(t, ts, "GET", "/api/v1/notifications/"+n["id"].(string), admin, nil)
-	if n["icon"] != "https://example.com/own.png" || n["image"] != img {
-		t.Fatalf("upsert did not store icon and image: %v", n)
+	if n["icon"] != "https://example.com/own.png" {
+		t.Fatalf("explicit icon on upsert: %v", n)
 	}
-	if code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "c",
-		"image": "javascript:x"}); code != 400 {
-		t.Fatalf("bad image: %d", code)
+	// A bad icon is refused before a resolve can act.
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "external_id": "k",
+		"status": "resolved", "icon": "javascript:x"}); code != 400 {
+		t.Fatalf("bad icon on resolve: %d", code)
+	}
+	if _, n = call(t, ts, "GET", "/api/v1/notifications/"+n["id"].(string), admin, nil); n["state"] != Active {
+		t.Fatalf("bad icon resolved the row: %v", n)
 	}
 
-	// ntfy: X-Icon and an image X-Attach map over; a bad icon or a non-image attach is dropped, not refused.
-	code, body := raw(t, "PUT", ts.URL+"/infra", admin, "m", map[string]string{"X-Icon": "https://example.com/n.png", "X-Attach": img})
-	m := ntfyDecode(t, body)
-	if code != 200 || m.Icon != "https://example.com/n.png" || m.Attachment == nil || m.Attachment.URL != img {
-		t.Fatalf("ntfy icon and attach: %d %s", code, body)
+	// ntfy: X-Icon maps over; a bad one is dropped, not refused.
+	code, body := raw(t, "PUT", ts.URL+"/infra", admin, "m", map[string]string{"X-Icon": "https://example.com/n.png"})
+	if m := ntfyDecode(t, body); code != 200 || m.Icon != "https://example.com/n.png" {
+		t.Fatalf("ntfy icon: %d %s", code, body)
 	}
-	code, body = raw(t, "PUT", ts.URL+"/infra", admin, "m", map[string]string{"X-Icon": "javascript:x", "X-Attach": "https://example.com/log.txt"})
-	m = ntfyDecode(t, body)
-	if code != 200 || m.Icon != icon || m.Attachment != nil {
-		t.Fatalf("ntfy dropped fields: %d %s", code, body)
+	code, body = raw(t, "PUT", ts.URL+"/infra", admin, "m", map[string]string{"X-Icon": "javascript:x"})
+	if m := ntfyDecode(t, body); code != 200 || m.Icon != icon {
+		t.Fatalf("ntfy bad icon: %d %s", code, body)
 	}
-	code, body = raw(t, "POST", ts.URL+"/", admin, `{"topic":"infra","message":"m","icon":"https://example.com/j.png","attach":"`+img+`"}`, nil)
-	m = ntfyDecode(t, body)
-	if code != 200 || m.Icon != "https://example.com/j.png" || m.Attachment == nil {
-		t.Fatalf("ntfy JSON icon and attach: %d %s", code, body)
+	code, body = raw(t, "POST", ts.URL+"/", admin, `{"topic":"infra","message":"m","icon":"https://example.com/j.png"}`, nil)
+	if m := ntfyDecode(t, body); code != 200 || m.Icon != "https://example.com/j.png" {
+		t.Fatalf("ntfy JSON icon: %d %s", code, body)
 	}
 
 	// Removing the topic's icon stops the fill.

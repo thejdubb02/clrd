@@ -3053,11 +3053,7 @@
      },
      "icon": {
       "type": "string",
-      "description": "http(s) image URL; the topic's icon when the sender gave none. Empty if unset."
-     },
-     "image": {
-      "type": "string",
-      "description": "http(s) image URL shown large. Empty if unset."
+      "description": "http(s) image URL; the topic's icon when the sender gave none. Empty if unset. Events logged before a server upgrade may omit it: treat missing as empty."
      },
      "actions": {
       "type": "array",
@@ -3130,11 +3126,6 @@
       "type": "string"
      },
      "icon": {
-      "type": "string",
-      "format": "uri",
-      "description": "http(s) image URL, at most 2048 characters."
-     },
-     "image": {
       "type": "string",
       "format": "uri",
       "description": "http(s) image URL, at most 2048 characters."
@@ -3273,17 +3264,6 @@
      "icon": {
       "type": "string"
      },
-     "attachment": {
-      "type": "object",
-      "properties": {
-       "name": {
-        "type": "string"
-       },
-       "url": {
-        "type": "string"
-       }
-      }
-     },
      "actions": {
       "type": "array",
       "items": {
@@ -3336,10 +3316,6 @@
      "icon": {
       "type": "string",
       "description": "Kept when an http(s) URL, else dropped."
-     },
-     "attach": {
-      "type": "string",
-      "description": "Kept as the image when an http(s) URL ending .png, .jpg, .jpeg, .gif or .webp, else dropped."
      },
      "actions": {
       "type": "array",

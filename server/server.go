@@ -410,15 +410,18 @@ func (s *Server) routesSetup() {
 	})
 	s.api("PUT /api/v1/topics/{topic}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
-			Icon string `json:"icon"`
+			Icon *string `json:"icon"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		if err := s.SetTopicIcon(r.Context(), tok, r.PathValue("topic"), in.Icon); err != nil {
+		if in.Icon == nil { // a missing key must not wipe the icon
+			return errf(400, "bad_request", `body needs "icon": a URL, or "" to remove it`)
+		}
+		if err := s.SetTopicIcon(r.Context(), tok, r.PathValue("topic"), *in.Icon); err != nil {
 			return err
 		}
-		writeJSON(w, 200, map[string]string{"topic": r.PathValue("topic"), "icon": in.Icon})
+		writeJSON(w, 200, map[string]string{"topic": r.PathValue("topic"), "icon": *in.Icon})
 		return nil
 	})
 	s.api("GET /api/v1/devices", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
