@@ -335,8 +335,8 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 			}
 			// Read again so a token revoked mid-wait gets an error, not the reply.
 			if _, err := h.api(r, "GET", "/api/v1/notifications/"+id, nil); err != nil {
-				if r.Context().Err() != nil {
-					return map[string]any{"reply": "timeout", "notification": last}, nil
+				if r.Context().Err() != nil { // unproven token: show nothing
+					return map[string]any{"reply": "timeout"}, nil
 				}
 				return nil, err
 			}
