@@ -279,6 +279,11 @@ func TestSessionCookieAndSetup(t *testing.T) {
 		t.Fatalf("session form: %d %q", res.StatusCode, res.Header.Get("Location"))
 	}
 	cookie := res.Cookies()[0]
+	// A wrong token on the form goes back to the page with a flag, not to raw JSON.
+	res, _ = noRedirect.PostForm(ts.URL+"/api/v1/session", url.Values{"token": {"clrd_nope"}, "next": {"/app?topic=infra"}})
+	if res.StatusCode != 303 || res.Header.Get("Location") != "/app?error=token&topic=infra" || len(res.Cookies()) != 0 {
+		t.Fatalf("bad token on form: %d %q", res.StatusCode, res.Header.Get("Location"))
+	}
 	// Login forgery: another site cannot sign this browser in as someone else.
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/session", strings.NewReader(url.Values{"token": {raw}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

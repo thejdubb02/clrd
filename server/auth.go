@@ -304,16 +304,27 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	} else if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
+	next := in.Next
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
+		next = "/app"
+	}
 	t := s.lookupToken(r.Context(), strings.TrimSpace(in.Token))
+	if t == nil && isForm { // back to the page, which shows the error (issue #14)
+		u, err := url.Parse(next)
+		if err != nil {
+			u = &url.URL{Path: "/app"}
+		}
+		q := u.Query()
+		q.Set("error", "token")
+		u.RawQuery = q.Encode()
+		http.Redirect(w, r, u.String(), http.StatusSeeOther)
+		return nil
+	}
 	if t == nil {
 		return errf(401, "unauthorized", "invalid token")
 	}
 	s.setCookie(w, r, strings.TrimSpace(in.Token), 365*24*3600)
 	if isForm {
-		next := in.Next
-		if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
-			next = "/app"
-		}
 		http.Redirect(w, r, next, http.StatusSeeOther)
 		return nil
 	}

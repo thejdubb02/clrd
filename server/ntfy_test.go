@@ -240,3 +240,16 @@ func TestNtfySubscribe(t *testing.T) {
 		t.Fatalf("ws message: %+v", m)
 	}
 }
+
+// An external_id with a slash round-trips when the SDKs escape it as %2F.
+func TestExternalIDWithSlash(t *testing.T) {
+	_, ts, admin := newTest(t)
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ci", "external_id": "repo/main", "message": "red"})
+	if code, n := call(t, ts, "POST", "/ci/repo%2Fmain/resolve", admin, nil); code != 200 || n["external_id"] != "repo/main" || n["state"] != Resolved {
+		t.Fatalf("resolve by escaped key: %d %v", code, n)
+	}
+	raw(t, "PUT", ts.URL+"/ci/repo%2Fdev", admin, "red", nil)
+	if _, out := raw(t, "DELETE", ts.URL+"/ci/repo%2Fdev", admin, "", nil); ntfyDecode(t, out).SequenceID != "repo/dev" {
+		t.Fatalf("ntfy delete by escaped key: %s", out)
+	}
+}

@@ -164,7 +164,7 @@
       }
      },
      "303": {
-      "description": "Form post: redirect to next (default /app)."
+      "description": "Form post: redirect to next (default /app). A wrong token redirects there too, with error=token added to the query."
      }
     },
     "description": "Must be same-origin. Sets an HttpOnly cookie.",
