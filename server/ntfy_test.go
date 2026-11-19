@@ -145,18 +145,21 @@ func TestNtfyPublish(t *testing.T) {
 	am := func(status string) string {
 		return `{"status":"` + status + `","alerts":[{"status":"` + status + `","fingerprint":"fp1","labels":{"alertname":"HighCPU"},"annotations":{"summary":"CPU high"}}]}`
 	}
-	for _, c := range []struct{ status, want string }{
-		{"firing", `{"published":1,"resolved":0}`},
-		{"firing", `{"published":1,"resolved":0}`}, // repeat updates, does not stack
-		{"resolved", `{"published":0,"resolved":1}`},
-		{"resolved", `{"published":0,"resolved":0}`}, // already gone: fine
-	} {
-		if code, out := raw(t, "POST", ts.URL+"/alerts?template=alertmanager", admin, am(c.status), nil); code != 200 || strings.TrimSpace(out) != c.want {
-			t.Fatalf("alertmanager %s: %d %s", c.status, code, out)
+	// Grafana sends the same alerts[] shape (issue #7).
+	for _, tpl := range []string{"alertmanager", "grafana"} {
+		for _, c := range []struct{ status, want string }{
+			{"firing", `{"published":1,"resolved":0}`},
+			{"firing", `{"published":1,"resolved":0}`}, // repeat updates, does not stack
+			{"resolved", `{"published":0,"resolved":1}`},
+			{"resolved", `{"published":0,"resolved":0}`}, // already gone: fine
+		} {
+			if code, out := raw(t, "POST", ts.URL+"/alerts-"+tpl+"?template="+tpl, admin, am(c.status), nil); code != 200 || strings.TrimSpace(out) != c.want {
+				t.Fatalf("%s %s: %d %s", tpl, c.status, code, out)
+			}
 		}
-	}
-	if _, l := call(t, ts, "GET", "/api/v1/notifications?topic=alerts&q=CPU+high&state=all", admin, nil); len(l["notifications"].([]any)) != 1 {
-		t.Fatalf("alertmanager stacked: %v", l)
+		if _, l := call(t, ts, "GET", "/api/v1/notifications?topic=alerts-"+tpl+"&q=CPU+high&state=all", admin, nil); len(l["notifications"].([]any)) != 1 {
+			t.Fatalf("%s stacked: %v", tpl, l)
+		}
 	}
 }
 
