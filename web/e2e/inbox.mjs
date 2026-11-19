@@ -44,7 +44,8 @@ try {
   const link = Buffer.from(`Bearer ${laptop}`).toString('base64url');
   await page.goto(`${base}/app?auth=${link}`);
   assert.equal(new URL(page.url()).search, '', 'token still in the URL');
-  assert.equal(await page.locator('[data-me]').getAttribute('data-me'), 'laptop');
+  // The browser gets its own token, named from its User-Agent (HeadlessChrome on Linux).
+  assert.equal(await page.locator('[data-me]').getAttribute('data-me'), 'Chrome on Linux');
 
   // Clearing it here offers Undo, and Undo brings it back.
   const a = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Disk full on web-1', message: '/var at 99%' });
