@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
 
 /** Foreground service that keeps the WebSocket open (docs/SPEC.md section 8). */
 class SyncService : Service() {
@@ -101,7 +102,7 @@ class BootReceiver : BroadcastReceiver() {
     }
 }
 
-/** Ack / Snooze 1h / Clear buttons and the swipe-away (delete intent) on a tray notification. */
+/** Ack / Snooze 1h / Clear / reply buttons and the swipe-away (delete intent) on a tray notification. */
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
@@ -110,6 +111,9 @@ class ActionReceiver : BroadcastReceiver() {
             Tray.ACTION_ACK -> "ack" to "{}"
             Tray.ACTION_SNOOZE -> "snooze" to """{"for":"1h"}"""
             Tray.ACTION_DISMISS -> "dismiss" to "{}"
+            // seq = the version the person saw: if the question changed since, the server answers 409 and the tap is dropped
+            Tray.ACTION_REPLY -> "reply" to JSONObject().put("reply", intent.getStringExtra(Tray.EXTRA_REPLY) ?: return)
+                .put("seq", intent.getLongExtra(Tray.EXTRA_SEQ, 0)).toString()
             else -> return
         }
         val r = goAsync() // keep the process alive until the action is saved (and probably sent)
