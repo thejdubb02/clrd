@@ -8,11 +8,11 @@ import org.junit.Test
 
 /** Event JSON in, tray step out. The cancel cases are the headline feature. */
 class TrayStepTest {
-    private fun event(state: String, topic: String = "backups", actions: String = "[]") = Notif.fromJson(
+    private fun event(state: String, topic: String = "backups", actions: String = "[]", reply: String = "") = Notif.fromJson(
         JSONObject(
             """{"id":"n1","topic":"$topic","title":"Backup failed","message":"disk full","priority":4,
                "tags":["warning","disk"],"click":null,"actions":$actions,"state":"$state","state_by":"phone",
-               "snooze_until":null,"created_at":"2026-11-19T10:00:00Z","updated_at":"2026-11-19T10:05:00Z","seq":7}""",
+               "snooze_until":null,"reply":"$reply","created_at":"2026-11-19T10:00:00Z","updated_at":"2026-11-19T10:05:00Z","seq":7}""",
         ),
     )
 
@@ -42,6 +42,7 @@ class TrayStepTest {
         assertEquals(1795082400000L, n.createdAt)
         assertEquals(1795082700000L, n.updatedAt)
         assertEquals(7L, n.seq)
+        assertEquals("", n.reply)
         assertTrue(!n.isFinal)
     }
 
@@ -63,5 +64,24 @@ class TrayStepTest {
         val b = TrayButton.pick(event("active", actions = actions))
         assertEquals(listOf("Open", "Ack", "Clear"), b.map { it.label })
         assertEquals("https://x.example", b[0].url)
+    }
+
+    private val yesNo = """[{"label":"Yes","reply":"yes"},{"label":"","reply":"no"},{"label":"L1","url":"https://x.example/1"}]"""
+
+    @Test fun repliesComeFirst() {
+        val b = TrayButton.pick(event("active", actions = yesNo))
+        assertEquals(listOf("Yes", "no", "L1"), b.map { it.label }) // an empty label shows the reply itself
+        assertEquals(listOf("yes", "no", null), b.map { it.reply })
+    }
+
+    @Test fun threeRepliesAtMost() {
+        val four = (1..4).joinToString(",", "[", "]") { """{"label":"R$it","reply":"r$it"}""" }
+        assertEquals(listOf("R1", "R2", "R3"), labels("active", four))
+    }
+
+    @Test fun anAnsweredOneShowsNoReplies() {
+        val n = event("acknowledged", actions = yesNo, reply = "yes")
+        assertEquals("yes", n.reply)
+        assertEquals(listOf("L1", "Snooze 1h", "Clear"), TrayButton.pick(n).map { it.label })
     }
 }

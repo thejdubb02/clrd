@@ -1,5 +1,6 @@
 package me.itsjustin.clrd
 
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Insert
@@ -32,7 +33,8 @@ interface NotifDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun put(n: Notif)
 
-    @Query("UPDATE notif SET state = :state WHERE id = :id")
+    // Only Reopen brings back a cleared row. A tap that raced a dismiss or resolve must not, since the server then refuses it.
+    @Query("UPDATE notif SET state = :state WHERE id = :id AND (:state = 'active' OR state NOT IN ('dismissed', 'resolved'))")
     fun setState(id: String, state: String)
 
     @Query("DELETE FROM notif")
@@ -96,7 +98,8 @@ interface NotifDao {
     }
 }
 
-@Database(entities = [Notif::class, Pending::class, Meta::class], version = 1)
+// Room writes each version to schemas/; AutoMigration keeps the queue and the cursor across an app update.
+@Database(entities = [Notif::class, Pending::class, Meta::class], version = 2, autoMigrations = [AutoMigration(from = 1, to = 2)])
 abstract class Db : RoomDatabase() {
     abstract fun dao(): NotifDao
 }

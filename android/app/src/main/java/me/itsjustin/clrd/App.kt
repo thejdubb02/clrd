@@ -72,7 +72,7 @@ class App : Application() {
                 val local = when (action) {
                     "dismiss" -> Notif.DISMISSED
                     "snooze" -> Notif.SNOOZED
-                    "ack" -> Notif.ACKNOWLEDGED
+                    "ack", "reply" -> Notif.ACKNOWLEDGED
                     "reopen" -> Notif.ACTIVE
                     else -> null
                 }

@@ -32,29 +32,34 @@ sealed interface TrayStep {
     }
 }
 
-/** One tray button: a sender link (docs/SPEC.md section 2) or one of ours, by its [Tray] action. */
-data class TrayButton(val label: String, val url: String? = null, val action: String? = null) {
+/** One tray button: a sender link or reply (docs/SPEC.md section 2), or one of ours, by its [Tray] action. */
+data class TrayButton(val label: String, val url: String? = null, val action: String? = null, val reply: String? = null) {
     companion object {
         val ACK = TrayButton("Ack", action = Tray.ACTION_ACK)
         val SNOOZE = TrayButton("Snooze 1h", action = Tray.ACTION_SNOOZE)
         val CLEAR = TrayButton("Clear", action = Tray.ACTION_DISMISS)
 
         /**
-         * Android shows 3 buttons at most. Up to 2 sender links come first (http and https only),
-         * then ours fill what is left in this order: Ack (unless acked already), Clear, Snooze.
+         * Android shows 3 buttons at most. The sender's replies come first (at most 3, until someone answers),
+         * then up to 2 sender links (http and https only), then ours fill what is left in this order:
+         * Ack (unless acked already), Clear, Snooze.
          * A swipe still clears, so Clear is never the only way out. Pure, so it is unit tested on the JVM.
          */
         fun pick(n: Notif): List<TrayButton> {
             val a = runCatching { JSONArray(n.actions) }.getOrNull() ?: JSONArray()
-            val links = (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { o ->
+            val objs = (0 until a.length()).mapNotNull { a.optJSONObject(it) }
+            val replies = if (n.reply.isNotEmpty()) emptyList() else objs.mapNotNull { o ->
+                o.optString("reply").takeIf { it.isNotEmpty() }?.let { TrayButton(o.optString("label").ifBlank { it }, reply = it) }
+            }.take(3)
+            val links = objs.mapNotNull { o ->
                 val url = o.optString("url")
                 // Web links only, and short: a huge URL would not fit through Binder and would crash the post.
                 if (url.length > 2048 || (!url.startsWith("https://", true) && !url.startsWith("http://", true))) null
                 // Android matches intent schemes case-sensitively, so HTTPS://x must become https://x
                 else TrayButton(o.optString("label").ifBlank { "Open" }, url = url.substringBefore(':').lowercase() + url.substring(url.indexOf(':')))
-            }.take(2)
-            val ours = listOfNotNull(ACK.takeIf { n.state != Notif.ACKNOWLEDGED }, CLEAR, SNOOZE).take(3 - links.size)
-            return links + listOf(ACK, SNOOZE, CLEAR).filter { it in ours } // ours keep their usual order
+            }.take(minOf(2, 3 - replies.size))
+            val ours = listOfNotNull(ACK.takeIf { n.state != Notif.ACKNOWLEDGED }, CLEAR, SNOOZE).take(3 - replies.size - links.size)
+            return replies + links + listOf(ACK, SNOOZE, CLEAR).filter { it in ours } // ours keep their usual order
         }
     }
 }
@@ -106,7 +111,13 @@ class Tray(private val ctx: Context) {
             .setContentTitle(n.title.ifEmpty { n.topic })
             .setContentText(n.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(n.message))
-            .setSubText(if (n.state == Notif.ACKNOWLEDGED) "Acknowledged on ${n.stateBy ?: "another device"}" else n.topic)
+            .setSubText(
+                when {
+                    n.reply.isNotEmpty() -> "Answered ${n.reply} on ${n.stateBy ?: "another device"}"
+                    n.state == Notif.ACKNOWLEDGED -> "Acknowledged on ${n.stateBy ?: "another device"}"
+                    else -> n.topic
+                },
+            )
             .setWhen(n.createdAt)
             .setShowWhen(true)
             .setPriority(n.priority - 3) // PRIORITY_MIN..MAX for API < 26 builders; channels rule on 26+
@@ -116,7 +127,9 @@ class Tray(private val ctx: Context) {
             .setContentIntent(open(n))
             .setDeleteIntent(action(n, ACTION_DISMISS)) // swipe away here = dismiss everywhere
         if (n.priority >= 5) b.setColor(0xFFC2410C.toInt())
-        TrayButton.pick(n).forEach { b.addAction(0, it.label, if (it.url != null) link(it.url) else action(n, it.action!!)) }
+        TrayButton.pick(n).forEach {
+            b.addAction(0, it.label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) } ?: action(n, it.action!!))
+        }
         nm.notify(n.id, 0, b.build())
     }
 
@@ -135,14 +148,20 @@ class Tray(private val ctx: Context) {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
-    private fun action(n: Notif, action: String): PendingIntent {
+    private fun action(n: Notif, action: String, reply: String? = null): PendingIntent {
         val server = App.of(ctx).serverUrl // a tap after a server switch must not reach the new server
         val i = Intent(ctx, ActionReceiver::class.java)
             .setAction(action)
-            // unique per (server, id, action) so PendingIntents do not collide or take over each other's extras
-            .setData(Uri.parse("clrd://n/${n.id}/$action").buildUpon().appendQueryParameter("server", server).build())
+            // unique per (server, id, action, reply) so PendingIntents do not collide or take over each other's extras
+            .setData(
+                Uri.parse("clrd://n/${n.id}/$action").buildUpon().appendQueryParameter("server", server)
+                    // a reply also carries the version shown, so a tap on an older post cannot send a newer seq
+                    .apply { if (reply != null) appendQueryParameter("reply", reply).appendQueryParameter("seq", "${n.seq}") }.build(),
+            )
             .putExtra(EXTRA_ID, n.id)
             .putExtra(EXTRA_SERVER, server)
+            .putExtra(EXTRA_REPLY, reply)
+            .putExtra(EXTRA_SEQ, n.seq)
         return PendingIntent.getBroadcast(ctx, 0, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -151,7 +170,10 @@ class Tray(private val ctx: Context) {
         const val ACTION_ACK = "me.itsjustin.clrd.ACK"
         const val ACTION_SNOOZE = "me.itsjustin.clrd.SNOOZE"
         const val ACTION_DISMISS = "me.itsjustin.clrd.DISMISS"
+        const val ACTION_REPLY = "me.itsjustin.clrd.REPLY"
         const val EXTRA_ID = "id"
         const val EXTRA_SERVER = "server"
+        const val EXTRA_REPLY = "reply"
+        const val EXTRA_SEQ = "seq"
     }
 }

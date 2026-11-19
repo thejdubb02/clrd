@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.os.Looper
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -15,10 +16,12 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.json.JSONObject
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -237,6 +240,82 @@ class TrayRaceTest {
         } finally {
             app.token = ""
             server.shutdown()
+        }
+    }
+
+    private fun tap(id: String, label: String) {
+        tray(id)!!.actions.single { it.title == label }.actionIntent.send()
+        shadowOf(Looper.getMainLooper()).idle()
+        drainIo()
+    }
+
+    private val yesNo = row("a", Notif.ACTIVE, 4).copy(actions = """[{"label":"Yes","reply":"yes"},{"label":"No","reply":"no"}]""")
+
+    @Test fun aReplyTapIsQueuedWithTheVersionShown() {
+        bg { RoomStore(app).apply(listOf(yesNo), 4) }
+        assertEquals(listOf("Yes", "No", "Ack"), buttons(tray("a")!!))
+        tap("a", "Yes") // the first of two: each reply button keeps its own value
+        val p = bg { dao.pending().single() }
+        assertEquals("reply", p.action)
+        assertEquals("yes", JSONObject(p.body).getString("reply"))
+        assertEquals(4L, JSONObject(p.body).getLong("seq")) // so the server refuses it if the question changed meanwhile
+        assertEquals(Notif.ACKNOWLEDGED, bg { dao.openNow().single().state })
+    }
+
+    @Test fun anOlderPostKeepsItsOwnVersion() {
+        bg { RoomStore(app).apply(listOf(yesNo), 4) }
+        val old = tray("a")!!.actions.first().actionIntent
+        bg { RoomStore(app).apply(listOf(yesNo.copy(message = "changed", seq = 5, updatedAt = 5)), 5) }
+        old.send() // tapped just as the new version was posted
+        shadowOf(Looper.getMainLooper()).idle()
+        drainIo()
+        assertEquals(4L, JSONObject(bg { dao.pending().single() }.body).getLong("seq"))
+    }
+
+    @Test fun aTapThatRacedADismissKeepsItCleared() {
+        bg { RoomStore(app).apply(listOf(yesNo.copy(state = Notif.DISMISSED, seq = 5)), 5) } // dismissed on another device
+        app.act("a", "reply", """{"reply":"yes","seq":4}""", "https://a.example")
+        drainIo()
+        assertTrue(bg { dao.openNow().isEmpty() })
+        assertNull(tray("a"))
+    }
+
+    @Test fun reopenStillBringsBackACleared() {
+        bg { RoomStore(app).apply(listOf(row("a", Notif.DISMISSED, 5)), 5) }
+        app.act("a", "reopen")
+        drainIo()
+        assertEquals(Notif.ACTIVE, bg { dao.openNow().single().state })
+    }
+
+    @Test fun aReplyTapAfterServerSwitchIsDropped() {
+        bg { RoomStore(app).apply(listOf(yesNo), 4) }
+        app.serverUrl = "https://b.example"
+        tap("a", "Yes")
+        assertTrue(bg { dao.pending().isEmpty() })
+    }
+
+    /** An app update must keep the rows and the queue of a version 1 database. */
+    @Test fun aVersion1DatabaseIsMigrated() {
+        val v1 = JSONObject(File("schemas/me.itsjustin.clrd.Db/1.json").readText()).getJSONObject("database")
+        val path = app.getDatabasePath("old.db").apply { parentFile!!.mkdirs() }
+        android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
+            val tables = v1.getJSONArray("entities")
+            for (i in 0 until tables.length()) {
+                val t = tables.getJSONObject(i)
+                db.execSQL(t.getString("createSql").replace("\${TABLE_NAME}", t.getString("tableName")))
+            }
+            val setup = v1.getJSONArray("setupQueries")
+            for (i in 0 until setup.length()) db.execSQL(setup.getString(i))
+            db.execSQL("INSERT INTO notif VALUES ('a','t','T','m',3,'',NULL,'[]','active',NULL,NULL,1,1,1)")
+            db.execSQL("INSERT INTO pending (notifId, action, body) VALUES ('a','dismiss','{}')")
+            db.version = 1
+        }
+        val db = Room.databaseBuilder(app, Db::class.java, "old.db").build()
+        try {
+            assertEquals("", bg { db.dao().openNow().single().reply })
+            assertEquals(listOf("dismiss"), bg { db.dao().pending().map { it.action } })
+        } finally {
+            db.close()
         }
     }
 }
