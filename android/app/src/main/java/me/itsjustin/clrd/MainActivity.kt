@@ -372,7 +372,7 @@ private fun SettingsScreen(app: App, battery: Intent?) {
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(R.string.server), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
-            url, { url = it }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            url, { url = pastedUrl(it) }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
         if (url.trim().startsWith("http://", ignoreCase = true)) Text(stringResource(R.string.plain_http_warning), color = b.signal, fontSize = 13.sp)
@@ -383,7 +383,8 @@ private fun SettingsScreen(app: App, battery: Intent?) {
         Button(
             onClick = {
                 result = ctx.getString(R.string.testing)
-                val newUrl = url.trim().trimEnd('/')
+                val newUrl = serverAddress(url)
+                url = newUrl
                 val newToken = token.trim()
                 app.io.execute {
                     if (newUrl != app.serverUrl || newToken != app.token) {
