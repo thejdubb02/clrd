@@ -42,6 +42,30 @@
         }
        }
       }
+     },
+     "503": {
+      "description": "A background job (snooze wake, prune) failed 3 times in a row; failing names it. Errors are in the server log.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "ok": {
+           "type": "boolean"
+          },
+          "seq": {
+           "type": "integer"
+          },
+          "failing": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
      }
     },
     "security": []
