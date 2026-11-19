@@ -24,6 +24,8 @@ class App : Application() {
     val acts = Executors.newSingleThreadExecutor()
     /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
     private val sends = Executors.newSingleThreadExecutor()
+    private var sendNotBefore = 0L // System.nanoTime(); a busy server's Retry-After, touched only on [sends]
+    private var sendNotBeforeGen = 0 // the settings it came from; another server is not busy
 
     val status = MutableStateFlow(SyncClient.Status.OFFLINE)
 
@@ -97,7 +99,14 @@ class App : Application() {
             if (!configured) return
             Triple(configGen, RoomStore(this), api())
         }
-        sends.execute { runCatching { flushPending(store, api) { configGen == gen } } }
+        sends.execute {
+            if (gen == sendNotBeforeGen && System.nanoTime() < sendNotBefore) return@execute // stays queued for later
+            try {
+                flushPending(store, api) { configGen == gen }
+            } catch (e: Exception) {
+                (e as? HttpError)?.retryAfterMs?.let { sendNotBefore = System.nanoTime() + it * 1_000_000; sendNotBeforeGen = gen }
+            }
+        }
     }
 
     companion object {
@@ -120,9 +129,10 @@ class RoomStore(private val app: App) : Store {
         val kept = dao.applyAll(notifs, seq)
         val muted = app.muted
         val waiting = waiting()
+        val acting = dao.pending().filter { it.action == "reopen" }.map { it.notifId }.toSet() // our own reopen's event may beat its answer here
         for (n in kept) {
             val step = if (n.id in waiting) TrayStep.Cancel(n.id) else TrayStep.plan(n, muted)
-            app.tray.apply(if (quiet && step is TrayStep.Show) step.copy(silent = true) else step)
+            app.tray.apply(if ((quiet || n.id in acting) && step is TrayStep.Show) step.copy(silent = true) else step)
         }
         dao.prune(System.currentTimeMillis() - 7 * 24 * 3600_000L)
     }
@@ -133,11 +143,14 @@ class RoomStore(private val app: App) : Store {
     }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
-    /** The queued action no longer hides the row, so the tray shows what Room says (another device may have reopened it). */
+    /**
+     * The queued action no longer hides the row, so the tray shows what Room says (another device may have reopened it).
+     * Quietly: it follows the person's own tap (a reopen from the inbox), and a row that alerted already did so once.
+     */
     override fun removePending(p: Pending) = ifMine {
         dao.removePending(p.key)
         val n = dao.get(p.notifId)
-        if (n != null && n.id !in waiting()) app.tray.apply(TrayStep.plan(n, app.muted))
+        if (n != null && n.id !in waiting()) app.tray.apply(TrayStep.plan(n, app.muted).let { if (it is TrayStep.Show) it.copy(silent = true) else it })
     }
 
     /** Under the lock, so a sync write cannot land between reading the rows and posting them. */

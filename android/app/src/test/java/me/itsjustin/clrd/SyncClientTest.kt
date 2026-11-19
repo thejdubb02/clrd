@@ -276,6 +276,15 @@ class SyncClientTest {
         assertEquals(listOf("/api/v1/notifications/busy/dismiss", "/api/v1/notifications/busy/dismiss", "/api/v1/notifications/b/dismiss"), posts)
     }
 
+    @Test fun theAnswerToOurOwnTapIsSavedQuietly() {
+        answer = { notifJson("a", "active", 5) } // reopened from the inbox
+        current = { notifJson(it, "active", 6) } // a row that changed since the tap
+        store.queue += Pending(1, "a", "reopen")
+        store.queue += Pending(2, "stale", "dismiss")
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(listOf(true, false), store.quiet)
+    }
+
     @Test fun aFailedPartialSaveIsRetried() {
         store.failOnce = true
         onConnect = { n, ws -> if (n == 1) ws.send(ev(1, "a", "active")) } // and no `ready` yet
@@ -293,7 +302,7 @@ class SyncClientTest {
         }
         start()
         await { SyncClient.Status.CONNECTED in statuses }
-        assertEquals(listOf(true, false), store.quiet) // a later event in the replay could still clear the first 500
+        assertEquals(listOf(true, true), store.quiet) // the rest of a replay that was already saved quietly stays quiet
     }
 
     @Test fun aSlowReplayIsSavedQuietlyAndOnlyReadyMeansInSync() {

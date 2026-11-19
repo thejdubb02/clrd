@@ -112,7 +112,7 @@ class BootReceiver : BroadcastReceiver() {
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
-        val server = intent.getStringExtra(Tray.EXTRA_SERVER) ?: return
+        val server = intent.getStringExtra(Tray.EXTRA_SERVER) // null on items posted before it was added: the current server
         val (action, body) = when (intent.action) {
             Tray.ACTION_ACK -> "ack" to "{}"
             Tray.ACTION_SNOOZE -> "snooze" to """{"for":"1h"}"""

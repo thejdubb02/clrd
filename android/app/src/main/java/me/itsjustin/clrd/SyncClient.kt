@@ -65,6 +65,7 @@ class SyncClient(
     private var replaying = false
     private val buffer = LinkedHashMap<String, Notif>()
     private var bufferSeq = 0L
+    private var replayQuiet = false // part of this replay was already saved quietly, so the rest is too
 
     /** Runs on the sync thread unless stopped. Once stop() has run, calls are dropped, never thrown. */
     private fun post(f: () -> Unit) { runCatching { exec.execute { if (!stopped) f() } } }
@@ -122,6 +123,7 @@ class SyncClient(
         val myGen = ++gen
         replaying = true
         buffer.clear()
+        replayQuiet = false
         bufferSeq = 0 // or a silent new socket would save the dropped replay's cursor with none of its rows
         ws = http.newWebSocket(api.wsRequest(store.lastSeq()), object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) = onThread(myGen) {
@@ -173,7 +175,7 @@ class SyncClient(
     }
 
     private fun endReplay() {
-        applyBuffer()
+        applyBuffer(quiet = replayQuiet)
         replaying = false
         attempt = 0
         onStatus(Status.CONNECTED)
@@ -182,6 +184,7 @@ class SyncClient(
     private fun applyBuffer(quiet: Boolean = false) {
         if (buffer.isEmpty() && bufferSeq <= store.lastSeq()) return
         store.apply(buffer.values.toList(), bufferSeq, quiet)
+        if (quiet && buffer.isNotEmpty()) replayQuiet = true
         buffer.clear()
     }
 
@@ -237,16 +240,18 @@ private val flushLock = Any()
 fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synchronized(flushLock) {
     for (p in store.pending()) {
         if (!live()) break
+        var mine = true // the row after our own action: the person just tapped it, so no sound
         val answer = try {
             api.action(p)
         } catch (e: HttpError) {
             if (!e.isPermanent) throw e
+            mine = false
             // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
             // so take the server's current row instead. A fetch that may work later throws and keeps the
             // action queued: the event that changed the row may already be behind the cursor.
             try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
         }
-        answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0) }
+        answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine) }
         store.removePending(p)
     }
 }
