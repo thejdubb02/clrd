@@ -1,0 +1,10 @@
+Name: clrd
+Summary: Notifications that clear everywhere when you clear them once
+Description: |-
+  The Android client for clrd, a self-hosted notification server.
+  Dismiss a notification on one device and it clears on all of them.
+License: Apache-2.0
+SourceCode: https://github.com/thejdubb02/clrd
+IssueTracker: https://github.com/thejdubb02/clrd/issues
+Categories:
+  - Connectivity
