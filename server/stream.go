@@ -75,7 +75,8 @@ func visible(tok *Token, topics []string, topic string) bool {
 
 // follow is the sync loop every stream shares: replay events after since,
 // send ready, then live events, pinging every 30s, until ctx ends or the
-// subscriber is dropped. send gets each message and its seq (0 for ready/reset).
+// subscriber is dropped. send gets each message and its seq (0 for reset and
+// pings; ready carries the seq it is ready at).
 func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []string,
 	send func(msg []byte, seq int64) error, ping func() error) error {
 	sub := s.hub.subscribe() // first, so nothing committed during replay is missed
@@ -119,7 +120,7 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 		}
 	}
 	last = max(last, since)
-	if err := send(msgReady(last), 0); err != nil {
+	if err := send(msgReady(last), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
 		return err
 	}
 	t := time.NewTicker(30 * time.Second)

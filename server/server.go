@@ -307,6 +307,9 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("GET /api/v1/devices", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		if err := tok.need(ScopeRead, ""); err != nil {
+			return err
+		}
 		ts, err := s.Tokens(r.Context(), time.Now().Add(-10*time.Minute))
 		if err != nil {
 			return err
@@ -318,7 +321,9 @@ func (s *Server) routesSetup() {
 		}
 		out := []device{}
 		for _, t := range ts {
-			out = append(out, device{t.ID, t.Name, t.LastSeenAt})
+			if tok.seesAll(t) {
+				out = append(out, device{t.ID, t.Name, t.LastSeenAt})
+			}
 		}
 		writeJSON(w, 200, map[string]any{"devices": out})
 		return nil

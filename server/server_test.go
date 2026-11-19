@@ -148,12 +148,17 @@ func TestScopesAndAllowList(t *testing.T) {
 		{"POST", "/api/v1/notifications/" + home["id"].(string) + "/resolve", reader, 403}, // resolve is the sender's
 		{"POST", "/api/v1/notifications/" + home["id"].(string) + "/dismiss", reader, 200},
 		{"GET", "/api/v1/tokens", reader, 403},
+		{"GET", "/api/v1/devices", sender, 403}, // publish-only learns nothing about devices
+		{"POST", "/api/v1/notifications/clear", admin, 400},
 		{"GET", "/api/v1/tokens", admin, 200},
 	}
 	for _, c := range cases {
 		var body any
 		if c.method == "POST" && strings.HasSuffix(c.path, "notifications") {
 			body = map[string]any{"topic": "home", "message": "x"}
+		}
+		if strings.HasSuffix(c.path, "/clear") { // both selectors: refused, not widened to the topic
+			body = map[string]any{"topic": "infra", "ids": []string{infra["id"].(string)}}
 		}
 		if code, out := call(t, ts, c.method, c.path, c.tok, body); code != c.want {
 			t.Errorf("%s %s: want %d, got %d %v", c.method, c.path, c.want, code, out)
@@ -168,8 +173,11 @@ func TestScopesAndAllowList(t *testing.T) {
 		t.Fatalf("allow-listed topics leaked: %v", top)
 	}
 	_, dev := call(t, ts, "GET", "/api/v1/devices", reader, nil)
-	if len(dev["devices"].([]any)) != 3 {
-		t.Fatalf("devices seen: %v", dev)
+	if d := dev["devices"].([]any); len(d) != 1 || d[0].(map[string]any)["name"] != "phone" {
+		t.Fatalf("limited token saw other devices: %v", dev)
+	}
+	if _, dev = call(t, ts, "GET", "/api/v1/devices", admin, nil); len(dev["devices"].([]any)) != 3 {
+		t.Fatalf("admin devices: %v", dev)
 	}
 }
 

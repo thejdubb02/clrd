@@ -213,8 +213,12 @@ func TestStreamResetAndPoll(t *testing.T) {
 	defer res.Body.Close()
 	sc := bufio.NewScanner(res.Body)
 	sc.Scan()
-	if sc.Text() != `data: {"type":"ready","seq":3}` {
+	if sc.Text() != "id: 3" { // ready moves the browser's cursor too (matters after a reset)
 		t.Fatalf("sse first line: %q", sc.Text())
+	}
+	sc.Scan()
+	if sc.Text() != `data: {"type":"ready","seq":3}` {
+		t.Fatalf("sse ready: %q", sc.Text())
 	}
 	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "live"})
 	for sc.Scan() && sc.Text() == "" {

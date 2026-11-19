@@ -421,8 +421,8 @@ func transition(n *Notification, target, by string, until *time.Time) (*Event, e
 
 // Clear dismisses every open notification in topic, or the given ids.
 func (s *Server) Clear(ctx context.Context, tok *Token, topic string, ids []string) (int, error) {
-	if topic == "" && len(ids) == 0 {
-		return 0, errf(400, "bad_request", "give topic or ids")
+	if (topic == "") == (len(ids) == 0) {
+		return 0, errf(400, "bad_request", "give topic or ids, not both")
 	}
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		q := `SELECT ` + notifCols + ` FROM notifications WHERE state NOT IN ('dismissed', 'resolved') AND `
