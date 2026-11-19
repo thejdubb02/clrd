@@ -97,7 +97,7 @@ conflict resolution, last write on the server wins.
 ### WebSocket `GET /api/v1/ws?since=<seq>&topics=a,b`
 
 1. Server sends every event with `seq > since` (replay), then
-   `{"type":"ready","seq":<current>}`.
+   `{"type":"ready","seq":<current>,"epoch":"<id>"}`.
 2. Then live events as they happen.
 3. Server pings every 30 s; client reconnects with backoff and its last seq.
 4. If `since` is older than retention, server sends `{"type":"reset"}` and the
@@ -108,8 +108,19 @@ with live events, so the client drops its local state, fetches the open list,
 and keeps the connection. The server also sends `reset` when `since` is ahead
 of the server (a wiped server).
 
+**Epoch.** The server picks a random `epoch` (a short string) when it creates
+its database and keeps it for the life of that database. It comes with every
+cursor a client is handed: `ready`, `GET /api/v1/events` and
+`GET /api/v1/notifications`. Clients save it next to their seq. When the epoch
+they see differs from the saved one, the seq numbers belong to another
+database (a server reinstalled or started on a new file), so they treat it
+exactly like `reset`: drop the cursor and local state, fetch the open list
+fresh, and carry on from the new seq. A client with no saved epoch just saves
+the one it sees. A database restored from a backup keeps the epoch it had, so
+this alone does not catch a restore (issue #63 tracks that).
+
 Also `GET /api/v1/events?since=<seq>&limit=500` for clients that poll: returns
-`{"events":[...],"seq":<current>}`, or HTTP 410 with code `reset`. SSE at
+`{"events":[...],"seq":<current>,"epoch":"<id>"}`, or HTTP 410 with code `reset`. SSE at
 `GET /api/v1/events/sse?since=<seq>` sends the same JSON objects as the
 WebSocket (events, `ready`, `reset`), one per `data:` line, and honours
 `Last-Event-ID`.
@@ -156,7 +167,7 @@ Codes: `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found`
 
 Notifications always carry every field: `""` for unset strings, `[]` for
 `tags` and `actions`, `null` for `snooze_until`. List returns
-`{"notifications":[...],"seq":<current>}`, newest first; page with
+`{"notifications":[...],"seq":<current>,"epoch":"<id>"}`, newest first; page with
 `before=<last id>`; `limit` defaults to 100, max 500. Fetch the list, then open
 the WebSocket with `since=<seq>` from that response. Setting the state a
 notification already has returns it unchanged with no new event (two phones
