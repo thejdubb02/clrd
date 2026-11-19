@@ -217,7 +217,7 @@ func TestActForm(t *testing.T) {
 	if code, at := form("https://evil.example", url.Values{"act": {"dismiss"}}); state().State != "active" {
 		t.Fatalf("cross-origin form post changed it (%d at %s)", code, at)
 	}
-	if code, at := form(ts.URL, url.Values{"act": {"ack"}, "next": {"/app?topic=home"}}); code != 200 || at != "/app?topic=home" || state().State != "acknowledged" || state().StateBy != "phone" {
+	if code, at := form(ts.URL, url.Values{"act": {"ack"}, "next": {"/app?topic=home"}}); code != 200 || at != "/app?topic=home" || state().State != "acknowledged" || state().StateBy != "Web browser" {
 		t.Fatalf("ack: %d at %s, state %s by %s", code, at, state().State, state().StateBy)
 	}
 	if code, _ := form(ts.URL, url.Values{"snooze": {"1h"}}); code != 200 || state().State != "snoozed" {
