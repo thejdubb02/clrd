@@ -312,20 +312,35 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 	if st := str(n, "state"); replied(st) {
 		return map[string]any{"reply": st, "by": n["state_by"], "notification": n}, nil
 	}
-	seq, _ := n["seq"].(float64)
+	var last any = n
 	for {
 		select {
 		case <-r.Context().Done():
-			return map[string]any{"reply": "timeout", "notification": n}, nil
+			return map[string]any{"reply": "timeout", "notification": last}, nil
 		case e, ok := <-evs:
 			if !ok {
 				return nil, nil
 			}
-			// Events up to the read's seq are already in n. The stream is not
-			// filtered by token, but the read above proved this id is visible.
-			if x := e.Notification; x != nil && x.ID == str(n, "id") && e.Seq > int64(seq) && replied(x.State) {
-				return map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, nil
+			// Every event here committed after Subscribe, so after the call
+			// started, even one the read above already shows overwritten. The
+			// stream is not filtered by token, but the read proved this id is
+			// visible.
+			x := e.Notification
+			if x == nil || x.ID != str(n, "id") {
+				continue
 			}
+			last = x
+			if !replied(x.State) {
+				continue
+			}
+			// Read again so a token revoked mid-wait gets an error, not the reply.
+			if _, err := h.api(r, "GET", "/api/v1/notifications/"+id, nil); err != nil {
+				if r.Context().Err() != nil {
+					return map[string]any{"reply": "timeout", "notification": last}, nil
+				}
+				return nil, err
+			}
+			return map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, nil
 		}
 	}
 }

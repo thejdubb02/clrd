@@ -19,7 +19,8 @@ type fakeAPI struct {
 	body  map[string]any
 	auth  string
 	state string
-	seq   int
+	gets  int // GETs allowed before the token is revoked (401); 0 means no limit
+	ngets int
 	subs  []chan server.Event // handed out by Subscribe in order, then a silent one
 	nsub  int
 	onSub func(n int) // runs under mu on the nth Subscribe
@@ -52,7 +53,12 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v1/notifications/") {
-		json.NewEncoder(w).Encode(map[string]any{"id": "01J", "state": f.state, "state_by": "pixel-9", "seq": f.seq})
+		if f.ngets++; f.gets > 0 && f.ngets > f.gets {
+			w.WriteHeader(401)
+			io.WriteString(w, `{"error":"token revoked","code":"unauthorized"}`)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"id": "01J", "state": f.state, "state_by": "pixel-9"})
 		return
 	}
 	if r.Method == "GET" {
@@ -211,24 +217,36 @@ func ev(seq int64, id, state string) server.Event {
 }
 
 func TestWaitForReply(t *testing.T) {
-	// The read says snoozed (seq 5), but the log has an ack after it that a
-	// snooze then overwrote. Sampling the state would miss the ack.
+	// The read says snoozed, but an ack landed after the call subscribed and
+	// a snooze then overwrote it, before or after the read. Sampling the state
+	// would miss the ack.
 	evs := make(chan server.Event, 8)
-	evs <- ev(4, "01J", "dismissed")    // already in the read
-	evs <- ev(6, "01K", "dismissed")    // another notification
-	evs <- ev(7, "01J", "snoozed")      // still waiting
-	evs <- ev(8, "01J", "acknowledged") // the reply
-	evs <- ev(9, "01J", "snoozed")
-	f := &fakeAPI{state: "snoozed", seq: 5, subs: []chan server.Event{evs}}
+	evs <- ev(4, "01K", "dismissed")    // another notification
+	evs <- ev(5, "01J", "snoozed")      // still waiting
+	evs <- ev(6, "01J", "acknowledged") // the reply, older than the read
+	evs <- ev(7, "01J", "snoozed")
+	f := &fakeAPI{state: "snoozed", subs: []chan server.Event{evs}}
 	text, isErr := callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 5})
 	if isErr || !strings.Contains(text, `"reply":"acknowledged"`) || !strings.Contains(text, `"by":"pixel-9"`) {
 		t.Fatalf("got %s", text)
 	}
 
-	f = &fakeAPI{state: "snoozed"} // snooze means "later": keep waiting
+	// Snooze means "later": keep waiting, and the timeout shows the latest state.
+	evs = make(chan server.Event, 1)
+	evs <- ev(8, "01J", "snoozed")
+	f = &fakeAPI{state: "active", subs: []chan server.Event{evs}}
 	text, _ = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 0.05})
-	if !strings.Contains(text, `"reply":"timeout"`) {
-		t.Fatalf("want timeout, got %s", text)
+	if !strings.Contains(text, `"reply":"timeout"`) || !strings.Contains(text, `"state":"snoozed"`) {
+		t.Fatalf("want timeout showing snoozed, got %s", text)
+	}
+
+	// A token revoked mid-wait gets an error, not the reply.
+	evs = make(chan server.Event, 1)
+	evs <- ev(9, "01J", "acknowledged")
+	f = &fakeAPI{state: "active", gets: 1, subs: []chan server.Event{evs}}
+	text, isErr = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 5})
+	if !isErr || strings.Contains(text, "acknowledged") {
+		t.Fatalf("revoked token got %s", text)
 	}
 }
 
