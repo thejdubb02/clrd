@@ -126,7 +126,11 @@ func (s *Server) ntfyRoutes() {
 // trying each alias in turn.
 func param(r *http.Request, names ...string) string {
 	for _, n := range names {
-		for _, v := range []string{r.Header.Get("X-" + n), r.Header.Get(n), r.URL.Query().Get(strings.ToLower(n))} {
+		h := r.Header.Get(n)
+		if n == "Priority" && (strings.Contains(h, "u=") || h == "i") {
+			h = "" // browsers send RFC 9218 "Priority: u=3, i" on HTTP/2 and 3; not ours
+		}
+		for _, v := range []string{r.Header.Get("X-" + n), h, r.URL.Query().Get(strings.ToLower(n))} {
 			if v != "" {
 				return v
 			}

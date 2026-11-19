@@ -311,6 +311,16 @@ func TestNtfyFilters(t *testing.T) {
 	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1", admin, "", map[string]string{"X-Title": "cpu"}); len(lines(out)) != 1 || ntfyDecode(t, lines(out)[0]).Message != "drop" {
 		t.Errorf("filter by header: %v", lines(out))
 	}
+	// A browser's RFC 9218 Priority header is not a filter, and does not hide ?priority=.
+	if code, out := raw(t, "GET", ts.URL+"/f/json?poll=1", admin, "", map[string]string{"Priority": "u=3, i"}); code != 200 || len(lines(out)) != 2 {
+		t.Errorf("browser Priority header: %d %v", code, lines(out))
+	}
+	if code, out := raw(t, "GET", ts.URL+"/f/json?poll=1&priority=high", admin, "", map[string]string{"Priority": "u=1"}); code != 200 || len(lines(out)) != 1 || ntfyDecode(t, lines(out)[0]).Message != "keep" {
+		t.Errorf("browser Priority header with ?priority=high: %d %v", code, lines(out))
+	}
+	if code, _ := raw(t, "POST", ts.URL+"/f", admin, "from a browser", map[string]string{"Priority": "u=1, i"}); code != 200 {
+		t.Errorf("publish with browser Priority header: %d", code)
+	}
 	if code, _ := raw(t, "GET", ts.URL+"/f/json?poll=1&p=7", admin, "", nil); code != 400 {
 		t.Errorf("bad priority filter: %d", code)
 	}
