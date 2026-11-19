@@ -402,6 +402,27 @@ func TestGetHonoursContext(t *testing.T) {
 	}
 }
 
+// The last-seen write is part of the request: it stops when the request does (#32).
+func TestTouchHonoursContext(t *testing.T) {
+	s, _, _ := newTest(t)
+	tok, _, err := s.CreateToken(context.Background(), "phone", []string{ScopeRead}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := func() (v sql.NullInt64) {
+		if err := s.db.QueryRow(`SELECT last_seen_at FROM tokens WHERE id = ?`, tok.ID).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	s.touch(ctx, tok)
+	if v := seen(); v.Valid {
+		t.Fatalf("touch wrote with a cancelled context: %v", v)
+	}
+}
+
 // Reply actions (issue 8): validation, first answer wins, one event per
 // answer, republish and reopen clear it, ntfy never sees a reply button.
 func TestReplyActions(t *testing.T) {

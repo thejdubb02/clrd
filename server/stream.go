@@ -179,7 +179,7 @@ func (s *Server) tokenAlive(ctx context.Context, tok *Token) bool {
 	if s.db.QueryRowContext(ctx, `SELECT 1 FROM tokens WHERE id = ?`, tok.ID).Scan(&one) != nil {
 		return false
 	}
-	s.touch(tok)
+	s.touch(ctx, tok)
 	return true
 }
 
