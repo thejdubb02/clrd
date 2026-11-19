@@ -21,7 +21,7 @@ APKs land in `app/build/outputs/apk/`.
 Every change to the app on `main` is built, signed and published to an F-Droid repo. To get it and its updates:
 
 1. In the F-Droid app, open Settings, then Repositories, and tap +.
-2. Enter `https://thejdubb02.github.io/clrd/fdroid/repo`.
+2. Enter `https://raw.githubusercontent.com/thejdubb02/clrd/fdroid/fdroid/repo`.
 3. Search for clrd and install it.
 
 These builds are signed with the project's own key, not a debug key and not F-Droid's key. Android will not update an app across signing keys, so uninstall any debug build (or a build from elsewhere) before installing from this repo. Published builds carry the short git commit in their version name (for example `0.1.0-85ba447`) and use the commit count as their version code; a local `./gradlew assembleRelease` with no extra flags does neither.

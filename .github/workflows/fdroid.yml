@@ -1,5 +1,5 @@
-# Publishes a signed release APK into the F-Droid repo on the gh-pages branch,
-# served at https://thejdubb02.github.io/clrd/fdroid/repo.
+# Publishes a signed release APK into the F-Droid repo on the fdroid branch,
+# served at https://raw.githubusercontent.com/thejdubb02/clrd/fdroid/fdroid/repo.
 # No pull_request trigger on purpose: the release environment holds the
 # signing key and only main may use it.
 name: fdroid
@@ -57,13 +57,13 @@ jobs:
             -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME"
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk
 
-      - name: Check out gh-pages
+      - name: Check out the fdroid branch
         run: |
           git worktree prune
-          if git rev-parse --verify -q refs/remotes/origin/gh-pages >/dev/null; then
-            git worktree add -B gh-pages "$PAGES" origin/gh-pages
+          if git rev-parse --verify -q refs/remotes/origin/fdroid >/dev/null; then
+            git worktree add -B fdroid "$PAGES" origin/fdroid
           else
-            git worktree add --orphan -B gh-pages "$PAGES"
+            git worktree add --orphan -B fdroid "$PAGES"
           fi
 
       - name: Update F-Droid repo
@@ -72,7 +72,6 @@ jobs:
           CLRD_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
         run: |
           mkdir -p fdroid/repo fdroid/metadata
-          touch .nojekyll
           printf '%s\n' config.yml '*.p12' '*.jks' '*.keystore' tmp/ > fdroid/.gitignore
           cp "$GITHUB_WORKSPACE/android/app/build/outputs/apk/release/app-release.apk" \
             "fdroid/repo/me.itsjustin.clrd_${VERSION_CODE}.apk"
@@ -94,7 +93,7 @@ jobs:
 
           # Passwords are read from the environment, never written to disk.
           (umask 077; cat > fdroid/config.yml <<EOF
-          repo_url: https://thejdubb02.github.io/clrd/fdroid/repo
+          repo_url: https://raw.githubusercontent.com/thejdubb02/clrd/fdroid/fdroid/repo
           repo_name: clrd
           repo_description: >-
             Signed builds of the clrd Android app, published from
@@ -109,7 +108,7 @@ jobs:
           )
           (cd fdroid && fdroid update)
 
-      - name: Commit and push gh-pages
+      - name: Commit and push the fdroid branch
         working-directory: ${{ runner.temp }}/gh-pages
         run: |
           git add -A
@@ -124,7 +123,7 @@ jobs:
           git -c user.name='github-actions[bot]' \
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
             commit -q -m "F-Droid repo: clrd $VERSION_NAME ($VERSION_CODE)"
-          git push origin gh-pages
+          git push origin fdroid
 
       - name: Clean up
         if: always()

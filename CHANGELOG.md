@@ -34,6 +34,9 @@ Fixed, Removed, Security), as one line a user can understand.
   text can be selected and copied.
 - Android: pasting a link into the Server URL field replaces the prefilled
   `https://`, and a pasted setup or page link is cut down to the server address.
+- Android: signed builds are published to the project's own F-Droid repo on
+  every change, so the F-Droid app can install and update clrd. The address is
+  in `android/README.md`.
 - SDKs for Python, JavaScript and Go, and a GitHub Action.
 - Integration guides for curl, GitHub Actions, MCP clients, Home Assistant,
   Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise and ntfy clients.
