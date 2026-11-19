@@ -126,6 +126,7 @@ type Query struct {
 // the WebSocket replay that starts from Seq.
 type Snapshot struct {
 	Seq     int64
+	Epoch   string // the database Seq belongs to; a different one means start over
 	Items   []Notification
 	Counts  map[string]int // open and recent rows by state
 	Topics  []Topic

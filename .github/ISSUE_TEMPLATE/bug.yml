@@ -1,0 +1,40 @@
+name: Bug report
+description: Something does not work as described.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Send a notification with ...
+        2. Dismiss it on ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part
+      multiple: true
+      options: [Server, Web inbox, Android app, SDK or GitHub Action, Integration, Docs]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The commit or image you run, and how (Docker, binary, Android build).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Server log lines around the problem. Remove tokens and any /setup link first (a setup link lets anyone create the admin token).
+      render: text

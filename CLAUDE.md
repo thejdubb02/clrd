@@ -15,6 +15,14 @@ Public open-source project: self-hosted notification server + Android app (F-Dro
 
 - CI runs only on self-hosted cezar1 runners (`runs-on: [self-hosted, cezar1]`).
 - Work tracked as GitHub issues on thejdubb02/clrd.
+- Keep the repo page and site true (Justin, 2026-11-19). Any PR a user would
+  notice updates, in the same PR: `CHANGELOG.md` under Unreleased (CI fails
+  without it; label `no-changelog` for tests, CI and refactors), plus
+  `README.md`, `web/templates/landing.html` and the matching `docs/` page when
+  a headline feature, install step or integration changes. The site serves
+  `docs/` and the landing page from the binary, so the repo is the site.
+- README claims only what works on `main` today. No install command for a
+  package or image that is not published.
 
 ## The contract
 
