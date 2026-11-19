@@ -189,7 +189,7 @@
     const n = await r.json().catch(() => ({}));
     if (act === 'reply') { say(`Answered ${b.textContent}.`); return refresh(); }
     done.snooze = n.snooze_until ? `Snoozed until ${fmt.format(new Date(n.snooze_until))}` : 'Snoozed';
-    if (act === 'dismiss' && !(n.state === 'dismissed' && n.state_by === shell.dataset.me)) {
+    if (act === 'dismiss' && !(n.state === 'dismissed' && n.state_by_id === shell.dataset.meId)) {
       // Another device or the sender got there first: no Undo, it would reopen their change.
       leave(c, reason(n));
       say(`${reason(n)}.`);

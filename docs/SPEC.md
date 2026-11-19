@@ -44,6 +44,7 @@ A **notification**:
   "reply": "",                 // the reply action tapped, "" until someone answers
   "state": "active",
   "state_by": "pixel-9",       // device name that made the last change
+  "state_by_id": "k3j9x2m1q8wz", // that device's token id ("" for the server); names can repeat, ids cannot
   "snooze_until": null,        // RFC3339 when state = snoozed
   "created_at": "2026-11-19T05:00:00Z",
   "updated_at": "2026-11-19T05:00:00Z",
@@ -125,7 +126,8 @@ the session cookie (same-origin only) as well as a Bearer token.
 - Basic auth (`user:token`) and `?auth=` query param accepted for ntfy-client compatibility.
 - Anonymous publish/read is off by default, can be enabled per topic.
 - Web UI uses a session cookie (HttpOnly, SameSite=Lax) after login.
-- Every token has a **device name**; it is what shows as `state_by`.
+- Every token has a **device name**; it is what shows as `state_by`. Names need not be
+  unique, so a client that asks "did I make this change?" compares `state_by_id` with its own token id.
 - What each scope allows: `read` = list, get, events, WebSocket, plus the
   user's own actions (ack, reply, snooze, dismiss, reopen, bulk clear), because a
   phone that can see a notification must be able to clear it. `publish` =

@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   reply TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL,
   state_by TEXT NOT NULL DEFAULT '',
+  state_by_id TEXT NOT NULL DEFAULT '',
   snooze_until INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -101,6 +102,7 @@ type Notification struct {
 	Reply       string     `json:"reply"` // the reply action tapped, "" until one is
 	State       string     `json:"state"`
 	StateBy     string     `json:"state_by"`
+	StateByID   string     `json:"state_by_id"` // token id: names can repeat
 	SnoozeUntil *time.Time `json:"snooze_until"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
@@ -147,11 +149,13 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
-	// Databases made before reply existed.
-	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN reply TEXT NOT NULL DEFAULT ''`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
-		db.Close()
-		return nil, fmt.Errorf("add reply column: %w", err)
+	// Databases made before these columns existed.
+	for _, col := range []string{"reply", "state_by_id"} {
+		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("add %s column: %w", col, err)
+		}
 	}
 	return db, nil
 }
@@ -168,7 +172,7 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, priority, tags, click, actions, reply,
-  state, state_by, snooze_until, created_at, updated_at, seq`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq`
 
 type scanner interface{ Scan(...any) error }
 
@@ -178,7 +182,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	var snooze sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Priority, &tags, &n.Click,
-		&actions, &n.Reply, &n.State, &n.StateBy, &snooze, &created, &updated, &n.Seq)
+		&actions, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq)
 	if err != nil {
 		return nil, err
 	}
@@ -196,13 +200,13 @@ func scanNotification(r scanner) (*Notification, error) {
 func saveNotification(tx *sql.Tx, n *Notification) error {
 	tags, _ := json.Marshal(n.Tags)
 	actions, _ := json.Marshal(n.Actions)
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, actions=excluded.actions,
-		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, snooze_until=excluded.snooze_until,
+		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
 		updated_at=excluded.updated_at, seq=excluded.seq`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Priority, string(tags), n.Click, string(actions),
-		n.Reply, n.State, n.StateBy, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
+		n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -361,11 +365,13 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Actions, n.Reply =
 					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Actions, "" // a new question starts unanswered
 				if in.Reopen && n.State == Acknowledged {
-					n.State, n.StateBy = Active, tok.Name
+					n.State = Active
+					n.setBy(tok)
 				}
 				if t := now(); in.SnoozeUntil != nil && in.SnoozeUntil.After(t) { // delayed: hide until then, like a new row
 					u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
-					n.State, n.StateBy, n.SnoozeUntil = Snoozed, tok.Name, &u
+					n.State, n.SnoozeUntil = Snoozed, &u
+					n.setBy(tok)
 				}
 				return []Event{{Type: EventUpdated, Notification: n}}, nil
 			}
@@ -376,7 +382,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		t := now()
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
 			Message: in.Message, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Actions: in.Actions,
-			State: Active, StateBy: tok.Name, CreatedAt: t}
+			State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
@@ -426,7 +432,7 @@ func (s *Server) act(ctx context.Context, tok *Token, action string, until *time
 			return nil, err
 		}
 		out = n
-		ev, err := transition(n, target, tok.Name, until)
+		ev, err := transition(n, target, tok, until)
 		if err != nil || ev == nil {
 			return nil, err
 		}
@@ -488,7 +494,8 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply string, seq in
 		if n.Final() {
 			return nil, errf(409, "conflict", "notification is %s", n.State)
 		}
-		n.Reply, n.State, n.StateBy, n.SnoozeUntil = reply, Acknowledged, tok.Name, nil
+		n.Reply, n.State, n.SnoozeUntil = reply, Acknowledged, nil
+		n.setBy(tok)
 		return []Event{{Type: EventState, Notification: n}}, nil
 	})
 	if err != nil {
@@ -505,9 +512,12 @@ func scopeFor(action string, byKey bool) string {
 	return ScopeRead
 }
 
+// setBy records who made the change: the device name to show, the token id to compare.
+func (n *Notification) setBy(t *Token) { n.StateBy, n.StateByID = t.Name, t.ID }
+
 // transition is the one place state rules live. It mutates n and returns
 // the event to log, or nil when nothing changes (same state again).
-func transition(n *Notification, target, by string, until *time.Time) (*Event, error) {
+func transition(n *Notification, target string, by *Token, until *time.Time) (*Event, error) {
 	switch {
 	case target == n.State && target != Snoozed:
 		return nil, nil
@@ -516,7 +526,8 @@ func transition(n *Notification, target, by string, until *time.Time) (*Event, e
 	case n.Final() && target != Active:
 		return nil, errf(409, "conflict", "notification is %s; reopen it first", n.State)
 	}
-	n.State, n.StateBy, n.SnoozeUntil = target, by, nil
+	n.State, n.SnoozeUntil = target, nil
+	n.setBy(by)
 	if target != Dismissed && target != Resolved {
 		n.Reply = "" // an answer stands only with the tap's own ack; dismiss and resolve keep it as history
 	}
@@ -553,7 +564,7 @@ func (s *Server) Clear(ctx context.Context, tok *Token, topic string, ids []stri
 			if tok.need(ScopeRead, n.Topic) != nil {
 				continue
 			}
-			ev, _ := transition(n, Dismissed, tok.Name, nil)
+			ev, _ := transition(n, Dismissed, tok, nil)
 			evs = append(evs, *ev)
 		}
 		return evs, nil
@@ -568,7 +579,7 @@ func (s *Server) wakeSnoozed(ctx context.Context) error {
 			WHERE state = 'snoozed' AND snooze_until <= ?`, ms(time.Now()))
 		var evs []Event
 		for _, n := range ns {
-			ev, _ := transition(n, Active, "server", nil)
+			ev, _ := transition(n, Active, &Token{Name: "server"}, nil)
 			evs = append(evs, *ev)
 		}
 		return evs, err
