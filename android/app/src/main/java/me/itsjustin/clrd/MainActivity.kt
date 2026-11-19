@@ -307,8 +307,9 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
             }
             if (n.message.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                val body = @Composable { Text(n.message, color = b.body, fontSize = 15.sp, maxLines = if (open) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 8.dp)) }
-                // Open text can be selected and copied. ponytail: links are not tappable yet, linkify if asked.
+                val text = remember(n.message, n.format, b) { Md.render(n.message, n.isMarkdown, link = b.clear, muted = b.slate) }
+                val body = @Composable { Text(text, color = b.body, fontSize = 15.sp, maxLines = if (open) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 8.dp)) }
+                // Open text can be selected and copied; links open in the browser.
                 if (open) SelectionContainer { body() } else body()
             }
             n.file?.let { f -> Attached(f) }

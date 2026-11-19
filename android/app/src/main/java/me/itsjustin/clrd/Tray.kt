@@ -111,11 +111,12 @@ class Tray(private val ctx: Context) {
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
+        val text = Md.tray(n.message, n.isMarkdown)
         val b = NotificationCompat.Builder(ctx, "p${n.priority}")
             .setSmallIcon(R.drawable.ic_stat_clrd)
             .setContentTitle(n.title.ifEmpty { n.topic })
-            .setContentText(n.message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(n.message))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSubText(
                 when {
                     n.reply.isNotEmpty() -> ctx.getString(R.string.tray_answered, n.reply, n.stateBy ?: ctx.getString(R.string.tray_another_device))
@@ -138,7 +139,7 @@ class Tray(private val ctx: Context) {
             images.cached(url, Images.ICON_PX)?.let(b::setLargeIcon) ?: images.prefetch(url, Images.ICON_PX, ::redraw)
         }
         n.file?.takeIf { it.isImage }?.let { f ->
-            images.cached(f.url, Images.PICTURE_PX)?.let { b.setStyle(NotificationCompat.BigPictureStyle().bigPicture(it).setSummaryText(n.message)) }
+            images.cached(f.url, Images.PICTURE_PX)?.let { b.setStyle(NotificationCompat.BigPictureStyle().bigPicture(it).setSummaryText(text)) }
                 ?: images.prefetch(f.url, Images.PICTURE_PX, ::redraw)
         }
         TrayButton.pick(n).forEach {
