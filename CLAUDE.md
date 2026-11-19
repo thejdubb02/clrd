@@ -27,6 +27,9 @@ Public open-source project: self-hosted notification server + Android app (F-Dro
 ## The contract
 
 `docs/SPEC.md` is the shared contract (API, sync, states, auth, MCP, brand
-tokens, directory ownership). Read it first. Public instance host:
-`clrd.itsjustin.me`. Parallel threads each own one area (server, web,
+tokens, directory ownership). Read it first. Hosts (Justin, 2026-11-19): our own
+running server is `clrd.willhitestrategy.org` (and it takes over
+`ntfy.willhitestrategy.org` at the ntfy cutover, #5). `clrd.itsjustin.me` is a
+separate marketing site for Justin's portfolio, built outside this repo; never
+point it at a clrd server. Parallel threads each own one area (server, web,
 android, integrations); stay in yours and open a PR to `main`.
