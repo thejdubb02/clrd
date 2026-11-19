@@ -868,8 +868,7 @@
         "properties": {
          "icon": {
           "type": "string",
-          "format": "uri",
-          "description": "http(s) image URL, at most 2048 characters."
+          "description": "http(s) image URL, at most 2048 characters, or \"\" to remove the topic icon."
          }
         }
        }
@@ -3127,8 +3126,7 @@
      },
      "icon": {
       "type": "string",
-      "format": "uri",
-      "description": "http(s) image URL, at most 2048 characters."
+      "description": "http(s) image URL, at most 2048 characters, or empty for none."
      },
      "actions": {
       "type": "array",

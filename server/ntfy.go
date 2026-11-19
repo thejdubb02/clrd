@@ -287,7 +287,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		Priority   int          `json:"priority"`
 		Tags       []string     `json:"tags"`
 		Click      string       `json:"click"`
-		Icon       string       `json:"icon"`
+		Icon       any          `json:"icon"` // any: ntfy drops a bad icon rather than failing the publish
 		Actions    []ntfyAction `json:"actions"`
 		Delay      string       `json:"delay"`
 		ID         string       `json:"id"`
@@ -304,7 +304,8 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status}
-	p.Icon = ntfyIcon(in.Icon)
+	icon, _ := in.Icon.(string)
+	p.Icon = ntfyIcon(icon)
 	for _, id := range []string{in.SequenceID, in.ID} {
 		if p.ExternalID == "" {
 			p.ExternalID = id
