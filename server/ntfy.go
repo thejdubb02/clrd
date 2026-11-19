@@ -453,10 +453,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				default:
 					b = []byte("\n")
 				}
-				if _, err := w.Write(b); err != nil {
-					return err
-				}
-				return rc.Flush()
+				return flushWrite(rc, w, b)
 			}
 		}
 		joined := strings.Join(topics, ",")

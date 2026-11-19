@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -230,17 +234,28 @@ func TestStreamResetAndPoll(t *testing.T) {
 }
 
 func TestSnoozeWakes(t *testing.T) {
+	old := wakeEvery
+	t.Cleanup(func() { wakeEvery = old })
+	wakeEvery = 20 * time.Millisecond
 	s, ts, admin := newTest(t)
+	// The running server's own ticker must wake it: the test never calls the job.
+	s.opt.Listen = "127.0.0.1:0"
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	c := dialWS(t, ts.URL, admin, 0)
+	c.until(func(m msg) bool { return m.Type == "ready" })
+
 	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "later"})
 	id := n["id"].(string)
 	until := time.Now().Add(50 * time.Millisecond).Format(time.RFC3339Nano)
 	if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/snooze", admin, map[string]string{"until": until}); code != 200 || n["state"] != Snoozed {
 		t.Fatalf("snooze: %d %v", code, n)
 	}
-	time.Sleep(60 * time.Millisecond)
-	if err := s.wakeSnoozed(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	c.until(func(m msg) bool {
+		return m.Notification != nil && m.Notification.ID == id && m.Notification.State == Active && m.Notification.StateBy == "server"
+	})
 	if _, n := call(t, ts, "GET", "/api/v1/notifications/"+id, admin, nil); n["state"] != Active || n["state_by"] != "server" || n["snooze_until"] != nil {
 		t.Fatalf("after wake: %v", n)
 	}
@@ -333,5 +348,48 @@ func TestRevokeAndPruneRace(t *testing.T) {
 	}
 	if code, _ := call(t, ts, "GET", "/api/v1/events?since=2", admin, nil); code != 410 {
 		t.Fatalf("poll with every event pruned: want 410, got %d", code)
+	}
+}
+
+// smallBufs keeps socket buffers tiny so a stream's writes block soon after
+// its client stops reading.
+type smallBufs struct{ net.Listener }
+
+func (l smallBufs) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if tc, ok := c.(*net.TCPConn); ok {
+		tc.SetWriteBuffer(4096)
+	}
+	return c, err
+}
+
+func TestStalledStreamTimesOut(t *testing.T) {
+	old := streamWriteTimeout
+	t.Cleanup(func() { streamWriteTimeout = old })
+	streamWriteTimeout = 200 * time.Millisecond
+	s, _, admin := newTest(t)
+	ts := httptest.NewUnstartedServer(s)
+	ts.Listener = smallBufs{ts.Listener}
+	ts.Start()
+	t.Cleanup(ts.Close)
+	big := strings.Repeat("x", 100_000)
+	for range 20 { // 2 MB of replay, far past both socket buffers
+		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": big})
+	}
+	for _, path := range []string{"/api/v1/events/sse", "/t/sse?since=all"} {
+		c, err := net.Dial("tcp", ts.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		c.(*net.TCPConn).SetReadBuffer(4096)
+		fmt.Fprintf(c, "GET %s HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\n\r\n", path, admin)
+		time.Sleep(time.Second) // the client reads nothing while the server's write blocks
+		// Timed out, the server drops the stream: reading drains to the end.
+		// Without the deadline the stream stays open and the read times out.
+		c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		if _, err := io.Copy(io.Discard, c); errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Errorf("%s: stalled stream still open", path)
+		}
 	}
 }

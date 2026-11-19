@@ -137,13 +137,13 @@ func (s *Server) Mount(prefix string, h http.Handler) {
 	sort.Slice(s.mounts, func(i, j int) bool { return len(s.mounts[i].prefix) > len(s.mounts[j].prefix) })
 }
 
-// ServeHTTP routes to a mount when one matches, else to the API.
 // bodyTimeout bounds how long a client may take to send a request body. A
 // server-wide ReadTimeout would also cut WebSocket and SSE streams.
 var bodyTimeout = 30 * time.Second
 
 const maxBody = 1 << 20 // no route takes more
 
+// ServeHTTP routes to a mount when one matches, else to the API.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 { // read the whole body now, under a deadline
 		rc := http.NewResponseController(w)
@@ -193,7 +193,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.bootstrap(ctx); err != nil {
 		return err
 	}
-	go s.every(ctx, "snooze wake", 15*time.Second, s.wakeSnoozed)
+	go s.every(ctx, "snooze wake", wakeEvery, s.wakeSnoozed)
 	go s.every(ctx, "prune", time.Hour, s.prune)
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }} // ends open streams on shutdown
@@ -209,6 +209,9 @@ func (s *Server) Run(ctx context.Context) error {
 	defer cancel()
 	return srv.Shutdown(sctx)
 }
+
+// wakeEvery is how often snoozed notifications are checked for waking.
+var wakeEvery = 15 * time.Second
 
 // jobFailures in a row mark a background job failing in /healthz.
 const jobFailures = 3
