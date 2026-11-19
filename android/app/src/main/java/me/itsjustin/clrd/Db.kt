@@ -86,10 +86,11 @@ interface NotifDao {
      * The open list replaces everything, except a listed row Room already has in a newer version
      * (an action answer saved while the list was on its way). Returns the rows now stored.
      * A list behind our cursor means the server was wiped or restored: then nothing old is kept.
+     * The same goes for a list from another database ([sameDb] false), whatever its seq.
      */
     @Transaction
-    fun replaceAll(open: List<Notif>, seq: Long): List<Notif> {
-        val keepNewer = seq >= (lastSeq() ?: 0)
+    fun replaceAll(open: List<Notif>, seq: Long, sameDb: Boolean = true): List<Notif> {
+        val keepNewer = sameDb && seq >= (lastSeq() ?: 0)
         val rows = open.map { n -> get(n.id)?.takeIf { keepNewer && it.seq > n.seq } ?: n }
         clearAll()
         rows.forEach { put(it) }

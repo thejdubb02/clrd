@@ -163,6 +163,31 @@ class SyncClientTest {
         assertEquals("50", wsSince[1]) // seq from the first page, read by the server before its query
     }
 
+    @Test fun aNewEpochIsHandledLikeAReset() {
+        store.epoch = "old"
+        store.apply(listOf(notif("stale", "active", 90)), 90) // a cursor from the old database
+        open = { """{"notifications":[${notifJson("fresh", "active", 2)}],"seq":3,"epoch":"new"}""" }
+        // The new database happens to have events past our cursor, so the server sees nothing wrong and replays.
+        onConnect = { n, ws ->
+            if (n == 1) ws.send(ev(91, "other", "active"))
+            ws.send("""{"type":"ready","seq":${if (n == 1) 91 else 3},"epoch":"new"}""")
+        }
+        start()
+        await { wsSince.size >= 2 }
+        assertEquals(listOf("90", "3"), wsSince.take(2))
+        assertEquals(setOf("fresh"), store.rows.keys) // neither the stale row nor the replayed one
+        assertEquals("new", store.epoch)
+        assertEquals(1, lists.size)
+    }
+
+    @Test fun theFirstEpochSeenIsSavedWithoutAReset() {
+        store.apply(listOf(notif("a", "active", 4)), 4)
+        onConnect = { _, ws -> ws.send("""{"type":"ready","seq":4,"epoch":"e1"}""") }
+        start()
+        await { store.epoch == "e1" }
+        assertTrue(lists.isEmpty() && store.rows.containsKey("a"))
+    }
+
     @Test fun queuedActionsGoOutInOrderOnConnectAndA404IsDropped() {
         store.queue += Pending(1, "a", "dismiss")
         store.queue += Pending(2, "gone", "ack")
@@ -395,11 +420,15 @@ class SyncClientTest {
             for (n in notifs) if (n.seq >= (rows[n.id]?.seq ?: 0)) rows[n.id] = n
             this.seq = maxOf(this.seq, seq)
         }
-        override fun replaceAll(open: List<Notif>, seq: Long) {
+        override fun replaceAll(open: List<Notif>, seq: Long, epoch: String) {
             rows.clear()
             open.forEach { rows[it.id] = it }
             this.seq = seq
+            if (epoch.isNotEmpty()) this.epoch = epoch
         }
+        @Volatile var epoch = ""
+        override fun epoch() = epoch
+        override fun saveEpoch(epoch: String) { this.epoch = epoch }
         override fun pending() = queue.toList()
         override fun removePending(p: Pending) { queue.remove(p) }
     }

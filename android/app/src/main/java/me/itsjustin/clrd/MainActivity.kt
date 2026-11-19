@@ -397,6 +397,7 @@ private fun SettingsScreen(app: App, battery: Intent?) {
                         old?.stop()
                         synchronized(app.configLock) {
                             app.db.dao().forget()
+                            app.epoch = ""
                             app.tray.reconcile(emptyList(), app.muted)
                             app.serverUrl = newUrl
                             app.token = newToken

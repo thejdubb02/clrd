@@ -131,6 +131,14 @@ class TrayRaceTest {
         assertTrue(tray("a") != null)
     }
 
+    @Test fun resetOnAnotherEpochKeepsNothingOld() {
+        val store = RoomStore(app)
+        bg { store.saveEpoch("old"); store.apply(listOf(row("a", Notif.DISMISSED, 5)), 5) }
+        bg { store.replaceAll(listOf(row("a", Notif.ACTIVE, 3)), 9, "new") } // seq is ahead, but it is another database
+        assertEquals(Notif.ACTIVE, bg { dao.openNow().single().state })
+        assertEquals("new", store.epoch())
+    }
+
     @Test fun resetUpdatesAShowingItem() {
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
