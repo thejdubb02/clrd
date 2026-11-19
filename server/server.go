@@ -62,6 +62,7 @@ type Server struct {
 	seq      atomic.Int64 // last committed event seq
 	pruned   atomic.Int64 // events with seq <= pruned are gone
 	revoked  sync.Map     // token ids deleted while the server runs
+	failing  sync.Map     // background job name -> true while it keeps failing; /healthz reports it
 
 	seen      sync.Map // token id -> time last written to last_seen_at
 	setupMu   sync.Mutex
@@ -182,8 +183,8 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.bootstrap(ctx); err != nil {
 		return err
 	}
-	go s.every(ctx, 15*time.Second, s.wakeSnoozed)
-	go s.every(ctx, time.Hour, s.prune)
+	go s.every(ctx, "snooze wake", 15*time.Second, s.wakeSnoozed)
+	go s.every(ctx, "prune", time.Hour, s.prune)
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }} // ends open streams on shutdown
 	errc := make(chan error, 1)
@@ -199,12 +200,22 @@ func (s *Server) Run(ctx context.Context) error {
 	return srv.Shutdown(sctx)
 }
 
-func (s *Server) every(ctx context.Context, d time.Duration, fn func(context.Context) error) {
+// jobFailures in a row mark a background job failing in /healthz.
+const jobFailures = 3
+
+func (s *Server) every(ctx context.Context, name string, d time.Duration, fn func(context.Context) error) {
 	t := time.NewTicker(d)
 	defer t.Stop()
+	fails := 0
 	for {
-		if err := fn(ctx); err != nil && ctx.Err() == nil {
-			s.log.Error("background job", "err", err)
+		if err := fn(ctx); err == nil {
+			fails = 0
+			s.failing.Delete(name)
+		} else if ctx.Err() == nil {
+			s.log.Error("background job", "job", name, "err", err)
+			if fails++; fails >= jobFailures {
+				s.failing.Store(name, true)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -260,6 +271,13 @@ func (s *Server) routesSetup() {
 	s.route("GET /healthz", func(w http.ResponseWriter, r *http.Request) error {
 		if err := s.db.PingContext(r.Context()); err != nil {
 			return err
+		}
+		var failing []string // names only: the errors are in the log, not on a public page
+		s.failing.Range(func(k, _ any) bool { failing = append(failing, k.(string)); return true })
+		if len(failing) > 0 {
+			sort.Strings(failing)
+			writeJSON(w, 503, map[string]any{"ok": false, "seq": s.CurrentSeq(), "failing": failing})
+			return nil
 		}
 		writeJSON(w, 200, map[string]any{"ok": true, "seq": s.CurrentSeq()})
 		return nil
