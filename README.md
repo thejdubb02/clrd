@@ -1,41 +1,115 @@
-# clrd
+<p align="center">
+  <img src="assets/logo.svg" alt="clrd" width="96">
+</p>
 
-Self-hosted push notifications where **dismiss once means gone everywhere**.
+<h1 align="center">clrd</h1>
 
-Send an alert with one HTTP call. It shows up on your Android phone, your tablet and the web inbox. Swipe it away on any one of them and it clears on all the others.
+<p align="center"><strong>Self-hosted push notifications. Dismiss once, gone everywhere.</strong></p>
 
-clrd is a notification server, not a chat app. No rooms, no messages back and forth, no accounts on someone else's service.
+<p align="center">
+  <a href="https://github.com/thejdubb02/clrd/actions/workflows/go.yml"><img src="https://github.com/thejdubb02/clrd/actions/workflows/go.yml/badge.svg?branch=main" alt="Server and web tests"></a>
+  <a href="https://github.com/thejdubb02/clrd/actions/workflows/android.yml"><img src="https://github.com/thejdubb02/clrd/actions/workflows/android.yml/badge.svg?branch=main" alt="Android tests"></a>
+  <a href="https://github.com/thejdubb02/clrd/actions/workflows/sdk.yml"><img src="https://github.com/thejdubb02/clrd/actions/workflows/sdk.yml/badge.svg?branch=main" alt="SDK tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
+</p>
 
-> Dismiss once. Gone everywhere.
->
-> Status: being built. The contract every part builds against is [docs/SPEC.md](docs/SPEC.md).
+Send an alert with one HTTP call. It shows up on your Android phone, your tablet
+and the web inbox. Swipe it away on any one of them and it clears on all the
+others. When the problem fixes itself, the sender resolves it and it clears
+everywhere without anyone touching it.
 
-## Why
+<p align="center">
+  <img src=".github/images/inbox-light.png" alt="The clrd web inbox with three open notifications, one acknowledged on a phone" width="760">
+  <img src=".github/images/inbox-phone-dark.png" alt="The same inbox on a phone in dark mode" width="200">
+</p>
 
-[ntfy](https://github.com/binwiederhier/ntfy) is great, and clrd aims to cover everything it does. The one gap: in ntfy the *sender* can clear a notification everywhere, but when a *person* swipes it away on one device, the other devices keep it. clrd makes the server the source of truth for every notification's state, so a dismissal anywhere syncs to every device.
+> **Status: early, no tagged release yet.** The server, web inbox, Android app
+> and SDKs have tests that run in CI. The integration guides for other tools are
+> not all tested against a live server yet. The Android app builds from source
+> until the F-Droid listing lands. See [CHANGELOG.md](CHANGELOG.md).
 
-## Planned
+## Why clrd
 
-- Single Go binary or one Docker container, SQLite, no Redis, no broker
-- HTTP publish API, plus an ntfy-compatible endpoint so existing scripts keep working
-- Android app (Kotlin), distributed through F-Droid, no Google services required
-- Web inbox built into the server, with browser push
-- Topics, priorities, tags, click URLs, action buttons, attachments, scheduled sends
-- Separate states that all sync: **dismiss** (hide it), **acknowledge** (someone is on it), **resolve** (the problem is fixed), **snooze**
-- Senders can resolve an alert by their own ID when the fault clears, so monitoring tools close their own alerts
-- Offline devices catch up on reconnect from an event sequence number, so cleared alerts never come back
+[ntfy](https://github.com/binwiederhier/ntfy) is great, and clrd speaks its
+protocol. The gap it fills: in ntfy, when you swipe a notification away on one
+device, your other devices keep it. clrd keeps every notification's state on
+the server, so a dismissal anywhere clears it everywhere, and a phone that was
+offline catches up the moment it reconnects.
 
-## Sending (planned API)
+## Features
 
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  -d '{"topic":"infra","title":"Disk full","message":"vps1 at 95%","priority":4,"external_id":"disk-vps1"}' \
-  https://clrd.itsjustin.me/api/v1/notifications
+- **One binary, one SQLite file.** No Redis, no broker. Or one Docker container.
+- **State that syncs.** Dismiss (hide it), acknowledge (someone is on it),
+  resolve (it is fixed) and snooze, each shown on every device.
+- **Self-resolving alerts.** Senders tag an alert with their own ID and resolve
+  it by that ID when the fault clears.
+- **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
+  WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
+  Attachments and email are not supported.
+- **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
+  work without JavaScript, dark mode, phone width.
+- **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
+  and LineageOS. Reply and link buttons in the tray.
+- **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
+  and an MCP server so an AI agent can notify you and wait for your answer.
+
+## Quick start
+
+```sh
+git clone https://github.com/thejdubb02/clrd && cd clrd
+# set CLRD_BASE_URL in docker-compose.yml to your public https URL
+docker compose up -d
+docker compose logs clrd    # prints a one-time setup link for your admin token
+```
+
+It listens on `127.0.0.1:8080`; put HTTPS in front as in
+[docs/self-host.md](docs/self-host.md). Then make a token for sending and send
+something:
+
+```sh
+export CLRD_TOKEN=$(docker compose exec -T clrd clrd token create --name script --scope publish)
+curl -H "Authorization: Bearer $CLRD_TOKEN" \
+  -d '{"topic":"infra","title":"Disk full","message":"web-1 at 95%","priority":4,"external_id":"disk-web-1"}' \
+  https://clrd.example.com/api/v1/notifications
 
 # ntfy style also works
-curl -d "Disk full" https://clrd.itsjustin.me/infra
+curl -u ":$CLRD_TOKEN" -d "Disk full" https://clrd.example.com/infra
 ```
+
+Tokens, backups and the binary install: [docs/self-host.md](docs/self-host.md).
+
+## Integrations
+
+curl, the [SDKs](sdk/), GitHub Actions, MCP (Claude Code, Claude Desktop,
+Cursor), Home Assistant, Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise and
+ntfy clients. Setup for each, and which ones resolve themselves:
+[docs/integrations](docs/integrations/README.md).
+
+## Docs
+
+- [docs/self-host.md](docs/self-host.md): run it, put HTTPS in front, tokens, backups
+- [docs/SPEC.md](docs/SPEC.md): the API, sync model, states and auth
+- [android/README.md](android/README.md): build the Android app
+- [web/README.md](web/README.md): how the web pages are served
+
+## Repo layout
+
+| Path | What |
+|---|---|
+| `server/` | Go server: API, sync, ntfy compatibility, MCP |
+| `web/` | Landing page, docs pages and the inbox, embedded in the binary |
+| `android/` | Android app (Kotlin, Jetpack Compose) |
+| `sdk/` | Python, JavaScript and Go clients, GitHub Action |
+| `docs/` | Self-hosting, spec and integration guides, also served at `/docs` |
+| `assets/` | Logo, icon and fonts |
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md). Security problems go through
+[SECURITY.md](SECURITY.md), not a public issue.
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE). Geist and Geist Mono fonts are under the
+[SIL Open Font License](assets/fonts/OFL.txt).
