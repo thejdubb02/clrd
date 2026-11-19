@@ -1,0 +1,88 @@
+name: integrations
+
+# Runs every guide in docs/integrations against a real clrd, using the real
+# tool in a container where one exists. See test/integrations/README.md.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "server/**"
+      - "docs/integrations/**"
+      - "sdk/**"
+      - "test/integrations/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/integrations.yml"
+  workflow_dispatch:
+
+jobs:
+  guides:
+    runs-on: [self-hosted, cezar1]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
+      - name: guides
+        run: CLRD_BIN="$RUNNER_TEMP/clrd" test/integrations/run.sh
+
+      # docs/integrations/github-actions.md, with the action itself on a real runner.
+      - name: start clrd for the action
+        run: |
+          port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+          export CLRD_DB="$RUNNER_TEMP/action.db" CLRD_LISTEN="127.0.0.1:$port"
+          token=$("$RUNNER_TEMP/clrd" token create --name action --scope admin 2>/dev/null)
+          echo "::add-mask::$token"
+          nohup "$RUNNER_TEMP/clrd" >"$RUNNER_TEMP/action.log" 2>&1 &
+          echo $! >"$RUNNER_TEMP/action.pid"
+          { echo "CLRD=http://127.0.0.1:$port"; echo "CLRD_TOKEN=$token"; } >>"$GITHUB_ENV"
+          for i in $(seq 50); do curl -fs "http://127.0.0.1:$port/healthz" >/dev/null && exit 0; sleep 0.2; done
+          exit 1
+      - name: "action: send (the guide's step, as on failure)"
+        uses: ./sdk/action
+        with:
+          url: ${{ env.CLRD }}
+          token: ${{ env.CLRD_TOKEN }}
+          topic: ci
+          id: ${{ github.event.repository.name }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
+          title: ${{ github.workflow }} failed on ${{ github.ref_name }}
+          message: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          priority: 4
+      - name: "action: check it is open"
+        env:
+          KEY: ${{ github.event.repository.name }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
+        run: |
+          curl -fsS -H "Authorization: Bearer $CLRD_TOKEN" "$CLRD/api/v1/notifications?topic=ci&state=all" |
+            jq -e --arg k "$KEY" '[.notifications[] | select(.external_id == $k)] | length == 1 and .[0].state == "active" and .[0].priority == 4'
+      - name: "action: resolve (the guide's step, as on success)"
+        uses: ./sdk/action
+        with:
+          url: ${{ env.CLRD }}
+          token: ${{ env.CLRD_TOKEN }}
+          topic: ci
+          id: ${{ github.event.repository.name }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
+          resolve: true
+      - name: "action: check it is resolved, and a second resolve is fine"
+        env:
+          KEY: ${{ github.event.repository.name }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
+        run: |
+          curl -fsS -H "Authorization: Bearer $CLRD_TOKEN" "$CLRD/api/v1/notifications?topic=ci&state=all" |
+            jq -e --arg k "$KEY" '[.notifications[] | select(.external_id == $k)] | length == 1 and .[0].state == "resolved"'
+      - name: "action: resolve with nothing open"
+        uses: ./sdk/action
+        with:
+          url: ${{ env.CLRD }}
+          token: ${{ env.CLRD_TOKEN }}
+          topic: ci
+          id: ${{ github.event.repository.name }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
+          resolve: true
+      - name: clean up
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/action.pid" ] && kill "$(cat "$RUNNER_TEMP/action.pid")" || true
+          # Tool containers left behind if the job was cancelled mid-case.
+          docker ps -aq --filter label=clrd-it | xargs -r docker rm -f

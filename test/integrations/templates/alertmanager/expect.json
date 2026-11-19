@@ -1,0 +1,11 @@
+{
+  "query": "priority=urgent",
+  "topic": "infra",
+  "external_id": "8f2c1e5b7a9d3c40",
+  "row": {
+    "title": "DiskFull",
+    "message": "/var on build is 91% full",
+    "click": "http://prometheus.example.com:9090/graph?g0.expr=disk_used_percent+%3E+90",
+    "priority": 5
+  }
+}

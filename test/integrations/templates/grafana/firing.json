@@ -1,0 +1,31 @@
+{
+  "receiver": "clrd",
+  "status": "firing",
+  "orgId": 1,
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {"alertname": "High CPU", "grafana_folder": "Infra", "instance": "web-1"},
+      "annotations": {"description": "CPU has been above 90% for 5 minutes."},
+      "startsAt": "2026-11-19T10:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://grafana.example.com/alerting/grafana/cdz1/view?orgId=1",
+      "fingerprint": "57c6d9296de2ad39",
+      "silenceURL": "https://grafana.example.com/alerting/silence/new?alertmanager=grafana&matcher=alertname%3DHigh+CPU",
+      "dashboardURL": "https://grafana.example.com/d/abc",
+      "panelURL": "https://grafana.example.com/d/abc?viewPanel=2",
+      "values": {"B": 91.2},
+      "valueString": "[ var='B' labels={instance=web-1} value=91.2 ]"
+    }
+  ],
+  "groupLabels": {"alertname": "High CPU"},
+  "commonLabels": {"alertname": "High CPU", "grafana_folder": "Infra", "instance": "web-1"},
+  "commonAnnotations": {"description": "CPU has been above 90% for 5 minutes."},
+  "externalURL": "https://grafana.example.com/",
+  "version": "1",
+  "groupKey": "{}:{alertname=\"High CPU\"}",
+  "truncatedAlerts": 0,
+  "title": "[FIRING:1] High CPU (Infra web-1)",
+  "state": "alerting",
+  "message": "**Firing**\n\nValue: B=91.2\nLabels:\n - alertname = High CPU\n"
+}
