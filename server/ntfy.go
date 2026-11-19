@@ -42,6 +42,7 @@ type ntfyMsg struct {
 	Priority   int          `json:"priority,omitempty"`
 	Tags       []string     `json:"tags,omitempty"`
 	Click      string       `json:"click,omitempty"`
+	Icon       string       `json:"icon,omitempty"`
 	Actions    []ntfyAction `json:"actions,omitempty"`
 }
 
@@ -64,7 +65,7 @@ func ntfyMessage(n *Notification, seq int64) ntfyMsg {
 		m.Event = "message_delete"
 		return m
 	}
-	m.Title, m.Message, m.Priority, m.Tags, m.Click = n.Title, n.Message, n.Priority, n.Tags, n.Click
+	m.Title, m.Message, m.Priority, m.Tags, m.Click, m.Icon = n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon
 	for i, a := range n.Actions {
 		if a.URL != "" { // ntfy has no reply button; an http action would need our token
 			m.Actions = append(m.Actions, ntfyAction{ID: strconv.Itoa(i), Action: "view", Label: a.Label, URL: a.URL})
@@ -254,6 +255,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	in.Title = param(r, "Title", "Ti", "T")
 	in.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
 	in.Click = param(r, "Click")
+	in.Icon = ntfyIcon(param(r, "Icon"))
 	if in.Priority, err = ntfyPriority(param(r, "Priority", "Prio", "P")); err != nil {
 		return err
 	}
@@ -279,19 +281,20 @@ func (s *Server) ntfyReply(w http.ResponseWriter, ctx context.Context, tok *Toke
 // ntfyPublishJSON: POST / with ntfy's JSON body.
 func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		Topic      string       `json:"topic"`
-		Message    string       `json:"message"`
-		Title      string       `json:"title"`
-		Priority   int          `json:"priority"`
-		Tags       []string     `json:"tags"`
-		Click      string       `json:"click"`
-		Actions    []ntfyAction `json:"actions"`
-		Delay      string       `json:"delay"`
-		ID         string       `json:"id"`
-		SequenceID string       `json:"sequence_id"`
-		ExternalID string       `json:"external_id"`
-		Status     string       `json:"status"`
-		Cache      string       `json:"cache"`
+		Topic      string          `json:"topic"`
+		Message    string          `json:"message"`
+		Title      string          `json:"title"`
+		Priority   int             `json:"priority"`
+		Tags       []string        `json:"tags"`
+		Click      string          `json:"click"`
+		Icon       json.RawMessage `json:"icon"` // raw: ntfy drops a bad icon rather than failing the publish
+		Actions    []ntfyAction    `json:"actions"`
+		Delay      string          `json:"delay"`
+		ID         string          `json:"id"`
+		SequenceID string          `json:"sequence_id"`
+		ExternalID string          `json:"external_id"`
+		Status     string          `json:"status"`
+		Cache      string          `json:"cache"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
@@ -301,6 +304,9 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status}
+	var icon string
+	_ = json.Unmarshal(in.Icon, &icon)
+	p.Icon = ntfyIcon(icon)
 	for _, id := range []string{in.SequenceID, in.ID} {
 		if p.ExternalID == "" {
 			p.ExternalID = id
@@ -582,4 +588,13 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		return 0, nil
 	}
 	return 0, errf(400, "bad_request", "invalid since %q", v)
+}
+
+// ntfyIcon keeps an http(s) icon URL and drops anything else, never a 400,
+// so a publish ntfy accepts still succeeds.
+func ntfyIcon(v string) string {
+	if checkImageURL("icon", v) != nil {
+		return ""
+	}
+	return v
 }
