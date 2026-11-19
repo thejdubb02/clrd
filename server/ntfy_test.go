@@ -279,3 +279,21 @@ func TestExternalIDWithSlash(t *testing.T) {
 		t.Fatalf("ntfy delete by escaped key: %s", out)
 	}
 }
+
+// Review fixes on PR #11: an empty topic list, a lowercase auth scheme and a
+// delay past ntfy's 3-day limit.
+func TestNtfyEdgeInputs(t *testing.T) {
+	_, ts, admin := newTest(t)
+	if code, body := raw(t, "GET", ts.URL+"/,/json?poll=1", "", "", nil); code != 400 {
+		t.Fatalf("comma-only topics: %d %s", code, body)
+	}
+	if code, body := raw(t, "POST", ts.URL+"/edge", "", "hi", map[string]string{"Authorization": "bearer " + admin}); code != 200 {
+		t.Fatalf("lowercase bearer: %d %s", code, body)
+	}
+	if code, body := raw(t, "POST", ts.URL+"/edge", admin, "hi", map[string]string{"X-Delay": "253402300800"}); code != 400 {
+		t.Fatalf("delay in year 10000: %d %s", code, body)
+	}
+	if code, body := raw(t, "POST", ts.URL+"/edge", admin, "hi", map[string]string{"X-Delay": "4d"}); code != 400 {
+		t.Fatalf("delay of 4 days: %d %s", code, body)
+	}
+}

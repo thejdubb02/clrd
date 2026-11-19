@@ -236,11 +236,12 @@ func rawToken(r *http.Request, cookie bool) (raw string, fromCookie bool) {
 			}
 		}
 	}
-	if v, ok := strings.CutPrefix(h, "Bearer "); ok {
+	scheme, v, _ := strings.Cut(h, " ")
+	if strings.EqualFold(scheme, "Bearer") {
 		return strings.TrimSpace(v), false
 	}
-	if _, ok := strings.CutPrefix(h, "Basic "); ok {
-		r2 := &http.Request{Header: http.Header{"Authorization": {h}}}
+	if strings.EqualFold(scheme, "Basic") {
+		r2 := &http.Request{Header: http.Header{"Authorization": {"Basic " + v}}}
 		if u, p, ok := r2.BasicAuth(); ok {
 			if strings.HasPrefix(p, tokenPrefix) {
 				return p, false
@@ -378,7 +379,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 	s.setupMu.Lock()
 	defer s.setupMu.Unlock()
 	if s.setupCode != "" {
-		if ok, err := s.hasAdmin(r.Context()); ok || err != nil {
+		ok, err := s.hasAdmin(r.Context())
+		if err != nil {
+			return err
+		}
+		if ok {
 			s.setupCode = ""
 		}
 	}

@@ -173,17 +173,22 @@ func ntfyActions(v string) ([]Action, error) {
 	return out, nil
 }
 
-// ntfyDelay reads a unix time or a duration (30m, 2h, 1d).
+// ntfyDelay reads a unix time or a duration (30m, 2h, 1d), at most 3 days
+// ahead like ntfy's default limit.
 func ntfyDelay(v string) (*time.Time, error) {
 	if v == "" {
 		return nil, nil
 	}
+	var t time.Time
 	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-		t := time.Unix(n, 0)
-		return &t, nil
+		t = time.Unix(n, 0)
+	} else if d, err := parseDuration(v); err == nil {
+		t = time.Now().Add(d)
 	}
-	if d, err := parseDuration(v); err == nil {
-		t := time.Now().Add(d)
+	if !t.IsZero() {
+		if t.After(time.Now().Add(72 * time.Hour)) {
+			return nil, errf(400, "bad_request", "delay %q is more than 3 days ahead", v)
+		}
 		return &t, nil
 	}
 	return nil, errf(400, "bad_request", "invalid delay %q: use a unix time or a duration like 30m", v)
@@ -367,6 +372,9 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 	return func(w http.ResponseWriter, r *http.Request) error {
 		tok := s.auth(r, false)
 		topics := splitList(r.PathValue("topics"))
+		if len(topics) == 0 {
+			return errf(400, "bad_request", "no topic given")
+		}
 		for _, t := range topics {
 			if err := validTopic(t); err != nil {
 				return err

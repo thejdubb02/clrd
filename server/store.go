@@ -231,7 +231,9 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 		if err := saveNotification(tx, e.Notification); err != nil {
 			return nil, err
 		}
-		e.Raw, _ = json.Marshal(e)
+		if e.Raw, err = json.Marshal(e); err != nil {
+			return nil, errf(400, "bad_request", "cannot encode notification: %v", err)
+		}
 		if _, err := tx.Exec(`UPDATE events SET data = ? WHERE seq = ?`, string(e.Raw), e.Seq); err != nil {
 			return nil, err
 		}
