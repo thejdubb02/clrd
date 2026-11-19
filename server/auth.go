@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Token scopes (spec section 4).
@@ -187,16 +188,30 @@ func (s *Server) Tokens(ctx context.Context, seenSince time.Time) ([]*Token, err
 }
 
 // DeleteToken revokes a token.
+// DeleteToken revokes a token and every web session signed in with it.
 func (s *Server) DeleteToken(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM tokens WHERE id = ?`, id)
+	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE k(id) AS
+	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
+	  DELETE FROM tokens WHERE id IN k RETURNING id`, id)
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	defer rows.Close()
+	n := 0
+	for ; rows.Next(); n++ {
+		var gone string
+		if err := rows.Scan(&gone); err != nil {
+			return err
+		}
+		s.revoked.Store(gone, true) // streams check this before every send
+		s.hub.drop(gone)            // and wake on this, so an idle stream closes now
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if n == 0 {
 		return errf(404, "not_found", "token not found")
 	}
-	s.revoked.Store(id, true) // streams check this before every send
-	s.hub.drop(id)            // and wake on this, so an idle stream closes now
 	return nil
 }
 
@@ -307,9 +322,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Token string `json:"token"`
 		Next  string `json:"next"`
+		Name  string `json:"name"`
 	}
 	if isForm {
-		in.Token, in.Next = r.PostFormValue("token"), r.PostFormValue("next")
+		in.Token, in.Next, in.Name = r.PostFormValue("token"), r.PostFormValue("next"), r.PostFormValue("name")
 	} else if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
@@ -332,16 +348,72 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	if t == nil {
 		return errf(401, "unauthorized", "invalid token")
 	}
-	s.setCookie(w, r, strings.TrimSpace(in.Token), 365*24*3600)
+	// Each browser gets its own token (issue #30): its own name in the device
+	// list and in state_by, revocable alone, and gone when its parent is.
+	s.endSession(r)
+	st, raw, err := s.CreateToken(r.Context(), deviceName(in.Name, r.UserAgent()), t.Scopes, t.Topics)
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(r.Context(), `INSERT INTO sessions (token_id, parent_id) VALUES (?, ?)`, st.ID, t.ID); err != nil {
+		s.DeleteToken(r.Context(), st.ID)
+		return err
+	}
+	s.setCookie(w, r, raw, 365*24*3600)
 	if isForm {
 		http.Redirect(w, r, next, http.StatusSeeOther)
 		return nil
 	}
-	writeJSON(w, 200, t)
+	writeJSON(w, 200, st)
 	return nil
 }
 
+// endSession revokes the token in this browser's cookie, only when sign-in
+// minted it. Older cookies and the setup cookie hold a real token; keep those.
+func (s *Server) endSession(r *http.Request) {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil {
+		return
+	}
+	var id string
+	if s.db.QueryRowContext(r.Context(), `SELECT token_id FROM sessions JOIN tokens ON id = token_id WHERE hash = ?`,
+		hashToken(c.Value)).Scan(&id) == nil {
+		if err := s.DeleteToken(r.Context(), id); err != nil {
+			s.log.Warn("end session", "err", err)
+		}
+	}
+}
+
+// deviceName is the name a signed-in browser shows as: the one given, else
+// a label from the User-Agent such as "Firefox on Linux".
+func deviceName(name, ua string) string {
+	name = strings.Join(strings.FieldsFunc(name, func(c rune) bool { return unicode.IsSpace(c) || unicode.IsControl(c) }), " ")
+	if name == "" {
+		pick := func(pairs ...string) string {
+			for i := 0; i < len(pairs); i += 2 {
+				if strings.Contains(ua, pairs[i]) {
+					return pairs[i+1]
+				}
+			}
+			return ""
+		}
+		name = pick("Edg/", "Edge", "OPR/", "Opera", "Firefox/", "Firefox", "Chrome/", "Chrome", "Safari/", "Safari")
+		if name == "" {
+			name = "Web browser"
+		}
+		if sys := pick("Android", "Android", "iPhone", "iOS", "iPad", "iPadOS", "Windows", "Windows",
+			"CrOS", "ChromeOS", "Mac OS X", "macOS", "Linux", "Linux"); sys != "" {
+			name += " on " + sys
+		}
+	}
+	if r := []rune(name); len(r) > 64 {
+		name = string(r[:64])
+	}
+	return name
+}
+
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) error {
+	s.endSession(r)
 	s.setCookie(w, r, "", -1)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
