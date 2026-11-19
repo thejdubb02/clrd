@@ -1,0 +1,25 @@
+{{define "docs"}}{{template "head" .}}</head>
+<body class="site">
+{{template "site-header" .}}
+<div class="wrap docs">
+  <nav class="docs-nav" aria-label="Docs">
+    <a href="/docs/"{{if not .Doc.Key}} aria-current="page"{{end}}>Overview</a>
+    {{range .Docs}}<a href="/docs/{{.Key}}"{{if eq .Key $.Doc.Key}} aria-current="page"{{end}}>{{.Title}}</a>
+    {{end}}
+  </nav>
+  <main id="main" class="prose">
+  {{if .Doc.Key}}{{.Doc.HTML}}
+  {{else if eq .Path "/docs/"}}
+    <h1>Docs</h1>
+    <p>clrd is a self-hosted notification server where a dismissal on one device clears the notification on every device. These pages are rendered from the <code>docs/</code> folder of the repository.</p>
+    <ul>{{range .Docs}}<li><a href="/docs/{{.Key}}">{{.Title}}</a></li>{{end}}</ul>
+  {{else}}
+    <h1>Page not found</h1>
+    <p>There is no doc at this address. Pick one from the list.</p>
+  {{end}}
+  </main>
+</div>
+{{template "site-footer" .}}
+</body>
+</html>
+{{end}}
