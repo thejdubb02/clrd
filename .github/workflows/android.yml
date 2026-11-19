@@ -1,0 +1,25 @@
+name: android
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: [self-hosted, cezar1]
+    defaults:
+      run:
+        working-directory: android
+    env:
+      ANDROID_HOME: /opt/android-sdk
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: android/app/build/outputs/apk/**/*.apk

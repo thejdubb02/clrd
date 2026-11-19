@@ -1,0 +1,1 @@
+First release: live sync with a clrd server, tray notifications with Ack, Snooze 1h and Clear, inbox with topic filters, offline action queue.
