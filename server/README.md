@@ -25,7 +25,7 @@ s, _ := server.New(opt)
 s.Mount("/", web.Handler(s))     // web thread: landing page at exactly "/"
 s.Mount("/docs", web.Docs(s))    // gets /docs and /docs/...
 s.Mount("/app", web.App(s))      // gets /app and /app/...
-s.Mount("/mcp", mcp.Handler(s))  // integrations thread
+s.Mount("/mcp", mcp.New(s))
 s.Run(ctx)
 ```
 

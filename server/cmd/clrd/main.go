@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/thejdubb02/clrd/server"
+	"github.com/thejdubb02/clrd/server/mcp"
 )
 
 func main() {
@@ -43,9 +44,7 @@ func run(args []string) error {
 			return err
 		}
 		defer s.Close()
-		// Other packages add their pages here, for example:
-		//   s.Mount("/", web.Handler(s))
-		//   s.Mount("/mcp", mcp.Handler(s))
+		s.Mount("/mcp", mcp.New(s))
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		return s.Run(ctx)

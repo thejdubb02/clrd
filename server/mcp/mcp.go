@@ -53,7 +53,7 @@ type rpcErr struct {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+	if a := r.Header.Get("Authorization"); len(a) < 8 || !strings.EqualFold(a[:7], "Bearer ") {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="clrd"`)
 		http.Error(w, `{"error":"bearer token required","code":"unauthorized"}`, http.StatusUnauthorized)
 		return
@@ -210,7 +210,13 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		if v := str(a, "id"); v != "" {
 			body["external_id"] = v // send's id is the sender's key, not the server ULID
 		}
-		return h.api(r, "POST", "/api/v1/notifications", body)
+		n, err := h.api(r, "POST", "/api/v1/notifications", body)
+		// Core keeps an existing row's state when a key is reused, so a new
+		// question could inherit the last answer. Reopen it so it starts unanswered.
+		if st := str(n, "state"); err == nil && body["external_id"] != nil && (st == "acknowledged" || st == "dismissed" || st == "resolved") {
+			return h.api(r, "POST", "/api/v1/notifications/"+url.PathEscape(str(n, "id"))+"/reopen", nil)
+		}
+		return n, err
 	case "list":
 		q := url.Values{}
 		if v := str(a, "topic"); v != "" {
