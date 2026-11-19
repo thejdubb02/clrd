@@ -23,8 +23,15 @@ interface Store {
      */
     fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false)
 
-    /** After a `reset`: the open list from the server replaces everything known. */
-    fun replaceAll(open: List<Notif>, seq: Long)
+    /**
+     * After a `reset`: the open list from the server replaces everything known, and [epoch] is saved.
+     * When [epoch] differs from the saved one the list comes from another database, so no old row is kept.
+     */
+    fun replaceAll(open: List<Notif>, seq: Long, epoch: String = "")
+
+    /** The id of the server database our seq belongs to (docs/SPEC.md section 3); "" when none is saved yet. */
+    fun epoch(): String
+    fun saveEpoch(epoch: String)
 
     fun pending(): List<Pending>
     fun removePending(p: Pending)
@@ -164,6 +171,12 @@ class SyncClient(
                 }
             }
             "ready" -> {
+                // Checked before anything replayed is trusted: another epoch means the seq numbers
+                // belong to another database, which is handled exactly like `reset`.
+                val epoch = o.optString("epoch")
+                val saved = store.epoch()
+                if (epoch.isNotEmpty() && saved.isNotEmpty() && epoch != saved) return reset()
+                if (epoch.isNotEmpty() && saved.isEmpty()) store.saveEpoch(epoch)
                 // Events this token cannot see still move the cursor, or a filtered token
                 // falls behind retention and resets on every reconnect.
                 bufferSeq = maxOf(bufferSeq, o.optLong("seq"))
@@ -189,7 +202,8 @@ class SyncClient(
     }
 
     /**
-     * The server no longer has events back to our seq: take its open list as the truth.
+     * The server no longer has events back to our seq, or it runs on another database (a new
+     * epoch): take its open list as the truth.
      * The spec lets the socket stay open after `reset`, but a fresh connect from the list's seq
      * is simpler and also right for servers that close it.
      */
@@ -198,8 +212,8 @@ class SyncClient(
         ws?.close(1000, null)
         ws = null
         try {
-            val (open, seq) = api.listOpen()
-            store.replaceAll(open, seq)
+            val (open, seq, epoch) = api.listOpen()
+            store.replaceAll(open, seq, epoch)
         } catch (e: IOException) {
             return fail(e)
         } // a malformed list throws past here to onMessage, which reconnects

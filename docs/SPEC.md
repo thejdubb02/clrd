@@ -40,6 +40,8 @@ A **notification**:
   "priority": 4,               // 1..5, ntfy scale. 5 = urgent (Signal orange)
   "tags": ["backup"],
   "click": "https://...",      // optional
+  "icon": "https://.../disk.png", // optional http(s) image URL, max 2048; "" if none
+  "attachment": {"name": "report.pdf", "url": "/api/v1/files/9f2c...", "type": "application/pdf", "size": 48213}, // or null
   "actions": [{"label": "Open draft", "url": "https://..."}, {"label": "Yes", "reply": "yes"}],
   "reply": "",                 // the reply action tapped, "" until someone answers
   "state": "active",
@@ -76,6 +78,44 @@ gets 409. An `acknowledged` notification with a non-empty `reply` is answered,
 and `state_by` is who tapped. The first answer wins: a second one gets 409.
 Any later state change except dismiss and resolve (reopen, snooze, a plain
 ack) clears `reply`. Reply actions are not sent to ntfy subscribers.
+
+**Icons:** `icon` is an absolute `http` or `https` URL with a host (at most
+2048 characters); anything else is a 400. Clients load it straight from that
+URL, so the image host sees the viewer's IP address. Each topic can have its
+own icon (`PUT /api/v1/topics/{topic}`): a publish that gives no `icon` gets
+the topic's icon copied in at publish time, so changing the topic's icon later
+leaves notifications already sent as they were. Fields added after a client
+shipped (`icon` today) may be missing from events logged before the server
+upgrade: clients treat a missing field as empty (`attachment`: null).
+
+**Attachments:** a notification carries at most one file, `attachment`
+(`null` if none). Two kinds:
+
+- **Uploaded** to clrd: `url` is a path on this server,
+  `/api/v1/files/<id>`. Clients fetch it with the same credentials as the rest
+  of the API (session cookie on the web, Bearer token on Android). `type` is
+  sniffed from the content by the server, never taken from the sender; `size`
+  is in bytes.
+- **External**: `url` is an absolute `http`/`https` URL (same rule as `icon`)
+  that the server never fetches. `type` is `""` and `size` is 0. Clients open
+  it as a plain link and never send the clrd token to it.
+
+So: a `url` starting with `/` is ours, send credentials; anything else is
+not. `name` is the sender's file name cut to its last path segment, control
+characters removed, at most 255 bytes (`attachment` if empty). Publishing
+again under the same `external_id` replaces the attachment, or clears it if
+the new publish has none, and the replaced file is deleted. Older events may
+still point at a deleted file: clients treat a 404 as "file gone". A file
+stays while its notification exists: when retention prunes a dismissed or
+resolved notification, its file goes with it. Downloads serve png, jpeg, gif
+and webp inline and everything else as a download (`Content-Disposition:
+attachment`), with `X-Content-Type-Options: nosniff` and
+`Content-Security-Policy: sandbox`.
+
+**Share and copy (client guidance):** each card offers Share and Copy. Share
+sends the title, the message and `click` (if set) to the platform's share
+sheet (Web Share API, Android `ACTION_SEND`). Copy puts the same text on the
+clipboard: the title, a blank line, the message, then `click` on its own line.
 
 ## 3. Events and sync
 
@@ -182,7 +222,8 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 
 | Method | Path | Does |
 |---|---|---|
-| POST | `/api/v1/notifications` | Publish. Body = notification fields above (topic required). Returns the notification. |
+| POST | `/api/v1/notifications` | Publish. Body = notification fields above (topic required). Returns the notification. `attachment` takes `{"url":"https://...","name":"..."}` (external; `name` optional). To upload a file, send `multipart/form-data` instead: first a part named `notification` holding the JSON, then a part named `file`; its file name becomes `attachment.name`. Over the size cap is a 413. |
+| GET | `/api/v1/files/{id}` | Download an uploaded attachment. Scope read on its topic. 404 once the file is gone. |
 | GET | `/api/v1/notifications?topic=&state=open\|all\|<state>&q=&limit=&before=` | List. `open` = active+acknowledged+snoozed. |
 | GET | `/api/v1/notifications/{id}` | One. |
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
@@ -192,7 +233,8 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | POST | `/api/v1/notifications/{id}/resolve` | Sender clears it. |
 | POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). |
 | POST | `/api/v1/notifications/clear` | Bulk dismiss, body `{"topic":"infra"}` or `{"ids":[...]}`. |
-| GET | `/api/v1/topics` | Topics with open counts. |
+| GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
+| PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it; a missing `icon` is a 400. Scope publish on the topic. |
 | GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices". |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin). |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
@@ -210,9 +252,18 @@ By external id (what scripts and monitors use):
 
 - `PUT|POST /{topic}` with the body as the message. Headers `X-Title`/`Title`/`t`,
   `X-Priority`/`Priority`/`p` (1-5 or min/low/default/high/urgent),
-  `X-Tags`/`Tags`, `X-Click`, `X-Actions`, `X-Delay`, `X-Markdown`, `X-Icon`,
-  `X-Attach`, `X-Email` (ignored, documented), plus clrd's own `X-Id` = `external_id`.
-- `POST /` with ntfy JSON body (`topic`, `message`, `title`, `priority`, `tags`, ...).
+  `X-Tags`/`Tags`, `X-Click`, `X-Actions`, `X-Delay`, `X-Icon` (sets `icon`; a
+  bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
+  is dropped), `X-Filename`/`Filename`/`File`/`f` (with it, the body is the
+  file and the message comes from `X-Message`/`Message`/`m`, default "You
+  received a file: <name>"), `X-Markdown` and `X-Email` (ignored, documented),
+  plus clrd's own `X-Id` = `external_id`. A body over 4096 bytes without a file
+  name is still a 413; clrd does not turn it into an attachment. ntfy output
+  carries `icon` and `attachment` (`name`, `url`, `type`, `size`, with `url`
+  made absolute from `CLRD_BASE_URL`). Unlike ntfy, clrd's file URLs need a
+  token, so a third-party ntfy app that fetches files without one gets 401.
+- `POST /` with ntfy JSON body (`topic`, `message`, `title`, `priority`, `tags`,
+  `icon`, `attach`, `filename`, ...).
 - `GET /{topic}/json`, `/{topic}/sse`, `/{topic}/ws`, `/{topic}/raw` with `since=`
   (`all`, unix time, duration, message id) and `poll=1`, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
@@ -240,7 +291,12 @@ is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
 - Go 1.23 (`GOTOOLCHAIN=local`; `modernc.org/sqlite` v1.38 is the last line that builds on 1.23), stdlib `net/http` router, `modernc.org/sqlite` (pure Go, no cgo),
   WAL mode, one writer goroutine or a mutex around writes.
 - Config by env: `CLRD_LISTEN` (`:8080`), `CLRD_DB` (`/data/clrd.db`),
-  `CLRD_BASE_URL`, `CLRD_RETENTION` (`720h` for final rows and events).
+  `CLRD_BASE_URL`, `CLRD_RETENTION` (`720h` for final rows and events),
+  `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
+  the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
+  `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still
+  exist; open notifications are never pruned, so their files keep counting).
+  An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.
 - Tests: `go test ./...` must cover publish, external_id upsert, each state

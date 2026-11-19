@@ -45,7 +45,10 @@ offline catches up the moment it reconnects.
   it by that ID when the fault clears.
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
-  Attachments and email are not supported.
+  Email is not supported.
+- **Files and icons.** Agents and scripts can attach a file or an icon to a
+  notification. The server stores and serves them; the web inbox and Android
+  app do not show them yet.
 - **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
   work without JavaScript, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS

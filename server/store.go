@@ -4,14 +4,25 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	_ "modernc.org/sqlite" // pure Go SQLite driver, no cgo
 )
@@ -42,7 +53,10 @@ CREATE TABLE IF NOT EXISTS notifications (
   priority INTEGER NOT NULL DEFAULT 3,
   tags TEXT NOT NULL DEFAULT '[]',
   click TEXT NOT NULL DEFAULT '',
+  icon TEXT NOT NULL DEFAULT '',
   actions TEXT NOT NULL DEFAULT '[]',
+  attachment TEXT NOT NULL DEFAULT '',
+  file TEXT NOT NULL DEFAULT '',
   reply TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL,
   state_by TEXT NOT NULL DEFAULT '',
@@ -73,6 +87,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   last_seen_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '');
 -- A web sign-in mints its own token; parent_id is the token typed in.
 CREATE TABLE IF NOT EXISTS sessions (
   token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
@@ -90,23 +105,35 @@ type Action struct {
 
 // Notification is the server-owned record every client mirrors.
 type Notification struct {
-	ID          string     `json:"id"`
-	Topic       string     `json:"topic"`
-	ExternalID  string     `json:"external_id"`
-	Title       string     `json:"title"`
-	Message     string     `json:"message"`
-	Priority    int        `json:"priority"`
-	Tags        []string   `json:"tags"`
-	Click       string     `json:"click"`
-	Actions     []Action   `json:"actions"`
-	Reply       string     `json:"reply"` // the reply action tapped, "" until one is
-	State       string     `json:"state"`
-	StateBy     string     `json:"state_by"`
-	StateByID   string     `json:"state_by_id"` // token id: names can repeat
-	SnoozeUntil *time.Time `json:"snooze_until"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	Seq         int64      `json:"seq"`
+	ID          string      `json:"id"`
+	Topic       string      `json:"topic"`
+	ExternalID  string      `json:"external_id"`
+	Title       string      `json:"title"`
+	Message     string      `json:"message"`
+	Priority    int         `json:"priority"`
+	Tags        []string    `json:"tags"`
+	Click       string      `json:"click"`
+	Icon        string      `json:"icon"` // http(s) image URL; the topic's icon when the sender gave none
+	Actions     []Action    `json:"actions"`
+	Attachment  *Attachment `json:"attachment"`
+	file        string      // uploaded file id, "" for none or external
+	Reply       string      `json:"reply"` // the reply action tapped, "" until one is
+	State       string      `json:"state"`
+	StateBy     string      `json:"state_by"`
+	StateByID   string      `json:"state_by_id"` // token id: names can repeat
+	SnoozeUntil *time.Time  `json:"snooze_until"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	Seq         int64       `json:"seq"`
+}
+
+// Attachment is a file on a notification: uploaded (URL is /api/v1/files/<id>)
+// or external (an http(s) URL the server never fetches; Type "" and Size 0).
+type Attachment struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Type string `json:"type"`
+	Size int64  `json:"size"`
 }
 
 // Final reports whether the notification has left every inbox.
@@ -150,12 +177,17 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
 			return nil, fmt.Errorf("add %s column: %w", col, err)
 		}
+	}
+	// After the loop: an old database only has the column once it ran.
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS notifications_file ON notifications(file) WHERE file != ''`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("file index: %w", err)
 	}
 	return db, nil
 }
@@ -171,20 +203,25 @@ func nullMS(t *time.Time) any {
 	return ms(*t)
 }
 
-const notifCols = `id, topic, external_id, title, message, priority, tags, click, actions, reply,
+const notifCols = `id, topic, external_id, title, message, priority, tags, click, icon, actions, attachment, file, reply,
   state, state_by, state_by_id, snooze_until, created_at, updated_at, seq`
 
 type scanner interface{ Scan(...any) error }
 
 func scanNotification(r scanner) (*Notification, error) {
 	var n Notification
-	var tags, actions string
+	var tags, actions, att string
 	var snooze sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Priority, &tags, &n.Click,
-		&actions, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq)
+		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq)
 	if err != nil {
 		return nil, err
+	}
+	if att != "" {
+		if err := json.Unmarshal([]byte(att), &n.Attachment); err != nil {
+			return nil, err
+		}
 	}
 	n.CreatedAt, n.UpdatedAt = fromMS(created), fromMS(updated)
 	if snooze.Valid {
@@ -200,13 +237,19 @@ func scanNotification(r scanner) (*Notification, error) {
 func saveNotification(tx *sql.Tx, n *Notification) error {
 	tags, _ := json.Marshal(n.Tags)
 	actions, _ := json.Marshal(n.Actions)
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	att := ""
+	if n.Attachment != nil {
+		b, _ := json.Marshal(n.Attachment)
+		att = string(b)
+	}
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(20)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message,
-		priority=excluded.priority, tags=excluded.tags, click=excluded.click, actions=excluded.actions,
+		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
+		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
 		updated_at=excluded.updated_at, seq=excluded.seq`,
-		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Priority, string(tags), n.Click, string(actions),
-		n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
+		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Priority, string(tags), n.Click, n.Icon, string(actions),
+		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -301,14 +344,17 @@ func ulidString(u [16]byte) string {
 
 // Publish input: the notification fields a sender sets.
 type PublishInput struct {
-	Topic       string     `json:"topic"`
-	ExternalID  string     `json:"external_id"`
-	Title       string     `json:"title"`
-	Message     string     `json:"message"`
-	Priority    int        `json:"priority"`
-	Tags        []string   `json:"tags"`
-	Click       string     `json:"click"`
-	Actions     []Action   `json:"actions"`
+	Topic       string      `json:"topic"`
+	ExternalID  string      `json:"external_id"`
+	Title       string      `json:"title"`
+	Message     string      `json:"message"`
+	Priority    int         `json:"priority"`
+	Tags        []string    `json:"tags"`
+	Click       string      `json:"click"`
+	Icon        string      `json:"icon"` // http(s) image URL; the topic's icon when the sender gave none
+	Actions     []Action    `json:"actions"`
+	Attachment  *Attachment `json:"attachment"` // external only: {"url","name"}; uploads go through PublishFile
+	file        string
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
 	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
 	// notification with this external_id instead of creating one; 404 if none.
@@ -326,6 +372,23 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	}
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
 		return nil, err
+	}
+	if err := checkImageURL("icon", in.Icon); err != nil {
+		return nil, err
+	}
+	if a := in.Attachment; a != nil && in.file == "" { // external: only the URL and name are the sender's
+		if a.URL == "" {
+			in.Attachment = nil
+		} else if err := checkImageURL("attachment.url", a.URL); err != nil {
+			return nil, err
+		} else {
+			name := a.Name
+			if name == "" {
+				u, _ := url.Parse(a.URL)
+				name = u.Path
+			}
+			in.Attachment = &Attachment{Name: cleanName(name), URL: a.URL}
+		}
 	}
 	if in.Status == "resolved" {
 		if in.ExternalID == "" {
@@ -357,13 +420,33 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err := checkActions(in.Actions); err != nil {
 		return nil, err
 	}
+	var replaced string // file id an upsert drops, removed after commit
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		if in.file != "" {
+			var used int64
+			// The row this upsert replaces does not count: its file goes.
+			if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(json_extract(attachment, '$.size')), 0)
+				FROM notifications WHERE file != '' AND NOT (external_id != '' AND topic = ? AND external_id = ?
+				AND state NOT IN ('dismissed', 'resolved'))`, in.Topic, in.ExternalID).Scan(&used); err != nil {
+				return nil, err
+			}
+			if used+in.Attachment.Size > s.opt.AttachmentTotal {
+				return nil, errf(507, "storage_full", "attachment storage is full")
+			}
+		}
+		if in.Icon == "" { // the topic's icon, copied so a later change leaves old rows alone
+			if err := tx.QueryRowContext(ctx, `SELECT icon FROM topics WHERE topic = ?`, in.Topic).Scan(&in.Icon); err != nil &&
+				!errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+		}
 		if in.ExternalID != "" {
 			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 				in.Topic, in.ExternalID)
 			if err == nil {
-				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Actions, n.Reply =
-					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Actions, "" // a new question starts unanswered
+				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
+					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
+				replaced, n.Attachment, n.file = n.file, in.Attachment, in.file
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -381,8 +464,8 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		}
 		t := now()
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
-			Message: in.Message, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Actions: in.Actions,
-			State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t}
+			Message: in.Message, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions,
+			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
@@ -392,7 +475,81 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err != nil {
 		return nil, err
 	}
+	if replaced != "" && replaced != in.file {
+		os.Remove(filepath.Join(s.opt.Attachments, replaced))
+	}
 	return evs[0].Notification, nil
+}
+
+// fileID is an uploaded file's name on disk and in its URL.
+var fileID = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// PublishFile stores body as an uploaded attachment and publishes in with it.
+// Nothing reaches disk unless the token may publish to the topic, and the
+// file is removed again if the publish fails.
+func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, name string, body io.Reader) (*Notification, error) {
+	if err := validTopic(in.Topic); err != nil {
+		return nil, err
+	}
+	if err := tok.need(ScopePublish, in.Topic); err != nil {
+		return nil, err
+	}
+	if in.Status == "resolved" {
+		return nil, errf(400, "bad_request", "status resolved cannot carry a file")
+	}
+	f, err := os.CreateTemp(s.opt.Attachments, ".up-*") // dot: the sweep never mistakes it for a finished file
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(f.Name()) // no-op once renamed
+	size, err := io.Copy(f, io.LimitReader(body, s.opt.AttachmentMax+1))
+	head := make([]byte, 512)
+	k, _ := f.ReadAt(head, 0)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	var mbe *http.MaxBytesError
+	switch {
+	case errors.As(err, &mbe) || size > s.opt.AttachmentMax:
+		return nil, errf(413, "too_large", "file over %d bytes", s.opt.AttachmentMax)
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		return nil, errf(408, "timeout", "upload too slow")
+	case err != nil:
+		return nil, errf(400, "bad_request", "cannot read file: %v", err)
+	}
+	b := make([]byte, 16)
+	rand.Read(b)
+	id := hex.EncodeToString(b)
+	path := filepath.Join(s.opt.Attachments, id)
+	if err := os.Rename(f.Name(), path); err != nil {
+		return nil, err
+	}
+	in.Attachment = &Attachment{Name: cleanName(name), URL: "/api/v1/files/" + id, Type: http.DetectContentType(head[:k]), Size: size}
+	in.file = id
+	n, err := s.Publish(ctx, tok, in)
+	if err != nil {
+		os.Remove(path)
+	}
+	return n, err
+}
+
+// cleanName keeps a sender's file name safe to show and to put in a header.
+func cleanName(name string) string {
+	name = path.Base(strings.ReplaceAll(name, `\`, "/"))
+	name = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, name)
+	for len(name) > 255 {
+		_, n := utf8.DecodeLastRuneInString(name)
+		name = name[:len(name)-n]
+	}
+	if name == "" || name == "." || name == ".." || name == "/" {
+		return "attachment"
+	}
+	return name
 }
 
 // Change actions and the state each one sets (spec section 5).
@@ -619,6 +776,32 @@ func (s *Server) prune(ctx context.Context) error {
 	if upTo.Valid && upTo.Int64 > s.pruned.Load() {
 		s.pruned.Store(upTo.Int64)
 	}
+	return s.sweepFiles(ctx)
+}
+
+// sweepFiles removes uploaded files no notification points at: pruned or
+// replaced ones, and uploads cut off by a crash. Anything younger than an
+// hour is left alone, so an upload still being published survives.
+func (s *Server) sweepFiles(ctx context.Context) error {
+	entries, err := os.ReadDir(s.opt.Attachments)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		info, err := e.Info()
+		// Only our own names: the folder may be shared with other files.
+		if err != nil || e.IsDir() || time.Since(info.ModTime()) < time.Hour ||
+			!fileID.MatchString(e.Name()) && !strings.HasPrefix(e.Name(), ".up-") {
+			continue
+		}
+		var used bool
+		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM notifications WHERE file = ? AND file != '')`, e.Name()).Scan(&used); err != nil {
+			return err
+		}
+		if !used {
+			os.Remove(filepath.Join(s.opt.Attachments, e.Name()))
+		}
+	}
 	return nil
 }
 
@@ -725,6 +908,7 @@ func (s *Server) Get(ctx context.Context, tok *Token, id string) (*Notification,
 type TopicCount struct {
 	Topic string `json:"topic"`
 	Open  int    `json:"open"`
+	Icon  string `json:"icon"`
 }
 
 // Topics lists topics tok may read, with open counts.
@@ -732,8 +916,9 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(state IN ('active', 'acknowledged', 'snoozed'))
-		FROM notifications GROUP BY topic ORDER BY topic`)
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon) FROM (
+		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon FROM notifications
+		UNION ALL SELECT topic, 0, icon FROM topics) GROUP BY topic ORDER BY topic`)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +926,7 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	out := []TopicCount{}
 	for rows.Next() {
 		var t TopicCount
-		if err := rows.Scan(&t.Topic, &t.Open); err != nil {
+		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon); err != nil {
 			return nil, err
 		}
 		if tok.Allows(t.Topic) {
@@ -749,6 +934,47 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 		}
 	}
 	return out, rows.Err()
+}
+
+// SetTopicIcon sets the icon new notifications in topic get when their
+// sender gives none. "" removes it. Rows already published keep theirs.
+func (s *Server) SetTopicIcon(ctx context.Context, tok *Token, topic, icon string) error {
+	if err := validTopic(topic); err != nil {
+		return err
+	}
+	if err := tok.need(ScopePublish, topic); err != nil {
+		return err
+	}
+	if err := checkImageURL("icon", icon); err != nil {
+		return err
+	}
+	if icon == "" {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ?`, topic)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO topics (topic, icon) VALUES (?, ?)
+		ON CONFLICT(topic) DO UPDATE SET icon = excluded.icon`, topic, icon)
+	return err
+}
+
+// checkImageURL accepts "" or an absolute http(s) URL: clients load it as an
+// image, so no javascript:, data: or relative paths.
+func checkImageURL(field, v string) error {
+	if v == "" {
+		return nil
+	}
+	u, err := url.Parse(v)
+	if err == nil && u.Port() != "" {
+		// Go accepts any digits as a port; browsers refuse anything over 65535.
+		_, err = strconv.ParseUint(u.Port(), 10, 16)
+	}
+	if err == nil && strings.HasPrefix(u.Host, "[") && net.ParseIP(u.Hostname()) == nil {
+		err = errors.New("bracketed host is not an IP")
+	}
+	if len(v) > 2048 || err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" {
+		return errf(400, "bad_request", "%s must be an http(s) URL of at most 2048 characters", field)
+	}
+	return nil
 }
 
 // eventsAfter returns up to limit logged events with seq > since, oldest

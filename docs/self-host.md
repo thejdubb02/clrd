@@ -78,6 +78,9 @@ at once.
 | `CLRD_DB` | `/data/clrd.db` | SQLite file. Its folder must be writable (WAL files live next to it). |
 | `CLRD_BASE_URL` | `http://localhost:<port>` | Public URL, used in the setup link. Set it to your https URL. |
 | `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. |
+| `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
+| `CLRD_ATTACHMENT_MAX_MB` | `15` | Largest file one notification can carry, in MB. |
+| `CLRD_ATTACHMENT_TOTAL_MB` | `5000` | Space all stored files may use together, in MB. Uploads past it get 507. |
 
 ## HTTPS and the reverse proxy
 
@@ -120,13 +123,18 @@ location / {
 
 ## Backups
 
-All state is the SQLite file. Stop clrd, copy `clrd.db` together with any
-`clrd.db-wal` and `clrd.db-shm` next to it, start clrd. Or, with the `sqlite3`
+All state is the SQLite file plus the `attachments` folder next to it. Stop
+clrd, copy `clrd.db` together with any `clrd.db-wal` and `clrd.db-shm` next to
+it and the `attachments` folder, start clrd. Or, with the `sqlite3`
 tool on the host, take a live copy:
 
 ```sh
 sqlite3 /path/to/clrd.db ".backup /path/to/clrd-backup.db"
+cp -r /path/to/attachments /path/to/attachments-backup
 ```
+
+A file replaced between the two copies can be missing from the backup; stop
+clrd first if you need an exact copy.
 
 Phones keep their last sequence number. If you restore an older backup, they
 notice the server is behind them, drop their local copy and resync.
@@ -149,7 +157,10 @@ same key to clear it everywhere when the problem goes away. Alertmanager and
 Grafana can post straight to `https://clrd.example.com/<topic>?template=alertmanager`:
 firing alerts appear, resolved alerts clear.
 
-Not supported yet: attachments, icons, email and phone call forwarding,
+Files work: send one with `X-Filename` (or `PUT` it as the body), or link one
+with `X-Attach`. Icons work with `X-Icon`.
+
+Not supported yet: email and phone call forwarding,
 anonymous topics, `Cache: no` (refused, since clrd stores every notification
 to sync it), and `http`/`broadcast` action buttons (view actions work).
 

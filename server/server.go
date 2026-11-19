@@ -14,9 +14,11 @@ import (
 	"io"
 	"log/slog"
 	"math/rand/v2"
+	"mime"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +37,10 @@ type Options struct {
 	BaseURL   string        // CLRD_BASE_URL, public URL used in links
 	Retention time.Duration // CLRD_RETENTION, default 720h
 	Logger    *slog.Logger  // default slog.Default()
+
+	Attachments     string // CLRD_ATTACHMENTS, default "attachments" next to DB
+	AttachmentMax   int64  // CLRD_ATTACHMENT_MAX_MB, bytes, default 15 MB
+	AttachmentTotal int64  // CLRD_ATTACHMENT_TOTAL_MB, bytes, default 5000 MB
 }
 
 // ConfigFromEnv reads the spec section 7 environment variables.
@@ -46,6 +52,19 @@ func ConfigFromEnv() (Options, error) {
 			return o, fmt.Errorf("CLRD_RETENTION: want a duration like 720h, got %q", v)
 		}
 		o.Retention = d
+	}
+	o.Attachments = os.Getenv("CLRD_ATTACHMENTS")
+	for _, v := range []struct {
+		env string
+		to  *int64
+	}{{"CLRD_ATTACHMENT_MAX_MB", &o.AttachmentMax}, {"CLRD_ATTACHMENT_TOTAL_MB", &o.AttachmentTotal}} {
+		if e := os.Getenv(v.env); e != "" {
+			mb, err := strconv.ParseInt(e, 10, 64)
+			if err != nil || mb <= 0 || mb > 1<<40 {
+				return o, fmt.Errorf("%s: want a whole number of megabytes, got %q", v.env, e)
+			}
+			*v.to = mb << 20
+		}
 	}
 	return o, nil
 }
@@ -97,6 +116,18 @@ func New(opt Options) (*Server, error) {
 	}
 	if opt.Logger == nil {
 		opt.Logger = slog.Default()
+	}
+	if opt.Attachments == "" {
+		opt.Attachments = filepath.Join(filepath.Dir(opt.DB), "attachments")
+	}
+	if opt.AttachmentMax == 0 {
+		opt.AttachmentMax = 15 << 20
+	}
+	if opt.AttachmentTotal == 0 {
+		opt.AttachmentTotal = 5000 << 20
+	}
+	if err := os.MkdirAll(opt.Attachments, 0o750); err != nil {
+		return nil, fmt.Errorf("attachments folder: %w", err)
 	}
 	db, err := openDB(opt.DB)
 	if err != nil {
@@ -157,11 +188,43 @@ func (s *Server) Mount(prefix string, h http.Handler) {
 // server-wide ReadTimeout would also cut WebSocket and SSE streams.
 var bodyTimeout = 30 * time.Second
 
-const maxBody = 1 << 20 // no route takes more
+const maxBody = 1 << 20 // no route takes more, except a file upload
+
+// uploadTimeout bounds a file upload, which streams instead of being buffered.
+var uploadTimeout = 10 * time.Minute
+
+// isUpload reports a request whose body is a file: a multipart native publish
+// or an ntfy publish with a file name. Those stream to disk.
+func isUpload(r *http.Request) bool {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		return false
+	}
+	if r.URL.Path == "/api/v1/notifications" {
+		mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		return r.Method == http.MethodPost && mt == "multipart/form-data"
+	}
+	p := strings.TrimPrefix(r.URL.Path, "/")
+	return p != "" && strings.Count(p, "/") <= 1 && ntfyFilename(r) != "" // /{topic} or /{topic}/{sid}
+}
 
 // ServeHTTP routes to a mount when one matches, else to the API.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.ContentLength != 0 { // read the whole body now, under a deadline
+	p := r.URL.Path
+	var mounted http.Handler
+	for _, m := range s.mounts {
+		if m.prefix == "/" && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			continue // POST / is ntfy's JSON publish
+		}
+		if p == m.prefix || (m.prefix != "/" && strings.HasPrefix(p, m.prefix+"/")) {
+			mounted = m.h
+			break
+		}
+	}
+	if r.ContentLength != 0 && mounted == nil && isUpload(r) {
+		// Streamed to disk by the handler, under a longer deadline and the file cap.
+		http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadTimeout))
+		r.Body = http.MaxBytesReader(w, r.Body, s.opt.AttachmentMax+maxBody)
+	} else if r.ContentLength != 0 { // read the whole body now, under a deadline
 		rc := http.NewResponseController(w)
 		rc.SetReadDeadline(time.Now().Add(bodyTimeout))
 		b, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
@@ -181,15 +244,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rc.SetReadDeadline(time.Time{}) // long calls (MCP wait_for_reply) keep their context
 		r.Body = io.NopCloser(bytes.NewReader(b))
 	}
-	p := r.URL.Path
-	for _, m := range s.mounts {
-		if m.prefix == "/" && r.Method != http.MethodGet && r.Method != http.MethodHead {
-			continue // POST / is ntfy's JSON publish
-		}
-		if p == m.prefix || (m.prefix != "/" && strings.HasPrefix(p, m.prefix+"/")) {
-			m.h.ServeHTTP(w, r)
-			return
-		}
+	if mounted != nil {
+		mounted.ServeHTTP(w, r)
+		return
 	}
 	if r.Method == http.MethodOptions && !strings.HasPrefix(p, "/api/") {
 		// CORS preflight for the ntfy routes, answered on any path a mount does not own, like ntfy.
@@ -323,16 +380,20 @@ func (s *Server) routesSetup() {
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in PublishInput
-		if err := decodeJSON(r, &in); err != nil {
-			return err
+		var n *Notification
+		var err error
+		if isUpload(r) {
+			n, err = s.publishMultipart(r, tok)
+		} else if err = decodeJSON(r, &in); err == nil {
+			n, err = s.Publish(r.Context(), tok, in)
 		}
-		n, err := s.Publish(r.Context(), tok, in)
 		if err != nil {
 			return err
 		}
 		writeJSON(w, 200, n)
 		return nil
 	})
+	s.api("GET /api/v1/files/{id}", s.serveFile)
 	s.api("GET /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		q := r.URL.Query()
 		seq := s.CurrentSeq() // before the query, so a ws?since=seq misses nothing
@@ -406,6 +467,22 @@ func (s *Server) routesSetup() {
 			return err
 		}
 		writeJSON(w, 200, map[string]any{"topics": ts})
+		return nil
+	})
+	s.api("PUT /api/v1/topics/{topic}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		var in struct {
+			Icon *string `json:"icon"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if in.Icon == nil { // a missing key must not wipe the icon
+			return errf(400, "bad_request", `body needs "icon": a URL, or "" to remove it`)
+		}
+		if err := s.SetTopicIcon(r.Context(), tok, r.PathValue("topic"), *in.Icon); err != nil {
+			return err
+		}
+		writeJSON(w, 200, map[string]string{"topic": r.PathValue("topic"), "icon": *in.Icon})
 		return nil
 	})
 	s.api("GET /api/v1/devices", func(w http.ResponseWriter, r *http.Request, tok *Token) error {

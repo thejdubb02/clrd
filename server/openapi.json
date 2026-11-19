@@ -280,15 +280,44 @@
      },
      "403": {
       "$ref": "#/components/responses/Error"
+     },
+     "413": {
+      "$ref": "#/components/responses/Error"
+     },
+     "507": {
+      "$ref": "#/components/responses/Error"
      }
     },
-    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none).",
+    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; over CLRD_ATTACHMENT_TOTAL_MB is a 507.",
     "requestBody": {
      "required": true,
      "content": {
       "application/json": {
        "schema": {
         "$ref": "#/components/schemas/PublishInput"
+       }
+      },
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "notification": {
+          "$ref": "#/components/schemas/PublishInput"
+         },
+         "file": {
+          "type": "string",
+          "format": "binary"
+         }
+        },
+        "required": [
+         "notification",
+         "file"
+        ]
+       },
+       "encoding": {
+        "notification": {
+         "contentType": "application/json"
+        }
        }
       }
      }
@@ -801,6 +830,48 @@
     }
    }
   },
+  "/api/v1/files/{id}": {
+   "get": {
+    "summary": "Download an uploaded attachment",
+    "tags": [
+     "notifications"
+    ],
+    "description": "Scope read on the notification's topic. png, jpeg, gif and webp are served inline; everything else as a download. 404 once the file is gone.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{32}$"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The file",
+      "content": {
+       "application/octet-stream": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/topics": {
    "get": {
     "summary": "Topics with open counts",
@@ -825,6 +896,9 @@
              },
              "open": {
               "type": "integer"
+             },
+             "icon": {
+              "type": "string"
              }
             }
            }
@@ -844,6 +918,73 @@
       "$ref": "#/components/responses/Error"
      }
     }
+   }
+  },
+  "/api/v1/topics/{topic}": {
+   "put": {
+    "summary": "Set the icon new notifications in a topic get when their sender gives none",
+    "description": "Scope publish on the topic. An empty icon removes it. Notifications already published keep their icon.",
+    "tags": [
+     "notifications"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "icon"
+        ],
+        "properties": {
+         "icon": {
+          "type": "string",
+          "description": "http(s) image URL, at most 2048 characters, or \"\" to remove the topic icon."
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "topic": {
+           "type": "string"
+          },
+          "icon": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
    }
   },
   "/api/v1/devices": {
@@ -1327,7 +1468,7 @@
   },
   "/{topic}": {
    "put": {
-    "summary": "ntfy publish (body is the message)",
+    "summary": "ntfy publish (body is the message, or the file with Filename)",
     "tags": [
      "ntfy"
     ],
@@ -1370,6 +1511,9 @@
       "$ref": "#/components/responses/Error"
      },
      "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "507": {
       "$ref": "#/components/responses/Error"
      }
     },
@@ -1466,6 +1610,33 @@
        ]
       },
       "description": "Read an Alertmanager or Grafana webhook body: one notification per alert, keyed by fingerprint; resolved alerts resolve."
+     },
+     {
+      "name": "Attach",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "External attachment URL; a bad one is dropped. Also X-Attach, a"
+     },
+     {
+      "name": "Filename",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "With it, the body is the file and the message comes from Message (default \"You received a file: <name>\"). Also X-Filename, File, f"
+     },
+     {
+      "name": "Message",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Message, m"
      }
     ],
     "requestBody": {
@@ -1481,7 +1652,7 @@
     }
    },
    "post": {
-    "summary": "ntfy publish (body is the message)",
+    "summary": "ntfy publish (body is the message, or the file with Filename)",
     "tags": [
      "ntfy"
     ],
@@ -1524,6 +1695,9 @@
       "$ref": "#/components/responses/Error"
      },
      "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "507": {
       "$ref": "#/components/responses/Error"
      }
     },
@@ -1620,6 +1794,33 @@
        ]
       },
       "description": "Read an Alertmanager or Grafana webhook body: one notification per alert, keyed by fingerprint; resolved alerts resolve."
+     },
+     {
+      "name": "Attach",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "External attachment URL; a bad one is dropped. Also X-Attach, a"
+     },
+     {
+      "name": "Filename",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "With it, the body is the file and the message comes from Message (default \"You received a file: <name>\"). Also X-Filename, File, f"
+     },
+     {
+      "name": "Message",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Also X-Message, m"
      }
     ],
     "requestBody": {
@@ -2980,11 +3181,26 @@
      "click": {
       "type": "string"
      },
+     "icon": {
+      "type": "string",
+      "description": "http(s) image URL; the topic's icon when the sender gave none. Empty if unset. Events logged before a server upgrade may omit it: treat missing as empty."
+     },
      "actions": {
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/Action"
       }
+     },
+     "attachment": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Attachment"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "At most one file. Events logged before a server upgrade may omit it: treat missing as null."
      },
      "reply": {
       "type": "string",
@@ -3050,11 +3266,30 @@
      "click": {
       "type": "string"
      },
+     "icon": {
+      "type": "string",
+      "description": "http(s) image URL, at most 2048 characters, or empty for none."
+     },
      "actions": {
       "type": "array",
       "items": {
        "$ref": "#/components/schemas/Action"
       }
+     },
+     "attachment": {
+      "type": "object",
+      "description": "External attachment: url is an http(s) URL of at most 2048 characters, name defaults to its last path segment. To upload a file, use multipart/form-data instead.",
+      "properties": {
+       "url": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url"
+      ]
      },
      "snooze_until": {
       "type": "string",
@@ -3181,6 +3416,9 @@
      "click": {
       "type": "string"
      },
+     "icon": {
+      "type": "string"
+     },
      "actions": {
       "type": "array",
       "items": {
@@ -3201,6 +3439,24 @@
         "clear": {
          "type": "boolean"
         }
+       }
+      }
+     },
+     "attachment": {
+      "type": "object",
+      "description": "url is absolute. Uploaded files need a clrd token to download.",
+      "properties": {
+       "name": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "size": {
+        "type": "integer"
+       },
+       "url": {
+        "type": "string"
        }
       }
      }
@@ -3229,6 +3485,10 @@
      },
      "click": {
       "type": "string"
+     },
+     "icon": {
+      "type": "string",
+      "description": "Kept when an http(s) URL, else dropped."
      },
      "actions": {
       "type": "array",
@@ -3261,11 +3521,37 @@
      },
      "status": {
       "type": "string"
+     },
+     "attach": {
+      "type": "string",
+      "description": "External attachment URL; a bad one is dropped"
+     },
+     "filename": {
+      "type": "string",
+      "description": "Name for attach"
      }
     },
     "required": [
      "topic"
     ]
+   },
+   "Attachment": {
+    "type": "object",
+    "description": "Uploaded: url is /api/v1/files/<id>, fetched with API credentials; type is sniffed by the server. External: an absolute http(s) URL the server never fetches; type is empty and size 0.",
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     },
+     "type": {
+      "type": "string"
+     },
+     "size": {
+      "type": "integer"
+     }
+    }
    }
   },
   "parameters": {

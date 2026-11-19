@@ -23,6 +23,9 @@ class HttpError(val code: Int, msg: String, val retryAfterMs: Long? = null) : IO
 /** `Retry-After` in seconds, at most an hour. The rare HTTP-date form counts as absent. */
 fun retryAfterMs(r: Response): Long? = r.header("Retry-After")?.trim()?.toLongOrNull()?.coerceIn(0, 3600)?.times(1000)
 
+/** The open rows, the seq to resume from, and the server's epoch ("" from a server older than epochs). */
+data class OpenList(val rows: List<Notif>, val seq: Long, val epoch: String)
+
 /** Blocking REST client for docs/SPEC.md section 5. Call off the main thread. */
 class Api(private val http: OkHttpClient, baseUrl: String, private val token: String) {
     val base = baseUrl.trimEnd('/')
@@ -38,16 +41,18 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
      * Every open row plus the seq to resume the WebSocket from (docs/SPEC.md section 5).
      * The seq comes from the first page: the server reads it before querying, so nothing is missed.
      */
-    fun listOpen(): Pair<List<Notif>, Long> {
+    fun listOpen(): OpenList {
         val rows = mutableListOf<Notif>()
         var seq = -1L
+        var epoch = ""
         var before = ""
         while (true) {
             val o = JSONObject(get("/api/v1/notifications?state=open&limit=$PAGE" + if (before.isEmpty()) "" else "&before=$before"))
-            if (seq < 0) seq = o.getLong("seq")
+            if (seq < 0) { seq = o.getLong("seq"); epoch = o.optString("epoch") }
+            else if (o.optString("epoch") != epoch) throw IOException("server changed between pages") // retried from page one
             val a = o.getJSONArray("notifications")
             for (i in 0 until a.length()) rows += Notif.fromJson(a.getJSONObject(i))
-            if (a.length() < PAGE) return rows to seq
+            if (a.length() < PAGE) return OpenList(rows, seq, epoch)
             before = rows.last().id
         }
     }
