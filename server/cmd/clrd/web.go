@@ -157,3 +157,12 @@ func (a webAPI) Act(r *http.Request, id, action string, until *time.Time) error 
 	_, err := a.s.Act(r.Context(), tok, id, action, until)
 	return err
 }
+
+func (a webAPI) Reply(r *http.Request, id, reply string, seq int64) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.Reply(r.Context(), tok, id, reply, seq)
+	return err
+}

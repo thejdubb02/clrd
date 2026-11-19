@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -110,6 +111,7 @@ func TestLinks(t *testing.T) {
 type readOnly struct{}
 
 func (readOnly) Act(*http.Request, string, string, *time.Time) error { return ErrUnauthorized }
+func (readOnly) Reply(*http.Request, string, string, int64) error    { return ErrUnauthorized }
 
 type deny struct{ readOnly }
 
@@ -190,6 +192,21 @@ func TestActForm(t *testing.T) {
 	}
 	if w := post(url.Values{"id": {door}, "act": {"ack"}, "pad": {strings.Repeat("x", 80<<10)}}); w.Code != 400 {
 		t.Errorf("oversized form: %d, want 400", w.Code)
+	}
+	// A reply button posts its answer and the seq the card was drawn at.
+	agent := id("Agent wants approval")
+	if _, body := get(t, h, "/app?topic=agents"); !strings.Contains(body, `name="reply" value="yes" data-act="reply">Approve</button>`) || strings.Contains(body, `<p class="links">`) {
+		t.Fatal("reply actions are not answer buttons, or show as empty links")
+	}
+	seq := strconv.FormatInt(f.items[agent].Seq, 10)
+	if w := post(url.Values{"id": {agent}, "reply": {"yes"}, "seq": {seq}, "next": {"/app?topic=agents"}}); w.Code != 303 || f.items[agent].Reply != "yes" || f.items[agent].State != "acknowledged" {
+		t.Fatalf("reply: %d, stored %q state %s", w.Code, f.items[agent].Reply, f.items[agent].State)
+	}
+	if _, body := get(t, h, "/app?topic=agents"); !strings.Contains(body, "Answered Approve on web") || strings.Contains(body, `name="reply"`) {
+		t.Fatal("answered card still offers the buttons or hides the answer")
+	}
+	if w := post(url.Values{"id": {agent}, "reply": {"no"}, "seq": {seq}}); w.Code != 400 || f.items[agent].Reply != "yes" {
+		t.Fatalf("second answer at a stale seq: %d, stored %q, want 400 and the first answer kept", w.Code, f.items[agent].Reply)
 	}
 	h = Handler(deny{}, "")
 	if w := post(url.Values{"id": {"x"}, "act": {"ack"}, "next": {"/app/cleared"}}); w.Code != 303 || w.Header().Get("Location") != "/app/cleared" {

@@ -181,11 +181,13 @@
       if (!b.dataset.for && !(t > new Date())) return say('Pick a time in the future.');
       body = b.dataset.for ? { for: b.dataset.for } : { until: t.toISOString() };
     }
+    if (act === 'reply') body = { reply: b.value, seq: Number(c.dataset.seq) }; // 409 if it changed since this card
     b.disabled = true;
     const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, body);
     b.disabled = false;
     if (!r) return;
     const n = await r.json().catch(() => ({}));
+    if (act === 'reply') { say(`Answered ${b.textContent}.`); return refresh(); }
     done.snooze = n.snooze_until ? `Snoozed until ${fmt.format(new Date(n.snooze_until))}` : 'Snoozed';
     if (act === 'dismiss' && !(n.state === 'dismissed' && n.state_by === shell.dataset.me)) {
       // Another device or the sender got there first: no Undo, it would reopen their change.
