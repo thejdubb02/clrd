@@ -64,7 +64,7 @@
   <div class="card-head">
     <span class="dot{{if ge $n.Priority 5}} dot-urgent{{else if eq $n.Priority 4}} dot-high{{end}}" aria-hidden="true"></span>
     <h2 class="card-title" id="t-{{$n.ID}}">{{if $n.Click}}<a href="{{$n.Click}}" rel="noopener noreferrer">{{$n.Heading}}</a>{{else}}{{$n.Heading}}{{end}}</h2>
-    {{if eq $n.State "acknowledged"}}<span class="chip chip-acknowledged">Acknowledged{{with $n.StateBy}} on {{.}}{{end}}</span>
+    {{if eq $n.State "acknowledged"}}<span class="chip chip-acknowledged">{{if $n.Reply}}Answered {{$n.Answer}}{{else}}Acknowledged{{end}}{{with $n.StateBy}} on {{.}}{{end}}</span>
     {{else if eq $n.State "snoozed"}}<span class="chip chip-snoozed">Snoozed{{with $n.SnoozeUntil}} until <time datetime="{{iso .}}">{{clock .}}</time>{{end}}</span>
     {{else if eq $n.State "dismissed"}}<span class="chip chip-dismissed">Cleared{{with $n.StateBy}} on {{.}}{{end}}</span>
     {{else if eq $n.State "resolved"}}<span class="chip chip-resolved">Resolved{{with $n.StateBy}} by {{.}}{{end}}</span>
@@ -72,12 +72,14 @@
   </div>
   {{with $n.Body}}<p class="card-body">{{.}}</p>{{end}}
   <p class="meta"><a href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{range $n.Tags}}<span>#{{.}}</span>{{end}}</p>
-  {{if $n.Actions}}<p class="links">{{range $n.Actions}}<a href="{{.URL}}" rel="noopener noreferrer">{{.Label}}</a>{{end}}</p>{{end}}
+  {{with $n.Links}}<p class="links">{{range .}}<a href="{{.URL}}" rel="noopener noreferrer">{{.Label}}</a>{{end}}</p>{{end}}
   <form class="actions" method="post" action="/app/act">
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">
+    <input type="hidden" name="seq" value="{{$n.Seq}}">
     {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button class="btn btn-quiet" name="act" value="reopen" data-act="reopen">Restore</button>{{end}}
     {{else}}
+      {{range $n.Replies}}<button class="btn btn-quiet" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}
       {{if ne $n.State "acknowledged"}}<button class="btn btn-quiet" name="act" value="ack" data-act="ack">Ack</button>{{end}}
       {{if ne $n.State "snoozed"}}<details class="snooze">
         <summary class="btn btn-quiet">Snooze</summary>

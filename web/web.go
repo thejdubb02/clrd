@@ -16,6 +16,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,15 +42,48 @@ type Notification struct {
 	Actions     []Action   `json:"actions,omitempty"`
 	State       string     `json:"state"`
 	StateBy     string     `json:"state_by"`
+	Reply       string     `json:"reply"` // the reply action tapped, "" until someone answers
 	SnoozeUntil *time.Time `json:"snooze_until"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	Seq         int64      `json:"seq"`
 }
 
+// Action is a link (URL) or an answer button (Reply), never both.
 type Action struct {
 	Label string `json:"label"`
 	URL   string `json:"url"`
+	Reply string `json:"reply,omitempty"`
+}
+
+// Links are the actions that open a URL.
+func (n Notification) Links() (out []Action) {
+	for _, a := range n.Actions {
+		if a.URL != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// Replies are the answer buttons still open: none once someone has answered.
+func (n Notification) Replies() (out []Action) {
+	for _, a := range n.Actions {
+		if a.Reply != "" && n.Reply == "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// Answer is the label of the reply that was tapped.
+func (n Notification) Answer() string {
+	for _, a := range n.Actions {
+		if a.Reply == n.Reply {
+			return a.Label
+		}
+	}
+	return n.Reply
 }
 
 // Heading is the title, or the message when a sender gave no title (common
@@ -106,6 +140,8 @@ type API interface {
 	// Act changes one notification for the signed-in browser: ack, snooze
 	// (until is set), dismiss or reopen.
 	Act(r *http.Request, id, action string, until *time.Time) error
+	// Reply answers with one of the notification's reply actions, as shown at seq.
+	Reply(r *http.Request, id, reply string, seq int64) error
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
@@ -366,11 +402,22 @@ func Handler(api API, baseURL string) http.Handler {
 			t := time.Now().Add(d)
 			act, until = "snooze", &t
 		}
-		if act != "ack" && act != "snooze" && act != "dismiss" && act != "reopen" {
+		var err error
+		if reply := f.Get("reply"); reply != "" {
+			act = "reply"
+			// seq 0 would skip the server's "changed since you looked" check.
+			if seq, perr := strconv.ParseInt(f.Get("seq"), 10, 64); perr != nil || seq <= 0 {
+				err = errors.New("reply without the card's seq")
+			} else {
+				err = api.Reply(r, f.Get("id"), reply, seq)
+			}
+		} else if act == "ack" || act == "snooze" || act == "dismiss" || act == "reopen" {
+			err = api.Act(r, f.Get("id"), act, until)
+		} else {
 			http.Error(w, "Unknown action.", http.StatusBadRequest)
 			return
 		}
-		if err := api.Act(r, f.Get("id"), act, until); err != nil && !errors.Is(err, ErrUnauthorized) {
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
 			log.Printf("web: %s: %v", act, err)
 			http.Error(w, "Could not change that notification. Go back and reload the page.", http.StatusBadRequest)
 			return

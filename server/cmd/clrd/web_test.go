@@ -232,6 +232,51 @@ func TestActForm(t *testing.T) {
 	}
 }
 
+// TestReplyForm taps a reply button without JavaScript: the answer is stored
+// for whoever waits on it, by this browser, and a stale card cannot answer.
+func TestReplyForm(t *testing.T) {
+	s, ts, raw := realServer(t)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/notifications", strings.NewReader(`{"topic":"agents","message":"merge?","actions":[{"label":"Yes","reply":"yes"},{"label":"No","reply":"no"}]}`))
+	req.Header.Set("Authorization", "Bearer "+raw)
+	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 200 {
+		t.Fatalf("publish: %v %v", err, res)
+	}
+	c := browser()
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	_, page = submit(t, c, ts.URL, page, raw, "")
+	m := regexp.MustCompile(`data-id="([^"]+)"[^>]*data-seq="(\d+)"`).FindStringSubmatch(page)
+	if m == nil || !strings.Contains(page, `name="reply" value="yes"`) || !strings.Contains(page, `name="seq" value="`+m[2]+`"`) {
+		t.Fatal("card has no reply buttons with its seq")
+	}
+	post := func(reply, seq string) int {
+		t.Helper()
+		v := url.Values{"id": {m[1]}, "reply": {reply}, "seq": {seq}}
+		req, _ := http.NewRequest("POST", ts.URL+"/app/act", strings.NewReader(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", ts.URL)
+		res, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	for _, seq := range []string{"", "0", "x"} {
+		if code := post("no", seq); code != 400 {
+			t.Errorf("reply with seq %q: %d, want 400 (no seq would skip the stale check)", seq, code)
+		}
+	}
+	post("yes", m[2])
+	n, _ := s.Get(context.Background(), mustTok(t, s, raw), m[1])
+	if n.Reply != "yes" || n.State != "acknowledged" || n.StateBy != "Web browser" {
+		t.Fatalf("after tapping Yes: reply %q, %s by %s", n.Reply, n.State, n.StateBy)
+	}
+	post("no", m[2])
+	if n, _ := s.Get(context.Background(), mustTok(t, s, raw), m[1]); n.Reply != "yes" {
+		t.Fatalf("a second tap changed the answer to %q", n.Reply)
+	}
+}
+
 // act posts an action with only the session cookie, the way the inbox does.
 func act(t *testing.T, c *http.Client, base, id, action string) server.Notification {
 	t.Helper()

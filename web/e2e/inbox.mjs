@@ -112,6 +112,18 @@ try {
   assert.equal(new Date(custom.snooze_until).toISOString(), '2031-06-01T13:30:00.000Z'); // 08:30 in Chicago (CDT)
   console.log('ok: custom snooze time with Enter');
 
+  // A reply button stores the answer for whoever waits on it; the card then shows it.
+  const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Merge 212?', message: 'tests pass', actions: [{ label: 'Yes', reply: 'yes' }, { label: 'No', reply: 'no' }] });
+  await page.reload();
+  await card('Merge 212?').getByRole('button', { name: 'Yes' }).click();
+  await toast.filter({ hasText: 'Answered Yes' }).waitFor();
+  const answered = await get(laptop, q.id);
+  assert.equal(answered.reply, 'yes');
+  assert.equal(answered.state, 'acknowledged');
+  await card('Merge 212?').getByText('Answered Yes').waitFor();
+  assert.equal(await card('Merge 212?').getByRole('button', { name: 'No' }).count(), 0, 'answered card still offers replies');
+  console.log('ok: reply button stores the answer');
+
   // With JavaScript off the buttons still work: a form post and back to the same page.
   const nojs = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
   await nojs.goto(`${base}/app?auth=${link}`);
@@ -128,7 +140,12 @@ try {
   await plain('Washer done').getByRole('button', { name: '4 hours' }).click();
   await plain('Washer done').waitFor({ state: 'detached' });
   assert.equal((await get(laptop, f.id)).state, 'snoozed');
-  console.log('ok: Clear and Snooze work without JavaScript');
+  const r = await api(phone, '/api/v1/notifications', { topic: 'home', title: 'Lock the door?', message: 'left open', actions: [{ label: 'Lock', reply: 'lock' }] });
+  await nojs.goto(`${base}/app?topic=home`);
+  await plain('Lock the door?').getByRole('button', { name: 'Lock' }).click();
+  await plain('Lock the door?').getByText('Answered Lock').waitFor();
+  assert.equal((await get(laptop, r.id)).reply, 'lock');
+  console.log('ok: Clear, Snooze and reply work without JavaScript');
 } finally {
   await browser?.close();
   server.kill();

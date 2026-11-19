@@ -32,7 +32,8 @@ func NewFake() *Fake {
 		{Topic: "infra", Title: "Load average back to normal", Message: "web-2 load 0.8 for 15 minutes.", Priority: 3, State: "resolved", StateBy: "gatus", CreatedAt: ago(240)},
 		{Topic: "infra", Title: "TLS certificate renews in 7 days", Message: "notify.example.com, renewal is automatic.", Priority: 2, State: "snoozed", StateBy: "web", SnoozeUntil: &until, CreatedAt: ago(200)},
 		{Topic: "deploys", Title: "Deploy finished: api v2.14.0", Message: "3 services rolled, 0 errors.", Priority: 3, Tags: []string{"release"}, State: "acknowledged", StateBy: "pixel-9", CreatedAt: ago(95)},
-		{Topic: "agents", Title: "Agent wants approval", Message: "Merge pull request 212 to main? All 148 tests pass.", Priority: 3, Click: "https://github.com/thejdubb02/clrd", CreatedAt: ago(41)},
+		{Topic: "agents", Title: "Agent wants approval", Message: "Merge pull request 212 to main? All 148 tests pass.", Priority: 3, Click: "https://github.com/thejdubb02/clrd",
+			Actions: []Action{{Label: "Approve", Reply: "yes"}, {Label: "Reject", Reply: "no"}}, CreatedAt: ago(41)},
 		{Topic: "home", Title: "Front door open for 10 minutes", Priority: 4, CreatedAt: ago(18)},
 		{Topic: "infra", ExternalID: "disk-web-1", Title: "Disk 91% full on web-1", Message: "/var at 91%. Grows about 2% a day.", Priority: 4, Tags: []string{"disk"},
 			Actions: []Action{{Label: "Open dashboard", URL: "https://grafana.example.com/d/disk"}}, CreatedAt: ago(9)},
@@ -104,7 +105,20 @@ func (f *Fake) Act(r *http.Request, id, action string, until *time.Time) error {
 	}
 	m := *n
 	m.State = map[string]string{"ack": "acknowledged", "snooze": "snoozed", "dismiss": "dismissed", "reopen": "active"}[action]
-	m.StateBy, m.SnoozeUntil = "web", until
+	m.StateBy, m.SnoozeUntil, m.Reply = "web", until, ""
+	f.put(m)
+	return nil
+}
+
+func (f *Fake) Reply(r *http.Request, id, reply string, seq int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.items[id]
+	if !ok || n.Seq != seq || n.Reply != "" {
+		return errors.New("conflict")
+	}
+	m := *n
+	m.State, m.StateBy, m.Reply = "acknowledged", "web", reply
 	f.put(m)
 	return nil
 }
