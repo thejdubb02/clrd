@@ -14,9 +14,9 @@ notification on every device without anyone touching it.
 | [Uptime Kuma](uptime-kuma.md) | today | yes | publish honours `status: resolved` (proposed) |
 | [Alertmanager](alertmanager.md) | needs compat | yes | `?template=alertmanager` (proposed) |
 | [Grafana](grafana.md) | needs compat | yes | `?template=grafana` (proposed) |
-| [Apprise](apprise.md) | needs compat | no | ntfy JSON publish to `POST /` (#2) |
-| [ntfy clients](ntfy-clients.md) | needs compat | by key, via `X-Id` | ntfy publish/subscribe, Basic auth (#2) |
-| Home Assistant ntfy integration | needs compat | no | ntfy publish (#2) |
+| [Apprise](apprise.md) | needs compat | no | ntfy JSON publish to `POST /` ([issue 2](https://github.com/thejdubb02/clrd/issues/2)) |
+| [ntfy clients](ntfy-clients.md) | needs compat | by key, via `X-Id` | ntfy publish/subscribe, Basic auth ([issue 2](https://github.com/thejdubb02/clrd/issues/2)) |
+| Home Assistant ntfy integration | needs compat | no | ntfy publish ([issue 2](https://github.com/thejdubb02/clrd/issues/2)) |
 
-"Proposed" items are tracked in the integrations gap issue. Snippets follow
+"Proposed" items are tracked in [issue 7](https://github.com/thejdubb02/clrd/issues/7). Snippets follow
 each tool's upstream docs; none has been run against a live clrd yet.

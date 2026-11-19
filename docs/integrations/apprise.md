@@ -1,7 +1,7 @@
 # Apprise
 
 Apprise's ntfy plugin talks to clrd once the server's ntfy compat lands.
-**Needs ntfy compat:** JSON publish to `POST /` with a `topic` field (issue #2).
+**Needs ntfy compat:** JSON publish to `POST /` with a `topic` field ([issue 2](https://github.com/thejdubb02/clrd/issues/2)).
 
 ```
 ntfys://clrd_...@clrd.itsjustin.me/infra?auth=token

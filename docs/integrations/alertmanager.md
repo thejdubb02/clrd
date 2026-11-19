@@ -1,6 +1,6 @@
 # Prometheus Alertmanager
 
-**Needs on the server (proposed, see the integrations gap issue):**
+**Needs on the server (proposed, see [issue 7](https://github.com/thejdubb02/clrd/issues/7)):**
 `POST /{topic}?template=alertmanager` accepts Alertmanager's webhook JSON. The
 URL form is the same as ntfy's built-in `alertmanager` template (ntfy 2.14+),
 so a config that works with ntfy works with clrd. clrd goes further: each alert

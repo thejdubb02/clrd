@@ -19,7 +19,7 @@ curl -sS -X POST "$CLRD/api/v1/notifications" \
 `external_id` is your stable key. Sending again with the same key while the
 notification is still open updates it instead of making a second one.
 
-The ntfy-style form also works (needs ntfy compat, issue #2):
+The ntfy-style form also works (needs ntfy compat, [issue 2](https://github.com/thejdubb02/clrd/issues/2)):
 
 ```sh
 curl -sS -H "Authorization: Bearer $CLRD_TOKEN" \

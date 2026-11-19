@@ -17,6 +17,7 @@ Tools:
 
 `wait_for_reply` is how an agent asks a human "OK to deploy?" and waits:
 `send`, then `wait_for_reply` with the returned `id`. Ack means yes, dismiss means no.
+Real button replies are [issue 8](https://github.com/thejdubb02/clrd/issues/8).
 
 ## Claude Code
 

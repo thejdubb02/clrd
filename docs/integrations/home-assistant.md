@@ -4,7 +4,7 @@ Two options.
 
 **Built-in ntfy integration** (HA 2025.5+): add it with server URL
 `https://clrd.itsjustin.me` and your `clrd_...` token as the access token.
-Publish only. **Needs ntfy compat** (issue #2). No resolve.
+Publish only. **Needs ntfy compat** ([issue 2](https://github.com/thejdubb02/clrd/issues/2)). No resolve.
 
 **`rest_command`** (works with the native API today, and can resolve):
 

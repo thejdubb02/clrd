@@ -1,7 +1,7 @@
 # ntfy clients (CLI and apps)
 
 clrd speaks ntfy's publish and subscribe protocol, so ntfy's own tools work.
-**All of this needs ntfy compat** (issue #2): `PUT|POST /{topic}`, `POST /`
+**All of this needs ntfy compat** ([issue 2](https://github.com/thejdubb02/clrd/issues/2)): `PUT|POST /{topic}`, `POST /`
 JSON, `GET /{topic}/json|sse|ws|raw` in ntfy's message format, and Basic auth
 with a token as the password.
 
@@ -34,4 +34,4 @@ curl -X POST -H "Authorization: Bearer clrd_..." https://clrd.itsjustin.me/infra
 
 A resolve removes it from the clrd inbox and the clrd app. Whether a resolve
 should also reach ntfy-app subscribers (ntfy has no delete event they act on)
-is open; see the integrations gap issue.
+is open; see [issue 7](https://github.com/thejdubb02/clrd/issues/7).

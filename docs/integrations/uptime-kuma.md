@@ -1,11 +1,11 @@
 # Uptime Kuma
 
 Use the **Webhook** notification type with a custom body. Kuma's ntfy type
-works for plain alerts (needs ntfy compat `POST /` JSON, issue #2) but sends
+works for plain alerts (needs ntfy compat `POST /` JSON, [issue 2](https://github.com/thejdubb02/clrd/issues/2)) but sends
 no stable key, so "Up" arrives as a second notification instead of clearing
 the "Down" one.
 
-**Needs on the server (proposed, see the integrations gap issue):** native
+**Needs on the server (proposed, see [issue 7](https://github.com/thejdubb02/clrd/issues/7)):** native
 publish honours `"status": "resolved"` with `topic` and `external_id`.
 
 Settings, Notifications, Setup Notification:

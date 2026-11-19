@@ -1,6 +1,6 @@
 # Grafana
 
-**Needs on the server (proposed, see the integrations gap issue):**
+**Needs on the server (proposed, see [issue 7](https://github.com/thejdubb02/clrd/issues/7)):**
 `POST /{topic}?template=grafana` accepts Grafana's webhook JSON (the same URL
 form as ntfy's built-in `grafana` template, ntfy 2.14+). Each alert's
 `fingerprint` becomes `external_id`; `"status": "resolved"` resolves it on
