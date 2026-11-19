@@ -235,9 +235,9 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | POST | `/api/v1/notifications/clear` | Bulk dismiss, body `{"topic":"infra"}` or `{"ids":[...]}`. |
 | GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
 | PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it; a missing `icon` is a 400. Scope publish on the topic. |
-| GET | `/api/v1/topics/{topic}/webhooks` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
-| PUT | `/api/v1/topics/{topic}/webhooks/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
-| DELETE | `/api/v1/topics/{topic}/webhooks/{name}` | Remove a saved template. Scope publish on the topic. |
+| GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
+| PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
+| DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
 | GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices". |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin). |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
@@ -281,7 +281,7 @@ By external id (what scripts and monitors use):
   tags, click, id, resolve; `each` splits a list). Built-ins: alertmanager,
   grafana, github, sentry, stripe, jira, healthchecks, proxmox, zabbix,
   netdata, jellyfin, arr. A topic owner saves others, or a built-in's secret,
-  under `/api/v1/topics/{topic}/webhooks/{name}`. With a secret saved, GitHub,
+  under `/api/v1/topics/{topic}/templates/{name}`. With a secret saved, GitHub,
   Jira, Sentry and Stripe signatures are checked on the raw body; other
   services send it in `X-Clrd-Secret` or `?secret=`. A failed check is 401.
   Docs: `docs/integrations/custom-webhooks.md`.
