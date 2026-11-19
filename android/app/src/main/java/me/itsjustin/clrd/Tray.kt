@@ -66,7 +66,7 @@ class Tray(private val ctx: Context) {
         val wantIds = want.map { it.n.id }.toSet()
         val showing = nm.activeNotifications.filter { it.tag != null }.map { it.tag }.toSet()
         showing.filter { it !in wantIds }.forEach { nm.cancel(it, 0) }
-        want.filter { it.n.id !in showing }.forEach { post(it.n, silent = true) }
+        want.forEach { post(it.n, silent = true) } // reposting a showing one updates it (state, buttons) without a sound
     }
 
     private fun post(n: Notif, silent: Boolean) {
@@ -101,10 +101,13 @@ class Tray(private val ctx: Context) {
     }
 
     private fun action(n: Notif, action: String): PendingIntent {
+        val server = App.of(ctx).serverUrl // a tap after a server switch must not reach the new server
         val i = Intent(ctx, ActionReceiver::class.java)
             .setAction(action)
-            .setData(Uri.parse("clrd://n/${n.id}/$action")) // unique per (id, action) so PendingIntents do not collide
+            // unique per (server, id, action) so PendingIntents do not collide or take over each other's extras
+            .setData(Uri.parse("clrd://n/${n.id}/$action").buildUpon().appendQueryParameter("server", server).build())
             .putExtra(EXTRA_ID, n.id)
+            .putExtra(EXTRA_SERVER, server)
         return PendingIntent.getBroadcast(ctx, 0, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -114,5 +117,6 @@ class Tray(private val ctx: Context) {
         const val ACTION_SNOOZE = "me.itsjustin.clrd.SNOOZE"
         const val ACTION_DISMISS = "me.itsjustin.clrd.DISMISS"
         const val EXTRA_ID = "id"
+        const val EXTRA_SERVER = "server"
     }
 }

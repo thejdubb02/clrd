@@ -57,11 +57,13 @@ interface NotifDao {
     @Query("DELETE FROM pending WHERE `key` = :key")
     fun removePending(key: Long)
 
-    /** Rows only move forward: an older snapshot never overwrites a newer one. */
+    /** Rows only move forward: an older snapshot never overwrites a newer one. Returns the rows kept. */
     @Transaction
-    fun applyAll(notifs: Collection<Notif>, seq: Long) {
-        for (n in notifs) if (n.seq >= (seqOf(n.id) ?: Long.MIN_VALUE)) put(n)
+    fun applyAll(notifs: Collection<Notif>, seq: Long): List<Notif> {
+        val kept = notifs.filter { n -> n.seq >= (seqOf(n.id) ?: Long.MIN_VALUE) }
+        kept.forEach { put(it) }
         if (seq > (lastSeq() ?: 0)) putMeta(Meta("seq", seq))
+        return kept
     }
 
     @Query("DELETE FROM pending")
@@ -75,11 +77,22 @@ interface NotifDao {
         putMeta(Meta("seq", 0))
     }
 
+    @Query("SELECT * FROM notif WHERE id = :id")
+    fun get(id: String): Notif?
+
+    /**
+     * The open list replaces everything, except a listed row Room already has in a newer version
+     * (an action answer saved while the list was on its way). Returns the rows now stored.
+     * A list behind our cursor means the server was wiped or restored: then nothing old is kept.
+     */
     @Transaction
-    fun replaceAll(open: List<Notif>, seq: Long) {
+    fun replaceAll(open: List<Notif>, seq: Long): List<Notif> {
+        val keepNewer = seq >= (lastSeq() ?: 0)
+        val rows = open.map { n -> get(n.id)?.takeIf { keepNewer && it.seq > n.seq } ?: n }
         clearAll()
-        open.forEach { put(it) }
+        rows.forEach { put(it) }
         putMeta(Meta("seq", seq))
+        return rows
     }
 }
 

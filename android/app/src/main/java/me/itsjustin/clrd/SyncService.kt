@@ -105,6 +105,7 @@ class BootReceiver : BroadcastReceiver() {
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
+        val server = intent.getStringExtra(Tray.EXTRA_SERVER) ?: return
         val (action, body) = when (intent.action) {
             Tray.ACTION_ACK -> "ack" to "{}"
             Tray.ACTION_SNOOZE -> "snooze" to """{"for":"1h"}"""
@@ -112,6 +113,6 @@ class ActionReceiver : BroadcastReceiver() {
             else -> return
         }
         val r = goAsync() // keep the process alive until the action is saved (and probably sent)
-        App.of(ctx).act(id, action, body) { r.finish() }
+        App.of(ctx).act(id, action, body, server) { r.finish() }
     }
 }

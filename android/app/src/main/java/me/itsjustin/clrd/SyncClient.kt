@@ -16,7 +16,10 @@ import kotlin.random.Random
 interface Store {
     fun lastSeq(): Long
 
-    /** Save these rows and the new last seq in one go, then update the tray. */
+    /**
+     * Save these rows and the new last seq in one go, then update the tray for the rows that were kept.
+     * A row older than the one already saved is dropped. `seq = 0` leaves the cursor where it is.
+     */
     fun apply(notifs: Collection<Notif>, seq: Long)
 
     /** After a `reset`: the open list from the server replaces everything known. */
@@ -29,10 +32,11 @@ interface Store {
 /**
  * Holds the WebSocket from docs/SPEC.md section 3.
  *
- * Every connect first sends queued user actions, then opens `/api/v1/ws?since=<last seq>`.
+ * Every connect opens `/api/v1/ws?since=<last seq>` and sends queued user actions alongside, on their
+ * own thread, so a send that hangs or keeps failing never holds back events from other devices.
  * Replayed events are coalesced per notification until `ready`, so a phone that was
  * offline does not buzz for things that were already cleared elsewhere.
- * All state is touched only on [exec], one thread, so there are no locks.
+ * Socket state is touched only on [exec], one thread, so there are no locks.
  */
 class SyncClient(
     private val http: OkHttpClient,
@@ -50,13 +54,13 @@ class SyncClient(
     private var attempt = 0
     @Volatile private var stopped = false
     private var retryTask: ScheduledFuture<*>? = null
-    private var flushRetry: ScheduledFuture<*>? = null
+    private val sender = Executors.newSingleThreadExecutor() // sends queued actions, in order
+    private var flushRetry: ScheduledFuture<*>? = null // touched only on [sender]
 
     private var replaying = false
     private val buffer = LinkedHashMap<String, Notif>()
     private var bufferSeq = 0L
 
-    /** Run on [exec]. Calls from outside can race [stop]; after it they are dropped, never thrown. */
     /** Runs on the sync thread unless stopped. Once stop() has run, calls are dropped, never thrown. */
     private fun post(f: () -> Unit) { runCatching { exec.execute { if (!stopped) f() } } }
 
@@ -69,6 +73,7 @@ class SyncClient(
         stopped = true // set here, not on the thread, so nothing queued after this call can send
         runCatching { exec.execute { gen++; ws?.close(1000, null); ws = null } }
         exec.shutdown()
+        sender.shutdown()
     }
 
     /** The network came back: skip the rest of the backoff wait. */
@@ -80,13 +85,16 @@ class SyncClient(
 
     /** A user action was queued: try to send it now. A failure retries every 30 s, and on every connect. */
     fun flushSoon() {
-        post {
-            flushRetry?.cancel(false)
-            try {
-                flush()
-            } catch (e: IOException) {
-                // A rejected token will not fix itself; the next connect reports it as AUTH_FAILED.
-                if (!stopped && !(e is HttpError && e.isAuth)) flushRetry = later(flushRetryMs) { flushSoon() }
+        runCatching {
+            sender.execute {
+                if (stopped) return@execute
+                flushRetry?.cancel(false)
+                try {
+                    flushPending(store, api) { !stopped }
+                } catch (e: IOException) {
+                    // A rejected token will not fix itself; the next connect reports it as AUTH_FAILED.
+                    if (!stopped && !(e is HttpError && e.isAuth)) flushRetry = later(flushRetryMs) { flushSoon() }
+                }
             }
         }
     }
@@ -94,12 +102,7 @@ class SyncClient(
     private fun connect() {
         if (stopped) return
         onStatus(Status.CONNECTING)
-        try {
-            flush()
-        } catch (e: IOException) {
-            return fail(e)
-        }
-        if (stopped) return // stop() came in during the flush
+        flushSoon()
         val myGen = ++gen
         replaying = true
         buffer.clear()
@@ -176,8 +179,6 @@ class SyncClient(
         connect()
     }
 
-    private fun flush() = flushPending(store, api)
-
     private fun fail(e: IOException) {
         ws = null
         gen++
@@ -193,17 +194,27 @@ class SyncClient(
     }
 }
 
+private val flushLock = Any()
+
 /**
  * Send queued user actions in order. A 4xx that retrying cannot fix (404, 409) drops the action;
  * anything else throws and leaves it queued.
+ *
+ * The server answers with the row after the change. It is saved before the action leaves the
+ * queue, so an older event replayed after the send cannot bring a dismissed row back.
+ * One sender at a time, process wide: a stopped client's sender stops at [live] instead of
+ * sending again what its replacement already sent.
  */
-fun flushPending(store: Store, api: Api) {
+fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synchronized(flushLock) {
     for (p in store.pending()) {
-        try {
+        if (!live()) break
+        val answer = try {
             api.action(p)
         } catch (e: HttpError) {
             if (!e.isPermanent) throw e
+            null
         }
+        answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0) }
         store.removePending(p)
     }
 }
