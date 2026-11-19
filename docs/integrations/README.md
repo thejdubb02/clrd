@@ -10,13 +10,13 @@ notification on every device without anyone touching it.
 | [GitHub Actions](github-actions.md) | today | yes | native API only |
 | [MCP](mcp.md) (Claude Code, Claude Desktop, Cursor) | today | yes (agent calls `resolve`) | `/mcp` mounted |
 | [Home Assistant](home-assistant.md) `rest_command` | today | yes | native API only |
-| [Gatus](gatus.md) | today | yes | publish honours `status: resolved` (proposed) |
-| [Uptime Kuma](uptime-kuma.md) | today | yes | publish honours `status: resolved` (proposed) |
-| [Alertmanager](alertmanager.md) | needs compat | yes | `?template=alertmanager` (proposed) |
-| [Grafana](grafana.md) | needs compat | yes | `?template=grafana` (proposed) |
-| [Apprise](apprise.md) | needs compat | no | ntfy JSON publish to `POST /` ([issue 2](https://github.com/thejdubb02/clrd/issues/2)) |
-| [ntfy clients](ntfy-clients.md) | needs compat | by key, via `X-Id` | ntfy publish/subscribe, Basic auth ([issue 2](https://github.com/thejdubb02/clrd/issues/2)) |
-| Home Assistant ntfy integration | needs compat | no | ntfy publish ([issue 2](https://github.com/thejdubb02/clrd/issues/2)) |
+| [Gatus](gatus.md) | today | yes | publish honours `status: resolved` |
+| [Uptime Kuma](uptime-kuma.md) | today | yes | publish honours `status: resolved` |
+| [Alertmanager](alertmanager.md) | today | yes | `?template=alertmanager` |
+| [Grafana](grafana.md) | today | yes | `?template=grafana` |
+| [Apprise](apprise.md) | today | no | ntfy JSON publish to `POST /` |
+| [ntfy clients](ntfy-clients.md) | today | by key, via `X-Id` | ntfy publish/subscribe, Basic auth |
+| Home Assistant ntfy integration | today | no | ntfy publish |
 
-"Proposed" items are tracked in [issue 7](https://github.com/thejdubb02/clrd/issues/7). Snippets follow
-each tool's upstream docs; none has been run against a live clrd yet.
+Everything in the last column is in the server. Snippets follow each tool's
+upstream docs; none has been run against a live clrd yet.

@@ -4,7 +4,7 @@ Two options.
 
 **Built-in ntfy integration** (HA 2025.5+): add it with server URL
 `https://clrd.itsjustin.me` and your `clrd_...` token as the access token.
-Publish only. **Needs ntfy compat** ([issue 2](https://github.com/thejdubb02/clrd/issues/2)). No resolve.
+Publish only, no resolve.
 
 **`rest_command`** (works with the native API today, and can resolve):
 
@@ -24,11 +24,12 @@ rest_command:
     headers:
       authorization: !secret clrd_bearer
     content_type: application/json
+    # to_json escapes quotes and newlines in the values.
     payload: >
-      {"topic": "{{ topic }}", "external_id": "{{ id }}", "title": "{{ title }}",
-       "message": "{{ message }}", "priority": {{ priority | default(3) }}}
+      {{ {"topic": topic, "external_id": id, "title": title | default(""),
+          "message": message, "priority": priority | default(3) | int} | to_json }}
   clrd_resolve:
-    url: "https://clrd.itsjustin.me/{{ topic }}/{{ id }}/resolve"
+    url: "https://clrd.itsjustin.me/{{ topic | urlencode }}/{{ id | urlencode | replace('/', '%2F') }}/resolve"
     method: post
     headers:
       authorization: !secret clrd_bearer

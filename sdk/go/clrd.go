@@ -68,7 +68,7 @@ func (e *Error) Error() string { return fmt.Sprintf("clrd: %d: %s", e.Status, e.
 type Client struct {
 	URL   string
 	Token string
-	HTTP  *http.Client
+	HTTP  *http.Client // redirects are never followed, whatever its CheckRedirect says
 }
 
 // New makes a client. Empty url or token fall back to CLRD_URL and CLRD_TOKEN;
@@ -103,7 +103,14 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	res, err := c.HTTP.Do(req)
+	// Never follow a redirect: Go would resend the token to the new address
+	// (even over plain http on the same host) and turn a POST into a GET.
+	hc := http.Client{Timeout: 10 * time.Second}
+	if c.HTTP != nil {
+		hc = *c.HTTP
+	}
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	res, err := hc.Do(req)
 	if err != nil {
 		return err
 	}
@@ -116,6 +123,9 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 		e := &Error{Status: res.StatusCode}
 		if json.Unmarshal(raw, e) != nil || e.Message == "" {
 			e.Message = strings.TrimSpace(string(raw))
+		}
+		if loc := res.Header.Get("Location"); res.StatusCode < 400 && loc != "" {
+			e.Message = "redirected to " + loc + ", not followed: point the client at the final URL"
 		}
 		return e
 	}

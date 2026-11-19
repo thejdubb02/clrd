@@ -15,9 +15,14 @@ Tools:
 | `snooze` | `id, for` | Snooze, e.g. `for: "1h"`. |
 | `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`. Default 60 s, max 300 s. |
 
+`wait_for_reply` returns at once if the notification is already acknowledged,
+dismissed or resolved. Otherwise it watches the server's committed events, so
+an ack that is quickly followed by a snooze is still reported as an ack.
+
 `wait_for_reply` is how an agent asks a human "OK to deploy?" and waits:
 `send`, then `wait_for_reply` with the returned `id`. Ack means yes, dismiss means no.
-Real button replies are [issue 8](https://github.com/thejdubb02/clrd/issues/8).
+Real button replies are [issue 8](https://github.com/thejdubb02/clrd/issues/8)
+(needs server support first).
 
 ## Claude Code
 

@@ -49,7 +49,6 @@ func TestAgainstRealServer(t *testing.T) {
 	if b, _ := json.Marshal(list); !strings.Contains(string(b), id) {
 		t.Fatalf("list misses %s: %s", id, b)
 	}
-	PollEvery = 10 * time.Millisecond
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		call("ack", map[string]any{"id": id})

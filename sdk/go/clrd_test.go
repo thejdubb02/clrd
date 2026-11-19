@@ -92,3 +92,23 @@ func TestError(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRedirectNotFollowed(t *testing.T) {
+	var got []string
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("Authorization"))
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.RedirectHandler(other.URL+"/api/v1/notifications", http.StatusFound))
+	defer srv.Close()
+	for _, c := range []*Client{New(srv.URL, "clrd_test"), {URL: srv.URL, Token: "clrd_test"}} {
+		_, err := c.Send(context.Background(), Message{Topic: "infra", Message: "x"})
+		var e *Error
+		if !errors.As(err, &e) || e.Status != 302 || !strings.Contains(e.Message, other.URL) {
+			t.Fatal(err)
+		}
+	}
+	if len(got) != 0 {
+		t.Fatalf("redirect followed, token sent on: %q", got)
+	}
+}

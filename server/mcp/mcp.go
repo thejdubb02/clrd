@@ -3,7 +3,7 @@
 // in-process with the caller's Authorization header, so token scopes, topic
 // allow-lists and state_by come from the server's normal auth, not from here.
 //
-// Mount: mux.Handle("/mcp", mcp.New(apiHandler))
+// Mount: s.Mount("/mcp", mcp.New(s))
 //
 // Hand-rolled JSON-RPC rather than the official Go SDK: the SDK needs Go 1.25
 // and pulls dependencies; this package is stdlib only.
@@ -19,26 +19,33 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/thejdubb02/clrd/server"
 )
 
 // MaxWait caps wait_for_reply. Keep it under the server's WriteTimeout and any
 // proxy idle timeout in front of it.
 var MaxWait = 300 * time.Second
 
-// PollEvery is how often wait_for_reply checks the notification.
-// ponytail: polling GET by id; switch to the event stream if it ever matters.
-var PollEvery = time.Second
-
 const latestProtocol = "2025-06-18"
 
-var protocols = map[string]bool{"2024-11-05": true, "2025-03-26": true, "2025-06-18": true, "2025-11-25": true}
+// Streamable HTTP versions. 2024-11-05 is the older HTTP+SSE transport, which
+// this endpoint does not speak.
+var protocols = map[string]bool{"2025-03-26": true, "2025-06-18": true, "2025-11-25": true}
+
+// API is what the handler needs from the server: its REST handler (the one
+// that serves /api/v1/... and /{topic}/{external_id}/resolve) and its stream
+// of committed events. *server.Server is one.
+type API interface {
+	http.Handler
+	Subscribe() (<-chan server.Event, func())
+}
 
 // Handler is the /mcp endpoint.
-type Handler struct{ rest http.Handler }
+type Handler struct{ rest API }
 
-// New returns the MCP handler. api is the server's REST handler (the one that
-// serves /api/v1/... and /{topic}/{external_id}/resolve).
-func New(api http.Handler) *Handler { return &Handler{rest: api} }
+// New returns the MCP handler.
+func New(api API) *Handler { return &Handler{rest: api} }
 
 type rpcReq struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -64,6 +71,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"origin not allowed","code":"forbidden"}`, http.StatusForbidden)
 			return
 		}
+	}
+	// Transport rule: an unsupported version header is a 400. No header means
+	// 2025-03-26, which is supported.
+	if v := r.Header.Get("MCP-Protocol-Version"); v != "" && !protocols[v] {
+		http.Error(w, `{"error":"unsupported MCP-Protocol-Version","code":"bad_request"}`, http.StatusBadRequest)
+		return
 	}
 	if r.Method != http.MethodPost {
 		// No server-initiated stream: stateless server.
@@ -255,7 +268,9 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 	return nil, fmt.Errorf("unknown tool %q", name)
 }
 
-// wait blocks until the notification leaves "active" or the timeout passes.
+// wait blocks until a human acknowledges or dismisses, the sender resolves, or
+// the timeout passes. It follows committed events rather than sampling the
+// state, so an ack quickly followed by a snooze still counts as the reply.
 func (h *Handler) wait(r *http.Request, id string, a map[string]any) (any, error) {
 	d := 60 * time.Second
 	if v, ok := a["timeout_s"].(float64); ok && v > 0 {
@@ -264,23 +279,53 @@ func (h *Handler) wait(r *http.Request, id string, a map[string]any) (any, error
 	if d > MaxWait {
 		d = MaxWait
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), d)
+	parent := r.Context()
+	ctx, cancel := context.WithTimeout(parent, d)
 	defer cancel()
+	r = r.WithContext(ctx) // the lookup shares the deadline
 	for {
-		n, err := h.api(r, "GET", "/api/v1/notifications/"+id, nil)
-		if err != nil {
-			return nil, err
+		evs, stop := h.rest.Subscribe() // before the read, so a change right after it is not missed
+		res, err := h.watch(r, id, evs)
+		stop()
+		if parent.Err() != nil {
+			return nil, parent.Err()
 		}
-		if st := str(n, "state"); st != "active" && st != "snoozed" { // snoozed = "ask me later", keep waiting
-			return map[string]any{"reply": st, "by": n["state_by"], "notification": n}, nil
+		if res != nil || err != nil {
+			return res, err
 		}
+		// Dropped for falling behind: read the state again and carry on.
+	}
+}
+
+func replied(state string) bool { return state != server.Active && state != server.Snoozed } // snoozed = "ask me later"
+
+// watch reads the notification, then follows its events until a reply or the
+// deadline. nil, nil means the stream dropped us.
+func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (map[string]any, error) {
+	n, err := h.api(r, "GET", "/api/v1/notifications/"+id, nil)
+	if err != nil {
+		if r.Context().Err() != nil {
+			return map[string]any{"reply": "timeout"}, nil
+		}
+		return nil, err
+	}
+	if st := str(n, "state"); replied(st) {
+		return map[string]any{"reply": st, "by": n["state_by"], "notification": n}, nil
+	}
+	seq, _ := n["seq"].(float64)
+	for {
 		select {
-		case <-ctx.Done():
-			if r.Context().Err() != nil {
-				return nil, r.Context().Err()
-			}
+		case <-r.Context().Done():
 			return map[string]any{"reply": "timeout", "notification": n}, nil
-		case <-time.After(PollEvery):
+		case e, ok := <-evs:
+			if !ok {
+				return nil, nil
+			}
+			// Events up to the read's seq are already in n. The stream is not
+			// filtered by token, but the read above proved this id is visible.
+			if x := e.Notification; x != nil && x.ID == str(n, "id") && e.Seq > int64(seq) && replied(x.State) {
+				return map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, nil
+			}
 		}
 	}
 }
