@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clrd"
+version = "0.1.0"
+description = "Tiny client for clrd: self-hosted notifications where dismissing on one device clears every device."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Justin Willhite" }]
+requires-python = ">=3.8"
+dependencies = []
+classifiers = ["License :: OSI Approved :: Apache Software License", "Programming Language :: Python :: 3"]
+
+[project.urls]
+Homepage = "https://github.com/thejdubb02/clrd"
+Documentation = "https://github.com/thejdubb02/clrd/tree/main/docs/integrations"
+
+[project.scripts]
+clrd = "clrd:main"
+
+[tool.setuptools]
+py-modules = ["clrd"]
