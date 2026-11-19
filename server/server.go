@@ -136,6 +136,9 @@ func (s *Server) Close() error { return s.db.Close() }
 // CurrentSeq is the seq of the last committed event.
 func (s *Server) CurrentSeq() int64 { return s.seq.Load() }
 
+// Epoch is this database's id, sent with every seq (see SPEC, Epoch).
+func (s *Server) Epoch() string { return s.epoch }
+
 // Mount serves h for every path under prefix ("/docs" gets /docs and
 // /docs/...; "/" gets only the exact root). Longest prefix wins and mounts
 // are checked before the server's own routes. Call before Run.
