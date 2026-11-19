@@ -23,6 +23,7 @@ import (
 type msg struct {
 	Type         string        `json:"type"`
 	Seq          int64         `json:"seq"`
+	Epoch        string        `json:"epoch"`
 	Notification *Notification `json:"notification"`
 }
 
@@ -223,7 +224,7 @@ func TestStreamResetAndPoll(t *testing.T) {
 		t.Fatalf("sse first line: %q", sc.Text())
 	}
 	sc.Scan()
-	if sc.Text() != `data: {"type":"ready","seq":3}` {
+	if sc.Text() != `data: {"type":"ready","seq":3,"epoch":"`+s.epoch+`"}` {
 		t.Fatalf("sse ready: %q", sc.Text())
 	}
 	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "live"})
@@ -231,6 +232,55 @@ func TestStreamResetAndPoll(t *testing.T) {
 	}
 	if sc.Text() != "id: 4" {
 		t.Fatalf("sse live: %q", sc.Text())
+	}
+}
+
+// The epoch names the database behind the seq numbers (#63): every cursor
+// carries it, a new database gets a new one, a restart keeps it.
+func TestEpoch(t *testing.T) {
+	epochs := func(ts *httptest.Server, admin string) string {
+		t.Helper()
+		c := dialWS(t, ts.URL, admin, 0)
+		ready := c.until(func(m msg) bool { return m.Type == "ready" })
+		_, list := call(t, ts, "GET", "/api/v1/notifications", admin, nil)
+		_, evs := call(t, ts, "GET", "/api/v1/events?since=0", admin, nil)
+		if ready.Epoch == "" || list["epoch"] != ready.Epoch || evs["epoch"] != ready.Epoch {
+			t.Fatalf("epochs: ready %q, list %v, events %v", ready.Epoch, list["epoch"], evs["epoch"])
+		}
+		return ready.Epoch
+	}
+	s, ts, admin := newTest(t)
+	first := epochs(ts, admin)
+	_, ts2, admin2 := newTest(t)
+	if other := epochs(ts2, admin2); other == first {
+		t.Fatalf("two new databases share epoch %q", first)
+	}
+	ts.Close()
+	s.Close()
+	again, err := New(s.opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts3 := httptest.NewServer(again)
+	t.Cleanup(func() { ts3.Close(); again.Close() })
+	if got := epochs(ts3, admin); got != first {
+		t.Fatalf("restart changed the epoch: %q, was %q", got, first)
+	}
+	// A database from before epochs gets one when it is opened.
+	call(t, ts3, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "old"})
+	if _, err := again.db.Exec(`DELETE FROM meta WHERE key = 'epoch'`); err != nil {
+		t.Fatal(err)
+	}
+	ts3.Close()
+	again.Close()
+	old, err := New(s.opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts4 := httptest.NewServer(old)
+	t.Cleanup(func() { ts4.Close(); old.Close() })
+	if got := epochs(ts4, admin); got == first {
+		t.Fatalf("pre-epoch database reused %q", got)
 	}
 }
 
