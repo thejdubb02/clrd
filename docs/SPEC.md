@@ -40,7 +40,8 @@ A **notification**:
   "priority": 4,               // 1..5, ntfy scale. 5 = urgent (Signal orange)
   "tags": ["backup"],
   "click": "https://...",      // optional
-  "actions": [{"label": "Open draft", "url": "https://..."}],
+  "actions": [{"label": "Open draft", "url": "https://..."}, {"label": "Yes", "reply": "yes"}],
+  "reply": "",                 // the reply action tapped, "" until someone answers
   "state": "active",
   "state_by": "pixel-9",       // device name that made the last change
   "snooze_until": null,        // RFC3339 when state = snoozed
@@ -58,8 +59,20 @@ A **notification**:
 - `snoozed` hides it until `snooze_until`; then the server moves it back to
   `active` with a new event (and re-notifies).
 - Publishing again with the same `external_id` while the row is non-final
-  updates that row (title/message/priority) instead of making a new one.
-  After it is final, a new publish makes a new row.
+  updates that row (title/message/priority) instead of making a new one,
+  and clears `reply`. After it is final, a new publish makes a new row.
+
+**Actions:** each action is a link (`url`) or an answer button (`reply`),
+exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
+notification, and there are at most 3 reply actions (an Android tray entry
+shows 3). Tapping one posts it to `/api/v1/notifications/{id}/reply`, which
+sets `reply`, sets the state to `acknowledged` with `state_by` = the device,
+and logs one `state` event. A device sends the `seq` it showed with the tap;
+if the notification changed since (a new question under the same key), the tap
+gets 409. An `acknowledged` notification with a non-empty `reply` is answered,
+and `state_by` is who tapped. The first answer wins: a second one gets 409.
+Any later state change except dismiss and resolve (reopen, snooze, a plain
+ack) clears `reply`. Reply actions are not sent to ntfy subscribers.
 
 ## 3. Events and sync
 
@@ -112,7 +125,7 @@ the session cookie (same-origin only) as well as a Bearer token.
 - Web UI uses a session cookie (HttpOnly, SameSite=Lax) after login.
 - Every token has a **device name**; it is what shows as `state_by`.
 - What each scope allows: `read` = list, get, events, WebSocket, plus the
-  user's own actions (ack, snooze, dismiss, reopen, bulk clear), because a
+  user's own actions (ack, reply, snooze, dismiss, reopen, bulk clear), because a
   phone that can see a notification must be able to clear it. `publish` =
   publish, resolve (by id or by external id), ack by external id. `admin` =
   everything, including tokens. A token with a topic allow-list sees and
@@ -154,6 +167,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/notifications?topic=&state=open\|all\|<state>&q=&limit=&before=` | List. `open` = active+acknowledged+snoozed. |
 | GET | `/api/v1/notifications/{id}` | One. |
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
+| POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`: answer with one of its reply actions (section 2). 400 if not one of them, 409 if already answered or final. |
 | POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. |
 | POST | `/api/v1/notifications/{id}/dismiss` | User clears it. |
 | POST | `/api/v1/notifications/{id}/resolve` | Sender clears it. |
@@ -191,11 +205,13 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, priority?, id?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, priority?, id?, actions?)`, `list(topic?, state?)`,
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,
 dismissed or an action is tapped; returns which, so an agent can ask a human
-"yes?" and wait).
+"yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one
+is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
+`reply` (the state).
 
 ## 7. Server internals
 

@@ -65,7 +65,9 @@ func ntfyMessage(n *Notification, seq int64) ntfyMsg {
 	}
 	m.Title, m.Message, m.Priority, m.Tags, m.Click = n.Title, n.Message, n.Priority, n.Tags, n.Click
 	for i, a := range n.Actions {
-		m.Actions = append(m.Actions, ntfyAction{ID: strconv.Itoa(i), Action: "view", Label: a.Label, URL: a.URL})
+		if a.URL != "" { // ntfy has no reply button; an http action would need our token
+			m.Actions = append(m.Actions, ntfyAction{ID: strconv.Itoa(i), Action: "view", Label: a.Label, URL: a.URL})
+		}
 	}
 	return m
 }

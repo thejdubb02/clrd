@@ -468,6 +468,77 @@
     ]
    }
   },
+  "/api/v1/notifications/{id}/reply": {
+   "post": {
+    "summary": "Answer with a reply action",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ],
+    "description": "Records which reply action was tapped and acknowledges the notification. Needs read scope. 400 if the value is not one of its reply actions; 409 if it is already answered, dismissed or resolved (the first answer wins).",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "reply": {
+          "type": "string",
+          "example": "yes"
+         },
+         "seq": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The notification seq the device showed. If the notification changed since, 409. Omit or 0 to skip the check."
+         }
+        },
+        "required": [
+         "reply"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/notifications/{id}/dismiss": {
    "post": {
     "summary": "Dismiss (user clears it)",
@@ -2791,17 +2862,22 @@
    },
    "Action": {
     "type": "object",
+    "description": "A link (url) or an answer button (reply), exactly one of the two. At most 3 reply actions; reply values are 1 to 64 of A-Z a-z 0-9 _ - and unique.",
     "properties": {
      "label": {
       "type": "string"
      },
      "url": {
       "type": "string"
+     },
+     "reply": {
+      "type": "string",
+      "example": "yes",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
      }
     },
     "required": [
-     "label",
-     "url"
+     "label"
     ]
    },
    "Notification": {
@@ -2841,6 +2917,10 @@
       "items": {
        "$ref": "#/components/schemas/Action"
       }
+     },
+     "reply": {
+      "type": "string",
+      "description": "The reply action tapped, empty until someone answers"
      },
      "state": {
       "type": "string",

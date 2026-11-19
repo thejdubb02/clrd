@@ -242,6 +242,9 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		if v := str(a, "id"); v != "" {
 			body["external_id"] = v // send's id is the sender's key, not the server ULID
 		}
+		if v, ok := a["actions"].([]any); ok {
+			body["actions"] = v
+		}
 		n, err := h.api(r, "POST", "/api/v1/notifications", body)
 		// Core keeps an existing row's state when a key is reused, so a new
 		// question could inherit the last answer. Reopen it so it starts unanswered.
@@ -329,7 +332,7 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 		return nil, err
 	}
 	if st := str(n, "state"); replied(st) {
-		return map[string]any{"reply": st, "by": n["state_by"], "notification": n}, nil
+		return answered(map[string]any{"reply": st, "by": n["state_by"], "notification": n}, st, str(n, "reply")), nil
 	}
 	var last any = n
 	for {
@@ -359,9 +362,18 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 				}
 				return nil, err
 			}
-			return map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, nil
+			return answered(map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, x.State, x.Reply), nil
 		}
 	}
+}
+
+// answered adds which reply action was tapped. Only while the tap's own
+// acknowledged state stands, so "by" is the device that tapped it.
+func answered(out map[string]any, state, reply string) map[string]any {
+	if reply != "" && state == server.Acknowledged {
+		out["answer"] = reply
+	}
+	return out
 }
 
 func schema(props map[string]any, required ...string) map[string]any {
@@ -382,6 +394,9 @@ var tools = []map[string]any{
 			"title":    p("string", "Optional title"),
 			"priority": map[string]any{"type": "integer", "minimum": 1, "maximum": 5, "description": "1..5, 5 = urgent"},
 			"id":       p("string", "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id)."),
+			"actions": map[string]any{"type": "array", "maxItems": 3,
+				"description": "Optional answer buttons, e.g. [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]. wait_for_reply returns the tapped one as answer.",
+				"items":       schema(map[string]any{"label": p("string", "Button text"), "reply": map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Value returned as answer, unique"}}, "label", "reply")},
 		}, "topic", "message")},
 	{"name": "list", "description": "List notifications.",
 		"inputSchema": schema(map[string]any{
@@ -398,6 +413,6 @@ var tools = []map[string]any{
 		})},
 	{"name": "snooze", "description": "Snooze a notification by server id.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id"), "for": p("string", "Duration, e.g. 30m or 1h")}, "id", "for")},
-	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout.",
+	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout, and answer = the reply value when one of send's actions was tapped.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "timeout_s": map[string]any{"type": "number", "description": "Seconds to wait, default 60, max 300"}}, "id")},
 }

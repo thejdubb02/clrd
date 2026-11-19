@@ -29,6 +29,7 @@ type Notification struct {
 	Tags        []string   `json:"tags,omitempty"`
 	Click       string     `json:"click,omitempty"`
 	Actions     []Action   `json:"actions,omitempty"`
+	Reply       string     `json:"reply,omitempty"` // the reply action tapped, if any
 	State       string     `json:"state"`
 	StateBy     string     `json:"state_by,omitempty"`
 	SnoozeUntil *time.Time `json:"snooze_until,omitempty"`
@@ -37,10 +38,12 @@ type Notification struct {
 	Seq         int64      `json:"seq"`
 }
 
-// Action is a link button on a notification.
+// Action is a button on a notification: a link (URL) or an answer (Reply),
+// never both. A tapped Reply shows up as Notification.Reply.
 type Action struct {
 	Label string `json:"label"`
-	URL   string `json:"url"`
+	URL   string `json:"url,omitempty"`
+	Reply string `json:"reply,omitempty"`
 }
 
 // Message is what Send publishes. ID is your stable key (external_id).
