@@ -30,6 +30,7 @@ APKs land in `app/build/outputs/apk/`.
 - **Foreground service type `specialUse`.** `dataSync` is capped at 6 hours a day on Android 15 and cannot start at boot, and clrd needs to be connected all the time. The F-Droid build is not subject to Play policy; a Play build would need to justify this type.
 - **Plain http is allowed** so home servers on a LAN work. Settings warns when the URL is `http://`, since the token is then sent unencrypted.
 - **No backup of app data.** The server token stays on the phone: `allowBackup` is off and the data extraction rules exclude everything.
+- **Changing server or token starts clean.** Cached rows, the replay position and any actions not yet sent are dropped, so nothing from one server reaches another.
 - **No tracking.** No analytics, no crash reporting, no Google Play Services, no Firebase. The only network peer is the server you configure.
 
 ## Reproducible builds
