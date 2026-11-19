@@ -1,8 +1,14 @@
 package me.itsjustin.clrd
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -78,14 +84,40 @@ import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
+/**
+ * Null when the phone already lets clrd run in the background, else the system prompt that allows it.
+ * Some phones stop a foreground service anyway when battery optimisation is on, and then clears
+ * from other devices stop arriving.
+ */
+fun batteryPrompt(ctx: Context): Intent? =
+    if (ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName)) null
+    else Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}"))
+
+/** Opens the prompt. Some builds have no such dialog; the list of apps then lets the person do it by hand. */
+fun openBattery(ctx: Context, prompt: Intent) {
+    try {
+        ctx.startActivity(prompt)
+    } catch (e: ActivityNotFoundException) {
+        runCatching { ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+    }
+}
+
 class MainActivity : ComponentActivity() {
+    /** Rechecked on every resume, so a change made in Android's settings shows when the person comes back. */
+    val battery = mutableStateOf<Intent?>(null)
+
+    override fun onResume() {
+        super.onResume()
+        battery.value = batteryPrompt(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         val app = App.of(this)
         if (app.configured) SyncService.start(this)
-        setContent { ClrdTheme { Home(app) } }
+        setContent { ClrdTheme { Home(app, battery.value) } }
     }
 }
 
@@ -97,7 +129,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 }
 
 @Composable
-private fun Home(app: App) {
+private fun Home(app: App, battery: Intent?) {
     val b = LocalBrand.current
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
@@ -136,7 +168,7 @@ private fun Home(app: App) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(app)
             when (tab) {
-                Tab.Settings -> SettingsScreen(app)
+                Tab.Settings -> SettingsScreen(app, battery)
                 else -> {
                     val flow = when (tab) { Tab.Inbox -> dao.inbox(); Tab.Snoozed -> dao.snoozed(); else -> dao.cleared() }
                     val rows by remember(tab) { flow }.collectAsState(emptyList())
@@ -304,7 +336,7 @@ private fun Empty(tab: Tab) {
 }
 
 @Composable
-private fun SettingsScreen(app: App) {
+private fun SettingsScreen(app: App, battery: Intent?) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     var url by rememberSaveable { mutableStateOf(app.serverUrl.ifEmpty { "https://" }) }
@@ -363,6 +395,10 @@ private fun SettingsScreen(app: App) {
             colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),
         ) { Text("Save and test connection") }
         result?.let { Text(it, color = b.body, fontSize = 14.sp) }
+        battery?.takeIf { app.configured }?.let { prompt ->
+            Text("This phone may pause clrd in the background, and then clears from other devices arrive late.", color = b.slate, fontSize = 13.sp)
+            TextButton(onClick = { openBattery(ctx, prompt) }) { Text("Let clrd run in the background", color = b.ink) }
+        }
 
         if (topics.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
