@@ -2,4 +2,6 @@
 <lint>
     <!-- aapt2 only finds the adaptive launcher icon in mipmap-anydpi-v26, even at minSdk 26. -->
     <issue id="ObsoleteSdkInt" severity="ignore" />
+    <!-- Keeping a socket open is the whole app, and there is no push service to fall back on (no Google services). -->
+    <issue id="BatteryLife" severity="ignore" />
 </lint>
