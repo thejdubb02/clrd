@@ -1,0 +1,17 @@
+<p>clrd is the Android app for a clrd server: self-hosted push notifications where a dismissal on one device clears the notification on every device.</p>
+
+<p>Send an alert with one HTTP call from a script, a monitoring tool or a cron job. It shows up on your phone, your tablet and the web inbox. Swipe it away on any of them and it is gone from all the others.</p>
+
+<p><b>What it does</b></p>
+<ul>
+<li>One system notification per open alert, with channels by priority</li>
+<li>Ack, Snooze 1h and Clear buttons right in the notification</li>
+<li>Clearing, acknowledging or resolving on another device updates this one within a second</li>
+<li>Works offline: actions you take without a connection are sent when it comes back, and alerts cleared elsewhere while you were away never buzz</li>
+<li>Inbox with topic filters, swipe to clear, and Snoozed and Cleared lists</li>
+<li>Mute a topic on this phone without muting it everywhere</li>
+<li>Light and dark themes</li>
+</ul>
+
+<p><b>What it needs</b></p>
+<p>Your own clrd server (open source, a single binary) and an access token from it. The app talks only to the server you set. No accounts, no analytics, no Google services.</p>

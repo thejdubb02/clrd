@@ -1,0 +1,22 @@
+# Manual only for now: no self-hosted runner is registered for this repo yet.
+# Switch on push/pull_request once one is (see the runner issue).
+name: android
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: [self-hosted, cezar1]
+    defaults:
+      run:
+        working-directory: android
+    env:
+      ANDROID_HOME: /opt/android-sdk
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: android/app/build/outputs/apk/**/*.apk
