@@ -14,10 +14,11 @@ Settings, Notifications, Setup Notification:
 - Custom Body (Liquid template, Kuma 1.23 and 2.x):
 
 ```liquid
+{% capture title %}{{ monitorJSON.name }} is {% if heartbeatJSON.status == 1 %}up{% else %}down{% endif %}{% endcapture %}
 {
   "topic": "infra",
   "external_id": "kuma-{{ monitorJSON.id }}",
-  "title": "{{ monitorJSON.name }} is {% if heartbeatJSON.status == 1 %}up{% else %}down{% endif %}",
+  "title": {{ title | json }},
   "message": {{ msg | json }},
   "priority": 4,
   "status": "{% if heartbeatJSON.status == 1 %}resolved{% else %}firing{% endif %}"

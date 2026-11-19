@@ -56,9 +56,9 @@ resolve instead of send).
           CLRD_TOKEN: ${{ secrets.CLRD_TOKEN }}
           KEY: ${{ github.repository }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
         run: |
-          jq -n --arg key "$KEY" --arg msg "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+          code=$(jq -n --arg key "$KEY" --arg msg "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             '{topic:"ci", external_id:$key, title:"Build failed", message:$msg, priority:4}' |
-          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST https://clrd.itsjustin.me/api/v1/notifications \
+            curl -sS -o /dev/null -w '%{http_code}' -X POST https://clrd.itsjustin.me/api/v1/notifications \
             -H "Authorization: Bearer $CLRD_TOKEN" -H "Content-Type: application/json" --data @-)
           case "$code" in 2??) ;; *) echo "clrd send failed: $code"; exit 1 ;; esac
       - if: success()

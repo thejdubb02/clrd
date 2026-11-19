@@ -36,8 +36,9 @@ inbox and every phone.
 curl -fsS -X POST -H "Authorization: Bearer $CLRD_TOKEN" "$CLRD/infra/disk-build/resolve"
 ```
 
-`-f` makes curl fail on an HTTP error. A 404 means nothing open has that key
-(already cleared). Keys with spaces or slashes must be URL-encoded in the path.
+`-f` makes curl exit non-zero on any HTTP error, 404 included. A 404 means
+nothing open has that key (already cleared); the cron example below treats it
+as fine. Keys with spaces or slashes must be URL-encoded in the path.
 
 ## Pattern: a cron check that cleans up after itself
 
