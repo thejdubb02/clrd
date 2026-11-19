@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: messages show their formatting (bold, italic, underline, strike,
+  code, lists, quotes, headings and tappable links) in the list, and bold and
+  italic in the system notification. A message sent as plain text is shown
+  exactly as sent.
 - Android: Share and Copy on each notification. Icons show in the tray and the
   list, picture attachments show as a preview, and other files get a Download
   button.

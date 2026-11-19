@@ -27,11 +27,14 @@ data class Notif(
     @ColumnInfo(defaultValue = "") val reply: String = "", // the reply action tapped, "" until someone answers
     @ColumnInfo(defaultValue = "") val icon: String = "", // http(s) image URL, "" if none
     @ColumnInfo(defaultValue = "") val attachment: String = "", // raw JSON object, "" if none
+    @ColumnInfo(defaultValue = "markdown") val format: String = "markdown", // or "text": shown exactly as sent
 ) {
     val isFinal get() = state == DISMISSED || state == RESOLVED
 
     /** The one file this notification carries, or null (docs/SPEC.md section 2, "Attachments"). */
     val file: Attachment? get() = Attachment.parse(attachment)
+
+    val isMarkdown get() = format != "text"
 
     /** Copy: the title, a blank line, the message, then click on its own line (docs/SPEC.md section 2). Empty parts are left out. */
     fun copyText() = listOf(title, message).filter { it.isNotEmpty() }.joinToString("\n\n") + (click?.takeIf { it.isNotEmpty() }?.let { "\n$it" } ?: "")
@@ -64,6 +67,7 @@ data class Notif(
             reply = o.str("reply") ?: "",
             icon = o.str("icon") ?: "", // events logged before the server had icons leave it out
             attachment = o.optJSONObject("attachment")?.toString() ?: "",
+            format = o.str("format") ?: "markdown", // events logged before formats existed are Markdown
         )
 
         private fun millis(s: String) = OffsetDateTime.parse(s).toInstant().toEpochMilli()

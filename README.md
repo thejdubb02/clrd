@@ -53,7 +53,7 @@ offline catches up the moment it reconnects.
   work without JavaScript, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, Share and Copy on each
-  notification.
+  notification, Markdown formatting and tappable links.
 - **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
   and an MCP server so an AI agent can notify you and wait for your answer.
 
