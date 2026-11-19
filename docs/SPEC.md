@@ -234,10 +234,33 @@ the session cookie (same-origin only) as well as a Bearer token.
 
 - **Tokens:** `Authorization: Bearer clrd_<32 random base62>`. Stored hashed (SHA-256).
   Scopes: `publish`, `read`, `admin`. Optional topic allow-list per token.
+  Tokens imported from ntfy keep their `tk_...` value (also stored hashed) and
+  work everywhere a `clrd_` token does.
+- **Per-topic grants:** a token may instead carry an ordered list of grants,
+  each a topic pattern (`*` matches any run of characters; matching ignores
+  case, as in ntfy) and the scopes it
+  gives there (`read`, `publish`, both, or none, which denies). For a topic the
+  first grant whose pattern matches decides; no match means no access. The
+  token's own scopes are the ceiling: a grant never adds a scope the token
+  lacks, and a grant never holds `admin`. A write-only grant (`publish` only)
+  lets the token publish to the topic but not list, get, stream, download
+  files from or act on its notifications, on the native API and on the ntfy
+  routes alike. A token with grants never manages tokens and only sees itself
+  in the device list. A browser signed in with it gets the same grants.
+  Grants come from `clrd import ntfy` (ntfy's access control list, rules in
+  ntfy's own order).
 - Bootstrap: first start with no users prints a one-time admin setup URL to the log.
   `clrd token create --name pixel-9 --scope read,publish` on the CLI.
 - Basic auth (`user:token`) and `?auth=` query param accepted for ntfy-client compatibility.
-- Anonymous publish/read is off by default, can be enabled per topic.
+- **Passwords, ntfy routes only:** users imported from ntfy keep their bcrypt
+  password hash, so `Basic user:password` (header or `?auth=`) works on the
+  ntfy-compatible routes (section 5) with that user's grants. The native API
+  (`/api/v1/*`, `/mcp`, the web session) never accepts a password: tokens only.
+- **Anonymous:** off unless imported. `clrd import ntfy` turns ntfy's
+  `everyone` rules and `auth-default-access` into a token named `anonymous`
+  with grants. It applies only on the ntfy-compatible routes, only to a request
+  that sends no credentials at all (a wrong credential is still a 401), and it
+  can never sign a browser in. Revoke that token to turn anonymous access off.
 - Web UI uses a session cookie (HttpOnly, SameSite=Lax) after login.
 - Every token has a **device name**; it is what shows as `state_by`. Names need not be
   unique, so a client that asks "did I make this change?" compares `state_by_id` with its own token id.
@@ -246,10 +269,10 @@ the session cookie (same-origin only) as well as a Bearer token.
   phone that can see a notification must be able to clear it. `publish` =
   publish, resolve (by id or by external id), ack by external id. `admin` =
   everything, including tokens. A token with a topic allow-list sees and
-  touches only those topics.
+  touches only those topics; one with grants follows them, as above.
 - Session: `POST /api/v1/session` with `{"token":"clrd_..."}` (JSON or a form
   post, optional `next` redirect for forms, optional `name`) mints a new token
-  for this browser, with the same scopes and topics, and sets it as the
+  for this browser, with the same scopes, topics and grants, and sets it as the
   `clrd_session` cookie. It is named `name`, else from the User-Agent ("Firefox
   on Linux"), so each browser is its own device. Revoking the token typed in
   also revokes the browsers signed in with it. One token keeps at most 20
