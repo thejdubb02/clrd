@@ -21,6 +21,7 @@ type fakeAPI struct {
 	state string
 	gets  int // GETs allowed before the token is revoked (401); 0 means no limit
 	ngets int
+	slow  bool                // a refused GET answers only after the deadline
 	subs  []chan server.Event // handed out by Subscribe in order, then a silent one
 	nsub  int
 	onSub func(n int) // runs under mu on the nth Subscribe
@@ -54,6 +55,9 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v1/notifications/") {
 		if f.ngets++; f.gets > 0 && f.ngets > f.gets {
+			if f.slow {
+				<-r.Context().Done()
+			}
 			w.WriteHeader(401)
 			io.WriteString(w, `{"error":"token revoked","code":"unauthorized"}`)
 			return
@@ -247,6 +251,15 @@ func TestWaitForReply(t *testing.T) {
 	text, isErr = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 5})
 	if !isErr || strings.Contains(text, "acknowledged") {
 		t.Fatalf("revoked token got %s", text)
+	}
+
+	// The deadline hits during that re-read: a timeout, still without the reply.
+	evs = make(chan server.Event, 1)
+	evs <- ev(10, "01J", "acknowledged")
+	f = &fakeAPI{state: "active", gets: 1, slow: true, subs: []chan server.Event{evs}}
+	text, _ = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 0.05})
+	if f.ngets != 2 || text != `{"reply":"timeout"}` {
+		t.Fatalf("revoked token at the deadline (%d reads) got %s", f.ngets, text)
 	}
 }
 
