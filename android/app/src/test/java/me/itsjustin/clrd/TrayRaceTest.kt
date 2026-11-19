@@ -5,6 +5,11 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -38,7 +43,10 @@ class TrayRaceTest {
         return checkNotNull(r) { "background step still running after 60 s" }.getOrThrow()
     }
 
-    private fun drainIo() = app.io.submit {}.get(10, TimeUnit.SECONDS)
+    private fun drainIo() {
+        app.io.submit {}.get(10, TimeUnit.SECONDS)
+        app.acts.submit {}.get(10, TimeUnit.SECONDS)
+    }
     private fun tray(id: String): Notification? = shadowOf(nm).getNotification(id, 0)
     private fun row(id: String, state: String, seq: Long) =
         Notif(id, "t", "T", "m", 3, "", null, "[]", state, null, null, seq, System.currentTimeMillis(), seq) // recent, or prune drops it
@@ -149,5 +157,78 @@ class TrayRaceTest {
         bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
         swipe("a")
         assertEquals(listOf("dismiss"), bg { dao.pending().map { it.action } })
+    }
+
+    @Test fun aTapIsSavedWhileIoIsBusy() {
+        bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        val gate = CountDownLatch(1)
+        app.io.execute { gate.await() } // a slow request on io, for example the Settings check
+        try {
+            val saved = CountDownLatch(1)
+            app.act("a", "dismiss", server = app.serverUrl) { saved.countDown() }
+            assertTrue(saved.await(5, TimeUnit.SECONDS)) // goAsync() finishes without waiting for io
+            assertEquals(1, bg { dao.pending().size })
+        } finally {
+            gate.countDown()
+        }
+    }
+
+    @Test fun aHungSendDoesNotHoldBackTheNextTap() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)) // the first send hangs
+        server.start()
+        try {
+            app.serverUrl = server.url("/").toString().trimEnd('/')
+            app.token = "t" // configured, but no sync service, so act sends by itself
+            bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
+            app.act("a", "dismiss", server = app.serverUrl)
+            assertTrue(server.takeRequest(10, TimeUnit.SECONDS) != null) // the hung send is under way
+            val saved = CountDownLatch(1)
+            app.act("b", "dismiss", server = app.serverUrl) { saved.countDown() }
+            assertTrue(saved.await(5, TimeUnit.SECONDS))
+            assertEquals(listOf("a", "b"), bg { dao.pending().map { it.notifId } }) // both saved while the first send hangs
+        } finally {
+            app.token = ""
+            server.shutdown()
+        }
+    }
+
+    @Test fun anInboxTapQueuedAcrossASwitchIsDropped() {
+        bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        val gate = CountDownLatch(1)
+        app.acts.execute { gate.await() } // an earlier tap still being saved
+        app.act("a", "dismiss") // from the inbox
+        app.configGen++ // Settings switched server or token (same URL) before the save ran
+        gate.countDown()
+        drainIo()
+        assertTrue(bg { dao.pending().isEmpty() })
+    }
+
+    @Test fun aSendStopsAtAServerSwitch() {
+        val server = MockWebServer()
+        val release = CountDownLatch(1)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                release.await(10, TimeUnit.SECONDS)
+                return MockResponse().setBody("{}")
+            }
+        }
+        server.start()
+        try {
+            app.serverUrl = server.url("/").toString().trimEnd('/')
+            app.token = "t"
+            bg {
+                RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1)
+                dao.addPending(Pending(notifId = "b", action = "dismiss", body = "{}")) // queued earlier
+            }
+            app.act("a", "dismiss", server = app.serverUrl)
+            assertTrue(server.takeRequest(10, TimeUnit.SECONDS) != null) // b is on its way
+            app.configGen++ // Settings switched server while it was in flight
+            release.countDown()
+            assertNull(server.takeRequest(2, TimeUnit.SECONDS)) // a is not sent to the old server afterwards
+        } finally {
+            app.token = ""
+            server.shutdown()
+        }
     }
 }
