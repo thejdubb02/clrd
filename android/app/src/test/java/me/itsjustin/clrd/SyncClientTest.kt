@@ -57,6 +57,7 @@ class SyncClientTest {
                     request.method == "POST" -> {
                         posts += path
                         if (path.contains("flaky") && posts.count { it == path } == 1) MockResponse().setResponseCode(503)
+                        else if (path.contains("busy") && posts.count { it == path } == 1) MockResponse().setResponseCode(429).setHeader("Retry-After", "1")
                         else if (path.contains("slow")) {
                             release.await(10, java.util.concurrent.TimeUnit.SECONDS)
                             slowAnswered = true
@@ -79,9 +80,10 @@ class SyncClientTest {
         server.shutdown()
     }
 
-    private fun start() {
+    private fun start(replayQuietMs: Long = 5_000) {
         val api = Api(http, server.url("/").toString().trimEnd('/'), "tok")
-        client = SyncClient(http, api, store, onStatus = { statuses += it }, baseDelayMs = 20, flushRetryMs = 50).also { it.start() }
+        client = SyncClient(http, api, store, onStatus = { statuses += it }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
+            .also { it.start() }
     }
 
     @Test fun replayIsCoalescedAndSeqSaved() {
@@ -224,6 +226,96 @@ class SyncClientTest {
         assertTrue(SyncClient.Status.OFFLINE in statuses)
     }
 
+    @Test fun busyServerIsLeftAloneForItsRetryAfter() {
+        wsResponse = { if (wsSince.size == 1) MockResponse().setResponseCode(429).setHeader("Retry-After", "1") else null }
+        onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
+        start()
+        await { SyncClient.Status.BUSY in statuses }
+        client!!.kick(force = true) // a network switch does not cut the wait short either
+        Thread.sleep(600) // the 20 ms backoff alone would have retried many times by now
+        assertEquals(1, wsSince.size)
+        await { SyncClient.Status.CONNECTED in statuses }
+    }
+
+    @Test fun busySendWaitsForRetryAfter() {
+        onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
+        start()
+        await { SyncClient.Status.CONNECTED in statuses }
+        store.queue += Pending(1, "busy", "dismiss")
+        client!!.flushSoon()
+        await { posts.isNotEmpty() }
+        store.queue += Pending(2, "b", "dismiss")
+        client!!.flushSoon() // a new tap does not cut the wait short either
+        Thread.sleep(600) // flushRetryMs is 50
+        assertEquals(1, posts.size)
+        await { store.queue.isEmpty() }
+        assertEquals(listOf("/api/v1/notifications/busy/dismiss", "/api/v1/notifications/busy/dismiss", "/api/v1/notifications/b/dismiss"), posts)
+    }
+
+    @Test fun aFailedPartialSaveIsRetried() {
+        store.failOnce = true
+        onConnect = { n, ws -> if (n == 1) ws.send(ev(1, "a", "active")) } // and no `ready` yet
+        start(replayQuietMs = 100)
+        await { store.rows["a"] != null }
+    }
+
+    @Test fun aFullReplayBufferIsSavedQuietly() {
+        onConnect = { n, ws ->
+            if (n == 1) {
+                (1..500L).forEach { ws.send(ev(it, "r$it", "active")) }
+                ws.send(ev(501, "last", "active"))
+                ws.send("""{"type":"ready","seq":501}""")
+            }
+        }
+        start()
+        await { SyncClient.Status.CONNECTED in statuses }
+        assertEquals(listOf(true, false), store.quiet) // a later event in the replay could still clear the first 500
+    }
+
+    @Test fun aSlowReplayIsSavedQuietlyAndOnlyReadyMeansInSync() {
+        onConnect = { n, ws -> if (n == 1) ws.send(ev(1, "a", "active")) } // and no `ready` yet
+        start(replayQuietMs = 100)
+        await { store.rows["a"] != null }
+        Thread.sleep(300)
+        assertTrue(store.quiet.all { it })
+        assertTrue("$statuses", SyncClient.Status.CONNECTED !in statuses)
+        serverSockets.last().send("""{"type":"ready","seq":1}""")
+        await { SyncClient.Status.CONNECTED in statuses }
+    }
+
+    @Test fun anUnreadableEventReconnectsFromTheSameCursor() {
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send("""{"type":"ready","seq":1}""")
+                ws.send("""{"seq":2,"type":"created","notification":{}}""") // no id
+                ws.send(ev(3, "c", "active")) // must not move the cursor past seq 2
+            } else ws.send("""{"type":"ready","seq":3}""")
+        }
+        start()
+        await { wsSince.size >= 2 }
+        assertEquals("1", wsSince[1])
+    }
+
+    @Test fun anUnreadableOpenListIsRetried() {
+        var calls = 0
+        open = { if (++calls == 1) "not json" else """{"notifications":[],"seq":7}""" }
+        onConnect = { n, ws -> if (n <= 2) ws.send("""{"type":"reset"}""") else ws.send("""{"type":"ready","seq":7}""") }
+        start()
+        await { store.lastSeq() == 7L && SyncClient.Status.CONNECTED in statuses }
+        assertEquals(2, lists.size)
+    }
+
+    @Test fun aNetworkSwitchReconnectsALiveSocket() {
+        onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
+        start()
+        await { SyncClient.Status.CONNECTED in statuses }
+        client!!.kick() // the same network came back: keep the socket
+        Thread.sleep(200)
+        assertEquals(1, wsSince.size)
+        client!!.kick(force = true)
+        await { wsSince.size >= 2 }
+    }
+
     private fun await(cond: () -> Boolean) {
         val end = System.currentTimeMillis() + 5_000
         while (!cond()) {
@@ -246,11 +338,15 @@ class SyncClientTest {
         val rows = java.util.concurrent.ConcurrentHashMap<String, Notif>()
         val queue = CopyOnWriteArrayList<Pending>()
         val applies = CopyOnWriteArrayList<Collection<Notif>>()
+        val quiet = CopyOnWriteArrayList<Boolean>()
+        @Volatile var failOnce = false
         @Volatile private var seq = 0L
 
         override fun lastSeq() = seq
-        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long) {
+        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean) {
+            if (failOnce) { failOnce = false; throw IllegalStateException("disk full") }
             applies += notifs
+            this.quiet += quiet
             for (n in notifs) if (n.seq >= (rows[n.id]?.seq ?: 0)) rows[n.id] = n
             this.seq = maxOf(this.seq, seq)
         }

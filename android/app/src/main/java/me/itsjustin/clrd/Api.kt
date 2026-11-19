@@ -2,6 +2,7 @@ package me.itsjustin.clrd
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONArray
@@ -9,12 +10,18 @@ import org.json.JSONObject
 import java.io.IOException
 
 /** HTTP error from the server. [code] is the HTTP status. */
-class HttpError(val code: Int, msg: String) : IOException("HTTP $code: $msg") {
+class HttpError(val code: Int, msg: String, val retryAfterMs: Long? = null) : IOException("HTTP $code: $msg") {
     val isAuth get() = code == 401 || code == 403
+
+    /** The server is turning us away for now (429, or 503 with a Retry-After), not down. */
+    val isBusy get() = code == 429 || (code == 503 && retryAfterMs != null)
 
     /** 4xx other than auth and rate limit means the request itself is wrong (gone, already final): retrying will not help. */
     val isPermanent get() = code in 400..499 && !isAuth && code != 408 && code != 429
 }
+
+/** `Retry-After` in seconds, at most an hour. The rare HTTP-date form counts as absent. */
+fun retryAfterMs(r: Response): Long? = r.header("Retry-After")?.trim()?.toLongOrNull()?.coerceIn(0, 3600)?.times(1000)
 
 /** Blocking REST client for docs/SPEC.md section 5. Call off the main thread. */
 class Api(private val http: OkHttpClient, baseUrl: String, private val token: String) {
@@ -51,7 +58,7 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
 
     private fun call(b: Request.Builder): String = http.newCall(b.build()).execute().use { r ->
         val text = r.body?.string().orEmpty()
-        if (!r.isSuccessful) throw HttpError(r.code, runCatching { JSONObject(text).optString("error") }.getOrNull() ?: text.take(200))
+        if (!r.isSuccessful) throw HttpError(r.code, runCatching { JSONObject(text).optString("error") }.getOrNull() ?: text.take(200), retryAfterMs(r))
         text
     }
 

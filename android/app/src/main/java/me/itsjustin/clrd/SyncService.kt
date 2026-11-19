@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 class SyncService : Service() {
     private val app get() = App.of(this)
     private var netCallback: ConnectivityManager.NetworkCallback? = null
+    private var lastNet: Network? = null // touched only on the callback thread
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -37,7 +38,11 @@ class SyncService : Service() {
         }
         if (netCallback == null) {
             netCallback = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) { app.sync?.kick() }
+                override fun onAvailable(network: Network) {
+                    val moved = lastNet != null && lastNet != network // the socket may still sit on the old network
+                    lastNet = network
+                    app.sync?.kick(force = moved)
+                }
             }.also { getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(it) }
         }
         return START_STICKY
@@ -58,6 +63,7 @@ class SyncService : Service() {
                 SyncClient.Status.CONNECTING -> "Connecting"
                 SyncClient.Status.CONNECTED -> "In sync"
                 SyncClient.Status.OFFLINE -> "Offline, retrying"
+                SyncClient.Status.BUSY -> "Server busy, retrying later"
                 SyncClient.Status.AUTH_FAILED -> "Token rejected. Check Settings."
             },
         )
