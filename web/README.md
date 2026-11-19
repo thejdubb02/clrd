@@ -3,7 +3,22 @@
 The landing page, the docs and the inbox, served by the clrd binary. Every page
 is rendered on the server, so it reads fine without JavaScript (and to crawlers).
 `static/inbox.js` only adds the action buttons, live updates over the WebSocket
-and the Undo toast. No framework, no build step.
+and the Undo toast. No framework.
+
+## Styles
+
+`ui/app.css` (Tailwind v4 plus the Basecoat components in `ui/basecoat/`, with
+the clrd tokens in `ui/tokens.css`) builds to `static/app.css`:
+
+```sh
+web/ui/build.sh          # once
+web/ui/build.sh --watch  # while you edit
+```
+
+The script fetches the pinned Tailwind standalone binary and checks its hash;
+there is no Node step. Commit the built `static/app.css` with your change: CI
+rebuilds it and fails if it differs. `/app/ui` shows every component in every
+state, light and dark.
 
 ## The seam with the server
 

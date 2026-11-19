@@ -1,5 +1,26 @@
 {
- "jscpd": [],
+ "jscpd": [
+  [
+   "server/files_test.go",
+   "server/files_test.go",
+   1
+  ],
+  [
+   "server/files_test.go",
+   "server/server_test.go",
+   1
+  ],
+  [
+   "server/mcp/real_test.go",
+   "server/mcp/real_test.go",
+   1
+  ],
+  [
+   "web/ui/basecoat/components/input.css",
+   "web/ui/basecoat/nova.css",
+   1
+  ]
+ ],
  "knip": [],
  "lint": []
 }

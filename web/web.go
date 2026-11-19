@@ -220,7 +220,10 @@ func loadDocs() (map[string]doc, []doc) {
 		}
 		// Relative links resolve from this file's folder, as on GitHub: another
 		// doc becomes its /docs/ page, anything else in the repo its GitHub page.
-		html := relLink.ReplaceAllStringFunc(b.String(), func(s string) string {
+		// Code blocks and tables scroll sideways on a phone, so they take
+		// keyboard focus (axe: scrollable-region-focusable).
+		out := strings.NewReplacer("<pre>", `<pre tabindex="0">`, "<table>", `<table tabindex="0">`).Replace(b.String())
+		html := relLink.ReplaceAllStringFunc(out, func(s string) string {
 			g := relLink.FindStringSubmatch(s)
 			t := path.Join(path.Dir(p), g[1])
 			switch {
@@ -384,6 +387,10 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/snoozed", app("snoozed"))
 	mux.HandleFunc("GET /app/cleared", app("cleared"))
 	mux.HandleFunc("GET /app/settings", app("settings"))
+	// The style guide: every component in every state, no data, no sign-in.
+	mux.HandleFunc("GET /app/ui", func(w http.ResponseWriter, r *http.Request) {
+		page(w, "ui", 200, meta{Title: "Components: clrd", Path: "/app/ui", Base: base(r)})
+	})
 
 	// The card buttons as a plain form post, so they work without JavaScript;
 	// then back to the page they came from. Snooze takes a duration because
