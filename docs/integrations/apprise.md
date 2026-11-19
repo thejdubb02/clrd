@@ -1,7 +1,6 @@
 # Apprise
 
-Apprise's ntfy plugin talks to clrd once the server's ntfy compat lands.
-**Needs ntfy compat:** JSON publish to `POST /` with a `topic` field ([issue 2](https://github.com/thejdubb02/clrd/issues/2)).
+Apprise's ntfy plugin talks to clrd through its ntfy-compatible publish.
 
 ```
 ntfys://clrd_...@clrd.itsjustin.me/infra?auth=token
@@ -19,6 +18,6 @@ apprise -t "Disk 91%" -b "/var on build is 91% full" "ntfys://clrd_...@clrd.itsj
 ## Auto-resolve
 
 Not supported: Apprise is fire-and-forget and has no resolved state or stable
-key. Resolve separately with `curl -X POST .../infra/<key>/resolve` (see
+key. Resolve separately with `curl -fsS -X POST .../infra/<key>/resolve` (see
 [curl](curl.md)) if your script knows when the problem clears, or use the
 native API or an SDK instead of Apprise for alerts that should clear themselves.

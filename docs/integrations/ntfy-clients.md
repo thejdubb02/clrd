@@ -1,9 +1,8 @@
 # ntfy clients (CLI and apps)
 
-clrd speaks ntfy's publish and subscribe protocol, so ntfy's own tools work.
-**All of this needs ntfy compat** ([issue 2](https://github.com/thejdubb02/clrd/issues/2)): `PUT|POST /{topic}`, `POST /`
-JSON, `GET /{topic}/json|sse|ws|raw` in ntfy's message format, and Basic auth
-with a token as the password.
+clrd speaks ntfy's publish and subscribe protocol, so ntfy's own tools work:
+`PUT|POST /{topic}`, `POST /` JSON, `GET /{topic}/json|sse|ws|raw` in ntfy's
+message format, and Basic auth with a token as the password.
 
 ## ntfy CLI
 
@@ -29,9 +28,9 @@ ntfy has no resolved state. Send with clrd's `X-Id` header, then resolve by key:
 
 ```sh
 curl -H "Authorization: Bearer clrd_..." -H "X-Id: disk-build" -d "Disk 91%" https://clrd.itsjustin.me/infra
-curl -X POST -H "Authorization: Bearer clrd_..." https://clrd.itsjustin.me/infra/disk-build/resolve
+curl -fsS -X POST -H "Authorization: Bearer clrd_..." https://clrd.itsjustin.me/infra/disk-build/resolve
 ```
 
-A resolve removes it from the clrd inbox and the clrd app. Whether a resolve
-should also reach ntfy-app subscribers (ntfy has no delete event they act on)
-is open; see [issue 7](https://github.com/thejdubb02/clrd/issues/7).
+A resolve removes it from the clrd inbox and the clrd app. ntfy subscribers get
+a `message_delete` for it (a `message_clear` for an ack or snooze); whether a
+given ntfy app acts on those depends on the app version.

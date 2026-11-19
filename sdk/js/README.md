@@ -1,6 +1,6 @@
 # clrd for JavaScript
 
-No dependencies. ESM, types included. Node 18+, Deno, Bun, browsers (anything with `fetch`).
+No dependencies. ESM, types included. Node 18+, Deno, Bun. In a browser it only works on pages served by the clrd server itself: the API sends no CORS headers, so other origins are blocked.
 Published as `clrd-client` (the `clrd` name on npm belongs to an unrelated project).
 
 ```js

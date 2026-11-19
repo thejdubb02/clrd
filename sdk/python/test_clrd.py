@@ -25,6 +25,8 @@ class Fake(BaseHTTPRequestHandler):
         else:
             self.send_response(200)
             out = {"id": "01J", "state": "active"}
+            if self.command == "GET" and self.path.startswith("/api/v1/notifications?"):
+                out = {"notifications": [out]}
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps(out).encode())
@@ -71,7 +73,7 @@ class T(unittest.TestCase):
         self.assertEqual(self.last()[:3], ("POST", "/api/v1/notifications/01J/snooze", {"for": "30m"}))
         clrd.dismiss("01J")
         self.assertEqual(self.last()[:2], ("POST", "/api/v1/notifications/01J/dismiss"))
-        clrd.list("infra")
+        self.assertEqual(clrd.list("infra"), {"notifications": [{"id": "01J", "state": "active"}]})
         self.assertEqual(self.last()[:2], ("GET", "/api/v1/notifications?state=open&topic=infra"))
 
     def test_error(self):

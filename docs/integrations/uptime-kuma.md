@@ -1,12 +1,9 @@
 # Uptime Kuma
 
 Use the **Webhook** notification type with a custom body. Kuma's ntfy type
-works for plain alerts (needs ntfy compat `POST /` JSON, [issue 2](https://github.com/thejdubb02/clrd/issues/2)) but sends
-no stable key, so "Up" arrives as a second notification instead of clearing
-the "Down" one.
-
-**Needs on the server (proposed, see [issue 7](https://github.com/thejdubb02/clrd/issues/7)):** native
-publish honours `"status": "resolved"` with `topic` and `external_id`.
+works for plain alerts but sends no stable key, so "Up" arrives as a second
+notification instead of clearing the "Down" one. The native publish below
+resolves by key when `status` is `resolved`.
 
 Settings, Notifications, Setup Notification:
 
@@ -17,10 +14,11 @@ Settings, Notifications, Setup Notification:
 - Custom Body (Liquid template, Kuma 1.23 and 2.x):
 
 ```liquid
+{% capture title %}{{ monitorJSON.name }} is {% if heartbeatJSON.status == 1 %}up{% else %}down{% endif %}{% endcapture %}
 {
   "topic": "infra",
   "external_id": "kuma-{{ monitorJSON.id }}",
-  "title": "{{ monitorJSON.name }} is {% if heartbeatJSON.status == 1 %}up{% else %}down{% endif %}",
+  "title": {{ title | json }},
   "message": {{ msg | json }},
   "priority": 4,
   "status": "{% if heartbeatJSON.status == 1 %}resolved{% else %}firing{% endif %}"

@@ -11,11 +11,14 @@ const srv = createServer((req, res) => {
     seen.push({ method: req.method, url: req.url, body: raw ? JSON.parse(raw) : null, auth: req.headers.authorization });
     const missing = req.url.startsWith("/missing");
     res.writeHead(missing ? 404 : 200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(missing ? { error: "no open notification", code: "not_found" } : { id: "01J", state: "active" }));
+    const n = { id: "01J", state: "active" };
+    const list = req.method === "GET" && req.url.startsWith("/api/v1/notifications?");
+    res.end(JSON.stringify(missing ? { error: "no open notification", code: "not_found" } : list ? { notifications: [n] } : n));
   });
 });
 let c, url;
 const last = () => seen.at(-1);
+const call = () => `${last().method} ${last().url}`;
 
 before(async () => {
   await new Promise((r) => srv.listen(0, "127.0.0.1", r));
@@ -36,22 +39,22 @@ test("send maps id to external_id", async () => {
 
 test("resolve and ack by key or id", async () => {
   await c.resolve("infra", "disk/build");
-  assert.equal(last().url, "/infra/disk%2Fbuild/resolve");
+  assert.equal(call(), "POST /infra/disk%2Fbuild/resolve");
   await c.resolve("01J");
-  assert.equal(last().url, "/api/v1/notifications/01J/resolve");
+  assert.equal(call(), "POST /api/v1/notifications/01J/resolve");
   await c.ack("infra", "k");
-  assert.equal(last().url, "/infra/k/ack");
+  assert.equal(call(), "POST /infra/k/ack");
   await c.ack("01J");
-  assert.equal(last().url, "/api/v1/notifications/01J/ack");
+  assert.equal(call(), "POST /api/v1/notifications/01J/ack");
 });
 
 test("snooze, dismiss, list", async () => {
   await c.snooze("01J", "30m");
-  assert.deepEqual([last().url, last().body], ["/api/v1/notifications/01J/snooze", { for: "30m" }]);
+  assert.deepEqual([call(), last().body], ["POST /api/v1/notifications/01J/snooze", { for: "30m" }]);
   await c.dismiss("01J");
-  assert.equal(last().url, "/api/v1/notifications/01J/dismiss");
-  await c.list({ topic: "infra" });
-  assert.deepEqual([last().method, last().url], ["GET", "/api/v1/notifications?state=open&topic=infra"]);
+  assert.equal(call(), "POST /api/v1/notifications/01J/dismiss");
+  assert.deepEqual(await c.list({ topic: "infra" }), { notifications: [{ id: "01J", state: "active" }] });
+  assert.equal(call(), "GET /api/v1/notifications?state=open&topic=infra");
 });
 
 test("errors carry status and code", async () => {

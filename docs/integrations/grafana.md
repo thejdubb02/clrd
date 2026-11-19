@@ -1,6 +1,5 @@
 # Grafana
 
-**Needs on the server (proposed, see [issue 7](https://github.com/thejdubb02/clrd/issues/7)):**
 `POST /{topic}?template=grafana` accepts Grafana's webhook JSON (the same URL
 form as ntfy's built-in `grafana` template, ntfy 2.14+). Each alert's
 `fingerprint` becomes `external_id`; `"status": "resolved"` resolves it on
@@ -27,11 +26,11 @@ contactPoints:
           url: https://clrd.itsjustin.me/infra?template=grafana
           httpMethod: POST
           authorization_scheme: Bearer
-        secureSettings:
-          authorization_credentials: clrd_...
+          authorization_credentials: clrd_...   # or $__file{/etc/grafana/clrd-token}
 ```
 
 Mapping is the same as [Alertmanager](alertmanager.md) (Grafana's payload is a
 superset): `fingerprint` to `external_id`, `labels.alertname` to title,
-`annotations.summary` to message, plus `dashboardURL` or `panelURL` as the
-click URL when present.
+`annotations.summary` (else `annotations.description`) to message,
+`generatorURL` as the click URL. Priority comes from `&priority=` on the URL,
+default 3.

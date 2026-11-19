@@ -4,10 +4,10 @@ Use Gatus's `custom` alert provider, not its `ntfy` provider: the ntfy provider
 only accepts tokens starting with `tk_` and sends no stable key, so a recovery
 cannot clear the original alert.
 
-**Needs on the server (proposed, see [issue 7](https://github.com/thejdubb02/clrd/issues/7)):** the native
-publish `POST /api/v1/notifications` treats `"status": "resolved"` plus
+The native publish `POST /api/v1/notifications` treats `"status": "resolved"` plus
 `topic` and `external_id` as a resolve of that key instead of a new
-notification. That is the `status: resolved` rule from SPEC section 5.
+notification (the `status: resolved` rule in SPEC section 5). Any other
+`status` value, such as `firing`, is a normal publish.
 
 ```yaml
 alerting:

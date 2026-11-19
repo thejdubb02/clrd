@@ -8,7 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
+
+	"github.com/thejdubb02/clrd/server"
 )
 
 // fakeAPI records every call and answers like the REST API in docs/SPEC.md.
@@ -18,6 +19,25 @@ type fakeAPI struct {
 	body  map[string]any
 	auth  string
 	state string
+	gets  int // GETs allowed before the token is revoked (401); 0 means no limit
+	ngets int
+	subs  []chan server.Event // handed out by Subscribe in order, then a silent one
+	nsub  int
+	onSub func(n int) // runs under mu on the nth Subscribe
+}
+
+func (f *fakeAPI) Subscribe() (<-chan server.Event, func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.nsub++; f.onSub != nil {
+		f.onSub(f.nsub)
+	}
+	if len(f.subs) == 0 {
+		return make(chan server.Event), func() {}
+	}
+	ch := f.subs[0]
+	f.subs = f.subs[1:]
+	return ch, func() {}
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +53,12 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/api/v1/notifications/") {
-		json.NewEncoder(w).Encode(map[string]any{"id": "01J", "state": f.state, "state_by": "pixel-9"})
+		if f.ngets++; f.gets > 0 && f.ngets > f.gets {
+			w.WriteHeader(401)
+			io.WriteString(w, `{"error":"token revoked","code":"unauthorized"}`)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"id": "01J", "state": f.state, "state_by": "pixel-9", "seq": 7})
 		return
 	}
 	if r.Method == "GET" {
@@ -111,15 +136,15 @@ func TestBadTokenSurfacesAsToolError(t *testing.T) {
 
 func TestInitializeAndList(t *testing.T) {
 	h := New(&fakeAPI{})
-	_, out := rpc(t, h, "Bearer x", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}`)
+	_, out := rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}`)
 	if out["result"].(map[string]any)["protocolVersion"] != "2025-03-26" {
 		t.Fatalf("version not echoed: %v", out)
 	}
-	code, _ := rpc(t, h, "Bearer x", `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	code, _ := rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
 	if code != 202 {
 		t.Fatalf("notification: want 202, got %d", code)
 	}
-	_, out = rpc(t, h, "Bearer x", `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	_, out = rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	var names []string
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
@@ -127,7 +152,7 @@ func TestInitializeAndList(t *testing.T) {
 	if strings.Join(names, ",") != "send,list,ack,resolve,snooze,wait_for_reply" {
 		t.Fatalf("tools: %v", names)
 	}
-	_, out = rpc(t, h, "Bearer x", `{"jsonrpc":"2.0","id":3,"method":"nope"}`)
+	_, out = rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","id":3,"method":"nope"}`)
 	if out["error"].(map[string]any)["code"].(float64) != -32601 {
 		t.Fatalf("want method not found: %v", out)
 	}
@@ -187,23 +212,71 @@ func TestMissingArgsAreToolErrors(t *testing.T) {
 	}
 }
 
+func ev(seq int64, id, state string) server.Event {
+	return server.Event{Seq: seq, Type: "state", Notification: &server.Notification{ID: id, State: state, StateBy: "pixel-9"}}
+}
+
 func TestWaitForReply(t *testing.T) {
-	PollEvery = 10 * time.Millisecond
-	f := &fakeAPI{state: "active"}
-	h := New(f)
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		f.mu.Lock()
-		f.state = "acknowledged"
-		f.mu.Unlock()
-	}()
-	text, isErr := callTool(t, h, "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 5})
+	// The read says snoozed, but an ack landed after the call subscribed and
+	// a snooze then overwrote it, before or after the read. Sampling the state
+	// would miss the ack.
+	evs := make(chan server.Event, 8)
+	evs <- ev(4, "01K", "dismissed")    // another notification
+	evs <- ev(5, "01J", "snoozed")      // still waiting
+	evs <- ev(6, "01J", "acknowledged") // the reply, older than the read
+	evs <- ev(7, "01J", "snoozed")
+	f := &fakeAPI{state: "snoozed", subs: []chan server.Event{evs}}
+	text, isErr := callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 5})
 	if isErr || !strings.Contains(text, `"reply":"acknowledged"`) || !strings.Contains(text, `"by":"pixel-9"`) {
 		t.Fatalf("got %s", text)
 	}
-	f.state = "snoozed" // snooze means "later": keep waiting
-	text, _ = callTool(t, h, "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 0.05})
-	if !strings.Contains(text, `"reply":"timeout"`) {
-		t.Fatalf("want timeout, got %s", text)
+
+	// Snooze means "later": keep waiting, and the timeout shows the latest state.
+	evs = make(chan server.Event, 1)
+	evs <- ev(8, "01J", "snoozed")
+	f = &fakeAPI{state: "active", subs: []chan server.Event{evs}}
+	text, _ = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 0.05})
+	if !strings.Contains(text, `"reply":"timeout"`) || !strings.Contains(text, `"state":"snoozed"`) {
+		t.Fatalf("want timeout showing snoozed, got %s", text)
+	}
+
+	// A token revoked mid-wait gets an error, not the reply.
+	evs = make(chan server.Event, 1)
+	evs <- ev(9, "01J", "acknowledged")
+	f = &fakeAPI{state: "active", gets: 1, subs: []chan server.Event{evs}}
+	text, isErr = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 5})
+	if !isErr || strings.Contains(text, "acknowledged") {
+		t.Fatalf("revoked token got %s", text)
+	}
+}
+
+func TestWaitForReplyRereadsAfterDrop(t *testing.T) {
+	dropped := make(chan server.Event)
+	close(dropped) // fell behind the stream
+	f := &fakeAPI{state: "active", subs: []chan server.Event{dropped}}
+	// The answer lands while the stream is dropped: only a fresh read sees it.
+	f.onSub = func(n int) {
+		if n == 2 {
+			f.state = "dismissed"
+		}
+	}
+	text, _ := callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 5})
+	if !strings.Contains(text, `"reply":"dismissed"`) {
+		t.Fatalf("got %s", text)
+	}
+}
+
+func TestProtocolVersionHeader(t *testing.T) {
+	for v, want := range map[string]int{"": 200, "2025-06-18": 200, "2025-03-26": 200, "2024-11-05": 400, "1999-01-01": 400} {
+		req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+		req.Header.Set("Authorization", "Bearer clrd_good")
+		if v != "" {
+			req.Header.Set("MCP-Protocol-Version", v)
+		}
+		rec := httptest.NewRecorder()
+		New(&fakeAPI{}).ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("version %q: got %d, want %d", v, rec.Code, want)
+		}
 	}
 }
