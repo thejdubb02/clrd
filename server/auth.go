@@ -268,7 +268,7 @@ func (s *Server) auth(r *http.Request, cookie bool) *Token {
 	if raw == "" {
 		return nil
 	}
-	if fromCookie && r.Method != http.MethodGet && r.Method != http.MethodHead && !sameOrigin(r) {
+	if fromCookie && r.Method != http.MethodGet && r.Method != http.MethodHead && !s.sameOrigin(r) {
 		return nil
 	}
 	return s.lookupToken(r.Context(), raw)
@@ -276,24 +276,31 @@ func (s *Server) auth(r *http.Request, cookie bool) *Token {
 
 // sameOrigin: SameSite=Lax already blocks cross-site cookie POSTs; this also
 // stops sibling subdomains. A missing Origin header (old browsers) passes.
-func sameOrigin(r *http.Request) bool {
+func (s *Server) sameOrigin(r *http.Request) bool {
 	o := r.Header.Get("Origin")
 	if o == "" {
 		return true
 	}
 	u, err := url.Parse(o)
-	return err == nil && u.Host == r.Host
+	if err != nil || u.Host != r.Host {
+		return false
+	}
+	return u.Scheme == "https" || !s.https(r) // a plain-http page cannot act on an https site
+}
+
+func (s *Server) https(r *http.Request) bool {
+	return r.TLS != nil || strings.HasPrefix(s.opt.BaseURL, "https://")
 }
 
 func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: value, Path: "/", MaxAge: maxAge, HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil || strings.HasPrefix(s.opt.BaseURL, "https://")})
+		SameSite: http.SameSiteLaxMode, Secure: s.https(r)})
 }
 
 // handleSession signs a browser in: JSON {"token"} or a form post with
 // token and optional next.
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
-	if !sameOrigin(r) {
+	if !s.sameOrigin(r) {
 		return errf(403, "forbidden", "sign-in must come from this site")
 	}
 	isForm := !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json")
