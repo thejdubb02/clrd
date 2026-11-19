@@ -26,16 +26,18 @@ func get(t *testing.T, h http.Handler, path string) (int, string) {
 func TestPages(t *testing.T) {
 	h := Handler(NewFake(), "https://clrd.example.com")
 	for path, want := range map[string][]string{
-		"/":               {"<h1>Dismiss once. Gone everywhere.</h1>", `og:image" content="https://clrd.example.com/assets/og.png`, "Uptime Kuma", "Alertmanager", "F-Droid", "github.com/thejdubb02/clrd"},
-		"/docs/":          {"<h1>Docs</h1>", `href="/docs/spec"`},
-		"/docs/spec":      {"clrd spec", `aria-current="page">clrd spec`},
-		"/app":            {`data-view="inbox"`, "Nightly backup failed", "Urgent", "Acknowledged on pixel-9", "In sync on 3 devices", `data-act="dismiss"`},
-		"/app/snoozed":    {"TLS certificate renews in 7 days", "Snoozed until"},
-		"/app/cleared":    {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
-		"/app/settings":   {"Devices in sync", "pixel-9", "https://clrd.example.com/api/v1/notifications"},
-		"/app?q=disk":     {"Disk 91% full on web-1"},
-		"/app?topic=home": {"Front door open", `<span class="in-topic">in home</span>`},
-		"/robots.txt":     {"User-agent: GPTBot", "User-agent: ClaudeBot", "User-agent: PerplexityBot", "User-agent: OAI-SearchBot", "Sitemap: https://clrd.example.com/sitemap.xml"},
+		"/":                          {"<h1>Dismiss once. Gone everywhere.</h1>", `og:image" content="https://clrd.example.com/assets/og.png`, "Uptime Kuma", "Alertmanager", "F-Droid", "github.com/thejdubb02/clrd"},
+		"/docs/":                     {"<h1>Docs</h1>", `href="/docs/spec"`},
+		"/docs/spec":                 {"clrd spec", `aria-current="page">clrd spec`},
+		"/docs/integrations/":        {`href="/docs/integrations/curl"`, `href="/docs/integrations/mcp"`},
+		"/docs/integrations/grafana": {`href="/docs/integrations/alertmanager"`},
+		"/app":                       {`data-view="inbox"`, "Nightly backup failed", "Urgent", "Acknowledged on pixel-9", "In sync on 3 devices", `data-act="dismiss"`},
+		"/app/snoozed":               {"TLS certificate renews in 7 days", "Snoozed until"},
+		"/app/cleared":               {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
+		"/app/settings":              {"Devices in sync", "pixel-9", "https://clrd.example.com/api/v1/notifications"},
+		"/app?q=disk":                {"Disk 91% full on web-1"},
+		"/app?topic=home":            {"Front door open", `<span class="in-topic">in home</span>`},
+		"/robots.txt":                {"User-agent: GPTBot", "User-agent: ClaudeBot", "User-agent: PerplexityBot", "User-agent: OAI-SearchBot", "Sitemap: https://clrd.example.com/sitemap.xml"},
 	} {
 		code, body := get(t, h, path)
 		if code != 200 {
@@ -53,6 +55,9 @@ func TestPages(t *testing.T) {
 	if _, body := get(t, h, "/app?topic=home"); strings.Contains(body, "Nightly backup") || strings.Contains(body, "Disk 91%") {
 		t.Error("topic filter shows other topics")
 	}
+	if code, _ := get(t, h, "/docs/SPEC.MD"); code != 200 {
+		t.Errorf("/docs/SPEC.MD: %d, want 200", code)
+	}
 	if code, _ := get(t, h, "/docs/nope"); code != 404 {
 		t.Errorf("/docs/nope: %d, want 404", code)
 	}
@@ -64,10 +69,21 @@ func TestLinks(t *testing.T) {
 	h := Handler(NewFake(), "")
 	href := regexp.MustCompile(`(?:href|src)="([^"]*)"`)
 	seen := map[string]bool{}
-	for _, page := range []string{"/", "/docs/", "/docs/spec", "/app", "/app/snoozed", "/app/cleared", "/app/settings"} {
+	pages := []string{"/", "/docs/", "/app", "/app/snoozed", "/app/cleared", "/app/settings"}
+	for _, d := range docList {
+		pages = append(pages, "/docs/"+d.Key)
+	}
+	for _, page := range pages {
 		_, body := get(t, h, page)
 		for _, m := range href.FindAllStringSubmatch(body, -1) {
 			ref, err := url.Parse(html.UnescapeString(m[1]))
+			// A doc's link into the repo goes to GitHub: the path must exist here, and must not be a doc.
+			if repo, ok := strings.CutPrefix(ref.Path, "/thejdubb02/clrd/tree/main/"); ok && ref.Host == "github.com" {
+				if _, err := os.Stat("../" + repo); err != nil || strings.HasPrefix(repo, "docs/") {
+					t.Errorf("%s links to %s: not a repo path outside docs/", page, ref)
+				}
+				continue
+			}
 			if err != nil || ref.Host != "" || ref.Scheme != "" || ref.String() == "/assets/og.png" { // og.png is checked in TestAssets
 				continue
 			}
