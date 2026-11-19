@@ -122,7 +122,7 @@
         headers: body ? { 'Content-Type': 'application/json' } : {},
         body: body ? JSON.stringify(body) : undefined,
       });
-      if (r.status === 401) { say('You are signed out. Reload the page to sign in.'); return null; }
+      if (r.status === 401) { location.reload(); return null; } // signed out: show the sign-in page
       if (!r.ok) { say(`The server refused that (${r.status}). Nothing changed.`); return null; }
       return r;
     } catch {

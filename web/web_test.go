@@ -93,6 +93,9 @@ func TestUnauthorized(t *testing.T) {
 			t.Errorf("%T: status %d, page leaked data, rendered the inbox or has no sign-in form", api, code)
 		}
 	}
+	if _, body := get(t, Handler(deny{}, ""), "/app?topic=home&auth=clrd_old"); !strings.Contains(body, `value="/app?topic=home"`) {
+		t.Error("next must keep the filters and drop auth")
+	}
 }
 
 type one struct{ n Notification }

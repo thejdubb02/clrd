@@ -278,7 +278,11 @@ func Handler(api API, baseURL string) http.Handler {
 			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q"))}
 			snap, err := api.Snapshot(r, q)
 			if errors.Is(err, ErrUnauthorized) {
-				page(w, "signin", http.StatusUnauthorized, meta{Title: "Sign in: clrd", Path: r.URL.RequestURI(), Base: base(r)})
+				next := *r.URL // keep the filters, drop a stale ?auth= that would beat the new cookie
+				v := next.Query()
+				v.Del("auth")
+				next.RawQuery = v.Encode()
+				page(w, "signin", http.StatusUnauthorized, meta{Title: "Sign in: clrd", Path: next.RequestURI(), Base: base(r)})
 				return
 			}
 			if err != nil {
