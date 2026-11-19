@@ -143,10 +143,20 @@ type doc struct {
 }
 
 // docs/*.md (and subdirectories) rendered once at start, keyed by lowercase
-// path without .md: docs/SPEC.md is served at /docs/spec.
+// path without .md: docs/SPEC.md is served at /docs/spec, and a folder's
+// README.md at the folder, docs/integrations/README.md at /docs/integrations.
 var docs, docList = loadDocs()
 
-var mdLink = regexp.MustCompile(`href="(?:\./)?(?:docs/)?([A-Za-z0-9_/-]+)\.md(#[^"]*)?"`)
+// A relative link in a doc: no scheme, not absolute, not just a fragment.
+var relLink = regexp.MustCompile(`href="([A-Za-z0-9_.][A-Za-z0-9_./-]*)(#[^"]*)?"`)
+
+func docKey(p string) string {
+	p = strings.ToLower(p)
+	if dir, file := path.Split(p); file == "readme" && dir != "" {
+		return strings.TrimSuffix(dir, "/")
+	}
+	return p
+}
 
 func loadDocs() (map[string]doc, []doc) {
 	md := goldmark.New(
@@ -166,12 +176,20 @@ func loadDocs() (map[string]doc, []doc) {
 		if err := md.Convert(src, &b); err != nil {
 			return err
 		}
-		// ponytail: links are resolved from docs/, so ../x.md inside a subdirectory is not rewritten.
-		html := mdLink.ReplaceAllStringFunc(b.String(), func(s string) string {
-			g := mdLink.FindStringSubmatch(s)
-			return `href="/docs/` + strings.ToLower(g[1]) + g[2] + `"`
+		// Relative links resolve from this file's folder, as on GitHub: another
+		// doc becomes its /docs/ page, anything else in the repo its GitHub page.
+		html := relLink.ReplaceAllStringFunc(b.String(), func(s string) string {
+			g := relLink.FindStringSubmatch(s)
+			t := path.Join(path.Dir(p), g[1])
+			switch {
+			case t == ".." || strings.HasPrefix(t, "../"):
+				return s
+			case strings.HasPrefix(t, "docs/") && strings.HasSuffix(t, ".md"):
+				return `href="/docs/` + docKey(strings.TrimSuffix(strings.TrimPrefix(t, "docs/"), ".md")) + g[2] + `"`
+			}
+			return `href="https://github.com/thejdubb02/clrd/tree/main/` + t + g[2] + `"`
 		})
-		key := strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(p, "docs/"), ".md"))
+		key := docKey(strings.TrimSuffix(strings.TrimPrefix(p, "docs/"), ".md"))
 		title := key
 		if line, _, _ := strings.Cut(string(src), "\n"); strings.HasPrefix(line, "# ") {
 			title = strings.TrimPrefix(line, "# ")
@@ -252,7 +270,7 @@ func Handler(api API, baseURL string) http.Handler {
 		})
 	})
 	mux.HandleFunc("GET /docs/{key...}", func(w http.ResponseWriter, r *http.Request) {
-		key := strings.TrimSuffix(strings.ToLower(r.PathValue("key")), ".md")
+		key := docKey(strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(r.PathValue("key")), "/"), ".md"))
 		data := struct {
 			meta
 			Doc  doc
