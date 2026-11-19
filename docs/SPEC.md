@@ -118,9 +118,13 @@ the session cookie (same-origin only) as well as a Bearer token.
   everything, including tokens. A token with a topic allow-list sees and
   touches only those topics.
 - Session: `POST /api/v1/session` with `{"token":"clrd_..."}` (JSON or a form
-  post, optional `next` redirect for forms) sets the `clrd_session` cookie;
-  `DELETE /api/v1/session` clears it. The cookie works on `/api/v1/*` only,
-  never on the ntfy-style GET publish webhooks.
+  post, optional `next` redirect for forms, optional `name`) mints a new token
+  for this browser, with the same scopes and topics, and sets it as the
+  `clrd_session` cookie. It is named `name`, else from the User-Agent ("Firefox
+  on Linux"), so each browser is its own device. Revoking the token typed in
+  also revokes the browsers signed in with it. `DELETE /api/v1/session` revokes
+  the browser's token and clears the cookie. The cookie works on `/api/v1/*`
+  only, never on the ntfy-style GET publish webhooks.
 - Setup: with no admin token in the database the server logs
   `<CLRD_BASE_URL>/setup?code=<one-time code>`. Opening it shows a form; posting
   it creates an admin token, shows it once and signs the browser in.

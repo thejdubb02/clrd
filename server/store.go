@@ -70,6 +70,11 @@ CREATE TABLE IF NOT EXISTS tokens (
   last_seen_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+-- A web sign-in mints its own token; parent_id is the token typed in.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
+  parent_id TEXT NOT NULL
+);
 `
 
 // Action is a button on a notification.

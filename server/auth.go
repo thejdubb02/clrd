@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Token scopes (spec section 4).
@@ -187,16 +188,30 @@ func (s *Server) Tokens(ctx context.Context, seenSince time.Time) ([]*Token, err
 }
 
 // DeleteToken revokes a token.
+// DeleteToken revokes a token and every web session signed in with it.
 func (s *Server) DeleteToken(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM tokens WHERE id = ?`, id)
+	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE k(id) AS
+	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
+	  DELETE FROM tokens WHERE id IN k RETURNING id`, id)
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	defer rows.Close()
+	n := 0
+	for ; rows.Next(); n++ {
+		var gone string
+		if err := rows.Scan(&gone); err != nil {
+			return err
+		}
+		s.revoked.Store(gone, true) // streams check this before every send
+		s.hub.drop(gone)            // and wake on this, so an idle stream closes now
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if n == 0 {
 		return errf(404, "not_found", "token not found")
 	}
-	s.revoked.Store(id, true) // streams check this before every send
-	s.hub.drop(id)            // and wake on this, so an idle stream closes now
 	return nil
 }
 
@@ -307,9 +322,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Token string `json:"token"`
 		Next  string `json:"next"`
+		Name  string `json:"name"`
 	}
 	if isForm {
-		in.Token, in.Next = r.PostFormValue("token"), r.PostFormValue("next")
+		in.Token, in.Next, in.Name = r.PostFormValue("token"), r.PostFormValue("next"), r.PostFormValue("name")
 	} else if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
@@ -332,16 +348,103 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	if t == nil {
 		return errf(401, "unauthorized", "invalid token")
 	}
-	s.setCookie(w, r, strings.TrimSpace(in.Token), 365*24*3600)
+	st, err := s.startSession(w, r, t, in.Name)
+	if err != nil {
+		return err
+	}
 	if isForm {
 		http.Redirect(w, r, next, http.StatusSeeOther)
 		return nil
 	}
-	writeJSON(w, 200, t)
+	writeJSON(w, 200, st)
 	return nil
 }
 
+// startSession signs this browser in with its own token (issue #30): same
+// scopes and topics as parent, its own name in the device list and in
+// state_by, revocable alone, and revoked with its parent.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *Token, name string) (*Token, error) {
+	if err := s.endSession(r); err != nil {
+		return nil, err
+	}
+	ctx := context.WithoutCancel(r.Context()) // never leave a half-made session
+	st, raw, err := s.CreateToken(ctx, deviceName(name, r.UserAgent()), parent.Scopes, parent.Topics)
+	if err != nil {
+		return nil, err
+	}
+	// Only while the parent exists, so a racing revoke cannot miss this one.
+	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id) SELECT ?, id FROM tokens WHERE id = ?`, st.ID, parent.ID)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n == 0 {
+			err = errf(401, "unauthorized", "token revoked")
+		}
+	}
+	if err != nil {
+		if derr := s.DeleteToken(ctx, st.ID); derr != nil {
+			s.log.Warn("drop half-made session", "err", derr)
+		}
+		return nil, err
+	}
+	s.setCookie(w, r, raw, 365*24*3600)
+	return st, nil
+}
+
+// endSession revokes the token in this browser's cookie, only when sign-in
+// minted it. Cookies set before #30 hold a real token; keep those.
+func (s *Server) endSession(r *http.Request) error {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil {
+		return nil
+	}
+	var id string
+	err = s.db.QueryRowContext(r.Context(), `SELECT token_id FROM sessions JOIN tokens ON id = token_id WHERE hash = ?`,
+		hashToken(c.Value)).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err == nil {
+		if err = s.DeleteToken(r.Context(), id); isNotFound(err) { // a racing sign-out got it first
+			err = nil
+		}
+	}
+	return err
+}
+
+// deviceName is the name a signed-in browser shows as: the one given, else
+// a label from the User-Agent such as "Firefox on Linux".
+func deviceName(name, ua string) string {
+	name = strings.Join(strings.FieldsFunc(name, func(c rune) bool { return unicode.IsSpace(c) || unicode.IsControl(c) }), " ")
+	if name == "" {
+		pick := func(pairs ...string) string {
+			for i := 0; i < len(pairs); i += 2 {
+				if strings.Contains(ua, pairs[i]) {
+					return pairs[i+1]
+				}
+			}
+			return ""
+		}
+		name = pick("Edg/", "Edge", "OPR/", "Opera", "Firefox/", "Firefox", "Chrome/", "Chrome", "Safari/", "Safari")
+		if name == "" {
+			name = "Web browser"
+		}
+		if sys := pick("Android", "Android", "iPhone", "iOS", "iPad", "iPadOS", "Windows", "Windows",
+			"CrOS", "ChromeOS", "Mac OS X", "macOS", "Linux", "Linux"); sys != "" {
+			name += " on " + sys
+		}
+	}
+	if r := []rune(name); len(r) > 64 {
+		name = string(r[:64])
+	}
+	return name
+}
+
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) error {
+	if !s.sameOrigin(r) {
+		return errf(403, "forbidden", "sign-out must come from this site")
+	}
+	if err := s.endSession(r); err != nil {
+		return err // keep the cookie so a retry can still revoke its token
+	}
 	s.setCookie(w, r, "", -1)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
@@ -412,7 +515,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.setupCode = ""
-	s.setCookie(w, r, raw, 365*24*3600)
+	// The browser gets its own token too, so signing out never revokes the
+	// admin token shown below. If that fails, still show the admin token.
+	if _, err := s.startSession(w, r, t, ""); err != nil {
+		s.log.Warn("setup sign-in", "err", err)
+	}
 	return setupPage.Execute(w, map[string]string{"Token": raw, "Name": t.Name})
 }
 

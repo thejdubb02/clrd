@@ -39,6 +39,8 @@ func TestWebOnRealServer(t *testing.T) {
 		t.Fatalf("/app signed out: %d", code)
 	}
 
+	// Sign-in mints a token for this browser, named from its User-Agent
+	// (Go's client gives "Web browser"), so that is the name it acts as.
 	// Sign in through the form the page renders, first with a bad token.
 	_, page := get("/app?topic=home")
 	if code, body := submit(t, c, ts.URL, page, "clrd_wrong"); code != 401 || !strings.Contains(body, `role="alert"`) || !strings.Contains(body, `value="/app?topic=home"`) {
@@ -47,7 +49,7 @@ func TestWebOnRealServer(t *testing.T) {
 	if _, body := get("/app?topic=home"); strings.Contains(body, `role="alert"`) {
 		t.Fatal("error shown before any sign-in attempt")
 	}
-	if code, body := submit(t, c, ts.URL, page, raw); code != 200 || !strings.Contains(body, "disk full") || !strings.Contains(body, `data-me="phone"`) {
+	if code, body := submit(t, c, ts.URL, page, raw); code != 200 || !strings.Contains(body, "disk full") || !strings.Contains(body, `data-me="Web browser"`) {
 		t.Fatalf("good token: %d, want the inbox with this device's name", code)
 	}
 	for path, want := range map[string]string{"/app": "disk full", "/app?topic=home": "disk full", "/app?topic=work": "deploy done", "/app?q=deploy": "deploy done"} {
@@ -56,7 +58,7 @@ func TestWebOnRealServer(t *testing.T) {
 			t.Errorf("%s: want %q and not %q", path, want, other)
 		}
 	}
-	if _, body := get("/app/settings"); !strings.Contains(body, "<span>phone</span>") {
+	if _, body := get("/app/settings"); !strings.Contains(body, "<span>Web browser</span>") {
 		t.Fatal("settings misses the device")
 	}
 	if _, body := get("/app/cleared"); strings.Contains(body, "disk full") {
@@ -64,8 +66,8 @@ func TestWebOnRealServer(t *testing.T) {
 	}
 	list, _ := s.List(context.Background(), mustTok(t, s, raw), server.ListQuery{State: "active", Topics: []string{"home"}})
 	// The page offers Undo only when the answer says this device cleared it.
-	if n := act(t, c, ts.URL, list[0].ID, "dismiss"); n.State != "dismissed" || n.StateBy != "phone" {
-		t.Fatalf("dismiss answered %+v, want dismissed by phone", n)
+	if n := act(t, c, ts.URL, list[0].ID, "dismiss"); n.State != "dismissed" || n.StateBy != "Web browser" {
+		t.Fatalf("dismiss answered %+v, want dismissed by this browser", n)
 	}
 	if _, body := get("/app"); strings.Contains(body, "disk full") {
 		t.Fatal("inbox still shows a dismissed notification")
