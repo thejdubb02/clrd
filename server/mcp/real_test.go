@@ -67,3 +67,33 @@ func TestAgainstRealServer(t *testing.T) {
 		t.Fatalf("resolve by key: %v", got)
 	}
 }
+
+// Methods that never reach the API still need a real token.
+func TestTokenCheckedUpFront(t *testing.T) {
+	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, pub, err := s.CreateToken(context.Background(), "sender", []string{"publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(s)
+	for _, m := range []string{"initialize", "ping", "tools/list"} {
+		body := `{"jsonrpc":"2.0","id":1,"method":"` + m + `"}`
+		if code, _ := rpc(t, h, "Bearer clrd_made_up", body); code != 401 {
+			t.Errorf("%s with a made-up token: want 401, got %d", m, code)
+		}
+		if code, out := rpc(t, h, "Bearer "+pub, body); code != 200 || out["result"] == nil {
+			t.Errorf("%s with a publish-only token: got %d %v", m, code, out)
+		}
+	}
+	note := `{"jsonrpc":"2.0","method":"notifications/initialized"}`
+	if code, _ := rpc(t, h, "Bearer clrd_made_up", note); code != 401 {
+		t.Errorf("notification with a made-up token: want 401, got %d", code)
+	}
+	if code, _ := rpc(t, h, "Bearer "+pub, note); code != 202 {
+		t.Errorf("notification with a publish-only token: want 202, got %d", code)
+	}
+}

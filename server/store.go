@@ -193,10 +193,10 @@ func saveNotification(tx *sql.Tx, n *Notification) error {
 	return err
 }
 
-func getNotification(q interface {
-	QueryRow(string, ...any) *sql.Row
+func getNotification(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, where string, args ...any) (*Notification, error) {
-	n, err := scanNotification(q.QueryRow(`SELECT `+notifCols+` FROM notifications WHERE `+where, args...))
+	n, err := scanNotification(q.QueryRowContext(ctx, `SELECT `+notifCols+` FROM notifications WHERE `+where, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errf(404, "not_found", "notification not found")
 	}
@@ -319,6 +319,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if len(in.ExternalID) > 256 {
 		return nil, errf(400, "bad_request", "external_id longer than 256")
 	}
+	if in.ExternalID == "." || in.ExternalID == ".." { // a URL path would drop it
+		return nil, errf(400, "bad_request", "external_id cannot be . or ..")
+	}
 	if in.Title == "" && in.Message == "" {
 		in.Message = "triggered" // what ntfy sends for an empty body
 	}
@@ -330,7 +333,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	}
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		if in.ExternalID != "" {
-			n, err := getNotification(tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
+			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 				in.Topic, in.ExternalID)
 			if err == nil {
 				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Actions =
@@ -390,7 +393,7 @@ func (s *Server) act(ctx context.Context, tok *Token, action string, until *time
 	}
 	var out *Notification
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
-		n, err := getNotification(tx, where, args...)
+		n, err := getNotification(ctx, tx, where, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -607,7 +610,7 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 
 // Get returns one notification.
 func (s *Server) Get(ctx context.Context, tok *Token, id string) (*Notification, error) {
-	n, err := getNotification(s.db, `id = ?`, id)
+	n, err := getNotification(ctx, s.db, `id = ?`, id)
 	if err != nil {
 		return nil, err
 	}

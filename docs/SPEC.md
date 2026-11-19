@@ -34,7 +34,7 @@ A **notification**:
 {
   "id": "01JD8...",            // server ULID
   "topic": "infra",
-  "external_id": "bk-nightly", // optional, sender's key, unique per topic among non-final rows
+  "external_id": "bk-nightly", // optional, sender's key, unique per topic among non-final rows; max 256 chars, not . or ..
   "title": "Nightly backup failed",
   "message": "restic exited 1 after 4m 12s.",
   "priority": 4,               // 1..5, ntfy scale. 5 = urgent (Signal orange)
