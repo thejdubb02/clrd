@@ -68,7 +68,7 @@ clrd token list
 Scopes: `read` (see and act on notifications), `publish` (send), `admin`
 (manage tokens). `--topics` limits a token to those topics. Revoke with
 `DELETE /api/v1/tokens/{id}` (ids are in `GET /api/v1/tokens`); open streams for that token close
-within 30 seconds.
+at once.
 
 ## Settings
 

@@ -98,7 +98,7 @@ func New(opt Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{opt: opt, db: db, log: opt.Logger, mux: http.NewServeMux()}
-	s.hub.subs = map[chan Event]struct{}{}
+	s.hub.subs = map[chan Event]string{}
 	var seq, pruned int64
 	if err := db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'events'`).Scan(&seq); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		db.Close()

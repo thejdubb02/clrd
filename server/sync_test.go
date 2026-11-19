@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -242,6 +243,50 @@ func TestSnoozeWakes(t *testing.T) {
 	}
 	if _, n := call(t, ts, "GET", "/api/v1/notifications/"+id, admin, nil); n["state"] != Active || n["state_by"] != "server" || n["snooze_until"] != nil {
 		t.Fatalf("after wake: %v", n)
+	}
+}
+
+func TestRevokeClosesIdleStreams(t *testing.T) {
+	s, ts, admin := newTest(t)
+	phone := mkToken(t, s, "phone", []string{ScopeRead}, nil)
+	c := dialWS(t, ts.URL, phone, 0)
+	c.until(func(m msg) bool { return m.Type == "ready" })
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/events/sse", nil)
+	req.Header.Set("Authorization", "Bearer "+phone)
+	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req) // never hang the suite
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	br := bufio.NewReader(res.Body)
+	for line := ""; !strings.Contains(line, `"ready"`); {
+		if line, err = br.ReadString('\n'); err != nil {
+			t.Fatalf("sse before ready: %v", err)
+		}
+	}
+
+	_, toks := call(t, ts, "GET", "/api/v1/tokens", admin, nil)
+	for _, tk := range toks["tokens"].([]any) {
+		if tk.(map[string]any)["name"] == "phone" {
+			call(t, ts, "DELETE", "/api/v1/tokens/"+tk.(map[string]any)["id"].(string), admin, nil)
+		}
+	}
+	// No event follows, so only the revoke itself can end these streams
+	// (the 30s ping tick is far beyond the deadline).
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, _, err := c.c.Read(ctx); websocket.CloseStatus(err) != websocket.StatusTryAgainLater {
+		t.Fatalf("idle ws after revoke: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := io.Copy(io.Discard, br); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("idle sse after revoke: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("idle sse still open 2s after revoke")
 	}
 }
 
