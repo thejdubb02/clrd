@@ -158,7 +158,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/topics` | Topics with open counts. |
 | GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices". |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin). |
-| GET | `/healthz` | `{"ok":true,"seq":N}` |
+| GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
 | POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |
 | GET | `/openapi.json` | OpenAPI 3.1 spec of all of the above. |
 
