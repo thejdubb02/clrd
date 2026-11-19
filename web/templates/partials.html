@@ -84,8 +84,14 @@ Sitemap: {{.}}/sitemap.xml
 {{template "site-header" .}}
 <main id="main" class="wrap narrow signin">
   <h1>Sign in to see your inbox</h1>
-  <p>Your notifications are private to your clrd server. Open the sign-in link your server printed when it first started, or ask the person who runs it for access.</p>
-  <p><a href="/docs/">Read how sign-in works</a></p>
+  <p>Your notifications are private to your clrd server. Paste a token to sign in on this browser. On a new server, open the setup link it printed to its log first.</p>
+  <form class="signin-form" method="post" action="/api/v1/session">
+    <label for="token">Token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" required placeholder="clrd_">
+    <input type="hidden" name="next" value="{{.Path}}">
+    <button class="btn btn-ink" type="submit">Sign in</button>
+  </form>
+  <p class="quiet">Make a token with <code>clrd token create --name laptop --scope read</code>. <a href="/docs/spec">How sign-in works</a></p>
 </main>
 </body>
 </html>

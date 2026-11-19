@@ -12,15 +12,13 @@
       <a href="/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>Cleared <span class="count">{{.Cleared}}</span></a>
       <a href="/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>Settings</a>
     </nav>
-    {{if .Snap.Topics}}
-    <nav class="topics" aria-labelledby="topics-h" data-live="topics">
+    <nav class="topics" aria-labelledby="topics-h" data-live="topics"{{if not .Snap.Topics}} hidden{{end}}>
       <h2 id="topics-h">Topics</h2>
       {{$base := "/app"}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "/app/%s" .View}}{{end}}
       <a href="{{$base}}"{{if and (not .Topic) (ne .View "settings")}} aria-current="true"{{end}}>All topics</a>
       {{range .Snap.Topics}}<a href="{{$base}}?topic={{.Name}}"{{if eq .Name $.Topic}} aria-current="true"{{end}}>{{.Name}} <span class="count">{{.Open}}</span></a>
       {{end}}
     </nav>
-    {{end}}
     <div class="sync" id="sync">
       <span class="sync-dot" aria-hidden="true"></span>
       <span data-live="devices">In sync on {{len .Snap.Devices}} {{plural (len .Snap.Devices) "device" "devices"}}</span>

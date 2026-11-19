@@ -7,20 +7,19 @@ and the Undo toast. No framework, no build step.
 
 ## The seam with the server
 
-The server mounts one handler as its `GET` fallback and implements one interface:
+One handler serves every page. The server mounts it at each path it owns
+(`server/README.md` on the server branch, `Mount` matches a prefix and
+everything under it, `"/"` matches only the root):
 
 ```go
-import "github.com/thejdubb02/clrd/web"
-
-mux.Handle("GET /", web.Handler(api, os.Getenv("CLRD_BASE_URL")))
+h := web.Handler(api, os.Getenv("CLRD_BASE_URL"))
+for _, p := range []string{"/", "/docs", "/app", "/static", "/assets", "/favicon.svg", "/robots.txt", "/sitemap.xml"} {
+	s.Mount(p, h)
+}
 ```
 
-`server/go.mod` needs the root module:
-
-```
-require github.com/thejdubb02/clrd v0.0.0
-replace github.com/thejdubb02/clrd => ../
-```
+`web` is a plain package in the root module; it adds `github.com/yuin/goldmark`
+to the root `go.mod`.
 
 `api` implements:
 
@@ -40,9 +39,9 @@ type API interface {
 - Return `web.ErrUnauthorized` when the request has no valid session. The page
   then answers 401 with a sign-in notice and nothing else from the snapshot.
 
-Specific server routes (`/api/v1/...`, `POST /{topic}`, `GET /{topic}/json` and
-the rest of the ntfy routes) win over `GET /`, so the two coexist on one mux.
-`web_test.go` checks this.
+Wiring `api` to the real store (`Authenticate`, `List`, `Topics`,
+`CurrentSeq`) waits for the server branch to merge; until then pages run
+against `Fake`.
 
 ## Routes
 
@@ -50,9 +49,8 @@ the rest of the ntfy routes) win over `GET /`, so the two coexist on one mux.
 `/app/cleared`, `/app/settings`, `/static/*`, `/assets/*`, `/favicon.svg`,
 `/robots.txt`, `/sitemap.xml`.
 
-So topic names `app`, `docs`, `static`, `assets`, `favicon.svg`, `robots.txt`
-and `sitemap.xml` must be reserved: `GET /{topic}` style routes for them would
-shadow these pages.
+`app`, `docs`, `static` and `assets` are in the spec's reserved topic names.
+The other paths contain a dot, which a topic name cannot.
 
 ## What the browser calls
 

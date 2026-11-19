@@ -54,9 +54,15 @@
     let doc;
     try {
       const r = await fetch(location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
-      if (!r.ok) return;
+      if (!r.ok) throw r.status;
       doc = new DOMParser().parseFromString(await r.text(), 'text/html');
-    } catch { return; }
+    } catch {
+      // seq has already moved past this change, so the WebSocket will not
+      // replay it: keep trying until the page loads.
+      clearTimeout(pending);
+      pending = setTimeout(patch, 5000);
+      return;
+    }
     document.querySelectorAll('[data-live]').forEach(cur => {
       const next = doc.querySelector(`[data-live="${cur.dataset.live}"]`);
       if (next && !cur.contains(document.activeElement)) cur.replaceWith(document.adoptNode(next));
@@ -117,7 +123,7 @@
       });
       if (r.status === 401) { say('You are signed out. Reload the page to sign in.'); return null; }
       if (!r.ok) { say(`The server refused that (${r.status}). Nothing changed.`); return null; }
-      return true;
+      return r;
     } catch {
       say('Could not reach the server. Nothing changed.');
       return null;
@@ -131,9 +137,13 @@
     const act = b.dataset.act;
     if (act === 'clear-all') {
       const ids = cards().map(c => c.dataset.id);
-      if (!ids.length || !await post('/api/v1/notifications/clear', { ids })) return;
+      const r = ids.length && await post('/api/v1/notifications/clear', { ids });
+      if (!r) return;
+      const n = (await r.json().catch(() => ({}))).cleared ?? ids.length;
       ids.forEach(id => leave(card(id), 'Cleared'));
-      say(`Cleared ${ids.length} ${ids.length === 1 ? 'notification' : 'notifications'}.`, ids);
+      // Undo only when we know every id was ours to clear; otherwise it could
+      // reopen something another device cleared first.
+      say(`Cleared ${n} ${n === 1 ? 'notification' : 'notifications'}.`, n === ids.length ? ids : undefined);
       return refresh();
     }
     const c = b.closest('.card');

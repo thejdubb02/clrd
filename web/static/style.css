@@ -6,7 +6,7 @@
 :root {
   --ink: #0F1114; --paper: #F5F3EE; --surface: #FFFFFF; --line: #DEDAD1;
   --slate: #5B6470; --body: #3D444D; --clear: #0B7A55; --on-clear: #F5F3EE;
-  --signal: #C2410C; --snooze: #B7791F;
+  --signal: #C2410C;
   --bg: var(--paper); --text: var(--ink);
   --chip-active-bg: #FCE9DF; --chip-active: #9A3412;
   --chip-ack-bg: #E9E6DE; --chip-ack: #3D444D;
@@ -22,7 +22,7 @@
   :root {
     --bg: var(--ink); --text: var(--paper); --surface: #171A1E; --line: #2C3036;
     --slate: #98A1AC; --body: #C9CED4; --clear: #3DDC97; --on-clear: #0F1114;
-    --signal: #F97316; --snooze: #E0A541;
+    --signal: #F97316;
     --chip-active-bg: #3A1C0F; --chip-active: #FDBA8C;
     --chip-ack-bg: #24282D; --chip-ack: #C9CED4;
     --chip-res-bg: #0F3326; --chip-res: #7FE3B6;
@@ -154,6 +154,10 @@ pre { margin: 0 0 1em; padding: 16px 18px; overflow-x: auto; background: var(--s
 .site-footer nav { display: flex; gap: 18px; }
 
 .signin { padding-top: 72px; padding-bottom: 72px; }
+.signin-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 24px 0; }
+.signin-form label { flex: 1 1 100%; font-weight: 500; color: var(--text); }
+.signin-form input { flex: 1 1 240px; height: 40px; }
+.signin-form .btn { min-height: 40px; }
 
 /* Docs */
 .docs { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-top: 40px; padding-bottom: 72px; }
@@ -192,8 +196,8 @@ pre { margin: 0 0 1em; padding: 16px 18px; overflow-x: auto; background: var(--s
 .bar h1 { font-size: 22px; margin: 0; letter-spacing: -0.03em; }
 .in-topic { color: var(--slate); font-weight: 400; }
 .search { margin-left: auto; }
-.search input { width: 240px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); font: 400 14px var(--sans); }
-.search input:focus-visible { outline-offset: 0; border-color: var(--clear); }
+.search input, .signin-form input { width: 240px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); font: 400 14px var(--sans); }
+.search input:focus-visible, .signin-form input:focus-visible { outline-offset: 0; border-color: var(--clear); }
 
 .list { display: grid; gap: 10px; }
 .card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }

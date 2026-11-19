@@ -89,8 +89,8 @@ func (leaky) Snapshot(*http.Request, Query) (Snapshot, error) {
 func TestUnauthorized(t *testing.T) {
 	for _, api := range []API{deny{}, leaky{}} {
 		code, body := get(t, Handler(api, ""), "/app")
-		if code != 401 || strings.Contains(body, "secret-title") || strings.Contains(body, "data-inbox") {
-			t.Errorf("%T: status %d, page leaked data or rendered the inbox", api, code)
+		if code != 401 || strings.Contains(body, "secret-title") || strings.Contains(body, "data-inbox") || !strings.Contains(body, `action="/api/v1/session"`) {
+			t.Errorf("%T: status %d, page leaked data, rendered the inbox or has no sign-in form", api, code)
 		}
 	}
 }
@@ -116,8 +116,8 @@ func TestHostileNotification(t *testing.T) {
 	}
 }
 
-// The server mounts Handler as its GET fallback beside the ntfy routes
-// (docs/SPEC.md section 5). That must not panic, and each side keeps its paths.
+// Handler sits beside the ntfy routes (docs/SPEC.md section 5): each side
+// keeps its paths, and ours answer 200.
 func TestMountBesideNtfy(t *testing.T) {
 	mux := http.NewServeMux()
 	ntfy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ntfy") })
@@ -128,9 +128,9 @@ func TestMountBesideNtfy(t *testing.T) {
 	mux.Handle("GET /", Handler(NewFake(), ""))
 	for path, ours := range map[string]bool{"/": true, "/app": true, "/app/cleared": true, "/docs/spec": true, "/static/style.css": true,
 		"/robots.txt": true, "/alerts/json": false, "/alerts/sse": false, "/healthz": false, "/api/v1/ws": false} {
-		_, body := get(t, mux, path)
-		if (body == "ntfy") == ours {
-			t.Errorf("%s routed to the wrong side", path)
+		code, body := get(t, mux, path)
+		if (body == "ntfy") == ours || (ours && code != 200) {
+			t.Errorf("%s routed to the wrong side (%d)", path, code)
 		}
 	}
 }
