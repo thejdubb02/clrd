@@ -181,16 +181,17 @@ func (h *Webhook) parse(hdr http.Header) (*template.Template, error) {
 		if len(src) > webhookFieldMax {
 			return nil, errf(400, "bad_request", "template %s: over 16 KB", f)
 		}
-		t, err := root.New(f).Parse(src)
-		if err == nil {
-			err = plain(t.Root)
-		}
-		if err != nil {
+		if _, err := root.New(f).Parse(src); err != nil {
 			return nil, errf(400, "bad_request", "template %s: %v", f, err)
 		}
 	}
 	if len(root.Templates()) > len(webhookFields) {
 		return nil, errf(400, "bad_request", "template: define and block are not allowed")
+	}
+	for _, t := range root.Templates() { // after all fields: a define in one field can replace another
+		if err := plain(t.Root); err != nil {
+			return nil, errf(400, "bad_request", "template %s: %v", t.Name(), err)
+		}
 	}
 	return root, nil
 }
@@ -255,6 +256,9 @@ func branch(b *parse.BranchNode) error {
 type capped struct{ bytes.Buffer }
 
 const webhookFieldMax = 16 << 10
+
+// webhookItemsMax caps one delivery's fan-out; Alertmanager groups stay far below it.
+const webhookItemsMax = 1000
 
 func (c *capped) Write(p []byte) (int, error) {
 	if c.Len()+len(p) > webhookFieldMax {
@@ -359,6 +363,9 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 			if items, ok = v.([]any); !ok {
 				return errf(400, "bad_request", "%s is not a list", h.Each)
 			}
+			if len(items) > webhookItemsMax {
+				return errf(400, "bad_request", "%s has over %d items", h.Each, webhookItemsMax)
+			}
 		} else {
 			items = nil
 		}
@@ -371,7 +378,7 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 	if err != nil {
 		return err
 	}
-	var created, resolved int
+	var ps []PublishInput // render every item before publishing any, so a bad item publishes nothing
 	for _, item := range items {
 		out := map[string]string{}
 		for _, f := range webhookFields {
@@ -392,6 +399,10 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 			}
 			p.Status = "resolved"
 		}
+		ps = append(ps, p)
+	}
+	var created, resolved int
+	for _, p := range ps {
 		_, err := s.Publish(r.Context(), tok, p)
 		switch {
 		case p.Status == "resolved" && isNotFound(err): // already cleared
@@ -542,6 +553,7 @@ var builtinWebhooks = map[string]Webhook{
 		Title:    `{{get . "type"}}`,
 		Message:  `{{get . "data.object.object"}} {{get . "data.object.id"}}`,
 		Click:    `https://dashboard.stripe.com/{{if eq (get . "livemode") "false"}}test/{{end}}events/{{get . "id"}}`,
+		ID:       `{{with get . "id"}}stripe-{{.}}{{end}}`, // a retried delivery updates, not duplicates
 		Priority: `{{if or (contains (get . "type") "fail") (contains (get . "type") "dispute")}}high{{end}}`,
 		sign:     stripeSignature,
 	},

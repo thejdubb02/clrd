@@ -120,8 +120,8 @@ func TestWebhookSaved(t *testing.T) {
 	tpl := map[string]string{"each": "items", "title": `{{get . "name"}}`, "message": `{{get . "detail.0.text"}} {{header "X-Secret-Note"}}`,
 		"id": `{{get . "id"}}`, "resolve": `{{eq (get . "ok") "true"}}`, "priority": `{{if get . "urgent"}}urgent{{end}}`, "secret": "s3cret"}
 	for _, bad := range []string{`{{get . }`, `{{range .items}}x{{end}}`, `{{define "x"}}y{{end}}`, `{{template "message" .}}`,
-		`{{if true}}{{printf "%999999999d" 1}}{{end}}`, strings.Repeat("x", 17<<10)} {
-		if code, out := call(t, ts, "PUT", "/api/v1/topics/ci/templates/my-app", pub, map[string]string{"title": bad}); code != 400 {
+		`{{if true}}{{printf "%999999999d" 1}}{{end}}`, `{{define "title"}}{{range .items}}x{{end}}{{end}}`, strings.Repeat("x", 17<<10)} {
+		if code, out := call(t, ts, "PUT", "/api/v1/topics/ci/templates/my-app", pub, map[string]string{"message": bad}); code != 400 {
 			t.Fatalf("template %.40q saved: %d %v", bad, code, out)
 		}
 	}
