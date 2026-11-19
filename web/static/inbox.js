@@ -170,10 +170,14 @@
   });
 
   // Live sync. Replays everything after the last seq on every (re)connect.
-  let tries = 0;
+  // Retries forever, but after 3 minutes without it says the page may be stale.
+  let tries = 0, staleTimer = null;
+  const offline = $('[data-offline]');
   const live = on => {
     sync.classList.toggle('is-live', on);
     conn.textContent = on ? '' : (tries ? 'Reconnecting' : 'Connecting');
+    if (on) { clearTimeout(staleTimer); staleTimer = null; offline.hidden = true; }
+    else staleTimer ??= setTimeout(() => { offline.hidden = false; }, 180000);
   };
   function connect() {
     const u = new URL('/api/v1/ws', location.href);

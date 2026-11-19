@@ -67,6 +67,25 @@ try {
   assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 0, 'Undo offered after a no-op clear');
   assert.equal((await get(laptop, b.id)).state, 'resolved');
   console.log('ok: no Undo when another device got there first');
+
+  // Server out of reach for 3 minutes: a notice says the page may be stale,
+  // and it goes once live sync is back.
+  const cut = await browser.newContext();
+  const slow = await cut.newPage();
+  await slow.clock.install();
+  let down = true;
+  await slow.routeWebSocket(/\/api\/v1\/ws/, ws => { if (down) ws.close(); else ws.connectToServer(); });
+  await slow.goto(`${base}/app?auth=${link}`);
+  const notice = slow.locator('[data-offline]');
+  await slow.clock.runFor('02:50');
+  assert.equal(await notice.isVisible(), false, 'notice before 3 minutes');
+  await slow.clock.runFor('00:20');
+  await notice.waitFor();
+  down = false;
+  await slow.clock.runFor('00:31');
+  await notice.waitFor({ state: 'hidden' });
+  await cut.close();
+  console.log('ok: offline notice after 3 minutes, gone on reconnect');
 } finally {
   await browser?.close();
   server.kill();
