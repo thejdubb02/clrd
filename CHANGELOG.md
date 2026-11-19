@@ -30,6 +30,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: app with live sync, tray notifications that clear when cleared
   anywhere else, link and reply buttons in the tray, F-Droid metadata. No Google
   Play Services.
+- Android: tap a notification in the inbox to read the whole message; the open
+  text can be selected and copied.
 - SDKs for Python, JavaScript and Go, and a GitHub Action.
 - Integration guides for curl, GitHub Actions, MCP clients, Home Assistant,
   Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise and ntfy clients.

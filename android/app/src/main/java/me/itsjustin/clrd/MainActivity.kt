@@ -78,6 +78,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -270,7 +271,10 @@ private fun Swipeable(n: Notif, onClear: () -> Unit, content: @Composable () -> 
 @Composable
 private fun Card(n: Notif, actions: @Composable () -> Unit) {
     val b = LocalBrand.current
+    // Tap to read the whole message; tap again to fold it.
+    var open by rememberSaveable(n.id) { mutableStateOf(false) }
     Surface(
+        onClick = { open = !open },
         color = b.surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, b.line),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -282,13 +286,15 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
                 Spacer(Modifier.width(10.dp))
                 Text(
                     n.title.ifEmpty { n.topic }, color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                    maxLines = if (open) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                 )
                 if (n.state != Notif.ACTIVE) StateChip(n.state)
             }
             if (n.message.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                Text(n.message, color = b.body, fontSize = 15.sp, maxLines = 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 8.dp))
+                val body = @Composable { Text(n.message, color = b.body, fontSize = 15.sp, maxLines = if (open) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 8.dp)) }
+                // Open text can be selected and copied. ponytail: links are not tappable yet, linkify if asked.
+                if (open) SelectionContainer { body() } else body()
             }
             Spacer(Modifier.height(8.dp))
             Text(meta(LocalContext.current, n), style = Mono, color = b.slate, maxLines = 1, overflow = TextOverflow.Ellipsis)
