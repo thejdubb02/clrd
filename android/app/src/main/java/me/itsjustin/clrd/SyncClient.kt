@@ -122,6 +122,7 @@ class SyncClient(
         val myGen = ++gen
         replaying = true
         buffer.clear()
+        bufferSeq = 0 // or a silent new socket would save the dropped replay's cursor with none of its rows
         ws = http.newWebSocket(api.wsRequest(store.lastSeq()), object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) = onThread(myGen) {
                 // A frame we cannot read must not be skipped: the cursor would move past it. Reconnect and replay.

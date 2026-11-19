@@ -283,6 +283,18 @@ class SyncClientTest {
         await { SyncClient.Status.CONNECTED in statuses }
     }
 
+    @Test fun aReplayDroppedBeforeASaveDoesNotMoveTheCursor() {
+        onConnect = { n, ws -> if (n == 1) (11..20L).forEach { ws.send(ev(it, "r$it", "active")) } } // no `ready`; the new socket says nothing
+        start(replayQuietMs = 1_500)
+        await { serverSockets.size >= 1 } // socket 1 is open and sending
+        Thread.sleep(500) // the replay is in the buffer, not saved
+        client!!.kick(force = true) // the socket drops before the quiet save
+        await { wsSince.size >= 2 }
+        Thread.sleep(3_000) // past the new socket's quiet save
+        assertEquals("0", wsSince[1])
+        assertEquals(0L, store.lastSeq()) // events 11..20 must still be replayed
+    }
+
     @Test fun anUnreadableEventReconnectsFromTheSameCursor() {
         onConnect = { n, ws ->
             if (n == 1) {
