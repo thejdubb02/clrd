@@ -40,6 +40,8 @@ class SyncClientTest {
     /** Body of GET /api/v1/notifications/{id}, or null for 404. */
     private var current: (String) -> String? = { null }
     private val gets = CopyOnWriteArrayList<String>()
+    /** How many GETs of a row fail with 503 before they answer. */
+    @Volatile private var getFails = 0
 
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
@@ -59,6 +61,7 @@ class SyncClientTest {
                     }
                     request.method == "GET" && path.startsWith("/api/v1/notifications/") -> {
                         gets += path
+                        if (gets.size <= getFails) return MockResponse().setResponseCode(503)
                         current(path.substringAfterLast('/'))?.let { MockResponse().setBody(it) }
                             ?: MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
                     }
@@ -171,10 +174,11 @@ class SyncClientTest {
         store.rows["stale"] = notif("stale", "acknowledged", 4) // the tap's local guess
         store.queue += Pending(1, "stale", "reply", """{"reply":"yes","seq":4}""")
         current = { if (it == "stale") notifJson("stale", "active", 5) else null } // the question changed since
+        getFails = 1 // the first fetch fails: the action stays queued and is tried again
         onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
         start()
         await { store.queue.isEmpty() && SyncClient.Status.CONNECTED in statuses }
-        assertEquals(listOf("/api/v1/notifications/stale"), gets)
+        assertEquals(List(2) { "/api/v1/notifications/stale" }, gets)
         assertEquals("active", store.rows["stale"]!!.state)
     }
 
