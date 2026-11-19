@@ -1,0 +1,64 @@
+name: clrd notify
+description: Send a clrd notification, or resolve one by its id so it clears on every device.
+branding:
+  icon: bell
+  color: green
+inputs:
+  url:
+    description: clrd server URL
+    default: https://clrd.itsjustin.me
+  token:
+    description: clrd token with publish scope (pass a secret)
+    required: true
+  topic:
+    description: Topic
+    required: true
+  id:
+    description: Stable key (external_id). Needed to resolve later.
+    default: ""
+  message:
+    description: Message body (send only)
+    default: ""
+  title:
+    description: Title (send only)
+    default: ""
+  priority:
+    description: 1 to 5 (send only)
+    default: "3"
+  resolve:
+    description: "true resolves the open notification with this topic and id instead of sending"
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CLRD_URL: ${{ inputs.url }}
+        CLRD_TOKEN: ${{ inputs.token }}
+        TOPIC: ${{ inputs.topic }}
+        KEY: ${{ inputs.id }}
+        MESSAGE: ${{ inputs.message }}
+        TITLE: ${{ inputs.title }}
+        PRIORITY: ${{ inputs.priority }}
+        RESOLVE: ${{ inputs.resolve }}
+      run: |
+        set -euo pipefail
+        enc() { jq -rn --arg v "$1" '$v|@uri'; }
+        if [ "$RESOLVE" = "true" ]; then
+          [ -n "$KEY" ] || { echo "::error::resolve needs id"; exit 1; }
+          # 404 means nothing open with that key: already clear, not a failure.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $CLRD_TOKEN" \
+            "${CLRD_URL%/}/$(enc "$TOPIC")/$(enc "$KEY")/resolve")
+          case "$code" in 2??|404) echo "clrd resolve: $code" ;; *) echo "::error::clrd resolve failed: $code"; exit 1 ;; esac
+        else
+          jq -n --arg topic "$TOPIC" --arg message "$MESSAGE" --arg title "$TITLE" \
+                --arg id "$KEY" --argjson priority "$PRIORITY" \
+            '{topic:$topic, message:$message, priority:$priority}
+             + (if $title != "" then {title:$title} else {} end)
+             + (if $id != "" then {external_id:$id} else {} end)' |
+          curl -sSf -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
+            -H "Content-Type: application/json" --data @- \
+            "${CLRD_URL%/}/api/v1/notifications" >/dev/null
+          echo "clrd: sent to $TOPIC"
+        fi

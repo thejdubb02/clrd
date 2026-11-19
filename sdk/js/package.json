@@ -1,0 +1,21 @@
+{
+  "name": "clrd-client",
+  "version": "0.1.0",
+  "description": "Tiny client for clrd: self-hosted notifications where dismissing on one device clears every device.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "types": "./index.d.ts",
+  "files": ["index.js", "index.d.ts"],
+  "engines": { "node": ">=18" },
+  "scripts": { "test": "node --test test.js" },
+  "license": "Apache-2.0",
+  "author": "Justin Willhite",
+  "repository": { "type": "git", "url": "git+https://github.com/thejdubb02/clrd.git", "directory": "sdk/js" },
+  "homepage": "https://github.com/thejdubb02/clrd",
+  "keywords": ["clrd", "notifications", "ntfy", "alerts"]
+}
