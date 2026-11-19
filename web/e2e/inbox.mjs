@@ -56,6 +56,25 @@ try {
   await page.waitForFunction(async id => (await (await fetch(`/api/v1/notifications/${id}`)).json()).state === 'active', a.id);
   console.log('ok: Clear offers Undo, Undo reopens');
 
+  // Server out of reach for 3 minutes: a notice says the page may be stale,
+  // and it goes once live sync is back.
+  const cut = await browser.newContext();
+  const slow = await cut.newPage();
+  await slow.clock.install();
+  let down = true;
+  await slow.routeWebSocket(/\/api\/v1\/ws/, ws => { if (down) ws.close(); else ws.connectToServer(); });
+  await slow.goto(`${base}/app?auth=${link}`);
+  const notice = slow.locator('[data-offline]');
+  await slow.clock.runFor('02:50');
+  assert.equal(await notice.isVisible(), false, 'notice before 3 minutes');
+  await slow.clock.runFor('00:20');
+  await notice.waitFor();
+  down = false;
+  await slow.clock.runFor('00:31');
+  await notice.waitFor({ state: 'hidden' });
+  await cut.close();
+  console.log('ok: offline notice after 3 minutes, gone on reconnect');
+
   // Another device resolved it before this page heard: Clear is a no-op on the
   // server, so Undo must not be offered (it would reopen the resolved alert).
   const b = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Backup failed', message: 'restic exited 1' });

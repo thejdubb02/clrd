@@ -27,6 +27,7 @@
   </aside>
 
   <main id="main" class="main">
+    <p class="offline" role="alert" data-offline hidden>Lost the live connection to the server, so this page may be out of date. Still trying. <a href="">Reload</a></p>
     {{if eq .View "settings"}}{{template "settings" .}}{{else}}
     <header class="bar">
       <h1>{{.Heading}}{{with .Topic}} <span class="in-topic">in {{.}}</span>{{end}}</h1>
