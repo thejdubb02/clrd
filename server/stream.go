@@ -88,8 +88,8 @@ func visible(tok *Token, topics []string, topic string) bool {
 
 // follow is the sync loop every stream shares: replay events after since,
 // send ready, then live events, pinging every 30s, until ctx ends or the
-// subscriber is dropped. send gets each message and its seq (0 for reset and
-// pings; ready carries the seq it is ready at).
+// subscriber is dropped. send gets each message and its seq (-1 for reset;
+// ready carries the seq it is ready at, which can be 0).
 func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []string,
 	send func(msg []byte, seq int64) error, ping func() error) error {
 	sub := s.hub.subscribe(tok.ID) // first, so nothing committed during replay is missed
@@ -103,7 +103,7 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 	}
 	last := s.seq.Load()
 	if since < s.pruned.Load() || since > last {
-		if err := send(msgReset, 0); err != nil {
+		if err := send(msgReset, -1); err != nil {
 			return err
 		}
 		since = last
@@ -114,7 +114,7 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 		}
 		evs, err := s.eventsAfter(ctx, since, 500)
 		if err == errReset { // pruned under us mid-replay
-			if err := send(msgReset, 0); err != nil {
+			if err := send(msgReset, -1); err != nil {
 				return err
 			}
 			since = max(since, s.seq.Load())
@@ -237,7 +237,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, tok *Token) e
 	}
 	s.follow(r.Context(), tok, sinceParam(r), splitList(r.URL.Query().Get("topics")),
 		func(msg []byte, seq int64) error {
-			if seq > 0 {
+			if seq >= 0 { // ready too, so EventSource drops a Last-Event-ID from before a reset
 				return write("id: %d\ndata: %s\n\n", seq, msg)
 			}
 			return write("data: %s\n\n", msg)

@@ -335,6 +335,10 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			if err == nil {
 				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Actions =
 					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Actions
+				if t := now(); in.SnoozeUntil != nil && in.SnoozeUntil.After(t) { // delayed: hide until then, like a new row
+					u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
+					n.State, n.StateBy, n.SnoozeUntil = Snoozed, tok.Name, &u
+				}
 				return []Event{{Type: EventUpdated, Notification: n}}, nil
 			}
 			if !isNotFound(err) {

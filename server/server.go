@@ -4,12 +4,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -135,7 +137,33 @@ func (s *Server) Mount(prefix string, h http.Handler) {
 }
 
 // ServeHTTP routes to a mount when one matches, else to the API.
+// bodyTimeout bounds how long a client may take to send a request body. A
+// server-wide ReadTimeout would also cut WebSocket and SSE streams.
+var bodyTimeout = 30 * time.Second
+
+const maxBody = 1 << 20 // no route takes more
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.ContentLength != 0 { // read the whole body now, under a deadline
+		rc := http.NewResponseController(w)
+		rc.SetReadDeadline(time.Now().Add(bodyTimeout))
+		b, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
+		// On refusal the deadline stays, so net/http does not wait to drain the rest.
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			s.fail(w, errf(408, "timeout", "request body too slow"))
+			return
+		}
+		if err != nil {
+			s.fail(w, errf(400, "bad_request", "cannot read request body"))
+			return
+		}
+		if len(b) > maxBody {
+			s.fail(w, errf(413, "too_large", "request body over %d bytes", maxBody))
+			return
+		}
+		rc.SetReadDeadline(time.Time{}) // long calls (MCP wait_for_reply) keep their context
+		r.Body = io.NopCloser(bytes.NewReader(b))
+	}
 	p := r.URL.Path
 	for _, m := range s.mounts {
 		if m.prefix == "/" && r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -222,7 +250,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func decodeJSON(r *http.Request, v any) error {
-	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20)).Decode(v); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxBody)).Decode(v); err != nil {
 		return errf(400, "bad_request", "bad JSON body: %v", err)
 	}
 	return nil

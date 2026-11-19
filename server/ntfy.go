@@ -365,7 +365,10 @@ func (s *Server) ntfyTemplate(w http.ResponseWriter, r *http.Request, tok *Token
 	return nil
 }
 
-var errStop = errors.New("poll done")
+var (
+	errStop   = errors.New("poll done")
+	errPruned = errors.New("since was pruned")
+)
 
 // ntfySubscribe: GET /{t1,t2}/json|sse|raw|ws with since= and poll=1.
 func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Request) error {
@@ -393,7 +396,6 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		if err != nil {
 			return err
 		}
-		since = max(since, s.pruned.Load()) // "all" means all that is left, not a reset
 
 		var write func(m ntfyMsg) error
 		ctx := r.Context()
@@ -442,23 +444,38 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				return nil
 			}
 		}
-		s.follow(ctx, tok, since, topics, func(raw []byte, seq int64) error {
-			if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
-				if poll {
-					return errStop
+		// ntfy has no reset: since= means all that is left after it, so a
+		// prune (before or during replay) restarts from the oldest event left.
+		for tries := 0; ; tries++ {
+			err := s.follow(ctx, tok, since, topics, func(raw []byte, seq int64) error {
+				if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
+					if poll {
+						return errStop
+					}
+					return nil
 				}
+				if seq < 0 {
+					if tries < 3 {
+						return errPruned
+					}
+					return nil
+				}
+				since = seq
+				var e Event
+				if err := json.Unmarshal(raw, &e); err != nil {
+					return err
+				}
+				return write(ntfyMessage(e.Notification, seq))
+			}, func() error { return write(ntfyEvent("keepalive", joined)) })
+			if err != errPruned {
 				return nil
 			}
-			if seq == 0 { // reset: ntfy has no such event
+			var oldest int64
+			if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(seq) - 1, ?) FROM events`, s.CurrentSeq()).Scan(&oldest); err != nil {
 				return nil
 			}
-			var e Event
-			if err := json.Unmarshal(raw, &e); err != nil {
-				return err
-			}
-			return write(ntfyMessage(e.Notification, seq))
-		}, func() error { return write(ntfyEvent("keepalive", joined)) })
-		return nil
+			since = max(since, oldest)
+		}
 	}
 }
 

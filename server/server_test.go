@@ -279,6 +279,9 @@ func TestSessionCookieAndSetup(t *testing.T) {
 		t.Fatalf("session form: %d %q", res.StatusCode, res.Header.Get("Location"))
 	}
 	cookie := res.Cookies()[0]
+	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode || cookie.Secure { // Secure only over https
+		t.Fatalf("session cookie flags: %+v", cookie)
+	}
 	// A wrong token on the form goes back to the page with a flag, not to raw JSON.
 	res, _ = noRedirect.PostForm(ts.URL+"/api/v1/session", url.Values{"token": {"clrd_nope"}, "next": {"/app?topic=infra"}})
 	if res.StatusCode != 303 || res.Header.Get("Location") != "/app?error=token&topic=infra" || len(res.Cookies()) != 0 {
