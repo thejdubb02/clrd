@@ -1,8 +1,11 @@
-# Manual only for now: no self-hosted runner is registered for this repo yet.
-# Switch on push/pull_request once one is (see the runner issue).
 name: android
 
 on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
   workflow_dispatch:
 
 jobs:

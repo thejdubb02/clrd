@@ -98,6 +98,12 @@ class SyncClientTest {
         assertEquals(3L, store.lastSeq())
     }
 
+    @Test fun readySeqMovesCursorWithNoVisibleEvents() {
+        onConnect = { _, ws -> ws.send("""{"type":"ready","seq":900}""") }
+        start()
+        await { store.lastSeq() == 900L }
+    }
+
     @Test fun liveEventAfterReadyIsAppliedAtOnce() {
         onConnect = { _, ws ->
             ws.send("""{"type":"ready","seq":0}""")

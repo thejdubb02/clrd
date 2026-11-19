@@ -134,7 +134,12 @@ class SyncClient(
                     store.apply(listOf(n), seq)
                 }
             }
-            "ready" -> endReplay()
+            "ready" -> {
+                // Events this token cannot see still move the cursor, or a filtered token
+                // falls behind retention and resets on every reconnect.
+                bufferSeq = maxOf(bufferSeq, o.optLong("seq"))
+                endReplay()
+            }
             "reset" -> reset()
             // Unknown types (pings, future additions) are ignored on purpose.
         }
@@ -148,7 +153,7 @@ class SyncClient(
     }
 
     private fun applyBuffer() {
-        if (buffer.isEmpty()) return
+        if (buffer.isEmpty() && bufferSeq <= store.lastSeq()) return
         store.apply(buffer.values.toList(), bufferSeq)
         buffer.clear()
     }
