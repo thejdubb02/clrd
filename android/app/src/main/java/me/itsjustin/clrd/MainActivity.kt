@@ -2,6 +2,8 @@ package me.itsjustin.clrd
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -9,6 +11,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -42,9 +47,11 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -61,6 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,8 +80,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -83,6 +95,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
@@ -282,7 +295,9 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 8.dp)) {
                 // Orange only when something needs you.
                 val dot = when { n.isFinal -> b.clear; n.priority >= 4 -> b.signal; n.priority == 3 -> b.slate; else -> b.line }
-                Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+                val icon = rememberPicture(n.icon, Images.ICON_PX)
+                if (icon != null) Image(icon, null, Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)))
+                else Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
                 Spacer(Modifier.width(10.dp))
                 Text(
                     n.title.ifEmpty { n.topic }, color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
@@ -296,11 +311,58 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
                 // Open text can be selected and copied. ponytail: links are not tappable yet, linkify if asked.
                 if (open) SelectionContainer { body() } else body()
             }
+            n.file?.let { f -> Attached(f) }
             Spacer(Modifier.height(8.dp))
-            Text(meta(LocalContext.current, n), style = Mono, color = b.slate, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) { actions() }
+            val ctx = LocalContext.current
+            Text(meta(ctx, n), style = Mono, color = b.slate, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                IconButton(onClick = { share(ctx, n) }) { Icon(Icons.Filled.Share, stringResource(R.string.share), tint = b.slate) }
+                IconButton(onClick = { copy(ctx, n) }) { Icon(painterResource(R.drawable.ic_copy), stringResource(R.string.copy), tint = b.slate, modifier = Modifier.size(20.dp)) }
+                Spacer(Modifier.weight(1f))
+                actions()
+            }
         }
     }
+}
+
+/** A picture attachment shows inline; any other file, or a picture that would not load, is a download button. */
+@Composable
+private fun Attached(f: Attachment) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    val images = App.of(ctx).images
+    val pic = if (f.isImage) rememberPicture(f.url, Images.PICTURE_PX) else null
+    Spacer(Modifier.height(8.dp))
+    if (pic != null) Image(
+        pic, f.name, contentScale = ContentScale.Fit,
+        modifier = Modifier.padding(end = 8.dp).heightIn(max = 240.dp).clip(RoundedCornerShape(10.dp)).clickable { images.download(ctx, f) },
+    )
+    else TextButton(onClick = { images.download(ctx, f) }, contentPadding = PaddingValues(0.dp)) {
+        Text(stringResource(R.string.download, f.name), color = b.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The picture at [url], or null while it loads, when there is none, or when it fails. */
+@Composable
+private fun rememberPicture(url: String, px: Int): ImageBitmap? {
+    if (url.isEmpty()) return null
+    val images = App.of(LocalContext.current).images
+    var bmp by remember(url) { mutableStateOf(images.cached(url, px)) }
+    LaunchedEffect(url) {
+        if (bmp == null) bmp = withContext(images.dispatcher) { images.load(url, px) }
+    }
+    return remember(bmp) { bmp?.asImageBitmap() }
+}
+
+private fun share(ctx: Context, n: Notif) {
+    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, n.shareText())
+    if (n.title.isNotEmpty()) send.putExtra(Intent.EXTRA_SUBJECT, n.title)
+    runCatching { ctx.startActivity(Intent.createChooser(send, null)) }
+}
+
+private fun copy(ctx: Context, n: Notif) {
+    ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(n.title, n.copyText()))
+    if (Build.VERSION.SDK_INT < 33) Toast.makeText(ctx, R.string.copied, Toast.LENGTH_SHORT).show() // Android 13 shows its own
 }
 
 @Composable

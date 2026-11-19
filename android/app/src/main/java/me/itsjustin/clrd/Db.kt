@@ -100,7 +100,7 @@ interface NotifDao {
 }
 
 // Room writes each version to schemas/; AutoMigration keeps the queue and the cursor across an app update.
-@Database(entities = [Notif::class, Pending::class, Meta::class], version = 2, autoMigrations = [AutoMigration(from = 1, to = 2)])
+@Database(entities = [Notif::class, Pending::class, Meta::class], version = 3, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)])
 abstract class Db : RoomDatabase() {
     abstract fun dao(): NotifDao
 }
