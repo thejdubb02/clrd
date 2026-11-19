@@ -1603,13 +1603,9 @@
       "in": "query",
       "required": false,
       "schema": {
-       "type": "string",
-       "enum": [
-        "alertmanager",
-        "grafana"
-       ]
+       "type": "string"
       },
-      "description": "Read an Alertmanager or Grafana webhook body: one notification per alert, keyed by fingerprint; resolved alerts resolve."
+      "description": "Read the body as a service's webhook JSON: a built-in (alertmanager, grafana, github, sentry, stripe, jira, healthchecks, proxmox, zabbix, netdata, jellyfin, arr) or a template saved for the topic under /api/v1/topics/{topic}/templates. A resolve event resolves the open row with its id."
      },
      {
       "name": "Attach",
@@ -1787,13 +1783,9 @@
       "in": "query",
       "required": false,
       "schema": {
-       "type": "string",
-       "enum": [
-        "alertmanager",
-        "grafana"
-       ]
+       "type": "string"
       },
-      "description": "Read an Alertmanager or Grafana webhook body: one notification per alert, keyed by fingerprint; resolved alerts resolve."
+      "description": "Read the body as a service's webhook JSON: a built-in (alertmanager, grafana, github, sentry, stripe, jira, healthchecks, proxmox, zabbix, netdata, jellyfin, arr) or a template saved for the topic under /api/v1/topics/{topic}/templates. A resolve event resolves the open row with its id."
      },
      {
       "name": "Attach",
@@ -3088,7 +3080,7 @@
     "security": []
    }
   },
-  "/api/v1/topics/{topic}/webhooks": {
+  "/api/v1/topics/{topic}/templates": {
    "get": {
     "summary": "List the webhook templates saved for a topic, and the built-in names",
     "description": "Scope publish on the topic. Secrets are never returned; has_secret says whether one is set.",
@@ -3133,7 +3125,7 @@
     }
    }
   },
-  "/api/v1/topics/{topic}/webhooks/{name}": {
+  "/api/v1/topics/{topic}/templates/{name}": {
    "put": {
     "summary": "Save a webhook template for a topic, used by POST /{topic}?template=<name>",
     "description": "Scope publish on the topic. Replaces the whole template. Saving under a built-in name sets its secret and overrides only the fields given.",
@@ -3164,7 +3156,7 @@
       "application/json": {
        "schema": {
         "type": "object",
-        "description": "Each field but each and secret is a Go text/template run over the sender's JSON. See docs/integrations/custom-webhooks.md.",
+        "description": "Each field but each and secret is a Go text/template run over the sender's JSON. range, template calls, define and printf are refused. See docs/integrations/custom-webhooks.md.",
         "properties": {
          "each": {
           "type": "string",

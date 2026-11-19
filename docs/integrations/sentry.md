@@ -12,7 +12,7 @@ warning is high.
 3. Turn on Alert Rule Action, and under Webhooks tick `issue`.
 4. Copy the integration's Client Secret and save it in clrd so it checks
    `Sentry-Hook-Signature`:
-   `curl -X PUT .../api/v1/topics/errors/webhooks/sentry -H "Authorization: Bearer clrd_..." -d '{"secret":"..."}'`
+   `curl -X PUT .../api/v1/topics/errors/templates/sentry -H "Authorization: Bearer clrd_..." -d '{"secret":"..."}'`
 5. For alerts, add the integration as an action on an alert rule.
 
 | clrd | Sentry |

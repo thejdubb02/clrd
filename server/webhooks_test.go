@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"net/http"
 	"os"
 	"strconv"
@@ -91,10 +92,10 @@ func TestWebhookSaved(t *testing.T) {
 	pub := mkToken(t, s, "pub", []string{ScopePublish}, []string{"ci"})
 	other := mkToken(t, s, "other", []string{ScopePublish}, []string{"elsewhere"})
 
-	if code, _ := call(t, ts, "PUT", "/api/v1/topics/ci/webhooks/stripe", other, map[string]string{"secret": "x"}); code != 403 {
+	if code, _ := call(t, ts, "PUT", "/api/v1/topics/ci/templates/stripe", other, map[string]string{"secret": "x"}); code != 403 {
 		t.Fatalf("other topic's token saved a template: %d", code)
 	}
-	if code, out := call(t, ts, "PUT", "/api/v1/topics/ci/webhooks/stripe", pub, map[string]string{"secret": "whsec_test"}); code != 200 || out["secret"] != nil {
+	if code, out := call(t, ts, "PUT", "/api/v1/topics/ci/templates/stripe", pub, map[string]string{"secret": "whsec_test"}); code != 200 || out["secret"] != nil {
 		t.Fatalf("save stripe secret: %d %v", code, out)
 	}
 	body, _ := os.ReadFile("testdata/webhooks/stripe.json")
@@ -117,13 +118,16 @@ func TestWebhookSaved(t *testing.T) {
 	// A custom template, with a shared secret since the sender cannot sign.
 	tpl := map[string]string{"each": "items", "title": `{{get . "name"}}`, "message": `{{get . "detail.0.text"}} {{header "X-Secret-Note"}}`,
 		"id": `{{get . "id"}}`, "resolve": `{{eq (get . "ok") "true"}}`, "priority": `{{if get . "urgent"}}urgent{{end}}`, "secret": "s3cret"}
-	if code, out := call(t, ts, "PUT", "/api/v1/topics/ci/webhooks/my-app", pub, map[string]string{"title": "{{get . "}); code != 400 {
-		t.Fatalf("bad template saved: %d %v", code, out)
+	for _, bad := range []string{`{{get . }`, `{{range .items}}x{{end}}`, `{{define "x"}}y{{end}}`, `{{template "message" .}}`,
+		`{{if true}}{{printf "%999999999d" 1}}{{end}}`, strings.Repeat("x", 17<<10)} {
+		if code, out := call(t, ts, "PUT", "/api/v1/topics/ci/templates/my-app", pub, map[string]string{"title": bad}); code != 400 {
+			t.Fatalf("template %.40q saved: %d %v", bad, code, out)
+		}
 	}
-	if code, out := call(t, ts, "PUT", "/api/v1/topics/ci/webhooks/my-app", pub, tpl); code != 200 {
+	if code, out := call(t, ts, "PUT", "/api/v1/topics/ci/templates/my-app", pub, tpl); code != 200 {
 		t.Fatalf("save: %d %v", code, out)
 	}
-	_, l := call(t, ts, "GET", "/api/v1/topics/ci/webhooks", pub, nil)
+	_, l := call(t, ts, "GET", "/api/v1/topics/ci/templates", pub, nil)
 	saved := l["webhooks"].([]any)
 	if len(saved) != 2 || saved[0].(map[string]any)["name"] != "my-app" || saved[0].(map[string]any)["has_secret"] != true || saved[0].(map[string]any)["secret"] != nil {
 		t.Fatalf("list: %v", l)
@@ -141,11 +145,12 @@ func TestWebhookSaved(t *testing.T) {
 	if n["message"] != "97%" || n["priority"].(float64) != 5 {
 		t.Errorf("custom fields (headers naming a secret must not render): %v", n)
 	}
-	if code, out := raw(t, "POST", ts.URL+"/ci?template=my-app&secret=s3cret", pub, `{"items":[{"id":"a","ok":true}]}`, nil); code != 200 || strings.TrimSpace(out) != `{"published":0,"resolved":1}` {
+	auth := base64.RawURLEncoding.EncodeToString([]byte("Bearer " + pub)) // what the docs tell services to use
+	if code, out := raw(t, "POST", ts.URL+"/ci?template=my-app&secret=s3cret&auth="+auth, "", `{"items":[{"id":"a","ok":true}]}`, nil); code != 200 || strings.TrimSpace(out) != `{"published":0,"resolved":1}` {
 		t.Fatalf("custom resolve: %d %s", code, out)
 	}
 
-	if code, _ := call(t, ts, "DELETE", "/api/v1/topics/ci/webhooks/my-app", pub, nil); code != 200 {
+	if code, _ := call(t, ts, "DELETE", "/api/v1/topics/ci/templates/my-app", pub, nil); code != 200 {
 		t.Fatalf("delete: %d", code)
 	}
 	if code, _ := raw(t, "POST", ts.URL+"/ci?template=my-app", pub, msg, hdr); code != 400 {

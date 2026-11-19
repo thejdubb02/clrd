@@ -11,7 +11,7 @@ notification that links to it in the dashboard. Event types with `fail` or
    `charge.dispute.created`.
 4. Reveal the endpoint's signing secret (`whsec_...`) and save it in clrd so
    it checks `Stripe-Signature`:
-   `curl -X PUT .../api/v1/topics/billing/webhooks/stripe -H "Authorization: Bearer clrd_..." -d '{"secret":"whsec_..."}'`
+   `curl -X PUT .../api/v1/topics/billing/templates/stripe -H "Authorization: Bearer clrd_..." -d '{"secret":"whsec_..."}'`
    Events signed more than 5 minutes ago are refused, as Stripe's own
    libraries do.
 

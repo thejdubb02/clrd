@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"text/template/parse"
 	"time"
 )
 
@@ -23,7 +24,7 @@ import (
 // service's JSON into notifications. A template maps the JSON to
 // notification fields with Go text/template. Built-ins cover common
 // services; a topic owner can save their own, or set a built-in's secret and
-// override some of its fields, with PUT /api/v1/topics/{topic}/webhooks/{name}.
+// override some of its fields, with PUT /api/v1/topics/{topic}/templates/{name}.
 
 // Webhook is one template. Every field but Each and Secret is a Go template
 // run over the decoded JSON (or over each item of Each).
@@ -176,11 +177,78 @@ func webhookFuncs(h http.Header) template.FuncMap {
 func (h *Webhook) parse(hdr http.Header) (*template.Template, error) {
 	root := template.New("").Funcs(webhookFuncs(hdr)).Option("missingkey=zero")
 	for _, f := range webhookFields {
-		if _, err := root.New(f).Parse(*h.field(f)); err != nil {
+		src := *h.field(f)
+		if len(src) > webhookFieldMax {
+			return nil, errf(400, "bad_request", "template %s: over 16 KB", f)
+		}
+		t, err := root.New(f).Parse(src)
+		if err == nil {
+			err = plain(t.Root)
+		}
+		if err != nil {
 			return nil, errf(400, "bad_request", "template %s: %v", f, err)
 		}
 	}
+	if len(root.Templates()) > len(webhookFields) {
+		return nil, errf(400, "bad_request", "template: define and block are not allowed")
+	}
 	return root, nil
+}
+
+// plain refuses what lets a saved template burn CPU or memory without
+// writing output: loops (each covers lists), calls to other templates, and
+// printf, whose widths allocate before the output cap sees them.
+func plain(n parse.Node) error {
+	switch t := n.(type) {
+	case *parse.RangeNode:
+		return errors.New("range is not allowed: use each")
+	case *parse.TemplateNode:
+		return errors.New("template calls are not allowed")
+	case *parse.IdentifierNode:
+		if t.Ident == "printf" {
+			return errors.New("printf is not allowed")
+		}
+	case *parse.ListNode:
+		if t == nil {
+			return nil
+		}
+		for _, c := range t.Nodes {
+			if err := plain(c); err != nil {
+				return err
+			}
+		}
+	case *parse.ActionNode:
+		return plain(t.Pipe)
+	case *parse.PipeNode:
+		if t == nil {
+			return nil
+		}
+		for _, c := range t.Cmds {
+			if err := plain(c); err != nil {
+				return err
+			}
+		}
+	case *parse.CommandNode:
+		for _, a := range t.Args {
+			if err := plain(a); err != nil {
+				return err
+			}
+		}
+	case *parse.IfNode:
+		return branch(&t.BranchNode)
+	case *parse.WithNode:
+		return branch(&t.BranchNode)
+	}
+	return nil
+}
+
+func branch(b *parse.BranchNode) error {
+	for _, n := range []parse.Node{b.Pipe, b.List, b.ElseList} {
+		if err := plain(n); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // capped stops a template that renders without end.
@@ -210,7 +278,7 @@ var webhookNameRe = topicRe
 // with any field it leaves empty taken from the built-in of that name.
 func (s *Server) webhook(ctx context.Context, topic, name string) (*Webhook, error) {
 	var spec string
-	err := s.db.QueryRowContext(ctx, `SELECT spec FROM webhooks WHERE topic = ? AND name = ?`, topic, name).Scan(&spec)
+	err := s.db.QueryRowContext(ctx, `SELECT spec FROM webhook_templates WHERE topic = ? AND name = ?`, topic, name).Scan(&spec)
 	b, builtin := builtinWebhooks[name]
 	if errors.Is(err, sql.ErrNoRows) {
 		if !builtin {
@@ -352,12 +420,12 @@ func (s *Server) webhookRoutes() {
 		}
 		return topic, name, tok.need(ScopePublish, topic)
 	}
-	s.api("GET /api/v1/topics/{topic}/webhooks", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+	s.api("GET /api/v1/topics/{topic}/templates", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		topic, _, err := owner(r, tok)
 		if err != nil {
 			return err
 		}
-		rows, err := s.db.QueryContext(r.Context(), `SELECT name, spec FROM webhooks WHERE topic = ? ORDER BY name`, topic)
+		rows, err := s.db.QueryContext(r.Context(), `SELECT name, spec FROM webhook_templates WHERE topic = ? ORDER BY name`, topic)
 		if err != nil {
 			return err
 		}
@@ -386,7 +454,7 @@ func (s *Server) webhookRoutes() {
 		writeJSON(w, 200, map[string]any{"webhooks": out, "builtin": builtinNames()})
 		return nil
 	})
-	s.api("PUT /api/v1/topics/{topic}/webhooks/{name}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+	s.api("PUT /api/v1/topics/{topic}/templates/{name}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		topic, name, err := owner(r, tok)
 		if err != nil {
 			return err
@@ -402,7 +470,7 @@ func (s *Server) webhookRoutes() {
 			return errf(400, "bad_request", "a template needs a title or a message")
 		}
 		spec, _ := json.Marshal(h)
-		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO webhooks (topic, name, spec) VALUES (?, ?, ?)
+		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO webhook_templates (topic, name, spec) VALUES (?, ?, ?)
 			ON CONFLICT(topic, name) DO UPDATE SET spec = excluded.spec`, topic, name, string(spec)); err != nil {
 			return err
 		}
@@ -410,12 +478,12 @@ func (s *Server) webhookRoutes() {
 		writeJSON(w, 200, h)
 		return nil
 	})
-	s.api("DELETE /api/v1/topics/{topic}/webhooks/{name}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+	s.api("DELETE /api/v1/topics/{topic}/templates/{name}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		topic, name, err := owner(r, tok)
 		if err != nil {
 			return err
 		}
-		res, err := s.db.ExecContext(r.Context(), `DELETE FROM webhooks WHERE topic = ? AND name = ?`, topic, name)
+		res, err := s.db.ExecContext(r.Context(), `DELETE FROM webhook_templates WHERE topic = ? AND name = ?`, topic, name)
 		if err != nil {
 			return err
 		}
@@ -439,7 +507,8 @@ var alerts = Webhook{
 }
 
 // builtinWebhooks: ?template=<name> without saving anything. Each has a
-// page under docs/integrations/ and a fixture under testdata/webhooks/.
+// page under docs/integrations/; the new ones have a fixture under
+// testdata/webhooks/ (alertmanager and grafana are tested in ntfy_test.go).
 var builtinWebhooks = map[string]Webhook{
 	"alertmanager": alerts,
 	"grafana":      alerts,

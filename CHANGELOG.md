@@ -18,7 +18,7 @@ Fixed, Removed, Security), as one line a user can understand.
   templates for GitHub, Sentry, Stripe, Jira, Healthchecks.io, Proxmox VE,
   Zabbix, Netdata, Jellyfin and the *arr apps, checks GitHub, Sentry, Stripe
   and Jira signatures, and takes a template you save for any other service's
-  JSON (`/api/v1/topics/{topic}/webhooks`). See
+  JSON (`/api/v1/topics/{topic}/templates`). See
   [docs/integrations/custom-webhooks.md](docs/integrations/custom-webhooks.md).
 - Server: files on notifications. Upload a file with the publish (multipart, or
   ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL

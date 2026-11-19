@@ -19,8 +19,8 @@ Use a token scoped to `publish` on that one topic.
 
 | `?template=` | Service | Resolves itself | Checks |
 |---|---|---|---|
-| `alertmanager` | [Alertmanager](alertmanager.md) | yes | none |
-| `grafana` | [Grafana](grafana.md) | yes | none |
+| `alertmanager` | [Alertmanager](alertmanager.md) | yes | shared secret |
+| `grafana` | [Grafana](grafana.md) | yes | shared secret |
 | `github` | [GitHub](github.md) | issue or PR closed | `X-Hub-Signature-256` |
 | `sentry` | [Sentry](sentry.md) | issue or alert resolved | `Sentry-Hook-Signature` |
 | `stripe` | [Stripe](stripe.md) | no | `Stripe-Signature` |
@@ -40,7 +40,7 @@ A built-in works with no setup. To check that a request really came from the
 service, save its secret for the topic (scope `publish` on the topic):
 
 ```sh
-curl -X PUT https://clrd.itsjustin.me/api/v1/topics/infra/webhooks/github \
+curl -X PUT https://clrd.itsjustin.me/api/v1/topics/infra/templates/github \
   -H "Authorization: Bearer clrd_..." -d '{"secret":"the secret you gave GitHub"}'
 ```
 
@@ -55,7 +55,7 @@ Save a template under any name (letters, digits, `_` and `-`), then send to
 `?template=<that name>`:
 
 ```sh
-curl -X PUT https://clrd.itsjustin.me/api/v1/topics/infra/webhooks/my-app \
+curl -X PUT https://clrd.itsjustin.me/api/v1/topics/infra/templates/my-app \
   -H "Authorization: Bearer clrd_..." -d '{
     "each": "events",
     "title": "{{get . \"service\"}}: {{get . \"summary\" \"text\"}}",
@@ -86,13 +86,14 @@ Functions:
   template can handle every event a service sends.
 - `header "X-Event"`: a request header. Headers whose name contains auth,
   cookie, secret, signature, token or key always read as empty.
-- `contains`, `lower`, `split`, plus Go's built-ins (`eq`, `ne`, `and`, `or`,
-  `not`, `if`, `with`, `index`, `printf`).
+- `contains`, `lower`, `split`, plus Go's `eq`, `ne`, `and`, `or`, `not`,
+  `index`, `if` and `with`. `range`, `define`, `template` and `printf` are
+  refused: use `each` for lists.
 
 A template that does not parse is refused when you save it. Saving under a
 built-in's name keeps the built-in and overrides only the fields you give, so
 `{"secret": "..."}` alone just sets the secret.
 
-`GET /api/v1/topics/{topic}/webhooks` lists the saved templates (with
+`GET /api/v1/topics/{topic}/templates` lists the saved templates (with
 `has_secret` in place of the secret) and the built-in names.
-`DELETE /api/v1/topics/{topic}/webhooks/{name}` removes one.
+`DELETE /api/v1/topics/{topic}/templates/{name}` removes one.
