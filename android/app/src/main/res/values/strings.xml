@@ -76,4 +76,13 @@
     <string name="channel_p4">High priority</string>
     <string name="channel_p5">Urgent</string>
     <string name="channel_service">Sync connection</string>
+
+    <!-- Notification tray -->
+    <string name="tray_ack">Ack</string>
+    <string name="tray_snooze">Snooze 1h</string>
+    <string name="tray_clear">Clear</string>
+    <string name="tray_open">Open</string>
+    <string name="tray_answered">Answered %1$s on %2$s</string>
+    <string name="tray_acked">Acknowledged on %1$s</string>
+    <string name="tray_another_device">another device</string>
 </resources>
