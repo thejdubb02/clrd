@@ -315,6 +315,10 @@
           },
           "seq": {
            "type": "integer"
+          },
+          "epoch": {
+           "type": "string",
+           "description": "This database's id. A different one from the saved one means: treat it like reset."
           }
          }
         }
@@ -1108,6 +1112,10 @@
           },
           "seq": {
            "type": "integer"
+          },
+          "epoch": {
+           "type": "string",
+           "description": "This database's id. A different one from the saved one means: treat it like reset."
           }
          }
         }
@@ -3085,6 +3093,10 @@
      },
      "notification": {
       "$ref": "#/components/schemas/Notification"
+     },
+     "epoch": {
+      "type": "string",
+      "description": "On ready only. This database's id. A different one from the saved one means: treat it like reset."
      }
     },
     "required": [
