@@ -55,6 +55,7 @@ type Server struct {
 	lastRand [10]byte
 	seq      atomic.Int64 // last committed event seq
 	pruned   atomic.Int64 // events with seq <= pruned are gone
+	revoked  sync.Map     // token ids deleted while the server runs
 
 	seen      sync.Map // token id -> time last written to last_seen_at
 	setupMu   sync.Mutex
@@ -323,7 +324,7 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("GET /api/v1/tokens", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		if err := tok.need(ScopeAdmin, ""); err != nil {
+		if err := tok.needFullAdmin(); err != nil {
 			return err
 		}
 		ts, err := s.Tokens(r.Context(), time.Time{})
@@ -334,7 +335,7 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("POST /api/v1/tokens", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		if err := tok.need(ScopeAdmin, ""); err != nil {
+		if err := tok.needFullAdmin(); err != nil {
 			return err
 		}
 		var in struct {
@@ -356,7 +357,7 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("DELETE /api/v1/tokens/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		if err := tok.need(ScopeAdmin, ""); err != nil {
+		if err := tok.needFullAdmin(); err != nil {
 			return err
 		}
 		if err := s.DeleteToken(r.Context(), r.PathValue("id")); err != nil {

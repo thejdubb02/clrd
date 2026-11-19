@@ -62,6 +62,17 @@ func (t *Token) need(scope, topic string) error {
 	return nil
 }
 
+// needFullAdmin: a topic-limited admin could otherwise mint an unlimited token.
+func (t *Token) needFullAdmin() error {
+	if err := t.need(ScopeAdmin, ""); err != nil {
+		return err
+	}
+	if len(t.Topics) > 0 {
+		return errf(403, "forbidden", "managing tokens needs an admin token without a topic list")
+	}
+	return nil
+}
+
 func randomString(n int) string {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	out := make([]byte, 0, n)
@@ -168,6 +179,7 @@ func (s *Server) DeleteToken(ctx context.Context, id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errf(404, "not_found", "token not found")
 	}
+	s.revoked.Store(id, true) // open streams check this before every send
 	return nil
 }
 
@@ -263,6 +275,9 @@ func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, value string,
 // handleSession signs a browser in: JSON {"token"} or a form post with
 // token and optional next.
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
+	if !sameOrigin(r) {
+		return errf(403, "forbidden", "sign-in must come from this site")
+	}
 	isForm := !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json")
 	var in struct {
 		Token string `json:"token"`
@@ -296,14 +311,16 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (s *Server) hasAdmin(ctx context.Context) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tokens WHERE ','||scopes||',' LIKE '%,admin,%'`).Scan(&n)
+	return n > 0, err
+}
+
 // bootstrap creates a one-time setup code when no admin token exists.
 func (s *Server) bootstrap(ctx context.Context) error {
-	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tokens WHERE ','||scopes||',' LIKE '%,admin,%'`).Scan(&n); err != nil {
+	if ok, err := s.hasAdmin(ctx); ok || err != nil {
 		return err
-	}
-	if n > 0 {
-		return nil
 	}
 	s.setupMu.Lock()
 	s.setupCode = randomString(24)
@@ -326,18 +343,24 @@ code{font-family:ui-monospace,monospace;background:#fff;padding:.25rem .5rem;bor
 <p><label>Device name <input name="name" value="admin" required></label></p><p><button>Create admin token</button></p></form>{{end}}
 </body></html>`))
 
-// handleSetup: GET shows the form (and never uses the code up), POST creates
-// the admin token, shows it once and signs the browser in.
+// handleSetup: GET or HEAD shows the form (and never uses the code up), POST
+// creates the admin token, shows it once and signs the browser in. The code
+// dies as soon as any admin token exists, including one made on the CLI.
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 	code := r.FormValue("code")
 	s.setupMu.Lock()
 	defer s.setupMu.Unlock()
+	if s.setupCode != "" {
+		if ok, err := s.hasAdmin(r.Context()); ok || err != nil {
+			s.setupCode = ""
+		}
+	}
 	if s.setupCode == "" || subtle.ConstantTimeCompare([]byte(code), []byte(s.setupCode)) != 1 {
 		return errf(404, "not_found", "no setup pending, or wrong code")
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if r.Method == http.MethodGet {
+	if r.Method != http.MethodPost {
 		return setupPage.Execute(w, map[string]string{"Code": code})
 	}
 	name := strings.TrimSpace(r.PostFormValue("name"))

@@ -63,6 +63,8 @@ func (s *Server) Subscribe() (<-chan Event, func()) {
 var (
 	msgReset   = []byte(`{"type":"reset"}`)
 	errDropped = errors.New("fell behind the live stream")
+	errReset   = errf(410, "reset", "since is outside the event log: fetch the open list again")
+	errRevoked = errf(401, "unauthorized", "token revoked")
 )
 
 func msgReady(seq int64) []byte { return fmt.Appendf(nil, `{"type":"ready","seq":%d}`, seq) }
@@ -78,6 +80,13 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 	send func(msg []byte, seq int64) error, ping func() error) error {
 	sub := s.hub.subscribe() // first, so nothing committed during replay is missed
 	defer s.hub.unsubscribe(sub)
+	inner := send
+	send = func(msg []byte, seq int64) error {
+		if _, gone := s.revoked.Load(tok.ID); gone {
+			return errRevoked
+		}
+		return inner(msg, seq)
+	}
 	last := s.seq.Load()
 	if since < s.pruned.Load() || since > last {
 		if err := send(msgReset, 0); err != nil {
@@ -87,6 +96,13 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 	}
 	for {
 		evs, err := s.eventsAfter(ctx, since, 500)
+		if err == errReset { // pruned under us mid-replay
+			if err := send(msgReset, 0); err != nil {
+				return err
+			}
+			since = max(since, s.seq.Load())
+			continue
+		}
 		if err != nil {
 			return err
 		}
@@ -114,7 +130,7 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 			return nil
 		case <-t.C:
 			if !s.tokenAlive(ctx, tok) {
-				return errf(401, "unauthorized", "token revoked")
+				return errRevoked
 			}
 			if err := ping(); err != nil {
 				return err
@@ -222,7 +238,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 	}
 	cur := s.CurrentSeq()
 	if since < s.pruned.Load() || since > cur {
-		return errf(410, "reset", "since is outside the event log: fetch the open list again")
+		return errReset
 	}
 	evs, err := s.eventsAfter(r.Context(), since, limit)
 	if err != nil {

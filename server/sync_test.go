@@ -154,8 +154,8 @@ func TestSyncProof(t *testing.T) {
 	if strings.Join(states, ",") != "created:active,state:acknowledged,state:resolved" {
 		t.Fatalf("B replayed %v", states)
 	}
-	if ready.Seq < want-1 {
-		t.Fatalf("ready seq %d is behind replay %d", ready.Seq, want-1)
+	if ready.Seq != want-1 {
+		t.Fatalf("ready seq %d, want the last replayed %d", ready.Seq, want-1)
 	}
 
 	// And it is live again after the replay.
@@ -238,5 +238,51 @@ func TestSnoozeWakes(t *testing.T) {
 	}
 	if _, n := call(t, ts, "GET", "/api/v1/notifications/"+id, admin, nil); n["state"] != Active || n["state_by"] != "server" || n["snooze_until"] != nil {
 		t.Fatalf("after wake: %v", n)
+	}
+}
+
+func TestRevokeAndPruneRace(t *testing.T) {
+	s, ts, admin := newTest(t)
+
+	// A topic-limited admin cannot manage tokens (it could mint an unlimited one).
+	home := mkToken(t, s, "home-admin", []string{ScopeAdmin}, []string{"home"})
+	if code, _ := call(t, ts, "POST", "/api/v1/tokens", home, map[string]any{"name": "x", "scopes": []string{"admin"}}); code != 403 {
+		t.Fatalf("limited admin minting: want 403, got %d", code)
+	}
+
+	// Revoking a token cuts its open stream before the next event, not 30s later.
+	phone := mkToken(t, s, "phone", []string{ScopeRead}, nil)
+	c := dialWS(t, ts.URL, phone, 0)
+	c.until(func(m msg) bool { return m.Type == "ready" })
+	_, toks := call(t, ts, "GET", "/api/v1/tokens", admin, nil)
+	for _, tk := range toks["tokens"].([]any) {
+		if tk.(map[string]any)["name"] == "phone" {
+			call(t, ts, "DELETE", "/api/v1/tokens/"+tk.(map[string]any)["id"].(string), admin, nil)
+		}
+	}
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "secret"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, b, err := c.c.Read(ctx); err == nil {
+		t.Fatalf("revoked stream still got %s", b)
+	} else if websocket.CloseStatus(err) != websocket.StatusTryAgainLater {
+		t.Fatalf("revoked stream: %v", err)
+	}
+
+	// A prune that lands between the cursor check and the query is a reset, not a skip.
+	for i := 0; i < 3; i++ {
+		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": fmt.Sprint(i)})
+	}
+	if _, err := s.db.Exec(`DELETE FROM events WHERE seq <= 2`); err != nil { // s.pruned not moved yet
+		t.Fatal(err)
+	}
+	if code, out := call(t, ts, "GET", "/api/v1/events?since=1", admin, nil); code != 410 || out["code"] != "reset" {
+		t.Fatalf("poll across a prune: %d %v", code, out)
+	}
+	if _, err := s.db.Exec(`DELETE FROM events`); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/events?since=2", admin, nil); code != 410 {
+		t.Fatalf("poll with every event pruned: want 410, got %d", code)
 	}
 }

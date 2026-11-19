@@ -596,7 +596,10 @@ func (s *Server) Get(ctx context.Context, tok *Token, id string) (*Notification,
 	if err != nil {
 		return nil, err
 	}
-	return n, tok.need(ScopeRead, n.Topic)
+	if err := tok.need(ScopeRead, n.Topic); err != nil {
+		return nil, err
+	}
+	return n, nil
 }
 
 // TopicCount is a topic with how many of its notifications are open.
@@ -629,8 +632,11 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	return out, rows.Err()
 }
 
-// eventsAfter returns up to limit logged events with seq > since, oldest first.
+// eventsAfter returns up to limit logged events with seq > since, oldest
+// first. seq has no gaps, so a missing since+1 means a prune ran between the
+// caller's check and this query: that is a 410 reset, never a silent skip.
 func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Event, error) {
+	head := s.seq.Load() // stored only after commit, so every seq <= head was written
 	rows, err := s.db.QueryContext(ctx, `SELECT seq, topic, data FROM events WHERE seq > ? ORDER BY seq LIMIT ?`, since, limit)
 	if err != nil {
 		return nil, err
@@ -646,7 +652,13 @@ func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Eve
 		e.Raw, e.Notification = []byte(data), &Notification{Topic: topic}
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if (len(out) > 0 && out[0].Seq != since+1) || (len(out) == 0 && since < head) {
+		return nil, errReset
+	}
+	return out, nil
 }
 
 func isNotFound(err error) bool {

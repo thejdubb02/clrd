@@ -231,10 +231,11 @@ func TestSessionCookieAndSetup(t *testing.T) {
 	ts2 := httptest.NewServer(s2)
 	defer ts2.Close()
 	code := s2.setupCode
-	for i := 0; i < 2; i++ { // GET twice: viewing must not use the code up
-		res, _ := http.Get(ts2.URL + "/setup?code=" + code)
+	for _, m := range []string{"GET", "HEAD", "GET"} { // viewing (or a link checker) must not use the code up
+		req, _ := http.NewRequest(m, ts2.URL+"/setup?code="+code, nil)
+		res, _ := http.DefaultClient.Do(req)
 		if res.StatusCode != 200 {
-			t.Fatalf("setup GET %d: %d", i, res.StatusCode)
+			t.Fatalf("setup %s: %d", m, res.StatusCode)
 		}
 	}
 	if res, _ := http.Get(ts2.URL + "/setup?code=wrong"); res.StatusCode != 404 {
@@ -249,6 +250,20 @@ func TestSessionCookieAndSetup(t *testing.T) {
 		t.Fatalf("setup code reused: %d", res.StatusCode)
 	}
 
+	// An admin made on the CLI kills a pending setup code.
+	s3, err := New(Options{DB: filepath.Join(t.TempDir(), "cli.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s3.Close()
+	s3.bootstrap(context.Background())
+	mkToken(t, s3, "cli", []string{ScopeAdmin}, nil)
+	ts3 := httptest.NewServer(s3)
+	defer ts3.Close()
+	if res, _ := http.Get(ts3.URL + "/setup?code=" + s3.setupCode); res.StatusCode != 404 {
+		t.Fatalf("setup after CLI admin: want 404, got %d", res.StatusCode)
+	}
+
 	// Session: form sign-in redirects and sets the cookie.
 	raw := mkToken(t, s, "browser", []string{ScopeRead, ScopePublish}, nil)
 	res, _ = noRedirect.PostForm(ts.URL+"/api/v1/session", url.Values{"token": {raw}, "next": {"//evil.example"}})
@@ -256,6 +271,13 @@ func TestSessionCookieAndSetup(t *testing.T) {
 		t.Fatalf("session form: %d %q", res.StatusCode, res.Header.Get("Location"))
 	}
 	cookie := res.Cookies()[0]
+	// Login forgery: another site cannot sign this browser in as someone else.
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/session", strings.NewReader(url.Values{"token": {raw}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://evil.example")
+	if res, _ := noRedirect.Do(req); res.StatusCode != 403 || len(res.Cookies()) != 0 {
+		t.Fatalf("cross-origin sign-in: %d", res.StatusCode)
+	}
 	with := func(method, path, origin string) int {
 		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(`{"topic":"home","message":"hi"}`))
 		req.AddCookie(cookie)
