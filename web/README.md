@@ -39,9 +39,9 @@ type API interface {
 - Return `web.ErrUnauthorized` when the request has no valid session. The page
   then answers 401 with a sign-in notice and nothing else from the snapshot.
 
-Wiring `api` to the real store (`Authenticate`, `List`, `Topics`,
-`CurrentSeq`) waits for the server branch to merge; until then pages run
-against `Fake`.
+The real `api` lives in `server/cmd/clrd/web.go` (`Authenticate`, `List`,
+`Topics`, `CurrentSeq`). `Fake` in `fake_test.go` stands in for it in the page
+tests.
 
 ## Routes
 
@@ -59,20 +59,22 @@ From `docs/SPEC.md`: `POST /api/v1/notifications/{id}/{ack|snooze|dismiss|reopen
 `/api/v1/ws?since={seq}`. The page sends `{"for": "1h"}` with snooze. On a
 `reset` message it reloads.
 
-## Run it without the server
+## Run it locally
+
+The real binary serves every page. With a throwaway database:
 
 ```
-go run ./web/cmd/clrd-web-dev -addr 127.0.0.1:8080
+export CLRD_DB=/tmp/clrd-dev.db CLRD_LISTEN=127.0.0.1:8080
+go run ./server/cmd/clrd token create --name laptop --scope admin   # prints a token
+go run ./server/cmd/clrd
 ```
 
-This serves every page against `Fake`, an in-memory stand-in with seeded
-notifications and the REST and WebSocket routes above. Play a phone with curl:
+Open `http://127.0.0.1:8080/app`, paste the token, then play a phone with curl:
 
 ```
-curl -X POST -H 'X-Device: pixel-9' localhost:8080/api/v1/notifications/{id}/dismiss
+curl -H "Authorization: Bearer $TOKEN" -d '{"topic":"test","title":"Hello"}' 127.0.0.1:8080/api/v1/notifications
+curl -X POST -H "Authorization: Bearer $TOKEN" "127.0.0.1:8080/api/v1/notifications/$ID/dismiss"
 ```
-
-`Fake` has no auth and no persistence. Not for production.
 
 ## Tests
 
