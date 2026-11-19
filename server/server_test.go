@@ -421,6 +421,11 @@ func TestTouchHonoursContext(t *testing.T) {
 	if v := seen(); v.Valid {
 		t.Fatalf("touch wrote with a cancelled context: %v", v)
 	}
+	s.seen.Delete(tok.ID) // the failed write above still counts for the once-a-minute limit
+	s.touch(context.Background(), tok)
+	if v := seen(); !v.Valid {
+		t.Fatal("touch did not write with a live context")
+	}
 }
 
 // Reply actions (issue 8): validation, first answer wins, one event per
