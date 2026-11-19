@@ -37,6 +37,9 @@ class SyncClientTest {
     @Volatile private var slowAnswered = false
     /** Body of a successful POST, by path. The server answers an action with the changed row. */
     private var answer: (String) -> String = { "{}" }
+    /** Body of GET /api/v1/notifications/{id}, or null for 404. */
+    private var current: (String) -> String? = { null }
+    private val gets = CopyOnWriteArrayList<String>()
 
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
@@ -54,6 +57,11 @@ class SyncClientTest {
                         lists += path
                         MockResponse().setBody(open(request.requestUrl!!.queryParameter("before")))
                     }
+                    request.method == "GET" && path.startsWith("/api/v1/notifications/") -> {
+                        gets += path
+                        current(path.substringAfterLast('/'))?.let { MockResponse().setBody(it) }
+                            ?: MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
+                    }
                     request.method == "POST" -> {
                         posts += path
                         if (path.contains("flaky") && posts.count { it == path } == 1) MockResponse().setResponseCode(503)
@@ -62,6 +70,7 @@ class SyncClientTest {
                             slowAnswered = true
                             MockResponse().setBody("{}")
                         }
+                        else if (path.contains("stale")) MockResponse().setResponseCode(409).setBody("""{"error":"changed"}""")
                         else if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
                         else MockResponse().setBody(answer(path))
                     }
@@ -156,6 +165,17 @@ class SyncClientTest {
         start()
         await { store.queue.isEmpty() && SyncClient.Status.CONNECTED in statuses }
         assertEquals(listOf("/api/v1/notifications/a/dismiss", "/api/v1/notifications/gone/ack"), posts)
+    }
+
+    @Test fun aRefusedActionTakesTheServersRow() {
+        store.rows["stale"] = notif("stale", "acknowledged", 4) // the tap's local guess
+        store.queue += Pending(1, "stale", "reply", """{"reply":"yes","seq":4}""")
+        current = { if (it == "stale") notifJson("stale", "active", 5) else null } // the question changed since
+        onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
+        start()
+        await { store.queue.isEmpty() && SyncClient.Status.CONNECTED in statuses }
+        assertEquals(listOf("/api/v1/notifications/stale"), gets)
+        assertEquals("active", store.rows["stale"]!!.state)
     }
 
     @Test fun aHungSendDoesNotHoldBackEvents() {

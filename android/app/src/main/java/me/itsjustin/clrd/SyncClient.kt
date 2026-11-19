@@ -197,8 +197,8 @@ class SyncClient(
 private val flushLock = Any()
 
 /**
- * Send queued user actions in order. A 4xx that retrying cannot fix (404, 409) drops the action;
- * anything else throws and leaves it queued.
+ * Send queued user actions in order. A 4xx that retrying cannot fix (404, 409) drops the action
+ * and saves the server's current row; anything else throws and leaves it queued.
  *
  * The server answers with the row after the change. It is saved before the action leaves the
  * queue, so an older event replayed after the send cannot bring a dismissed row back.
@@ -212,7 +212,9 @@ fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synch
             api.action(p)
         } catch (e: HttpError) {
             if (!e.isPermanent) throw e
-            null
+            // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
+            // so take the server's current row instead. A failed fetch keeps the guess until the next event.
+            runCatching { api.get("/api/v1/notifications/${p.notifId}") }.getOrNull()
         }
         answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0) }
         store.removePending(p)
