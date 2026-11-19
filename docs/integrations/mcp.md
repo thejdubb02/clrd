@@ -78,6 +78,6 @@ claude mcp add --transport http clrd https://clrd.itsjustin.me/mcp \
 ## Auto-resolve
 
 Have the agent call `send` with an `id` when it starts something risky, and
-`resolve` with `topic` and `external_id` when it is done. Checked with the MCP
-Inspector CLI; the Desktop and Cursor snippets follow their upstream docs and
-are untested against a live clrd.
+`resolve` with `topic` and `external_id` when it is done. CI runs the Claude
+Code and Claude Desktop snippets above against a live clrd on every change.
+The Cursor snippet follows Cursor's docs and is not run.

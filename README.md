@@ -24,8 +24,8 @@ everywhere without anyone touching it.
 </p>
 
 > **Status: early, no tagged release yet.** The server, web inbox, Android app
-> and SDKs have tests that run in CI. The integration guides for other tools are
-> not all tested against a live server yet. The Android app builds from source
+> and SDKs have tests that run in CI, and so do the integration guides (see the
+> [integrations table](docs/integrations/README.md) for what each one runs). The Android app builds from source
 > until the F-Droid listing lands. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Why clrd

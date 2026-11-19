@@ -71,3 +71,14 @@ wait_http() {
   for _ in $(seq 120); do curl -s -o /dev/null "$1" && return; sleep 0.5; done
   fail "$1 never answered"
 }
+
+# toggle_server: an HTTP server whose /up answers 200 while $WORK/site/up
+# exists and 404 once it is removed. Prints its port. For uptime monitors.
+toggle_server() {
+  local port
+  port=$(free_port)
+  mkdir -p "$WORK/site" && touch "$WORK/site/up"
+  spawn python3 -m http.server -b 127.0.0.1 -d "$WORK/site" "$port" >/dev/null 2>&1
+  wait_http "http://127.0.0.1:$port/" >/dev/null
+  echo "$port"
+}

@@ -28,6 +28,11 @@ Fixed, Removed, Security), as one line a user can understand.
   and link preview endpoints fetch pages for your devices, refuse private
   network addresses, and cache results. The web inbox and Android app do not
   use them yet. See docs/formatting.md.
+- Docs: every integration guide now runs against a live clrd in CI, with the
+  real tool where one can run (Gatus, Uptime Kuma, Alertmanager, Grafana,
+  Apprise, the ntfy CLI, Claude Code and Claude Desktop). The integrations
+  table says what each one checks. The Gatus guide now sets an alert
+  description, so the notification is not blank.
 - Server: files on notifications. Upload a file with the publish (multipart, or
   ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL
   (`attachment`, or ntfy's `X-Attach`). Downloads need a token that can read the

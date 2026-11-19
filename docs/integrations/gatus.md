@@ -37,6 +37,7 @@ endpoints:
     conditions: ["[STATUS] == 200"]
     alerts:
       - type: custom
+        description: "health check failed"
         send-on-resolved: true
 ```
 

@@ -17,3 +17,8 @@ sh -e -c "$(sed -n 1p <<<"$resolve")" >/dev/null
 expect infra disk-build '.state == "active" and .message == "Disk 91%"' "curl with X-Id"
 sh -e -c "$(sed -n 2p <<<"$resolve")" >/dev/null
 expect infra disk-build '.state == "resolved"' "resolve by key"
+
+# The app's way in: Basic auth, any username, the token as password.
+ntfy "ntfy publish -u phone:$CLRD_TOKEN --title Basic http://127.0.0.1:$CLRD_PORT/home hi" >/dev/null
+check "$(rows home "")" 'length == 1 and .[0].title == "Basic"' "Basic auth with the token as password"
+ok "Basic auth with the token as password"
