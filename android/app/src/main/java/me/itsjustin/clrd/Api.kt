@@ -49,6 +49,7 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
         while (true) {
             val o = JSONObject(get("/api/v1/notifications?state=open&limit=$PAGE" + if (before.isEmpty()) "" else "&before=$before"))
             if (seq < 0) { seq = o.getLong("seq"); epoch = o.optString("epoch") }
+            else if (o.optString("epoch") != epoch) throw IOException("server changed between pages") // retried from page one
             val a = o.getJSONArray("notifications")
             for (i in 0 until a.length()) rows += Notif.fromJson(a.getJSONObject(i))
             if (a.length() < PAGE) return OpenList(rows, seq, epoch)
