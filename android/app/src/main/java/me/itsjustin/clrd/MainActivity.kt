@@ -331,15 +331,22 @@ private fun SettingsScreen(app: App) {
                 val newToken = token.trim()
                 app.io.execute {
                     if (newUrl != app.serverUrl || newToken != app.token) {
-                        // Old server's rows, cursor and queue must not reach the new one. Stop the old client
-                        // and wait for it, wipe, and only then save, so a crash in between leaves no mix.
-                        app.sync?.stopAndWait()
+                        // Old server's rows, cursor and queue must not reach the new one. Blanking the token
+                        // fences the old client's writes (RoomStore.ifMine) and keeps the service from starting
+                        // one; a crash before the final save leaves the app unconfigured, never mixed.
+                        synchronized(app.configLock) { app.token = "" }
+                        app.sync?.stop()
                         app.sync = null
-                        app.db.dao().forget()
-                        app.tray.reconcile(emptyList(), app.muted)
+                        synchronized(app.configLock) {
+                            app.db.dao().forget()
+                            app.tray.reconcile(emptyList(), app.muted)
+                            app.serverUrl = newUrl
+                            app.token = newToken
+                        }
+                    } else {
+                        app.serverUrl = newUrl
+                        app.token = newToken
                     }
-                    app.serverUrl = newUrl
-                    app.token = newToken
                     // /api/v1/topics needs the read scope, so this checks the URL and the token together.
                     result = try {
                         app.api().get("/api/v1/topics")

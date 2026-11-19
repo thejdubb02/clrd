@@ -63,12 +63,6 @@ class SyncClient(
         exec.shutdown()
     }
 
-    /** [stop], then wait until nothing more can be written to the store. Not for the main thread. */
-    fun stopAndWait() {
-        stop()
-        exec.awaitTermination(15, TimeUnit.SECONDS)
-    }
-
     /** The network came back: skip the rest of the backoff wait. */
     fun kick() {
         exec.execute {

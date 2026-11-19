@@ -26,6 +26,9 @@ class App : Application() {
     /** Live sync client while the service runs; null otherwise. */
     @Volatile var sync: SyncClient? = null
 
+    /** Held while syncing writes rows and while Settings switches server, so the two never interleave. */
+    val configLock = Any()
+
     var serverUrl: String
         get() = prefs.getString("url", "").orEmpty()
         set(v) = prefs.edit().putString("url", v.trim().trimEnd('/')).apply()
@@ -80,9 +83,14 @@ class App : Application() {
 class RoomStore(private val app: App) : Store {
     private val dao = app.db.dao()
 
+    /** The server and token this store syncs for. After a switch in Settings its writes are dropped. */
+    private val owner = app.serverUrl to app.token
+    private fun mine() = owner == app.serverUrl to app.token
+    private inline fun ifMine(f: () -> Unit) = synchronized(app.configLock) { if (mine()) f() }
+
     override fun lastSeq() = dao.lastSeq() ?: 0
 
-    override fun apply(notifs: Collection<Notif>, seq: Long) {
+    override fun apply(notifs: Collection<Notif>, seq: Long) = ifMine {
         dao.applyAll(notifs, seq)
         val muted = app.muted
         // A queued dismiss or snooze that has not reached the server yet wins over what the server last said.
@@ -93,12 +101,12 @@ class RoomStore(private val app: App) : Store {
         dao.prune(System.currentTimeMillis() - 7 * 24 * 3600_000L)
     }
 
-    override fun replaceAll(open: List<Notif>, seq: Long) {
+    override fun replaceAll(open: List<Notif>, seq: Long) = ifMine {
         dao.replaceAll(open, seq)
         app.tray.reconcile(open, app.muted)
     }
 
-    override fun pending() = dao.pending()
+    override fun pending() = if (mine()) dao.pending() else emptyList() // never send the new server's queue to the old one
     override fun removePending(p: Pending) = dao.removePending(p.key)
 
     fun reconcile() = app.tray.reconcile(dao.openNow(), app.muted)
