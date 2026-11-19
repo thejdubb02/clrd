@@ -154,7 +154,7 @@
     ],
     "responses": {
      "200": {
-      "description": "JSON post: the token's details",
+      "description": "JSON post: the token minted for this browser",
       "content": {
        "application/json": {
         "schema": {
@@ -167,7 +167,7 @@
       "description": "Form post: redirect to next (default /app). A wrong token redirects there too, with error=token added to the query."
      }
     },
-    "description": "Must be same-origin. Sets an HttpOnly cookie.",
+    "description": "Must be same-origin. Mints a token for this browser with the same scopes and topics and sets it as an HttpOnly cookie.",
     "requestBody": {
      "required": true,
      "content": {
@@ -180,6 +180,10 @@
          },
          "next": {
           "type": "string"
+         },
+         "name": {
+          "type": "string",
+          "description": "Device name for this browser. Default: from the User-Agent."
          }
         },
         "required": [
@@ -196,6 +200,10 @@
          },
          "next": {
           "type": "string"
+         },
+         "name": {
+          "type": "string",
+          "description": "Device name for this browser. Default: from the User-Agent."
          }
         },
         "required": [
@@ -214,7 +222,7 @@
     ],
     "responses": {
      "204": {
-      "description": "Cookie cleared"
+      "description": "Browser token revoked, cookie cleared"
      }
     },
     "security": []

@@ -58,9 +58,10 @@ Errors from these are the same ones the API returns (status and code); a
 mounted handler can just answer with its own message.
 
 The browser flow: the web app signs in with `POST /api/v1/session` (JSON or a
-form post with `token` and optional `next`), which sets the `clrd_session`
-cookie. After that every `/api/v1/*` call, the WebSocket and SSE work from the
-browser with no header. `DELETE /api/v1/session` signs out. On a fresh server
+form post with `token`, optional `next` and optional `name`), which mints a
+token for that browser with the same scopes and topics and sets it as the
+`clrd_session` cookie, so each browser is its own device. After that every `/api/v1/*` call, the WebSocket and SSE work from the
+browser with no header. `DELETE /api/v1/session` signs out and revokes that browser's token. On a fresh server
 with no admin token, the log prints `<CLRD_BASE_URL>/setup?code=...`; that page
 creates the first admin token and signs the browser in.
 
