@@ -108,6 +108,13 @@ func TestSignInMintsDevice(t *testing.T) {
 	if _, ok := tokenIDs(t, ts, admin)[a["id"].(string)]; ok || withCookie(t, ts, "GET", "/api/v1/topics", ca) != 401 {
 		t.Fatal("old session survives a new sign-in")
 	}
+	// Another site cannot sign this browser out.
+	req, _ = http.NewRequest("DELETE", ts.URL+"/api/v1/session", nil)
+	req.AddCookie(ca2)
+	req.Header.Set("Origin", "https://evil.example")
+	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 403 {
+		t.Fatalf("cross-site sign-out: %v %v", err, res)
+	}
 	// Sign-out revokes the session token, and only that.
 	if c := withCookie(t, ts, "DELETE", "/api/v1/session", ca2); c != 204 {
 		t.Fatalf("sign-out: %d", c)

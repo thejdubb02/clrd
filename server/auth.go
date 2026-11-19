@@ -439,6 +439,9 @@ func deviceName(name, ua string) string {
 }
 
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) error {
+	if !s.sameOrigin(r) {
+		return errf(403, "forbidden", "sign-out must come from this site")
+	}
 	if err := s.endSession(r); err != nil {
 		return err // keep the cookie so a retry can still revoke its token
 	}
