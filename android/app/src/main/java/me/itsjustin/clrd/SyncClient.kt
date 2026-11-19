@@ -63,6 +63,12 @@ class SyncClient(
         exec.shutdown()
     }
 
+    /** [stop], then wait until nothing more can be written to the store. Not for the main thread. */
+    fun stopAndWait() {
+        stop()
+        exec.awaitTermination(15, TimeUnit.SECONDS)
+    }
+
     /** The network came back: skip the rest of the backoff wait. */
     fun kick() {
         exec.execute {
@@ -78,7 +84,8 @@ class SyncClient(
             try {
                 flush()
             } catch (e: IOException) {
-                if (!stopped) flushRetry = exec.schedule({ flushSoon() }, flushRetryMs, TimeUnit.MILLISECONDS)
+                // A rejected token will not fix itself; the next connect reports it as AUTH_FAILED.
+                if (!stopped && !(e is HttpError && e.isAuth)) flushRetry = exec.schedule({ flushSoon() }, flushRetryMs, TimeUnit.MILLISECONDS)
             }
         }
     }
@@ -107,7 +114,7 @@ class SyncClient(
     }
 
     private fun onThread(myGen: Int, f: () -> Unit) {
-        if (!exec.isShutdown) exec.execute { if (myGen == gen && !stopped) f() }
+        if (!exec.isShutdown) runCatching { exec.execute { if (myGen == gen && !stopped) f() } } // may lose a race with stop()
     }
 
     private fun handle(text: String) {

@@ -327,17 +327,19 @@ private fun SettingsScreen(app: App) {
         Button(
             onClick = {
                 result = "Testing"
-                val changed = url != app.serverUrl || token != app.token
-                app.serverUrl = url
-                app.token = token
+                val newUrl = url.trim().trimEnd('/')
+                val newToken = token.trim()
                 app.io.execute {
-                    if (changed) {
-                        // ponytail: the old client may still land one in-flight event after this; the next reset clears it.
-                        app.sync?.stop()
+                    if (newUrl != app.serverUrl || newToken != app.token) {
+                        // Old server's rows, cursor and queue must not reach the new one. Stop the old client
+                        // and wait for it, wipe, and only then save, so a crash in between leaves no mix.
+                        app.sync?.stopAndWait()
                         app.sync = null
                         app.db.dao().forget()
                         app.tray.reconcile(emptyList(), app.muted)
                     }
+                    app.serverUrl = newUrl
+                    app.token = newToken
                     // /api/v1/topics needs the read scope, so this checks the URL and the token together.
                     result = try {
                         app.api().get("/api/v1/topics")
