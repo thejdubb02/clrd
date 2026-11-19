@@ -278,7 +278,7 @@ func Handler(api API, baseURL string) http.Handler {
 			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q"))}
 			snap, err := api.Snapshot(r, q)
 			if errors.Is(err, ErrUnauthorized) {
-				page(w, "signin", http.StatusUnauthorized, meta{Title: "Sign in: clrd", Path: r.URL.Path, Base: base(r)})
+				page(w, "signin", http.StatusUnauthorized, meta{Title: "Sign in: clrd", Path: r.URL.RequestURI(), Base: base(r)})
 				return
 			}
 			if err != nil {

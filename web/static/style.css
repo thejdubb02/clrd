@@ -156,7 +156,7 @@ pre { margin: 0 0 1em; padding: 16px 18px; overflow-x: auto; background: var(--s
 .signin { padding-top: 72px; padding-bottom: 72px; }
 .signin-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 24px 0; }
 .signin-form label { flex: 1 1 100%; font-weight: 500; color: var(--text); }
-.signin-form input { flex: 1 1 240px; height: 40px; }
+.signin .signin-form input { flex: 1 1 240px; height: 40px; }
 .signin-form .btn { min-height: 40px; }
 
 /* Docs */
