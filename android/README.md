@@ -42,7 +42,7 @@ APKs land in `app/build/outputs/apk/`.
 - No build timestamps or git hashes are written into the APK.
 - Fonts (Geist, SIL Open Font License, see `licenses/Geist-OFL.txt`) are committed, not downloaded at build time.
 
-F-Droid's own reproducibility check has not been run yet.
+Two separate Linux machines (JDK 17, SDK 35, clean checkouts) built byte-identical unsigned release APKs. F-Droid's own reproducibility check has not been run yet.
 
 ## Not done yet
 
