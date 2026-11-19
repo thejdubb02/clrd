@@ -222,18 +222,18 @@ func (s *Server) lookupToken(ctx context.Context, raw string) *Token {
 	if err != nil {
 		return nil
 	}
-	s.touch(t)
+	s.touch(ctx, t)
 	return t
 }
 
 // touch records that a device was seen, at most once a minute per token.
-func (s *Server) touch(t *Token) {
+func (s *Server) touch(ctx context.Context, t *Token) {
 	n := time.Now()
 	if last, ok := s.seen.Load(t.ID); ok && n.Sub(last.(time.Time)) < time.Minute {
 		return
 	}
 	s.seen.Store(t.ID, n)
-	if _, err := s.db.Exec(`UPDATE tokens SET last_seen_at = ? WHERE id = ?`, ms(n), t.ID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE tokens SET last_seen_at = ? WHERE id = ?`, ms(n), t.ID); err != nil && ctx.Err() == nil {
 		s.log.Warn("touch token", "err", err)
 	}
 }
