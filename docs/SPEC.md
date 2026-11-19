@@ -109,15 +109,17 @@ and keeps the connection. The server also sends `reset` when `since` is ahead
 of the server (a wiped server).
 
 **Epoch.** The server picks a random `epoch` (a short string) when it creates
-its database and keeps it for the life of that database. It comes with every
-cursor a client is handed: `ready`, `GET /api/v1/events` and
-`GET /api/v1/notifications`. Clients save it next to their seq. When the epoch
-they see differs from the saved one, the seq numbers belong to another
-database (a server reinstalled or started on a new file), so they treat it
-exactly like `reset`: drop the cursor and local state, fetch the open list
-fresh, and carry on from the new seq. A client with no saved epoch just saves
-the one it sees. A database restored from a backup keeps the epoch it had, so
-this alone does not catch a restore (issue #63 tracks that).
+its database (or first opens one from before epochs) and keeps it for the life
+of that database. It comes with `ready` and with the two responses that hand
+out a seq, `GET /api/v1/events` and `GET /api/v1/notifications`; single events
+do not carry it. Clients save it next to their seq and check it there, before
+trusting anything they replayed. When the epoch they see differs from the
+saved one, the seq numbers belong to another database (a server reinstalled or
+started on a new file), so they treat it exactly like `reset`: drop the cursor
+and local state, fetch the open list fresh, and carry on from the new seq. A
+client with no saved epoch just saves the one it sees. A database restored
+from a backup keeps the epoch it had, so this alone does not catch a restore
+(issue #63 tracks that).
 
 Also `GET /api/v1/events?since=<seq>&limit=500` for clients that poll: returns
 `{"events":[...],"seq":<current>,"epoch":"<id>"}`, or HTTP 410 with code `reset`. SSE at
