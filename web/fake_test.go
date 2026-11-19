@@ -6,6 +6,7 @@ package web
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"slices"
 	"sort"
@@ -92,4 +93,18 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	now := time.Now().UTC()
 	s.Devices = []Device{{"pixel-9", now.Add(-time.Minute)}, {"tablet", now.Add(-4 * time.Minute)}, {"web", now}}
 	return s, nil
+}
+
+func (f *Fake) Act(r *http.Request, id, action string, until *time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.items[id]
+	if !ok {
+		return errors.New("not found")
+	}
+	m := *n
+	m.State = map[string]string{"ack": "acknowledged", "snooze": "snoozed", "dismiss": "dismissed", "reopen": "active"}[action]
+	m.StateBy, m.SnoozeUntil = "web", until
+	f.put(m)
+	return nil
 }

@@ -39,7 +39,7 @@
       {{if eq .View "inbox"}}<button type="button" class="btn btn-quiet js-only" data-act="clear-all"{{if not .Snap.Items}} hidden{{end}}>Clear all</button>{{end}}
     </header>
     <div class="list" data-list>
-      {{range .Snap.Items}}{{template "card" (card . $.View)}}{{end}}
+      {{range .Snap.Items}}{{template "card" (card . $.View $.Here)}}{{end}}
     </div>
     <div class="empty"{{if .Snap.Items}} hidden{{end}} data-empty>
       {{if .Q}}<p>No notifications match "{{.Q}}".</p>
@@ -73,14 +73,25 @@
   {{with $n.Body}}<p class="card-body">{{.}}</p>{{end}}
   <p class="meta"><a href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{range $n.Tags}}<span>#{{.}}</span>{{end}}</p>
   {{if $n.Actions}}<p class="links">{{range $n.Actions}}<a href="{{.URL}}" rel="noopener noreferrer">{{.Label}}</a>{{end}}</p>{{end}}
-  <div class="actions js-only">
-    {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button type="button" class="btn btn-quiet" data-act="reopen">Restore</button>{{end}}
+  <form class="actions" method="post" action="/app/act">
+    <input type="hidden" name="id" value="{{$n.ID}}">
+    <input type="hidden" name="next" value="{{.Here}}">
+    {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button class="btn btn-quiet" name="act" value="reopen" data-act="reopen">Restore</button>{{end}}
     {{else}}
-      {{if ne $n.State "acknowledged"}}<button type="button" class="btn btn-quiet" data-act="ack">Ack</button>{{end}}
-      {{if ne $n.State "snoozed"}}<button type="button" class="btn btn-quiet" data-act="snooze" title="Snooze for 1 hour">Snooze</button>{{end}}
-      <button type="button" class="btn btn-clear" data-act="dismiss">Clear</button>
+      {{if ne $n.State "acknowledged"}}<button class="btn btn-quiet" name="act" value="ack" data-act="ack">Ack</button>{{end}}
+      {{if ne $n.State "snoozed"}}<details class="snooze">
+        <summary class="btn btn-quiet">Snooze</summary>
+        <div class="snooze-menu">
+          <button class="btn btn-quiet" name="snooze" value="1h" data-act="snooze" data-for="1h">1 hour</button>
+          <button class="btn btn-quiet" name="snooze" value="4h" data-act="snooze" data-for="4h">4 hours</button>
+          <button type="button" class="btn btn-quiet js-only" data-act="snooze" data-at="tonight">Tonight 20:00</button>
+          <button type="button" class="btn btn-quiet js-only" data-act="snooze" data-at="tomorrow">Tomorrow 09:00</button>
+          <span class="snooze-custom js-only"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" type="datetime-local" data-until><button type="button" class="btn btn-quiet" data-act="snooze" data-at="custom">Set</button></span>
+        </div>
+      </details>{{end}}
+      <button class="btn btn-clear" name="act" value="dismiss" data-act="dismiss">Clear</button>
     {{end}}
-  </div>
+  </form>
 </article>
 {{end}}
 

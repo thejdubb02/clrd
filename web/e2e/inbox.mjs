@@ -36,7 +36,7 @@ try {
     await new Promise(r => setTimeout(r, 100));
   }
   browser = await chromium.launch();
-  const page = await (await browser.newContext()).newPage();
+  const page = await (await browser.newContext({ timezoneId: 'America/Chicago' })).newPage();
   const card = title => page.locator('article.card', { hasText: title });
   const toast = page.locator('[data-toast]');
 
@@ -86,6 +86,48 @@ try {
   await notice.waitFor({ state: 'hidden' });
   await cut.close();
   console.log('ok: offline notice after 3 minutes, gone on reconnect');
+
+  // Snooze menu: Tomorrow 09:00 means 09:00 where the reader is, not on the server.
+  const d = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Cert renews soon', message: '7 days left' });
+  await page.reload();
+  const want = await page.evaluate(() => { const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); return t.toISOString(); });
+  await card('Cert renews soon').getByText('Snooze', { exact: true }).click();
+  await card('Cert renews soon').getByRole('button', { name: 'Tomorrow 09:00' }).click();
+  await toast.filter({ hasText: 'Snoozed until' }).waitFor();
+  const got = await get(laptop, d.id);
+  assert.equal(got.state, 'snoozed');
+  assert.equal(new Date(got.snooze_until).toISOString(), want);
+  console.log('ok: snooze until tomorrow 09:00 local');
+
+  // A custom time, confirmed with Enter, snoozes until that time (and does not Ack).
+  const g = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Renew domain', message: 'expires in 30 days' });
+  await page.reload();
+  await card('Renew domain').getByText('Snooze', { exact: true }).click();
+  await card('Renew domain').getByLabel('Snooze until').fill('2031-06-01T08:30');
+  await card('Renew domain').getByLabel('Snooze until').press('Enter');
+  await toast.filter({ hasText: 'Snoozed until' }).waitFor();
+  const custom = await get(laptop, g.id);
+  assert.equal(custom.state, 'snoozed');
+  assert.equal(new Date(custom.snooze_until).toISOString(), '2031-06-01T13:30:00.000Z'); // 08:30 in Chicago (CDT)
+  console.log('ok: custom snooze time with Enter');
+
+  // With JavaScript off the buttons still work: a form post and back to the same page.
+  const nojs = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+  await nojs.goto(`${base}/app?auth=${link}`);
+  const e = await api(phone, '/api/v1/notifications', { topic: 'home', title: 'Garage open', message: '20 minutes' });
+  const f = await api(phone, '/api/v1/notifications', { topic: 'home', title: 'Washer done', message: 'cycle finished' });
+  await nojs.goto(`${base}/app?topic=home`);
+  const plain = title => nojs.locator('article.card', { hasText: title });
+  assert.equal(await plain('Garage open').getByRole('button', { name: 'Tomorrow 09:00' }).isVisible(), false, 'script-only snooze shown without script');
+  await plain('Garage open').getByRole('button', { name: 'Clear' }).click();
+  await plain('Garage open').waitFor({ state: 'detached' });
+  assert.equal(new URL(nojs.url()).search, '?topic=home');
+  assert.equal((await get(laptop, e.id)).state, 'dismissed');
+  await plain('Washer done').getByText('Snooze', { exact: true }).click();
+  await plain('Washer done').getByRole('button', { name: '4 hours' }).click();
+  await plain('Washer done').waitFor({ state: 'detached' });
+  assert.equal((await get(laptop, f.id)).state, 'snoozed');
+  console.log('ok: Clear and Snooze work without JavaScript');
 } finally {
   await browser?.close();
   server.kill();

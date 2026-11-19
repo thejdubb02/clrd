@@ -183,6 +183,46 @@ func publish(t *testing.T, ts *httptest.Server, raw, topic, msg string) {
 	}
 }
 
+// TestActForm posts the card form the way a browser without JavaScript does.
+func TestActForm(t *testing.T) {
+	s, ts, raw := realServer(t)
+	c := browser()
+	publish(t, ts, raw, "home", "disk full")
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	submit(t, c, ts.URL, page, raw)
+	list, _ := s.List(context.Background(), mustTok(t, s, raw), server.ListQuery{State: "active"})
+	id := list[0].ID
+	form := func(origin string, v url.Values) (int, string) {
+		t.Helper()
+		v.Set("id", id)
+		req, _ := http.NewRequest("POST", ts.URL+"/app/act", strings.NewReader(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", origin)
+		res, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode, res.Request.URL.RequestURI()
+	}
+	state := func() *server.Notification {
+		n, err := s.Get(context.Background(), mustTok(t, s, raw), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if code, at := form("https://evil.example", url.Values{"act": {"dismiss"}}); state().State != "active" {
+		t.Fatalf("cross-origin form post changed it (%d at %s)", code, at)
+	}
+	if code, at := form(ts.URL, url.Values{"act": {"ack"}, "next": {"/app?topic=home"}}); code != 200 || at != "/app?topic=home" || state().State != "acknowledged" || state().StateBy != "phone" {
+		t.Fatalf("ack: %d at %s, state %s by %s", code, at, state().State, state().StateBy)
+	}
+	if code, _ := form(ts.URL, url.Values{"snooze": {"1h"}}); code != 200 || state().State != "snoozed" {
+		t.Fatalf("snooze: %d, state %s", code, state().State)
+	}
+}
+
 // act posts an action with only the session cookie, the way the inbox does.
 func act(t *testing.T, c *http.Client, base, id, action string) server.Notification {
 	t.Helper()

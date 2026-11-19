@@ -135,10 +135,33 @@
     }
   }
 
-  const done = { ack: 'Acknowledged', snooze: 'Snoozed for 1 hour', dismiss: 'Cleared', reopen: 'Restored to the inbox' };
+  // Snooze times the server cannot work out: it does not know the reader's time zone.
+  const snoozeAt = (at, c) => {
+    const d = new Date();
+    if (at === 'tonight') d.setHours(20, 0, 0, 0);
+    else if (at === 'tomorrow') { d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); }
+    else return c.querySelector('[data-until]').value ? new Date(c.querySelector('[data-until]').value) : null;
+    return d;
+  };
+  // Tonight is offered only while it is still ahead.
+  document.addEventListener('toggle', e => {
+    const t = e.target.querySelector && e.target.querySelector('[data-at=tonight]');
+    if (t) t.hidden = new Date().getHours() >= 20;
+  }, true);
+
+  // Enter in the date box would submit the card form with its first button (Ack).
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-until]')) {
+      e.preventDefault();
+      e.target.closest('.snooze-custom').querySelector('[data-act]').click();
+    }
+  });
+
+  const done = { ack: 'Acknowledged', dismiss: 'Cleared', reopen: 'Restored to the inbox' };
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled) return;
+    e.preventDefault(); // the buttons are also a form for when this script is off
     const act = b.dataset.act;
     if (act === 'clear-all') {
       const ids = cards().map(c => c.dataset.id);
@@ -152,11 +175,18 @@
       return refresh();
     }
     const c = b.closest('.card');
+    let body;
+    if (act === 'snooze') {
+      const t = !b.dataset.for && snoozeAt(b.dataset.at, c);
+      if (!b.dataset.for && !(t > new Date())) return say('Pick a time in the future.');
+      body = b.dataset.for ? { for: b.dataset.for } : { until: t.toISOString() };
+    }
     b.disabled = true;
-    const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, act === 'snooze' ? { for: '1h' } : undefined);
+    const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, body);
     b.disabled = false;
     if (!r) return;
     const n = await r.json().catch(() => ({}));
+    done.snooze = n.snooze_until ? `Snoozed until ${fmt.format(new Date(n.snooze_until))}` : 'Snoozed';
     if (act === 'dismiss' && !(n.state === 'dismissed' && n.state_by === shell.dataset.me)) {
       // Another device or the sender got there first: no Undo, it would reopen their change.
       leave(c, reason(n));

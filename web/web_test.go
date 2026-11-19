@@ -106,11 +106,16 @@ func TestLinks(t *testing.T) {
 	}
 }
 
-type deny struct{}
+// readOnly is for page tests that never act.
+type readOnly struct{}
+
+func (readOnly) Act(*http.Request, string, string, *time.Time) error { return ErrUnauthorized }
+
+type deny struct{ readOnly }
 
 func (deny) Snapshot(*http.Request, Query) (Snapshot, error) { return Snapshot{}, ErrUnauthorized }
 
-type leaky struct{}
+type leaky struct{ readOnly }
 
 func (leaky) Snapshot(*http.Request, Query) (Snapshot, error) {
 	return Snapshot{Items: []Notification{{Title: "secret-title"}}}, ErrUnauthorized
@@ -131,17 +136,72 @@ func TestUnauthorized(t *testing.T) {
 	}
 }
 
-type one struct{ n Notification }
+type one struct {
+	readOnly
+	n Notification
+}
 
 func (o one) Snapshot(*http.Request, Query) (Snapshot, error) {
 	return Snapshot{Items: []Notification{o.n}}, nil
+}
+
+// The card buttons are a form, so Ack, Snooze and Clear work without JavaScript.
+func TestActForm(t *testing.T) {
+	f := NewFake()
+	h := Handler(f, "")
+	id := func(title string) string {
+		for _, n := range f.items {
+			if n.Title == title {
+				return n.ID
+			}
+		}
+		t.Fatalf("no %q", title)
+		return ""
+	}
+	door := id("Front door open for 10 minutes")
+	if _, body := get(t, h, "/app?topic=home"); !strings.Contains(body, `action="/app/act"`) || !strings.Contains(body, `name="next" value="/app?topic=home"`) ||
+		!strings.Contains(body, `name="snooze" value="4h"`) || !strings.Contains(body, `name="act" value="dismiss"`) {
+		t.Fatal("cards have no action form that returns to this page")
+	}
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/app/act", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.ServeHTTP(w, r)
+		return w
+	}
+	w := post(url.Values{"id": {door}, "snooze": {"4h"}, "next": {"/app?topic=home"}})
+	if n := f.items[door]; w.Code != 303 || w.Header().Get("Location") != "/app?topic=home" || n.State != "snoozed" ||
+		n.SnoozeUntil == nil || n.SnoozeUntil.Sub(time.Now()) < 239*time.Minute || n.SnoozeUntil.Sub(time.Now()) > 4*time.Hour {
+		t.Fatalf("snooze 4h: %d to %q, state %s until %v", w.Code, w.Header().Get("Location"), n.State, n.SnoozeUntil)
+	}
+	for _, next := range []string{"//evil.example/app", "https://evil.example/app", "", "/app/../\\evil.example", "/apple", "/app/..%2f..%2f"} {
+		if w := post(url.Values{"id": {door}, "act": {"dismiss"}, "next": {next}}); w.Code != 303 || w.Header().Get("Location") != "/app" {
+			t.Errorf("next %q: %d to %q, want /app", next, w.Code, w.Header().Get("Location"))
+		}
+	}
+	if f.items[door].State != "dismissed" {
+		t.Fatal("Clear did not dismiss")
+	}
+	for _, form := range []url.Values{{"id": {door}, "act": {"delete"}}, {"id": {door}, "snooze": {"-1h"}}, {"id": {door}, "snooze": {"tonight"}}, {"id": {"nope"}, "act": {"ack"}}} {
+		if w := post(form); w.Code != 400 {
+			t.Errorf("%v: %d, want 400", form, w.Code)
+		}
+	}
+	if w := post(url.Values{"id": {door}, "act": {"ack"}, "pad": {strings.Repeat("x", 80<<10)}}); w.Code != 400 {
+		t.Errorf("oversized form: %d, want 400", w.Code)
+	}
+	h = Handler(deny{}, "")
+	if w := post(url.Values{"id": {"x"}, "act": {"ack"}, "next": {"/app/cleared"}}); w.Code != 303 || w.Header().Get("Location") != "/app/cleared" {
+		t.Errorf("signed out: %d to %q, want back to the page (it shows sign-in)", w.Code, w.Header().Get("Location"))
+	}
 }
 
 // Notification fields come from anyone with a publish token.
 func TestHostileNotification(t *testing.T) {
 	n := Notification{ID: `x" onmouseover="alert(1)`, Topic: "a<b", Title: `<img src=x onerror=alert(1)>`, Message: "<script>alert(1)</script>",
 		Click: "javascript:alert(1)", Actions: []Action{{Label: "go", URL: "javascript:alert(2)"}}, State: "active", CreatedAt: time.Now()}
-	_, body := get(t, Handler(one{n}, ""), "/app")
+	_, body := get(t, Handler(one{n: n}, ""), "/app")
 	for _, bad := range []string{"<img src=x", "<script>alert", `href="javascript:`, `" onmouseover="`} {
 		if strings.Contains(body, bad) {
 			t.Errorf("rendered %q unescaped", bad)

@@ -103,6 +103,9 @@ type Snapshot struct {
 // session; the page then shows nothing but a sign-in notice.
 type API interface {
 	Snapshot(r *http.Request, q Query) (Snapshot, error)
+	// Act changes one notification for the signed-in browser: ack, snooze
+	// (until is set), dismiss or reopen.
+	Act(r *http.Request, id, action string, until *time.Time) error
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
@@ -117,11 +120,11 @@ var views = map[string][]string{
 var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"iso":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 	"clock": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
-	"card": func(n Notification, view string) any {
+	"card": func(n Notification, view, here string) any {
 		return struct {
-			N    Notification
-			View string
-		}{n, view}
+			N          Notification
+			View, Here string
+		}{n, view, here}
 	},
 	"plural": func(n int, one, many string) string {
 		if n == 1 {
@@ -319,12 +322,12 @@ func Handler(api API, baseURL string) http.Handler {
 			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings"}
 			page(w, "app", 200, struct {
 				meta
-				View, Heading, Topic, Q string
-				Snap                    Snapshot
-				Inbox, Snoozed, Cleared int
+				View, Heading, Topic, Q, Here string
+				Snap                          Snapshot
+				Inbox, Snoozed, Cleared       int
 			}{
 				meta: meta{Title: titles[view] + ": clrd", Path: r.URL.Path, Base: base(r)},
-				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Snap: snap,
+				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), Snap: snap,
 				Inbox:   c["active"] + c["acknowledged"],
 				Snoozed: c["snoozed"],
 				Cleared: c["dismissed"] + c["resolved"],
@@ -336,6 +339,44 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/snoozed", app("snoozed"))
 	mux.HandleFunc("GET /app/cleared", app("cleared"))
 	mux.HandleFunc("GET /app/settings", app("settings"))
+
+	// The card buttons as a plain form post, so they work without JavaScript;
+	// then back to the page they came from. Snooze takes a duration because
+	// only the browser knows its time zone (the script sends "until" itself).
+	mux.HandleFunc("POST /app/act", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		// Back to an inbox page only. Redirect cleans dot segments, so a path
+		// with ".." or a backslash could turn into "/\host": refuse those.
+		next := f.Get("next")
+		if p, _, _ := strings.Cut(next, "?"); (p != "/app" && !strings.HasPrefix(p, "/app/")) || strings.Contains(p, "..") || strings.Contains(p, "\\") {
+			next = "/app"
+		}
+		act, until := f.Get("act"), (*time.Time)(nil)
+		if s := f.Get("snooze"); s != "" {
+			d, err := time.ParseDuration(s)
+			if err != nil || d <= 0 || d > 31*24*time.Hour {
+				http.Error(w, "Snooze needs a duration like 1h.", http.StatusBadRequest)
+				return
+			}
+			t := time.Now().Add(d)
+			act, until = "snooze", &t
+		}
+		if act != "ack" && act != "snooze" && act != "dismiss" && act != "reopen" {
+			http.Error(w, "Unknown action.", http.StatusBadRequest)
+			return
+		}
+		if err := api.Act(r, f.Get("id"), act, until); err != nil && !errors.Is(err, ErrUnauthorized) {
+			log.Printf("web: %s: %v", act, err)
+			http.Error(w, "Could not change that notification. Go back and reload the page.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, next, http.StatusSeeOther) // signed out: next shows the sign-in page
+	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
