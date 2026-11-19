@@ -36,5 +36,7 @@ Fixed, Removed, Security), as one line a user can understand.
 - Docker image build and a Compose file for self-hosting.
 - Server: `ready`, the events poll and the notification list carry an `epoch`
   naming the database, so a client can tell when the server was reinstalled or
-  started on a new database and fetch fresh. Clients do not act on it yet, and a
-  restored backup keeps its old epoch.
+  started on a new database and fetch fresh. The Android app does not act on it
+  yet, and a restored backup keeps its old epoch.
+- Web: an open inbox reloads when the server comes back on a different database
+  (a new epoch), instead of carrying on from a position that no longer exists.

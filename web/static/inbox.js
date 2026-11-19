@@ -10,6 +10,7 @@
   const list = $('[data-list]'), empty = $('[data-empty]'), clearAll = $('[data-act=clear-all]');
   const toast = $('[data-toast]'), announce = $('[data-announce]'), conn = $('[data-conn]'), sync = $('#sync');
   let seq = Number(shell.dataset.seq) || 0;
+  let epoch = shell.dataset.epoch || ''; // the database seq belongs to
 
   // Times are rendered in UTC on the server; show them in the reader's zone.
   const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -219,8 +220,15 @@
     ws.onmessage = e => {
       let m;
       try { m = JSON.parse(e.data); } catch { return; }
-      if (m.type === 'ready') { tries = 0; if (m.seq > seq) seq = m.seq; live(true); }
-      else if (m.type === 'reset') { ws.onclose = null; ws.close(); location.reload(); }
+      const reset = () => { ws.onclose = null; ws.close(); location.reload(); };
+      if (m.type === 'ready') {
+        // Another epoch is another database (server reinstalled or moved), so
+        // this page's seq and cards mean nothing there: same as reset.
+        if (epoch && m.epoch && m.epoch !== epoch) return reset();
+        epoch ||= m.epoch || '';
+        tries = 0; if (m.seq > seq) seq = m.seq; live(true);
+      }
+      else if (m.type === 'reset') reset();
       else if (m.notification) onEvent(m);
     };
     ws.onclose = () => {
