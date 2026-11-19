@@ -949,7 +949,7 @@
     ],
     "responses": {
      "101": {
-      "description": "Upgrade. Frames are Event JSON: replay after since, then {\"type\":\"ready\",\"seq\":N}, then live. {\"type\":\"reset\"} means the cursor is gone: drop local state and rebuild from the replay."
+      "description": "Upgrade. Frames are Event JSON: replay after since, then {\"type\":\"ready\",\"seq\":N}, then live. {\"type\":\"reset\"} means the cursor is gone: drop local state and fetch GET /api/v1/notifications?state=open, keeping the connection."
      },
      "400": {
       "$ref": "#/components/responses/Error"
@@ -1226,7 +1226,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "oneOf": [
+         "anyOf": [
           {
            "$ref": "#/components/schemas/NtfyMessage"
           },
@@ -1380,7 +1380,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "oneOf": [
+         "anyOf": [
           {
            "$ref": "#/components/schemas/NtfyMessage"
           },
@@ -1536,7 +1536,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "oneOf": [
+         "anyOf": [
           {
            "$ref": "#/components/schemas/NtfyMessage"
           },
@@ -1685,7 +1685,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "oneOf": [
+         "anyOf": [
           {
            "$ref": "#/components/schemas/NtfyMessage"
           },
@@ -2085,7 +2085,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "oneOf": [
+         "anyOf": [
           {
            "$ref": "#/components/schemas/NtfyMessage"
           },
@@ -2145,7 +2145,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "oneOf": [
+         "anyOf": [
           {
            "$ref": "#/components/schemas/NtfyMessage"
           },
@@ -2241,7 +2241,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "oneOf": [
+         "anyOf": [
           {
            "$ref": "#/components/schemas/NtfyMessage"
           },
@@ -2337,7 +2337,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "oneOf": [
+         "anyOf": [
           {
            "$ref": "#/components/schemas/NtfyMessage"
           },

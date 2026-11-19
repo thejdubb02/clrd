@@ -18,9 +18,13 @@ Or plain Docker:
 
 ```sh
 docker build -t clrd .
-docker run -d --name clrd -p 8080:8080 -v clrd-data:/data \
+docker run -d --name clrd -p 127.0.0.1:8080:8080 -v clrd-data:/data \
   -e CLRD_BASE_URL=https://clrd.example.com clrd
 ```
+
+Both publish the port on localhost only, so tokens reach clrd through your
+HTTPS proxy and never cross the network in plain HTTP. If the proxy runs on
+another machine, publish the port on a private interface instead.
 
 Or the binary (Go 1.23+, no C compiler needed):
 
@@ -63,7 +67,7 @@ clrd token list
 Scopes: `read` (see and act on notifications), `publish` (send), `admin`
 (manage tokens). `--topics` limits a token to those topics. Revoke with
 `DELETE /api/v1/tokens/{id}` (ids are in `GET /api/v1/tokens`); open streams for that token close
-at once.
+within 30 seconds.
 
 ## Settings
 
@@ -88,14 +92,19 @@ clrd.example.com {
 }
 ```
 
-nginx:
+nginx (the `map` goes in the `http` block):
 
 ```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 location / {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;  # map $http_upgrade in the http block
+    proxy_set_header Connection $connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_buffering off;
@@ -140,7 +149,8 @@ Grafana can post straight to `https://clrd.example.com/<topic>?template=alertman
 firing alerts appear, resolved alerts clear.
 
 Not supported yet: attachments, icons, email and phone call forwarding,
-anonymous topics, and `http`/`broadcast` action buttons (view actions work).
+anonymous topics, `Cache: no` (refused, since clrd stores every notification
+to sync it), and `http`/`broadcast` action buttons (view actions work).
 
 ## Upgrading
 

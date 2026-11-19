@@ -93,6 +93,9 @@ func (s *Server) ntfyRoutes() {
 	}
 	s.route("GET /{topics}/auth", func(w http.ResponseWriter, r *http.Request) error {
 		tok := s.auth(r, false)
+		if err := tok.need(ScopeRead, ""); err != nil {
+			return err
+		}
 		for _, t := range splitList(r.PathValue("topics")) {
 			if err := tok.need(ScopeRead, t); err != nil {
 				return err
@@ -197,6 +200,12 @@ func parseDuration(v string) (time.Duration, error) {
 // ntfyPublish: PUT/POST /{topic}[/{sid}] with the body as the message, or
 // GET /{topic}/publish with everything in the query. Never the cookie.
 func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
+	if r.Method == http.MethodHead { // GET routes also match HEAD; a probe must not publish
+		return errf(405, "bad_request", "use GET, PUT or POST to publish")
+	}
+	if strings.EqualFold(param(r, "Cache"), "no") { // ntfy drops these after delivery; clrd keeps every notification
+		return errf(400, "bad_request", "Cache: no is not supported: clrd stores every notification so it can sync")
+	}
 	tok := s.auth(r, false)
 	if t := r.URL.Query().Get("template"); t != "" && r.Method != http.MethodGet {
 		return s.ntfyTemplate(w, r, tok, t)
@@ -286,9 +295,11 @@ func (s *Server) ntfyAct(action string) func(http.ResponseWriter, *http.Request)
 		tok, topic, sid := s.auth(r, false), r.PathValue("topic"), r.PathValue("sid")
 		n, err := s.ActByKey(r.Context(), tok, topic, sid, action)
 		if isNotFound(err) {
-			n, err = s.Act(r.Context(), tok, sid, action, nil)
-			if err == nil && n.Topic != topic {
+			if n, err = s.Get(r.Context(), tok, sid); err == nil && n.Topic != topic {
 				return errf(404, "not_found", "no open notification %q in %q", sid, topic)
+			}
+			if err == nil {
+				n, err = s.Act(r.Context(), tok, sid, action, nil)
 			}
 		}
 		if err != nil {

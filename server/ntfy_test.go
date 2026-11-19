@@ -53,6 +53,21 @@ func TestNtfyPublish(t *testing.T) {
 	s, ts, admin := newTest(t)
 	s.Mount("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "landing") }))
 
+	// A HEAD probe and a no-cache publish store nothing; the auth probe needs a token.
+	before := s.seq.Load()
+	if code, _ := raw(t, "HEAD", ts.URL+"/alerts/trigger?message=x", admin, "", nil); code != 405 {
+		t.Fatalf("HEAD publish: %d", code)
+	}
+	if code, _ := raw(t, "PUT", ts.URL+"/alerts", admin, "secret", map[string]string{"Cache": "no"}); code != 400 {
+		t.Fatalf("Cache: no: %d", code)
+	}
+	if s.seq.Load() != before {
+		t.Fatal("HEAD or Cache: no published")
+	}
+	if code, _ := raw(t, "GET", ts.URL+"/,/auth", "", "", nil); code != 401 {
+		t.Fatalf("auth probe with no topics and no token: %d", code)
+	}
+
 	code, out := raw(t, "PUT", ts.URL+"/alerts", admin, "Disk 91%", map[string]string{"Title": "web-1", "Priority": "high",
 		"Tags": "warning,disk", "X-Click": "https://example.com/d", "Actions": "view, Open, https://example.com/o; http, Hook, https://example.com/h"})
 	m := ntfyDecode(t, out)
@@ -110,6 +125,9 @@ func TestNtfyPublish(t *testing.T) {
 	id := ntfyDecode(t, out).SequenceID
 	if code, _ := raw(t, "DELETE", ts.URL+"/other/"+id, admin, "", nil); code != 404 {
 		t.Fatalf("delete through the wrong topic: %d", code)
+	}
+	if _, out := raw(t, "GET", ts.URL+"/api/v1/notifications/"+id, admin, "", nil); !strings.Contains(out, `"state":"active"`) {
+		t.Fatalf("wrong-topic delete changed the row: %s", out)
 	}
 	if _, out := raw(t, "DELETE", ts.URL+"/alerts/"+id, admin, "", nil); ntfyDecode(t, out).Event != "message_delete" {
 		t.Fatalf("delete: %s", out)

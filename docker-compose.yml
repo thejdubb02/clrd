@@ -5,7 +5,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       CLRD_BASE_URL: https://clrd.example.com
       # CLRD_RETENTION: 720h

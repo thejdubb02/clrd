@@ -413,7 +413,7 @@ func snoozeUntil(r *http.Request) (*time.Time, error) {
 	if in.Until != nil {
 		return in.Until, nil
 	}
-	d, err := time.ParseDuration(in.For)
+	d, err := parseDuration(in.For)
 	if err != nil || d <= 0 {
 		return nil, errf(400, "bad_request", "snooze needs \"for\" (like 1h) or \"until\" (RFC3339)")
 	}
