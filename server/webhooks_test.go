@@ -10,8 +10,9 @@ import (
 	"time"
 )
 
-// TestWebhookBuiltins sends each built-in its fixture (a vendor example, or
-// the exact body its docs page says to paste) and checks what it publishes,
+// TestWebhookBuiltins sends each built-in its fixture (the vendor's own example
+// trimmed by key: octokit/webhooks, sentry-docs, Stripe API docs, Atlassian docs;
+// or, for services where clrd supplies the body, the exact body its docs page says to paste) and checks what it publishes,
 // then sends the follow-up that resolves it where the service has one.
 func TestWebhookBuiltins(t *testing.T) {
 	_, ts, admin := newTest(t)
@@ -19,10 +20,10 @@ func TestWebhookBuiltins(t *testing.T) {
 		name, hdr, title, prio string
 		resolve                [2]string // replace in the fixture to get the event that resolves it; "" = none
 	}{
-		{"github", "X-GitHub-Event: issues", "octocat/Hello-World: issues opened", "3", [2]string{`"opened"`, `"closed"`}},
-		{"sentry", "", "ZeroDivisionError: division by zero", "3", [2]string{`"created"`, `"resolved"`}},
-		{"stripe", "", "payment_intent.payment_failed", "4", [2]string{}},
-		{"jira", "", "OPS-12: Backups failing on db1", "3", [2]string{`"key":"new"`, `"key":"done"`}},
+		{"github", "X-GitHub-Event: issues", "Codertocat/Hello-World: issues opened", "3", [2]string{`"opened"`, `"closed"`}},
+		{"sentry", "", "Error generated with event_id: 495d375a-1df6-45c0-9890-34dae8e1b6a4(Priority: HIGH)", "3", [2]string{`"created"`, `"resolved"`}},
+		{"stripe", "", "setup_intent.created", "3", [2]string{}},
+		{"jira", "", "JRA-20002: I feel the need for speed", "3", [2]string{`"jira:issue_updated"`, `"jira:issue_deleted"`}},
 		{"healthchecks", "", "nightly-backup is down", "4", [2]string{`"down"`, `"up"`}},
 		{"proxmox", "", "vzdump backup status (pve1): backup failed", "4", [2]string{}},
 		{"zabbix", "", "Problem: High CPU utilization on web1", "4", [2]string{`"value":"1"`, `"value":"0"`}},

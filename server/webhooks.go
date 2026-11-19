@@ -525,7 +525,7 @@ var builtinWebhooks = map[string]Webhook{
 		sign:     hubSignature("X-Hub-Signature-256"),
 	},
 
-	// https://docs.sentry.io/organization/integrations/integration-platform/webhooks/
+	// https://docs.sentry.io/organization/integrations/integration-platform/webhooks/ (examples in getsentry/sentry-docs)
 	// Issues, issue alerts and metric alerts; a resolved issue or alert resolves.
 	"sentry": {
 		Title:    `{{get . "data.issue.title" "data.event.title" "data.metric_alert.alert_rule.name" "data.description_title"}}`,
@@ -550,7 +550,7 @@ var builtinWebhooks = map[string]Webhook{
 	// One notification per issue, resolved when it is done or deleted.
 	"jira": {
 		Title:   `{{get . "issue.key"}}: {{get . "issue.fields.summary"}}`,
-		Message: `{{get . "issue.fields.status.name"}}{{with get . "user.displayName"}}, {{.}}{{end}}`,
+		Message: `{{with get . "issue.fields.status.name"}}{{.}}, {{end}}{{get . "user.displayName"}}`,
 		Click:   `{{with get . "issue.self"}}{{index (split . "/rest/") 0}}/browse/{{get $ "issue.key"}}{{end}}`,
 		ID:      `{{with get . "issue.key"}}jira-{{.}}{{end}}`,
 		Resolve: `{{or (eq (get . "issue.fields.status.statusCategory.key") "done") (eq (get . "webhookEvent") "jira:issue_deleted")}}`,

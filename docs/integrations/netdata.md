@@ -8,7 +8,12 @@ Critical is priority high.
 1. Space settings, Alerts & Notifications, Notification Methods, Webhook.
 2. Webhook URL: `https://clrd.itsjustin.me/netdata?template=netdata`.
 3. Authentication: Bearer, with your clrd token.
-4. Use the Test button to check it arrives.
+
+Netdata documents the webhook fields but publishes no sample body, so this
+template follows its field reference. The Test button's body is not
+documented and may arrive with a blank title. Alert payloads name no node,
+so the same alert on two nodes shares one notification; use one topic per
+node if that matters.
 
 | clrd | Netdata |
 |---|---|
