@@ -11,13 +11,20 @@ Public instance: `https://clrd.itsjustin.me` (docs and examples use this host).
 
 | Dir | Owner thread | What |
 |---|---|---|
-| `server/` | server | Go module `github.com/thejdubb02/clrd/server`. Single binary. |
+| `server/` | server | Go package `github.com/thejdubb02/clrd/server`, binary in `server/cmd/clrd`. |
 | `web/` | web | Inbox app and landing/docs pages, embedded in the binary via `embed`. |
 | `android/` | android | Kotlin app, Gradle, F-Droid ready. |
 | `sdk/python`, `sdk/js`, `sdk/go` | integrations | Thin clients over the REST API. |
 | `server/mcp/` | integrations | MCP server mounted at `/mcp`. |
 | `docs/` | everyone | This spec, `api.md`, `self-host.md`, `integrations/*.md`. |
 | `assets/` | web | `logo.svg`, `mark.svg`, icons. One source for every surface. |
+
+One Go module at the repo root, `github.com/thejdubb02/clrd` (`go.mod`
+owned by the server thread). Reason: `go:embed` cannot reach outside its
+module, and the binary must embed `web/`. So `web/` is a plain package in that
+module (no own `go.mod`); `sdk/go` gets its own nested `go.mod` so SDK users do
+not pull in SQLite. How `web` and `server/mcp` plug into the binary:
+`server/README.md`.
 
 ## 2. Data model
 
@@ -80,8 +87,19 @@ conflict resolution, last write on the server wins.
 4. If `since` is older than retention, server sends `{"type":"reset"}` and the
    client fetches `GET /api/v1/notifications?state=open` fresh.
 
-Also `GET /api/v1/events?since=<seq>&limit=500` (JSON, same events) for
-clients that poll, and SSE at `GET /api/v1/events/sse?since=<seq>`.
+After `reset` the server sends `ready` with the current seq and carries on
+with live events, so the client drops its local state, fetches the open list,
+and keeps the connection. The server also sends `reset` when `since` is ahead
+of the server (a wiped server).
+
+Also `GET /api/v1/events?since=<seq>&limit=500` for clients that poll: returns
+`{"events":[...],"seq":<current>}`, or HTTP 410 with code `reset`. SSE at
+`GET /api/v1/events/sse?since=<seq>` sends the same JSON objects as the
+WebSocket (events, `ready`, `reset`), one per `data:` line, and honours
+`Last-Event-ID`.
+
+Browsers cannot set headers on a WebSocket, so the WebSocket and SSE accept
+the session cookie (same-origin only) as well as a Bearer token.
 
 ## 4. Auth
 
@@ -93,10 +111,38 @@ clients that poll, and SSE at `GET /api/v1/events/sse?since=<seq>`.
 - Anonymous publish/read is off by default, can be enabled per topic.
 - Web UI uses a session cookie (HttpOnly, SameSite=Lax) after login.
 - Every token has a **device name**; it is what shows as `state_by`.
+- What each scope allows: `read` = list, get, events, WebSocket, plus the
+  user's own actions (ack, snooze, dismiss, reopen, bulk clear), because a
+  phone that can see a notification must be able to clear it. `publish` =
+  publish, resolve (by id or by external id), ack by external id. `admin` =
+  everything, including tokens. A token with a topic allow-list sees and
+  touches only those topics.
+- Session: `POST /api/v1/session` with `{"token":"clrd_..."}` (JSON or a form
+  post, optional `next` redirect for forms) sets the `clrd_session` cookie;
+  `DELETE /api/v1/session` clears it. The cookie works on `/api/v1/*` only,
+  never on the ntfy-style GET publish webhooks.
+- Setup: with no admin token in the database the server logs
+  `<CLRD_BASE_URL>/setup?code=<one-time code>`. Opening it shows a form; posting
+  it creates an admin token, shows it once and signs the browser in.
 
 ## 5. HTTP API
 
-Native (JSON in, JSON out, errors as `{"error":"...","code":"..."}`):
+Native (JSON in, JSON out, errors as `{"error":"...","code":"..."}`).
+Codes: `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found`
+404, `conflict` 409, `reset` 410, `internal` 500.
+
+Notifications always carry every field: `""` for unset strings, `[]` for
+`tags` and `actions`, `null` for `snooze_until`. List returns
+`{"notifications":[...],"seq":<current>}`, newest first; page with
+`before=<last id>`; `limit` defaults to 100, max 500. Fetch the list, then open
+the WebSocket with `since=<seq>` from that response. Setting the state a
+notification already has returns it unchanged with no new event (two phones
+dismissing at once is normal). Reopening a dismissed row whose `external_id`
+has since been reused returns 409.
+
+Topic names: `[A-Za-z0-9_-]{1,64}`. Reserved (the server and mounted pages
+own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
+`logout`, `mcp`, `setup`, `static`, `v1`.
 
 | Method | Path | Does |
 |---|---|---|
@@ -113,6 +159,7 @@ Native (JSON in, JSON out, errors as `{"error":"...","code":"..."}`):
 | GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices". |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin). |
 | GET | `/healthz` | `{"ok":true,"seq":N}` |
+| POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |
 | GET | `/openapi.json` | OpenAPI 3.1 spec of all of the above. |
 
 By external id (what scripts and monitors use):
@@ -148,7 +195,7 @@ dismissed or an action is tapped; returns which, so an agent can ask a human
 
 ## 7. Server internals
 
-- Go 1.23+, stdlib `net/http` router, `modernc.org/sqlite` (pure Go, no cgo),
+- Go 1.23 (`GOTOOLCHAIN=local`; `modernc.org/sqlite` v1.38 is the last line that builds on 1.23), stdlib `net/http` router, `modernc.org/sqlite` (pure Go, no cgo),
   WAL mode, one writer goroutine or a mutex around writes.
 - Config by env: `CLRD_LISTEN` (`:8080`), `CLRD_DB` (`/data/clrd.db`),
   `CLRD_BASE_URL`, `CLRD_RETENTION` (`720h` for final rows and events).
