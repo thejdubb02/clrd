@@ -1,0 +1,134 @@
+# Publishes a signed release APK into the F-Droid repo on the gh-pages branch,
+# served at https://thejdubb02.github.io/clrd/fdroid/repo.
+# No pull_request trigger on purpose: the release environment holds the
+# signing key and only main may use it.
+name: fdroid
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/fdroid.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: fdroid-repo
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: [self-hosted, cezar1]
+    environment: release
+    defaults:
+      run:
+        shell: bash
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      # Gradle 8.11 cannot run on a newer default JDK.
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      APKSIGNER: /opt/android-sdk/build-tools/35.0.0/apksigner
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version
+        run: |
+          echo "VERSION_CODE=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=0.1.0-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
+          echo "KEYSTORE=$RUNNER_TEMP/clrd-release.p12" >> "$GITHUB_ENV"
+          echo "PAGES=$RUNNER_TEMP/gh-pages" >> "$GITHUB_ENV"
+
+      - name: Decode keystore
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+        run: |
+          umask 077
+          printf '%s' "$RELEASE_KEYSTORE_B64" | base64 -d > "$KEYSTORE"
+
+      - name: Build signed release APK
+        working-directory: android
+        env:
+          CLRD_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          CLRD_KEYSTORE="$KEYSTORE" ./gradlew --no-daemon clean assembleRelease \
+            -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME"
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk
+
+      - name: Check out gh-pages
+        run: |
+          git worktree prune
+          if git rev-parse --verify -q refs/remotes/origin/gh-pages >/dev/null; then
+            git worktree add -B gh-pages "$PAGES" origin/gh-pages
+          else
+            git worktree add --orphan -B gh-pages "$PAGES"
+          fi
+
+      - name: Update F-Droid repo
+        working-directory: ${{ runner.temp }}/gh-pages
+        env:
+          CLRD_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          mkdir -p fdroid/repo fdroid/metadata
+          touch .nojekyll
+          printf '%s\n' config.yml '*.p12' '*.jks' '*.keystore' tmp/ > fdroid/.gitignore
+          cp "$GITHUB_WORKSPACE/android/app/build/outputs/apk/release/app-release.apk" \
+            "fdroid/repo/me.itsjustin.clrd_${VERSION_CODE}.apk"
+          # Keep the newest 5 APKs.
+          ls fdroid/repo/me.itsjustin.clrd_*.apk | sort -V | head -n -5 | xargs -r rm --
+
+          cat > fdroid/metadata/me.itsjustin.clrd.yml <<'EOF'
+          Name: clrd
+          Summary: Notifications that clear everywhere when you clear them once
+          Description: |-
+            The Android client for clrd, a self-hosted notification server.
+            Dismiss a notification on one device and it clears on all of them.
+          License: Apache-2.0
+          SourceCode: https://github.com/thejdubb02/clrd
+          IssueTracker: https://github.com/thejdubb02/clrd/issues
+          Categories:
+            - Connectivity
+          EOF
+
+          # Passwords are read from the environment, never written to disk.
+          (umask 077; cat > fdroid/config.yml <<EOF
+          repo_url: https://thejdubb02.github.io/clrd/fdroid/repo
+          repo_name: clrd
+          repo_description: >-
+            Signed builds of the clrd Android app, published from
+            https://github.com/thejdubb02/clrd on every change.
+          archive_older: 0
+          sdk_path: $ANDROID_HOME
+          keystore: $KEYSTORE
+          repo_keyalias: fdroidrepo
+          keystorepass: {env: CLRD_KEYSTORE_PASSWORD}
+          keypass: {env: CLRD_KEYSTORE_PASSWORD}
+          EOF
+          )
+          (cd fdroid && fdroid update)
+
+      - name: Commit and push gh-pages
+        working-directory: ${{ runner.temp }}/gh-pages
+        run: |
+          git add -A
+          if git diff --cached --name-only | grep -E '(^|/)config\.yml$|\.(p12|jks|keystore)$'; then
+            echo "::error::Refusing to publish the F-Droid config or a keystore"
+            exit 1
+          fi
+          if git diff --cached --quiet; then
+            echo "Nothing to publish"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "F-Droid repo: clrd $VERSION_NAME ($VERSION_CODE)"
+          git push origin gh-pages
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f "$KEYSTORE" "$PAGES/fdroid/config.yml"
+          git worktree remove --force "$PAGES" 2>/dev/null || true
+          git worktree prune

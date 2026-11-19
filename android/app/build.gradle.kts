@@ -5,6 +5,12 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Release signing is opt-in: with both variables set (as in the F-Droid repo
+// workflow) the release APK is signed with the project key, otherwise it stays
+// unsigned. Empty counts as unset, since CI passes a missing secret as "".
+val releaseKeystore = System.getenv("CLRD_KEYSTORE").orEmpty()
+val releaseKeystorePassword = System.getenv("CLRD_KEYSTORE_PASSWORD").orEmpty()
+
 android {
     namespace = "me.itsjustin.clrd"
     compileSdk = 35
@@ -13,14 +19,27 @@ android {
         applicationId = "me.itsjustin.clrd"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("versionName") as String?) ?: "0.1.0"
+    }
+
+    if (releaseKeystore.isNotEmpty() && releaseKeystorePassword.isNotEmpty()) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = releaseKeystorePassword
+                storeType = "pkcs12"
+                keyAlias = "clrd"
+                keyPassword = releaseKeystorePassword
+            }
+        }
     }
 
     buildTypes {
         release {
             // ponytail: no minify yet, smaller APK is a later win, not a v0 need.
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
