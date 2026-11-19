@@ -39,6 +39,31 @@ func TestSlowBodyTimesOut(t *testing.T) {
 	}
 }
 
+// A call that sent a body and then waits (MCP wait_for_reply holds up to
+// 300 s) keeps its context past the body deadline (issue #7).
+func TestLongHoldOutlivesBodyDeadline(t *testing.T) {
+	s, ts, _ := newTest(t)
+	old := bodyTimeout
+	bodyTimeout = 100 * time.Millisecond
+	defer func() { bodyTimeout = old }()
+	s.Mount("/hold", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			w.WriteHeader(499)
+		case <-time.After(400 * time.Millisecond):
+			w.WriteHeader(200)
+		}
+	}))
+	res, err := http.Post(ts.URL+"/hold", "application/json", strings.NewReader(`{"id":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("long hold cut at the body deadline: %d", res.StatusCode)
+	}
+}
+
 // Publishing again with a delay hides the open row until then, the same as a
 // new delayed publish, instead of updating it in place at once.
 func TestDelayedRepublishSnoozes(t *testing.T) {
