@@ -42,6 +42,7 @@ type Notification struct {
 	Actions     []Action   `json:"actions,omitempty"`
 	State       string     `json:"state"`
 	StateBy     string     `json:"state_by"`
+	StateByID   string     `json:"state_by_id"`
 	Reply       string     `json:"reply"` // the reply action tapped, "" until someone answers
 	SnoozeUntil *time.Time `json:"snooze_until"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -130,6 +131,7 @@ type Snapshot struct {
 	Topics  []Topic
 	Devices []Device // seen in the last 10 minutes
 	Me      string   // device name of the signed-in token, the state_by its own actions get
+	MeID    string   // its token id, the state_by_id its own actions get (names can repeat)
 }
 
 // API is what the server provides. The request is passed so the server can

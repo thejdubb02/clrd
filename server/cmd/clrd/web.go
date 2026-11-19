@@ -89,7 +89,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return web.Snapshot{}, web.ErrUnauthorized
 	}
 	ctx := r.Context()
-	snap := web.Snapshot{Seq: a.s.CurrentSeq(), Counts: map[string]int{}, Me: tok.Name} // seq first, so replay cannot skip an event
+	snap := web.Snapshot{Seq: a.s.CurrentSeq(), Counts: map[string]int{}, Me: tok.Name, MeID: tok.ID} // seq first, so replay cannot skip an event
 	want := map[string]bool{}
 	for _, st := range q.States {
 		want[st] = true

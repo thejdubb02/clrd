@@ -69,6 +69,22 @@ try {
   assert.equal((await get(laptop, b.id)).state, 'resolved');
   console.log('ok: no Undo when another device got there first');
 
+  // A second browser gets the same device name. It is still another device: no Undo here.
+  const twin = await (await browser.newContext()).newPage();
+  await twin.goto(`${base}/app?auth=${link}`);
+  assert.equal(await twin.locator('[data-me]').getAttribute('data-me'), 'Chrome on Linux');
+  const h = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Load high on db-1', message: 'load 14' });
+  await page.reload();
+  await twin.reload();
+  await twin.locator('article.card', { hasText: 'Load high on db-1' }).locator('[data-act="dismiss"]').click();
+  await twin.locator('[data-toast]').getByRole('button', { name: 'Undo' }).waitFor();
+  await card('Load high on db-1').locator('[data-act="dismiss"]').click();
+  await toast.filter({ hasText: 'Cleared on Chrome on Linux' }).waitFor();
+  assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 0, 'Undo offered for a same-named device');
+  assert.equal((await get(laptop, h.id)).state, 'dismissed');
+  await twin.context().close();
+  console.log('ok: no Undo for another device with the same name');
+
   // Server out of reach for 3 minutes: a notice says the page may be stale,
   // and it goes once live sync is back.
   const cut = await browser.newContext();
