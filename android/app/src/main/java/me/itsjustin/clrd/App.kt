@@ -20,6 +20,10 @@ class App : Application() {
     val tray by lazy { Tray(this) }
     val prefs by lazy { getSharedPreferences("clrd", Context.MODE_PRIVATE) }
     val io = Executors.newSingleThreadExecutor()
+    /** User actions only, and they never wait on the network, so a tray tap is saved within its goAsync() deadline. */
+    val acts = Executors.newSingleThreadExecutor()
+    /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
+    private val sends = Executors.newSingleThreadExecutor()
 
     val status = MutableStateFlow(SyncClient.Status.OFFLINE)
 
@@ -58,10 +62,12 @@ class App : Application() {
      * A user action from the tray or the inbox. Saved first, shown locally at once, then sent.
      * If sending fails it stays queued and goes out before the next WebSocket connect.
      * [server] is the server the tray item came from (null = the inbox, which always shows the current one).
-     * An action for a server that is no longer configured is dropped, never sent to the new one.
+     * An action for a server that is no longer configured is dropped, never sent to the new one, and so is
+     * one that waited across a Settings switch.
      */
     fun act(id: String, action: String, body: String = "{}", server: String? = null, done: () -> Unit = {}) {
-        io.execute {
+        val gen = configGen // read now, not when the save runs
+        acts.execute {
             try {
                 val local = when (action) {
                     "dismiss" -> Notif.DISMISSED
@@ -71,18 +77,27 @@ class App : Application() {
                     else -> null
                 }
                 synchronized(configLock) {
-                    if (server != null && server != serverUrl) return@execute
+                    if (gen != configGen || (server != null && server != serverUrl)) return@execute
                     val dao = db.dao()
                     dao.addPending(Pending(notifId = id, action = action, body = body))
                     if (local != null) dao.setState(id, local)
                     if (local == Notif.DISMISSED || local == Notif.SNOOZED) tray.apply(TrayStep.Cancel(id))
                 }
                 val s = sync
-                if (s != null) s.flushSoon() else if (configured) runCatching { flushPending(RoomStore(this), api()) }
+                if (s != null) s.flushSoon() else sendAlone()
             } finally {
                 done()
             }
         }
+    }
+
+    private fun sendAlone() {
+        // One snapshot of server, token and store, so a switch never sends one server's queue to another.
+        val (gen, store, api) = synchronized(configLock) {
+            if (!configured) return
+            Triple(configGen, RoomStore(this), api())
+        }
+        sends.execute { runCatching { flushPending(store, api) { configGen == gen } } }
     }
 
     companion object {
