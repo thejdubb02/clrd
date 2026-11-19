@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: the landing page and README link to a tip page for anyone who wants to
+  support the project.
 - Server: one Go binary with SQLite. Native publish API, notification states
   (dismiss, acknowledge, resolve, snooze) synced to every device over WebSocket
   and SSE, with catch-up from the last seen event after a reconnect.
