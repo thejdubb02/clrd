@@ -209,7 +209,7 @@ func (f *fetcher) sweep(context.Context) error {
 }
 
 var (
-	reTag   = regexp.MustCompile(`(?is)<(meta|link)\s[^>]*>`)
+	reTag   = regexp.MustCompile(`(?is)<(meta|link)\s(?:[^>"']|"[^"]*"|'[^']*')*>`)
 	reAttr  = regexp.MustCompile(`(?is)([a-z:_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))`)
 	reTitle = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 	reHost  = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)*$`)
@@ -244,11 +244,16 @@ func (f *fetcher) favicon(ctx context.Context, host string) favicon {
 	if b, _, err := f.get(ctx, base.ResolveReference(&url.URL{Path: "/favicon.ico"}), fetchMax); err == nil && rasterType(b) != "" {
 		fi = favicon{rasterType(b), b}
 	} else if page, final, err := f.get(ctx, base, fetchMax); err == nil {
+		tries := 0
 		for _, t := range tags(page) {
+			if tries == 3 {
+				break
+			}
 			if t[""] != "link" || !strings.Contains(strings.ToLower(t["rel"]), "icon") || t["href"] == "" {
 				continue
 			}
 			if ref, err := url.Parse(t["href"]); err == nil {
+				tries++
 				if b, _, err := f.get(ctx, final.ResolveReference(ref), fetchMax); err == nil && rasterType(b) != "" {
 					fi = favicon{rasterType(b), b}
 					break
@@ -256,7 +261,9 @@ func (f *fetcher) favicon(ctx context.Context, host string) favicon {
 			}
 		}
 	}
-	f.store("icon", host, fi)
+	if ctx.Err() == nil {
+		f.store("icon", host, fi)
+	}
 	return fi
 }
 
@@ -271,6 +278,9 @@ type Preview struct {
 }
 
 func (f *fetcher) preview(ctx context.Context, u *url.URL) Preview {
+	u2 := *u
+	u2.Fragment = ""
+	u = &u2
 	p := Preview{URL: u.String()}
 	if f.cached("preview", p.URL, previewTTL, &p) {
 		return p
@@ -314,7 +324,9 @@ func (f *fetcher) preview(ctx context.Context, u *url.URL) Preview {
 			}
 		}
 	}
-	f.store("preview", p.URL, p)
+	if ctx.Err() == nil { // a client that hung up is not the site failing
+		f.store("preview", p.URL, p)
+	}
 	return p
 }
 

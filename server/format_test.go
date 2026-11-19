@@ -264,8 +264,8 @@ func TestPreviewAndFavicon(t *testing.T) {
 }
 
 func TestIconLink(t *testing.T) {
-	ts := tags([]byte(`<link rel="stylesheet" href="/a.css"><LINK REL="Shortcut Icon" HREF="/i.png?a=1&amp;b=2">`))
-	if len(ts) != 2 || ts[1]["rel"] != "Shortcut Icon" || ts[1]["href"] != "/i.png?a=1&b=2" {
+	ts := tags([]byte(`<link rel="stylesheet" href="/a.css"><LINK REL="Shortcut Icon" HREF="/i.png?a=1&amp;b=2"><meta content="CPU > 90%" property="og:title">`))
+	if len(ts) != 3 || ts[1]["rel"] != "Shortcut Icon" || ts[1]["href"] != "/i.png?a=1&b=2" || ts[2]["content"] != "CPU > 90%" {
 		t.Fatalf("tags: %v", ts)
 	}
 }
