@@ -44,6 +44,9 @@ android {
     }
 
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+
+    // Robolectric runs Room and the NotificationManager on the JVM.
+    testOptions { unitTests.isIncludeAndroidResources = true }
 }
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
@@ -66,4 +69,6 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // Android's org.json is a stub on the JVM; tests need the real one.
     testImplementation("org.json:json:20240303")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }

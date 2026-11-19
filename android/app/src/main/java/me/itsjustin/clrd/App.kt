@@ -26,7 +26,10 @@ class App : Application() {
     /** Live sync client while the service runs; null otherwise. */
     @Volatile var sync: SyncClient? = null
 
-    /** Held while syncing writes rows and while Settings switches server, so the two never interleave. */
+    /**
+     * Held for every change that writes Room and then the tray (sync, user actions, reconcile) and while
+     * Settings switches server. Without it a slower writer can put back a tray item a faster one just cleared.
+     */
     val configLock = Any()
 
     /** Bumped on every server or token switch. A store made before the bump is fenced off. */
@@ -54,12 +57,12 @@ class App : Application() {
     /**
      * A user action from the tray or the inbox. Saved first, shown locally at once, then sent.
      * If sending fails it stays queued and goes out before the next WebSocket connect.
+     * [server] is the server the tray item came from (null = the inbox, which always shows the current one).
+     * An action for a server that is no longer configured is dropped, never sent to the new one.
      */
-    fun act(id: String, action: String, body: String = "{}", done: () -> Unit = {}) {
+    fun act(id: String, action: String, body: String = "{}", server: String? = null, done: () -> Unit = {}) {
         io.execute {
             try {
-                val dao = db.dao()
-                dao.addPending(Pending(notifId = id, action = action, body = body))
                 val local = when (action) {
                     "dismiss" -> Notif.DISMISSED
                     "snooze" -> Notif.SNOOZED
@@ -67,8 +70,13 @@ class App : Application() {
                     "reopen" -> Notif.ACTIVE
                     else -> null
                 }
-                if (local != null) dao.setState(id, local)
-                if (local == Notif.DISMISSED || local == Notif.SNOOZED) tray.apply(TrayStep.Cancel(id))
+                synchronized(configLock) {
+                    if (server != null && server != serverUrl) return@execute
+                    val dao = db.dao()
+                    dao.addPending(Pending(notifId = id, action = action, body = body))
+                    if (local != null) dao.setState(id, local)
+                    if (local == Notif.DISMISSED || local == Notif.SNOOZED) tray.apply(TrayStep.Cancel(id))
+                }
                 val s = sync
                 if (s != null) s.flushSoon() else if (configured) runCatching { flushPending(RoomStore(this), api()) }
             } finally {
@@ -93,23 +101,35 @@ class RoomStore(private val app: App) : Store {
     override fun lastSeq() = dao.lastSeq() ?: 0
 
     override fun apply(notifs: Collection<Notif>, seq: Long) = ifMine {
-        dao.applyAll(notifs, seq)
+        // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
+        val kept = dao.applyAll(notifs, seq)
         val muted = app.muted
-        // A queued dismiss or snooze that has not reached the server yet wins over what the server last said.
-        val waiting = dao.pending().filter { it.action == "dismiss" || it.action == "snooze" }.map { it.notifId }.toSet()
-        for (n in notifs) {
+        val waiting = waiting()
+        for (n in kept) {
             app.tray.apply(if (n.id in waiting) TrayStep.Cancel(n.id) else TrayStep.plan(n, muted))
         }
         dao.prune(System.currentTimeMillis() - 7 * 24 * 3600_000L)
     }
 
     override fun replaceAll(open: List<Notif>, seq: Long) = ifMine {
-        dao.replaceAll(open, seq)
-        app.tray.reconcile(open, app.muted)
+        val waiting = waiting()
+        app.tray.reconcile(dao.replaceAll(open, seq).filter { it.id !in waiting }, app.muted)
     }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
-    override fun removePending(p: Pending) = dao.removePending(p.key)
+    /** The queued action no longer hides the row, so the tray shows what Room says (another device may have reopened it). */
+    override fun removePending(p: Pending) = ifMine {
+        dao.removePending(p.key)
+        val n = dao.get(p.notifId)
+        if (n != null && n.id !in waiting()) app.tray.apply(TrayStep.plan(n, app.muted))
+    }
 
-    fun reconcile() = app.tray.reconcile(dao.openNow(), app.muted)
+    /** Under the lock, so a sync write cannot land between reading the rows and posting them. */
+    fun reconcile() = ifMine {
+        val waiting = waiting()
+        app.tray.reconcile(dao.openNow().filter { it.id !in waiting }, app.muted)
+    }
+
+    /** A queued dismiss or snooze that has not reached the server yet wins over what the server last said. */
+    private fun waiting() = dao.pending().filter { it.action == "dismiss" || it.action == "snooze" }.map { it.notifId }.toSet()
 }

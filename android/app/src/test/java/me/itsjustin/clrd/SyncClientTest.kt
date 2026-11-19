@@ -23,7 +23,6 @@ class SyncClientTest {
     private val statuses = CopyOnWriteArrayList<SyncClient.Status>()
     private val wsSince = CopyOnWriteArrayList<String>()
     private val posts = CopyOnWriteArrayList<String>()
-    private val log = CopyOnWriteArrayList<String>() // POSTs and WebSocket connects, in arrival order
     private val serverSockets = CopyOnWriteArrayList<WebSocket>()
 
     /** What the fake server sends on each WebSocket connect, by connect number. */
@@ -35,6 +34,9 @@ class SyncClientTest {
     private var client: SyncClient? = null
     /** Holds a "slow" POST open until the test lets it go. */
     private val release = java.util.concurrent.CountDownLatch(1)
+    @Volatile private var slowAnswered = false
+    /** Body of a successful POST, by path. The server answers an action with the changed row. */
+    private var answer: (String) -> String = { "{}" }
 
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
@@ -43,7 +45,6 @@ class SyncClientTest {
                 return when {
                     path.startsWith("/api/v1/ws") -> {
                         wsSince += request.requestUrl!!.queryParameter("since")!!
-                        log += "ws"
                         val n = wsSince.size
                         wsResponse() ?: MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) { serverSockets += webSocket; onConnect(n, webSocket) }
@@ -55,11 +56,14 @@ class SyncClientTest {
                     }
                     request.method == "POST" -> {
                         posts += path
-                        log += path
                         if (path.contains("flaky") && posts.count { it == path } == 1) MockResponse().setResponseCode(503)
-                        else if (path.contains("slow")) { release.await(5, java.util.concurrent.TimeUnit.SECONDS); MockResponse().setBody("{}") }
+                        else if (path.contains("slow")) {
+                            release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                            slowAnswered = true
+                            MockResponse().setBody("{}")
+                        }
                         else if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
-                        else MockResponse().setBody("{}")
+                        else MockResponse().setBody(answer(path))
                     }
                     else -> MockResponse().setResponseCode(500)
                 }
@@ -145,14 +149,42 @@ class SyncClientTest {
         assertEquals("50", wsSince[1]) // seq from the first page, read by the server before its query
     }
 
-    @Test fun queuedActionsGoOutBeforeTheSocketAndA404IsDropped() {
+    @Test fun queuedActionsGoOutInOrderOnConnectAndA404IsDropped() {
         store.queue += Pending(1, "a", "dismiss")
         store.queue += Pending(2, "gone", "ack")
         onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
         start()
+        await { store.queue.isEmpty() && SyncClient.Status.CONNECTED in statuses }
+        assertEquals(listOf("/api/v1/notifications/a/dismiss", "/api/v1/notifications/gone/ack"), posts)
+    }
+
+    @Test fun aHungSendDoesNotHoldBackEvents() {
+        store.queue += Pending(1, "slow", "dismiss")
+        onConnect = { _, ws ->
+            ws.send("""{"type":"ready","seq":0}""")
+            ws.send(ev(7, "x", "dismissed")) // cleared on another device
+        }
+        start()
+        await { store.rows["x"] != null }
+        assertTrue("the event waited for the send", !slowAnswered)
+        release.countDown()
+        await { store.queue.isEmpty() }
+    }
+
+    @Test fun theAnswerToASendBeatsAnOlderEvent() {
+        store.rows["a"] = notif("a", "active", 1)
+        answer = { if (it.endsWith("/a/dismiss")) notifJson("a", "dismissed", 5) else "{}" }
+        onConnect = { _, ws -> ws.send("""{"type":"ready","seq":2}""") }
+        start()
         await { SyncClient.Status.CONNECTED in statuses }
-        assertEquals(listOf("/api/v1/notifications/a/dismiss", "/api/v1/notifications/gone/ack", "ws"), log)
-        assertTrue(store.queue.isEmpty())
+        store.queue += Pending(1, "a", "dismiss")
+        client!!.flushSoon()
+        await { store.queue.isEmpty() }
+        serverSockets.last().send(ev(3, "a", "active")) // the server's event from before the dismiss, delivered late
+        serverSockets.last().send(ev(4, "y", "active"))
+        await { store.rows["y"] != null }
+        assertEquals("dismissed", store.rows["a"]!!.state)
+        assertEquals(4L, store.lastSeq()) // the answer did not move the cursor
     }
 
     @Test fun failedSendWhileConnectedRetriesOnItsOwn() {
@@ -166,14 +198,15 @@ class SyncClientTest {
         assertEquals(1, wsSince.size) // no reconnect was needed
     }
 
-    @Test fun stopDuringFirstFlushNeverOpensTheSocket() {
+    @Test fun stopDuringASendSendsNothingMore() {
         store.queue += Pending(1, "slow", "dismiss")
+        store.queue += Pending(2, "b", "snooze")
         start()
-        await { posts.isNotEmpty() } // the send is held open by the server
-        client!!.stop()
+        await { posts.isNotEmpty() } // the first send is held open by the server
+        client!!.stop() // a restart: the next client sends "b" itself, so this one must not send it again
         release.countDown()
-        Thread.sleep(500) // the connect would follow the send within milliseconds
-        assertTrue(log.toString(), "ws" !in log)
+        Thread.sleep(500)
+        assertEquals(listOf("/api/v1/notifications/slow/dismiss"), posts)
     }
 
     @Test fun badTokenStopsRetrying() {
@@ -216,7 +249,7 @@ class SyncClientTest {
         @Volatile private var seq = 0L
 
         override fun lastSeq() = seq
-        override fun apply(notifs: Collection<Notif>, seq: Long) {
+        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long) {
             applies += notifs
             for (n in notifs) if (n.seq >= (rows[n.id]?.seq ?: 0)) rows[n.id] = n
             this.seq = maxOf(this.seq, seq)
