@@ -14,18 +14,18 @@ notification on every device without anyone touching it.
 | [Uptime Kuma](uptime-kuma.md) | today | yes | publish honours `status: resolved` | Uptime Kuma 1.23: down, then up |
 | [Alertmanager](alertmanager.md) | today | yes | `?template=alertmanager` | Alertmanager 0.28: firing, then resolved |
 | [Grafana](grafana.md) | today | yes | `?template=grafana` | Grafana 11.6 with the provisioning file: firing, then resolved |
-| [GitHub](github.md) | today | issue or PR closed | `?template=github` | not run yet |
-| [Sentry](sentry.md) | today | yes | `?template=sentry` | not run yet |
-| [Stripe](stripe.md) | today | no | `?template=stripe` | not run yet |
-| [Jira](jira.md) | today | issue done | `?template=jira` | not run yet |
-| [Healthchecks.io](healthchecks.md) | today | yes | `?template=healthchecks` | not run yet |
-| [Proxmox VE](proxmox.md) | today | no | `?template=proxmox` | not run yet |
-| [Zabbix](zabbix.md) | today | yes | `?template=zabbix` | not run yet |
-| [Netdata](netdata.md) | today | yes | `?template=netdata` | not run yet |
-| [Jellyfin](jellyfin.md) | today | no | `?template=jellyfin` | not run yet |
-| [Sonarr, Radarr, Lidarr, Readarr](arr.md) | today | health only | `?template=arr` | not run yet |
-| [Watchtower](watchtower.md) | today | no | ntfy publish | not run yet |
-| [Any other service](custom-webhooks.md) | today | if you map it | a saved template | not run yet |
+| [GitHub](github.md) | today | issue or PR closed | `?template=github` | the guide's URL and token form, with a real GitHub webhook body: sends, then resolves |
+| [Sentry](sentry.md) | today | yes | `?template=sentry` | the guide's URL and token form, with a real Sentry webhook body: sends, then resolves |
+| [Stripe](stripe.md) | today | no | `?template=stripe` | the guide's URL and token form, with a real Stripe webhook body: sends |
+| [Jira](jira.md) | today | issue done | `?template=jira` | the guide's URL and token form, with a real Jira webhook body: sends, then resolves |
+| [Healthchecks.io](healthchecks.md) | today | yes | `?template=healthchecks` | the guide's URL and token form, with a real Healthchecks.io webhook body: sends, then resolves |
+| [Proxmox VE](proxmox.md) | today | no | `?template=proxmox` | the guide's body template, filled in as Proxmox VE would; Proxmox itself not run |
+| [Zabbix](zabbix.md) | today | yes | `?template=zabbix` | the guide's media type script, run with Zabbix's parameters: problem, then recovery; Zabbix itself not run |
+| [Netdata](netdata.md) | today | yes | `?template=netdata` | the guide's URL and token form, with a real Netdata webhook body: sends, then resolves |
+| [Jellyfin](jellyfin.md) | today | no | `?template=jellyfin` | the guide's URL and token form, with a real Jellyfin webhook body: sends |
+| [Sonarr, Radarr, Lidarr, Readarr](arr.md) | today | health only | `?template=arr` | the guide's URL and token form, with a real Sonarr webhook body: sends, then resolves |
+| [Watchtower](watchtower.md) | today | no | ntfy publish | Watchtower 1.7 with the guide's URL: a run report arrives |
+| [Any other service](custom-webhooks.md) | today | if you map it | a saved template | the guide's template saved and fed events (send, resolve, secret), both token forms, a saved GitHub secret rejecting unsigned requests |
 | [Apprise](apprise.md) | today | no | ntfy JSON publish to `POST /` | Apprise 1.9: both URL forms. `?priority=` is dropped ([#130](https://github.com/thejdubb02/clrd/issues/130)) |
 | [ntfy clients](ntfy-clients.md) | today | by key, via `X-Id` | ntfy publish/subscribe, Basic auth | ntfy CLI 2.14: publish, subscribe, Basic auth; then resolve by key |
 | Home Assistant ntfy integration | today | no | ntfy publish | not run |
