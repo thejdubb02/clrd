@@ -27,6 +27,11 @@ jobs:
           go-version-file: go.mod
       - name: build
         run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
+      # Pulled up front so a cold pull does not eat a case's 5 minute limit.
+      - name: pull tool images
+        run: |
+          grep -ohE '(python|node|golang):[0-9.]+(-slim)?|[a-z0-9-]+/[a-z0-9-]+:v?[0-9][0-9.]*' test/integrations/cases/*.sh |
+            sort -u | xargs -P 4 -n 1 docker pull -q
       - name: guides
         run: CLRD_BIN="$RUNNER_TEMP/clrd" test/integrations/run.sh
 
