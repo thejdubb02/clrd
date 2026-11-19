@@ -58,7 +58,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, `{"error":"token revoked","code":"unauthorized"}`)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"id": "01J", "state": f.state, "state_by": "pixel-9"})
+		json.NewEncoder(w).Encode(map[string]any{"id": "01J", "state": f.state, "state_by": "pixel-9", "seq": 7})
 		return
 	}
 	if r.Method == "GET" {
