@@ -303,13 +303,19 @@ func Handler(api API, baseURL string) http.Handler {
 				next := *r.URL // keep the filters, drop a stale ?auth= that would beat the new cookie
 				v := next.Query()
 				failed := v.Get("error") == "token" // the server sends a bad token back here
+				name := ""
+				if failed {
+					name = v.Get("name") // and the device name typed, so it need not be typed again
+				}
 				v.Del("auth")
 				v.Del("error")
+				v.Del("name")
 				next.RawQuery = v.Encode()
 				page(w, "signin", http.StatusUnauthorized, struct {
 					meta
 					Failed bool
-				}{meta{Title: "Sign in: clrd", Path: next.RequestURI(), Base: base(r)}, failed})
+					Name   string
+				}{meta{Title: "Sign in: clrd", Path: next.RequestURI(), Base: base(r)}, failed, name})
 				return
 			}
 			if err != nil {
