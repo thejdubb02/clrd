@@ -2997,6 +2997,10 @@
       "enum": [
        "resolved"
       ]
+     },
+     "reopen": {
+      "type": "boolean",
+      "description": "If the notification under this external_id is acknowledged, put it back to active in the same write, so a new question does not inherit the old answer."
      }
     },
     "required": [

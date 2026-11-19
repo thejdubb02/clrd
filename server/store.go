@@ -309,6 +309,9 @@ type PublishInput struct {
 	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
 	// notification with this external_id instead of creating one; 404 if none.
 	Status string `json:"status,omitempty"`
+	// Reopen puts an acknowledged notification under this external_id back
+	// to active in the same write, so a new question cannot inherit the old answer.
+	Reopen bool `json:"reopen,omitempty"`
 }
 
 // Publish creates a notification, or updates the open one with the same
@@ -357,6 +360,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			if err == nil {
 				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Actions, n.Reply =
 					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Actions, "" // a new question starts unanswered
+				if in.Reopen && n.State == Acknowledged {
+					n.State, n.StateBy = Active, tok.Name
+				}
 				if t := now(); in.SnoozeUntil != nil && in.SnoozeUntil.After(t) { // delayed: hide until then, like a new row
 					u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 					n.State, n.StateBy, n.SnoozeUntil = Snoozed, tok.Name, &u

@@ -245,13 +245,10 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		if v, ok := a["actions"].([]any); ok {
 			body["actions"] = v
 		}
-		n, err := h.api(r, "POST", "/api/v1/notifications", body)
 		// Core keeps an existing row's state when a key is reused, so a new
-		// question could inherit the last answer. Reopen it so it starts unanswered.
-		if st := str(n, "state"); err == nil && body["external_id"] != nil && (st == "acknowledged" || st == "dismissed" || st == "resolved") {
-			return h.api(r, "POST", "/api/v1/notifications/"+url.PathEscape(str(n, "id"))+"/reopen", nil)
-		}
-		return n, err
+		// question could inherit the last answer. Reopen it in the same write.
+		body["reopen"] = true
+		return h.api(r, "POST", "/api/v1/notifications", body)
 	case "list":
 		q := url.Values{}
 		if v := str(a, "topic"); v != "" {

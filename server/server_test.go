@@ -410,6 +410,15 @@ func TestReplyActions(t *testing.T) {
 	}
 	id := n["id"].(string)
 	phone := mkToken(t, s, "pixel-9", []string{ScopeRead}, nil)
+	// Answering needs read on the topic: not publish alone, not another topic.
+	for name, tok := range map[string]string{
+		"publish-only": mkToken(t, s, "sender", []string{ScopePublish}, nil),
+		"other topic":  mkToken(t, s, "elsewhere", []string{ScopeRead}, []string{"infra"}),
+	} {
+		if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", tok, map[string]any{"reply": "yes"}); code != 403 {
+			t.Errorf("%s token: want 403, got %d", name, code)
+		}
+	}
 	reply := func(v string) (int, map[string]any) {
 		return call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", phone, map[string]any{"reply": v})
 	}
@@ -440,6 +449,16 @@ func TestReplyActions(t *testing.T) {
 	}
 	if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reopen", phone, nil); code != 200 || n["reply"] != "" {
 		t.Fatalf("reopen kept the answer: %d %v", code, n)
+	}
+	// A new question with reopen goes back to active in one write, so no tap
+	// can land between the republish and the reset.
+	if code, n := reply("yes"); code != 200 || n["state"] != "acknowledged" {
+		t.Fatalf("answer before reopen: %d %v", code, n)
+	}
+	seq = s.CurrentSeq()
+	if code, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "agents", "external_id": "q", "message": "again?", "reopen": true,
+		"actions": []any{r("yes"), r("no")}}); code != 200 || n["id"] != id || n["state"] != "active" || n["reply"] != "" || s.CurrentSeq() != seq+1 {
+		t.Fatalf("republish with reopen: %d %v, %d events", code, n, s.CurrentSeq()-seq)
 	}
 	call(t, ts, "POST", "/api/v1/notifications/"+id+"/dismiss", phone, nil)
 	if code, _ := reply("yes"); code != 409 {

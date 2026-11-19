@@ -60,7 +60,9 @@ A **notification**:
   `active` with a new event (and re-notifies).
 - Publishing again with the same `external_id` while the row is non-final
   updates that row (title/message/priority) instead of making a new one,
-  and clears `reply`. After it is final, a new publish makes a new row.
+  and clears `reply`. With `"reopen": true` an acknowledged row also goes
+  back to `active` in the same write. After it is final, a new publish
+  makes a new row.
 
 **Actions:** each action is a link (`url`) or an answer button (`reply`),
 exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
