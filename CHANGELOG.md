@@ -77,6 +77,7 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: the always-on "in sync" notice no longer puts a dot on the app icon.
 - Android: reopening a notification from the inbox, and the end of a long
   catch-up after being offline, no longer make the phone buzz; with sync off,
   a busy server's retry wait is respected; tray buttons on notifications from

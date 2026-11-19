@@ -77,9 +77,13 @@ class Tray(private val ctx: Context) {
                 NotificationChannel("p3", ctx.getString(R.string.channel_p3), NotificationManager.IMPORTANCE_DEFAULT),
                 NotificationChannel("p4", ctx.getString(R.string.channel_p4), NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel("p5", ctx.getString(R.string.channel_p5), NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel(SERVICE_CHANNEL, ctx.getString(R.string.channel_service), NotificationManager.IMPORTANCE_MIN),
+                // No badge: the always-on "in sync" notice must not put a dot on the app icon.
+                NotificationChannel(SERVICE_CHANNEL, ctx.getString(R.string.channel_service), NotificationManager.IMPORTANCE_MIN)
+                    .apply { setShowBadge(false) },
             ),
         )
+        // Android never lets an app change a channel's badge setting after creation, so the old channel is replaced.
+        nm.deleteNotificationChannel("service")
     }
 
     fun apply(step: TrayStep) {
@@ -191,7 +195,7 @@ class Tray(private val ctx: Context) {
     }
 
     companion object {
-        const val SERVICE_CHANNEL = "service"
+        const val SERVICE_CHANNEL = "sync"
         const val ACTION_ACK = "me.itsjustin.clrd.ACK"
         const val ACTION_SNOOZE = "me.itsjustin.clrd.SNOOZE"
         const val ACTION_DISMISS = "me.itsjustin.clrd.DISMISS"
