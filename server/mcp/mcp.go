@@ -89,6 +89,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeRPC(w, nil, nil, &rpcErr{-32700, "parse error"})
 		return
 	}
+	// Tool calls go through the API, which checks the token. Everything else
+	// would answer any Bearer value, so check it here.
+	if req.Method != "tools/call" && !h.tokenOK(r) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="clrd", error="invalid_token"`)
+		http.Error(w, `{"error":"missing or invalid token","code":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 	if req.ID == nil { // notification, e.g. notifications/initialized
 		w.WriteHeader(http.StatusAccepted)
 		return
@@ -186,6 +193,18 @@ func (h *Handler) api(r *http.Request, method, path string, body any) (map[strin
 		return nil, fmt.Errorf("%s %s: %d %s", method, path, rec.Code, msg)
 	}
 	return out, nil
+}
+
+// tokenOK reports whether the bearer token is real. Reading an id that
+// cannot exist costs one token lookup and one indexed read: the API answers
+// 401 for a bad token and 404 for any real one, whatever its scopes.
+func (h *Handler) tokenOK(r *http.Request) bool {
+	req := httptest.NewRequest("GET", "/api/v1/notifications/-", nil).WithContext(r.Context())
+	req.Header.Set("Authorization", r.Header.Get("Authorization"))
+	req.RemoteAddr = r.RemoteAddr
+	rec := httptest.NewRecorder()
+	h.rest.ServeHTTP(rec, req)
+	return rec.Code != http.StatusUnauthorized
 }
 
 func str(a map[string]any, k string) string {

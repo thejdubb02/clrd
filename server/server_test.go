@@ -351,3 +351,34 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 		t.Errorf("openapi.json documents %q, which the server does not serve", r)
 	}
 }
+
+// A key of . or .. is dropped from every by-key URL, so it is refused.
+func TestDotKeysRejected(t *testing.T) {
+	_, ts, admin := newTest(t)
+	for _, k := range []string{".", ".."} {
+		if code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "external_id": k}); code != 400 {
+			t.Errorf("external_id %q: want 400, got %d", k, code)
+		}
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "external_id": "..."}); code != 200 {
+		t.Errorf("external_id ...: want 200, got %d", code)
+	}
+}
+
+// Get honours its context, so a caller's deadline (MCP wait_for_reply) holds.
+func TestGetHonoursContext(t *testing.T) {
+	s, ts, admin := newTest(t)
+	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "title": "x"})
+	tok, _, err := s.CreateToken(context.Background(), "reader", []string{ScopeRead}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(context.Background(), tok, n["id"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.Get(ctx, tok, n["id"].(string)); err == nil {
+		t.Fatal("Get with a cancelled context succeeded")
+	}
+}
