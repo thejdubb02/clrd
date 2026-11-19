@@ -341,6 +341,21 @@ func (s *Server) routesSetup() {
 			return nil
 		})
 	}
+	s.api("POST /api/v1/notifications/{id}/reply", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		var in struct {
+			Reply string `json:"reply"`
+			Seq   int64  `json:"seq"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		n, err := s.Reply(r.Context(), tok, r.PathValue("id"), in.Reply, in.Seq)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, n)
+		return nil
+	})
 	s.api("POST /api/v1/notifications/clear", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
 			Topic string   `json:"topic"`

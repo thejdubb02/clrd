@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -380,5 +381,126 @@ func TestGetHonoursContext(t *testing.T) {
 	cancel()
 	if _, err := s.Get(ctx, tok, n["id"].(string)); err == nil {
 		t.Fatal("Get with a cancelled context succeeded")
+	}
+}
+
+// Reply actions (issue 8): validation, first answer wins, one event per
+// answer, republish and reopen clear it, ntfy never sees a reply button.
+func TestReplyActions(t *testing.T) {
+	s, ts, admin := newTest(t)
+	pub := func(actions any) (int, map[string]any) {
+		return call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "agents", "external_id": "q", "message": "deploy?", "actions": actions})
+	}
+	r := func(v string) map[string]any { return map[string]any{"label": v, "reply": v} }
+	for name, bad := range map[string]any{
+		"url and reply": []any{map[string]any{"label": "x", "url": "https://example.com", "reply": "x"}},
+		"neither":       []any{map[string]any{"label": "x"}},
+		"bad chars":     []any{r("no way")},
+		"too long":      []any{r(strings.Repeat("a", 65))},
+		"duplicate":     []any{r("yes"), r("yes")},
+		"four":          []any{r("a"), r("b"), r("c"), r("d")},
+	} {
+		if code, _ := pub(bad); code != 400 {
+			t.Errorf("%s: want 400, got %d", name, code)
+		}
+	}
+	code, n := pub([]any{r("yes"), r("no"), r(strings.Repeat("a", 64)), map[string]any{"label": "Docs", "url": "https://example.com"}})
+	if code != 200 || n["reply"] != "" {
+		t.Fatalf("publish: %d %v", code, n)
+	}
+	id := n["id"].(string)
+	phone := mkToken(t, s, "pixel-9", []string{ScopeRead}, nil)
+	// Answering needs read on the topic: not publish alone, not another topic.
+	for name, tok := range map[string]string{
+		"publish-only": mkToken(t, s, "sender", []string{ScopePublish}, nil),
+		"other topic":  mkToken(t, s, "elsewhere", []string{ScopeRead}, []string{"infra"}),
+	} {
+		if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", tok, map[string]any{"reply": "yes"}); code != 403 {
+			t.Errorf("%s token: want 403, got %d", name, code)
+		}
+	}
+	reply := func(v string) (int, map[string]any) {
+		return call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", phone, map[string]any{"reply": v})
+	}
+	for _, v := range []string{"maybe", "", "Docs"} {
+		if code, _ := reply(v); code != 400 {
+			t.Errorf("reply %q: want 400, got %d", v, code)
+		}
+	}
+	seq := s.CurrentSeq()
+	if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", phone, map[string]any{"reply": "yes", "seq": seq}); code != 200 || n["reply"] != "yes" || n["state"] != "acknowledged" || n["state_by"] != "pixel-9" {
+		t.Fatalf("reply yes: %d %v", code, n)
+	}
+	if s.CurrentSeq() != seq+1 {
+		t.Errorf("reply logged %d events, want 1", s.CurrentSeq()-seq)
+	}
+	if code, _ := reply("no"); code != 409 {
+		t.Errorf("second answer: want 409, got %d", code)
+	}
+	if code, n := pub([]any{r("yes"), r("no")}); code != 200 || n["id"] != id || n["reply"] != "" {
+		t.Fatalf("republish kept the answer: %d %v", code, n)
+	}
+	// A button still showing the old question must not answer the new one.
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", phone, map[string]any{"reply": "maybe", "seq": seq + 1}); code != 409 {
+		t.Errorf("tap on the replaced question: want 409, got %d", code)
+	}
+	if code, n := reply("no"); code != 200 || n["reply"] != "no" {
+		t.Fatalf("answer after republish: %d %v", code, n)
+	}
+	if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reopen", phone, nil); code != 200 || n["reply"] != "" {
+		t.Fatalf("reopen kept the answer: %d %v", code, n)
+	}
+	// A new question with reopen goes back to active in one write, so no tap
+	// can land between the republish and the reset.
+	if code, n := reply("yes"); code != 200 || n["state"] != "acknowledged" {
+		t.Fatalf("answer before reopen: %d %v", code, n)
+	}
+	seq = s.CurrentSeq()
+	if code, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "agents", "external_id": "q", "message": "again?", "reopen": true,
+		"actions": []any{r("yes"), r("no")}}); code != 200 || n["id"] != id || n["state"] != "active" || n["reply"] != "" || s.CurrentSeq() != seq+1 {
+		t.Fatalf("republish with reopen: %d %v, %d events", code, n, s.CurrentSeq()-seq)
+	}
+	call(t, ts, "POST", "/api/v1/notifications/"+id+"/dismiss", phone, nil)
+	if code, _ := reply("yes"); code != 409 {
+		t.Errorf("answer on a dismissed row: want 409, got %d", code)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/nope/reply", phone, map[string]any{"reply": "yes"}); code != 404 {
+		t.Errorf("unknown id: want 404, got %d", code)
+	}
+
+	// ntfy subscribers get the link, never a view action with no url.
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ntq", "message": "m",
+		"actions": []any{r("yes"), map[string]any{"label": "Docs", "url": "https://example.com"}}})
+	_, out := raw(t, "GET", ts.URL+"/ntq/json?poll=1", admin, "", nil)
+	if l := lines(out); len(l) != 1 || len(ntfyDecode(t, l[0]).Actions) != 1 || ntfyDecode(t, l[0]).Actions[0].URL != "https://example.com" {
+		t.Errorf("ntfy actions: %s", out)
+	}
+}
+
+// A database made before reply existed gains the column on start.
+func TestReplyColumnAdded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "clrd.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := strings.Replace(schema, "  reply TEXT NOT NULL DEFAULT '',\n", "", 1)
+	if old == schema {
+		t.Fatal("schema has no reply line to drop")
+	}
+	if _, err := db.Exec(old); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	for i := 0; i < 2; i++ { // the second start finds the column already there
+		s, err := New(Options{DB: path, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		if err != nil {
+			t.Fatalf("start %d: %v", i, err)
+		}
+		tok, _, _ := s.CreateToken(context.Background(), "a", []string{ScopeAdmin}, nil)
+		if _, err := s.Publish(context.Background(), tok, PublishInput{Topic: "infra", Message: "m"}); err != nil {
+			t.Fatalf("publish on start %d: %v", i, err)
+		}
+		s.Close()
 	}
 }

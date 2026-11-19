@@ -97,3 +97,54 @@ func TestTokenCheckedUpFront(t *testing.T) {
 		t.Errorf("notification with a publish-only token: want 202, got %d", code)
 	}
 }
+
+// A tapped reply button reaches the agent as answer, live and on a later call.
+func TestReplyButtons(t *testing.T) {
+	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, raw, err := s.CreateToken(context.Background(), "agent", []string{"read", "publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone, _, err := s.CreateToken(context.Background(), "pixel-9", []string{"read"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(s)
+	call := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
+		code, out := rpc(t, h, "Bearer "+raw, string(b))
+		res, _ := out["result"].(map[string]any)
+		if code != 200 || res == nil || res["isError"] == true {
+			t.Fatalf("%s: http %d %v", name, code, out)
+		}
+		var v map[string]any
+		json.Unmarshal([]byte(res["content"].([]any)[0].(map[string]any)["text"].(string)), &v)
+		return v
+	}
+	sent := call("send", map[string]any{"topic": "agents", "message": "deploy?", "id": "deploy-2", "actions": []any{
+		map[string]any{"label": "Yes", "reply": "yes"}, map[string]any{"label": "No", "reply": "no"}}})
+	id, _ := sent["id"].(string)
+	if acts, _ := sent["actions"].([]any); len(acts) != 2 {
+		t.Fatalf("send dropped the buttons: %v", sent)
+	}
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		s.Reply(context.Background(), phone, id, "yes", 0)
+	}()
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "acknowledged" || got["answer"] != "yes" || got["by"] != "pixel-9" {
+		t.Fatalf("wait_for_reply: %v", got)
+	}
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["answer"] != "yes" {
+		t.Fatalf("second wait_for_reply: %v", got)
+	}
+	// Once the sender resolves it, by is the sender, so no answer rides along.
+	call("resolve", map[string]any{"topic": "agents", "external_id": "deploy-2"})
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "resolved" || got["answer"] != nil {
+		t.Fatalf("wait after resolve: %v", got)
+	}
+}

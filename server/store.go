@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   tags TEXT NOT NULL DEFAULT '[]',
   click TEXT NOT NULL DEFAULT '',
   actions TEXT NOT NULL DEFAULT '[]',
+  reply TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL,
   state_by TEXT NOT NULL DEFAULT '',
   snooze_until INTEGER,
@@ -77,10 +79,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 `
 
-// Action is a button on a notification.
+// Action is a button on a notification: a link (URL) or an answer (Reply)
+// that POST /api/v1/notifications/{id}/reply records.
 type Action struct {
 	Label string `json:"label"`
 	URL   string `json:"url"`
+	Reply string `json:"reply,omitempty"`
 }
 
 // Notification is the server-owned record every client mirrors.
@@ -94,6 +98,7 @@ type Notification struct {
 	Tags        []string   `json:"tags"`
 	Click       string     `json:"click"`
 	Actions     []Action   `json:"actions"`
+	Reply       string     `json:"reply"` // the reply action tapped, "" until one is
 	State       string     `json:"state"`
 	StateBy     string     `json:"state_by"`
 	SnoozeUntil *time.Time `json:"snooze_until"`
@@ -142,6 +147,12 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
+	// Databases made before reply existed.
+	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN reply TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add reply column: %w", err)
+	}
 	return db, nil
 }
 
@@ -156,7 +167,7 @@ func nullMS(t *time.Time) any {
 	return ms(*t)
 }
 
-const notifCols = `id, topic, external_id, title, message, priority, tags, click, actions,
+const notifCols = `id, topic, external_id, title, message, priority, tags, click, actions, reply,
   state, state_by, snooze_until, created_at, updated_at, seq`
 
 type scanner interface{ Scan(...any) error }
@@ -167,7 +178,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	var snooze sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Priority, &tags, &n.Click,
-		&actions, &n.State, &n.StateBy, &snooze, &created, &updated, &n.Seq)
+		&actions, &n.Reply, &n.State, &n.StateBy, &snooze, &created, &updated, &n.Seq)
 	if err != nil {
 		return nil, err
 	}
@@ -185,13 +196,13 @@ func scanNotification(r scanner) (*Notification, error) {
 func saveNotification(tx *sql.Tx, n *Notification) error {
 	tags, _ := json.Marshal(n.Tags)
 	actions, _ := json.Marshal(n.Actions)
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, actions=excluded.actions,
-		state=excluded.state, state_by=excluded.state_by, snooze_until=excluded.snooze_until,
+		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, snooze_until=excluded.snooze_until,
 		updated_at=excluded.updated_at, seq=excluded.seq`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Priority, string(tags), n.Click, string(actions),
-		n.State, n.StateBy, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
+		n.Reply, n.State, n.StateBy, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -298,6 +309,9 @@ type PublishInput struct {
 	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
 	// notification with this external_id instead of creating one; 404 if none.
 	Status string `json:"status,omitempty"`
+	// Reopen puts an acknowledged notification under this external_id back
+	// to active in the same write, so a new question cannot inherit the old answer.
+	Reopen bool `json:"reopen,omitempty"`
 }
 
 // Publish creates a notification, or updates the open one with the same
@@ -336,13 +350,19 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if in.Actions == nil {
 		in.Actions = []Action{}
 	}
+	if err := checkActions(in.Actions); err != nil {
+		return nil, err
+	}
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		if in.ExternalID != "" {
 			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 				in.Topic, in.ExternalID)
 			if err == nil {
-				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Actions =
-					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Actions
+				n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Actions, n.Reply =
+					in.Title, in.Message, in.Priority, in.Tags, in.Click, in.Actions, "" // a new question starts unanswered
+				if in.Reopen && n.State == Acknowledged {
+					n.State, n.StateBy = Active, tok.Name
+				}
 				if t := now(); in.SnoozeUntil != nil && in.SnoozeUntil.After(t) { // delayed: hide until then, like a new row
 					u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 					n.State, n.StateBy, n.SnoozeUntil = Snoozed, tok.Name, &u
@@ -415,6 +435,68 @@ func (s *Server) act(ctx context.Context, tok *Token, action string, until *time
 	return out, err
 }
 
+// checkActions: each action is a link or a reply, never both; reply values
+// are short, unique, and at most 3 (what an Android tray entry shows).
+func checkActions(as []Action) error {
+	seen := map[string]bool{}
+	for _, a := range as {
+		if (a.URL == "") == (a.Reply == "") {
+			return errf(400, "bad_request", "action %q needs a url or a reply, not both", a.Label)
+		}
+		if a.Reply == "" {
+			continue
+		}
+		if !topicRe.MatchString(a.Reply) { // same rule as a topic name
+			return errf(400, "bad_request", "invalid reply %q: use letters, digits, _ and -, at most 64", a.Reply)
+		}
+		if seen[a.Reply] {
+			return errf(400, "bad_request", "reply %q used twice", a.Reply)
+		}
+		seen[a.Reply] = true
+	}
+	if len(seen) > 3 {
+		return errf(400, "bad_request", "at most 3 reply actions")
+	}
+	return nil
+}
+
+// Reply records a tap on one of the notification's reply actions and
+// acknowledges it. The first answer wins: a second one gets 409. A non-zero
+// seq is the version the device showed; if the row changed since (say the
+// sender put a new question under the same key), the tap gets 409.
+func (s *Server) Reply(ctx context.Context, tok *Token, id, reply string, seq int64) (*Notification, error) {
+	if tok == nil {
+		return nil, errf(401, "unauthorized", "missing or invalid token")
+	}
+	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		n, err := getNotification(ctx, tx, `id = ?`, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := tok.need(ScopeRead, n.Topic); err != nil {
+			return nil, err
+		}
+		if seq != 0 && seq != n.Seq {
+			return nil, errf(409, "conflict", "notification changed since seq %d; show the current one", seq)
+		}
+		if reply == "" || !slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply == reply }) {
+			return nil, errf(400, "bad_request", "%q is not one of this notification's replies", reply)
+		}
+		if n.Reply != "" {
+			return nil, errf(409, "conflict", "already answered %q by %s", n.Reply, n.StateBy)
+		}
+		if n.Final() {
+			return nil, errf(409, "conflict", "notification is %s", n.State)
+		}
+		n.Reply, n.State, n.StateBy, n.SnoozeUntil = reply, Acknowledged, tok.Name, nil
+		return []Event{{Type: EventState, Notification: n}}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return evs[0].Notification, nil
+}
+
 // scopeFor: the sender's actions need publish; the user's own need read.
 func scopeFor(action string, byKey bool) string {
 	if action == "resolve" || byKey {
@@ -435,6 +517,9 @@ func transition(n *Notification, target, by string, until *time.Time) (*Event, e
 		return nil, errf(409, "conflict", "notification is %s; reopen it first", n.State)
 	}
 	n.State, n.StateBy, n.SnoozeUntil = target, by, nil
+	if target != Dismissed && target != Resolved {
+		n.Reply = "" // an answer stands only with the tap's own ack; dismiss and resolve keep it as history
+	}
 	if target == Snoozed {
 		u := until.UTC().Truncate(time.Millisecond)
 		n.SnoozeUntil = &u

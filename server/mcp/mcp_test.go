@@ -172,7 +172,7 @@ func TestTools(t *testing.T) {
 		body map[string]any
 	}{
 		{"send", map[string]any{"topic": "infra", "message": "Disk 91%", "title": "build", "priority": 4, "id": "disk-build"},
-			"POST /api/v1/notifications", map[string]any{"topic": "infra", "message": "Disk 91%", "title": "build", "priority": float64(4), "external_id": "disk-build"}},
+			"POST /api/v1/notifications", map[string]any{"topic": "infra", "message": "Disk 91%", "title": "build", "priority": float64(4), "external_id": "disk-build", "reopen": true}},
 		{"list", map[string]any{"topic": "infra"}, "GET /api/v1/notifications?state=open&topic=infra", nil},
 		{"list", map[string]any{"state": "all"}, "GET /api/v1/notifications?state=all", nil},
 		{"ack", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/ack", nil},

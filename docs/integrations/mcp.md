@@ -8,21 +8,31 @@ Tools:
 
 | Tool | Arguments | Does |
 |---|---|---|
-| `send` | `topic, message, title?, priority?, id?` | Publish. `id` is your stable key (`external_id`). |
+| `send` | `topic, message, title?, priority?, id?, actions?` | Publish. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. |
 | `list` | `topic?, state?` | List, default `open`. |
 | `ack` | `id` | Acknowledge by server id. |
 | `resolve` | `id` or `topic + external_id` | Clear it everywhere. |
 | `snooze` | `id, for` | Snooze, e.g. `for: "1h"`. |
-| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`. Default 60 s, max 300 s. |
+| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped. Default 60 s, max 300 s. |
 
 `wait_for_reply` returns at once if the notification is already acknowledged,
 dismissed or resolved. Otherwise it watches the server's committed events, so
 an ack that is quickly followed by a snooze is still reported as an ack.
 
 `wait_for_reply` is how an agent asks a human "OK to deploy?" and waits:
-`send`, then `wait_for_reply` with the returned `id`. Ack means yes, dismiss means no.
-Real button replies are [issue 8](https://github.com/thejdubb02/clrd/issues/8)
-(needs server support first).
+
+```json
+send {"topic": "agents", "message": "OK to deploy?", "id": "deploy-1",
+      "actions": [{"label": "Yes", "reply": "yes"}, {"label": "No", "reply": "no"}]}
+wait_for_reply {"id": "<id from send>", "timeout_s": 300}
+-> {"reply": "acknowledged", "answer": "yes", "by": "pixel-9", "notification": {...}}
+```
+
+The first tap wins; a second phone gets told it is already answered. A plain
+ack (no button) has no `answer`, and dismiss means no. The web inbox and the
+Android app show the buttons once they support them
+([issue 8](https://github.com/thejdubb02/clrd/issues/8)); until then a human
+can still ack or dismiss.
 
 ## Claude Code
 
