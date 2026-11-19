@@ -1,0 +1,19 @@
+# docs/integrations/mcp.md through the Claude Desktop config: the real
+# mcp-remote bridge, spawned from the guide's JSON as Claude Desktop does.
+# Claude Code and Cursor connect straight to the same /mcp over HTTP.
+snippet mcp.md '"mcpServers"' | sed 's/"mcp-remote"/"mcp-remote@0.16.7"/' >"$WORK/desktop.json"
+grep -q '"command": "npx"' "$WORK/desktop.json" || fail "the Desktop block did not match"
+# The guide's send call, argument for argument.
+send=$(snippet mcp.md 'wait_for_reply {' | sed -n '/^send /,/^wait_for_reply/p' | sed '$d' | sed 's/^send //' | jq -c .)
+out=$(dock -e CLRD -e CLRD_TOKEN -e SEND="$send" -e HOME=/tmp -e npm_config_update_notifier=false \
+  -v "$HERE/mcp:/d:ro" -v "$WORK/desktop.json:/w/desktop.json:ro" node:22-slim node /d/drive.mjs /w/desktop.json)
+res() { jq -c --arg t "$1" 'select(.tool == $t) | .out' <<<"$out" | head -1; }
+check "$(res tools/list)" '. == ["ack","list","resolve","send","snooze","wait_for_reply"]' "tools/list"
+ok "tools/list has the six tools in the guide"
+check "$(res list)" 'tostring | contains("deploy-1")' "list sees the sent notification"
+check "$(res wait_for_reply)" '.reply == "acknowledged" and .answer == "yes"' "wait_for_reply"
+ok "wait_for_reply returns the tapped answer"
+expect agents deploy-1 '.state == "acknowledged" and .reply == "yes" and .message == "OK to deploy?"' "send with actions, answered"
+expect agents job-2 '.state == "resolved"' "resolve by topic + external_id"
+expect agents job-3 '.state == "acknowledged"' "ack by id"
+expect agents job-4 '.state == "snoozed"' "snooze by id"

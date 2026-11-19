@@ -1,0 +1,10 @@
+{
+  "topic": "infra",
+  "external_id": "57c6d9296de2ad39",
+  "row": {
+    "title": "High CPU",
+    "message": "CPU has been above 90% for 5 minutes.",
+    "click": "https://grafana.example.com/alerting/grafana/cdz1/view?orgId=1",
+    "priority": 3
+  }
+}

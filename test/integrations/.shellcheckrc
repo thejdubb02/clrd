@@ -1,0 +1,5 @@
+# Cases and lib.sh are sourced by run.sh under bash.
+shell=bash
+# Snippets are passed to sh -c and jq on purpose, unexpanded.
+disable=SC2016
+source-path=SCRIPTDIR

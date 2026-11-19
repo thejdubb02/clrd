@@ -1,0 +1,22 @@
+{
+  "version": "4",
+  "groupKey": "{}:{alertname=\"DiskFull\"}",
+  "truncatedAlerts": 0,
+  "status": "firing",
+  "receiver": "clrd",
+  "groupLabels": {"alertname": "DiskFull"},
+  "commonLabels": {"alertname": "DiskFull", "instance": "build:9100", "severity": "warning"},
+  "commonAnnotations": {"summary": "/var on build is 91% full"},
+  "externalURL": "http://alertmanager.example.com:9093",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {"alertname": "DiskFull", "instance": "build:9100", "severity": "warning"},
+      "annotations": {"summary": "/var on build is 91% full", "description": "Filesystem /var has 9% left."},
+      "startsAt": "2026-11-19T10:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.example.com:9090/graph?g0.expr=disk_used_percent+%3E+90",
+      "fingerprint": "8f2c1e5b7a9d3c40"
+    }
+  ]
+}
