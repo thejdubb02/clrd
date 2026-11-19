@@ -85,6 +85,11 @@ Fixed, Removed, Security), as one line a user can understand.
 - Web: an open inbox reloads when the server comes back on a different database
   (a new epoch), instead of carrying on from a position that no longer exists.
 
+### Changed
+
+- Web: the final logo. The three lines now end on one circle around the
+  green disc, so every gap is the same. The README and site header use it.
+
 ### Fixed
 
 - Android: the always-on "in sync" notice no longer puts a dot on the app icon.
