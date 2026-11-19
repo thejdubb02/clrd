@@ -148,6 +148,27 @@ func TestNtfyImport(t *testing.T) {
 	if c, _ := bearer(t, "POST", u+"/api/v1/notifications/"+id+"/dismiss", pixel, ""); c != 403 {
 		t.Errorf("pixel dismissed a write-only notification: %d", c)
 	}
+	// Acting on or overwriting someone else's message by its sequence id
+	// must not hand that message back to a write-only token.
+	if c, _ := raw(t, "POST", u+"/drop-box", boss, "boss secret", map[string]string{"X-Sequence-ID": "d2"}); c != 200 {
+		t.Fatalf("boss publish drop-box: %d", c)
+	}
+	for _, p := range []string{"/drop-box/d2/clear", "/drop-box/d2/ack"} {
+		m := map[bool]string{true: "PUT", false: "POST"}[strings.HasSuffix(p, "clear")]
+		if c, b := bearer(t, m, u+p, pixel, ""); c != 200 || strings.Contains(b, "boss secret") {
+			t.Errorf("pixel %s leaks: %d %s", p, c, b)
+		}
+	}
+	req, _ := http.NewRequest("POST", u+"/drop-box", strings.NewReader("mine"))
+	req.Header.Set("Authorization", "Bearer "+pixel)
+	req.Header.Set("X-Sequence-ID", "d2")
+	if c, b := send(t, req); c != 200 || strings.Contains(b, "acknowledged") || strings.Contains(b, "boss") {
+		t.Errorf("pixel overwrite d2 leaks state: %d %s", c, b)
+	}
+	// A malformed ?auth= is a wrong credential, not anonymous.
+	if c, _ := raw(t, "GET", u+"/public/json?poll=1&auth=!!!", "", "", nil); c != 401 {
+		t.Errorf("bad ?auth= fell back to anonymous: %d", c)
+	}
 
 	// Deny beats the default, in any case; read-only cannot publish; _ is literal.
 	for _, p := range []string{"/secret", "/SECRET", "/news", "/announce", "/myXtopic"} {
@@ -320,5 +341,16 @@ func TestNtfyImportRealCLI(t *testing.T) {
 	}
 	if out, err := ntfy("subscribe", "--poll", "-u", "phone:wrong", u+"/alerts"); err == nil {
 		t.Fatalf("wrong password accepted: %s", out)
+	}
+}
+
+func TestNtfyMIDRejectsPaths(t *testing.T) {
+	for _, mid := range []string{"../user.db", "a/b", "", "..", "WkNQimnAbetP/"} {
+		if ntfyMID.MatchString(mid) {
+			t.Errorf("%q taken as a message id", mid)
+		}
+	}
+	if !ntfyMID.MatchString("WkNQimnAbetP") {
+		t.Error("real id refused")
 	}
 }

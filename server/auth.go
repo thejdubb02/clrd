@@ -344,7 +344,7 @@ func rawToken(r *http.Request, cookie bool) (raw string, fromCookie bool) {
 	if strings.EqualFold(scheme, "Basic") {
 		r2 := &http.Request{Header: http.Header{"Authorization": {"Basic " + v}}}
 		if u, p, ok := r2.BasicAuth(); ok {
-			if strings.HasPrefix(p, tokenPrefix) {
+			if isToken(p) {
 				return p, false
 			}
 			return u, false
@@ -365,6 +365,7 @@ func authHeader(r *http.Request) string {
 				return string(b)
 			}
 		}
+		return a // not base64: still a credential, so never anonymous
 	}
 	return h
 }

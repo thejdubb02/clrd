@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -439,7 +440,8 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 		n.Attachment, n.file = nil, ""
 		if aName != "" {
 			src := filepath.Join(in.AttachmentDir, mid)
-			if st, err := os.Stat(src); in.AttachmentDir != "" && err == nil && st.Mode().IsRegular() {
+			// ntfy names the file by message id; anything else, or a symlink, is not its file.
+			if st, err := os.Lstat(src); in.AttachmentDir != "" && ntfyMID.MatchString(mid) && err == nil && st.Mode().IsRegular() {
 				id := randomHex()
 				if !in.DryRun {
 					dst := filepath.Join(s.opt.Attachments, id)
@@ -508,6 +510,8 @@ func randomHex() string {
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+var ntfyMID = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
 
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)

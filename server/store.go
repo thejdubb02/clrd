@@ -512,7 +512,23 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if replaced != "" && replaced != in.file {
 		os.Remove(filepath.Join(s.opt.Attachments, replaced))
 	}
-	return evs[0].Notification, nil
+	return senderView(tok, evs[0].Notification, true), nil
+}
+
+// senderView is what a token that may not read the topic gets back: a
+// publish can land on someone else's notification (same external_id), and
+// resolve acts on one, so only the id and what the sender set come back.
+func senderView(tok *Token, n *Notification, own bool) *Notification {
+	if n == nil || tok.may(ScopeRead, n.Topic) {
+		return n
+	}
+	v := &Notification{ID: n.ID, Topic: n.Topic, ExternalID: n.ExternalID, State: n.State, CreatedAt: n.UpdatedAt, UpdatedAt: n.UpdatedAt, Seq: n.Seq}
+	if own { // a publish: the content is the sender's own; the state is not
+		v.Title, v.Message, v.Priority, v.Tags, v.Click, v.Icon, v.Actions, v.Attachment =
+			n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Attachment
+		v.State = Active
+	}
+	return v
 }
 
 // fileID is an uploaded file's name on disk and in its URL.
@@ -629,7 +645,10 @@ func (s *Server) act(ctx context.Context, tok *Token, action string, until *time
 		}
 		return []Event{*ev}, nil
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	return senderView(tok, out, false), nil
 }
 
 // checkActions: each action is a link or a reply, never both; reply values

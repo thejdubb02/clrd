@@ -94,3 +94,9 @@ Fixed, Removed, Security), as one line a user can understand.
   catch-up after being offline, no longer make the phone buzz; with sync off,
   a busy server's retry wait is respected; tray buttons on notifications from
   older app versions work again.
+
+### Security
+
+- Server: a token that can publish to a topic but not read it no longer gets
+  another sender's message back when it acks, resolves or overwrites one by
+  external id.
