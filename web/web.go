@@ -246,7 +246,7 @@ func templates(base string) *template.Template {
 			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic)}
 		},
 		"snoozeLabel": snoozeLabel,
-		"add": func(a, b int) int { return a + b },
+		"add":         func(a, b int) int { return a + b },
 		"plural": func(n int, one, many string) string {
 			if n == 1 {
 				return one

@@ -64,6 +64,7 @@ try {
   await page.getByRole('button', { name: 'Next tip' }).click();
   assert.notEqual(await tip.locator('h4').textContent(), 'Send your first notification', 'Next changes the tip');
   assert.equal(await page.locator('[data-tip-count]').textContent(), '2 of 9');
+  assert.equal(await announce.textContent(), await tip.locator('h4').textContent(), 'Next announces the new tip');
   console.log('ok: tip card shows, Next changes it, Copy has the base URL');
 
   // Clearing it here offers Undo, and Undo brings it back.

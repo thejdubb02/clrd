@@ -165,8 +165,7 @@ func (none) Snapshot(*http.Request, Query) (Snapshot, error) { return Snapshot{}
 // An empty first run shows the send-a-test tip, with this instance's address.
 func TestFirstRunTip(t *testing.T) {
 	_, body := get(t, Handler(none{}, ""), "/app")
-	first := strings.Index(body, "Send your first notification")
-	if first < 0 || first > strings.Index(body, "Ask your AI agent") {
+	if !strings.Contains(body, `aria-label="Send your first notification" data-tip>`) {
 		t.Error("first run must lead with the send-a-test tip")
 	}
 	if strings.Count(body, " data-tip hidden") != len(tips("x"))-1 || !strings.Contains(body, "http://example.com/api/v1/notifications") {

@@ -425,21 +425,24 @@
   // on hover or focus, and none at all under reduced motion.
   const tipBox = $('[data-tips]');
   if (tipBox) {
-    const ts = [...tipBox.querySelectorAll('[data-tip]')], live = $('#tips');
-    let at = ts.findIndex(t => !t.hidden), held = false;
+    const ts = [...tipBox.querySelectorAll('[data-tip]')];
+    let at = ts.findIndex(t => !t.hidden), stopped = false;
     const show = (i, said) => {
       ts[at].hidden = true; at = (i + ts.length) % ts.length; ts[at].hidden = false;
-      live.setAttribute('aria-live', said ? 'polite' : 'off');
       $('[data-tip-count]').textContent = `${at + 1} of ${ts.length}`;
+      if (said) announce.textContent = ts[at].getAttribute('aria-label');
     };
     tipBox.addEventListener('click', async e => {
       const step = e.target.closest('[data-tip-step]');
-      if (step) return show(at + +step.dataset.tipStep, true);
+      // Stepping by hand stops the rotation for good (WCAG 2.2.2).
+      if (step) { stopped = true; return show(at + +step.dataset.tipStep, true); }
       if (!e.target.closest('[data-tip-copy-btn]')) return;
       try { await copyText(ts[at].querySelector('[data-tip-copy]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
     });
-    for (const [ev, v] of [['mouseenter', true], ['mouseleave', false], ['focusin', true], ['focusout', false]]) tipBox.addEventListener(ev, () => { held = v; });
-    setInterval(() => { if (!held && !still.matches && !document.hidden && tipBox.offsetParent) show(at + 1, false); }, 15000);
+    setInterval(() => {
+      if (stopped || still.matches || document.hidden || !tipBox.offsetParent || tipBox.matches(':hover') || tipBox.contains(document.activeElement)) return;
+      show(at + 1, false);
+    }, 15000);
   }
 
   const done = { ack: 'Acknowledged', dismiss: 'Cleared', reopen: 'Restored to the inbox' };
