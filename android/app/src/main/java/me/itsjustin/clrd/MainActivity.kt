@@ -385,9 +385,10 @@ private fun Home(app: App, battery: Intent?, scan: () -> Unit) {
                 else -> {
                     val flow = when (tab) { Tab.Inbox -> dao.inbox(); Tab.Snoozed -> dao.snoozed(); else -> dao.cleared() }
                     val rows by remember(tab) { flow }.collectAsState(emptyList())
-                    val topics = rows.map { it.topic }.distinct().sorted()
+                    val counts = topicCounts(rows)
+                    val topics = counts.keys.sorted()
                     val picked = topic?.takeIf { it in topics }
-                    if (topics.size > 1) Pills(topics, picked) { topic = it }
+                    if (topics.size > 1) Pills(topics, counts, rows.size, picked) { topic = it }
                     val shown = rows.filter { picked == null || it.topic == picked }
                     if (shown.isEmpty()) Empty(tab) else LazyColumn(
                         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 16.dp),
@@ -432,7 +433,7 @@ private fun Header(app: App) {
 }
 
 @Composable
-private fun Pills(topics: List<String>, selected: String?, onPick: (String?) -> Unit) {
+private fun Pills(topics: List<String>, counts: Map<String, Int>, total: Int, selected: String?, onPick: (String?) -> Unit) {
     val b = LocalBrand.current
     // Solid background and room below, so cards scrolling up are cut off cleanly under the chips (#145).
     LazyRow(
@@ -443,7 +444,7 @@ private fun Pills(topics: List<String>, selected: String?, onPick: (String?) -> 
         items(listOf<String?>(null) + topics) { t ->
             val on = t == selected
             Text(
-                t ?: stringResource(R.string.all_topics),
+                stringResource(R.string.topic_count, t ?: stringResource(R.string.all_topics), if (t == null) total else counts[t] ?: 0),
                 color = if (on) b.paper else b.ink,
                 fontSize = 14.sp,
                 modifier = Modifier
@@ -517,7 +518,7 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
             n.file?.let { f -> Attached(f) }
             Spacer(Modifier.height(8.dp))
             val ctx = LocalContext.current
-            Text(meta(ctx, n), style = Mono, color = b.slate, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(meta(ctx, n), style = Mono, color = b.slate, maxLines = 2, overflow = TextOverflow.Ellipsis) // 2: a full date is long
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 IconButton(onClick = { share(ctx, n) }) { Icon(Icons.Filled.Share, stringResource(R.string.share), tint = b.slate) }
                 IconButton(onClick = { copy(ctx, n) }) { Icon(painterResource(R.drawable.ic_copy), stringResource(R.string.copy), tint = b.slate, modifier = Modifier.size(20.dp)) }
@@ -601,15 +602,19 @@ private fun meta(ctx: Context, n: Notif): String {
     return parts.joinToString("  ·  ")
 }
 
-private fun ago(ctx: Context, t: Long): String {
-    val m = (System.currentTimeMillis() - t) / 60_000
+/** Short relative time for the last day, then the full date and time ("3d" alone hides when it happened). */
+internal fun ago(ctx: Context, t: Long, now: Long = System.currentTimeMillis()): String {
+    val m = (now - t) / 60_000
     return when {
         m < 1 -> ctx.getString(R.string.ago_now)
         m < 60 -> ctx.getString(R.string.ago_minutes, m.toInt())
         m < 1440 -> ctx.getString(R.string.ago_hours, (m / 60).toInt())
-        else -> ctx.getString(R.string.ago_days, (m / 1440).toInt())
+        else -> DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(t))
     }
 }
+
+/** How many rows each topic has, for the topic chips. */
+internal fun topicCounts(rows: List<Notif>): Map<String, Int> = rows.groupingBy { it.topic }.eachCount()
 
 @Composable
 private fun Empty(tab: Tab) {
