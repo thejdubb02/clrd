@@ -988,6 +988,10 @@
           "maximum": 36500,
           "description": "Days dismissed and resolved notifications are kept after they were cleared. 0 keeps them forever. Needs scope admin."
          },
+         "sound": {
+          "type": "string",
+          "description": "The asking device's own notification sound, a name from GET /api/v1/sounds. Needs a token with no topic list."
+         },
          "render_formatting": {
           "type": "boolean"
          },
@@ -1355,7 +1359,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this and can_unlink. A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
+      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this, can_unlink and sound. A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
      }
     ]
    }
@@ -1380,7 +1384,79 @@
     }
    }
   },
+  "/api/v1/sounds": {
+   "get": {
+    "summary": "Valid notification sound names",
+    "description": "Scope read. {\"sounds\":[...],\"default\":\"default\"}. default is the device's own system or browser sound and none is silent. Each device's choice is set with PUT /api/v1/devices/{id}.",
+    "tags": [
+     "sync"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/devices/{id}": {
+   "put": {
+    "summary": "Set a device's notification sound",
+    "description": "Scope read, from a token not limited to some topics. Body {\"sound\":\"chime\"}, a name from GET /api/v1/sounds; an unknown name gives 400 listing the valid ones. The caller must see the device in GET /api/v1/devices?all=1 (else 404). Returns the device. The device's settings stream carries the new sound.",
+    "tags": [
+     "sync"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "sound"
+        ],
+        "properties": {
+         "sound": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The device, with its new sound"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   },
    "delete": {
     "summary": "Unlink a browser or phone (signed out at once)",
     "description": "Scope read. Signs the device out at once with every browser it approved: open streams close and the next request gets 401. The caller must see the device in GET /api/v1/devices?all=1 (else 404). A typed-in token is revoked with DELETE /api/v1/tokens/{id} instead (403 here).",
@@ -4964,6 +5040,10 @@
      "keep_cleared_days": {
       "type": "integer",
       "description": "Days dismissed and resolved notifications are kept after they were cleared; 0 keeps them forever. Until set, follows CLRD_RETENTION (30 days)."
+     },
+     "sound": {
+      "type": "string",
+      "description": "The asking device's own notification sound (one per device, not per server), a name from GET /api/v1/sounds. default until set."
      },
      "render_formatting": {
       "type": "boolean",

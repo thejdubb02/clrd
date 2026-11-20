@@ -28,6 +28,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: each device can have its own notification sound (default, none,
+  chime, ding, pop, bell, alert or soft), read and set through the API and the
+  MCP `sound` tool; `GET /api/v1/sounds` lists the names. The Android app and
+  web inbox start playing the choice in their own follow-up releases (#282).
 - Server: an admin can read every server setting in effect with
   `GET /api/v1/server`, and create a token with per-topic grants over the API
   (`grants` on `POST /api/v1/tokens`), so an agent can check and set up access
