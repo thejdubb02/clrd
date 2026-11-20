@@ -94,26 +94,6 @@ func (t *Token) Has(scope string) bool {
 	return slices.Contains(t.Scopes, scope) || slices.Contains(t.Scopes, ScopeAdmin)
 }
 
-// seesAll: a topic-limited token only learns about devices limited to its
-// own topics; a token with grants only about itself.
-func (t *Token) seesAll(o *Token) bool {
-	if len(t.Grants) > 0 || len(o.Grants) > 0 {
-		return !t.limited() || o.ID == t.ID
-	}
-	if len(t.Topics) == 0 {
-		return true
-	}
-	if len(o.Topics) == 0 {
-		return false
-	}
-	for _, topic := range o.Topics {
-		if !slices.Contains(t.Topics, topic) {
-			return false
-		}
-	}
-	return true
-}
-
 func (t *Token) need(scope, topic string) error {
 	if t == nil {
 		return errf(401, "unauthorized", noToken)

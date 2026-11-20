@@ -44,17 +44,13 @@ func (s *Server) deviceRoutes() {
 		if err := tok.need(ScopeRead, ""); err != nil {
 			return err
 		}
-		if r.URL.Query().Get("all") != "" {
-			ds, err := s.Devices(r.Context(), tok)
-			if err != nil {
-				return err
-			}
-			writeJSON(w, 200, map[string]any{"devices": ds})
-			return nil
-		}
-		ts, err := s.Tokens(r.Context(), time.Now().Add(-10*time.Minute))
+		ds, err := s.Devices(r.Context(), tok) // the one scope for both lists (#263)
 		if err != nil {
 			return err
+		}
+		if r.URL.Query().Get("all") != "" {
+			writeJSON(w, 200, map[string]any{"devices": ds})
+			return nil
 		}
 		type device struct {
 			ID         string     `json:"id"`
@@ -62,9 +58,10 @@ func (s *Server) deviceRoutes() {
 			LastSeenAt *time.Time `json:"last_seen_at"`
 		}
 		out := []device{}
-		for _, t := range ts {
-			if tok.seesAll(t) {
-				out = append(out, device{t.ID, t.Name, t.LastSeenAt})
+		since := time.Now().Add(-10 * time.Minute)
+		for _, d := range ds {
+			if d.LastSeenAt != nil && d.LastSeenAt.After(since) {
+				out = append(out, device{d.ID, d.Name, d.LastSeenAt})
 			}
 		}
 		writeJSON(w, 200, map[string]any{"devices": out})

@@ -65,6 +65,11 @@ func TestUnlinkDevice(t *testing.T) {
 	if all := devices(admin); all["other"] == nil {
 		t.Fatal("a full admin should see every token")
 	}
+	// #263: the plain list (seen in the last 10 minutes) is scoped the same way.
+	_, recent := call(t, ts, "GET", "/api/v1/devices", other, nil)
+	if d := recent["devices"].([]any); len(d) != 1 || d[0].(map[string]any)["name"] != "other" {
+		t.Fatalf("another family's reader saw these devices: %v", recent)
+	}
 
 	// A reader cannot unlink a device it did not approve, nor see it.
 	if code, _ := call(t, ts, "DELETE", "/api/v1/devices/"+phoneID, other, nil); code != 404 {
