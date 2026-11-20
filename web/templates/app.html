@@ -18,7 +18,7 @@
     <nav class="order-3 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-labelledby="topics-h" data-live="topics"{{if not .Snap.Topics}} hidden{{end}}>
       <h2 id="topics-h" class="text-muted-foreground px-2 pb-1 text-xs font-medium max-md:sr-only">Topics</h2>
       <a class="side-link" href="{{$base}}"{{if and (not .Topic) (ne .View "settings")}} aria-current="true"{{end}}>All topics</a>
-      {{range .Snap.Topics}}<a class="side-link" href="{{$base}}?topic={{.Name}}"{{if eq .Name $.Topic}} aria-current="true"{{end}}>{{template "i-hash"}}{{.Name}} <span class="count">{{.Open}}</span></a>
+      {{range .Snap.Topics}}<a class="side-link" href="{{$base}}?topic={{.Name}}" data-name="{{.Name}}" data-topic-icon="{{.Icon}}"{{if eq .Name $.Topic}} aria-current="true"{{end}}>{{template "i-hash"}}{{.Name}} <span class="count">{{.Open}}</span></a>
       {{end}}
     </nav>
     <div class="ms-auto flex items-center gap-2 text-xs md:bg-card md:ms-0 md:mt-auto md:flex-wrap md:rounded-lg md:border md:p-3 md:text-sm" id="sync">
@@ -47,6 +47,20 @@
     <div class="grid grid-cols-[minmax(0,1fr)] gap-2" data-list>
       {{range .Snap.Items}}{{template "card" (card . $.View $.Here $.Snap)}}{{end}}
     </div>
+    {{if eq .View "inbox"}}<template data-stack-tpl><article class="card border px-4" data-stack>
+      <div class="grid min-w-0 grid-cols-[0.5rem_minmax(0,1fr)] gap-x-3 py-3.5">
+        <span class="mt-2 size-2 rounded-full bg-border" aria-hidden="true" data-stack-dot></span>
+        <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <h2 class="card-title text-[17px]/snug font-semibold tracking-tight [overflow-wrap:anywhere]"><img class="me-2 inline-block size-6 rounded object-cover align-[-5px]" alt="" width="24" height="24" referrerpolicy="no-referrer" data-icon hidden><span data-stack-topic></span></h2>
+          <span class="badge" data-state="acknowledged" data-stack-count></span>
+        </div>
+        <p class="text-body col-start-2 mt-1 min-w-0 text-[15px]/normal [overflow-wrap:anywhere]" data-stack-latest></p>
+      </div>
+      <div class="flex flex-wrap items-start gap-1.5 pb-3.5 ps-5">
+        <button type="button" class="btn" data-variant="outline" aria-expanded="false" data-stack-toggle>Show all</button>
+        <button type="button" class="btn" data-variant="clear" data-act="clear-stack">{{template "i-check"}}Clear all</button>
+      </div>
+    </article></template>{{end}}
     <div class="text-body grid max-w-xl gap-3 py-10 text-sm/relaxed"{{if .Snap.Items}} hidden{{end}} data-empty>
       {{if .Q}}<h2 class="text-foreground text-base font-semibold">No notifications match "{{.Q}}"</h2>
       <p>Search looks at titles, messages and tags{{with .Topic}} in {{.}}{{end}}. <a href="{{$base}}{{with .Topic}}?topic={{.}}{{end}}">Clear the search</a></p>
@@ -89,7 +103,7 @@
 {{end}}
 
 {{define "card"}}{{$n := .N}}
-<article class="card border px-4" tabindex="-1" data-id="{{$n.ID}}" data-seq="{{$n.Seq}}" data-state="{{$n.State}}" aria-labelledby="t-{{$n.ID}}">
+<article class="card border px-4" tabindex="-1" data-id="{{$n.ID}}" data-seq="{{$n.Seq}}" data-state="{{$n.State}}" data-topic="{{$n.Topic}}" data-priority="{{$n.Priority}}" aria-labelledby="t-{{$n.ID}}">
   <div class="grid min-w-0 grid-cols-[0.5rem_minmax(0,1fr)] gap-x-3 py-3.5">
     <span class="mt-2 size-2 rounded-full {{if ge $n.Priority 5}}bg-destructive{{else if eq $n.Priority 4}}bg-foreground{{else}}bg-border{{end}}" aria-hidden="true"></span>
     <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -173,6 +187,11 @@
 <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"test","message":"Hello from clrd"}' \
   {{.Base}}/api/v1/notifications</code></pre>
+  </section>
+  <section class="js-only grid gap-3" aria-labelledby="inbox-h">
+    <h2 id="inbox-h" class="text-base font-semibold">Inbox</h2>
+    <p class="text-body text-sm/relaxed">With stacking on, two or more notifications from one topic show as one card in the inbox. This setting is for this browser only.</p>
+    <label class="label"><input type="checkbox" role="switch" class="input" data-stack-setting> Stack by topic</label>
   </section>
   <section class="js-only grid gap-3" aria-labelledby="msg-h">
     <h2 id="msg-h" class="text-base font-semibold">Messages</h2>

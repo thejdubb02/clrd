@@ -472,6 +472,47 @@ try {
   assert.equal((await get(laptop, r.id)).reply, 'lock');
   console.log('ok: Clear, Snooze and reply work without JavaScript');
 
+  // Stack by topic (#108): off by default; on, a topic with two or more
+  // notifications shows as one card that opens in place and clears together.
+  {
+    const sp = await (await browser.newContext()).newPage();
+    await sp.goto(`${base}/app?auth=${link}`);
+    const ids = [];
+    for (const t of ['Build 1 failed', 'Build 2 failed', 'Build 3 failed']) ids.push((await api(phone, '/api/v1/notifications', { topic: 'ci-stack', title: t, message: 'red' })).id);
+    await sp.reload();
+    const stack = sp.locator('[data-stack="ci-stack"]');
+    const item = t => sp.locator('article.card[data-id]', { hasText: t });
+    assert.equal(await stack.count(), 0, 'stacked while the setting is off');
+    assert.equal(await item('Build 1 failed').isVisible(), true);
+    await sp.goto(base + '/app/settings');
+    await sp.getByRole('switch', { name: 'Stack by topic' }).check();
+    await sp.goto(base + '/app');
+    await stack.waitFor();
+    assert.equal(await stack.locator('[data-stack-count]').textContent(), '3 notifications');
+    assert.equal(await stack.locator('[data-stack-latest]').textContent(), 'Build 3 failed');
+    assert.equal(await item('Build 1 failed').isVisible(), false, 'stacked card still shown');
+    // A new one only bumps the count, live.
+    ids.push((await api(phone, '/api/v1/notifications', { topic: 'ci-stack', title: 'Build 4 failed', message: 'red' })).id);
+    await stack.locator('[data-stack-count]', { hasText: '4 notifications' }).waitFor();
+    assert.equal(await stack.locator('[data-stack-latest]').textContent(), 'Build 4 failed');
+    assert.equal(await item('Build 4 failed').isVisible(), false, 'new card shown outside its stack');
+    await stack.getByRole('button', { name: 'Show all' }).click();
+    for (const n of [1, 2, 3, 4]) await item(`Build ${n} failed`).waitFor({ state: 'visible' });
+    assert.equal(await stack.getByRole('button', { name: 'Hide' }).getAttribute('aria-expanded'), 'true');
+    // Clear all on the stack clears all four on the server, and Undo reopens them.
+    await stack.getByRole('button', { name: 'Clear all' }).click();
+    await sp.locator('[data-toast]').filter({ hasText: 'Cleared 4 notifications.' }).waitFor();
+    for (const id of ids) assert.equal((await get(laptop, id)).state, 'dismissed');
+    await sp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
+    for (const id of ids) await sp.waitForFunction(async i => (await (await fetch(`/api/v1/notifications/${i}`)).json()).state === 'active', id);
+    await stack.locator('[data-stack-count]', { hasText: '4 notifications' }).waitFor();
+    // A single topic's page never stacks.
+    await sp.goto(`${base}/app?topic=ci-stack`);
+    assert.equal(await stack.count(), 0, 'stacked on the topic page');
+    await sp.context().close();
+    console.log('ok: Stack by topic folds a topic into one card that opens and clears');
+  }
+
   // QR sign-in (#74): a signed-out browser shows a code, a signed-in phone
   // opens the link and taps Approve, and the waiting browser signs itself in.
   const pc = await (await browser.newContext()).newPage();
