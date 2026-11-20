@@ -1,0 +1,85 @@
+package me.itsjustin.clrd
+
+import android.Manifest
+import android.app.NotificationManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.test.core.app.ApplicationProvider
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+
+/** Notification sounds (#282): the choice really changes the channel a notification posts on, and what it plays. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class SoundsTest {
+    private val app = ApplicationProvider.getApplicationContext<App>()
+    private val nm = app.getSystemService(NotificationManager::class.java)
+
+    @Before fun setUp() {
+        shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        app.serverUrl = "https://a.example"
+        app.token = "" // not configured, so nothing here touches the network
+    }
+
+    @After fun tearDown() { bg { app.db.dao().forget(); app.saveSound(Sounds.DEFAULT) } }
+
+    private fun row(id: String, priority: Int = 3) =
+        Notif(id, "disk", "T", "m", priority, "", null, "[]", Notif.ACTIVE, null, null, 1, System.currentTimeMillis(), 1)
+
+    @Test fun theSixSoundsShipInTheApp() {
+        for (name in Sounds.BUILT_IN) assertNotEquals(name, 0, app.resources.getIdentifier(name, "raw", app.packageName))
+    }
+
+    @Test fun unsetMeansThePhoneDefaultOnTheOldChannels() {
+        assertEquals(Sounds.DEFAULT, app.sound)
+        assertEquals("p3", Sounds.channel(3, app.sound))
+        assertEquals("p3", Sounds.channel(3, "trumpet")) // an unknown name plays default
+        app.tray.apply(TrayStep.Show(row("a"), silent = false))
+        assertEquals("p3", shadowOf(nm).getNotification("a", 0).channelId)
+    }
+
+    @Test fun pickingASoundMovesPostsToItsChannelAndDropsTheOldOnes() {
+        bg { app.saveSound("chime") }
+        bg { app.db.dao().applyAll(listOf(row("a", priority = 4)), 1) } // in Room, so the switch below reposts it
+        app.tray.apply(TrayStep.Show(row("a", priority = 4), silent = false))
+        assertEquals("p4-chime", shadowOf(nm).getNotification("a", 0).channelId)
+        assertEquals(Uri.parse("android.resource://${app.packageName}/raw/chime"), nm.getNotificationChannel("p4-chime").sound)
+        assertNull("the default channels are gone", nm.getNotificationChannel("p4"))
+        assertTrue("the sync notice keeps its channel", nm.getNotificationChannel(Tray.SERVICE_CHANNEL) != null)
+
+        bg { app.saveSound("none") }
+        assertNull(nm.getNotificationChannel("p4-none").sound)
+        assertNull(nm.getNotificationChannel("p4-chime"))
+        assertEquals("a showing row moves to the new channel", "p4-none", shadowOf(nm).getNotification("a", 0).channelId)
+    }
+
+    @Test fun aSilentPostStaysSilentWhateverTheSound() {
+        bg { app.saveSound("alert") }
+        app.tray.apply(TrayStep.Show(row("a", priority = 5), silent = true))
+        val n = shadowOf(nm).getNotification("a", 0)
+        assertEquals("p5-alert", n.channelId)
+        // How NotificationCompat silences one post on API 26+: only a group summary may alert, and this is not one.
+        assertEquals(android.app.Notification.GROUP_ALERT_SUMMARY, n.groupAlertBehavior)
+    }
+
+    @Test fun theAppSaysWhenThePhoneSettingsWin() {
+        val chime = Uri.parse("android.resource://me.itsjustin.clrd/raw/chime")
+        val ok = (3..5).associateWith { chime to NotificationManager.IMPORTANCE_HIGH }
+        assertFalse(Sounds.overridden(chime, ok))
+        assertTrue("sound changed in system settings", Sounds.overridden(chime, ok + (4 to (Settings.System.DEFAULT_NOTIFICATION_URI to NotificationManager.IMPORTANCE_HIGH))))
+        assertTrue("turned down to silent", Sounds.overridden(chime, ok + (5 to (chime to NotificationManager.IMPORTANCE_LOW))))
+        assertFalse("a missing channel is not an override", Sounds.overridden(chime, ok + (3 to null)))
+        bg { app.saveSound("ding") }
+        assertFalse(app.tray.soundOverridden())
+    }
+}

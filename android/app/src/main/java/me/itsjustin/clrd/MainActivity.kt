@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.media.RingtoneManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.Image
@@ -64,6 +65,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -132,6 +134,8 @@ fun openBattery(ctx: Context, prompt: Intent) {
 class MainActivity : ComponentActivity() {
     /** Rechecked on every resume, so a change made in Android's settings shows when the person comes back. */
     val battery = mutableStateOf<Intent?>(null)
+    /** Counts resumes, so Settings re-reads what the phone's own settings changed meanwhile (the sound). */
+    val resumes = mutableStateOf(0)
 
     /** The browser sign-in or phone link in progress, if any. */
     val pair = mutableStateOf<PairUi?>(null)
@@ -149,6 +153,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         battery.value = batteryPrompt(this)
+        resumes.value++
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -161,7 +166,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handlePair(intent)
         setContent {
             ClrdTheme {
-                Home(app, battery.value, ::scan)
+                Home(app, battery.value, resumes.value, ::scan)
                 PairDialog(pair.value, { pair.value = it }, ::approvePair, ::claimLink)
             }
         }
@@ -341,7 +346,7 @@ private enum class Tab(val label: Int, val icon: ImageVector) {
 }
 
 @Composable
-private fun Home(app: App, battery: Intent?, scan: () -> Unit) {
+private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val b = LocalBrand.current
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
@@ -381,7 +386,7 @@ private fun Home(app: App, battery: Intent?, scan: () -> Unit) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(app)
             when (tab) {
-                Tab.Settings -> SettingsScreen(app, battery, scan)
+                Tab.Settings -> SettingsScreen(app, battery, resumes, scan)
                 else -> {
                     val flow = when (tab) { Tab.Inbox -> dao.inbox(); Tab.Snoozed -> dao.snoozed(); else -> dao.cleared() }
                     val rows by remember(tab) { flow }.collectAsState(emptyList())
@@ -700,8 +705,55 @@ private fun SnoozeSettings(app: App) {
     result?.let { Text(it, color = b.body, fontSize = 14.sp) }
 }
 
+/** The notification sound on this phone (#282): pick one, hear it first, and see when Android's own settings win. */
 @Composable
-private fun SettingsScreen(app: App, battery: Intent?, scan: () -> Unit) {
+private fun SoundSettings(app: App, resumes: Int) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    var sound by remember { mutableStateOf(app.sound) }
+    val overridden = remember(sound, resumes) { app.tray.soundOverridden(sound) }
+    var playing by remember { mutableStateOf<android.media.Ringtone?>(null) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { playing?.stop() } }
+
+    Spacer(Modifier.height(8.dp))
+    Text(stringResource(R.string.sound), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(R.string.sound_explain), color = b.slate, fontSize = 13.sp)
+    Sounds.NAMES.forEach { name ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            RadioButton(selected = name == sound, onClick = {
+                sound = name
+                app.io.execute { app.saveSound(name) }
+            })
+            Text(stringResource(soundLabel(name)), color = b.ink, modifier = Modifier.weight(1f))
+            Sounds.uri(ctx, name)?.let { uri ->
+                TextButton(onClick = {
+                    playing?.stop()
+                    playing = RingtoneManager.getRingtone(ctx, uri)?.apply { play() }
+                }) { Text(stringResource(R.string.sound_preview), color = b.ink) }
+            }
+        }
+    }
+    if (overridden) {
+        Text(stringResource(R.string.sound_overridden), color = b.signal, fontSize = 13.sp)
+        TextButton(onClick = {
+            runCatching { ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)) }
+        }) { Text(stringResource(R.string.sound_open_settings), color = b.ink) }
+    }
+}
+
+private fun soundLabel(name: String) = when (name) {
+    Sounds.DEFAULT -> R.string.sound_default
+    Sounds.NONE -> R.string.sound_none
+    "chime" -> R.string.sound_chime
+    "ding" -> R.string.sound_ding
+    "pop" -> R.string.sound_pop
+    "bell" -> R.string.sound_bell
+    "alert" -> R.string.sound_alert
+    else -> R.string.sound_soft
+}
+
+@Composable
+private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val saved by app.saved.collectAsState() // a linked phone's new server and token show here at once
@@ -782,6 +834,7 @@ private fun SettingsScreen(app: App, battery: Intent?, scan: () -> Unit) {
                 app.io.execute { RoomStore(app).reconcile() } // reposts every row in or out of its stack
             })
         }
+        SoundSettings(app, resumes)
         if (app.configured) SnoozeSettings(app)
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.about, BuildConfig.VERSION_NAME), style = Mono, color = b.slate)
