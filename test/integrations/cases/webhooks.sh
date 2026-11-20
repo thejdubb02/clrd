@@ -15,9 +15,9 @@ arr|Sonarr: Health|"Health"|"HealthRestored"'
 auth=$(echo -n "Bearer $CLRD_TOKEN" | base64 -w0 | tr -d '=')
 while IFS='|' read -r name title from to; do
   [ -n "$name" ] || continue
-  url=$(grep -ho "https://clrd.itsjustin.me/[a-z]*?template=${name}[^ \`)]*" "$ROOT/docs/integrations/$name.md" | head -1)
+  url=$(grep -ho "https://clrd.example.com/[a-z]*?template=${name}[^ \`)]*" "$ROOT/docs/integrations/$name.md" | head -1)
   [ -n "$url" ] || fail "$name.md has no ?template=$name URL"
-  url=${url/https:\/\/clrd.itsjustin.me/$CLRD}
+  url=${url/https:\/\/clrd.example.com/$CLRD}
   url=${url/<token>/$auth}
   topic=${url#"$CLRD"/}; topic=${topic%%\?*}
   # Without &auth= the guide has the service send the token itself.

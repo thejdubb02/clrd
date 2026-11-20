@@ -4,7 +4,7 @@ Watchtower sends through shoutrrr, which speaks ntfy, so no template is
 needed:
 
 ```sh
-WATCHTOWER_NOTIFICATION_URL=ntfy://anything:clrd_...@clrd.itsjustin.me/docker
+WATCHTOWER_NOTIFICATION_URL=ntfy://anything:clrd_...@clrd.example.com/docker
 ```
 
 The token goes in the password. Each update report is one notification.

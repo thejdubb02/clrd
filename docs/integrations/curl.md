@@ -3,7 +3,7 @@
 Works today against the native API.
 
 ```sh
-export CLRD=https://clrd.itsjustin.me
+export CLRD=https://clrd.example.com
 export CLRD_TOKEN=clrd_...
 ```
 

@@ -4,7 +4,7 @@
 target (Proxmox VE 8.3+). Error severity is priority high, info is low.
 
 1. Datacenter, Notifications, Add, Webhook.
-2. Method `POST`, URL `https://clrd.itsjustin.me/pve?template=proxmox`.
+2. Method `POST`, URL `https://clrd.example.com/pve?template=proxmox`.
 3. Secrets: add `token` with your clrd token (and `clrd` with a shared secret
    if you want the [secret check](custom-webhooks.md#secrets)).
 4. Headers: `Content-Type: application/json`,

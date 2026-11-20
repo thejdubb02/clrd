@@ -3,7 +3,7 @@
 Two options.
 
 **Built-in ntfy integration** (HA 2025.5+): add it with server URL
-`https://clrd.itsjustin.me` and your `clrd_...` token as the access token.
+`https://clrd.example.com` and your `clrd_...` token as the access token.
 Publish only, no resolve.
 
 **`rest_command`** (works with the native API today, and can resolve):
@@ -19,7 +19,7 @@ clrd_bearer: "Bearer clrd_..."
 ```yaml
 rest_command:
   clrd_send:
-    url: https://clrd.itsjustin.me/api/v1/notifications
+    url: https://clrd.example.com/api/v1/notifications
     method: post
     headers:
       authorization: !secret clrd_bearer
@@ -29,7 +29,7 @@ rest_command:
       {{ {"topic": topic, "external_id": id, "title": title | default(""),
           "message": message, "priority": priority | default(3) | int} | to_json }}
   clrd_resolve:
-    url: "https://clrd.itsjustin.me/{{ topic | urlencode }}/{{ id | urlencode | replace('/', '%2F') }}/resolve"
+    url: "https://clrd.example.com/{{ topic | urlencode }}/{{ id | urlencode | replace('/', '%2F') }}/resolve"
     method: post
     headers:
       authorization: !secret clrd_bearer

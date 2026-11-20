@@ -3,17 +3,17 @@
 Apprise's ntfy plugin talks to clrd through its ntfy-compatible publish.
 
 ```
-ntfys://clrd_...@clrd.itsjustin.me/infra?auth=token
+ntfys://clrd_...@clrd.example.com/infra?auth=token
 ```
 
 - `ntfys://` is HTTPS, `ntfy://` is HTTP.
 - `?auth=token` is required: Apprise only treats the user part as a token on
-  its own when it starts with `tk_`. Equivalent: `ntfys://clrd.itsjustin.me/infra?token=clrd_...`.
+  its own when it starts with `tk_`. Equivalent: `ntfys://clrd.example.com/infra?token=clrd_...`.
 - Title, message and Apprise's priority, tags and click URL options
   (`?priority=high` etc.) all arrive.
 
 ```sh
-apprise -t "Disk 91%" -b "/var on build is 91% full" "ntfys://clrd_...@clrd.itsjustin.me/infra?auth=token"
+apprise -t "Disk 91%" -b "/var on build is 91% full" "ntfys://clrd_...@clrd.example.com/infra?auth=token"
 ```
 
 ## Auto-resolve

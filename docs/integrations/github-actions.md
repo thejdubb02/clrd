@@ -3,8 +3,8 @@
 Native API only. Works today.
 
 Add a repository secret `CLRD_TOKEN` (a token with `publish` scope), then use
-the composite action in [`sdk/action`](../../sdk/action). It needs `bash`,
-`curl` and `jq` on the runner (all present on GitHub-hosted runners).
+the composite action in [`sdk/action`](../../sdk/action) with `url` set to
+your server (replace `clrd.example.com` below). It needs `bash`, `curl` and `jq` on the runner (all present on GitHub-hosted runners).
 
 ## Send on failure, resolve on the next success
 
@@ -23,6 +23,7 @@ at the end of the job:
         if: failure()
         uses: thejdubb02/clrd/sdk/action@main
         with:
+          url: https://clrd.example.com
           token: ${{ secrets.CLRD_TOKEN }}
           topic: ci
           id: ${{ github.event.repository.name }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
@@ -34,6 +35,7 @@ at the end of the job:
         if: success()
         uses: thejdubb02/clrd/sdk/action@main
         with:
+          url: https://clrd.example.com
           token: ${{ secrets.CLRD_TOKEN }}
           topic: ci
           id: ${{ github.event.repository.name }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
@@ -44,7 +46,7 @@ Resolving when nothing is open is a no-op (the action treats 404 as fine).
 Keys are URL-encoded in the resolve path, so spaces and slashes (`feature/x`) are fine.
 Pin `@main` to a tag or commit once releases exist.
 
-Inputs: `url` (default `https://clrd.itsjustin.me`), `token`, `topic`, `id`,
+Inputs: `url` (your server, required), `token`, `topic`, `id`,
 `message`, `title`, `priority` (1 to 5, default 3), `resolve` (`true` to
 resolve instead of send).
 
@@ -58,7 +60,7 @@ resolve instead of send).
         run: |
           code=$(jq -n --arg key "$KEY" --arg msg "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             '{topic:"ci", external_id:$key, title:"Build failed", message:$msg, priority:4}' |
-            curl -sS -o /dev/null -w '%{http_code}' -X POST https://clrd.itsjustin.me/api/v1/notifications \
+            curl -sS -o /dev/null -w '%{http_code}' -X POST https://clrd.example.com/api/v1/notifications \
             -H "Authorization: Bearer $CLRD_TOKEN" -H "Content-Type: application/json" --data @-)
           case "$code" in 2??) ;; *) echo "clrd send failed: $code"; exit 1 ;; esac
       - if: success()
@@ -67,6 +69,6 @@ resolve instead of send).
           KEY: ${{ github.repository }}-${{ github.workflow }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.ref_name }}
         run: |
           code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
-            "https://clrd.itsjustin.me/ci/$(jq -rn --arg v "$KEY" '$v|@uri')/resolve")
+            "https://clrd.example.com/ci/$(jq -rn --arg v "$KEY" '$v|@uri')/resolve")
           case "$code" in 2??|404) ;; *) echo "clrd resolve failed: $code"; exit 1 ;; esac
 ```

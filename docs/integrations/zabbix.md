@@ -9,7 +9,7 @@ urgent, High is high, Not classified and Information are low.
 
    | Name | Value |
    |---|---|
-   | `url` | `https://clrd.itsjustin.me/zabbix?template=zabbix` |
+   | `url` | `https://clrd.example.com/zabbix?template=zabbix` |
    | `token` | your clrd token |
    | `subject` | `{ALERT.SUBJECT}` |
    | `message` | `{ALERT.MESSAGE}` |

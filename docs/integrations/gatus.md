@@ -12,7 +12,7 @@ notification (the `status: resolved` rule in SPEC section 5). Any other
 ```yaml
 alerting:
   custom:
-    url: https://clrd.itsjustin.me/api/v1/notifications
+    url: https://clrd.example.com/api/v1/notifications
     method: POST
     headers:
       Authorization: Bearer clrd_...

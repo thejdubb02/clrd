@@ -83,6 +83,14 @@ func TestPaths(t *testing.T) {
 	}
 }
 
+func TestNoDefaultServer(t *testing.T) {
+	t.Setenv("CLRD_URL", "")
+	_, err := New("", "clrd_test").Resolve(context.Background(), "infra", "nope")
+	if err == nil || !strings.Contains(err.Error(), "set CLRD_URL") {
+		t.Fatal(err)
+	}
+}
+
 func TestError(t *testing.T) {
 	c, _ := fake(t)
 	c.URL += "/missing"

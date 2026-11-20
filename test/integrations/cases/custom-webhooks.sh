@@ -17,8 +17,8 @@ expect infra db-lag '.state == "resolved"' "my-app: resolve"
 # Sending the token: ?auth= from the guide's recipe, and Basic auth in the URL.
 recipe=$(grep -o 'echo -n "Bearer clrd_\.\.\." | base64 | tr -d .=.' "$ROOT/docs/integrations/custom-webhooks.md")
 auth=$(sh -c "${recipe//clrd_.../$CLRD_TOKEN}")
-basic=$(grep -o 'https://anything:clrd_\.\.\.@clrd.itsjustin.me/infra?template=github' "$ROOT/docs/integrations/custom-webhooks.md")
-basic=${basic/clrd_.../$CLRD_TOKEN}; basic=${basic/https:\/\/anything:/http://anything:}; basic=${basic/clrd.itsjustin.me/127.0.0.1:$CLRD_PORT}
+basic=$(grep -o 'https://anything:clrd_\.\.\.@clrd.example.com/infra?template=github' "$ROOT/docs/integrations/custom-webhooks.md")
+basic=${basic/clrd_.../$CLRD_TOKEN}; basic=${basic/https:\/\/anything:/http://anything:}; basic=${basic/clrd.example.com/127.0.0.1:$CLRD_PORT}
 gh=$ROOT/server/testdata/webhooks/github.json
 for url in "$CLRD/infra?template=github&auth=$auth" "$basic"; do
   curl -fsS -H 'X-GitHub-Event: issues' "$url" --data-binary "@$gh" >/dev/null || fail "token form: $url"

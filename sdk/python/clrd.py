@@ -4,8 +4,8 @@
     clrd.send("infra", "Disk 91%", id="disk-build")
     clrd.resolve("infra", "disk-build")
 
-Reads CLRD_URL (default https://clrd.itsjustin.me) and CLRD_TOKEN from the
-environment, or use clrd.Client(url, token).
+Reads CLRD_URL and CLRD_TOKEN from the environment, or use
+clrd.Client(url, token). There is no default server.
 """
 
 import argparse
@@ -39,11 +39,13 @@ _open = urllib.request.build_opener(_NoRedirect).open
 
 class Client:
     def __init__(self, url=None, token=None, timeout=10):
-        self.url = (url or os.environ.get("CLRD_URL") or "https://clrd.itsjustin.me").rstrip("/")
+        self.url = (url or os.environ.get("CLRD_URL") or "").rstrip("/")
         self.token = token if token is not None else os.environ.get("CLRD_TOKEN")
         self.timeout = timeout
 
     def _req(self, method, path, body=None):
+        if not self.url:
+            raise ClrdError(0, "no server URL: set CLRD_URL or pass url")
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self.url + path, data=data, method=method)
         req.add_header("Content-Type", "application/json")

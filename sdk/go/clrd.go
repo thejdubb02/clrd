@@ -74,14 +74,11 @@ type Client struct {
 	HTTP  *http.Client // redirects are never followed, whatever its CheckRedirect says
 }
 
-// New makes a client. Empty url or token fall back to CLRD_URL and CLRD_TOKEN;
-// the url defaults to https://clrd.itsjustin.me.
+// New makes a client. Empty url or token fall back to CLRD_URL and CLRD_TOKEN.
+// There is no default server: with neither set, every call fails saying so.
 func New(baseURL, token string) *Client {
 	if baseURL == "" {
 		baseURL = os.Getenv("CLRD_URL")
-	}
-	if baseURL == "" {
-		baseURL = "https://clrd.itsjustin.me"
 	}
 	if token == "" {
 		token = os.Getenv("CLRD_TOKEN")
@@ -90,6 +87,9 @@ func New(baseURL, token string) *Client {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+	if c.URL == "" {
+		return fmt.Errorf("clrd: no server URL: set CLRD_URL or pass it to New")
+	}
 	var body io.Reader
 	if in != nil {
 		b, err := json.Marshal(in)

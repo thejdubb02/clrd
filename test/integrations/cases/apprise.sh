@@ -4,7 +4,7 @@ dock python:3.12-slim sh -ec "pip install -q --root-user-action=ignore --disable
 expect infra "" '.state == "active" and .title == "Disk 91%" and .message == "/var on build is 91% full"' "apprise ntfy:// URL with ?auth=token"
 
 # The guide's equivalent URL form, plus ?priority=high.
-eq=$(grep -o 'ntfys://clrd.itsjustin.me/infra?token=clrd_\.\.\.' "$ROOT/docs/integrations/apprise.md" | sed -e "s|ntfys://clrd.itsjustin.me|ntfy://127.0.0.1:$CLRD_PORT|" -e "s|clrd_\.\.\.|$CLRD_TOKEN|")
+eq=$(grep -o 'ntfys://clrd.example.com/infra?token=clrd_\.\.\.' "$ROOT/docs/integrations/apprise.md" | sed -e "s|ntfys://clrd.example.com|ntfy://127.0.0.1:$CLRD_PORT|" -e "s|clrd_\.\.\.|$CLRD_TOKEN|")
 [ -n "$eq" ] || fail "the equivalent ?token= URL is gone from the guide"
 dock python:3.12-slim sh -ec "pip install -q --root-user-action=ignore --disable-pip-version-check apprise==1.9.3 && apprise -t Equivalent -b body '$eq&priority=high'"
 check "$(rows infra "")" 'map(select(.title == "Equivalent")) | length == 1' "?token= form"

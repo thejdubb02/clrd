@@ -6,7 +6,7 @@ notification per check, resolved when the check passes again. Health errors
 and manual interaction requests are priority high.
 
 1. Settings, Connect, add a Webhook.
-2. URL: `https://clrd.itsjustin.me/media?template=arr`, method `POST`.
+2. URL: `https://clrd.example.com/media?template=arr`, method `POST`.
 3. Username: anything. Password: your clrd token.
 4. Tick the events you want, including On Health Issue and On Health Restored.
 

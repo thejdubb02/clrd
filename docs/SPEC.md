@@ -5,7 +5,8 @@ build against this file. Change it in its own commit when the contract changes,
 and say so in the PR.
 
 Tagline: **Dismiss once. Gone everywhere.**
-Public instance: `https://clrd.itsjustin.me` (docs and examples use this host).
+Docs and examples use `https://clrd.example.com` as a placeholder for your
+own server. There is no public instance and no default server.
 
 ## 1. Repo layout
 
