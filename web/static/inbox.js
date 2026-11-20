@@ -418,9 +418,10 @@
       }
       else if (m.type === 'reset') reset();
       else if (m.type === 'settings') {
-        // Snooze times changed on another device: the cards' menus are stale.
+        // Snooze times or formatting changed on another device: the cards are stale.
         const st = m.settings || {};
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) reset();
+        else if ('render_formatting' in st && `${st.render_formatting},${st.autolink}` !== shell.dataset.fmt) reset();
       }
       else if (m.notification) onEvent(m);
     };

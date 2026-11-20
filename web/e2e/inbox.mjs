@@ -310,6 +310,31 @@ try {
   await sharePage.close();
   console.log('ok: share, copy, icon and attachments on the card');
 
+  // Markdown bodies: the subset renders, other HTML shows as typed, no images,
+  // line breaks kept; plain text stays raw; turning formatting off reloads open pages.
+  await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Formatted', message: '**Disk** 91% on ++web1++\nsee https://example.com/d\n- one\n- two\n<script>window.pwned=1</script> <img src=x onerror="window.pwned=1"> ![px](https://example.com/p.png)' });
+  await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Raw text', message: '**not bold**', format: 'text' });
+  const mp = await page.context().newPage();
+  await mp.goto(`${base}/app`);
+  const fbody = mp.locator('article.card', { hasText: 'Formatted' }).locator('[data-body]');
+  assert.equal(await fbody.locator('strong').textContent(), 'Disk');
+  assert.equal(await fbody.locator('u').textContent(), 'web1');
+  assert.equal(await fbody.locator('li').count(), 2);
+  assert.equal(await fbody.locator('br').count(), 1, 'line break lost');
+  assert.equal(await fbody.getByRole('link', { name: 'https://example.com/d' }).getAttribute('rel'), 'noopener noreferrer');
+  assert.equal(await fbody.locator('img, script, iframe').count(), 0, 'raw HTML or an image got through');
+  assert.ok((await fbody.textContent()).includes('<script>window.pwned=1</script>'), 'raw HTML not shown as typed');
+  assert.equal(await mp.evaluate(() => window.pwned), undefined);
+  const rbody = mp.locator('article.card', { hasText: 'Raw text' }).locator('[data-body]');
+  assert.equal(await rbody.textContent(), '**not bold**');
+  await putSettings({ render_formatting: false });
+  await mp.locator('[data-fmt="false,true"]').waitFor({ state: 'attached' }); // the open page reloaded itself
+  assert.equal(await fbody.locator('strong, li').count(), 0, 'formatting off still renders Markdown');
+  assert.ok((await fbody.textContent()).startsWith('**Disk** 91% on ++web1++'));
+  await putSettings({ render_formatting: true });
+  await mp.close();
+  console.log('ok: Markdown bodies follow the formatting setting');
+
   // On a phone, the open Snooze menu stays on screen, even when Snooze ends the first row of buttons.
   const narrow = await (await browser.newContext({ viewport: { width: 360, height: 740 } })).newPage();
   await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Deploy 213?', message: 'staging green', actions: [{ label: 'Go', reply: 'go' }, { label: 'No', reply: 'no' }] });

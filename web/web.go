@@ -40,7 +40,8 @@ type Notification struct {
 	Priority    int         `json:"priority"`
 	Tags        []string    `json:"tags"`
 	Click       string      `json:"click,omitempty"`
-	Icon        string      `json:"icon,omitempty"` // http(s) image URL
+	Icon        string      `json:"icon,omitempty"`   // http(s) image URL
+	Format      string      `json:"format,omitempty"` // "markdown" (also when empty) or "text"
 	Attachment  *Attachment `json:"attachment,omitempty"`
 	Actions     []Action    `json:"actions,omitempty"`
 	State       string      `json:"state"`
@@ -158,6 +159,8 @@ type Snapshot struct {
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
+	// Display settings for message bodies (docs/SPEC.md section 2.1).
+	Formatting, Autolink bool
 }
 
 // API is what the server provides. The request is passed so the server can
@@ -190,7 +193,8 @@ var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 			View, Here    string
 			Snooze        []string
 			SnoozeDefault string
-		}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault}
+			Text          template.HTML
+		}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap.Formatting, snap.Autolink)}
 	},
 	"snoozeLabel": snoozeLabel,
 	"plural": func(n int, one, many string) string {
