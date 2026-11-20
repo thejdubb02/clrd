@@ -20,6 +20,9 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: notifications from the same topic stack together in the phone's
   notification shade, and swiping a stack away clears all of them on every
   device. Turn it off in Settings with "Stack by topic".
+- Web: a "Stack by topic" setting (off by default, kept per browser). With it
+  on, two or more notifications from one topic show as one card with a count
+  and the newest title; tap it to see them all, or clear them all at once.
 - Android: Snooze uses the snooze default from your server settings instead
   of always 1 hour, a long press on Snooze offers the other saved times, and
   Settings has a section to change the times and the default for every device.
