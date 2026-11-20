@@ -147,8 +147,10 @@ cp -r /path/to/attachments /path/to/attachments-backup
 A file replaced between the two copies can be missing from the backup; stop
 clrd first if you need an exact copy.
 
-Phones keep their last sequence number. If you restore an older backup, they
-notice the server is behind them, drop their local copy and resync.
+Phones and browsers keep their last sequence number. If you restore an older
+backup, stop clrd first and restore over the old `clrd.db`, leaving the small
+`clrd.db.epoch` file next to it in place. clrd then sees the database went back
+in time and tells every client to drop its local copy and resync.
 
 ## Coming from ntfy
 

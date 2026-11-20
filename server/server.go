@@ -218,6 +218,22 @@ func New(opt Options) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
+	// A restored backup keeps its epoch, so the sidecar (written on Close)
+	// remembers the highest seq handed out: a head below it means the database
+	// went back in time, and clients must start over (issue #63).
+	var sideEpoch string
+	var high int64
+	if b, err := os.ReadFile(opt.DB + ".epoch"); err == nil {
+		fmt.Sscan(string(b), &sideEpoch, &high)
+	}
+	if sideEpoch == strconv.FormatInt(epoch, 36) && seq < high {
+		epoch = rand.Int64()
+		if _, err := db.Exec(`UPDATE meta SET value = ? WHERE key = 'epoch'`, epoch); err != nil {
+			db.Close()
+			return nil, err
+		}
+		opt.Logger.Warn("database is behind its last seq, so it was restored: new epoch, clients start over", "seq", seq, "was", high)
+	}
 	s.epoch = strconv.FormatInt(epoch, 36)
 	s.seq.Store(seq)
 	s.pruned.Store(pruned)
@@ -226,8 +242,13 @@ func New(opt Options) (*Server, error) {
 	return s, nil
 }
 
-// Close closes the database.
-func (s *Server) Close() error { return s.db.Close() }
+// Close records the epoch and head seq next to the database (see New), then closes it.
+func (s *Server) Close() error {
+	if err := os.WriteFile(s.opt.DB+".epoch", fmt.Appendf(nil, "%s %d\n", s.epoch, s.seq.Load()), 0o600); err != nil {
+		s.log.Warn("could not write the epoch file", "err", err)
+	}
+	return s.db.Close()
+}
 
 // CurrentSeq is the seq of the last committed event.
 func (s *Server) CurrentSeq() int64 { return s.seq.Load() }

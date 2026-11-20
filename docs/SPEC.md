@@ -228,8 +228,10 @@ saved one, the seq numbers belong to another database (a server reinstalled or
 started on a new file), so they treat it exactly like `reset`: drop the cursor
 and local state, fetch the open list fresh, and carry on from the new seq. A
 client with no saved epoch just saves the one it sees. A database restored
-from a backup keeps the epoch it had, so this alone does not catch a restore
-(issue #63 tracks that).
+from a backup keeps the epoch it had, so on a clean stop the server also writes
+the epoch and its head seq to `<db>.epoch` next to the database. At startup, a
+database with that epoch whose head seq is below the saved one was rolled
+back: the server picks a new epoch, and clients start over.
 
 Also `GET /api/v1/events?since=<seq>&limit=500` for clients that poll: returns
 `{"events":[...],"seq":<current>,"epoch":"<id>"}`, or HTTP 410 with code `reset`. SSE at
