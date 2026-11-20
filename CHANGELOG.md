@@ -40,6 +40,12 @@ Fixed, Removed, Security), as one line a user can understand.
   table says what each one checks. The Gatus guide now sets an alert
   description, so the notification is not blank, and the Apprise guide no
   longer claims priority, tags and click URL work (#130).
+- Server: `clrd import ntfy` moves an ntfy server into clrd: users, bcrypt
+  passwords (ntfy routes only), `tk_` tokens, per-topic access rules (read-only,
+  write-only, deny, wildcards), anonymous access, message history and
+  attachments. `--dry-run` lists what maps and what does not. Tokens can now be
+  limited to certain topics with read, publish or both. Ignored ntfy publish
+  options are counted at `/api/v1/ntfy/ignored`. Guide: docs/migrate-from-ntfy.md.
 - Server: files on notifications. Upload a file with the publish (multipart, or
   ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL
   (`attachment`, or ntfy's `X-Attach`). Downloads need a token that can read the
@@ -102,3 +108,9 @@ Fixed, Removed, Security), as one line a user can understand.
   catch-up after being offline, no longer make the phone buzz; with sync off,
   a busy server's retry wait is respected; tray buttons on notifications from
   older app versions work again.
+
+### Security
+
+- Server: a token that can publish to a topic but not read it no longer gets
+  another sender's message back when it acks, resolves or overwrites one by
+  external id.

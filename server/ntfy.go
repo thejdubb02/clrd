@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -125,7 +127,7 @@ func (s *Server) ntfyRoutes() {
 		route("GET /{topics}/"+f, s.ntfySubscribe(f))
 	}
 	route("GET /{topics}/auth", func(w http.ResponseWriter, r *http.Request) error {
-		tok := s.auth(r, false)
+		tok := s.ntfyAuth(r)
 		if err := tok.need(ScopeRead, ""); err != nil {
 			return err
 		}
@@ -253,7 +255,8 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if strings.EqualFold(param(r, "Cache"), "no") { // ntfy drops these after delivery; clrd keeps every notification
 		return errNoCache
 	}
-	tok := s.auth(r, false)
+	tok := s.ntfyAuth(r)
+	s.noteIgnored(r)
 	if t := r.URL.Query().Get("template"); t != "" && r.Method != http.MethodGet {
 		return s.webhookIn(w, r, tok, t) // webhooks.go
 	}
@@ -344,9 +347,22 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		Cache      string          `json:"cache"`
 		Markdown   *bool           `json:"markdown"`
 	}
-	if err := decodeJSON(r, &in); err != nil {
-		return err
+	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxBody))
+	if err != nil {
+		return errf(400, "bad_request", "bad JSON body: %v", err)
 	}
+	if err := json.Unmarshal(body, &in); err != nil {
+		return errf(400, "bad_request", "bad JSON body: %v", err)
+	}
+	var keys map[string]json.RawMessage
+	json.Unmarshal(body, &keys)
+	var unknown []string
+	for k := range keys {
+		if !ntfyJSONKeys[k] {
+			unknown = append(unknown, k)
+		}
+	}
+	s.noteIgnored(r, unknown...)
 	if strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no") {
 		return errNoCache
 	}
@@ -370,18 +386,94 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 			p.Actions = append(p.Actions, Action{Label: a.Label, URL: a.URL})
 		}
 	}
-	var err error
 	if p.SnoozeUntil, err = ntfyDelay(in.Delay); err != nil {
 		return err
 	}
-	return s.ntfyReply(w, r.Context(), s.auth(r, false), p)
+	return s.ntfyReply(w, r.Context(), s.ntfyAuth(r), p)
+}
+
+// ntfyJSONKeys are the JSON publish fields clrd reads; any other key is logged as ignored.
+var ntfyJSONKeys = map[string]bool{"topic": true, "message": true, "title": true, "priority": true, "tags": true,
+	"click": true, "icon": true, "attach": true, "filename": true, "actions": true, "delay": true, "id": true,
+	"sequence_id": true, "external_id": true, "status": true, "cache": true, "markdown": true}
+
+// ntfyIgnoredParams are ntfy publish options clrd accepts but does not act on.
+var ntfyIgnoredParams = [][]string{{"Email", "E-Mail", "Mail", "E"}, {"Call"},
+	{"Firebase"}, {"UnifiedPush", "Up"}, {"Poll-Id"}}
+
+var ignoredName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,40}$`)
+
+// noteIgnored counts each ntfy option a publish sent that clrd ignores, so
+// an admin can see what a migrated service relies on (GET /api/v1/ntfy/ignored).
+// The table holds at most 200 names; a full table only counts names it has.
+func (s *Server) noteIgnored(r *http.Request, jsonKeys ...string) {
+	var names []string
+	for _, p := range ntfyIgnoredParams {
+		if param(r, p...) != "" {
+			names = append(names, p[0])
+		}
+	}
+	for _, k := range jsonKeys {
+		if !ignoredName.MatchString(k) {
+			k = "(other)"
+		}
+		names = append(names, "json:"+k)
+	}
+	for _, n := range names {
+		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO ntfy_ignored (name, count, last_seen)
+			SELECT ?1, 1, ?2 WHERE EXISTS (SELECT 1 FROM ntfy_ignored WHERE name = ?1) OR (SELECT COUNT(*) FROM ntfy_ignored) < 200
+			ON CONFLICT(name) DO UPDATE SET count = count + 1, last_seen = excluded.last_seen`, n, ms(now())); err != nil {
+			s.log.Warn("ntfy ignored log", "err", err)
+		}
+	}
+}
+
+var ignoredPage = template.Must(template.New("").Parse(`<!doctype html><meta charset="utf-8"><title>Ignored ntfy options</title>
+<h1>ntfy options received but ignored</h1>
+<table><tr><th>Option</th><th>Count</th><th>Last seen</th></tr>
+{{range .}}<tr><td>{{.Name}}</td><td>{{.Count}}</td><td>{{.LastSeen.Format "2006-01-02 15:04:05Z07:00"}}</td></tr>
+{{else}}<tr><td colspan="3">None yet.</td></tr>{{end}}</table>`))
+
+func (s *Server) handleNtfyIgnored(w http.ResponseWriter, r *http.Request, tok *Token) error {
+	if err := tok.need(ScopeAdmin, ""); err != nil {
+		return err
+	}
+	type row struct {
+		Name     string    `json:"name"`
+		Count    int64     `json:"count"`
+		LastSeen time.Time `json:"last_seen"`
+	}
+	rows, err := s.db.QueryContext(r.Context(), `SELECT name, count, last_seen FROM ntfy_ignored ORDER BY count DESC, name`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	out := []row{}
+	for rows.Next() {
+		var x row
+		var seen int64
+		if err := rows.Scan(&x.Name, &x.Count, &seen); err != nil {
+			return err
+		}
+		x.LastSeen = fromMS(seen)
+		out = append(out, x)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		return ignoredPage.Execute(w, out)
+	}
+	writeJSON(w, 200, map[string]any{"ignored": out})
+	return nil
 }
 
 // ntfyAct: PUT /{topic}/{sid}/clear acks, DELETE /{topic}/{sid} resolves.
 // sid is the external id, or the notification id when it had none.
 func (s *Server) ntfyAct(action string) func(http.ResponseWriter, *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		tok, topic, sid := s.auth(r, false), r.PathValue("topic"), r.PathValue("sid")
+		tok, topic, sid := s.ntfyAuth(r), r.PathValue("topic"), r.PathValue("sid")
 		n, err := s.ActByKey(r.Context(), tok, topic, sid, action)
 		if isNotFound(err) {
 			n, err = s.act(r.Context(), tok, action, nil, false, `id = ? AND topic = ?`, sid, topic)
@@ -402,7 +494,7 @@ var (
 // ntfySubscribe: GET /{t1,t2}/json|sse|raw|ws with since= and poll=1.
 func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		tok := s.auth(r, false)
+		tok := s.ntfyAuth(r)
 		topics := splitList(r.PathValue("topics"))
 		if len(topics) == 0 {
 			return errf(400, "bad_request", "no topic given")
@@ -591,7 +683,11 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 	if d, err := parseDuration(v); err == nil {
 		return firstAfter(time.Now().Add(-d))
 	}
-	if len(v) == 12 { // a message id from another server (or ntfy itself): send everything
+	if len(v) == 12 { // an imported ntfy message id, else one from another server: send everything
+		var seq int64
+		if s.db.QueryRowContext(ctx, `SELECT seq FROM ntfy_mids WHERE mid = ?`, v).Scan(&seq) == nil {
+			return min(seq, cur), nil
+		}
 		return 0, nil
 	}
 	return 0, errf(400, "bad_request", "invalid since %q", v)

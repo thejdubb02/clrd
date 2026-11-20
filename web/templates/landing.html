@@ -127,6 +127,16 @@
   </div>
 </section>
 
+<section class="wrap" aria-labelledby="switch">
+  <h2 id="switch">Switch from ntfy in five minutes</h2>
+  <p>Stop ntfy, run one command, point its hostname at clrd. Users, passwords, <code>tk_</code> tokens, per-topic access rules, anonymous access, message history and attachments come across, so every script and phone keeps its credentials. Keep ntfy stopped, not deleted, and you can roll back by pointing the hostname back.</p>
+<pre><code>clrd import ntfy --dry-run \
+  --auth-file /var/lib/ntfy/user.db \
+  --cache-file /var/cache/ntfy/cache.db \
+  --attachment-dir /var/cache/ntfy/attachments</code></pre>
+  <p><a href="/docs/migrate-from-ntfy">Migration guide</a></p>
+</section>
+
 <section class="band" aria-labelledby="self-host">
   <div class="wrap split">
     <div>
