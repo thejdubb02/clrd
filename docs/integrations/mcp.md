@@ -96,18 +96,16 @@ claude mcp add --transport http clrd https://clrd.example.com/mcp \
 
 ### VS Code
 
-`.vscode/mcp.json` (VS Code asks for the token once and stores it):
+`.mcp.json` in your workspace, or `~/.copilot/mcp-config.json` for every
+workspace:
 
 ```json
 {
-  "inputs": [
-    { "type": "promptString", "id": "clrd-token", "description": "clrd token", "password": true }
-  ],
-  "servers": {
+  "mcpServers": {
     "clrd": {
       "type": "http",
       "url": "https://clrd.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${input:clrd-token}" }
+      "headers": { "Authorization": "Bearer ${CLRD_TOKEN}" }
     }
   }
 }
@@ -162,7 +160,7 @@ bearer_token_env_var = "CLRD_TOKEN"
   "mcpServers": {
     "clrd": {
       "httpUrl": "https://clrd.example.com/mcp",
-      "headers": { "Authorization": "Bearer $CLRD_TOKEN" }
+      "headers": { "Authorization": "Bearer clrd_..." }
     }
   }
 }
