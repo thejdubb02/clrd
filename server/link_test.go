@@ -286,3 +286,20 @@ func TestLinkFromPairedBrowser(t *testing.T) {
 		t.Fatalf("phone after the typed token is revoked: %d, want 401", code)
 	}
 }
+
+// Issue #184: an approval just before the code expires still reaches the phone.
+func TestLinkApproveNearExpiry(t *testing.T) {
+	s, ts, admin := newTest(t)
+	lc := linkStart(t, ts, admin)
+	linkClaim(t, ts.URL, lc, phoneSecret)
+	s.pairMu.Lock()
+	s.pairs[lc].created = time.Now().Add(2*time.Second - pairTTL)
+	s.pairMu.Unlock()
+	if code, _ := call(t, ts, "POST", "/api/v1/link/"+lc+"/approve", admin, nil); code != 200 {
+		t.Fatalf("approve: %d", code)
+	}
+	time.Sleep(3 * time.Second) // the phone's next poll lands after the code's first 2 minutes
+	if code, out := linkClaim(t, ts.URL, lc, phoneSecret); code != 200 || out["token"] == nil {
+		t.Fatalf("claim after an approval near expiry: %d %v", code, out)
+	}
+}
