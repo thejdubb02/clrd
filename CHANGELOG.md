@@ -96,6 +96,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: the release APK is shrunk with R8 and resource shrinking, from
   7.8 MB to 1.9 MB. CI now fails if the server binary or the APK grows past
   its size budget, and prints both sizes in the job summary.
+- Web: the empty inbox sits centered in the main panel, and its tip reads as a
+  quiet hint instead of a card (#302).
 - SDKs and GitHub Action: no default server. The Go, JavaScript and Python
   clients used to fall back to `clrd.itsjustin.me`, which is not a clrd
   server; now a call with no URL and no `CLRD_URL` fails saying to set it, and
