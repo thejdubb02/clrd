@@ -273,9 +273,10 @@
   if (snz) {
     // The Default list follows the Times box as it is typed, so a time just added can be the default (#182).
     const labels = Object.fromEntries([...snz.default.options].map(o => [o.value, o.text]));
+    let want = snzSaved; // the default last picked, kept while its time is retyped
+    snz.default.addEventListener('change', () => { want = snz.default.value; });
     snz.times.addEventListener('input', () => {
-      const cur = snz.default.value;
-      snz.default.replaceChildren(...snzTyped().map(v => new Option(labels[snzValue(v)] || v, snzValue(v), false, snzValue(v) === cur)));
+      snz.default.replaceChildren(...snzTyped().map(v => new Option(labels[snzValue(v)] || v, snzValue(v), false, snzValue(v) === want)));
     });
   }
   snz && snz.addEventListener('submit', async e => {

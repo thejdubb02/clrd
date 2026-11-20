@@ -204,6 +204,9 @@ try {
   await sp.getByRole('button', { name: 'Save' }).click();
   await sp.locator('[data-snooze="24h,30m,24h"]').waitFor({ state: 'attached' });
   assert.equal(await sp.getByLabel('Default').inputValue(), '24h');
+  await sp.getByLabel('Times').fill('30m');
+  await sp.getByLabel('Times').fill('30m, 1d'); // retyped: the default picked comes back with its time
+  assert.equal(await sp.getByLabel('Default').inputValue(), '24h');
   await sp.getByLabel('Times').fill('1h, soon');
   await sp.getByRole('button', { name: 'Save' }).click();
   await sp.locator('[data-snooze-status]').filter({ hasText: 'soon' }).waitFor();
