@@ -251,7 +251,10 @@ try {
   const f = await api(phone, '/api/v1/notifications', { topic: 'home', title: 'Washer done', message: 'cycle finished' });
   await nojs.goto(`${base}/app?topic=home`);
   const plain = title => nojs.locator('article.card', { hasText: title });
+  await plain('Garage open').getByLabel('More snooze times').click();
+  assert.equal(await plain('Garage open').getByRole('button', { name: '4 hours' }).isVisible(), true, 'snooze menu did not open without script');
   assert.equal(await plain('Garage open').getByRole('button', { name: 'Tomorrow 09:00' }).isVisible(), false, 'script-only snooze shown without script');
+  await plain('Garage open').getByLabel('More snooze times').click();
   await plain('Garage open').getByRole('button', { name: 'Clear' }).click();
   await plain('Garage open').waitFor({ state: 'detached' });
   assert.equal(new URL(nojs.url()).search, '?topic=home');

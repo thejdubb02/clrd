@@ -1,8 +1,8 @@
 package server
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -296,6 +296,7 @@ func TestSnoozeSettings(t *testing.T) {
 		{"snooze_intervals": []string{"1h", "2h", "3h", "4h", "5h", "6h", "7h", "8h", "9h"}},
 		{"snooze_intervals": []string{"tomorrow"}},
 		{"snooze_intervals": []string{"0s"}},
+		{"snooze_intervals": []string{"30s"}},
 		{"snooze_intervals": []string{"745h"}},
 		{"snooze_intervals": []string{"60m", "1h"}},
 		{"snooze_default": "5h"},
@@ -307,6 +308,11 @@ func TestSnoozeSettings(t *testing.T) {
 	lim := mkToken(t, s, "phone", []string{ScopeRead}, []string{"mine"})
 	if code, _ := call(t, ts, "PUT", "/api/v1/settings", lim, map[string]any{"snooze_default": "3h"}); code != 403 {
 		t.Fatalf("limited token changed the snooze default: %d", code)
+	}
+	threeH := "3h"
+	granted := &Token{Name: "ntfy-user", Scopes: []string{ScopeRead}, Grants: []Grant{{Topic: "mine", Scopes: []string{ScopeRead}}}}
+	if _, err := s.UpdateSettings(context.Background(), granted, SettingsPatch{SnoozeDefault: &threeH}); err == nil {
+		t.Fatal("a token limited by grants changed the snooze default")
 	}
 	if _, st = call(t, ts, "GET", "/api/v1/settings", admin, nil); fmt.Sprint(st["snooze_intervals"]) != "[30m 3h]" || st["snooze_default"] != "30m" {
 		t.Fatalf("a rejected change was stored: %v", st)

@@ -65,7 +65,7 @@ type Settings struct {
 const maxSnooze = 31 * 24 * time.Hour
 
 // checkSnooze validates a snooze list and its default: 1 to 8 different
-// durations, each above zero and at most 31 days, and the default one of them.
+// durations, each from 1 minute to 31 days, and the default one of them.
 func checkSnooze(list []string, def string) error {
 	if len(list) < 1 || len(list) > 8 {
 		return errf(400, "bad_request", "snooze_intervals needs 1 to 8 durations")
@@ -73,8 +73,8 @@ func checkSnooze(list []string, def string) error {
 	seen := map[time.Duration]bool{}
 	for _, v := range list {
 		d, err := time.ParseDuration(v)
-		if err != nil || d <= 0 || d > maxSnooze {
-			return errf(400, "bad_request", "snooze interval %q must be a duration like 30m or 4h, at most 744h", v)
+		if err != nil || d < time.Minute || d > maxSnooze {
+			return errf(400, "bad_request", "snooze interval %q must be a duration like 30m or 4h, from 1m to 744h", v)
 		}
 		if seen[d] {
 			return errf(400, "bad_request", "snooze interval %q is listed twice", v)
@@ -152,7 +152,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
 		p.SnoozeIntervals != nil || p.SnoozeDefault != nil
-	if global && len(tok.Topics) > 0 {
+	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews")
 	}
 	for t := range p.TopicPreviews {

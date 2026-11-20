@@ -6,10 +6,10 @@
 package web
 
 import (
-	"fmt"
 	"bytes"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
