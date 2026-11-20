@@ -27,7 +27,7 @@ from other machines on the same network), so tokens reach clrd through your
 HTTPS proxy and never cross the network in plain HTTP. If the proxy runs on
 another machine, publish the port on a private interface instead.
 
-Or the binary (Go 1.23+, no C compiler needed):
+Or the binary (Go 1.24+, no C compiler needed):
 
 ```sh
 CGO_ENABLED=0 go build -o clrd ./server/cmd/clrd

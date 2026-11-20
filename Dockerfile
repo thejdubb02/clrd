@@ -1,5 +1,5 @@
 # clrd: one static binary on distroless. Build: docker build -t clrd .
-FROM golang:1.23 AS build
+FROM golang:1.24 AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 COPY go.mod go.sum ./

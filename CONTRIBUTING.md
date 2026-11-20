@@ -16,7 +16,7 @@ Thanks for helping. Bug reports, ideas, docs fixes and code are all welcome.
 
 | Area | Needs | Command |
 |---|---|---|
-| Server and web | Go 1.23+ | `go vet ./... && go test ./...` |
+| Server and web | Go 1.24+ | `go vet ./... && go test ./...` |
 | Android | JDK 17, Android SDK 35 | `cd android && ./gradlew assembleDebug testDebugUnitTest lintDebug` |
 | Go SDK | Go 1.23+ | `cd sdk/go && go test ./...` |
 | JS SDK | Node 22 | `cd sdk/js && node --test test.js` |
