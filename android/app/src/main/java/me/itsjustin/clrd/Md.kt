@@ -32,10 +32,11 @@ object Md {
     // A marker pair must hug its text (no space just inside) and "_" only counts at word edges, so
     // snake_case, globs and "2 * 3" stay literal.
     // A styled run is at most 300 characters, so an unclosed marker costs a short scan, not the rest of the line.
+    private const val BARE_URL = """https?://[^\s<>]+"""
     private val INLINE = Regex(
         """`([^`]+)`""" +
             """|\[([^\]\n]+)]\((https?://[^\s)]+)\)""" +
-            """|(https?://[^\s<>]+)""" +
+            "|(" + BARE_URL + ")" +
             """|\*\*(?=\S)(.{1,300}?)(?<=\S)\*\*""" +
             """|(?<!\w)__(?=\S)(.{1,300}?)(?<=\S)__(?!\w)""" +
             """|~~(?=\S)(.{1,300}?)(?<=\S)~~""" +
@@ -45,6 +46,7 @@ object Md {
             """|(?<!\w)_(?=[^\s_])(.{1,300}?)(?<=[^\s_])_(?!\w)""" +
             """|\\([\\`*_~+\[\]()<>#.!-])""",
     )
+    private val BARE = Regex(BARE_URL)
     private val HEADING = Regex("""^#{1,6}\s+(.*)""")
     private val BULLET = Regex("""^(\s*)[-*+]\s+(.*)""")
     private val NUMBER = Regex("""^(\s*)(\d{1,9}[.)])\s+(.*)""")
@@ -53,8 +55,17 @@ object Md {
 
     /** [src] drawn as Markdown, or exactly as sent when [markdown] is false. */
     fun render(src: String, markdown: Boolean = true, link: Color = Color.Unspecified, muted: Color = Color.Unspecified): AnnotatedString {
-        if (!markdown) return AnnotatedString(src)
         val linkStyle = TextLinkStyles(SpanStyle(color = link, textDecoration = TextDecoration.Underline))
+        if (!markdown) return buildAnnotatedString {
+            var at = 0
+            for (m in BARE.findAll(src)) {
+                append(src, at, m.range.first)
+                val url = bareUrl(m.value)
+                withLink(LinkAnnotation.Url(url, linkStyle)) { append(url) }
+                at = m.range.first + url.length
+            }
+            append(src, at, src.length)
+        }
         val code = SpanStyle(fontFamily = FontFamily.Monospace)
         return buildAnnotatedString {
             var fence = false
@@ -106,10 +117,7 @@ object Md {
                 g[1] != null -> withStyle(code) { append(g[1]!!.value) }
                 g[2] != null -> withLink(LinkAnnotation.Url(g[3]!!.value, linkStyle)) { append(g[2]!!.value) }
                 g[4] != null -> {
-                    // A sentence ending in a URL keeps its full stop outside the link.
-                    val url = g[4]!!.value.trimEnd('.', ',', ';', ':', '!', '?', '\'', '"').let { u ->
-                        if (u.endsWith(')') && u.count { it == '(' } < u.count { it == ')' }) u.dropLast(1) else u
-                    }
+                    val url = bareUrl(g[4]!!.value)
                     withLink(LinkAnnotation.Url(url, linkStyle)) { append(url) }
                     at = m.range.first + url.length
                 }
@@ -124,6 +132,11 @@ object Md {
             }
         }
         append(s, at, s.length)
+    }
+
+    // A sentence ending in a URL keeps its full stop outside the link.
+    private fun bareUrl(s: String) = s.trimEnd('.', ',', ';', ':', '!', '?', '\'', '"').let { u ->
+        if (u.endsWith(')') && u.count { it == '(' } < u.count { it == ')' }) u.dropLast(1) else u
     }
 
     /** For the system notification: the text without markers, with bold and italic only (docs/SPEC.md, issue #107). */
