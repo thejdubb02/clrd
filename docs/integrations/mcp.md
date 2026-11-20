@@ -13,7 +13,7 @@ Tools:
 | `ack` | `id` | Acknowledge by server id. |
 | `resolve` | `id` or `topic + external_id` | Clear it everywhere. |
 | `snooze` | `id, for` | Snooze, e.g. `for: "1h"`. |
-| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped. Default 60 s, max 300 s. |
+| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped. Default 60 s, max 600 s. |
 
 `wait_for_reply` returns at once if the notification is already acknowledged,
 dismissed or resolved. Otherwise it watches the server's committed events, so
@@ -24,7 +24,7 @@ an ack that is quickly followed by a snooze is still reported as an ack.
 ```json
 send {"topic": "agents", "message": "OK to deploy?", "id": "deploy-1",
       "actions": [{"label": "Yes", "reply": "yes"}, {"label": "No", "reply": "no"}]}
-wait_for_reply {"id": "<id from send>", "timeout_s": 300}
+wait_for_reply {"id": "<id from send>", "timeout_s": 600}
 -> {"reply": "acknowledged", "answer": "yes", "by": "pixel-9", "notification": {...}}
 ```
 
@@ -33,6 +33,58 @@ ack (no button) has no `answer`, and dismiss means no. The web inbox and the
 Android app show the buttons once they support them
 ([issue 8](https://github.com/thejdubb02/clrd/issues/8)); until then a human
 can still ack or dismiss.
+
+## Approve agent actions from your phone
+
+`POST /mcp/approve` answers a coding agent's permission prompt. Point Claude
+Code's or Codex's `PermissionRequest` hook at it: clrd sends a notification
+with **Allow** and **Deny** buttons to the `agents` topic, waits for a tap, and
+answers the agent. The tap clears the notification on every other device.
+
+- Only an **Allow** tap allows. Deny, dismiss, resolve or no answer in time
+  all deny, and the agent is told why.
+- It waits 590 s by default, just under the agents' 600 s hook limit. Set
+  `?timeout=` (seconds, max 600) and `?topic=` to change either.
+- If clrd cannot send the notification (bad token, server down), it answers
+  with an error and the agent shows its normal prompt on screen.
+- The token needs `read` and `publish`. Behind a reverse proxy, allow requests
+  to run 10 minutes (nginx: `proxy_read_timeout 600s;`).
+
+Claude Code, in `~/.claude/settings.json` (with `CLRD_TOKEN` set in your
+environment):
+
+```json
+{
+  "hooks": {
+    "PermissionRequest": [{
+      "hooks": [{
+        "type": "http",
+        "url": "https://clrd.itsjustin.me/mcp/approve",
+        "timeout": 600,
+        "headers": {"Authorization": "Bearer $CLRD_TOKEN"},
+        "allowedEnvVars": ["CLRD_TOKEN"]
+      }]
+    }]
+  }
+}
+```
+
+Codex, in its `hooks.json` (Codex hooks run a command, so curl does the call):
+
+```json
+{
+  "hooks": {
+    "PermissionRequest": [{
+      "hooks": [{
+        "type": "command",
+        "command": "curl -sf --max-time 600 -H \"Authorization: Bearer $CLRD_TOKEN\" -H \"Content-Type: application/json\" --data-binary @- https://clrd.itsjustin.me/mcp/approve"
+      }]
+    }]
+  }
+}
+```
+
+Add a `"matcher"` (for example `"Bash"`) to ask only about some tools.
 
 ## Claude Code
 

@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Approve agent actions from your phone: point Claude Code's or Codex's
+  permission hook at `/mcp/approve` and each prompt arrives as a notification
+  with Allow and Deny. No answer in time means deny.
 - Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
   notification resolves itself then, leaving every inbox and phone.
 - Missed check-in alerts: give a topic an expected interval (for example

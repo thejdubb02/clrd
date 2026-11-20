@@ -390,7 +390,13 @@ Tools: `send(topic, message, title?, priority?, id?, actions?)`, `list(topic?, s
 dismissed or an action is tapped; returns which, so an agent can ask a human
 "yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
-`reply` (the state).
+`reply` (the state). `wait_for_reply` waits at most 600 s.
+
+`POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
+`PermissionRequest` hook body, sends an Allow / Deny notification, waits, and
+returns `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny","message"?}}}`.
+Only an Allow tap allows; a timeout denies and resolves the notification. A
+failed send returns 502, so the agent falls back to its own prompt.
 
 ## 7. Server internals
 
