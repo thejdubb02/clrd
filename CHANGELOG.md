@@ -171,6 +171,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- ntfy publish: a header such as `Prio: high` now wins over a query parameter
+  such as `?priority=low`, the same order ntfy uses.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.

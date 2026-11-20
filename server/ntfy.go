@@ -179,18 +179,23 @@ func (s *Server) ntfyRoutes() {
 	})
 }
 
-// param reads a ntfy parameter from X-Name, Name, or the query (?name=),
-// trying each alias in turn.
+// param reads a ntfy parameter from X-Name or Name for every alias first,
+// then from the query (?name=), the same order as ntfy's readParam.
 func param(r *http.Request, names ...string) string {
 	for _, n := range names {
 		h := r.Header.Get(n)
 		if n == "Priority" && (strings.Contains(h, "u=") || h == "i") {
 			h = "" // browsers send RFC 9218 "Priority: u=3, i" on HTTP/2 and 3; not ours
 		}
-		for _, v := range []string{r.Header.Get("X-" + n), h, r.URL.Query().Get(strings.ToLower(n))} {
+		for _, v := range []string{r.Header.Get("X-" + n), h} {
 			if v != "" {
 				return v
 			}
+		}
+	}
+	for _, n := range names {
+		if v := r.URL.Query().Get(strings.ToLower(n)); v != "" {
+			return v
 		}
 	}
 	return ""
