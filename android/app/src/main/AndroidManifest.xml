@@ -30,6 +30,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- clrd://pair?server=...&code=... from a browser's sign-in page: this phone approves that browser. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="clrd" android:host="pair" />
+            </intent-filter>
         </activity>
 
         <!-- specialUse: a long-lived connection to the user's own server. dataSync would be cut off

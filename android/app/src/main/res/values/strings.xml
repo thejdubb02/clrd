@@ -90,4 +90,16 @@
     <string name="tray_answered">Answered %1$s on %2$s</string>
     <string name="tray_acked">Acknowledged on %1$s</string>
     <string name="tray_another_device">another device</string>
+
+    <!-- Signing in a browser from a clrd://pair link -->
+    <string name="pair_title">Sign in a browser?</string>
+    <string name="pair_text">%1$s wants to sign in to %2$s as this phone\'s account. Only approve if you just scanned the code on your own screen.</string>
+    <string name="pair_approve">Approve</string>
+    <string name="pair_deny">Deny</string>
+    <string name="pair_done">Browser signed in</string>
+    <string name="pair_expired">That code expired or was already used. Make a new one on the browser.</string>
+    <string name="pair_other_server">This link is for a different server: %1$s</string>
+    <string name="pair_not_set_up">Set up the app first: add your server and token in Settings, then scan the code again.</string>
+    <string name="pair_bad_link">This sign-in link is not valid. Make a new one on the browser.</string>
+    <string name="ok">OK</string>
 </resources>

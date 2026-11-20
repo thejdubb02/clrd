@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -121,6 +122,9 @@ class MainActivity : ComponentActivity() {
     /** Rechecked on every resume, so a change made in Android's settings shows when the person comes back. */
     val battery = mutableStateOf<Intent?>(null)
 
+    /** The browser sign-in in progress, if any. */
+    val pair = mutableStateOf<PairUi?>(null)
+
     override fun onResume() {
         super.onResume()
         battery.value = batteryPrompt(this)
@@ -132,7 +136,97 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         val app = App.of(this)
         if (app.configured) SyncService.start(this)
-        setContent { ClrdTheme { Home(app, battery.value) } }
+        // Not again after rotation or from recents: the code was used already and would read as expired.
+        if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handlePair(intent)
+        setContent {
+            ClrdTheme {
+                Home(app, battery.value)
+                PairDialog(pair.value, { pair.value = it }) { ask -> approvePair(ask) }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handlePair(intent)
+    }
+
+    private fun handlePair(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val data = intent.dataString ?: return
+        val link = parsePairLink(data) ?: return run { pair.value = PairUi.Note(getString(R.string.pair_bad_link)) }
+        val app = App.of(this)
+        // One snapshot: the gate and every request use the same server and token, never the link's server.
+        val url = app.serverUrl
+        val token = app.token
+        when (pairGate(link, url, token)) {
+            PairGate.NOT_SET_UP -> pair.value = PairUi.Note(getString(R.string.pair_not_set_up))
+            PairGate.OTHER_SERVER -> pair.value = PairUi.Note(getString(R.string.pair_other_server, serverAddress(link.server)))
+            PairGate.OK -> {
+                val api = Api(app.http, url, token)
+                pair.value = null
+                app.io.execute {
+                    pair.value = try {
+                        PairUi.Ask(api, link.code, api.pairInfo(link.code), url)
+                    } catch (e: Exception) {
+                        PairUi.Note(pairError(e))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun approvePair(ask: PairUi.Ask) {
+        pair.value = null // closed first, so a second tap cannot send it again
+        App.of(this).io.execute {
+            pair.value = PairUi.Note(
+                try {
+                    ask.api.pairApprove(ask.code)
+                    getString(R.string.pair_done)
+                } catch (e: Exception) {
+                    pairError(e)
+                },
+            )
+        }
+    }
+
+    private fun pairError(e: Exception) = when {
+        e is HttpError && e.code == 404 -> getString(R.string.pair_expired)
+        e is HttpError && e.isAuth -> getString(R.string.test_token_rejected)
+        e is HttpError -> getString(R.string.test_http_error, e.code)
+        else -> getString(R.string.test_unreachable, e.message)
+    }
+}
+
+/** What the sign-in dialog shows: a question to approve, or a one-line result. */
+sealed interface PairUi {
+    class Ask(val api: Api, val code: String, val name: String, val server: String) : PairUi
+    class Note(val text: String) : PairUi
+}
+
+@Composable
+private fun PairDialog(ui: PairUi?, set: (PairUi?) -> Unit, approve: (PairUi.Ask) -> Unit) {
+    val app = App.of(LocalContext.current)
+    when (ui) {
+        null -> Unit
+        is PairUi.Note -> AlertDialog(
+            onDismissRequest = { set(null) },
+            text = { Text(ui.text) },
+            confirmButton = { TextButton(onClick = { set(null) }) { Text(stringResource(R.string.ok)) } },
+        )
+        // Back or a tap outside closes it without approving; the code then just expires.
+        is PairUi.Ask -> AlertDialog(
+            onDismissRequest = { set(null) },
+            title = { Text(stringResource(R.string.pair_title)) },
+            text = { Text(stringResource(R.string.pair_text, ui.name, ui.server)) },
+            confirmButton = { TextButton(onClick = { approve(ui) }) { Text(stringResource(R.string.pair_approve)) } },
+            dismissButton = {
+                TextButton(onClick = {
+                    set(null)
+                    app.io.execute { runCatching { ui.api.pairDeny(ui.code) } }
+                }) { Text(stringResource(R.string.pair_deny)) }
+            },
+        )
     }
 }
 

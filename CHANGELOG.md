@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: approve a browser sign-in from the phone. Opening a `clrd://pair`
+  link asks before signing that browser in, and refuses a link made for a
+  different server than the one the app is set up with.
 - Android: messages show their formatting (bold, italic, underline, strike,
   code, lists, quotes, headings and tappable links) in the list, and bold and
   italic in the system notification. A message sent as plain text is shown

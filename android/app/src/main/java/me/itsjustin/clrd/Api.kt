@@ -57,6 +57,13 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
         }
     }
 
+    /** Name of the browser waiting on pairing [code] (issue #74). 404 when unknown, expired or used. */
+    fun pairInfo(code: String): String = JSONObject(get("/api/v1/pair/$code")).getString("name")
+
+    fun pairApprove(code: String) { post("/api/v1/pair/$code/approve") }
+
+    fun pairDeny(code: String) { post("/api/v1/pair/$code/deny") }
+
     fun wsRequest(since: Long): Request = req("/api/v1/ws?since=$since").build()
 
     private fun req(path: String) = Request.Builder().url(base + path).header("Authorization", "Bearer $token")
