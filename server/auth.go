@@ -271,6 +271,24 @@ func (s *Server) Tokens(ctx context.Context, seenSince time.Time) ([]*Token, err
 	if !seenSince.IsZero() {
 		q, args = `SELECT `+tokenCols+` FROM tokens WHERE last_seen_at > ? ORDER BY last_seen_at DESC`, []any{ms(seenSince)}
 	}
+	return s.listTokens(ctx, q, args...)
+}
+
+// Family lists the tokens seen after seenSince that share id's top token:
+// that token and every browser session under it, id included. A linked phone
+// is its own top token, as in rootOf, so a family never crosses one either
+// way. It is one person's devices, without anyone else's (issue #245).
+func (s *Server) Family(ctx context.Context, id string, seenSince time.Time) ([]*Token, error) {
+	root, err := s.rootOf(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.listTokens(ctx, `WITH RECURSIVE k(id) AS
+	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id WHERE NOT phone)
+	  SELECT `+tokenCols+` FROM tokens WHERE id IN k AND last_seen_at > ? ORDER BY last_seen_at DESC`, root, ms(seenSince))
+}
+
+func (s *Server) listTokens(ctx context.Context, q string, args ...any) ([]*Token, error) {
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err

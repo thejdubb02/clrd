@@ -23,7 +23,7 @@
     </nav>
     <div class="ms-auto flex items-center gap-2 text-xs md:bg-card md:ms-0 md:mt-auto md:flex-wrap md:rounded-lg md:border md:p-3 md:text-sm" id="sync">
       <span class="sync-dot bg-border size-2 shrink-0 rounded-full" aria-hidden="true"></span>
-      <span class="tabular-nums" data-live="devices">In sync on {{len .Snap.Devices}} {{plural (len .Snap.Devices) "device" "devices"}}</span>
+      <span class="tabular-nums" data-live="devices">{{with len .Snap.Devices}}In sync on {{.}} {{plural . "device" "devices"}}{{else}}In sync{{end}}</span>
       <span class="meta empty:hidden md:basis-full md:ps-4" data-conn></span>
     </div>
   </aside>

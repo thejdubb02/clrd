@@ -205,6 +205,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: a browser signed in with a token that is not admin, such as one
+  signed in by QR from a phone, no longer says "In sync on 0 devices". It
+  lists its own devices: itself, the token or phone that signed it in, and
+  that token's other sessions. It still never shows anyone else's. When the
+  count is unknown the header says only "In sync". (#245)
 - Android: switching to another server no longer keeps the old server's
   snooze times, and the snooze times box is no longer reset while you type in
   it when another device saves them.
