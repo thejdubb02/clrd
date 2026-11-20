@@ -3350,6 +3350,189 @@
     "security": []
    }
   },
+  "/api/v1/topics/{topic}/hooks": {
+   "get": {
+    "summary": "List the outgoing webhooks on a topic",
+    "description": "Scope admin. Secrets are never returned; has_secret says whether one is set. enabled is false once the server turned a failing hook off.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "hooks": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/OutHook"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/topics/{topic}/hooks/{name}": {
+   "put": {
+    "summary": "Save an outgoing webhook: POST the topic's state changes to a URL",
+    "description": "Scope admin. Replaces the whole hook and turns it back on. Each delivery's body is the sync stream event; X-Clrd-Event names it and X-Clrd-Signature is sha256=<hex HMAC-SHA256 of the body> when a secret is set. Private addresses and ports other than 80 and 443 are refused at send time. See docs/integrations/webhooks-out.md.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "url"
+        ],
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "events": {
+          "type": "array",
+          "description": "Any of dismissed, acknowledged, resolved, snoozed, action (a tapped reply button, also sent to acknowledged). Empty means all.",
+          "items": {
+           "type": "string"
+          }
+         },
+         "secret": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OutHook"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Delete an outgoing webhook and its delivery log",
+    "description": "Scope admin.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    }
+   }
+  },
+  "/api/v1/topics/{topic}/hooks/{name}/deliveries": {
+   "get": {
+    "summary": "The last 100 deliveries of an outgoing webhook, newest first",
+    "description": "Scope admin. status is pending (next_at is the next try), ok or failed (gave up after 8 tries).",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "deliveries": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/topics/{topic}/templates": {
    "get": {
     "summary": "List the webhook templates saved for a topic, and the built-in names",
@@ -3821,6 +4004,34 @@
    }
   },
   "schemas": {
+   "OutHook": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     },
+     "events": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "has_secret": {
+      "type": "boolean"
+     },
+     "enabled": {
+      "type": "boolean"
+     },
+     "failing_since": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     }
+    }
+   },
    "Error": {
     "type": "object",
     "properties": {

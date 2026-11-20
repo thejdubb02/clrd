@@ -29,6 +29,7 @@ notification on every device without anyone touching it.
 | [Apprise](apprise.md) | today | no | ntfy JSON publish to `POST /` | Apprise 1.9: both URL forms, `?priority=` included |
 | [ntfy clients](ntfy-clients.md) | today | by key, via `X-Id` | ntfy publish/subscribe, Basic auth | ntfy CLI 2.14: publish, subscribe, Basic auth; then resolve by key |
 | Home Assistant ntfy integration | today | no | ntfy publish | not run |
+| [Outgoing webhooks](webhooks-out.md): clrd tells your service when someone dismisses, acks, resolves, snoozes or replies | today | not applicable | a saved outgoing webhook (admin) | server tests: delivery, signature, retry, turn-off; the guide's receiver not run |
 
 Everything in "Needs on the server" is in the server. "Checked in CI" is what
 [`test/integrations`](../../test/integrations/) runs against a live clrd on

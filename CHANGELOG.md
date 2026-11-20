@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: outgoing webhooks. A topic can POST to your URL when a notification
+  is dismissed, acknowledged, resolved, snoozed or replied to, signed with
+  HMAC, retried with backoff and turned off with a notice after a day of
+  failures. Setup: docs/integrations/webhooks-out.md.
 - Android: the app trusts certificate authorities you install in Android
   settings, so a server behind your own home-lab CA works over HTTPS.
 - Android: Snooze uses the snooze default from your server settings instead
