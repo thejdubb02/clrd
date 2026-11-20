@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- MCP: the `send` tool takes `icon` (an image URL) and `attachment` (a link to
+  a file by URL, with an optional name).
 - MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
   send plain text that is shown exactly as written.
 - Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
