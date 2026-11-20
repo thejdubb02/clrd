@@ -14,6 +14,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Run clrd under a sub-path: put the path in `CLRD_BASE_URL`
   (`https://example.com/clrd`) and the inbox, docs, API and live updates all
   work there behind your proxy.
+- Android: the app trusts certificate authorities you install in Android
+  settings, so a server behind your own home-lab CA works over HTTPS.
 - Android: Snooze uses the snooze default from your server settings instead
   of always 1 hour, a long press on Snooze offers the other saved times, and
   Settings has a section to change the times and the default for every device.
