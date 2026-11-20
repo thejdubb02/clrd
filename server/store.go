@@ -1110,16 +1110,33 @@ func (s *Server) SetTopicCheckin(ctx context.Context, tok *Token, topic string, 
 	if err := tok.need(ScopePublish, topic); err != nil {
 		return err
 	}
-	if every == 0 {
-		_, err := s.db.ExecContext(ctx, `UPDATE topics SET checkin_ms = NULL, checkin_at = NULL, checkin_late = 0 WHERE topic = ?`, topic)
-		return err
-	}
-	if every < time.Minute || every > 366*24*time.Hour {
+	if every != 0 && (every < time.Minute || every > 366*24*time.Hour) {
 		return errf(400, "bad_request", "checkin must be 1m to 8784h")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO topics (topic, checkin_ms, checkin_at) VALUES (?, ?, ?)
-		ON CONFLICT(topic) DO UPDATE SET checkin_ms = excluded.checkin_ms, checkin_at = excluded.checkin_at, checkin_late = 0`,
-		topic, every.Milliseconds(), ms(time.Now()))
+	// Turning it off or changing it starts over, so an open alert is resolved.
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		q, args := `INSERT INTO topics (topic, checkin_ms, checkin_at) VALUES (?, ?, ?)
+			ON CONFLICT(topic) DO UPDATE SET checkin_ms = excluded.checkin_ms, checkin_at = excluded.checkin_at, checkin_late = 0`,
+			[]any{topic, every.Milliseconds(), ms(time.Now())}
+		if every == 0 {
+			q, args = `UPDATE topics SET checkin_ms = NULL, checkin_at = NULL, checkin_late = 0 WHERE topic = ?`, []any{topic}
+		}
+		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+			return nil, err
+		}
+		n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`, topic, checkinID)
+		if isNotFound(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		ev, err := transition(n, Resolved, serverToken, nil)
+		if ev == nil {
+			return nil, err
+		}
+		return []Event{*ev}, err
+	})
 	return err
 }
 

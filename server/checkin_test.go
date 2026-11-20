@@ -18,8 +18,8 @@ func TestCheckin(t *testing.T) {
 		}
 	}
 	var on int
-	if s.db.QueryRow(`SELECT COUNT(*) FROM topics WHERE checkin_ms IS NOT NULL`).Scan(&on); on != 0 {
-		t.Fatal("a rejected PUT set the check-in")
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM topics WHERE checkin_ms IS NOT NULL`).Scan(&on); err != nil || on != 0 {
+		t.Fatalf("a rejected PUT set the check-in: %d %v", on, err)
 	}
 	if code, out := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "backup", "external_id": checkinID}); code != 400 {
 		t.Fatalf("reserved external_id: %d %v", code, out)
@@ -109,9 +109,19 @@ func TestCheckin(t *testing.T) {
 		t.Fatalf("stale alert reopened: %v", a)
 	}
 
-	// Off: never alerts again.
+	// Off: resolves an open alert and never alerts again.
+	overdue()
+	if err := s.checkins(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if a = alert(); a["state"] != "active" {
+		t.Fatalf("second miss: %v", a)
+	}
 	if code, out := call(t, ts, "PUT", "/api/v1/topics/backup", admin, map[string]any{"checkin": ""}); code != 200 {
 		t.Fatalf("checkin off: %d %v", code, out)
+	}
+	if a = alert(); a["state"] != "resolved" {
+		t.Fatalf("alert left open after off: %v", a)
 	}
 	overdue()
 	before = s.seq.Load()
