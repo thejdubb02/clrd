@@ -38,6 +38,11 @@ try {
   browser = await chromium.launch();
   const page = await (await browser.newContext({ timezoneId: 'America/Chicago' })).newPage();
   const card = title => page.locator('article.card', { hasText: title });
+  // Width the snooze date box has, and the width its own date and time fields need.
+  const dateFit = scope => scope.getByLabel('Snooze until').evaluate(i => {
+    const c = i.cloneNode(); c.style.cssText = 'position:absolute;visibility:hidden;width:auto;min-width:0;flex:none';
+    i.parentNode.append(c); const need = c.offsetWidth; c.remove(); return { has: i.offsetWidth, need };
+  });
   const toast = page.locator('[data-toast]');
   const announce = page.locator('[data-announce]');
 
@@ -150,6 +155,9 @@ try {
   const box = await card('Renew domain').locator('[data-popover]').boundingBox();
   const set = await card('Renew domain').getByRole('button', { name: 'Set' }).boundingBox();
   assert.ok(set.x + set.width <= box.x + box.width, 'Set button clipped by the snooze menu');
+  const deskFit = await dateFit(card('Renew domain'));
+  assert.ok(deskFit.has >= deskFit.need, `snooze date box squeezed to ${deskFit.has} px, needs ${deskFit.need} px`);
+  assert.ok(Math.abs(set.y - (await card('Renew domain').getByLabel('Snooze until').boundingBox()).y) < 8, 'Set button wrapped under the date box on a wide screen');
   // On a wide screen the menu opens inside its card, not over the sidebar.
   const cardBox = await card('Renew domain').boundingBox();
   assert.ok(box.x >= cardBox.x, `snooze menu starts at ${box.x}, left of its card at ${cardBox.x}`);
@@ -189,10 +197,7 @@ try {
   const smallSet = await wide.getByRole('button', { name: 'Set' }).boundingBox();
   assert.ok(smallSet.x + smallSet.width <= small.x + small.width, 'Set button clipped by the snooze menu on a 300 px screen');
   // The date box keeps the width its own fields need (a squeezed one hides part of the time).
-  const fit = await wide.getByLabel('Snooze until').evaluate(i => {
-    const c = i.cloneNode(); c.style.cssText = 'position:absolute;visibility:hidden;width:auto;min-width:0;flex:none';
-    i.parentNode.append(c); const need = c.offsetWidth; c.remove(); return { has: i.offsetWidth, need };
-  });
+  const fit = await dateFit(wide);
   assert.ok(fit.has >= fit.need, `snooze date box squeezed to ${fit.has} px, needs ${fit.need} px on a 300 px screen`);
   await narrow.context().close();
   console.log('ok: snooze menu fits a phone screen');
