@@ -63,6 +63,9 @@ offline catches up the moment it reconnects.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, Share and Copy on each
   notification, Markdown formatting and tappable links.
+- **Add devices by QR code.** Sign a new browser in by scanning its code with
+  the app, or link a phone from Settings in a signed-in browser. Both screens
+  show the same 4-digit number, so no token is typed or copied.
 - **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
   and an MCP server so an AI agent can notify you and wait for your answer.
   Claude Code and Codex can ask your phone before running a command.
