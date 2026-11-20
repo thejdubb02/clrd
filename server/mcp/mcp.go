@@ -25,7 +25,7 @@ import (
 
 // MaxWait caps wait_for_reply. Keep it under the server's WriteTimeout and any
 // proxy idle timeout in front of it.
-var MaxWait = 300 * time.Second
+var MaxWait = 600 * time.Second
 
 const latestProtocol = "2025-06-18"
 
@@ -82,6 +82,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// No server-initiated stream: stateless server.
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/approve") {
+		h.approve(w, r)
 		return
 	}
 	var req rpcReq
@@ -422,5 +426,5 @@ var tools = []map[string]any{
 	{"name": "snooze", "description": "Snooze a notification by server id.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id"), "for": p("string", "Duration, e.g. 30m or 1h")}, "id", "for")},
 	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout, and answer = the reply value when one of send's actions was tapped.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "timeout_s": map[string]any{"type": "number", "description": "Seconds to wait, default 60, max 300"}}, "id")},
+		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "timeout_s": map[string]any{"type": "number", "description": "Seconds to wait, default 60, max 600"}}, "id")},
 }

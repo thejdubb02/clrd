@@ -64,6 +64,7 @@ offline catches up the moment it reconnects.
   notification, Markdown formatting and tappable links.
 - **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
   and an MCP server so an AI agent can notify you and wait for your answer.
+  Claude Code and Codex can ask your phone before running a command.
 
 ## Quick start
 

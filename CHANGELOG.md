@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Approve agent actions from your phone: point Claude Code's or Codex's
+  permission hook at `/mcp/approve` and each prompt arrives as a notification
+  with Allow and Deny. No answer in time means deny.
 - MCP: the `send` tool takes `icon` (an image URL) and `attachment` (a link to
   a file by URL, with an optional name).
 - MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
