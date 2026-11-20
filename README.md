@@ -102,7 +102,8 @@ Cursor, VS Code, Windsurf, Zed, Codex CLI, Gemini CLI), Home Assistant, Gatus, U
 ntfy clients and Watchtower. Built-in webhook templates for GitHub, Sentry,
 Stripe, Jira, Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the
 *arr apps, with signature checks, and your own template for any other
-service's JSON. Setup for each, and which ones resolve themselves:
+service's JSON. Outgoing webhooks tell your own service when someone
+dismisses, acks, resolves, snoozes or replies. Setup for each, and which ones resolve themselves:
 [docs/integrations](docs/integrations/README.md).
 
 ## Docs

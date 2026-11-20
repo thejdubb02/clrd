@@ -381,6 +381,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.every(ctx, "check-ins", wakeEvery, s.checkins)
 	go s.every(ctx, "prune", time.Hour, s.prune)
 	go s.every(ctx, "cache sweep", time.Hour, s.fetch.sweep)
+	go s.every(ctx, "webhooks out", hookEvery, s.deliverHooks)
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }} // ends open streams on shutdown
 	errc := make(chan error, 1)
@@ -725,6 +726,7 @@ func (s *Server) routesSetup() {
 		})
 	}
 	s.webhookRoutes()
+	s.hookOutRoutes()
 	s.ntfyRoutes()
 }
 

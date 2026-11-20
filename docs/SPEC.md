@@ -382,6 +382,9 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
 | PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
 | DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
+| GET | `/api/v1/topics/{topic}/hooks` | The topic's outgoing webhooks (secret hidden, `has_secret` shown). Admin. |
+| PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret"}`, replaces and turns it back on) or remove an outgoing webhook. Admin. |
+| GET | `/api/v1/topics/{topic}/hooks/{name}/deliveries` | The last 100 deliveries, newest first. Admin. |
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
@@ -434,6 +437,13 @@ By external id (what scripts and monitors use):
   services send it in `X-Clrd-Secret` or `?secret=`. A failed check is 401.
   `X-Markdown` / `?markdown=` work as on any ntfy publish (section 2.1).
   Docs: `docs/integrations/custom-webhooks.md`.
+- Webhooks out: a topic's outgoing webhook POSTs the sync stream event
+  (section 3) on dismissed, acknowledged, resolved, snoozed and `action` (a
+  reply tapped), with `X-Clrd-Event`, `X-Clrd-Delivery` and, with a secret,
+  `X-Clrd-Signature: sha256=<hex HMAC>`. Same address guard as the favicon
+  fetcher. Non-2xx retries 8 times from 30 s, doubling; 24 h of failures turns
+  it off with a notification on the topic. Docs:
+  `docs/integrations/webhooks-out.md`.
 
 Full ntfy parity checklist lives in issue #2; tick it off there.
 

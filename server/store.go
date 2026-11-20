@@ -112,6 +112,34 @@ CREATE TABLE IF NOT EXISTS sessions (
   parent_id TEXT NOT NULL,
   phone INTEGER NOT NULL DEFAULT 0 -- 1 for a phone linked from a browser (issue #180)
 );
+-- Outgoing webhooks (issue #112): events is a JSON array of hook event names.
+CREATE TABLE IF NOT EXISTS hooks_out (
+  topic TEXT NOT NULL,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  events TEXT NOT NULL,
+  secret TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  failing_since INTEGER, -- first failure since the last 2xx
+  PRIMARY KEY (topic, name)
+);
+-- One row per event per hook, written in the event's own transaction.
+CREATE TABLE IF NOT EXISTS hook_deliveries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, -- never reused: it is X-Clrd-Delivery
+  topic TEXT NOT NULL,
+  name TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  event TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending, ok or failed
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_at INTEGER NOT NULL,
+  code INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS hook_deliveries_due ON hook_deliveries (status, next_at);
+CREATE INDEX IF NOT EXISTS hook_deliveries_hook ON hook_deliveries (topic, name, id);
 `
 
 // Action is a button on a notification: a link (URL) or an answer (Reply)
@@ -166,6 +194,7 @@ type Event struct {
 	Type         string        `json:"type"`
 	Notification *Notification `json:"notification"`
 	Raw          []byte        `json:"-"`
+	replied      bool          // a reply button was tapped: the "action" hook event
 }
 
 var topicRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
@@ -355,6 +384,9 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 			return nil, errf(400, "bad_request", "cannot encode notification: %v", err)
 		}
 		if _, err := tx.Exec(`UPDATE events SET data = ? WHERE seq = ?`, string(e.Raw), e.Seq); err != nil {
+			return nil, err
+		}
+		if err := queueHooks(tx, e, t); err != nil {
 			return nil, err
 		}
 	}
@@ -797,7 +829,7 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply string, seq in
 		}
 		n.Reply, n.State, n.SnoozeUntil = reply, Acknowledged, nil
 		n.setBy(tok)
-		return []Event{{Type: EventState, Notification: n}}, nil
+		return []Event{{Type: EventState, Notification: n, replied: true}}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -949,6 +981,9 @@ func (s *Server) prune(ctx context.Context) error {
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM notifications WHERE state IN ('dismissed', 'resolved') AND updated_at < ?`, cutoff); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

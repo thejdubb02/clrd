@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: outgoing webhooks. A topic can POST to your URL when a notification
+  is dismissed, acknowledged, resolved, snoozed or replied to, signed with
+  HMAC, retried with backoff and turned off with a notice after a day of
+  failures. Setup: docs/integrations/webhooks-out.md.
 - Run clrd under a sub-path: put the path in `CLRD_BASE_URL`
   (`https://example.com/clrd`) and the inbox, docs, API and live updates all
   work there behind your proxy.
