@@ -178,6 +178,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: the topic chips above the inbox have a solid background and a
+  gap below, so cards no longer show through them while scrolling.
 - ntfy publish: a header such as `Prio: high` now wins over a query parameter
   such as `?priority=low`, the same order ntfy uses.
 - A phone linked from the web inbox is no longer signed out when the same

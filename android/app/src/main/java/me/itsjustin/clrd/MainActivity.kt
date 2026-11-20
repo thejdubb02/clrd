@@ -434,7 +434,12 @@ private fun Header(app: App) {
 @Composable
 private fun Pills(topics: List<String>, selected: String?, onPick: (String?) -> Unit) {
     val b = LocalBrand.current
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Solid background and room below, so cards scrolling up are cut off cleanly under the chips (#145).
+    LazyRow(
+        Modifier.fillMaxWidth().background(b.paper).padding(bottom = 8.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         items(listOf<String?>(null) + topics) { t ->
             val on = t == selected
             Text(
