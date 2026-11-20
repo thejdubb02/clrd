@@ -63,9 +63,27 @@ try {
   assert.ok((await page.evaluate(() => window.copied[0])).includes(`${base}/api/v1/notifications`), 'copy holds the base URL');
   await page.getByRole('button', { name: 'Next tip' }).click();
   assert.notEqual(await tip.locator('h4').textContent(), 'Send your first notification', 'Next changes the tip');
-  assert.equal(await page.locator('[data-tip-count]').textContent(), '2 of 9');
+  assert.equal(await page.locator('[data-tip-count]').textContent(), '2 of 10');
   assert.equal(await announce.textContent(), await tip.locator('h4').textContent(), 'Next announces the new tip');
   console.log('ok: tip card shows, Next changes it, Copy has the base URL');
+
+  // Tips move on by themselves, quietly, and hold still under the pointer (#292).
+  {
+    const tp = await page.context().newPage();
+    await tp.clock.install();
+    await tp.goto(`${base}/app`);
+    const title = () => tp.locator('[data-tip]:visible h4').textContent();
+    const first = await title();
+    await tp.clock.runFor(10000);
+    const second = await title();
+    assert.notEqual(second, first, 'the tip changes on its own');
+    assert.equal(await tp.locator('[data-announce]').textContent(), '', 'an automatic change is not announced');
+    await tp.locator('[data-tips]').hover();
+    await tp.clock.runFor(30000);
+    assert.equal(await title(), second, 'the tip stays put while hovered');
+    await tp.close();
+  }
+  console.log('ok: tips advance on their own and pause on hover');
 
   // Clearing it here offers Undo, and Undo brings it back.
   const a = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Disk full on web-1', message: '/var at 99%' });

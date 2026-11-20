@@ -173,6 +173,9 @@ func TestFirstRunTip(t *testing.T) {
 	if strings.Count(body, " data-tip hidden") != len(tips("x"))-1 || !strings.Contains(body, "http://example.com/api/v1/notifications") {
 		t.Error("one tip shows, and it copies this instance's address")
 	}
+	if n := strings.Count(body, `place-items-center rounded-lg [&_svg]:size-[18px]"><svg`); n != len(tips("x")) {
+		t.Errorf("every tip has its icon: %d of %d", n, len(tips("x")))
+	}
 }
 
 // The card buttons are a form, so Ack, Snooze and Clear work without JavaScript.

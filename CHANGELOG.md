@@ -37,6 +37,12 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: the empty inbox is friendlier. A larger "Nothing waiting" with the
+  clrd mark, an icon on every tip, a new tip about sounds, and tips that move
+  on by themselves every few seconds. They hold still while you hover or
+  focus them, while the tab is hidden, and when your system asks for reduced
+  motion (#292).
+
 - MCP: tools to set up every feature except the environment settings (which
   `server_env` reads), so an agent needs no web page or command line: dismiss, reopen and clear; silences; topic icon and check-in;
   incoming webhook templates; and, with an admin token, outgoing webhooks,

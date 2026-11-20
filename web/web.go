@@ -225,8 +225,15 @@ var views = map[string][]string{
 // else the path of CLRD_BASE_URL, like "/clrd". Every link to the site
 // starts with {{base}}.
 func templates(base string) *template.Template {
-	return template.Must(template.New("").Funcs(template.FuncMap{
+	var t *template.Template
+	t = template.Must(template.New("").Funcs(template.FuncMap{
 		"base": func() string { return base },
+		// icon renders the i-<name> icon chosen by data, like a tip's.
+		"icon": func(name string) (template.HTML, error) {
+			var b strings.Builder
+			err := t.ExecuteTemplate(&b, "i-"+name, nil)
+			return template.HTML(b.String()), err
+		},
 		// local puts base in front of a path on this server ("/api/v1/files/x").
 		"local": func(u string) string {
 			if strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") {
@@ -255,6 +262,7 @@ func templates(base string) *template.Template {
 			return many
 		},
 	}).ParseFS(files, "templates/*.html"))
+	return t
 }
 
 // PreviewsOn says whether a topic's cards show link previews, as the server
@@ -315,25 +323,27 @@ func (m meta) URL() string { return m.Base + m.Path }
 
 // Tip is one card in the empty inbox (issue #244). Copy is text to paste,
 // with this server's own address in it; Link is a path under the inbox.
-type Tip struct{ Title, Text, Copy, Link, LinkText string }
+// Icon names an i-<name> icon in icons.html (#292).
+type Tip struct{ Icon, Title, Text, Copy, Link, LinkText string }
 
 // tips lists only what works on main today, the first-run tip first. Add a
 // tip with one line here.
 func tips(b string) []Tip {
 	return []Tip{
-		{Title: "Send your first notification", Text: "Run this with a token in CLRD_TOKEN. It lands here at once.",
+		{Icon: "terminal", Title: "Send your first notification", Text: "Run this with a token in CLRD_TOKEN. It lands here at once.",
 			Copy: "curl -H \"Authorization: Bearer $CLRD_TOKEN\" \\\n  -d '{\"topic\":\"test\",\"message\":\"Hello from clrd\"}' \\\n  " + b + "/api/v1/notifications"},
-		{Title: "Ask your AI agent to set it up", Text: "Paste this into Claude Code or another agent that runs commands.",
+		{Icon: "bot", Title: "Ask your AI agent to set it up", Text: "Paste this into Claude Code or another agent that runs commands.",
 			Copy: "Add the clrd MCP server: run claude mcp add --transport http clrd " + b + "/mcp --header \"Authorization: Bearer $CLRD_TOKEN\". Then use its send tool to send me a test notification."},
-		{Title: "Get pinged when a job finishes", Text: "Paste this into your agent before a long task.",
+		{Icon: "timer", Title: "Get pinged when a job finishes", Text: "Paste this into your agent before a long task.",
 			Copy: "When this task is done, send me a clrd notification: POST " + b + "/api/v1/notifications with the header Authorization: Bearer $CLRD_TOKEN and the JSON {\"topic\":\"jobs\",\"message\":\"<what finished>\"}."},
-		{Title: "Link your phone", Text: "Show a code in Settings and scan it with the clrd app on your phone. Clear on the phone and it clears here too.", Link: "/app/settings#link-h", LinkText: "Link a phone"},
-		{Title: "Sign in another browser by QR", Text: "Open this address there, choose Show sign-in code, and approve it from your phone. No token to type.", Copy: b + "/app"},
-		{Title: "Already publish to ntfy?", Text: "ntfy-style publishing works here too. Point your scripts at this server.",
+		{Icon: "smartphone", Title: "Link your phone", Text: "Show a code in Settings and scan it with the clrd app on your phone. Clear on the phone and it clears here too.", Link: "/app/settings#link-h", LinkText: "Link a phone"},
+		{Icon: "qr-code", Title: "Sign in another browser by QR", Text: "Open this address there, choose Show sign-in code, and approve it from your phone. No token to type.", Copy: b + "/app"},
+		{Icon: "send", Title: "Already publish to ntfy?", Text: "ntfy-style publishing works here too. Point your scripts at this server.",
 			Copy: "curl -H \"Authorization: Bearer $CLRD_TOKEN\" -d \"Backup done\" " + b + "/backups"},
-		{Title: "Stack a busy topic", Text: "Turn on Stack by topic to fold a topic into one card you can clear at once.", Link: "/app/settings#inbox-h", LinkText: "Inbox settings"},
-		{Title: "Snooze for later", Text: "Snooze a notification from its menu. It comes back and notifies again. Pick your own times in Settings.", Link: "/app/settings#snz-h", LinkText: "Snooze settings"},
-		{Title: "Give each topic an icon", Text: "Set an icon per topic so you can tell them apart at a glance.", Link: "/app/settings#ticon-h", LinkText: "Topic icons"},
+		{Icon: "layers", Title: "Stack a busy topic", Text: "Turn on Stack by topic to fold a topic into one card you can clear at once.", Link: "/app/settings#inbox-h", LinkText: "Inbox settings"},
+		{Icon: "clock", Title: "Snooze for later", Text: "Snooze a notification from its menu. It comes back and notifies again. Pick your own times in Settings.", Link: "/app/settings#snz-h", LinkText: "Snooze settings"},
+		{Icon: "hash", Title: "Give each topic an icon", Text: "Set an icon per topic so you can tell them apart at a glance.", Link: "/app/settings#ticon-h", LinkText: "Topic icons"},
+		{Icon: "bell-ring", Title: "Pick a sound", Text: "Choose the sound this browser plays when a notification arrives, or turn it off.", Link: "/app/settings#sound-h", LinkText: "Sound settings"},
 	}
 }
 
