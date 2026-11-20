@@ -122,8 +122,14 @@ class BootReceiver : BroadcastReceiver() {
 /** Ack / Snooze (the default time) / Clear / reply buttons and the swipe-away (delete intent) on a tray notification. */
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
         val server = intent.getStringExtra(Tray.EXTRA_SERVER) // null on items posted before it was added: the current server
+        if (intent.action == Tray.ACTION_DISMISS_STACK) {
+            val ids = intent.getStringArrayExtra(Tray.EXTRA_IDS)?.toList() ?: return
+            val r = goAsync()
+            App.of(ctx).dismissAll(ids, server) { r.finish() }
+            return
+        }
+        val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
         val (action, body) = when (intent.action) {
             Tray.ACTION_ACK -> "ack" to "{}"
             Tray.ACTION_SNOOZE -> "snooze" to Snooze.body(App.of(ctx).snooze.value.default)

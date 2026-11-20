@@ -91,20 +91,66 @@ class Tray(private val ctx: Context) {
             is TrayStep.Cancel -> nm.cancel(step.id, 0)
             is TrayStep.Show -> post(step.n, step.silent)
         }
+        summaries()
     }
 
     /**
      * Make the tray match the open rows: post what is missing, cancel what should be gone.
-     * Android caps an app at about 50 notifications.
-     * ponytail: newest 40 only; a "N more" summary if people hit it.
+     * Android caps an app at about 50 notifications, stack summaries included (one per 2 or more rows).
+     * ponytail: newest 40 only (32 when stacking); a "N more" summary if people hit it.
      */
     fun reconcile(rows: List<Notif>, muted: Set<String>) {
         val want = rows.map { TrayStep.plan(it, muted) }.filterIsInstance<TrayStep.Show>()
-            .sortedByDescending { it.n.createdAt }.take(40)
+            .sortedByDescending { it.n.createdAt }.take(if (App.of(ctx).stack) 32 else 40)
         val wantIds = want.map { it.n.id }.toSet()
-        val showing = nm.activeNotifications.filter { it.tag != null }.map { it.tag }.toSet()
+        val showing = nm.activeNotifications.filter { it.tag != null && it.id == 0 }.map { it.tag }.toSet()
         showing.filter { it !in wantIds }.forEach { nm.cancel(it, 0) }
         want.forEach { post(it.n, silent = true) } // reposting a showing one updates it (state, buttons) without a sound
+        summaries()
+    }
+
+    /**
+     * Stack by topic (#108): every topic with 2 or more rows showing gets a group summary, so Android folds
+     * them into one stack. Summaries use int id [SUMMARY_ID] and the group key as tag. Rebuilt from what the
+     * tray shows after every change. A summary is cancelled only once its stack is empty: Android cancels a
+     * summary's children with it, so cancelling it at one row would take that row out of the tray too.
+     */
+    private fun summaries() {
+        val active = nm.activeNotifications
+        // Tag check too: the sync notice also uses id 1, with no tag.
+        val shown = active.filter { it.id == SUMMARY_ID && it.tag?.startsWith(GROUP) == true }.map { it.tag }.toSet()
+        val stacks = active.filter { it.tag != null && it.id == 0 && it.notification.group?.startsWith(GROUP) == true }
+            .groupBy { it.notification.group!! }.filter { (g, rows) -> rows.size >= 2 || g in shown }
+        shown.filter { it !in stacks.keys }.forEach { nm.cancel(it, SUMMARY_ID) }
+        if (stacks.isEmpty()) return
+        val server = App.of(ctx).serverUrl
+        val main = PendingIntent.getActivity(
+            ctx, 0,
+            Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        for ((group, rows) in stacks) {
+            val topic = group.removePrefix(GROUP)
+            val ids = rows.map { it.tag }.toTypedArray()
+            // Swiping the stack away dismisses exactly the rows it held, queued like any other swipe (one clear call).
+            val delete = Intent(ctx, ActionReceiver::class.java)
+                .setAction(ACTION_DISMISS_STACK)
+                .setData(Uri.parse("clrd://stack/${Uri.encode(topic)}").buildUpon().appendQueryParameter("server", server).build())
+                .putExtra(EXTRA_IDS, ids)
+                .putExtra(EXTRA_SERVER, server)
+            val b = NotificationCompat.Builder(ctx, rows.maxOf { it.notification.channelId })
+                .setSmallIcon(R.drawable.ic_stat_clrd)
+                .setContentTitle(topic)
+                .setContentText(ctx.resources.getQuantityString(R.plurals.tray_stack, rows.size, rows.size))
+                .setSubText(topic)
+                .setGroup(group)
+                .setGroupSummary(true)
+                .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN) // the rows alert, the summary never does
+                .setSilent(true)
+                .setContentIntent(main)
+                .setDeleteIntent(PendingIntent.getBroadcast(ctx, 0, delete, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            nm.notify(group, SUMMARY_ID, b.build())
+        }
     }
 
     private fun post(n: Notif, silent: Boolean) {
@@ -133,6 +179,7 @@ class Tray(private val ctx: Context) {
             .setContentIntent(open(n))
             .setDeleteIntent(action(n, ACTION_DISMISS)) // swipe away here = dismiss everywhere
         if (n.priority >= 5) b.setColor(0xFFC2410C.toInt())
+        if (App.of(ctx).stack) b.setGroup(GROUP + n.topic)
         // Pictures never hold up a post: one not loaded yet is fetched in the background, then the tray is redrawn.
         val images = App.of(ctx).images
         n.icon.takeIf { it.isNotEmpty() }?.let { url ->
@@ -201,6 +248,10 @@ class Tray(private val ctx: Context) {
         const val ACTION_SNOOZE = "me.itsjustin.clrd.SNOOZE"
         const val ACTION_DISMISS = "me.itsjustin.clrd.DISMISS"
         const val ACTION_REPLY = "me.itsjustin.clrd.REPLY"
+        const val ACTION_DISMISS_STACK = "me.itsjustin.clrd.DISMISS_STACK"
+        const val EXTRA_IDS = "ids"
+        const val GROUP = "topic:"
+        const val SUMMARY_ID = 1
         const val EXTRA_ID = "id"
         const val EXTRA_SERVER = "server"
         const val EXTRA_REPLY = "reply"

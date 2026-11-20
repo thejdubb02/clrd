@@ -272,6 +272,18 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		}
 		q.Set("state", st)
 		return h.api(r, "GET", "/api/v1/notifications?"+q.Encode(), nil)
+	case "topics":
+		return h.api(r, "GET", "/api/v1/topics", nil)
+	case "get":
+		if err := need("id"); err != nil {
+			return nil, err
+		}
+		return h.api(r, "GET", "/api/v1/notifications/"+id, nil)
+	case "update":
+		if err := need("id", "message"); err != nil {
+			return nil, err
+		}
+		return h.api(r, "PATCH", "/api/v1/notifications/"+id, map[string]any{"message": str(a, "message")})
 	case "ack":
 		if err := need("id"); err != nil {
 			return nil, err
@@ -415,6 +427,12 @@ var tools = []map[string]any{
 			"topic": p("string", "Filter by topic"),
 			"state": p("string", "open (default), all, active, acknowledged, snoozed, dismissed or resolved"),
 		})},
+	{"name": "topics", "description": "List the topics this token can read, with how many notifications are open in each.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "get", "description": "Get one notification by its server id, with its current state.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
+	{"name": "update", "description": "Replace the message of an open notification, keeping its id and state. Use it for progress (step 3 of 10) instead of sending a new one each time.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "message": p("string", "New body text")}, "id", "message")},
 	{"name": "ack", "description": "Acknowledge a notification by its server id.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
 	{"name": "resolve", "description": "Resolve (sender clears) a notification by server id, or by topic plus external_id. Clears it from every device.",

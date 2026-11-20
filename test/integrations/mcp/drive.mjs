@@ -49,4 +49,10 @@ const a = await call("send", { topic: "agents", message: "Disk full", id: "job-3
 await call("ack", { id: a.id });
 const z = await call("send", { topic: "agents", message: "Later", id: "job-4" });
 await call("snooze", { id: z.id, for: "1h" });
+
+// A progress line edited in place, then read back.
+const p = await call("send", { topic: "agents", message: "Step 1 of 3", id: "job-5" });
+await call("update", { id: p.id, message: "Step 3 of 3" });
+await call("get", { id: p.id });
+await call("topics", {});
 child.kill();

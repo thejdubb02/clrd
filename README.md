@@ -98,7 +98,7 @@ Tokens, backups and the binary install: [docs/self-host.md](docs/self-host.md).
 ## Integrations
 
 curl, the [SDKs](sdk/), GitHub Actions, MCP (Claude Code, Claude Desktop,
-Cursor), Home Assistant, Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise,
+Cursor, VS Code, Windsurf, Zed, Codex CLI, Gemini CLI), Home Assistant, Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise,
 ntfy clients and Watchtower. Built-in webhook templates for GitHub, Sentry,
 Stripe, Jira, Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the
 *arr apps, with signature checks, and your own template for any other

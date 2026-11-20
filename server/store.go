@@ -696,6 +696,45 @@ func (s *Server) Act(ctx context.Context, tok *Token, id, action string, until *
 	return s.act(ctx, tok, action, until, false, `id = ?`, id)
 }
 
+// Edit replaces the message of an open notification in place: same id, same
+// state, every device redraws it. An agent's progress line, not a new alert.
+func (s *Server) Edit(ctx context.Context, tok *Token, id, message string) (*Notification, error) {
+	if tok == nil {
+		return nil, errf(401, "unauthorized", "missing or invalid token")
+	}
+	if message == "" {
+		return nil, errf(400, "bad_request", "message is required")
+	}
+	var out *Notification
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		n, err := getNotification(ctx, tx, `id = ?`, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := tok.need(ScopePublish, n.Topic); err != nil {
+			return nil, err
+		}
+		if n.Final() {
+			return nil, errf(409, "conflict", "notification is %s", n.State)
+		}
+		// A tap answers the text shown with the buttons (an approve prompt's
+		// Allow), so that text must not change under them.
+		if slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply != "" }) {
+			return nil, errf(409, "conflict", "notification has answer buttons")
+		}
+		if err := s.publishLimit(tok, n.Topic); err != nil {
+			return nil, err
+		}
+		n.Message = message
+		out = n
+		return []Event{{Type: EventUpdated, Notification: n}}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return senderView(tok, out, false), nil
+}
+
 // ActByKey applies ack or resolve to the open notification with topic and external_id.
 func (s *Server) ActByKey(ctx context.Context, tok *Token, topic, externalID, action string) (*Notification, error) {
 	return s.act(ctx, tok, action, nil, true, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
