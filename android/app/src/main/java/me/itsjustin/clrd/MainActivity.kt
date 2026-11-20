@@ -652,12 +652,13 @@ private fun SnoozeSettings(app: App) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val s by app.snooze.collectAsState()
-    var times by remember { mutableStateOf(s.times.joinToString(", ")) }
-    var def by remember { mutableStateOf(s.default) }
+    val server by app.saved.collectAsState() // a switch to another server drops unsaved edits
+    var times by remember(server) { mutableStateOf(s.times.joinToString(", ")) }
+    var def by remember(server) { mutableStateOf(s.default) }
     var result by remember { mutableStateOf<String?>(null) }
     // Unsaved edits win over a settings message from another device; after a save the server's answer shows.
-    var edited by remember { mutableStateOf(false) }
-    LaunchedEffect(s) {
+    var edited by remember(server) { mutableStateOf(false) }
+    LaunchedEffect(s, edited) {
         if (!edited) {
             times = s.times.joinToString(", ")
             def = s.default
@@ -677,12 +678,12 @@ private fun SnoozeSettings(app: App) {
             // Without a default from the list the server keeps the old one, or picks the first.
             val body = org.json.JSONObject().put("snooze_intervals", org.json.JSONArray(typed)).apply { if (def in typed) put("snooze_default", def) }.toString()
             val api = app.api() // the server shown now, even if a switch is queued ahead of this save
+            val sent = times to def
             app.io.execute {
                 result = try {
                     // The server sends the new times to every device, this one too, as a settings message.
                     api.put("/api/v1/settings", body)
-                    edited = false
-                    times = typed.joinToString(", ") // what was saved, until the server's own message replaces it
+                    if (times to def == sent) edited = false // edits typed during the save stay unsaved
                     ctx.getString(R.string.snooze_saved)
                 } catch (e: Exception) {
                     ctx.getString(R.string.snooze_not_saved, e.message)
