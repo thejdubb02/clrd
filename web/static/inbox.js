@@ -266,9 +266,22 @@
 
   // Settings: snooze times. "2d" is sent as "48h", the form the server reads.
   const snz = $('[data-snooze-settings]');
+  const snzTyped = () => snz.times.value.split(',').map(v => v.trim()).filter(Boolean);
+  const snzValue = v => v.replace(/^(\d+)d$/, (_, n) => `${n * 24}h`);
+  const snzSaved = snz && snz.default.value;
+  const snzDirty = () => snz && (snz.times.value !== snz.times.defaultValue || snz.default.value !== snzSaved);
+  if (snz) {
+    // The Default list follows the Times box as it is typed, so a time just added can be the default (#182).
+    const labels = Object.fromEntries([...snz.default.options].map(o => [o.value, o.text]));
+    let want = snzSaved; // the default last picked, kept while its time is retyped
+    snz.default.addEventListener('change', () => { want = snz.default.value; });
+    snz.times.addEventListener('input', () => {
+      snz.default.replaceChildren(...snzTyped().map(v => new Option(labels[snzValue(v)] || v, snzValue(v), false, snzValue(v) === want)));
+    });
+  }
   snz && snz.addEventListener('submit', async e => {
     e.preventDefault();
-    const times = snz.times.value.split(',').map(v => v.trim()).filter(Boolean).map(v => v.replace(/^(\d+)d$/, (_, n) => `${n * 24}h`));
+    const times = snzTyped().map(snzValue);
     const body = { snooze_intervals: times };
     if (times.includes(snz.default.value)) body.snooze_default = snz.default.value; // otherwise the server keeps or picks the first
     const status = $('[data-snooze-status]');
@@ -356,20 +369,22 @@
   const sendBox = $('#send');
   if (sendBox) {
     const f = sendBox.querySelector('form'), status = $('[data-send-status]');
+    let opened = 0; // counts openings: a send that ends after the dialog was reopened leaves the new note alone (#182)
     document.addEventListener('click', e => {
-      if (e.target.closest('[data-send-open]')) { status.textContent = ''; sendBox.showModal(); }
+      if (e.target.closest('[data-send-open]')) { opened++; status.textContent = ''; sendBox.showModal(); }
       if (e.target === sendBox || e.target.closest('[data-send-close]')) sendBox.close(); // the dim or Cancel
     });
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const v = name => f.elements[name].value.trim();
       const body = { topic: v('topic'), title: v('title') || undefined, message: v('message'), priority: Number(v('priority')) };
-      const btn = e.submitter;
+      const btn = e.submitter, mine = opened;
       if (btn) btn.disabled = true; // one tap, one notification
       status.textContent = 'Sending...';
       const r = await fetch('/api/v1/notifications', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
       if (btn) btn.disabled = false;
       if (r && r.status === 401) return location.reload();
+      if (mine !== opened) return say(r && r.ok ? 'Sent.' : 'Not sent.');
       if (!r || !r.ok) {
         status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not sent (${r.status}).` : 'Not sent: no connection.';
         return;
@@ -466,9 +481,11 @@
       else if (m.type === 'reset') reset();
       else if (m.type === 'settings') {
         // Snooze times or formatting changed on another device: the cards are stale.
+        // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
         const st = m.settings || {};
-        if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) reset();
-        else if ('render_formatting' in st && (`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) reset();
+        const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
+        if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
+        else if ('render_formatting' in st && (`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
       }
       else if (m.notification) onEvent(m);
     };

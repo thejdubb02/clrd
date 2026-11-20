@@ -200,13 +200,21 @@ try {
   // The Settings form saves the list; a default left out of it falls back to its first entry.
   await sp.goto(`${base}/app/settings`);
   await sp.getByLabel('Times').fill('30m, 1d');
+  await sp.getByLabel('Default').selectOption('24h'); // a time just typed can be the default before saving
   await sp.getByRole('button', { name: 'Save' }).click();
-  await sp.locator('[data-snooze="30m,30m,24h"]').waitFor({ state: 'attached' });
-  assert.equal(await sp.getByLabel('Default').inputValue(), '30m');
+  await sp.locator('[data-snooze="24h,30m,24h"]').waitFor({ state: 'attached' });
+  assert.equal(await sp.getByLabel('Default').inputValue(), '24h');
+  await sp.getByLabel('Times').fill('30m');
+  await sp.getByLabel('Times').fill('30m, 1d'); // retyped: the default picked comes back with its time
+  assert.equal(await sp.getByLabel('Default').inputValue(), '24h');
   await sp.getByLabel('Times').fill('1h, soon');
   await sp.getByRole('button', { name: 'Save' }).click();
   await sp.locator('[data-snooze-status]').filter({ hasText: 'soon' }).waitFor();
+  // A change from another device keeps the edit not yet saved here, and says so.
   await putSettings({ snooze_intervals: ['1h', '4h'], snooze_default: '1h' });
+  await sp.locator('[data-snooze-status]').filter({ hasText: 'another device' }).waitFor();
+  assert.equal(await sp.getByLabel('Times').inputValue(), '1h, soon', 'unsaved snooze edit dropped');
+  await sp.reload();
   await sp.locator('[data-snooze="1h,1h,4h"]').waitFor({ state: 'attached' });
   await sp.close();
   console.log('ok: snooze default, long press, right click and Settings');
@@ -263,6 +271,19 @@ try {
   assert.equal(sent[0].priority, 4);
   await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
   assert.equal(await sendBox.getByLabel('Message').inputValue(), '', 'message kept after sending');
+  // Closed while a slow send is in flight, then a new note: the first send's success leaves the new note alone.
+  await sendPage.route('**/api/v1/notifications', async r => { if (r.request().method() === 'POST') await new Promise(ok => setTimeout(ok, 800)); await r.continue(); });
+  await sendBox.getByLabel('Topic').fill('notes');
+  await sendBox.getByLabel('Message').fill('slow one');
+  await sendBox.getByRole('button', { name: 'Send' }).click();
+  await sendBox.getByRole('button', { name: 'Cancel' }).click();
+  await sendBox.getByLabel('Message').waitFor({ state: 'hidden' });
+  await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
+  await sendBox.getByLabel('Title').fill('Second note');
+  await sendPage.locator('article.card', { hasText: 'slow one' }).waitFor();
+  await sendPage.waitForTimeout(200);
+  assert.equal(await sendBox.getByLabel('Title').inputValue(), 'Second note', 'a finished send cleared the new note');
+  assert.ok(await sendBox.getByLabel('Title').isVisible(), 'a finished send closed the new note');
   await sendPage.keyboard.press('Escape');
   await sendPage.close();
   console.log('ok: send a notification from the inbox');
