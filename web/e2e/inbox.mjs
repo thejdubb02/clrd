@@ -146,6 +146,10 @@ try {
   const g = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Renew domain', message: 'expires in 30 days' });
   await page.reload();
   await card('Renew domain').getByText('Snooze', { exact: true }).click();
+  // The custom time box and its Set button fit inside the menu, not clipped by it.
+  const box = await card('Renew domain').locator('[data-popover]').boundingBox();
+  const set = await card('Renew domain').getByRole('button', { name: 'Set' }).boundingBox();
+  assert.ok(set.x + set.width <= box.x + box.width, 'Set button clipped by the snooze menu');
   await card('Renew domain').getByLabel('Snooze until').fill('2031-06-01T08:30');
   await card('Renew domain').getByLabel('Snooze until').press('Enter');
   await announce.filter({ hasText: 'Snoozed until' }).waitFor({ state: 'attached' });
@@ -175,6 +179,10 @@ try {
   const menu = await wide.locator('[data-popover]').boundingBox();
   assert.ok(menu.x >= 0 && menu.x + menu.width <= 360, `snooze menu spans ${menu.x} to ${menu.x + menu.width} on a 360 px screen`);
   assert.equal(await narrow.evaluate(() => document.documentElement.scrollWidth), 360, 'page scrolls sideways with the menu open');
+  // A very small phone too.
+  await narrow.setViewportSize({ width: 300, height: 740 });
+  const small = await wide.locator('[data-popover]').boundingBox();
+  assert.ok(small.x >= 0 && small.x + small.width <= 300, `snooze menu spans ${small.x} to ${small.x + small.width} on a 300 px screen`);
   await narrow.context().close();
   console.log('ok: snooze menu fits a phone screen');
 
