@@ -394,3 +394,31 @@ func TestNtfyEdgeInputs(t *testing.T) {
 		t.Fatalf("delay of 4 days: %d %s", code, body)
 	}
 }
+
+// ntfy's inline templates (#272): ?tpl=yes renders m, t and p over the JSON body.
+func TestNtfyInlineTemplate(t *testing.T) {
+	_, ts, admin := newTest(t)
+	mm := "?tpl=yes&markdown=yes&m={{.text}}&p={{if%20.channel}}2{{else}}4{{end}}&auth=" + basicAuthParam(admin)
+	code, out := raw(t, "POST", ts.URL+"/wsg"+mm, "", `{"text": "disk full"}`,
+		map[string]string{"Content-Type": "application/json"})
+	if m := ntfyDecode(t, out); code != 200 || m.Message != "disk full" || m.Priority != 4 {
+		t.Fatalf("Mattermost-style templated publish: %d %s", code, out)
+	}
+	if _, out = raw(t, "POST", ts.URL+"/wsg"+mm, "", `{"text": "x", "channel": "c"}`, nil); ntfyDecode(t, out).Priority != 2 {
+		t.Fatalf("templated priority: %s", out)
+	}
+	code, out = raw(t, "PUT", ts.URL+"/wsg", admin, `{"a": {"b": "deep"}, "n": 5}`,
+		map[string]string{"X-Template": "1", "X-Title": `{{.a.b}}`, "X-Message": `n={{.n}} {{.missing}}`})
+	if m := ntfyDecode(t, out); code != 200 || m.Title != "deep" || m.Message != "n=5" {
+		t.Fatalf("X-Template header form: %d %s", code, out)
+	}
+	if code, out = raw(t, "POST", ts.URL+"/wsg?template=yes&m={{.text}}", admin, `{"text": "t"}`, nil); code != 200 || ntfyDecode(t, out).Message != "t" {
+		t.Fatalf("?template=yes is ntfy's inline form, not a saved template named yes: %d %s", code, out)
+	}
+	if code, out = raw(t, "POST", ts.URL+"/wsg?tpl=yes&m={{.text}}", admin, `not json`, nil); code != 400 {
+		t.Fatalf("non-JSON body with tpl=yes: %d %s", code, out)
+	}
+	if code, out = raw(t, "POST", ts.URL+"/wsg?tpl=yes&m={{range .}}x{{end}}", admin, `[1]`, nil); code != 400 {
+		t.Fatalf("range must be refused as in saved templates: %d %s", code, out)
+	}
+}

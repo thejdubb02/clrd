@@ -320,6 +320,14 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		return h.api(r, "DELETE", "/api/v1/devices/"+id, nil)
+	case "sound":
+		if str(a, "sound") == "" {
+			return h.api(r, "GET", "/api/v1/sounds", nil)
+		}
+		if err := need("id"); err != nil {
+			return nil, err
+		}
+		return h.api(r, "PUT", "/api/v1/devices/"+id, map[string]any{"sound": str(a, "sound")})
 	case "settings":
 		if len(a) == 0 {
 			return h.api(r, "GET", "/api/v1/settings", nil)
@@ -516,6 +524,8 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{})},
 	{"name": "unlink", "description": "Unlink a browser or phone by its id from devices. It is signed out at once, with every browser it approved.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices")}, "id")},
+	{"name": "sound", "description": "Notification sounds, chosen per device. No arguments lists the valid sound names and the default; devices shows each device's current sound. With id and sound, sets that device's sound.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices"), "sound": p("string", "A name from the list, e.g. chime or none")})},
 	{"name": "dismiss", "description": "Dismiss (clear) a notification by its server id. It goes away on every device; reopen undoes it.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
 	{"name": "reopen", "description": "Make a dismissed, acknowledged, snoozed or resolved notification active again, by its server id.",

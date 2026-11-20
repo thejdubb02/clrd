@@ -64,6 +64,9 @@ type Settings struct {
 	// only once set; until then CLRD_RETENTION decides, and reads show
 	// that in whole days (rounded up).
 	KeepClearedDays *int `json:"keep_cleared_days"`
+	// Sound is the asking device's own sound (#282), filled on reads and
+	// set with PUT /api/v1/devices/{id}.
+	Sound string `json:"sound,omitempty"`
 }
 
 // maxKeepDays is the longest keep_cleared_days a number can ask for (100 years).
@@ -155,6 +158,7 @@ type SettingsPatch struct {
 	SnoozeIntervals  []string         `json:"snooze_intervals"`
 	SnoozeDefault    *string          `json:"snooze_default"`
 	KeepClearedDays  *int             `json:"keep_cleared_days"`
+	Sound            *string          `json:"sound"` // this device's own sound
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -176,7 +180,9 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 		d := int((s.opt.Retention + 24*time.Hour - 1) / (24 * time.Hour))
 		st.KeepClearedDays = &d
 	}
-	return st, nil
+	sounds, err := s.deviceSounds(ctx, s.db)
+	st.Sound = soundOf(sounds, tok.ID)
+	return st, err
 }
 
 func (s *Server) loadSettings(ctx context.Context, q interface {
@@ -208,7 +214,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		return Settings{}, err
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
-		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil
+		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil
 	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews")
 	}
@@ -227,6 +233,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		if !tok.Allows(t) {
 			return Settings{}, errf(403, "forbidden", "token may not use topic %q", t)
 		}
+	}
+	if p.Sound != nil && !slices.Contains(soundNames, *p.Sound) { // checked now, set once the rest is saved
+		return Settings{}, errf(400, "bad_request", "unknown sound %q, use one of: %s", *p.Sound, strings.Join(soundNames, ", "))
 	}
 	s.mu.Lock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -276,6 +285,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 	}
 	s.mu.Unlock()
+	if err == nil && p.Sound != nil {
+		err = s.SetSound(ctx, tok, tok.ID, *p.Sound)
+	}
 	if err != nil {
 		return Settings{}, err
 	}

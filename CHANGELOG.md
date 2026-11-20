@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: ntfy publish URLs with `tpl=yes` now render their templated
+  message, title and priority from the JSON body, as ntfy does. Before, a
+  templated priority was refused with "invalid priority" and the alert was
+  lost, and a templated message arrived as raw JSON (#272).
 - F-Droid: updating the app no longer fails with a 404 when the phone's
   F-Droid app list is a few builds old. The clrd F-Droid repo now keeps the
   last 30 builds instead of 5 (#277).
@@ -29,6 +33,10 @@ Fixed, Removed, Security), as one line a user can understand.
   incoming webhook templates; and, with an admin token, outgoing webhooks,
   tokens with per-topic grants, the server settings in effect and ignored ntfy
   options (#252).
+- Server: each device can have its own notification sound (default, none,
+  chime, ding, pop, bell, alert or soft), read and set through the API and the
+  MCP `sound` tool; `GET /api/v1/sounds` lists the names. The Android app and
+  web inbox start playing the choice in their own follow-up releases (#282).
 - Server: an admin can read every server setting in effect with
   `GET /api/v1/server`, and create a token with per-topic grants over the API
   (`grants` on `POST /api/v1/tokens`), so an agent can check and set up access

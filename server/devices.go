@@ -24,6 +24,7 @@ type LinkedDevice struct {
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	This       bool       `json:"this"` // the token asking
 	CanUnlink  bool       `json:"can_unlink"`
+	Sound      string     `json:"sound"` // one of GET /api/v1/sounds
 }
 
 // DeviceEvent is one line of the activity log.
@@ -109,6 +110,10 @@ func (s *Server) Devices(ctx context.Context, tok *Token) ([]LinkedDevice, error
 	if err != nil {
 		return nil, err
 	}
+	sounds, err := s.deviceSounds(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE k(id) AS
 	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
 	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name
@@ -129,6 +134,7 @@ func (s *Server) Devices(ctx context.Context, tok *Token) ([]LinkedDevice, error
 			return nil, err
 		}
 		d.LinkedAt, d.Via, d.This, d.CanUnlink = fromMS(created), via.String, d.ID == tok.ID, phone.Valid
+		d.Sound = soundOf(sounds, d.ID)
 		if seen.Valid {
 			v := fromMS(seen.Int64)
 			d.LastSeenAt = &v

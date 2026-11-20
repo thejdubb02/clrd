@@ -154,7 +154,7 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,counts,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,"+
+	if strings.Join(names, ",") != "send,list,topics,counts,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,"+
 		"hooks,set_hook,delete_hook,hook_deliveries,tokens,create_token,revoke_token,server_env,ntfy_ignored" {
 		t.Fatalf("tools: %v", names)
