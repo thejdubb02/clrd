@@ -110,6 +110,11 @@ func TestRepeat(t *testing.T) {
 	if r := get(id).Repeat; r.Next == nil || r.Next.Before(at) {
 		t.Fatalf("scheduled repeat starts before delivery: %+v", r)
 	}
+	// Delivered early by hand, it counts from then, not from the planned time.
+	call(t, ts, "POST", "/api/v1/notifications/"+id+"/reopen", admin, nil)
+	if r := get(id).Repeat; get(id).State != "active" || r.Next == nil || r.Next.After(time.Now().Add(6*time.Minute)) {
+		t.Fatalf("early delivery kept the planned repeat time: %s %+v", get(id).State, r)
+	}
 
 	// A tap on the card a device showed before a re-alert still counts.
 	id = pub(map[string]any{"repeat": "5m", "actions": []map[string]any{{"label": "Yes", "reply": "yes"}}})

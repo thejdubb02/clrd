@@ -958,6 +958,10 @@ func transition(n *Notification, target string, by *Token, via string, until *ti
 	n.setBy(by)
 	if target != Active { // any answer ends the re-alerts; a wake or reopen does not restart them
 		n.stopRepeat()
+	} else if r := n.Repeat; r != nil && r.Next != nil { // a scheduled send delivered now: count from now
+		d, _ := parseDuration(r.Every)
+		next := time.Now().Add(d)
+		r.Next = &next
 	}
 	if target != Dismissed && target != Resolved {
 		n.Reply = "" // an answer stands only with the tap's own ack; dismiss and resolve keep it as history
@@ -1011,11 +1015,6 @@ func (s *Server) wakeSnoozed(ctx context.Context) error {
 		var evs []Event
 		for _, n := range ns {
 			ev, _ := transition(n, Active, &Token{Name: "server"}, "snooze_end", nil)
-			if r := n.Repeat; r != nil && r.Next != nil { // a scheduled send: count from now, even after downtime
-				d, _ := parseDuration(r.Every)
-				next := time.Now().Add(d)
-				r.Next = &next
-			}
 			evs = append(evs, *ev)
 		}
 		return evs, err
