@@ -273,7 +273,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val LINK_TTL_NS = 120_000_000_000L
+        const val LINK_TTL_NS = 125_000_000_000L // 2 minutes, plus a poll or two after an approval near expiry (#184)
         const val LINK_POLL_MS = 1_500L
     }
 }
