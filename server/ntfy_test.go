@@ -79,6 +79,9 @@ func TestNtfyPublish(t *testing.T) {
 	if _, out = raw(t, "GET", ts.URL+"/alerts/publish?message=hi&t=T&p=5", admin, "", nil); ntfyDecode(t, out).Priority != 5 {
 		t.Fatalf("GET publish: %s", out)
 	}
+	if _, out = raw(t, "POST", ts.URL+"/alerts?priority=low", admin, "hi", map[string]string{"Prio": "high"}); ntfyDecode(t, out).Priority != 4 {
+		t.Fatalf("a header alias beats the query, as in ntfy (#172): %s", out)
+	}
 	code, out = raw(t, "POST", ts.URL+"/", admin, `{"topic":"alerts","message":"j","priority":2,"actions":[{"action":"view","label":"L","url":"https://example.com"}]}`, nil)
 	if m := ntfyDecode(t, out); code != 200 || m.Message != "j" || m.Priority != 2 || len(m.Actions) != 1 {
 		t.Fatalf("JSON publish past a root mount: %d %s", code, out)

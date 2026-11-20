@@ -133,6 +133,7 @@ type Topic struct {
 }
 
 type Device struct {
+	ID       string    `json:"id"` // token id; matches Snapshot.MeID on the browser viewing the page
 	Name     string    `json:"name"`
 	LastSeen time.Time `json:"last_seen"`
 }

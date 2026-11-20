@@ -69,7 +69,7 @@ func (f *Fake) put(n Notification) {
 func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s := Snapshot{Seq: f.seq, Counts: map[string]int{}, Items: []Notification{}, Me: "web", SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}
+	s := Snapshot{Seq: f.seq, Counts: map[string]int{}, Items: []Notification{}, Me: "web", MeID: "tok-web", SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}
 	topics := map[string]int{}
 	needle := strings.ToLower(q.Q)
 	for _, n := range f.items {
@@ -92,7 +92,7 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	}
 	sort.Slice(s.Topics, func(i, j int) bool { return s.Topics[i].Name < s.Topics[j].Name })
 	now := time.Now().UTC()
-	s.Devices = []Device{{"pixel-9", now.Add(-time.Minute)}, {"tablet", now.Add(-4 * time.Minute)}, {"web", now}}
+	s.Devices = []Device{{"tok-pixel", "pixel-9", now.Add(-time.Minute)}, {"tok-tablet", "tablet", now.Add(-4 * time.Minute)}, {"tok-web", "web", now}}
 	return s, nil
 }
 

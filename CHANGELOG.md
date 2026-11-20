@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: the device list in Settings marks the browser you are using with
+  "(this browser)".
 - Web: link previews. With previews on, a message's first link shows a card
   with the page's title, summary and image, fetched by your server. Settings
   has a switch for previews and a Default, On or Off choice for each topic.
@@ -174,6 +176,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: a new alert no longer shows twice in the notification drawer, once
   bundled under the silent sync notice. The sync notice also shows the real
   connection state instead of staying on Connecting after the app is opened.
+- ntfy publish: a header such as `Prio: high` now wins over a query parameter
+  such as `?priority=low`, the same order ntfy uses.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.

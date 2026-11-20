@@ -164,7 +164,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		}
 		for _, t := range toks {
 			if t.LastSeenAt != nil {
-				snap.Devices = append(snap.Devices, web.Device{Name: t.Name, LastSeen: *t.LastSeenAt})
+				snap.Devices = append(snap.Devices, web.Device{ID: t.ID, Name: t.Name, LastSeen: *t.LastSeenAt})
 			}
 		}
 	}
