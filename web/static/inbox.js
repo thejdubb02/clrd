@@ -289,6 +289,31 @@
     refresh();
   });
 
+  // Send a notification from this browser, with its own token (#150).
+  const sendBox = $('#send');
+  if (sendBox) {
+    const f = sendBox.querySelector('form'), status = $('[data-send-status]');
+    document.addEventListener('click', e => {
+      if (e.target.closest('[data-send-open]')) { status.textContent = ''; sendBox.showModal(); }
+      if (e.target === sendBox || e.target.closest('[data-send-close]')) sendBox.close(); // the dim or Cancel
+    });
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const v = name => f.elements[name].value.trim();
+      const body = { topic: v('topic'), title: v('title') || undefined, message: v('message'), priority: Number(v('priority')) };
+      status.textContent = 'Sending...';
+      const r = await fetch('/api/v1/notifications', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+      if (r && r.status === 401) return location.reload();
+      if (!r || !r.ok) {
+        status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not sent (${r.status}).` : 'Not sent: no connection.';
+        return;
+      }
+      f.elements.title.value = f.elements.message.value = '';
+      sendBox.close();
+      say('Sent.');
+    });
+  }
+
   // Command palette (Ctrl or Cmd+K) and single-key shortcuts. The palette
   // lists every shortcut; Basecoat's command.js filters it and runs Enter.
   const palette = $('#palette');
@@ -333,7 +358,7 @@
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return palette && (palette.open ? palette.close() : openPalette()); }
     const t = e.target;
-    if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || (palette && palette.open)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || $('dialog[open]')) return; // the palette or Send is open
     if (t.closest && t.closest('input, textarea, select, [contenteditable], details[open]')) {
       if (e.key === 'Escape' && t === search) search.blur();
       return;

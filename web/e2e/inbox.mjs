@@ -235,6 +235,35 @@ try {
   await later.close();
   console.log('ok: open count in the tab, full time on older cards');
 
+  // Send from the inbox: the note lands on the server with its fields and shows
+  // live; a bad topic keeps the dialog open with the server's reason.
+  const sendPage = await page.context().newPage();
+  await sendPage.goto(`${base}/app`);
+  const sendBox = sendPage.getByRole('dialog', { name: 'Send a notification' });
+  await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
+  await sendBox.getByLabel('Topic').fill('bad topic!');
+  await sendBox.getByLabel('Message').fill('nope');
+  await sendBox.getByRole('button', { name: 'Send' }).click();
+  await sendBox.locator('[data-send-status]').filter({ hasText: /topic/i }).waitFor();
+  assert.ok(await sendBox.getByLabel('Message').isVisible(), 'dialog closed on an error');
+  await sendBox.getByLabel('Topic').fill('notes');
+  await sendBox.getByLabel('Title').fill('From the laptop');
+  await sendBox.getByLabel('Message').fill('https://example.com/read-later');
+  await sendBox.getByLabel('Priority').selectOption('4');
+  await sendBox.getByRole('button', { name: 'Send' }).click();
+  await sendBox.getByLabel('Message').waitFor({ state: 'hidden' });
+  await sendPage.locator('article.card', { hasText: 'From the laptop' }).waitFor();
+  const sent = (await (await fetch(`${base}/api/v1/notifications?topic=notes`, { headers: { Authorization: `Bearer ${phone}` } })).json()).notifications;
+  assert.equal(sent.length, 1, 'sent note not on the server');
+  assert.equal(sent[0].message, 'https://example.com/read-later');
+  assert.equal(sent[0].priority, 4);
+  await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
+  assert.equal(await sendBox.getByLabel('Message').inputValue(), '', 'message kept after sending');
+  assert.equal(await sendBox.locator('[data-send-status]').textContent(), '', 'old error still shown');
+  await sendPage.keyboard.press('Escape');
+  await sendPage.close();
+  console.log('ok: send a notification from the inbox');
+
   // A reply button stores the answer for whoever waits on it; the card then shows it.
   const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Merge 212?', message: 'tests pass', actions: [{ label: 'Yes', reply: 'yes' }, { label: 'No', reply: 'no' }] });
   await page.reload();

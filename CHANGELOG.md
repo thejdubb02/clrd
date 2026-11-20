@@ -31,6 +31,9 @@ Fixed, Removed, Security), as one line a user can understand.
 - Web: Snooze uses a default time from Settings. Long press it, right click
   it, or tap the arrow next to it for the other times. Settings has a Snooze
   section to pick up to 8 times and the default, shared by every device.
+- Web: a Send button in the inbox opens a box to send a notification (topic,
+  title, message, priority) to every device, for a quick link or note from the
+  laptop to the phone.
 - Web: the browser tab shows how many notifications are open, as "(3) Inbox",
   and keeps it current when another device clears one.
 - Web: times read as "5 min. ago" and similar for the last day, then as a date
