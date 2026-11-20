@@ -26,7 +26,8 @@ class SyncService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Called again on every app launch: an already running sync keeps its real status, not "Connecting".
-        foreground(if (app.sync != null) app.status.value else SyncClient.Status.CONNECTING)
+        if (app.sync == null) app.status.value = SyncClient.Status.CONNECTING
+        foreground()
         // Store and credentials are read together, so a Settings switch cannot pair one server's store with another's API.
         val (store, api) = synchronized(app.configLock) { if (app.configured) RoomStore(app) to app.api() else null to null }
         if (store == null || api == null) {
@@ -60,12 +61,13 @@ class SyncService : Service() {
 
     private fun status(s: SyncClient.Status) {
         app.status.value = s
-        foreground(s)
+        foreground()
     }
 
-    private fun foreground(s: SyncClient.Status) {
+    /** Locked, and reads the status inside the lock, so a status change racing an app launch cannot be overwritten by an older one. */
+    @Synchronized private fun foreground() {
         val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-        ServiceCompat.startForeground(this, 1, notice(this, s), type)
+        ServiceCompat.startForeground(this, 1, notice(this, app.status.value), type)
     }
 
     companion object {
