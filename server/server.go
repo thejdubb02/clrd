@@ -179,6 +179,9 @@ func New(opt Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("CLRD_BASE_URL: %w", err)
 	}
+	if p := base.Path; p == "/api" || strings.HasPrefix(p, "/api/") { // the server calls its own /api/v1 routes without the path
+		return nil, fmt.Errorf("CLRD_BASE_URL: the path cannot start with /api")
+	}
 	if opt.Retention == 0 {
 		opt.Retention = 720 * time.Hour
 	}

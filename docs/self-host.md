@@ -133,7 +133,7 @@ To serve clrd at `https://example.com/clrd/` instead of its own host name, put
 the path in `CLRD_BASE_URL` (`https://example.com/clrd`). Every page, link,
 asset, API route and the WebSocket then live under `/clrd/`, and the sign-in
 cookie is scoped to it. The proxy can pass the path through or strip it; both
-work. In Caddy, `handle /clrd/*` with the same `reverse_proxy` line; in nginx,
+work. The path cannot start with `/api`. In Caddy, `handle /clrd/*` with the same `reverse_proxy` line; in nginx,
 the same block as `location /clrd/`. In the Android app, enter the full
 address with the path.
 

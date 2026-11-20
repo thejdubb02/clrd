@@ -20,6 +20,9 @@ import (
 // behind a proxy at example.com/clrd/) and checks every page only links,
 // posts and redirects inside it, and the API, sign-in and WebSocket work there.
 func TestSubPath(t *testing.T) {
+	if _, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "x.db"), BaseURL: "http://clrd.example/api"}); err == nil {
+		t.Fatal("a sub-path of /api accepted: it would hide the server's own /api/v1 calls")
+	}
 	const base = "http://clrd.example/clrd/"
 	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), BaseURL: base, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
