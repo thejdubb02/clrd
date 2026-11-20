@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: links in messages show the site's icon, fetched by your server, and
+  Settings has switches for Markdown formatting, links and site icons that
+  apply to every device.
 - Android: set the app up by scanning the Link a phone code on a signed-in
   browser. A new Scan QR code button in Settings asks before connecting to the
   scanned server, then waits for that browser to approve the phone. Both

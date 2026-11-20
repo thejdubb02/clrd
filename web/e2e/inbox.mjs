@@ -322,16 +322,29 @@ try {
   assert.equal(await fbody.locator('li').count(), 2);
   assert.equal(await fbody.locator('br').count(), 1, 'line break lost');
   assert.equal(await fbody.getByRole('link', { name: 'https://example.com/d' }).getAttribute('rel'), 'noopener noreferrer');
-  assert.equal(await fbody.locator('img, script, iframe').count(), 0, 'raw HTML or an image got through');
+  assert.equal(await fbody.locator('img:not(.favicon), script, iframe').count(), 0, 'raw HTML or an image got through');
+  assert.deepEqual(await fbody.locator('img.favicon').evaluateAll(i => i.map(e => e.getAttribute('src'))), ['/api/v1/favicon?host=example.com'], 'site icon missing');
+  assert.ok(await fbody.locator('img.favicon').evaluate(i => i.complete && i.naturalWidth > 0), 'site icon did not load');
   assert.ok((await fbody.textContent()).includes('<script>window.pwned=1</script>'), 'raw HTML not shown as typed');
   assert.equal(await mp.evaluate(() => window.pwned), undefined);
   const rbody = mp.locator('article.card', { hasText: 'Raw text' }).locator('[data-body]');
   assert.equal(await rbody.textContent(), '**not bold**');
   await putSettings({ render_formatting: false });
-  await mp.locator('[data-fmt="false,true"]').waitFor({ state: 'attached' }); // the open page reloaded itself
+  await mp.locator('[data-fmt="false,true,true"]').waitFor({ state: 'attached' }); // the open page reloaded itself
   assert.equal(await fbody.locator('strong, li').count(), 0, 'formatting off still renders Markdown');
   assert.ok((await fbody.textContent()).startsWith('**Disk** 91% on ++web1++'));
   await putSettings({ render_formatting: true });
+  // The Settings switch saves for every device: site icons off on the open inbox.
+  const setp = await page.context().newPage();
+  await setp.goto(`${base}/app/settings`);
+  const iconSw = setp.getByRole('switch', { name: 'Show site icons next to links' });
+  assert.ok(await iconSw.isChecked());
+  await Promise.all([setp.waitForEvent('load'), iconSw.click()]); // saved, then the page reloads
+  assert.equal(await setp.getByRole('switch', { name: 'Show site icons next to links' }).isChecked(), false, 'switch not saved');
+  await mp.locator('[data-fmt="true,true,false"]').waitFor({ state: 'attached' });
+  assert.equal(await fbody.locator('img.favicon').count(), 0, 'site icon still shown with the setting off');
+  await putSettings({ favicons: true });
+  await setp.close();
   await mp.close();
   console.log('ok: Markdown bodies follow the formatting setting');
 

@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := "/app"}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "/app/%s" .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -173,6 +173,16 @@
 <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"test","message":"Hello from clrd"}' \
   {{.Base}}/api/v1/notifications</code></pre>
+  </section>
+  <section class="js-only grid gap-3" aria-labelledby="msg-h">
+    <h2 id="msg-h" class="text-base font-semibold">Messages</h2>
+    <p class="text-body text-sm/relaxed">How message text shows. These settings apply to every device.</p>
+    <form class="grid gap-3" data-display-settings>
+      <label class="label"><input type="checkbox" role="switch" class="input" name="render_formatting"{{if .Snap.Formatting}} checked{{end}}> Show Markdown formatting</label>
+      <label class="label"><input type="checkbox" role="switch" class="input" name="autolink"{{if .Snap.Autolink}} checked{{end}}> Turn web addresses into links</label>
+      <label class="label"><input type="checkbox" role="switch" class="input" name="favicons"{{if .Snap.Favicons}} checked{{end}}> Show site icons next to links</label>
+      <span class="meta" role="status" data-display-status></span>
+    </form>
   </section>
   <section class="js-only grid gap-3" aria-labelledby="snz-h">
     <h2 id="snz-h" class="text-base font-semibold">Snooze</h2>

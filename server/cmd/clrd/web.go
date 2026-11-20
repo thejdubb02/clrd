@@ -119,7 +119,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return snap, err
 	}
 	snap.SnoozeIntervals, snap.SnoozeDefault = ds.SnoozeIntervals, ds.SnoozeDefault
-	snap.Formatting, snap.Autolink = ds.RenderFormatting, ds.Autolink
+	snap.Formatting, snap.Autolink, snap.Favicons = ds.RenderFormatting, ds.Autolink, ds.Favicons
 	want := map[string]bool{}
 	for _, st := range q.States {
 		want[st] = true
