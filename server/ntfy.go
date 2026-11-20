@@ -406,6 +406,25 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	if p.SnoozeUntil, err = ntfyDelay(in.Delay); err != nil {
 		return err
 	}
+	// Like ntfy, headers and query params fill what the JSON leaves out
+	// (Apprise sends X-Priority, X-Tags, X-Click next to a JSON body).
+	if p.Title == "" {
+		p.Title = param(r, "Title", "Ti", "T")
+	}
+	if len(p.Tags) == 0 {
+		p.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
+	}
+	if p.Click == "" {
+		p.Click = param(r, "Click")
+	}
+	if p.Icon == "" {
+		p.Icon = ntfyIcon(param(r, "Icon"))
+	}
+	if p.Priority == 0 {
+		if p.Priority, err = ntfyPriority(param(r, "Priority", "Prio", "P")); err != nil {
+			return err
+		}
+	}
 	return s.ntfyReply(w, r.Context(), s.ntfyAuth(r), p)
 }
 

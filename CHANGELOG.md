@@ -114,6 +114,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- ntfy compatibility: a JSON publish to `/` now reads priority, title, tags,
+  click URL and icon from headers when the JSON leaves them out, as ntfy does,
+  so Apprise's `?priority=high` arrives.
 - Android: the always-on "in sync" notice no longer puts a dot on the app icon.
 - Web: the inbox no longer scrolls sideways on a phone (long titles, the
   closed Snooze menu and the action row pushed it wider than the screen), and
