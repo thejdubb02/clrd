@@ -201,7 +201,15 @@ try {
   await sp.goto(`${base}/app/settings`);
   await sp.getByLabel('Times').fill('30m, 1d');
   await sp.getByLabel('Default').selectOption('24h'); // a time just typed can be the default before saving
+  // While the save is on its way, the forms are locked: the reload after it would drop an edit (#214).
+  let release;
+  const held = new Promise(ok => { release = ok; });
+  await sp.route('**/api/v1/settings', async r => { if (r.request().method() === 'PUT') await held; await r.continue(); });
   await sp.getByRole('button', { name: 'Save' }).click();
+  for (const l of ['Times', 'Default']) assert.equal(await sp.getByLabel(l).isDisabled(), true, `${l} editable during a save`);
+  assert.equal(await sp.locator('[data-display-settings] input').first().isDisabled(), true, 'display switch usable during a snooze save');
+  release();
+  await sp.unroute('**/api/v1/settings');
   await sp.locator('[data-snooze="24h,30m,24h"]').waitFor({ state: 'attached' });
   assert.equal(await sp.getByLabel('Default').inputValue(), '24h');
   await sp.getByLabel('Times').fill('30m');

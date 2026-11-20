@@ -197,6 +197,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: switching to another server no longer keeps the old server's
   snooze times, and the snooze times box is no longer reset while you type in
   it when another device saves them.
+- Web: Settings locks the snooze and display settings while a save is on its
+  way, so an edit made in that moment is no longer lost when the page reloads.
 - Android: a new alert no longer shows twice in the notification drawer, once
   bundled under the silent sync notice. The sync notice also shows the real
   connection state instead of staying on Connecting after the app is opened.

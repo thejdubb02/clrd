@@ -348,28 +348,33 @@
       snz.default.replaceChildren(...snzTyped().map(v => new Option(labels[snzValue(v)] || v, snzValue(v), false, snzValue(v) === want)));
     });
   }
+  // A saved setting reloads the page, so while one save runs the snooze and
+  // display forms are locked: an edit made then would be lost (#214), and an
+  // older save cannot land after a newer one.
+  const disp = $('[data-display-settings]');
+  const lock = on => [snz, disp].forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
   snz && snz.addEventListener('submit', async e => {
     e.preventDefault();
     const times = snzTyped().map(snzValue);
     const body = { snooze_intervals: times };
     if (times.includes(snz.default.value)) body.snooze_default = snz.default.value; // otherwise the server keeps or picks the first
     const status = $('[data-snooze-status]');
+    lock(true);
     const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     if (r && r.ok) return location.reload();
+    lock(false);
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   });
 
   // Settings: message display switches, each saved on its own.
-  const disp = $('[data-display-settings]');
   disp && disp.addEventListener('change', async e => {
     const sw = e.target, status = $('[data-display-status]'), t = sw.dataset.topic;
     const body = t ? { topic_previews: { [t]: sw.value ? sw.value === 'on' : null } } : { [sw.name]: sw.checked }; // null: back to the default
-    const ctl = [...disp.elements];
-    ctl.forEach(c => { c.disabled = true; }); // one save at a time: an older save cannot land last, a reload cannot drop a newer one
+    lock(true);
     const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     if (r && r.ok) return location.reload();
     if (t) sw.value = [...sw.options].find(o => o.defaultSelected).value; else sw.checked = !sw.checked;
-    ctl.forEach(c => { c.disabled = false; });
+    lock(false);
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   });
 
