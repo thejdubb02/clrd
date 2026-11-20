@@ -14,7 +14,7 @@
     <string name="undo">Undo</string>
     <string name="restore">Restore</string>
     <string name="ack">Ack</string>
-    <string name="snooze_1h">Snooze 1h</string>
+    <string name="snooze_for">Snooze %1$s</string>
     <string name="clear">Clear</string>
     <string name="share">Share</string>
     <string name="copy">Copy</string>
@@ -84,7 +84,7 @@
 
     <!-- Notification tray -->
     <string name="tray_ack">Ack</string>
-    <string name="tray_snooze">Snooze 1h</string>
+    <string name="tray_snooze">Snooze</string>
     <string name="tray_clear">Clear</string>
     <string name="tray_open">Open</string>
     <string name="tray_answered">Answered %1$s on %2$s</string>
@@ -117,4 +117,11 @@
     <string name="link_cancel">Cancel</string>
     <string name="link_done">Phone linked. Syncing now.</string>
     <string name="link_expired">That code expired, was denied or was already used. Make a new one on the browser.</string>
+    <string name="snooze_settings">Snooze</string>
+    <string name="snooze_explain">Snooze on a card uses the default time. Long press it for the other times. These settings apply to every device.</string>
+    <string name="snooze_times">Times, comma separated (15m, 4h, 2d)</string>
+    <string name="snooze_default">Default</string>
+    <string name="snooze_save">Save snooze times</string>
+    <string name="snooze_saved">Saved.</string>
+    <string name="snooze_not_saved">Not saved: %1$s</string>
 </resources>

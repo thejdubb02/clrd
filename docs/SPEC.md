@@ -473,7 +473,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 - Kotlin, Jetpack Compose, minSdk 26, no Google Play Services (F-Droid).
 - Foreground service holds the WebSocket; reconnect with backoff; stores last seq in Room/DataStore.
 - Each open notification = one system notification, `tag` = notification id.
-  `setDeleteIntent` -> POST `/dismiss`. Buttons ACK, SNOOZE 1H, CLEAR.
+  `setDeleteIntent` -> POST `/dismiss`. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR.
 - Incoming `dismissed`/`resolved` event -> `NotificationManager.cancel(tag)`. That is the headline feature.
 - Inbox screen per the brand board: filter pills by topic, swipe to clear with green reveal, tabs Inbox, Snoozed, Cleared, Settings.
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.

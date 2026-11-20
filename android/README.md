@@ -31,7 +31,7 @@ These builds are signed with the project's own key, not a debug key and not F-Dr
 - `SyncService` is a foreground service holding a WebSocket to `/api/v1/ws?since=<last seq>` (docs/SPEC.md section 3). It reconnects with jittered exponential backoff (1 s up to 60 s) and right away when the network comes back.
 - Events replayed after a reconnect are merged per notification until the server sends `ready`, so a phone that was offline does not buzz for alerts that were already cleared elsewhere.
 - Rows live in a Room database with the last applied seq, written in the same transaction.
-- Every tap (Ack, Snooze 1h, Clear, swipe) is saved to a local queue first, applied on screen at once, then sent. Anything that could not be sent goes out before the next WebSocket connect, so an action taken offline is not lost.
+- Every tap (Ack, Snooze, Clear, swipe) is saved to a local queue first, applied on screen at once, then sent. Anything that could not be sent goes out before the next WebSocket connect, so an action taken offline is not lost.
 - Each open notification is one system notification with `tag` = notification id. Swiping it away calls the server's `dismiss`. A `dismissed` or `resolved` event from the server cancels it.
 - Channels by priority: p1 min, p2 low, p3 default, p4 and p5 high.
 
