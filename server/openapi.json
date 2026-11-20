@@ -873,7 +873,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
-    "description": "Give topic or ids, not both.",
+    "description": "Give topic or ids, not both. Every state change also takes an optional via (docs/SPEC.md section 5).",
     "requestBody": {
      "required": true,
      "content": {
@@ -881,6 +881,10 @@
        "schema": {
         "type": "object",
         "properties": {
+         "via": {
+          "type": "string",
+          "description": "How the clear was made, recorded on each state event"
+         },
          "topic": {
           "type": "string"
          },
@@ -4345,6 +4349,10 @@
      },
      "notification": {
       "$ref": "#/components/schemas/Notification"
+     },
+     "via": {
+      "type": "string",
+      "description": "On a state event: how the change was made (app, tray_button, web, mcp, api, ...). See docs/SPEC.md section 5."
      },
      "epoch": {
       "type": "string",

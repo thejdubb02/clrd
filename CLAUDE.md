@@ -6,7 +6,7 @@ Public open-source project: self-hosted notification server + Android app (F-Dro
 
 - Name: clrd. License Apache-2.0.
 - Server: Go, single binary, SQLite (WAL), WebSocket for live sync, web UI embedded in the binary.
-- Android: Kotlin. Swipe detection via `NotificationCompat.Builder.setDeleteIntent()`. No Google Play Services dependency (F-Droid). UnifiedPush/FCM optional later.
+- Android: Kotlin. A swipe in the notification shade only hides it on that phone (Justin, 2026-11-20, #265); clearing happens in the app, web or API. No Google Play Services dependency (F-Droid). UnifiedPush/FCM optional later.
 - State model: notifications have server-owned state (active, dismissed, acknowledged, resolved, snoozed). Every change is an event with a monotonic sequence number; clients replay from their last sequence on reconnect.
 - Goal: cover ntfy's features, including an ntfy-compatible publish endpoint.
 - First milestone is the sync proof (two phones + web, dismiss from each, offline catch-up) before any polish.

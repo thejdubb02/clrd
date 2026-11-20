@@ -74,7 +74,7 @@
     <string name="topic_muted">muted</string>
     <string name="topic_on">on</string>
     <string name="stack">Stack by topic</string>
-    <string name="stack_explain">Notifications from the same topic fold into one stack in the phone\'s notification shade. Swiping the stack away clears all of them everywhere.</string>
+    <string name="stack_explain">Notifications from the same topic fold into one stack in the phone\'s notification shade. Swiping a notification or stack away only hides it on this phone; clear it in the app to clear it everywhere.</string>
     <!-- Group summary in the tray: how many notifications a topic's stack holds. -->
     <plurals name="tray_stack">
         <item quantity="one">%1$d notification</item>

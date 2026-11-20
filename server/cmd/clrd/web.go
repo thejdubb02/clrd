@@ -191,7 +191,7 @@ func (a webAPI) Act(r *http.Request, id, action string, until *time.Time) error 
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	_, err := a.s.Act(r.Context(), tok, id, action, until)
+	_, err := a.s.Act(r.Context(), tok, id, action, "web_form", until) // the inbox's no-script form buttons
 	return err
 }
 
@@ -200,6 +200,6 @@ func (a webAPI) Reply(r *http.Request, id, reply string, seq int64) error {
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	_, err := a.s.Reply(r.Context(), tok, id, reply, seq)
+	_, err := a.s.Reply(r.Context(), tok, id, reply, "web_form", seq)
 	return err
 }

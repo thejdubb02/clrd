@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.room.Room
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.OkHttpClient
+import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -120,14 +121,21 @@ class App : Application() {
      * [server] is the server the tray item came from (null = the inbox, which always shows the current one).
      * An action for a server that is no longer configured is dropped, never sent to the new one, and so is
      * one that waited across a Settings switch.
+     * [via] says how the person did it (docs/SPEC.md "via"), so the server log can answer "I did not clear that".
      */
-    fun act(id: String, action: String, body: String = "{}", server: String? = null, done: () -> Unit = {}) =
-        actAll(listOf(id), action, body, server, done)
+    fun act(id: String, action: String, body: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) =
+        actAll(listOf(id), action, body, server, via, done)
 
-    /** Swiping a topic's stack away (#108): every row it held, queued together so they go out as one clear call. */
-    fun dismissAll(ids: List<String>, server: String?, done: () -> Unit = {}) = actAll(ids, "dismiss", "{}", server, done)
+    /**
+     * Rows swiped out of the shade (#265). A swipe, a stack swipe or Clear all only hides them on this
+     * phone; clearing happens in the app, the web or the API. A new alert for one shows it again.
+     */
+    var trayHidden: Set<String>
+        get() = prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
+        set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
 
-    private fun actAll(ids: List<String>, action: String, body: String, server: String?, done: () -> Unit) {
+    private fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
+        val body = JSONObject(rawBody).put("via", via).toString()
         val gen = configGen // read now, not when the save runs
         acts.execute {
             try {
@@ -177,6 +185,10 @@ class App : Application() {
 
     companion object {
         fun of(ctx: Context) = ctx.applicationContext as App
+
+        // How an action was made, sent as "via" (docs/SPEC.md).
+        const val VIA_APP = "app"
+        const val VIA_TRAY_BUTTON = "tray_button"
     }
 }
 

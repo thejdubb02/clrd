@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -38,13 +39,6 @@ class TrayRaceTest {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         app.serverUrl = "https://a.example"
         app.token = "" // not configured, so nothing here touches the network
-    }
-
-    /** Room refuses the main thread, which is the Robolectric test thread. */
-    private fun <T> bg(f: () -> T): T {
-        var r: Result<T>? = null
-        Thread { r = runCatching(f) }.apply { start(); join(60_000) } // the first Room open in a JVM is slow on CI
-        return checkNotNull(r) { "background step still running after 60 s" }.getOrThrow()
     }
 
     private fun drainIo() {
@@ -182,7 +176,7 @@ class TrayRaceTest {
 
     @Test fun aTapOnATrayItemFromBeforeTheServerExtraIsSaved() {
         bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
-        app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_DISMISS).putExtra(Tray.EXTRA_ID, "a"))
+        app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_CLEAR).putExtra(Tray.EXTRA_ID, "a"))
         shadowOf(Looper.getMainLooper()).idle()
         drainIo()
         assertEquals(listOf("dismiss"), bg { dao.pending().map { it.action } })
@@ -208,24 +202,26 @@ class TrayRaceTest {
         }
     }
 
-    private fun swipe(id: String) {
-        tray(id)!!.deleteIntent.send()
+    private fun clearTap(id: String) {
+        tray(id)!!.actions.single { it.actionIntent.let { pi -> shadowOf(pi).savedIntent.action == Tray.ACTION_CLEAR } }.actionIntent.send()
         shadowOf(Looper.getMainLooper()).idle()
         drainIo()
     }
 
-    @Test fun swipeAfterServerSwitchIsDropped() {
+    @Test fun aClearTapAfterServerSwitchIsDropped() {
         bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
         app.serverUrl = "https://b.example" // the tray item still belongs to server a
-        swipe("a")
+        clearTap("a")
         assertTrue(bg { dao.pending().isEmpty() })
         assertEquals(Notif.ACTIVE, bg { dao.openNow().single().state })
     }
 
-    @Test fun swipeOnTheSameServerIsSaved() {
+    @Test fun aClearTapOnTheSameServerIsSaved() {
         bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
-        swipe("a")
-        assertEquals(listOf("dismiss"), bg { dao.pending().map { it.action } })
+        clearTap("a")
+        val p = bg { dao.pending().single() }
+        assertEquals("dismiss", p.action)
+        assertEquals(App.VIA_TRAY_BUTTON, JSONObject(p.body).getString("via"))
     }
 
     @Test fun aTapIsSavedWhileIoIsBusy() {
@@ -317,7 +313,35 @@ class TrayRaceTest {
         assertEquals("reply", p.action)
         assertEquals("yes", JSONObject(p.body).getString("reply"))
         assertEquals(4L, JSONObject(p.body).getLong("seq")) // so the server refuses it if the question changed meanwhile
+        assertEquals(App.VIA_TRAY_BUTTON, JSONObject(p.body).getString("via"))
         assertEquals(Notif.ACKNOWLEDGED, bg { dao.openNow().single().state })
+    }
+
+    @Test fun aSingleSwipeOnlyHidesItHere() { // #265: clearing happens in the app, never by a swipe
+        bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        tray("a")!!.deleteIntent.send()
+        nm.cancel("a", 0) // what the shade did
+        shadowOf(Looper.getMainLooper()).idle()
+        drainIo()
+        assertEquals(emptyList<Pending>(), bg { dao.pending() })
+        assertEquals(Notif.ACTIVE, bg { dao.openNow().single().state })
+        app.tray.reconcile(bg { dao.openNow() }, emptySet())
+        assertNull("a resync must not bring it back", tray("a"))
+    }
+
+    @Test fun oneGestureThatClearsManyOnlyHidesThemHere() { // #265: one bundle swipe fired 6 deletes across 3 topics
+        val rows = (1..6).map { row("n$it", Notif.ACTIVE, 1).copy(topic = "t${it % 3}") }
+        bg { RoomStore(app).apply(rows, 1) }
+        rows.forEach { tray(it.id)!!.deleteIntent.send() }
+        nm.cancelAll() // what the shade did
+        shadowOf(Looper.getMainLooper()).idle()
+        drainIo()
+        assertEquals(emptyList<Pending>(), bg { dao.pending() }) // nothing dismissed on the server
+        assertEquals(6, bg { dao.openNow() }.size) // still open in the inbox
+        app.tray.reconcile(bg { dao.openNow() }, emptySet())
+        assertTrue("a resync must not bring them back", rows.all { tray(it.id) == null })
+        bg { RoomStore(app).apply(listOf(rows[0].copy(seq = 2, updatedAt = 2)), 2) } // a new alert for one
+        assertNotNull(tray("n1"))
     }
 
     @Test fun anOlderPostKeepsItsOwnVersion() {

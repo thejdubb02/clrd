@@ -337,6 +337,16 @@ class SyncClientTest {
         assertTrue(store.queue.isEmpty())
     }
 
+    @Test fun aClearRunKeepsOneVia() { // #267: each clear call is logged the way it was made
+        store.queue += Pending(1, "a", "dismiss", """{"via":"tray_button"}""")
+        store.queue += Pending(2, "b", "dismiss", """{"via":"tray_button"}""")
+        store.queue += Pending(3, "c", "dismiss", """{"via":"app"}""") // another gesture: its own call
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(listOf("/api/v1/notifications/clear", "/api/v1/notifications/c/dismiss"), posts)
+        assertEquals("""{"ids":["a","b"],"via":"tray_button"}""", server.takeRequest().body.readUtf8())
+        assertEquals("""{"via":"app"}""", server.takeRequest().body.readUtf8())
+    }
+
     @Test fun aFailedPartialSaveIsRetried() {
         store.failOnce = true
         onConnect = { n, ws -> if (n == 1) ws.send(ev(1, "a", "active")) } // and no `ready` yet

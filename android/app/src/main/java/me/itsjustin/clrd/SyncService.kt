@@ -123,23 +123,26 @@ class BootReceiver : BroadcastReceiver() {
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val server = intent.getStringExtra(Tray.EXTRA_SERVER) // null on items posted before it was added: the current server
-        if (intent.action == Tray.ACTION_DISMISS_STACK) {
-            val ids = intent.getStringArrayExtra(Tray.EXTRA_IDS)?.toList() ?: return
-            val r = goAsync()
-            App.of(ctx).dismissAll(ids, server) { r.finish() }
+        val app = App.of(ctx)
+        if (intent.action == Tray.ACTION_DISMISS_STACK) { // a stack swiped away: hide here only (#265)
+            app.trayHidden += intent.getStringArrayExtra(Tray.EXTRA_IDS).orEmpty()
             return
         }
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
+        if (intent.action == Tray.ACTION_DISMISS) { // a swipe or Clear all: hide here only, never a clear (#265)
+            app.trayHidden += id
+            return
+        }
         val (action, body) = when (intent.action) {
             Tray.ACTION_ACK -> "ack" to "{}"
             Tray.ACTION_SNOOZE -> "snooze" to Snooze.body(App.of(ctx).snooze.value.default)
-            Tray.ACTION_DISMISS -> "dismiss" to "{}"
+            Tray.ACTION_CLEAR -> "dismiss" to "{}"
             // seq = the version the person saw: if the question changed since, the server answers 409 and the tap is dropped
             Tray.ACTION_REPLY -> "reply" to JSONObject().put("reply", intent.getStringExtra(Tray.EXTRA_REPLY) ?: return)
                 .put("seq", intent.getLongExtra(Tray.EXTRA_SEQ, 0)).toString()
             else -> return
         }
         val r = goAsync() // keep the process alive until the action is saved (and probably sent)
-        App.of(ctx).act(id, action, body, server) { r.finish() }
+        App.of(ctx).act(id, action, body, server, App.VIA_TRAY_BUTTON) { r.finish() }
     }
 }

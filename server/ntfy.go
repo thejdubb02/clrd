@@ -532,9 +532,9 @@ func (s *Server) handleNtfyIgnored(w http.ResponseWriter, r *http.Request, tok *
 func (s *Server) ntfyAct(action string) func(http.ResponseWriter, *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		tok, topic, sid := s.ntfyAuth(r), r.PathValue("topic"), r.PathValue("sid")
-		n, err := s.ActByKey(r.Context(), tok, topic, sid, action)
+		n, err := s.ActByKey(r.Context(), tok, topic, sid, action, "ntfy")
 		if isNotFound(err) {
-			n, err = s.act(r.Context(), tok, action, nil, false, `id = ? AND topic = ?`, sid, topic)
+			n, err = s.act(r.Context(), tok, action, "ntfy", nil, false, `id = ? AND topic = ?`, sid, topic)
 		}
 		if err != nil {
 			return err

@@ -368,7 +368,11 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 		if err := saveNotification(tx, n); err != nil {
 			return err
 		}
-		raw, err := json.Marshal(Event{Seq: seq, Type: typ, Notification: n})
+		ev := Event{Seq: seq, Type: typ, Notification: n}
+		if typ == EventState {
+			ev.Via = "ntfy_import"
+		}
+		raw, err := json.Marshal(ev)
 		if err != nil {
 			return err
 		}

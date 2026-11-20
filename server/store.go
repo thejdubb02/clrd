@@ -193,8 +193,22 @@ type Event struct {
 	Seq          int64         `json:"seq"`
 	Type         string        `json:"type"`
 	Notification *Notification `json:"notification"`
-	Raw          []byte        `json:"-"`
-	replied      bool          // a reply button was tapped: the "action" hook event
+	// Via says how a state change was made (docs/SPEC.md section 5 lists the values), so a
+	// report like "the phone cleared it and I did not" can be answered from the log (#265).
+	Via     string `json:"via,omitempty"`
+	Raw     []byte `json:"-"`
+	replied bool   // a reply button was tapped: the "action" hook event
+}
+
+// viaRe bounds the client's label: it is stored and sent to every device.
+var viaRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+
+// cleanVia keeps a well-formed label from the client, else def. A bad label never blocks the action.
+func cleanVia(v, def string) string {
+	if viaRe.MatchString(v) {
+		return v
+	}
+	return def
 }
 
 var topicRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
@@ -397,6 +411,10 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 		return nil, err
 	}
 	for _, e := range evs {
+		if e.Type == EventState { // one line per change, so the server log alone shows who cleared what and how
+			n := e.Notification
+			s.log.Info("state", "seq", e.Seq, "id", n.ID, "topic", n.Topic, "state", n.State, "by", n.StateBy, "by_id", n.StateByID, "via", e.Via)
+		}
 		s.seq.Store(e.Seq)
 		s.hub.publish(e)
 	}
@@ -499,7 +517,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		if in.ExternalID == "" {
 			return nil, errf(400, "bad_request", "status resolved needs an external_id")
 		}
-		return s.ActByKey(ctx, tok, in.Topic, in.ExternalID, "resolve")
+		return s.ActByKey(ctx, tok, in.Topic, in.ExternalID, "resolve", "publish")
 	}
 	if in.Priority == 0 {
 		in.Priority = 3
@@ -695,8 +713,9 @@ var actionState = map[string]string{"ack": Acknowledged, "snooze": Snoozed, "dis
 
 // Act applies a state change to the notification with the given id.
 // until is required for snooze.
-func (s *Server) Act(ctx context.Context, tok *Token, id, action string, until *time.Time) (*Notification, error) {
-	return s.act(ctx, tok, action, until, false, `id = ?`, id)
+// via is how the person made the change (see [Event.Via]).
+func (s *Server) Act(ctx context.Context, tok *Token, id, action, via string, until *time.Time) (*Notification, error) {
+	return s.act(ctx, tok, action, via, until, false, `id = ?`, id)
 }
 
 // Edit replaces the message of an open notification in place: same id, same
@@ -739,12 +758,12 @@ func (s *Server) Edit(ctx context.Context, tok *Token, id, message string) (*Not
 }
 
 // ActByKey applies ack or resolve to the open notification with topic and external_id.
-func (s *Server) ActByKey(ctx context.Context, tok *Token, topic, externalID, action string) (*Notification, error) {
-	return s.act(ctx, tok, action, nil, true, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
+func (s *Server) ActByKey(ctx context.Context, tok *Token, topic, externalID, action, via string) (*Notification, error) {
+	return s.act(ctx, tok, action, via, nil, true, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 		topic, externalID)
 }
 
-func (s *Server) act(ctx context.Context, tok *Token, action string, until *time.Time, byKey bool, where string, args ...any) (*Notification, error) {
+func (s *Server) act(ctx context.Context, tok *Token, action, via string, until *time.Time, byKey bool, where string, args ...any) (*Notification, error) {
 	if tok == nil {
 		return nil, errf(401, "unauthorized", noToken)
 	}
@@ -765,7 +784,7 @@ func (s *Server) act(ctx context.Context, tok *Token, action string, until *time
 			return nil, err
 		}
 		out = n
-		ev, err := transition(n, target, tok, until)
+		ev, err := transition(n, target, tok, via, until)
 		if err != nil || ev == nil {
 			return nil, err
 		}
@@ -806,7 +825,7 @@ func checkActions(as []Action) error {
 // acknowledges it. The first answer wins: a second one gets 409. A non-zero
 // seq is the version the device showed; if the row changed since (say the
 // sender put a new question under the same key), the tap gets 409.
-func (s *Server) Reply(ctx context.Context, tok *Token, id, reply string, seq int64) (*Notification, error) {
+func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, seq int64) (*Notification, error) {
 	if tok == nil {
 		return nil, errf(401, "unauthorized", noToken)
 	}
@@ -832,7 +851,7 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply string, seq in
 		}
 		n.Reply, n.State, n.SnoozeUntil = reply, Acknowledged, nil
 		n.setBy(tok)
-		return []Event{{Type: EventState, Notification: n, replied: true}}, nil
+		return []Event{{Type: EventState, Notification: n, Via: via, replied: true}}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -853,7 +872,7 @@ func (n *Notification) setBy(t *Token) { n.StateBy, n.StateByID = t.Name, t.ID }
 
 // transition is the one place state rules live. It mutates n and returns
 // the event to log, or nil when nothing changes (same state again).
-func transition(n *Notification, target string, by *Token, until *time.Time) (*Event, error) {
+func transition(n *Notification, target string, by *Token, via string, until *time.Time) (*Event, error) {
 	switch {
 	case target == n.State && target != Snoozed:
 		return nil, nil
@@ -871,11 +890,11 @@ func transition(n *Notification, target string, by *Token, until *time.Time) (*E
 		u := until.UTC().Truncate(time.Millisecond)
 		n.SnoozeUntil = &u
 	}
-	return &Event{Type: EventState, Notification: n}, nil
+	return &Event{Type: EventState, Notification: n, Via: via}, nil
 }
 
 // Clear dismisses every open notification in topic, or the given ids.
-func (s *Server) Clear(ctx context.Context, tok *Token, topic string, ids []string) (int, error) {
+func (s *Server) Clear(ctx context.Context, tok *Token, topic string, ids []string, via string) (int, error) {
 	if (topic == "") == (len(ids) == 0) {
 		return 0, errf(400, "bad_request", "give topic or ids, not both")
 	}
@@ -900,7 +919,7 @@ func (s *Server) Clear(ctx context.Context, tok *Token, topic string, ids []stri
 			if tok.need(ScopeRead, n.Topic) != nil {
 				continue
 			}
-			ev, _ := transition(n, Dismissed, tok, nil)
+			ev, _ := transition(n, Dismissed, tok, via, nil)
 			evs = append(evs, *ev)
 		}
 		return evs, nil
@@ -915,7 +934,7 @@ func (s *Server) wakeSnoozed(ctx context.Context) error {
 			WHERE state = 'snoozed' AND snooze_until <= ? AND (expires_at IS NULL OR expires_at > ?)`, ms(time.Now()), ms(time.Now()))
 		var evs []Event
 		for _, n := range ns {
-			ev, _ := transition(n, Active, &Token{Name: "server"}, nil)
+			ev, _ := transition(n, Active, &Token{Name: "server"}, "snooze_end", nil)
 			evs = append(evs, *ev)
 		}
 		return evs, err
@@ -952,7 +971,7 @@ func (s *Server) expireDue(ctx context.Context) error {
 		var evs []Event
 		for _, n := range ns {
 			n.ExpiresAt = nil // done: a reopen must not expire it again at once
-			ev, _ := transition(n, Resolved, &Token{Name: "server"}, nil)
+			ev, _ := transition(n, Resolved, &Token{Name: "server"}, "expired", nil)
 			evs = append(evs, *ev)
 		}
 		return evs, err
@@ -1222,7 +1241,7 @@ func (s *Server) SetTopicCheckin(ctx context.Context, tok *Token, topic string, 
 		if err != nil {
 			return nil, err
 		}
-		ev, err := transition(n, Resolved, serverToken, nil)
+		ev, err := transition(n, Resolved, serverToken, "checkin", nil)
 		if ev == nil {
 			return nil, err
 		}
@@ -1270,7 +1289,7 @@ func (s *Server) checkIn(ctx context.Context, tx *sql.Tx, in PublishInput) (*Eve
 	if err != nil {
 		return nil, err
 	}
-	return transition(n, Resolved, serverToken, nil)
+	return transition(n, Resolved, serverToken, "checkin", nil)
 }
 
 // checkins raises an urgent alert in each topic whose check-in is overdue.

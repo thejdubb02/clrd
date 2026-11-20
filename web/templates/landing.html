@@ -6,7 +6,7 @@
 <section class="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-4 pt-12 pb-14 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14 lg:py-22">
   <div>
     <h1 class="text-foreground mb-6 max-w-[9ch] text-[44px]/[0.98] font-semibold tracking-[-0.05em] sm:text-7xl/[0.98]">Dismiss once. Gone everywhere.</h1>
-    <p class="max-w-[34em] text-lg/relaxed">clrd is a self-hosted notification server. Send an alert with one HTTP call. It lands on your phone, your tablet and the web inbox. Swipe it away on any of them and it clears on all the others.</p>
+    <p class="max-w-[34em] text-lg/relaxed">clrd is a self-hosted notification server. Send an alert with one HTTP call. It lands on your phone, your tablet and the web inbox. Clear it on any of them and it clears on all the others.</p>
     <p class="mt-7 mb-5 flex flex-wrap gap-2">
       <a class="btn" data-variant="primary" data-size="lg" href="#self-host">Self-host clrd</a>
       <a class="btn" data-variant="outline" data-size="lg" href="{{base}}/docs/">Read the docs</a>
@@ -25,7 +25,7 @@
       {{template "follower" "web inbox"}}
       {{template "follower" "tablet"}}
     </div>
-    <figcaption id="demo-cap" class="text-muted-foreground mt-3.5 text-sm">Swiped away on the phone. The web inbox and the tablet clear in the same second.</figcaption>
+    <figcaption id="demo-cap" class="text-muted-foreground mt-3.5 text-sm">Swiped away in the phone app. The web inbox and the tablet clear in the same second.</figcaption>
   </figure>
 </section>
 
@@ -36,7 +36,7 @@
       <ol class="mt-5 grid list-decimal gap-3.5 ps-5 marker:font-mono marker:text-sm marker:text-muted-foreground [&_strong]:text-foreground [&_strong]:font-semibold">
         <li><strong>Send.</strong> A script, a monitor or an AI agent posts an alert to a topic.</li>
         <li><strong>It arrives everywhere.</strong> Every phone, tablet and browser signed in to that topic shows it. Adding a device is one QR code scan.</li>
-        <li><strong>Clear it anywhere.</strong> Swipe it on the phone, click Clear on the web, or let the sender resolve it when the fault is fixed.</li>
+        <li><strong>Clear it anywhere.</strong> Swipe it in the phone app, click Clear on the web, or let the sender resolve it when the fault is fixed.</li>
         <li><strong>Every device follows.</strong> The server owns the state, so the alert leaves every inbox and every phone tray.</li>
       </ol>
     </div>
@@ -54,7 +54,7 @@
   <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="states">More than read and unread</h2>
   <p class="mt-2 mb-8 max-w-[60ch] text-lg">Four states, all synced, all with the device that set them.</p>
   <dl class="grid border-t sm:grid-cols-2 lg:grid-cols-4 [&>div]:grid [&>div]:content-start [&>div]:gap-3 [&>div]:border-b [&>div]:py-5 sm:[&>div]:pe-5 lg:[&>div]:border-b-0 lg:[&>div+div]:border-s lg:[&>div+div]:ps-5">
-    <div><dt><span class="badge" data-state="dismissed">Cleared</span></dt><dd>You swiped it away. Gone from every device.</dd></div>
+    <div><dt><span class="badge" data-state="dismissed">Cleared</span></dt><dd>You cleared it. Gone from every device.</dd></div>
     <div><dt><span class="badge" data-state="acknowledged">Acknowledged</span></dt><dd>Someone is on it. It stays in the inbox and stops buzzing.</dd></div>
     <div><dt><span class="badge" data-state="resolved">Resolved</span></dt><dd>The sender cleared it because the fault is fixed. Monitors close their own alerts by id.</dd></div>
     <div><dt><span class="badge" data-state="snoozed">Snoozed</span></dt><dd>Hidden until a time you pick, then it comes back and notifies again.</dd></div>
@@ -118,7 +118,7 @@
       <table class="mt-3 w-full border-collapse text-sm [&_td]:border-b [&_td]:py-3 [&_td]:pe-3 [&_td]:align-top [&_th]:border-b [&_th]:py-3 [&_th]:pe-3 [&_th]:text-start [&_th]:align-top [&_tbody_th]:text-foreground [&_tbody_th]:w-[44%] [&_tbody_th]:font-medium [&_thead_th]:meta [&_thead_th]:font-normal [&_.yes]:text-clear [&_.yes]:font-medium">
         <thead><tr><th scope="col"><span class="sr-only">Situation</span></th><th scope="col">ntfy</th><th scope="col">clrd</th></tr></thead>
         <tbody>
-          <tr><th scope="row">You swipe an alert away on one device</th><td>The others keep it</td><td class="yes">Gone everywhere</td></tr>
+          <tr><th scope="row">You clear an alert on one device</th><td>The others keep it</td><td class="yes">Gone everywhere</td></tr>
           <tr><th scope="row">The sender clears an alert</th><td class="yes">Gone everywhere</td><td class="yes">Gone everywhere</td></tr>
           <tr><th scope="row">Someone takes an alert</th><td>No shared state</td><td class="yes">Acknowledged, with who</td></tr>
           <tr><th scope="row">A phone was offline</th><td>Catches up on messages</td><td class="yes">Catches up on messages and clears</td></tr>

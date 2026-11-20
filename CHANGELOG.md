@@ -9,7 +9,21 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ## Unreleased
 
+### Fixed
+
+- Android: swiping a notification out of the phone's notification shade (one,
+  a stack, or Clear all) no longer clears it on every device. It only hides it
+  on this phone, and it stays open in the inbox. Clear it in the app, on the
+  web, or with the notification's Clear button. Before, one swipe on a bundle
+  could clear every notification everywhere (#265).
+
 ### Added
+
+- Server: every state change now records how it was made (`via`: the Android
+  inbox, a tray button, the web inbox, an agent, ntfy, or the
+  server itself), on the event and as one log line per change, so "I never
+  cleared that" can be answered from the log. The Android app and the web inbox
+  send it (#267, #265).
 
 - Docs: the README and landing page now open with the out-of-box path (one
   setting, the setup link, linking the phone by QR, send), point to the clrd F-Droid repo
@@ -40,8 +54,7 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: the app trusts certificate authorities you install in Android
   settings, so a server behind your own home-lab CA works over HTTPS.
 - Android: notifications from the same topic stack together in the phone's
-  notification shade, and swiping a stack away clears all of them on every
-  device. Turn it off in Settings with "Stack by topic".
+  notification shade. Turn it off in Settings with "Stack by topic".
 - Web: a "Stack by topic" setting (off by default, kept per browser). With it
   on, two or more notifications from one topic show as one card with a count
   and the newest title; tap it to see them all, or clear them all at once.

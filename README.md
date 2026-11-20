@@ -14,8 +14,9 @@
 </p>
 
 Send an alert with one HTTP call. It shows up on your Android phone, your tablet
-and the web inbox. Clear it on any one of them (swipe on a phone, Clear on the
-web) and it clears on all the others. When the problem fixes itself, the sender resolves it and it clears
+and the web inbox. Clear it on any one of them (in the phone app, or Clear on
+the web) and it clears on all the others. Swiping a phone notification away
+only hides it on that phone. When the problem fixes itself, the sender resolves it and it clears
 everywhere without anyone touching it.
 
 Getting started needs one setting: start it with `CLRD_BASE_URL` set to the
@@ -41,9 +42,9 @@ an AI agent can set them up without a person clicking through Settings.
 ## Why clrd
 
 [ntfy](https://github.com/binwiederhier/ntfy) is great, and clrd speaks its
-protocol. The gap it fills: in ntfy, when you swipe a notification away on one
+protocol. The gap it fills: in ntfy, when you clear a notification on one
 device, your other devices keep it. clrd keeps every notification's state on
-the server, so a dismissal anywhere clears it everywhere, and a phone that was
+the server, so a clear anywhere clears it everywhere, and a phone that was
 offline catches up the moment it reconnects.
 
 ## Features
