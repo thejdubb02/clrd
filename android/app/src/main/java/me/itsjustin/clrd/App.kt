@@ -60,6 +60,16 @@ class App : Application() {
         get() = prefs.getString("epoch", "").orEmpty()
         set(v) = prefs.edit().putString("epoch", v).apply()
 
+    /** The shared snooze times, as the server last sent them (every connect sends them). */
+    val snooze by lazy { MutableStateFlow(prefs.getString("snooze", null)?.let { runCatching { Snooze.from(org.json.JSONObject(it)) }.getOrNull() } ?: Snooze()) }
+
+    /** Keeps the snooze part of a server `settings` message. */
+    fun saveSettings(o: org.json.JSONObject) {
+        val s = Snooze.from(o) ?: return
+        prefs.edit().putString("snooze", s.json()).apply()
+        snooze.value = s
+    }
+
     val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
 
     fun api() = Api(http, serverUrl, token)

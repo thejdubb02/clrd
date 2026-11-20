@@ -19,7 +19,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +53,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -88,6 +95,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -390,7 +398,7 @@ private fun Home(app: App, battery: Intent?, scan: () -> Unit) {
                             else Swipeable(n, onClear = { clear(n) }) {
                                 Card(n) {
                                     if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text(stringResource(R.string.ack), color = b.ink) }
-                                    if (tab == Tab.Inbox) TextButton(onClick = { app.act(n.id, "snooze", """{"for":"1h"}""") }) { Text(stringResource(R.string.snooze_1h), color = b.ink) }
+                                    if (tab == Tab.Inbox) SnoozeButton(app, n.id)
                                     TextButton(onClick = { clear(n) }) { Text(stringResource(R.string.clear), color = b.clear, fontWeight = FontWeight.SemiBold) }
                                 }
                             }
@@ -611,6 +619,64 @@ private fun Empty(tab: Tab) {
     }
 }
 
+/** Tap snoozes for the default time; a long press offers the other saved times, like the web (#193). */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SnoozeButton(app: App, id: String) {
+    val b = LocalBrand.current
+    val s by app.snooze.collectAsState()
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        Text(
+            stringResource(R.string.snooze_for, snoozeLabel(s.default)), color = b.ink, style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                .combinedClickable(role = Role.Button, onLongClick = { menu = true }) { app.act(id, "snooze", Snooze.body(s.default)) }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        )
+        DropdownMenu(menu, { menu = false }) {
+            s.times.forEach { t ->
+                DropdownMenuItem(text = { Text(snoozeLabel(t)) }, onClick = { menu = false; app.act(id, "snooze", Snooze.body(t)) })
+            }
+        }
+    }
+}
+
+/** The shared snooze times and default, saved on the server for every device (#193). */
+@Composable
+private fun SnoozeSettings(app: App) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    val s by app.snooze.collectAsState()
+    var times by remember(s) { mutableStateOf(s.times.joinToString(", ")) }
+    var def by remember(s) { mutableStateOf(s.default) }
+    var result by remember { mutableStateOf<String?>(null) }
+    val typed = Snooze.parse(times)
+    Spacer(Modifier.height(8.dp))
+    Text(stringResource(R.string.snooze_settings), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(R.string.snooze_explain), color = b.slate, fontSize = 13.sp)
+    OutlinedTextField(times, { times = it }, label = { Text(stringResource(R.string.snooze_times)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    Text(stringResource(R.string.snooze_default), color = b.body, fontSize = 14.sp)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        typed.forEach { t -> FilterChip(selected = t == def, onClick = { def = t }, label = { Text(snoozeLabel(t)) }) }
+    }
+    Button(
+        onClick = {
+            // Without a default from the list the server keeps the old one, or picks the first.
+            val body = org.json.JSONObject().put("snooze_intervals", org.json.JSONArray(typed)).apply { if (def in typed) put("snooze_default", def) }.toString()
+            app.io.execute {
+                result = try {
+                    app.saveSettings(org.json.JSONObject(app.api().put("/api/v1/settings", body)))
+                    ctx.getString(R.string.snooze_saved)
+                } catch (e: Exception) {
+                    ctx.getString(R.string.snooze_not_saved, e.message)
+                }
+            }
+        },
+        colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),
+    ) { Text(stringResource(R.string.snooze_save)) }
+    result?.let { Text(it, color = b.body, fontSize = 14.sp) }
+}
+
 @Composable
 private fun SettingsScreen(app: App, battery: Intent?, scan: () -> Unit) {
     val b = LocalBrand.current
@@ -680,6 +746,7 @@ private fun SettingsScreen(app: App, battery: Intent?, scan: () -> Unit) {
                 }
             }
         }
+        if (app.configured) SnoozeSettings(app)
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.about, BuildConfig.VERSION_NAME), style = Mono, color = b.slate)
     }

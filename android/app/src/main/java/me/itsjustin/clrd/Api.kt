@@ -35,6 +35,8 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
 
     fun get(path: String): String = call(req(path).get())
 
+    fun put(path: String, body: String): String = call(req(path).put(body.toRequestBody(JSON)))
+
     fun action(p: Pending) = post("/api/v1/notifications/${p.notifId}/${p.action}", p.body)
 
     /**

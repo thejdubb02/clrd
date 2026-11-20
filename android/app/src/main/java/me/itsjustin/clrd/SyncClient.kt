@@ -52,6 +52,7 @@ class SyncClient(
     private val api: Api,
     private val store: Store,
     private val onStatus: (Status) -> Unit = {},
+    private val onSettings: (JSONObject) -> Unit = {},
     private val baseDelayMs: Long = 1_000,
     private val flushRetryMs: Long = 30_000,
     private val replayQuietMs: Long = 5_000,
@@ -183,6 +184,7 @@ class SyncClient(
                 endReplay()
             }
             "reset" -> reset()
+            "settings" -> o.optJSONObject("settings")?.let(onSettings) // sent on every connect and on every change
             // Unknown types (pings, future additions) are ignored on purpose.
         }
     }

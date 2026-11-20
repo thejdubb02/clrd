@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: Snooze uses the snooze default from your server settings instead
+  of always 1 hour, a long press on Snooze offers the other saved times, and
+  Settings has a section to change the times and the default for every device.
 - Web: the device list in Settings marks the browser you are using with
   "(this browser)".
 - Web: link previews. With previews on, a message's first link shows a card

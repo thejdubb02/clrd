@@ -92,9 +92,11 @@ class SyncClientTest {
         server.shutdown()
     }
 
+    private val settings = CopyOnWriteArrayList<String>()
+
     private fun start(replayQuietMs: Long = 5_000) {
         val api = Api(http, server.url("/").toString().trimEnd('/'), "tok")
-        client = SyncClient(http, api, store, onStatus = { statuses += it }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
+        client = SyncClient(http, api, store, onStatus = { statuses += it }, onSettings = { settings += it.toString() }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
             .also { it.start() }
     }
 
@@ -120,6 +122,16 @@ class SyncClientTest {
         onConnect = { _, ws -> ws.send("""{"type":"ready","seq":900}""") }
         start()
         await { store.lastSeq() == 900L }
+    }
+
+    @Test fun settingsMessageReachesTheApp() {
+        onConnect = { _, ws ->
+            ws.send("""{"type":"settings","settings":{"snooze_intervals":["15m","2h"],"snooze_default":"2h"}}""")
+            ws.send("""{"type":"ready","seq":0}""")
+        }
+        start()
+        await { SyncClient.Status.CONNECTED in statuses }
+        assertEquals(Snooze("2h", listOf("15m", "2h")), Snooze.from(org.json.JSONObject(settings.single())))
     }
 
     @Test fun liveEventAfterReadyIsAppliedAtOnce() {
