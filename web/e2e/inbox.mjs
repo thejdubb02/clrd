@@ -211,6 +211,30 @@ try {
   await sp.close();
   console.log('ok: snooze default, long press, right click and Settings');
 
+  // The tab shows the open count and follows a change on another device.
+  const titleIs = async (p, t) => { // the page's CSP refuses waitForFunction
+    for (let i = 0; i < 50 && await p.title() !== t; i++) await p.waitForTimeout(100);
+    assert.equal(await p.title(), t);
+  };
+  const tp = await page.context().newPage();
+  await tp.goto(`${base}/app`);
+  const open = Number((await tp.title()).match(/^\((\d+)\) Inbox: clrd$/)?.[1]);
+  assert.ok(open > 0, `no open count in the tab title: ${await tp.title()}`);
+  const tc = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Tab count', message: 'one more' });
+  await titleIs(tp, `(${open + 1}) Inbox: clrd`);
+  await api(phone, `/api/v1/notifications/${tc.id}/dismiss`);
+  await titleIs(tp, `(${open}) Inbox: clrd`);
+  await tp.close();
+  // Two days on, a card shows its date and time, not "2 days ago".
+  const later = await page.context().newPage();
+  await later.clock.setFixedTime(Date.now() + 2 * 86400e3);
+  await later.goto(`${base}/app`);
+  const when = await later.locator('article.card time').first().textContent();
+  assert.match(when, /\d{1,2}:\d{2}/, `old card time has no clock time: ${when}`);
+  assert.doesNotMatch(when, /ago|yesterday/i, `old card time is relative: ${when}`);
+  await later.close();
+  console.log('ok: open count in the tab, full time on older cards');
+
   // A reply button stores the answer for whoever waits on it; the card then shows it.
   const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Merge 212?', message: 'tests pass', actions: [{ label: 'Yes', reply: 'yes' }, { label: 'No', reply: 'no' }] });
   await page.reload();
