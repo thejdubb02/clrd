@@ -26,6 +26,7 @@ func TestSilences(t *testing.T) {
 		{"topic": "door"},
 		{"topic": "door", "for": "-1h"},
 		{"topic": "door", "for": "9000h"},
+		{"topic": "door", "for": "1ns"},
 		{"topic": "door", "for": "1h", "until": time.Now().Add(time.Hour).Format(time.RFC3339)},
 	} {
 		if code, out := call(t, ts, "POST", "/api/v1/silences", admin, bad); code != 400 {
@@ -92,6 +93,10 @@ func TestSilences(t *testing.T) {
 	}
 	if _, out := call(t, ts, "GET", "/api/v1/silences", other, nil); len(out["silences"].([]any)) != 1 {
 		t.Fatalf("other token sees: %v", out)
+	}
+	pubOnly := mkToken(t, s, "sender", []string{"publish"}, []string{"door"})
+	if code, out := call(t, ts, "GET", "/api/v1/silences", pubOnly, nil); code != 403 {
+		t.Fatalf("publish-only list: %d %v", code, out)
 	}
 	if _, out := call(t, ts, "GET", "/api/v1/silences", admin, nil); len(out["silences"].([]any)) != 2 {
 		t.Fatalf("admin sees: %v", out)

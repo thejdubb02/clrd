@@ -3540,7 +3540,7 @@
   "/api/v1/silences": {
    "get": {
     "summary": "List the active silences",
-    "description": "The silences this token can see: those on its topics and those with no topic. Ended silences are not listed.",
+    "description": "Scope read. The silences on topics this token may read, and those with no topic. Ended silences are not listed.",
     "tags": [
      "notifications"
     ],
@@ -3642,6 +3642,9 @@
     "responses": {
      "204": {
       "description": "Ended"
+     },
+     "403": {
+      "description": "No publish scope on the topic"
      },
      "404": {
       "description": "No such active silence on a topic this token can see"

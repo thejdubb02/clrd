@@ -78,8 +78,9 @@ A **notification**:
 **Silences:** a silence mutes a topic, a tag, or a tag within a topic until a
 set time (`POST /api/v1/silences`). Notifications still arrive, sync and show;
 the server sets `silenced: true` on every event it writes while a silence
-matches (publish, update, snooze wake, check-in), and clients show those
-without sound or vibration. A silence mutes every priority, 5 included. It
+matches (publish, update, snooze wake, check-in), and clients must show those
+without sound or vibration (the Android app and web inbox do not read the
+flag yet). A silence mutes every priority, 5 included. It
 ends by itself; `DELETE` ends it early. Events logged before a server upgrade
 may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
 message at priority 1. Quiet hours on one device are a client setting, not a
@@ -437,7 +438,7 @@ resolved`) and `ntfy_import`.
 | GET | `/api/v1/topics/{topic}/hooks` | The topic's outgoing webhooks (secret hidden, `has_secret` shown). Admin. |
 | PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret"}`, replaces and turns it back on) or remove an outgoing webhook. Admin. |
 | GET | `/api/v1/topics/{topic}/hooks/{name}/deliveries` | The last 100 deliveries, newest first. Admin. |
-| GET | `/api/v1/silences` | Active silences on topics this token can see, plus those with no topic: `{"silences":[{"id","topic","tag","until","comment","created_by","created_at"}]}`. |
+| GET | `/api/v1/silences` | Scope read. Active silences on topics this token may read, plus those with no topic: `{"silences":[{"id","topic","tag","until","comment","created_by","created_at"}]}`. |
 | POST | `/api/v1/silences` | Body `{"topic","tag","for":"8h"}` or `"until":"RFC3339"` instead of `for` (exactly one, at most 8784h ahead), optional `comment`. Needs `topic`, `tag` or both. Returns 201 and the silence. Scope publish on the topic; no topic (every topic) needs a token without a topic list. |
 | DELETE | `/api/v1/silences/{id}` | End a silence early. Same scope as creating it. 204. |
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |

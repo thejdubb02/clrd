@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"time"
+	"unicode/utf8"
 )
 
 // Silence mutes a topic, a tag, or a tag within a topic until a set time
@@ -69,13 +70,16 @@ func activeSilences(ctx context.Context, q interface {
 
 func (s *Server) silenceRoutes() {
 	s.api("GET /api/v1/silences", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		if err := tok.need(ScopeRead, ""); err != nil {
+			return err
+		}
 		all, err := activeSilences(r.Context(), s.db, time.Now())
 		if err != nil {
 			return err
 		}
 		out := []Silence{}
 		for _, sl := range all {
-			if sl.Topic == "" || tok.Allows(sl.Topic) {
+			if tok.may(ScopeRead, sl.Topic) {
 				out = append(out, sl)
 			}
 		}
@@ -98,7 +102,7 @@ func (s *Server) silenceRoutes() {
 				return err
 			}
 		}
-		if len(in.Tag) > 64 || len(in.Comment) > 256 {
+		if utf8.RuneCountInString(in.Tag) > 64 || utf8.RuneCountInString(in.Comment) > 256 {
 			return errf(400, "bad_request", "tag is at most 64 characters, comment at most 256")
 		}
 		if err := tok.needSilence(in.Topic); err != nil {
@@ -114,10 +118,11 @@ func (s *Server) silenceRoutes() {
 			}
 			until = t.Add(d)
 		case in.For == "" && in.Until != nil:
-			until = in.Until.UTC().Truncate(time.Millisecond)
+			until = *in.Until
 		default:
 			return errf(400, "bad_request", `give exactly one of "for" (like "2h") or "until" (RFC3339)`)
 		}
+		until = until.UTC().Truncate(time.Millisecond) // as stored, so "1ns" is not a silence that never matches
 		if !until.After(t) || until.Sub(t) > maxSilence {
 			return errf(400, "bad_request", "a silence must end in the future and within 8784h")
 		}
