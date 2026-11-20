@@ -87,7 +87,7 @@ func TestExactCounts(t *testing.T) {
 			t.Fatal(err)
 		}
 		if i > 1 {
-			if _, err := s.Act(ctx, tok, n.ID, "dismiss", nil); err != nil {
+			if _, err := s.Act(ctx, tok, n.ID, "dismiss", "api", nil); err != nil {
 				t.Fatal(err)
 			}
 		}
