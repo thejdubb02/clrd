@@ -24,7 +24,7 @@ data class Snooze(val default: String = "1h", val times: List<String> = listOf("
 
         /** Times typed in Settings, comma separated. "2d" is sent as "48h", the form the server reads (same as the web). */
         fun parse(text: String): List<String> = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-            .map { v -> Regex("""(\d+)d""").matchEntire(v)?.let { "${it.groupValues[1].toLong() * 24}h" } ?: v }
+            .map { v -> Regex("""(\d{1,4})d""").matchEntire(v)?.let { "${it.groupValues[1].toInt() * 24}h" } ?: v }
     }
 }
 

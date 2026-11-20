@@ -16,6 +16,7 @@ class SnoozeTest {
 
     @Test fun typedTimesSendDaysAsHours() {
         assertEquals(listOf("15m", "48h", "4h"), Snooze.parse(" 15m, 2d,,4h "))
+        assertEquals(listOf("99999999999999999999d"), Snooze.parse("99999999999999999999d")) // too big: left for the server to refuse
     }
 
     @Test fun aDefaultOutsideTheListIsIgnored() {

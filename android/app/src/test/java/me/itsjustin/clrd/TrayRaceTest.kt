@@ -59,10 +59,10 @@ class TrayRaceTest {
     @Test fun anOlderEventNeverChangesTheTray() {
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.ACKNOWLEDGED, 10)), 10) }
-        assertEquals(listOf("Snooze 1h", "Clear"), buttons(tray("a")!!))
+        assertEquals(listOf("Snooze", "Clear"), buttons(tray("a")!!))
         bg { store.apply(listOf(row("a", Notif.ACTIVE, 5)), 11) } // replayed late, Room drops it
         assertEquals(Notif.ACKNOWLEDGED, bg { dao.openNow().single().state })
-        assertEquals(listOf("Snooze 1h", "Clear"), buttons(tray("a")!!)) // still no Ack button: the tray did not go back
+        assertEquals(listOf("Snooze", "Clear"), buttons(tray("a")!!)) // still no Ack button: the tray did not go back
     }
 
     @Test fun aQuietSaveDoesNotBuzz() {
@@ -142,9 +142,9 @@ class TrayRaceTest {
     @Test fun resetUpdatesAShowingItem() {
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
-        assertEquals(listOf("Ack", "Snooze 1h", "Clear"), buttons(tray("a")!!))
+        assertEquals(listOf("Ack", "Snooze", "Clear"), buttons(tray("a")!!))
         bg { store.replaceAll(listOf(row("a", Notif.ACKNOWLEDGED, 5)), 5) } // the ack event itself was lost
-        assertEquals(listOf("Snooze 1h", "Clear"), buttons(tray("a")!!))
+        assertEquals(listOf("Snooze", "Clear"), buttons(tray("a")!!))
     }
 
     @Test fun aSentActionRevealsARowReopenedMeanwhile() {

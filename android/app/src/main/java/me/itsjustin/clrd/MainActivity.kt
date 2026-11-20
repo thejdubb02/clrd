@@ -663,9 +663,11 @@ private fun SnoozeSettings(app: App) {
         onClick = {
             // Without a default from the list the server keeps the old one, or picks the first.
             val body = org.json.JSONObject().put("snooze_intervals", org.json.JSONArray(typed)).apply { if (def in typed) put("snooze_default", def) }.toString()
+            val api = app.api() // the server shown now, even if a switch is queued ahead of this save
             app.io.execute {
                 result = try {
-                    app.saveSettings(org.json.JSONObject(app.api().put("/api/v1/settings", body)))
+                    // The server sends the new times to every device, this one too, as a settings message.
+                    api.put("/api/v1/settings", body)
                     ctx.getString(R.string.snooze_saved)
                 } catch (e: Exception) {
                     ctx.getString(R.string.snooze_not_saved, e.message)
