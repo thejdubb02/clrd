@@ -13,7 +13,7 @@ Tested against ntfy v2.38.1.
 | ntfy | clrd |
 |---|---|
 | Access tokens (`tk_...`) | Kept as they are. Bearer, Basic and `?auth=` all work, on the ntfy routes and on clrd's own API. The token's label becomes its device name. |
-| Passwords | Kept (bcrypt hash). `user:password` works on the ntfy routes only; clrd's own API and the web inbox take tokens only. |
+| Passwords | Kept (bcrypt hash). `user:password` works on the ntfy routes only; clrd's own API and the web inbox take tokens only. Ten wrong passwords from one address block passwords from it (429 with `Retry-After`), freeing one try a minute; tokens are never blocked. |
 | Access rules (read-write, read-only, write-only, deny, wildcards) | Per-topic grants, checked in ntfy's order. A write-only topic stays write-only: you can publish to it but not read it. |
 | `everyone` rules and `auth-default-access` | A token named `anonymous`, used only on the ntfy routes and only for requests with no credentials at all. |
 | Admin users | Admin tokens. |

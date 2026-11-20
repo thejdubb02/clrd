@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -108,6 +109,22 @@ func (s *Server) ntfyRoutes() {
 	route := func(pattern string, h func(http.ResponseWriter, *http.Request) error) {
 		s.route(pattern, func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+			if _, _, ok := ntfyPassword(r); ok { // taken before bcrypt, kept only if the password was wrong
+				ip := clientIP(r)
+				if wait := s.pwLimit.take(ip, time.Now()); wait > 0 {
+					return retryAfter(w, wait, "too many wrong passwords from this address, try again later")
+				}
+				var once sync.Once
+				settle := func(wrong bool) { // a right or unchecked password gets its token back
+					once.Do(func() {
+						if !wrong {
+							s.pwLimit.give(ip)
+						}
+					})
+				}
+				defer settle(false)
+				r = r.WithContext(context.WithValue(r.Context(), passwordSettle{}, settle))
+			}
 			return h(w, r)
 		})
 	}

@@ -288,7 +288,8 @@ the session cookie (same-origin only) as well as a Bearer token.
 
 Native (JSON in, JSON out, errors as `{"error":"...","code":"..."}`).
 Codes: `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found`
-404, `conflict` 409, `reset` 410, `internal` 500.
+404, `conflict` 409, `reset` 410, `rate_limited` 429 (with `Retry-After` in
+seconds), `internal` 500.
 
 Notifications always carry every field: `""` for unset strings, `[]` for
 `tags` and `actions`, `null` for `snooze_until`. List returns
