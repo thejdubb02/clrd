@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Run clrd under a sub-path: put the path in `CLRD_BASE_URL`
+  (`https://example.com/clrd`) and the inbox, docs, API and live updates all
+  work there behind your proxy.
 - MCP: new tools `topics`, `get` and `update`, so an agent can see its topics,
   read one notification and edit a progress message in place. The REST API has
   the same edit as `PATCH /api/v1/notifications/{id}`. The MCP guide has setup

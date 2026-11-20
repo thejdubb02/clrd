@@ -45,7 +45,7 @@ func newMD(autolink bool) goldmark.Markdown {
 // formatting is off) shows exactly as sent, with web addresses as links when
 // autolink is on, as on Android. With favicons on, each web link gets its
 // site's icon, fetched by the server (the browser never contacts the site).
-func renderBody(src, format string, snap Snapshot) template.HTML {
+func renderBody(src, format string, snap Snapshot, base string) template.HTML {
 	out := body(src, format, snap.Formatting, snap.Autolink)
 	if !snap.Favicons {
 		return template.HTML(out)
@@ -55,7 +55,7 @@ func renderBody(src, format string, snap Snapshot) template.HTML {
 		if err != nil || u.Hostname() == "" {
 			return a
 		}
-		return `<img class="favicon" src="/api/v1/favicon?host=` + url.QueryEscape(u.Hostname()) + `" alt="" width="16" height="16" loading="lazy">` + a
+		return `<img class="favicon" src="` + base + `/api/v1/favicon?host=` + url.QueryEscape(u.Hostname()) + `" alt="" width="16" height="16" loading="lazy">` + a
 	}))
 }
 

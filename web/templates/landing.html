@@ -9,7 +9,7 @@
     <p class="max-w-[34em] text-lg/relaxed">clrd is a self-hosted notification server. Send an alert with one HTTP call. It lands on your phone, your tablet and the web inbox. Swipe it away on any of them and it clears on all the others.</p>
     <p class="mt-7 mb-5 flex flex-wrap gap-2">
       <a class="btn" data-variant="primary" data-size="lg" href="#self-host">Self-host clrd</a>
-      <a class="btn" data-variant="outline" data-size="lg" href="/docs/">Read the docs</a>
+      <a class="btn" data-variant="outline" data-size="lg" href="{{base}}/docs/">Read the docs</a>
     </p>
     <p class="meta">In early development. The API is settling; expect changes before 1.0.</p>
   </div>
@@ -81,7 +81,7 @@
         <h3 class="text-foreground text-base font-semibold">AI agents (MCP)</h3>
         <p>clrd serves MCP at <code>/mcp</code>. Agents can send, list, acknowledge and resolve, edit a progress message in place, and <code>wait_for_reply</code> lets an agent ask you a yes or no question and wait for your tap. Claude Code and Codex can send their permission prompts to your phone through <code>/mcp/approve</code>.</p>
         <h3 class="text-foreground text-base font-semibold">SDKs</h3>
-        <p>Thin clients for Python, JavaScript and Go wrap the same API. The <a href="/docs/spec">API reference</a> lists every endpoint.</p>
+        <p>Thin clients for Python, JavaScript and Go wrap the same API. The <a href="{{base}}/docs/spec">API reference</a> lists every endpoint.</p>
       </div>
     </div>
 
@@ -129,7 +129,7 @@
     <div>
       <h3 class="text-foreground text-xl font-semibold tracking-[-0.02em]" id="switch">Switch from ntfy in five minutes</h3>
       <p>Stop ntfy, run one command, point its hostname at clrd. Users, passwords, <code>tk_</code> tokens, per-topic access rules, anonymous access, message history and attachments come across, so every script and phone keeps its credentials. Keep ntfy stopped, not deleted, and you can roll back by pointing the hostname back.</p>
-      <p><a href="/docs/migrate-from-ntfy">Migration guide</a></p>
+      <p><a href="{{base}}/docs/migrate-from-ntfy">Migration guide</a></p>
     </div>
     <div>
 <pre tabindex="0" aria-label="Import from ntfy"><code>clrd import ntfy --dry-run \

@@ -3,8 +3,8 @@
 {{template "site-header" .}}
 <div class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-6 px-4 py-8 sm:px-6 md:grid-cols-[200px_minmax(0,1fr)] md:gap-12 md:py-12">
   <nav class="flex gap-1 overflow-x-auto max-md:-mx-4 max-md:px-4 max-md:pb-1 md:sticky md:top-6 md:flex-col" aria-label="Docs">
-    <a class="side-link" href="/docs/"{{if not .Doc.Key}} aria-current="page"{{end}}>Overview</a>
-    {{range .Docs}}<a class="side-link" href="/docs/{{.Key}}"{{if eq .Key $.Doc.Key}} aria-current="page"{{end}}>{{.Title}}</a>
+    <a class="side-link" href="{{base}}/docs/"{{if not .Doc.Key}} aria-current="page"{{end}}>Overview</a>
+    {{range .Docs}}<a class="side-link" href="{{base}}/docs/{{.Key}}"{{if eq .Key $.Doc.Key}} aria-current="page"{{end}}>{{.Title}}</a>
     {{end}}
   </nav>
   <main id="main" class="prose">
@@ -12,7 +12,7 @@
   {{else if eq .Path "/docs/"}}
     <h1>Docs</h1>
     <p>clrd is a self-hosted notification server where a dismissal on one device clears the notification on every device. These pages are rendered from the <code>docs/</code> folder of the repository.</p>
-    <ul>{{range .Docs}}<li><a href="/docs/{{.Key}}">{{.Title}}</a></li>{{end}}</ul>
+    <ul>{{range .Docs}}<li><a href="{{base}}/docs/{{.Key}}">{{.Title}}</a></li>{{end}}</ul>
   {{else}}
     <h1>Page not found</h1>
     <p>There is no doc at this address. Pick one from the list.</p>

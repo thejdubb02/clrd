@@ -1,19 +1,19 @@
 {{define "app"}}{{template "head" .}}<meta name="robots" content="noindex">
-<script src="/static/vendor/basecoat.min.js" defer></script>
-<script src="/static/vendor/command.min.js" defer></script>
-<script src="/static/inbox.js" defer></script>
+<script src="{{base}}/static/vendor/basecoat.min.js" defer></script>
+<script src="{{base}}/static/vendor/command.min.js" defer></script>
+<script src="{{base}}/static/inbox.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
-{{$base := "/app"}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "/app/%s" .View}}{{end}}
+{{$base := printf "%s/app" base}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "%s/app/%s" base .View}}{{end}}
 <div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
-      <a class="side-link" href="/app"{{if eq .View "inbox"}} aria-current="page"{{end}}>{{template "i-inbox"}}Inbox <span class="count">{{.Inbox}}</span></a>
-      <a class="side-link" href="/app/snoozed"{{if eq .View "snoozed"}} aria-current="page"{{end}}>{{template "i-clock"}}Snoozed <span class="count">{{.Snoozed}}</span></a>
-      <a class="side-link" href="/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>{{template "i-check-check"}}Cleared <span class="count">{{.Cleared}}</span></a>
-      <a class="side-link" href="/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>{{template "i-settings"}}Settings</a>
+      <a class="side-link" href="{{base}}/app"{{if eq .View "inbox"}} aria-current="page"{{end}}>{{template "i-inbox"}}Inbox <span class="count">{{.Inbox}}</span></a>
+      <a class="side-link" href="{{base}}/app/snoozed"{{if eq .View "snoozed"}} aria-current="page"{{end}}>{{template "i-clock"}}Snoozed <span class="count">{{.Snoozed}}</span></a>
+      <a class="side-link" href="{{base}}/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>{{template "i-check-check"}}Cleared <span class="count">{{.Cleared}}</span></a>
+      <a class="side-link" href="{{base}}/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>{{template "i-settings"}}Settings</a>
     </nav>
     <nav class="order-3 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-labelledby="topics-h" data-live="topics"{{if not .Snap.Topics}} hidden{{end}}>
       <h2 id="topics-h" class="text-muted-foreground px-2 pb-1 text-xs font-medium max-md:sr-only">Topics</h2>
@@ -70,7 +70,7 @@
   -d '{"topic":"test","message":"Hello from clrd"}' \
   {{.Base}}/api/v1/notifications</code></pre>
       {{else if eq .View "snoozed"}}<h2 class="text-foreground text-base font-semibold">Nothing snoozed</h2>
-      <p>Snooze a notification from its menu in the <a href="/app">inbox</a> to hide it until later. It comes back and notifies again at that time.</p>
+      <p>Snooze a notification from its menu in the <a href="{{base}}/app">inbox</a> to hide it until later. It comes back and notifies again at that time.</p>
       {{else}}<h2 class="text-foreground text-base font-semibold">Nothing cleared yet</h2>
       <p>Cleared and resolved notifications stay here for a while, so you can restore one you cleared by mistake.</p>{{end}}
     </div>
@@ -117,13 +117,13 @@
     </div>
     <div class="col-start-2 min-w-0">
       {{if $n.Body}}<div class="msg text-body mt-1 text-[15px]/normal [overflow-wrap:anywhere]" data-body{{if .Preview}} data-preview="{{$n.Topic}}"{{end}}>{{.Text}}</div>{{end}}
-      {{with $n.Attachment}}{{if .Image}}<a class="mt-2 block w-fit" href="{{.URL}}" rel="noopener noreferrer" data-attachment><img class="max-h-64 max-w-full rounded-md border" src="{{.URL}}" alt="{{.Name}}" loading="lazy" referrerpolicy="no-referrer"></a>
-      {{else}}<p class="mt-2 text-sm font-medium" data-attachment><a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" download="{{.Name}}" rel="noopener noreferrer">{{template "i-paperclip"}}{{or .Name "Attachment"}}</a></p>{{end}}{{end}}
+      {{with $n.Attachment}}{{if .Image}}<a class="mt-2 block w-fit" href="{{local .URL}}" rel="noopener noreferrer" data-attachment><img class="max-h-64 max-w-full rounded-md border" src="{{local .URL}}" alt="{{.Name}}" loading="lazy" referrerpolicy="no-referrer"></a>
+      {{else}}<p class="mt-2 text-sm font-medium" data-attachment><a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{local .URL}}" download="{{.Name}}" rel="noopener noreferrer">{{template "i-paperclip"}}{{or .Name "Attachment"}}</a></p>{{end}}{{end}}
       <p class="meta mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5"><a class="hover:text-foreground hover:underline" href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}" title="{{clock $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{range $n.Tags}}<span>#{{.}}</span>{{end}}</p>
       {{with $n.Links}}<p class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium" data-links>{{range .}}<a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" rel="noopener noreferrer">{{.Label}}{{template "i-external-link"}}</a>{{end}}</p>{{end}}
     </div>
   </div>
-  <form class="relative flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="/app/act">
+  <form class="relative flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="{{base}}/app/act">
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">
     <input type="hidden" name="seq" value="{{$n.Seq}}">
@@ -180,7 +180,7 @@
       <div class="flex gap-2"><button class="btn" data-variant="primary" type="button" data-link-approve>Approve</button><button class="btn" data-variant="outline" type="button" data-link-deny>Deny</button></div>
     </div>
   </section>
-  <script src="/static/pair.js" defer></script>
+  <script src="{{base}}/static/pair.js" defer></script>
   <section class="grid gap-3" aria-labelledby="send-h">
     <h2 id="send-h" class="text-base font-semibold">Send a test notification</h2>
     <p class="text-body text-sm/relaxed">Run this with a token that has the publish scope. It should appear on every device within a second.</p>
@@ -261,15 +261,15 @@
       <hr role="separator">{{end}}
       <div role="group" aria-labelledby="pal-go">
         <span data-heading id="pal-go">Go to</span>
-        <a role="menuitem" href="/app" data-keywords="home">{{template "i-inbox"}}Inbox <kbd class="kbd" data-shortcut>G I</kbd></a>
-        <a role="menuitem" href="/app/snoozed" data-keywords="later">{{template "i-clock"}}Snoozed <kbd class="kbd" data-shortcut>G S</kbd></a>
-        <a role="menuitem" href="/app/cleared" data-keywords="done history restore">{{template "i-check-check"}}Cleared <kbd class="kbd" data-shortcut>G C</kbd></a>
-        <a role="menuitem" href="/app/settings" data-keywords="devices token">{{template "i-settings"}}Settings <kbd class="kbd" data-shortcut>G ,</kbd></a>
+        <a role="menuitem" href="{{base}}/app" data-keywords="home">{{template "i-inbox"}}Inbox <kbd class="kbd" data-shortcut>G I</kbd></a>
+        <a role="menuitem" href="{{base}}/app/snoozed" data-keywords="later">{{template "i-clock"}}Snoozed <kbd class="kbd" data-shortcut>G S</kbd></a>
+        <a role="menuitem" href="{{base}}/app/cleared" data-keywords="done history restore">{{template "i-check-check"}}Cleared <kbd class="kbd" data-shortcut>G C</kbd></a>
+        <a role="menuitem" href="{{base}}/app/settings" data-keywords="devices token">{{template "i-settings"}}Settings <kbd class="kbd" data-shortcut>G ,</kbd></a>
       </div>
       {{with .Snap.Topics}}<hr role="separator">
       <div role="group" aria-labelledby="pal-topics">
         <span data-heading id="pal-topics">Topics</span>
-        {{range .}}<a role="menuitem" href="/app?topic={{.Name}}" data-keywords="topic">{{template "i-hash"}}{{.Name}} <span class="meta ms-auto">{{.Open}}</span></a>
+        {{range .}}<a role="menuitem" href="{{base}}/app?topic={{.Name}}" data-keywords="topic">{{template "i-hash"}}{{.Name}} <span class="meta ms-auto">{{.Open}}</span></a>
         {{end}}
       </div>{{end}}
     </div>

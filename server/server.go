@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -152,6 +153,7 @@ type Server struct {
 	fetch           *fetcher
 
 	mux    *http.ServeMux
+	prefix string   // the path of CLRD_BASE_URL, "" at the root: every route is served under it
 	routes []string // every pattern registered, checked against openapi.json
 	mounts []mount
 }
@@ -173,6 +175,13 @@ func New(opt Options) (*Server, error) {
 		opt.BaseURL = "http://localhost" + opt.Listen[strings.LastIndex(opt.Listen, ":"):]
 	}
 	opt.BaseURL = strings.TrimSuffix(opt.BaseURL, "/")
+	base, err := url.Parse(opt.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("CLRD_BASE_URL: %w", err)
+	}
+	if p := base.Path; p == "/api" || strings.HasPrefix(p, "/api/") { // the server calls its own /api/v1 routes without the path
+		return nil, fmt.Errorf("CLRD_BASE_URL: the path cannot start with /api")
+	}
 	if opt.Retention == 0 {
 		opt.Retention = 720 * time.Hour
 	}
@@ -196,7 +205,7 @@ func New(opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{opt: opt, db: db, log: opt.Logger, mux: http.NewServeMux(),
+	s := &Server{opt: opt, db: db, log: opt.Logger, mux: http.NewServeMux(), prefix: strings.TrimSuffix(base.Path, "/"),
 		pwLimit: newLimiter(10, time.Minute), tokLimit: perMinute(opt.RateToken), topicLimit: perMinute(opt.RateTopic)}
 	s.hub.subs = map[chan Event]string{}
 	var seq, pruned int64
@@ -257,6 +266,10 @@ func (s *Server) CurrentSeq() int64 { return s.seq.Load() }
 // Epoch is this database's id, sent with every seq (see SPEC, Epoch).
 func (s *Server) Epoch() string { return s.epoch }
 
+// Path is p (a path from the root, like "/app") as the browser must see it:
+// under the sub-path of CLRD_BASE_URL, if it has one.
+func (s *Server) Path(p string) string { return s.prefix + p }
+
 // Mount serves h for every path under prefix ("/docs" gets /docs and
 // /docs/...; "/" gets only the exact root). Longest prefix wins and mounts
 // are checked before the server's own routes. Call before Run.
@@ -296,6 +309,16 @@ func isUpload(r *http.Request) bool {
 
 // ServeHTTP routes to a mount when one matches, else to the API.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Under a sub-path, strip it so the routes match as at the root. A path
+	// without it passes through: a proxy may strip it first, and the web
+	// sign-in link calls back in with a bare path.
+	if p := r.URL.Path; s.prefix != "" && (p == s.prefix || strings.HasPrefix(p, s.prefix+"/")) {
+		r2, u := *r, *r.URL
+		u.Path = cmp.Or(strings.TrimPrefix(p, s.prefix), "/")
+		u.RawPath = strings.TrimPrefix(u.RawPath, s.prefix)
+		r2.URL = &u
+		r = &r2
+	}
 	p := r.URL.Path
 	var mounted http.Handler
 	for _, m := range s.mounts {

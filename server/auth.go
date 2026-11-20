@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -412,7 +413,7 @@ func (s *Server) https(r *http.Request) bool {
 }
 
 func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: value, Path: "/", MaxAge: maxAge, HttpOnly: true,
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: value, Path: cmp.Or(s.prefix, "/"), MaxAge: maxAge, HttpOnly: true,
 		SameSite: http.SameSiteLaxMode, Secure: s.https(r) || r.Header.Get("X-Forwarded-Proto") == "https"}) // behind a TLS proxy; a spoofed header only adds Secure
 }
 
@@ -453,7 +454,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 			q.Set("name", in.Name) // the page fills it back in (issue #33)
 		}
 		u.RawQuery = q.Encode()
-		http.Redirect(w, r, u.String(), http.StatusSeeOther)
+		http.Redirect(w, r, s.Path(u.String()), http.StatusSeeOther)
 		return nil
 	}
 	if t == nil {
@@ -464,7 +465,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if isForm {
-		http.Redirect(w, r, next, http.StatusSeeOther)
+		http.Redirect(w, r, s.Path(next), http.StatusSeeOther)
 		return nil
 	}
 	writeJSON(w, 200, st)
@@ -624,13 +625,13 @@ func (s *Server) bootstrap(ctx context.Context) error {
 
 var setupPage = template.Must(template.New("setup").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>clrd setup</title><link rel="stylesheet" href="/static/app.css"></head><body class="text-body">
+<title>clrd setup</title><link rel="stylesheet" href="{{.Base}}/static/app.css"></head><body class="text-body">
 <main class="mx-auto max-w-md px-4 py-16">
 <h1 class="text-foreground mb-4 text-2xl font-semibold tracking-tight">clrd setup</h1>
 {{if .Token}}<p class="mb-3">Admin token for <b class="text-foreground">{{.Name}}</b>. Copy it now; it is not shown again.</p><pre class="mb-3 whitespace-pre-wrap break-all"><code>{{.Token}}</code></pre>
-<p>This browser is signed in. <a class="underline" href="/app">Open the inbox</a>.</p>
+<p>This browser is signed in. <a class="underline" href="{{.Base}}/app">Open the inbox</a>.</p>
 {{else}}<p class="mb-4">Create the first admin token.</p>
-<form class="bg-card grid gap-4 rounded-xl border p-5" method="post" action="/setup"><input type="hidden" name="code" value="{{.Code}}">
+<form class="bg-card grid gap-4 rounded-xl border p-5" method="post" action="{{.Base}}/setup"><input type="hidden" name="code" value="{{.Code}}">
 <div class="field"><label for="name">Device name</label><input class="input" id="name" name="name" value="admin" required></div>
 <button class="btn" data-variant="primary">Create admin token</button></form>{{end}}
 </main>
@@ -658,7 +659,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodPost {
-		return setupPage.Execute(w, map[string]string{"Code": code})
+		return setupPage.Execute(w, map[string]string{"Code": code, "Base": s.prefix})
 	}
 	name := strings.TrimSpace(r.PostFormValue("name"))
 	if name == "" {
@@ -674,7 +675,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.startSession(w, r, t, ""); err != nil {
 		s.log.Warn("setup sign-in", "err", err)
 	}
-	return setupPage.Execute(w, map[string]string{"Token": raw, "Name": t.Name})
+	return setupPage.Execute(w, map[string]string{"Token": raw, "Name": t.Name, "Base": s.prefix})
 }
 
 // apiError is an HTTP error with the spec's {"error","code"} body.
