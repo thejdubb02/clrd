@@ -87,7 +87,7 @@
       {{with $n.Links}}<p class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium" data-links>{{range .}}<a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" rel="noopener noreferrer">{{.Label}}{{template "i-external-link"}}</a>{{end}}</p>{{end}}
     </div>
   </div>
-  <form class="flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="/app/act">
+  <form class="relative flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="/app/act">
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">
     <input type="hidden" name="seq" value="{{$n.Seq}}">
@@ -95,9 +95,9 @@
     {{else}}
       {{range $n.Replies}}<button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}
       {{if ne $n.State "acknowledged"}}<button class="btn" data-variant="outline" name="act" value="ack" data-act="ack">Ack</button>{{end}}
-      {{if ne $n.State "snoozed"}}<details class="popover relative">
+      {{if ne $n.State "snoozed"}}<details class="popover max-md:static">
         <summary class="btn" data-variant="outline">Snooze</summary>
-        <div data-popover class="start-0 top-full mt-1 grid w-56 gap-0.5 p-1 md:start-auto md:end-0">
+        <div data-popover class="start-5 top-full mt-1 grid w-64 gap-0.5 p-1 max-md:min-w-0 md:start-auto md:end-0">
           <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="1h" data-act="snooze" data-for="1h">1 hour</button>
           <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="4h" data-act="snooze" data-for="4h">4 hours</button>
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tonight">Tonight <span class="meta ms-auto">20:00</span></button>

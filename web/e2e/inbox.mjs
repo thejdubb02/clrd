@@ -166,6 +166,18 @@ try {
   assert.equal(await card('Merge 212?').getByRole('button', { name: 'No' }).count(), 0, 'answered card still offers replies');
   console.log('ok: reply button stores the answer');
 
+  // On a phone, the open Snooze menu stays on screen, even when Snooze ends the first row of buttons.
+  const narrow = await (await browser.newContext({ viewport: { width: 360, height: 740 } })).newPage();
+  await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Deploy 213?', message: 'staging green', actions: [{ label: 'Go', reply: 'go' }, { label: 'No', reply: 'no' }] });
+  await narrow.goto(`${base}/app?auth=${link}`);
+  const wide = narrow.locator('article.card', { hasText: 'Deploy 213?' });
+  await wide.getByText('Snooze', { exact: true }).click();
+  const menu = await wide.locator('[data-popover]').boundingBox();
+  assert.ok(menu.x >= 0 && menu.x + menu.width <= 360, `snooze menu spans ${menu.x} to ${menu.x + menu.width} on a 360 px screen`);
+  assert.equal(await narrow.evaluate(() => document.documentElement.scrollWidth), 360, 'page scrolls sideways with the menu open');
+  await narrow.context().close();
+  console.log('ok: snooze menu fits a phone screen');
+
   // With JavaScript off the buttons still work: a form post and back to the same page.
   const nojs = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
   await nojs.goto(`${base}/app?auth=${link}`);
