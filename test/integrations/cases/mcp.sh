@@ -8,8 +8,11 @@ send=$(snippet mcp.md 'wait_for_reply {' | sed -n '/^send /,/^wait_for_reply/p' 
 out=$(dock -e CLRD -e CLRD_TOKEN -e SEND="$send" -e HOME=/tmp -e npm_config_update_notifier=false \
   -v "$HERE/mcp:/d:ro" -v "$WORK/desktop.json:/w/desktop.json:ro" node:22-slim node /d/drive.mjs /w/desktop.json)
 res() { jq -c --arg t "$1" 'select(.tool == $t) | .out' <<<"$out" | head -1; }
-check "$(res tools/list)" '. == ["ack","list","resolve","send","snooze","wait_for_reply"]' "tools/list"
-ok "tools/list has the six tools in the guide"
+check "$(res tools/list)" '. == ["ack","get","list","resolve","send","snooze","topics","update","wait_for_reply"]' "tools/list"
+ok "tools/list has the nine tools in the guide"
+check "$(res get)" '.message == "Step 3 of 3" and .state == "active"' "get after update"
+check "$(res topics)" 'tostring | contains("agents")' "topics lists agents"
+ok "update edits in place, get and topics read it back"
 check "$(res list)" 'tostring | contains("deploy-1")' "list sees the sent notification"
 check "$(res wait_for_reply)" '.reply == "acknowledged" and .answer == "yes"' "wait_for_reply"
 ok "wait_for_reply returns the tapped answer"

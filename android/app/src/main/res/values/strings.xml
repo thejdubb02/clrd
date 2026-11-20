@@ -72,6 +72,13 @@
     <string name="topics_explain">A muted topic stays in the inbox but never pops up on this phone.</string>
     <string name="topic_muted">muted</string>
     <string name="topic_on">on</string>
+    <string name="stack">Stack by topic</string>
+    <string name="stack_explain">Notifications from the same topic fold into one stack in the phone\'s notification shade. Swiping the stack away clears all of them everywhere.</string>
+    <!-- Group summary in the tray: how many notifications a topic's stack holds. -->
+    <plurals name="tray_stack">
+        <item quantity="one">%1$d notification</item>
+        <item quantity="other">%1$d notifications</item>
+    </plurals>
     <string name="about">clrd %1$s. No tracking, no Google services.</string>
 
     <!-- Android notification channels (shown in the system notification settings) -->

@@ -1,6 +1,11 @@
 {
  "jscpd": [
   [
+   ".github/workflows/go.yml",
+   ".github/workflows/sdk.yml",
+   1
+  ],
+  [
    "server/files_test.go",
    "server/files_test.go",
    1
@@ -13,6 +18,11 @@
   [
    "server/mcp/real_test.go",
    "server/mcp/real_test.go",
+   2
+  ],
+  [
+   "server/mcp/real_test.go",
+   "server/session_test.go",
    1
   ],
   [

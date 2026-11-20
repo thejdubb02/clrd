@@ -693,6 +693,7 @@ private fun SettingsScreen(app: App, battery: Intent?, scan: () -> Unit) {
     var token by rememberSaveable(saved) { mutableStateOf(app.token) }
     var result by remember { mutableStateOf<String?>(null) }
     var muted by remember { mutableStateOf(app.muted) }
+    var stack by remember { mutableStateOf(app.stack) }
     val topics by app.db.dao().topics().collectAsState(emptyList())
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -752,6 +753,18 @@ private fun SettingsScreen(app: App, battery: Intent?, scan: () -> Unit) {
                     })
                 }
             }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.stack), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.stack_explain), color = b.slate, fontSize = 13.sp)
+            }
+            Switch(checked = stack, onCheckedChange = { on ->
+                stack = on
+                app.stack = on
+                app.io.execute { RoomStore(app).reconcile() } // reposts every row in or out of its stack
+            })
         }
         if (app.configured) SnoozeSettings(app)
         Spacer(Modifier.height(8.dp))
