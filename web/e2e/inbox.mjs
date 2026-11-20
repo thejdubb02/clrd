@@ -61,7 +61,10 @@ try {
   await page.evaluate(() => { window.copied = []; navigator.clipboard.writeText = async t => { window.copied.push(t); }; });
   await tip.getByRole('button', { name: 'Copy' }).click();
   assert.ok((await page.evaluate(() => window.copied[0])).includes(`${base}/api/v1/notifications`), 'copy holds the base URL');
-  await page.getByRole('button', { name: 'Next tip' }).click();
+  const next = page.getByRole('button', { name: 'Next tip' });
+  const at = await next.boundingBox();
+  await next.click();
+  assert.deepEqual(await next.boundingBox(), at, 'Next stays put when the tip height changes (#302)');
   assert.notEqual(await tip.locator('h4').textContent(), 'Send your first notification', 'Next changes the tip');
   assert.equal(await page.locator('[data-tip-count]').textContent(), '2 of 10');
   assert.equal(await announce.textContent(), await tip.locator('h4').textContent(), 'Next announces the new tip');
