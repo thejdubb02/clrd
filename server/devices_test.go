@@ -144,3 +144,64 @@ func TestDeviceLogBounded(t *testing.T) {
 		t.Fatalf("log rows: %d, want %d", n, maxDeviceLog)
 	}
 }
+
+// Issue #300: the device list says which devices have a live stream and are
+// caught up, and every other stream hears when that changes.
+func TestDeviceLiveStatus(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	phone := mkToken(t, s, "phone", []string{ScopeRead}, nil)
+	phoneID := s.lookupToken(ctx, phone).ID
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "m"})
+
+	row := func(ds []LinkedDevice) LinkedDevice {
+		for _, d := range ds {
+			if d.ID == phoneID {
+				return d
+			}
+		}
+		t.Fatalf("phone not in %v", ds)
+		return LinkedDevice{}
+	}
+	pushed := func(m msg) bool { return m.Type == "devices" }
+
+	web := dialWS(t, ts.URL, admin, 0)
+	web.until(func(m msg) bool { return m.Type == "ready" })
+
+	p := dialWS(t, ts.URL, phone, 0)
+	ready := p.until(func(m msg) bool { return m.Type == "ready" })
+	d := row(web.until(func(m msg) bool { return pushed(m) && row(m.Devices).CaughtUp }).Devices)
+	if !d.Connected || d.SyncedSeq != ready.Seq || ready.Seq == 0 {
+		t.Fatalf("pushed after the phone caught up: %+v, ready seq %d", d, ready.Seq)
+	}
+	ds, err := s.Devices(ctx, s.lookupToken(ctx, admin))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := row(ds); !d.Connected || !d.CaughtUp || d.SyncedSeq != ready.Seq {
+		t.Fatalf("device list: %+v", d)
+	}
+
+	p.c.Close(websocket.StatusNormalClosure, "")
+	web.until(func(m msg) bool { return pushed(m) && !row(m.Devices).Connected })
+}
+
+// A second stream on one token closing leaves the token connected.
+func TestDeviceStatusTwoStreams(t *testing.T) {
+	var h hub
+	h.subs = map[chan Event]*stream{}
+	one, st := h.subscribe("tok")
+	st.ready.Store(true)
+	two, _ := h.subscribe("tok") // still replaying
+	if c, up, _ := h.status("tok"); !c || !up {
+		t.Fatalf("one of two caught up: connected %v caught up %v", c, up)
+	}
+	h.unsubscribe(one)
+	if c, up, _ := h.status("tok"); !c || up {
+		t.Fatalf("after the caught-up one closed: connected %v caught up %v", c, up)
+	}
+	h.unsubscribe(two)
+	if c, _, _ := h.status("tok"); c {
+		t.Fatal("connected with no stream")
+	}
+}

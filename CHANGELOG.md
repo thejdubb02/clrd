@@ -37,6 +37,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: the device list says which devices are connected right now and
+  caught up, and the last event each was sent (`connected`, `caught_up`,
+  `synced_seq`). Every open WebSocket gets the new list when another device
+  connects, catches up or drops (#300).
 - Web: the empty inbox is friendlier. A larger "Nothing waiting" with the
   clrd mark, an icon on every tip, a new tip about sounds, and tips that move
   on by themselves every few seconds. They hold still while you hover or

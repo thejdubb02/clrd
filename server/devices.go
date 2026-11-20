@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -25,6 +26,24 @@ type LinkedDevice struct {
 	This       bool       `json:"this"` // the token asking
 	CanUnlink  bool       `json:"can_unlink"`
 	Sound      string     `json:"sound"` // one of GET /api/v1/sounds
+	// Live sync state (#300): connected has a stream open now, caught_up has
+	// one past its replay, synced_seq is the last event seq the server sent it.
+	Connected bool  `json:"connected"`
+	CaughtUp  bool  `json:"caught_up"`
+	SyncedSeq int64 `json:"synced_seq"`
+}
+
+// devicesMsg is the stream message carrying tok's device list, sent when a
+// stream connects, catches up or ends.
+func (s *Server) devicesMsg(ctx context.Context, tok *Token) ([]byte, error) {
+	ds, err := s.Devices(ctx, tok)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(struct {
+		Type    string         `json:"type"`
+		Devices []LinkedDevice `json:"devices"`
+	}{"devices", ds})
 }
 
 // DeviceEvent is one line of the activity log.
@@ -132,6 +151,7 @@ func (s *Server) Devices(ctx context.Context, tok *Token) ([]LinkedDevice, error
 		}
 		d.LinkedAt, d.Via, d.This, d.CanUnlink = fromMS(created), via.String, d.ID == tok.ID, phone.Valid
 		d.Sound = soundOf(sounds, d.ID)
+		d.Connected, d.CaughtUp, d.SyncedSeq = s.hub.status(d.ID)
 		if seen.Valid {
 			v := fromMS(seen.Int64)
 			d.LastSeenAt = &v

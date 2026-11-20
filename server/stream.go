@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -19,23 +20,45 @@ import (
 // token it streams for so a revoke can cut that token's streams at once.
 type hub struct {
 	mu   sync.Mutex
-	subs map[chan Event]string
+	subs map[chan Event]*stream
 }
 
-func (h *hub) subscribe(tokenID string) chan Event {
-	ch := make(chan Event, 256)
+// stream is one live subscriber's sync state, for the device list (#300).
+type stream struct {
+	tok   string
+	ready atomic.Bool  // replay done and ready sent: caught up
+	seq   atomic.Int64 // the last event seq the server sent it, or passed over as not visible to it
+}
+
+func (h *hub) subscribe(tokenID string) (chan Event, *stream) {
+	ch, st := make(chan Event, 256), &stream{tok: tokenID}
 	h.mu.Lock()
-	h.subs[ch] = tokenID
+	h.subs[ch] = st
 	h.mu.Unlock()
-	return ch
+	return ch, st
+}
+
+// status reports whether tokenID has a live stream, whether one of them is
+// caught up, and the highest seq sent to any of them.
+func (h *hub) status(tokenID string) (connected, caughtUp bool, seq int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, st := range h.subs {
+		if st.tok == tokenID {
+			connected = true
+			caughtUp = caughtUp || st.ready.Load()
+			seq = max(seq, st.seq.Load())
+		}
+	}
+	return
 }
 
 // drop closes every subscription of one token.
 func (h *hub) drop(tokenID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for ch, id := range h.subs {
-		if id == tokenID {
+	for ch, st := range h.subs {
+		if st.tok == tokenID {
 			delete(h.subs, ch)
 			close(ch)
 		}
@@ -70,7 +93,7 @@ func (h *hub) publish(e Event) {
 // The channel closes if the reader falls behind. For mounted handlers
 // (MCP wait_for_reply).
 func (s *Server) Subscribe() (<-chan Event, func()) {
-	ch := s.hub.subscribe("")
+	ch, _ := s.hub.subscribe("")
 	return ch, func() { s.hub.unsubscribe(ch) }
 }
 
@@ -102,8 +125,12 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 // before ready and again after every change (seq -1, so SSE sets no id).
 func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics []string, withSettings bool,
 	send func(msg []byte, seq int64) error, ping func() error) error {
-	sub := s.hub.subscribe(tok.ID) // first, so nothing committed during replay is missed
-	defer s.hub.unsubscribe(sub)
+	sub, st := s.hub.subscribe(tok.ID) // first, so nothing committed during replay is missed
+	s.devicesChanged.fire()
+	defer func() {
+		s.hub.unsubscribe(sub)
+		s.devicesChanged.fire() // after, so the others see this stream gone
+	}()
 	inner := send
 	send = func(msg []byte, seq int64) error {
 		if _, gone := s.revoked.Load(tok.ID); gone {
@@ -143,6 +170,7 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 				}
 			}
 			since = e.Seq
+			st.seq.Store(since)
 		}
 	}
 	var changed <-chan struct{} // nil blocks forever: no settings
@@ -163,6 +191,13 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 	if err := send(msgReady(last, s.epoch), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
 		return err
 	}
+	st.seq.Store(last)
+	st.ready.Store(true)
+	s.devicesChanged.fire()
+	var devChanged <-chan struct{} // nil blocks forever: no device updates
+	if withSettings {
+		devChanged = s.devicesChanged.wait() // after our own fire: a stream hears the others, not itself
+	}
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	for {
@@ -171,6 +206,15 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 			return nil
 		case <-changed:
 			if err := sendSettings(); err != nil {
+				return err
+			}
+		case <-devChanged:
+			devChanged = s.devicesChanged.wait() // before reading, so no change is missed
+			msg, err := s.devicesMsg(ctx, tok)
+			if err != nil {
+				return err
+			}
+			if err := send(msg, -1); err != nil {
 				return err
 			}
 		case <-t.C:
@@ -191,6 +235,7 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 				continue // already sent during replay
 			}
 			last = e.Seq
+			st.seq.Store(last)
 			if visible(tok, topics, e.Notification.Topic) {
 				if err := send(e.Raw, e.Seq); err != nil {
 					return err

@@ -206,6 +206,7 @@ type Server struct {
 	pairs      map[string]*pairing // browser sign-ins waiting for approval, by code (pair.go)
 
 	settingsChanged signal // fires after every settings change
+	devicesChanged  signal // fires when a stream connects, catches up or ends (#300)
 	fetch           *fetcher
 
 	mux    *http.ServeMux
@@ -264,7 +265,7 @@ func New(opt Options) (*Server, error) {
 	}
 	s := &Server{opt: opt, baseSet: baseSet, db: db, log: opt.Logger, mux: http.NewServeMux(), prefix: strings.TrimSuffix(base.Path, "/"),
 		pwLimit: newLimiter(10, time.Minute), tokLimit: perMinute(opt.RateToken), topicLimit: perMinute(opt.RateTopic)}
-	s.hub.subs = map[chan Event]string{}
+	s.hub.subs = map[chan Event]*stream{}
 	var seq, pruned int64
 	if err := db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'events'`).Scan(&seq); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		db.Close()
