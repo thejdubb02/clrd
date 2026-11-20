@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   expires_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  seq INTEGER NOT NULL DEFAULT 0
+  seq INTEGER NOT NULL DEFAULT 0,
+  silenced INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -152,6 +153,16 @@ CREATE TABLE IF NOT EXISTS hook_deliveries (
 );
 CREATE INDEX IF NOT EXISTS hook_deliveries_due ON hook_deliveries (status, next_at);
 CREATE INDEX IF NOT EXISTS hook_deliveries_hook ON hook_deliveries (topic, name, id);
+-- Silences (issue #81): topic "" matches every topic, tag "" every tag.
+CREATE TABLE IF NOT EXISTS silences (
+  id TEXT PRIMARY KEY,
+  topic TEXT NOT NULL DEFAULT '',
+  tag TEXT NOT NULL DEFAULT '',
+  until_ms INTEGER NOT NULL,
+  comment TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
 `
 
 // Action is a button on a notification: a link (URL) or an answer (Reply)
@@ -186,6 +197,7 @@ type Notification struct {
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Seq         int64       `json:"seq"`
+	Silenced    bool        `json:"silenced"` // a silence matched when this was written: show, do not alert
 }
 
 // Attachment is a file on a notification: uploaded (URL is /api/v1/files/<id>)
@@ -290,6 +302,11 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add grants column: %w", err)
 	}
+	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN silenced INTEGER NOT NULL DEFAULT 0`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add silenced column: %w", err)
+	}
 	if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN phone INTEGER NOT NULL DEFAULT 0`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
@@ -315,7 +332,7 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced`
 
 type scanner interface{ Scan(...any) error }
 
@@ -325,7 +342,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	var snooze, expires sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
-		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires)
+		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires, &n.Silenced)
 	if err != nil {
 		return nil, err
 	}
@@ -357,14 +374,14 @@ func saveNotification(tx *sql.Tx, n *Notification) error {
 		b, _ := json.Marshal(n.Attachment)
 		att = string(b)
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(22)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(23)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
-		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt))
+		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt), n.Silenced)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -397,8 +414,15 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 		return nil, err
 	}
 	t := now()
+	var sils []Silence
+	if len(evs) > 0 {
+		if sils, err = activeSilences(ctx, tx, t); err != nil {
+			return nil, err
+		}
+	}
 	for i := range evs {
 		e := &evs[i]
+		e.Notification.Silenced = silenced(sils, e.Notification)
 		res, err := tx.Exec(`INSERT INTO events (type, topic, data, created_at) VALUES (?, ?, '', ?)`,
 			e.Type, e.Notification.Topic, ms(t))
 		if err != nil {
@@ -1033,6 +1057,9 @@ func (s *Server) prune(ctx context.Context) error {
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM silences WHERE until_ms < ?`, ms(time.Now())); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

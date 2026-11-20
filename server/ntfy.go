@@ -80,6 +80,9 @@ func (s *Server) ntfyMessage(n *Notification, seq int64) ntfyMsg {
 		return m
 	}
 	m.Title, m.Message, m.Priority, m.Tags, m.Click, m.Icon = n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon
+	if n.Silenced { // ntfy apps have no "silenced": min priority shows it without a sound
+		m.Priority = 1
+	}
 	if n.Format != FormatText {
 		m.ContentType = "text/markdown"
 	}

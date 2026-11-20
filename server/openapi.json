@@ -3537,6 +3537,118 @@
     "security": []
    }
   },
+  "/api/v1/silences": {
+   "get": {
+    "summary": "List the active silences",
+    "description": "The silences this token can see: those on its topics and those with no topic. Ended silences are not listed.",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "silences": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Silence"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Silence a topic, a tag, or a tag within a topic",
+    "description": "Scope publish on the topic. A silence with no topic (every topic) needs a token without a topic list. Notifications still arrive and sync; every event written while a silence matches has silenced true, and clients do not alert. Mutes every priority, including 5. Give exactly one of for (a duration like 2h) or until (RFC3339), at most 8784h ahead.",
+    "tags": [
+     "notifications"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "topic": {
+          "type": "string"
+         },
+         "tag": {
+          "type": "string",
+          "maxLength": 64
+         },
+         "for": {
+          "type": "string",
+          "example": "8h"
+         },
+         "until": {
+          "type": "string",
+          "format": "date-time"
+         },
+         "comment": {
+          "type": "string",
+          "maxLength": 256
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Silence"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "No topic or tag, or a bad time"
+     },
+     "403": {
+      "description": "No publish scope on the topic"
+     }
+    }
+   }
+  },
+  "/api/v1/silences/{id}": {
+   "delete": {
+    "summary": "End a silence early",
+    "description": "Same scope as creating it.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Ended"
+     },
+     "404": {
+      "description": "No such active silence on a topic this token can see"
+     }
+    }
+   }
+  },
   "/api/v1/topics/{topic}/hooks": {
    "get": {
     "summary": "List the outgoing webhooks on a topic",
@@ -4191,6 +4303,36 @@
    }
   },
   "schemas": {
+   "Silence": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "topic": {
+      "type": "string",
+      "description": "Empty: every topic"
+     },
+     "tag": {
+      "type": "string",
+      "description": "Empty: every notification in the topic"
+     },
+     "until": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "comment": {
+      "type": "string"
+     },
+     "created_by": {
+      "type": "string"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
    "OutHook": {
     "type": "object",
     "properties": {
@@ -4346,6 +4488,10 @@
       ],
       "format": "date-time",
       "description": "When the server resolves it on its own; null for never."
+     },
+     "silenced": {
+      "type": "boolean",
+      "description": "A silence matched when this was written: show it, do not alert. Events logged before a server upgrade may omit it: treat missing as false."
      },
      "created_at": {
       "type": "string",

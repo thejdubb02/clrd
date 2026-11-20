@@ -787,6 +787,7 @@ func (s *Server) routesSetup() {
 	}
 	s.webhookRoutes()
 	s.hookOutRoutes()
+	s.silenceRoutes()
 	s.ntfyRoutes()
 }
 

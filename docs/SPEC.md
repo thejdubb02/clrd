@@ -52,7 +52,8 @@ A **notification**:
   "expires_at": null,          // RFC3339 when the server resolves it on its own, or null
   "created_at": "2026-11-19T05:00:00Z",
   "updated_at": "2026-11-19T05:00:00Z",
-  "seq": 48211                 // seq of the last event that touched it
+  "seq": 48211,                // seq of the last event that touched it
+  "silenced": false            // a silence matched when that event was written: show, do not alert
 }
 ```
 
@@ -73,6 +74,16 @@ A **notification**:
   and clears `reply`. With `"reopen": true` an acknowledged row also goes
   back to `active` in the same write. After it is final, a new publish
   makes a new row.
+
+**Silences:** a silence mutes a topic, a tag, or a tag within a topic until a
+set time (`POST /api/v1/silences`). Notifications still arrive, sync and show;
+the server sets `silenced: true` on every event it writes while a silence
+matches (publish, update, snooze wake, check-in), and clients show those
+without sound or vibration. A silence mutes every priority, 5 included. It
+ends by itself; `DELETE` ends it early. Events logged before a server upgrade
+may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
+message at priority 1. Quiet hours on one device are a client setting, not a
+silence.
 
 **Actions:** each action is a link (`url`) or an answer button (`reply`),
 exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
@@ -426,6 +437,9 @@ resolved`) and `ntfy_import`.
 | GET | `/api/v1/topics/{topic}/hooks` | The topic's outgoing webhooks (secret hidden, `has_secret` shown). Admin. |
 | PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret"}`, replaces and turns it back on) or remove an outgoing webhook. Admin. |
 | GET | `/api/v1/topics/{topic}/hooks/{name}/deliveries` | The last 100 deliveries, newest first. Admin. |
+| GET | `/api/v1/silences` | Active silences on topics this token can see, plus those with no topic: `{"silences":[{"id","topic","tag","until","comment","created_by","created_at"}]}`. |
+| POST | `/api/v1/silences` | Body `{"topic","tag","for":"8h"}` or `"until":"RFC3339"` instead of `for` (exactly one, at most 8784h ahead), optional `comment`. Needs `topic`, `tag` or both. Returns 201 and the silence. Scope publish on the topic; no topic (every topic) needs a token without a topic list. |
+| DELETE | `/api/v1/silences/{id}` | End a silence early. Same scope as creating it. 204. |
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
