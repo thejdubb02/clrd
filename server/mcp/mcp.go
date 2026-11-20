@@ -278,6 +278,9 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 	case "topics":
 		return h.api(r, "GET", "/api/v1/topics", nil)
 	case "counts":
+		if d := str(a, "keep_cleared_days"); d != "" {
+			return h.api(r, "GET", "/api/v1/counts?keep_cleared_days="+url.QueryEscape(d), nil)
+		}
 		return h.api(r, "GET", "/api/v1/counts", nil)
 	case "devices":
 		return h.api(r, "GET", "/api/v1/devices?all=1", nil)
@@ -288,6 +291,11 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		return h.api(r, "DELETE", "/api/v1/devices/"+id, nil)
+	case "settings":
+		if len(a) == 0 {
+			return h.api(r, "GET", "/api/v1/settings", nil)
+		}
+		return h.api(r, "PUT", "/api/v1/settings", a)
 	case "get":
 		if err := need("id"); err != nil {
 			return nil, err
@@ -443,8 +451,18 @@ var tools = []map[string]any{
 		})},
 	{"name": "topics", "description": "List the topics this token can read, with how many notifications are open in each.",
 		"inputSchema": schema(map[string]any{})},
-	{"name": "counts", "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved).",
-		"inputSchema": schema(map[string]any{})},
+	{"name": "counts", "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved). With keep_cleared_days, also would_remove: how many cleared messages that setting would delete.",
+		"inputSchema": schema(map[string]any{"keep_cleared_days": p("integer", "Preview a keep_cleared_days value before setting it")})},
+	{"name": "settings", "description": "Read the server settings, or change them: pass only the fields to change. keep_cleared_days (0 = forever) deletes cleared messages older than that on the next hourly cleanup and needs an admin token; preview it with counts first.",
+		"inputSchema": schema(map[string]any{
+			"keep_cleared_days": p("integer", "Days to keep dismissed and resolved messages, counted from when they were cleared; 0 = forever"),
+			"render_formatting": p("boolean", "Show Markdown formatting"),
+			"autolink":          p("boolean", "Turn web addresses into links"),
+			"favicons":          p("boolean", "Show site icons next to links"),
+			"link_previews":     p("boolean", "Show link previews"),
+			"snooze_intervals":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Snooze menu times as durations like 30m or 4h, 1 to 8"},
+			"snooze_default":    p("string", "The snooze time a plain tap uses, one of snooze_intervals"),
+		})},
 	{"name": "get", "description": "Get one notification by its server id, with its current state.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
 	{"name": "update", "description": "Replace the message of an open notification, keeping its id and state. Use it for progress (step 3 of 10) instead of sending a new one each time.",

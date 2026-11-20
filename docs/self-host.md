@@ -79,7 +79,7 @@ at once.
 | `CLRD_LISTEN` | `:8080` | Address to listen on. |
 | `CLRD_DB` | `/data/clrd.db` if it exists, else `~/.local/share/clrd/clrd.db` (or under `$XDG_DATA_HOME`) | SQLite file. Its folder must be writable (WAL files live next to it). |
 | `CLRD_BASE_URL` | unset: links use the address the browser opened clrd on | Public URL, used in the setup and phone pairing links. Set it to your https URL behind a proxy. A path in it (`https://example.com/clrd`) serves everything under that path. |
-| `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. |
+| `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. This is the starting value: once someone sets "Keep cleared messages" in Settings (or `keep_cleared_days` over the API or MCP), that setting wins. Open and snoozed messages are never deleted. |
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
 | `CLRD_PUBLIC_PAGES` | `on` | `off` hides the landing page and docs on a private server: `/` goes to the inbox, `/docs` is 404, and `robots.txt` asks every crawler to stay out. |
 | `CLRD_ATTACHMENT_MAX_MB` | `15` | Largest file one notification can carry, in MB. |

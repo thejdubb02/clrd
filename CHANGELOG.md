@@ -34,6 +34,10 @@ Fixed, Removed, Security), as one line a user can understand.
   browser goes to sign-in at once with a plain message. The same is on the
   API (`GET /api/v1/devices?all=1`, `GET /api/v1/devices/log`,
   `DELETE /api/v1/devices/{id}`) and MCP (`devices`, `device_log`, `unlink`).
+- Keep cleared messages for 1, 5, 7, 30 (default), 90 days, forever or a
+  custom number of days: set it in web Settings, over the API
+  (`keep_cleared_days`) or with the new MCP `settings` tool. Settings shows how
+  many messages a shorter period would delete before you confirm.
 
 - Docs: the README and landing page now open with the out-of-box path (one
   setting, the setup link, linking the phone by QR, send), point to the clrd F-Droid repo

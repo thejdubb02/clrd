@@ -219,7 +219,7 @@ try {
   let release;
   const held = new Promise(ok => { release = ok; });
   await sp.route('**/api/v1/settings', async r => { if (r.request().method() === 'PUT') await held; await r.continue(); });
-  await sp.getByRole('button', { name: 'Save' }).click();
+  await sp.locator('[data-snooze-settings]').getByRole('button', { name: 'Save' }).click();
   for (const l of ['Times', 'Default']) assert.equal(await sp.getByLabel(l).isDisabled(), true, `${l} editable during a save`);
   assert.equal(await sp.locator('[data-display-settings] input').first().isDisabled(), true, 'display switch usable during a snooze save');
   release();
@@ -230,7 +230,7 @@ try {
   await sp.getByLabel('Times').fill('30m, 1d'); // retyped: the default picked comes back with its time
   assert.equal(await sp.getByLabel('Default').inputValue(), '24h');
   await sp.getByLabel('Times').fill('1h, soon');
-  await sp.getByRole('button', { name: 'Save' }).click();
+  await sp.locator('[data-snooze-settings]').getByRole('button', { name: 'Save' }).click();
   await sp.locator('[data-snooze-status]').filter({ hasText: 'soon' }).waitFor();
   // A change from another device keeps the edit not yet saved here, and says so.
   await putSettings({ snooze_intervals: ['1h', '4h'], snooze_default: '1h' });

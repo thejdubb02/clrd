@@ -197,6 +197,7 @@ type Snapshot struct {
 	// Display settings for message bodies (docs/SPEC.md section 2.1).
 	Formatting, Autolink, Favicons, LinkPreviews bool
 	TopicPreviews                                map[string]bool // overrides LinkPreviews for one topic
+	KeepClearedDays                              int             // days cleared messages are kept, 0 = forever
 }
 
 // API is what the server provides. The request is passed so the server can

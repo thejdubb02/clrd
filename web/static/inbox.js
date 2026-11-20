@@ -352,7 +352,8 @@
   // display forms are locked: an edit made then would be lost (#214), and an
   // older save cannot land after a newer one.
   const disp = $('[data-display-settings]');
-  const lock = on => [snz, disp].forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
+  const keep = $('[data-keep-settings]');
+  const lock = on => [snz, disp, keep].forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
   snz && snz.addEventListener('submit', async e => {
     e.preventDefault();
     const times = snzTyped().map(snzValue);
@@ -361,6 +362,25 @@
     const status = $('[data-snooze-status]');
     lock(true);
     const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+    if (r && r.ok) return location.reload();
+    lock(false);
+    status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  });
+
+  // Settings: how long cleared messages are kept (#250). Before a save that
+  // deletes anything, say how many go and ask.
+  keep && keep.days.addEventListener('change', () => { $('[data-keep-custom]').hidden = keep.days.value !== 'custom'; });
+  keep && keep.addEventListener('submit', async e => {
+    e.preventDefault();
+    const custom = keep.days.value === 'custom', days = Number(custom ? keep.custom.value : keep.days.value);
+    const status = $('[data-keep-status]');
+    if (!Number.isInteger(days) || days < (custom ? 1 : 0) || days > 36500) { status.textContent = 'Enter a whole number of days, 1 to 36500.'; return; }
+    lock(true);
+    const c = await fetch(`/api/v1/counts?keep_cleared_days=${days}`, { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!c) { lock(false); status.textContent = 'Not saved: could not check how many messages this deletes.'; return; } // never delete without the count
+    const n = c.would_remove || 0;
+    if (n && !confirm(`This deletes ${n} cleared message${n === 1 ? '' : 's'} within the hour. Keep cleared messages for ${days} day${days === 1 ? '' : 's'}?`)) { lock(false); return; }
+    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keep_cleared_days: days }) }).catch(() => null);
     if (r && r.ok) return location.reload();
     lock(false);
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
@@ -638,7 +658,8 @@
         const st = m.settings || {};
         const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
-        else if ('render_formatting' in st && (`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
+        else if ('keep_cleared_days' in st && `${st.keep_cleared_days}` !== shell.dataset.keep) reset(); // a stale form would save the old period back
+        else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
       }
       else if (m.notification) onEvent(m);
     };

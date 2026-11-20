@@ -974,7 +974,7 @@
     "tags": [
      "settings"
     ],
-    "description": "Scope read. Only the fields given change; a topic mapped to null in topic_previews drops its override. The four switches need a token with no topic list; a topic override needs that topic.",
+    "description": "Scope read. Only the fields given change; a topic mapped to null in topic_previews drops its override. The four switches need a token with no topic list; a topic override needs that topic. keep_cleared_days needs scope admin.",
     "requestBody": {
      "required": true,
      "content": {
@@ -982,6 +982,12 @@
        "schema": {
         "type": "object",
         "properties": {
+         "keep_cleared_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 36500,
+          "description": "Days dismissed and resolved notifications are kept after they were cleared. 0 keeps them forever. Needs scope admin."
+         },
          "render_formatting": {
           "type": "boolean"
          },
@@ -1128,9 +1134,22 @@
   "/api/v1/counts": {
    "get": {
     "summary": "Exact counts by state",
-    "description": "How many notifications this token can read are in each state, plus inbox (active and acknowledged) and cleared (dismissed and resolved). Every key is always present.",
+    "description": "How many notifications this token can read are in each state, plus inbox (active and acknowledged) and cleared (dismissed and resolved). Every key is always present. With keep_cleared_days, also would_remove: how many cleared notifications that setting would delete now.",
     "tags": [
      "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "keep_cleared_days",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 36500
+      },
+      "description": "Preview a keep_cleared_days value before saving it."
+     }
     ],
     "responses": {
      "200": {
@@ -4714,6 +4733,10 @@
     "type": "object",
     "description": "Display settings every device follows. One set per server.",
     "properties": {
+     "keep_cleared_days": {
+      "type": "integer",
+      "description": "Days dismissed and resolved notifications are kept after they were cleared; 0 keeps them forever. Until set, follows CLRD_RETENTION (30 days)."
+     },
      "render_formatting": {
       "type": "boolean",
       "description": "Render Markdown in messages. Default true."
