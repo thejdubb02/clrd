@@ -286,7 +286,13 @@ conflict resolution, last write on the server wins.
    settings `{"type":"settings","settings":{...}}` (section 2.1), then
    `{"type":"ready","seq":<current>,"epoch":"<id>"}`.
 2. Then live events as they happen, and a new `settings` message whenever a
-   device changes the settings. Clients ignore message types they do not know.
+   device changes the settings. When a device in this token's list (the one
+   `GET /api/v1/devices?all=1` shows, section 6) connects, finishes its replay
+   or drops, the server sends that list again as
+   `{"type":"devices","devices":[...]}`, so a client can show which devices
+   are live without polling. A stream does not hear its own connect: read the
+   list once after `ready`, then apply these. Clients ignore
+   message types they do not know.
 3. Server pings every 30 s; client reconnects with backoff and its last seq.
 4. If `since` is older than retention, server sends `{"type":"reset"}` and the
    client fetches `GET /api/v1/notifications?state=open` fresh.
@@ -498,7 +504,7 @@ resolved`) and `ntfy_import`.
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
-| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices", from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,linked_at,last_seen_at,this,can_unlink}]}`; `kind` is `token`, `browser` or `phone`. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
+| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices", from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,linked_at,last_seen_at,this,can_unlink,sound,connected,caught_up,synced_seq}]}`; `kind` is `token`, `browser` or `phone`. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
 | GET | `/api/v1/devices/log` | The last 200 links, sign-ins and unlinks for the same devices, newest first: `{events:[{at,action,device,device_id,by}]}`. |
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
 | PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |

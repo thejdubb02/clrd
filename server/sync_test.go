@@ -22,10 +22,11 @@ import (
 )
 
 type msg struct {
-	Type         string        `json:"type"`
-	Seq          int64         `json:"seq"`
-	Epoch        string        `json:"epoch"`
-	Notification *Notification `json:"notification"`
+	Type         string         `json:"type"`
+	Seq          int64          `json:"seq"`
+	Epoch        string         `json:"epoch"`
+	Notification *Notification  `json:"notification"`
+	Devices      []LinkedDevice `json:"devices"`
 }
 
 type wsClient struct {

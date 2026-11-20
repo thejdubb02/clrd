@@ -1359,7 +1359,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this, can_unlink and sound. A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
+      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this, can_unlink, sound, and the live sync state: connected (has a stream open now), caught_up (one of its streams has finished replay) and synced_seq (the last event seq the server sent it). A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
      }
     ]
    }
