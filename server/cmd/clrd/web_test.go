@@ -323,7 +323,7 @@ func TestHidePublicPages(t *testing.T) {
 		}
 		body, _ := io.ReadAll(res.Body)
 		res.Body.Close()
-		if res.StatusCode != want || res.Header.Get("X-Robots-Tag") == "" {
+		if res.StatusCode != want || res.Header.Get("X-Robots-Tag") != "noindex, nofollow" {
 			t.Errorf("%s: %d %q, want %d and X-Robots-Tag", path, res.StatusCode, res.Header.Get("X-Robots-Tag"), want)
 		}
 		if path == "/" && res.Header.Get("Location") != "/app" {
