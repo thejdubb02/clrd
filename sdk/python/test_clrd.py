@@ -3,6 +3,7 @@ import io
 import json
 import threading
 import unittest
+import unittest.mock
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import clrd
@@ -75,6 +76,11 @@ class T(unittest.TestCase):
         self.assertEqual(self.last()[:2], ("POST", "/api/v1/notifications/01J/dismiss"))
         self.assertEqual(clrd.list("infra"), {"notifications": [{"id": "01J", "state": "active"}]})
         self.assertEqual(self.last()[:2], ("GET", "/api/v1/notifications?state=open&topic=infra"))
+
+    def test_no_default_server(self):
+        with unittest.mock.patch.dict("os.environ", {"CLRD_URL": ""}), \
+                self.assertRaisesRegex(clrd.ClrdError, "set CLRD_URL"):
+            clrd.Client(None, "clrd_test").send("infra", "hi")
 
     def test_error(self):
         c = clrd.Client(self.url + "/missing", "clrd_test")

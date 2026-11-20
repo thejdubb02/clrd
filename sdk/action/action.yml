@@ -5,8 +5,8 @@ branding:
   color: green
 inputs:
   url:
-    description: clrd server URL
-    default: https://clrd.itsjustin.me
+    description: clrd server URL, like https://clrd.example.com
+    required: true
   token:
     description: clrd token with publish scope (pass a secret)
     required: true
@@ -43,6 +43,7 @@ runs:
         RESOLVE: ${{ inputs.resolve }}
       run: |
         set -euo pipefail
+        [ -n "$CLRD_URL" ] || { echo "::error::set url to your clrd server"; exit 1; }
         enc() { jq -rn --arg v "$1" '$v|@uri'; }
         if [ "$RESOLVE" = "true" ]; then
           [ -n "$KEY" ] || { echo "::error::resolve needs id"; exit 1; }

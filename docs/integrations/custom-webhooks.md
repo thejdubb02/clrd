@@ -11,7 +11,7 @@ token in the URL. Either works:
 
 - `?auth=` plus the base64 of `Bearer clrd_...`:
   `echo -n "Bearer clrd_..." | base64 | tr -d '='`
-- Basic auth in the URL: `https://anything:clrd_...@clrd.itsjustin.me/infra?template=github`
+- Basic auth in the URL: `https://anything:clrd_...@clrd.example.com/infra?template=github`
 
 Use a token scoped to `publish` on that one topic.
 
@@ -40,7 +40,7 @@ A built-in works with no setup. To check that a request really came from the
 service, save its secret for the topic (scope `publish` on the topic):
 
 ```sh
-curl -X PUT https://clrd.itsjustin.me/api/v1/topics/infra/templates/github \
+curl -X PUT https://clrd.example.com/api/v1/topics/infra/templates/github \
   -H "Authorization: Bearer clrd_..." -d '{"secret":"the secret you gave GitHub"}'
 ```
 
@@ -55,7 +55,7 @@ Save a template under any name (letters, digits, `_` and `-`), then send to
 `?template=<that name>`:
 
 ```sh
-curl -X PUT https://clrd.itsjustin.me/api/v1/topics/infra/templates/my-app \
+curl -X PUT https://clrd.example.com/api/v1/topics/infra/templates/my-app \
   -H "Authorization: Bearer clrd_..." -d '{
     "each": "events",
     "title": "{{get . \"service\"}}: {{get . \"summary\" \"text\"}}",

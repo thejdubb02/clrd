@@ -6,7 +6,7 @@ check coming back up resolves it.
 
 1. Integrations, Webhook, Add.
 2. For both "Execute when a check goes down" and "goes up": method `POST`,
-   URL `https://clrd.itsjustin.me/cron?template=healthchecks&auth=<token>`
+   URL `https://clrd.example.com/cron?template=healthchecks&auth=<token>`
    ([how to make `<token>`](custom-webhooks.md#sending-the-token)),
    header `Content-Type: application/json`, and this body:
 

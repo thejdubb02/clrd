@@ -14,12 +14,13 @@ const e = encodeURIComponent;
 
 export class Client {
   constructor({ url, token, fetch: f } = {}) {
-    this.url = (url ?? env("CLRD_URL") ?? "https://clrd.itsjustin.me").replace(/\/+$/, "");
+    this.url = (url ?? env("CLRD_URL") ?? "").replace(/\/+$/, "");
     this.token = token ?? env("CLRD_TOKEN");
     this.fetch = f ?? ((...a) => globalThis.fetch(...a)); // unbound native fetch throws in browsers
   }
 
   async #req(method, path, body) {
+    if (!this.url) throw new ClrdError(0, "no server URL: set CLRD_URL or pass { url }");
     const headers = { "Content-Type": "application/json" };
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
     const res = await this.fetch(this.url + path, {

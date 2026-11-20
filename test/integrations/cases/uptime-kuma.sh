@@ -5,7 +5,7 @@ site=$(toggle_server)
 kuma=$(free_port)
 # The guide's bullet fields, then its Liquid body.
 field() { grep -m1 -- "- $1:" "$ROOT/docs/integrations/uptime-kuma.md" | sed -e 's/^[^`]*`//' -e 's/`$//' \
-  -e "s|https://clrd.itsjustin.me|$CLRD|" -e "s|clrd_\.\.\.|$CLRD_TOKEN|"; }
+  -e "s|https://clrd.example.com|$CLRD|" -e "s|clrd_\.\.\.|$CLRD_TOKEN|"; }
 jq -n --arg url "$(field 'Post URL')" --arg headers "$(field 'Additional Headers')" \
   --arg body "$(snippet uptime-kuma.md 'monitorJSON.name')" --arg site "http://127.0.0.1:$site/up" \
   '{url: $url, headers: $headers, body: $body, site: $site}' >"$WORK/kuma.json"

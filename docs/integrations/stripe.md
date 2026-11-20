@@ -5,7 +5,7 @@ notification that links to it in the dashboard. Event types with `fail` or
 `dispute` in them are priority high.
 
 1. Developers, Webhooks, Add endpoint.
-2. Endpoint URL: `https://clrd.itsjustin.me/billing?template=stripe&auth=<token>`
+2. Endpoint URL: `https://clrd.example.com/billing?template=stripe&auth=<token>`
    ([how to make `<token>`](custom-webhooks.md#sending-the-token)).
 3. Pick the events you want, for example `payment_intent.payment_failed` and
    `charge.dispute.created`.

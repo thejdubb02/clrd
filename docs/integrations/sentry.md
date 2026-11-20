@@ -7,7 +7,7 @@ warning is high.
 
 1. Settings, Developer Settings, Custom Integrations, Create New Integration,
    Internal Integration.
-2. Webhook URL: `https://clrd.itsjustin.me/errors?template=sentry&auth=<token>`
+2. Webhook URL: `https://clrd.example.com/errors?template=sentry&auth=<token>`
    ([how to make `<token>`](custom-webhooks.md#sending-the-token)).
 3. Turn on Alert Rule Action, and under Webhooks tick `issue`.
 4. Copy the integration's Client Secret and save it in clrd so it checks

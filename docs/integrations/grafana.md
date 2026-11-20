@@ -7,7 +7,7 @@ every device.
 
 Alerting, Contact points, New, Integration **Webhook**:
 
-- URL: `https://clrd.itsjustin.me/infra?template=grafana`
+- URL: `https://clrd.example.com/infra?template=grafana`
 - HTTP method: POST
 - Authorization header: scheme `Bearer`, credentials `clrd_...`
 - Leave "Disable resolved message" off: the resolved message is what clears it.
@@ -23,7 +23,7 @@ contactPoints:
       - uid: clrd
         type: webhook
         settings:
-          url: https://clrd.itsjustin.me/infra?template=grafana
+          url: https://clrd.example.com/infra?template=grafana
           httpMethod: POST
           authorization_scheme: Bearer
           authorization_credentials: clrd_...   # or $__file{/etc/grafana/clrd-token}

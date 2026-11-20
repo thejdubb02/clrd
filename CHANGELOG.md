@@ -71,6 +71,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Changed
 
+- SDKs and GitHub Action: no default server. The Go, JavaScript and Python
+  clients used to fall back to `clrd.itsjustin.me`, which is not a clrd
+  server; now a call with no URL and no `CLRD_URL` fails saying to set it, and
+  the action's `url` input is required. Docs use `clrd.example.com` (#249).
 - Server: runs with no settings as any user. The database defaults to
   `~/.local/share/clrd/clrd.db` (an existing `/data/clrd.db` is still used),
   the phone pairing link uses the address your browser opened clrd on when

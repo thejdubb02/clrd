@@ -8,7 +8,7 @@ resolves by key when `status` is `resolved`.
 Settings, Notifications, Setup Notification:
 
 - Notification Type: Webhook
-- Post URL: `https://clrd.itsjustin.me/api/v1/notifications`
+- Post URL: `https://clrd.example.com/api/v1/notifications`
 - Request Body: Custom Body
 - Additional Headers: `{"Authorization": "Bearer clrd_..."}`
 - Custom Body (Liquid template, Kuma 1.23 and 2.x):

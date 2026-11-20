@@ -54,6 +54,12 @@ class ActionTest(unittest.TestCase):
             self.assertEqual(r.returncode == 0, ok, f"{status}: {r.stdout}{r.stderr}")
             self.assertEqual(Fake.hits, ["/api/v1/notifications"])
 
+    def test_no_url(self):
+        r = self.run_action(200, CLRD_URL="")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("set url", r.stdout)
+        self.assertEqual(Fake.hits, [])
+
     def test_resolve(self):
         for status, ok in [(200, True), (404, True), (302, False), (500, False)]:
             r = self.run_action(status, RESOLVE="true")

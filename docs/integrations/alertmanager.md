@@ -13,7 +13,7 @@ route:
 receivers:
   - name: clrd
     webhook_configs:
-      - url: https://clrd.itsjustin.me/infra?template=alertmanager
+      - url: https://clrd.example.com/infra?template=alertmanager
         send_resolved: true   # the default for webhooks, shown for clarity
         http_config:
           authorization:

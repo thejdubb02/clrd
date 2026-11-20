@@ -57,6 +57,16 @@ test("snooze, dismiss, list", async () => {
   assert.equal(call(), "GET /api/v1/notifications?state=open&topic=infra");
 });
 
+test("no default server: a call without a url says to set CLRD_URL", async () => {
+  const saved = process.env.CLRD_URL;
+  delete process.env.CLRD_URL;
+  try {
+    await assert.rejects(new Client({ token: "clrd_test" }).send("infra", "hi"), /set CLRD_URL/);
+  } finally {
+    if (saved !== undefined) process.env.CLRD_URL = saved;
+  }
+});
+
 test("errors carry status and code", async () => {
   const bad = new Client({ url: url + "/missing", token: "clrd_test" });
   await assert.rejects(bad.resolve("infra", "nope"), (e) => e instanceof ClrdError && e.status === 404 && e.code === "not_found");

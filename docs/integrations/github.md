@@ -6,7 +6,7 @@ on it and resolved when it closes. A failed workflow run or check is priority
 high.
 
 1. Repository (or organization) Settings, Webhooks, Add webhook.
-2. Payload URL: `https://clrd.itsjustin.me/dev?template=github&auth=<token>`
+2. Payload URL: `https://clrd.example.com/dev?template=github&auth=<token>`
    (how to make `<token>`: [custom-webhooks.md](custom-webhooks.md#sending-the-token)).
 3. Content type: `application/json`. The form type is not supported.
 4. Secret: any long random string. Save the same one in clrd so it checks

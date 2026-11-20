@@ -5,7 +5,7 @@ one notification, updated as it changes and resolved when its status reaches
 the Done category or it is deleted.
 
 1. Jira settings, System, WebHooks, Create a WebHook.
-2. URL: `https://clrd.itsjustin.me/tickets?template=jira&auth=<token>`
+2. URL: `https://clrd.example.com/tickets?template=jira&auth=<token>`
    ([how to make `<token>`](custom-webhooks.md#sending-the-token)).
 3. Events: issue created, updated and deleted. Add a JQL filter to narrow it.
 4. If you set a secret (the REST API registration supports one), save it in

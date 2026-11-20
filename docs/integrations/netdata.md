@@ -6,7 +6,7 @@ that becomes unreachable is one notification, resolved when it is back.
 Critical is priority high.
 
 1. Space settings, Alerts & Notifications, Notification Methods, Webhook.
-2. Webhook URL: `https://clrd.itsjustin.me/netdata?template=netdata`.
+2. Webhook URL: `https://clrd.example.com/netdata?template=netdata`.
 3. Authentication: Bearer, with your clrd token.
 
 Netdata documents the webhook fields but publishes no sample body, so this
