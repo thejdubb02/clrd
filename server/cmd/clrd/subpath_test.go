@@ -60,12 +60,20 @@ func TestSubPath(t *testing.T) {
 		}
 	}
 	c := browser()
-	for path, want := range map[string]int{"/": 200, "/docs/": 200, "/docs/spec": 200, "/app": 401, "/static/app.css": 200, "/favicon.svg": 200} {
+	for path, want := range map[string]int{"/": 200, "/docs/": 200, "/docs/spec": 200, "/app": 401, "/static/app.css": 200, "/favicon.svg": 200,
+		"/favicon.ico": 200, "/apple-touch-icon.png": 200, "/manifest.webmanifest": 200, "/assets/icon-192.png": 200} {
 		code, body, _ := fetch(t, c, root+path)
 		if code != want {
 			t.Fatalf("GET /clrd%s: %d, want %d", path, code, want)
 		}
 		check(path, body)
+		if strings.HasSuffix(path, "/") || path == "/app" {
+			for _, l := range []string{`href="/clrd/favicon.svg"`, `href="/clrd/assets/icon-32.png"`, `href="/clrd/apple-touch-icon.png"`, `href="/clrd/manifest.webmanifest"`} {
+				if !strings.Contains(body, l) {
+					t.Errorf("GET /clrd%s: no %s", path, l)
+				}
+			}
+		}
 	}
 
 	// Sign in through the form, the way a browser does.

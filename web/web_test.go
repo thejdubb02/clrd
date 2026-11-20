@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"html"
 	"io"
 	"io/fs"
@@ -279,6 +280,45 @@ func TestAssets(t *testing.T) {
 		}
 		if m := inline.FindString(w.Body.String()); m != "" {
 			t.Errorf("%s: inline %q is blocked by the CSP", p, m)
+		}
+	}
+}
+
+// Wrappers like Ferdium and home screens never read the SVG icon (#243).
+func TestIcons(t *testing.T) {
+	h := Handler(NewFake(), "")
+	for p, ct := range map[string]string{"/favicon.svg": "image/svg+xml", "/favicon.ico": "image/x-icon",
+		"/apple-touch-icon.png": "image/png", "/manifest.webmanifest": "application/manifest+json",
+		"/assets/icon-32.png": "image/png", "/assets/icon-192.png": "image/png", "/assets/icon-512.png": "image/png"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", p, nil))
+		if w.Code != 200 || w.Header().Get("Content-Type") != ct || w.Body.Len() == 0 {
+			t.Errorf("%s: %d %q, want 200 %q", p, w.Code, w.Header().Get("Content-Type"), ct)
+		}
+	}
+	var m struct {
+		Icons []struct{ Src string }
+	}
+	_, body := get(t, h, "/manifest.webmanifest")
+	if err := json.Unmarshal([]byte(body), &m); err != nil || len(m.Icons) != 2 {
+		t.Fatalf("manifest: %v %+v", err, m)
+	}
+	for _, i := range m.Icons {
+		if code, _ := get(t, h, "/"+i.Src); code != 200 {
+			t.Errorf("manifest icon %s: %d", i.Src, code)
+		}
+	}
+	links := []string{`<link rel="icon" href="/favicon.svg"`, `<link rel="icon" href="/assets/icon-32.png"`, `<link rel="icon" href="/favicon.ico"`,
+		`<link rel="apple-touch-icon" href="/apple-touch-icon.png"`, `<link rel="manifest" href="/manifest.webmanifest"`}
+	for _, p := range []string{"/", "/docs/", "/docs/spec", "/app", "/app/settings", "/app/ui"} {
+		_, body := get(t, h, p)
+		last := -1
+		for _, l := range links {
+			i := strings.Index(body, l)
+			if i < 0 || i < last {
+				t.Errorf("%s: missing or out of order %s", p, l)
+			}
+			last = i
 		}
 	}
 }

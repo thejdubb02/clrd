@@ -403,10 +403,20 @@ func Handler(api API, baseURL string) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", cached("/static/", static))
 	mux.Handle("GET /assets/", cached("/assets/", assets))
-	mux.HandleFunc("GET /favicon.svg", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		http.ServeFileFS(w, r, clrd.Files, "assets/mark.svg")
-	})
+	// Root icon paths that browsers, wrappers and home screens ask for by
+	// name. The manifest's relative URLs resolve under a sub-path base.
+	for p, f := range map[string][2]string{
+		"/favicon.svg":          {"mark.svg", "image/svg+xml"},
+		"/favicon.ico":          {"favicon.ico", "image/x-icon"},
+		"/apple-touch-icon.png": {"apple-touch-icon.png", "image/png"},
+		"/manifest.webmanifest": {"manifest.webmanifest", "application/manifest+json"},
+	} {
+		mux.HandleFunc("GET "+p, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", f[1])
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			http.ServeFileFS(w, r, clrd.Files, "assets/"+f[0])
+		})
+	}
 	mux.HandleFunc("GET /robots.txt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		tpl.ExecuteTemplate(w, "robots.txt", base(r))

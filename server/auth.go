@@ -643,7 +643,7 @@ func (s *Server) bootstrap(ctx context.Context) error {
 
 var setupPage = template.Must(template.New("setup").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>clrd setup</title><link rel="stylesheet" href="{{.Base}}/static/app.css"></head><body class="text-body">
+<title>clrd setup</title><link rel="icon" href="{{.Base}}/favicon.svg" type="image/svg+xml"><link rel="icon" href="{{.Base}}/favicon.ico" sizes="16x16 32x32 48x48"><link rel="apple-touch-icon" href="{{.Base}}/apple-touch-icon.png"><link rel="stylesheet" href="{{.Base}}/static/app.css"></head><body class="text-body">
 <main class="mx-auto max-w-md px-4 py-16">
 <h1 class="text-foreground mb-4 text-2xl font-semibold tracking-tight">clrd setup</h1>
 {{if .Token}}<p class="mb-3">Admin token for <b class="text-foreground">{{.Name}}</b>. Copy it now; it is not shown again.</p><pre class="mb-3 whitespace-pre-wrap break-all"><code>{{.Token}}</code></pre>

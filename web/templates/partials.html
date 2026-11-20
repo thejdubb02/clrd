@@ -9,7 +9,7 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#F5F3EE" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0F1114" media="(prefers-color-scheme: dark)">
-<link rel="icon" href="{{base}}/favicon.svg" type="image/svg+xml">
+{{template "icons-head"}}
 <link rel="preload" href="{{base}}/assets/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="{{base}}/assets/fonts/GeistMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{{base}}/static/app.css">
@@ -115,3 +115,9 @@ Sitemap: {{.}}/sitemap.xml
 </body>
 </html>
 {{end}}
+
+{{define "icons-head"}}<link rel="icon" href="{{base}}/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="{{base}}/assets/icon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="{{base}}/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="{{base}}/apple-touch-icon.png">
+<link rel="manifest" href="{{base}}/manifest.webmanifest">{{end}}
