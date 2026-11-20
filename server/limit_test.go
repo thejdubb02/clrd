@@ -114,9 +114,15 @@ func TestPasswordLimit(t *testing.T) {
 			t.Errorf("peer %s with trusted proxies: %s, want %s", peer, got, want)
 		}
 	}
-	t.Setenv("CLRD_TRUSTED_PROXIES", "10.0.0.0/33")
-	if _, err := ConfigFromEnv(); err == nil {
-		t.Error("bad CLRD_TRUSTED_PROXIES accepted")
+	for _, bad := range []string{"10.0.0.0/33", " , "} { // a list of nothing must not fall back to trusting every private peer
+		t.Setenv("CLRD_TRUSTED_PROXIES", bad)
+		if _, err := ConfigFromEnv(); err == nil {
+			t.Errorf("bad CLRD_TRUSTED_PROXIES %q accepted", bad)
+		}
+	}
+	t.Setenv("CLRD_TRUSTED_PROXIES", "::ffff:10.0.0.5")
+	if o, _ := ConfigFromEnv(); clientIP(&http.Request{RemoteAddr: "10.0.0.5:1", Header: http.Header{"X-Forwarded-For": {"203.0.113.9"}}}, o.TrustedProxies) != "203.0.113.9" {
+		t.Error("IPv4-mapped proxy address not matched")
 	}
 }
 

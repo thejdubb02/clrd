@@ -112,7 +112,13 @@ func ConfigFromEnv() (Options, error) {
 			}
 			p = netip.PrefixFrom(a, a.BitLen())
 		}
+		if p.Addr().Is4In6() && p.Bits() >= 96 { // the peer is unmapped before matching
+			p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+		}
 		o.TrustedProxies = append(o.TrustedProxies, p.Masked())
+	}
+	if o.TrustedProxies == nil && os.Getenv("CLRD_TRUSTED_PROXIES") != "" {
+		return o, errors.New("CLRD_TRUSTED_PROXIES: set but lists no proxies")
 	}
 	return o, nil
 }
