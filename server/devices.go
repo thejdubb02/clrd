@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -33,17 +35,23 @@ type LinkedDevice struct {
 	SyncedSeq int64 `json:"synced_seq"`
 }
 
-// devicesMsg is the stream message carrying tok's device list, sent when a
-// stream connects, catches up or ends.
-func (s *Server) devicesMsg(ctx context.Context, tok *Token) ([]byte, error) {
+// devicesMsg is the stream message carrying tok's device list, and a key of
+// who is in it and their live state: the stream sends the message only when
+// the key changes, so it never tells of devices outside tok's list.
+func (s *Server) devicesMsg(ctx context.Context, tok *Token) ([]byte, string, error) {
 	ds, err := s.Devices(ctx, tok)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return json.Marshal(struct {
+	var key strings.Builder
+	for _, d := range ds {
+		fmt.Fprintf(&key, "%s %t %t,", d.ID, d.Connected, d.CaughtUp)
+	}
+	msg, err := json.Marshal(struct {
 		Type    string         `json:"type"`
 		Devices []LinkedDevice `json:"devices"`
 	}{"devices", ds})
+	return msg, key.String(), err
 }
 
 // DeviceEvent is one line of the activity log.

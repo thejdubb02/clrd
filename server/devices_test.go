@@ -184,6 +184,15 @@ func TestDeviceLiveStatus(t *testing.T) {
 
 	p.c.Close(websocket.StatusNormalClosure, "")
 	web.until(func(m msg) bool { return pushed(m) && !row(m.Devices).Connected })
+
+	// A token that cannot see the phone never hears it come and go.
+	other := dialWS(t, ts.URL, mkToken(t, s, "other", []string{ScopeRead}, nil), 0)
+	other.until(func(m msg) bool { return m.Type == "ready" })
+	dialWS(t, ts.URL, phone, 0).until(func(m msg) bool { return m.Type == "ready" })
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "after"})
+	if m := other.next(); m.Type == "devices" {
+		t.Fatalf("other token told of the phone: %+v", m.Devices)
+	}
 }
 
 // A second stream on one token closing leaves the token connected.

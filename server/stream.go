@@ -188,15 +188,23 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 		}
 	}
 	last = max(last, since)
-	if err := send(msgReady(last, s.epoch), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
-		return err
-	}
 	st.seq.Store(last)
 	st.ready.Store(true)
 	s.devicesChanged.fire()
 	var devChanged <-chan struct{} // nil blocks forever: no device updates
+	var devSeen string
 	if withSettings {
-		devChanged = s.devicesChanged.wait() // after our own fire: a stream hears the others, not itself
+		// After our own fire, so a stream hears the others and not itself, and
+		// before ready, so a client that reads the list on ready misses nothing.
+		devChanged = s.devicesChanged.wait()
+		_, key, err := s.devicesMsg(ctx, tok)
+		if err != nil {
+			return err
+		}
+		devSeen = key
+	}
+	if err := send(msgReady(last, s.epoch), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
+		return err
 	}
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
@@ -210,10 +218,14 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 			}
 		case <-devChanged:
 			devChanged = s.devicesChanged.wait() // before reading, so no change is missed
-			msg, err := s.devicesMsg(ctx, tok)
+			msg, key, err := s.devicesMsg(ctx, tok)
 			if err != nil {
 				return err
 			}
+			if key == devSeen {
+				continue // the change was outside this token's list
+			}
+			devSeen = key
 			if err := send(msg, -1); err != nil {
 				return err
 			}
@@ -235,12 +247,12 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 				continue // already sent during replay
 			}
 			last = e.Seq
-			st.seq.Store(last)
 			if visible(tok, topics, e.Notification.Topic) {
 				if err := send(e.Raw, e.Seq); err != nil {
 					return err
 				}
 			}
+			st.seq.Store(last)
 		}
 	}
 }
