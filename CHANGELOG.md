@@ -178,6 +178,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: a new alert no longer shows twice in the notification drawer, once
+  bundled under the silent sync notice. The sync notice also shows the real
+  connection state instead of staying on Connecting after the app is opened.
 - Android: the topic chips above the inbox have a solid background and a
   gap below, so cards no longer show through them while scrolling.
 - ntfy publish: a header such as `Prio: high` now wins over a query parameter

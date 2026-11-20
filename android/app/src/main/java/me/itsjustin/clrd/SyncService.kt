@@ -25,7 +25,9 @@ class SyncService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        foreground(R.string.status_connecting)
+        // Called again on every app launch: an already running sync keeps its real status, not "Connecting".
+        if (app.sync == null) app.status.value = SyncClient.Status.CONNECTING
+        foreground()
         // Store and credentials are read together, so a Settings switch cannot pair one server's store with another's API.
         val (store, api) = synchronized(app.configLock) { if (app.configured) RoomStore(app) to app.api() else null to null }
         if (store == null || api == null) {
@@ -59,33 +61,42 @@ class SyncService : Service() {
 
     private fun status(s: SyncClient.Status) {
         app.status.value = s
-        foreground(
-            when (s) {
-                SyncClient.Status.CONNECTING -> R.string.status_connecting
-                SyncClient.Status.CONNECTED -> R.string.status_in_sync
-                SyncClient.Status.OFFLINE -> R.string.service_offline
-                SyncClient.Status.BUSY -> R.string.service_busy
-                SyncClient.Status.AUTH_FAILED -> R.string.service_token_rejected
-            },
-        )
+        foreground()
     }
 
-    private fun foreground(text: Int) {
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val n = NotificationCompat.Builder(this, Tray.SERVICE_CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_clrd)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(text))
-            .setOngoing(true)
-            .setSilent(true)
-            .setContentIntent(open)
-            .build()
+    /** Locked, and reads the status inside the lock, so a status change racing an app launch cannot be overwritten by an older one. */
+    @Synchronized private fun foreground() {
         val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-        ServiceCompat.startForeground(this, 1, n, type)
+        ServiceCompat.startForeground(this, 1, notice(this, app.status.value), type)
     }
 
     companion object {
         const val ACTION_RESTART = "me.itsjustin.clrd.RESTART"
+
+        /**
+         * The always-on sync notice. Its own group keeps it out of the bundle Android makes from an app's
+         * ungrouped notifications, so alerts are never collected under it and never show twice.
+         */
+        fun notice(ctx: Context, s: SyncClient.Status) =
+            NotificationCompat.Builder(ctx, Tray.SERVICE_CHANNEL)
+                .setSmallIcon(R.drawable.ic_stat_clrd)
+                .setContentTitle(ctx.getString(R.string.app_name))
+                .setContentText(
+                    ctx.getString(
+                        when (s) {
+                            SyncClient.Status.CONNECTING -> R.string.status_connecting
+                            SyncClient.Status.CONNECTED -> R.string.status_in_sync
+                            SyncClient.Status.OFFLINE -> R.string.service_offline
+                            SyncClient.Status.BUSY -> R.string.service_busy
+                            SyncClient.Status.AUTH_FAILED -> R.string.service_token_rejected
+                        },
+                    ),
+                )
+                .setGroup(Tray.SERVICE_CHANNEL)
+                .setOngoing(true)
+                .setSilent(true)
+                .setContentIntent(PendingIntent.getActivity(ctx, 0, Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
+                .build()
 
         /** Start (or restart after a settings change). Safe to call from anywhere; background start limits are logged, not thrown. */
         fun start(ctx: Context, restart: Boolean = false) {
