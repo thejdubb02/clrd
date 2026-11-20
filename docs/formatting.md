@@ -30,6 +30,8 @@ Settings live on the server, so a change on one device shows on all of them.
 | `favicons` | on | Show the site's icon next to a link. |
 | `link_previews` | off | Show a card with the page's title, summary and image. |
 | `topic_previews` | none | Turn link previews on or off for one topic. |
+| `snooze_intervals` | `["1h","4h"]` | Snooze times offered on each card, 1 to 8, each up to 31 days (`15m`, `2h`, `48h`). |
+| `snooze_default` | `1h` | The time a plain tap on Snooze uses. Must be one of the snooze times. |
 
 ```sh
 curl -X PUT -H "Authorization: Bearer $TOKEN" -d '{"link_previews":true,"topic_previews":{"alerts":false}}' https://clrd.example.com/api/v1/settings

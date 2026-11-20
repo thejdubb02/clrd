@@ -144,7 +144,7 @@ shows messages the same way:
 
 ```json
 {"render_formatting": true, "autolink": true, "favicons": true, "link_previews": false,
- "topic_previews": {"news": true}}
+ "topic_previews": {"news": true}, "snooze_intervals": ["1h", "4h"], "snooze_default": "1h"}
 ```
 
 `render_formatting` off shows Markdown as plain text. `autolink` turns bare
@@ -153,7 +153,11 @@ http(s) URLs into links. `favicons` shows a site icon next to links.
 topic. `GET /api/v1/settings` reads them and `PUT` changes only the fields
 given (a topic mapped to `null` drops its override); both need scope read. A
 token limited to some topics sees and sets only those topics' overrides and
-cannot change the four switches (403). Every change goes to every open
+cannot change the four switches or the snooze times (403). `snooze_intervals`
+is the list of snooze times clients offer (1 to 8 Go durations such as `15m`
+or `48h`, each above 0 and at most 31 days, no two the same length) and
+`snooze_default` is the one a plain tap uses; it must be in the list. A list
+without the current default makes its first entry the default. Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
 
 **Fetchers.** Clients never contact a linked site; the server does, so the
@@ -442,7 +446,10 @@ is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
   the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
   `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still
-  exist; open notifications are never pruned, so their files keep counting).
+  exist; open notifications are never pruned, so their files keep counting),
+  `CLRD_PUBLIC_PAGES` (`on`; `off` for a private server: `/` redirects to
+  `/app`, `/docs` and `/sitemap.xml` are 404, `robots.txt` disallows
+  everything, and the web pages send `X-Robots-Tag: noindex, nofollow`).
   `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` (60 each, publishes a minute per
   token and per topic, with a burst of the same size; `0` turns one off).
   Every publish counts, on every route; over a cap is a 429 `rate_limited`.

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,11 +15,34 @@ import (
 )
 
 // mountWeb serves the landing page, docs and inbox from the same binary.
-func mountWeb(s *server.Server, baseURL string) {
+// With hide, only the inbox is served and nothing asks to be indexed.
+func mountWeb(s *server.Server, baseURL string, hide bool) {
 	h := signInLink(s, web.Handler(webAPI{s}, baseURL))
+	if hide {
+		h = private(h)
+	}
 	for _, p := range []string{"/", "/docs", "/app", "/static", "/assets", "/favicon.svg", "/robots.txt", "/sitemap.xml"} {
 		s.Mount(p, h)
 	}
+}
+
+// private hides the public site of a private server: / goes to the inbox,
+// /docs and the sitemap are gone, and robots.txt turns every crawler away.
+func private(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+		switch p := r.URL.Path; {
+		case p == "/":
+			http.Redirect(w, r, "/app", http.StatusFound)
+		case p == "/robots.txt":
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			io.WriteString(w, "User-agent: *\nDisallow: /\n")
+		case p == "/docs" || strings.HasPrefix(p, "/docs/") || p == "/sitemap.xml":
+			http.NotFound(w, r)
+		default:
+			h.ServeHTTP(w, r)
+		}
+	})
 }
 
 // signInLink trades /app?auth=... for the session cookie and a redirect to the
@@ -90,6 +114,11 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	}
 	ctx := r.Context()
 	snap := web.Snapshot{Seq: a.s.CurrentSeq(), Epoch: a.s.Epoch(), Counts: map[string]int{}, Me: tok.Name, MeID: tok.ID} // seq first, so replay cannot skip an event
+	ds, err := a.s.Settings(ctx, tok)
+	if err != nil {
+		return snap, err
+	}
+	snap.SnoozeIntervals, snap.SnoozeDefault = ds.SnoozeIntervals, ds.SnoozeDefault
 	want := map[string]bool{}
 	for _, st := range q.States {
 		want[st] = true

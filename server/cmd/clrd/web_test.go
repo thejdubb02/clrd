@@ -131,7 +131,7 @@ func realServer(t *testing.T) (*server.Server, *httptest.Server, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	mountWeb(s, "")
+	mountWeb(s, "", false)
 	ts := httptest.NewServer(s)
 	t.Cleanup(ts.Close)
 	_, raw, err := s.CreateToken(context.Background(), "phone", []string{"admin"}, nil)
@@ -293,4 +293,44 @@ func act(t *testing.T, c *http.Client, base, id, action string) server.Notificat
 		t.Fatalf("%s %s: %d", action, id, res.StatusCode)
 	}
 	return n
+}
+
+// TestHidePublicPages: CLRD_PUBLIC_PAGES=off keeps a private server's
+// address from showing the landing page or docs, or being indexed.
+func TestHidePublicPages(t *testing.T) {
+	t.Setenv("CLRD_PUBLIC_PAGES", "maybe")
+	if _, err := server.ConfigFromEnv(); err == nil {
+		t.Fatal("CLRD_PUBLIC_PAGES=maybe accepted")
+	}
+	t.Setenv("CLRD_PUBLIC_PAGES", "off")
+	opt, err := server.ConfigFromEnv()
+	if err != nil || !opt.HidePublicPages {
+		t.Fatalf("off: %v %v", opt.HidePublicPages, err)
+	}
+	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	mountWeb(s, "", opt.HidePublicPages)
+	ts := httptest.NewServer(s)
+	t.Cleanup(ts.Close)
+	c := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	for path, want := range map[string]int{"/": 302, "/docs": 404, "/docs/spec": 404, "/sitemap.xml": 404, "/robots.txt": 200, "/app": 401, "/static/app.css": 200} {
+		res, err := c.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != want || res.Header.Get("X-Robots-Tag") != "noindex, nofollow" {
+			t.Errorf("%s: %d %q, want %d and X-Robots-Tag", path, res.StatusCode, res.Header.Get("X-Robots-Tag"), want)
+		}
+		if path == "/" && res.Header.Get("Location") != "/app" {
+			t.Errorf("/ goes to %q", res.Header.Get("Location"))
+		}
+		if path == "/robots.txt" && !strings.Contains(string(body), "Disallow: /\n") {
+			t.Errorf("robots.txt: %q", body)
+		}
+	}
 }
