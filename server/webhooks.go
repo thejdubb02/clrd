@@ -378,7 +378,8 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 	if err != nil {
 		return err
 	}
-	var ps []PublishInput // render every item before publishing any, so a bad item publishes nothing
+	md := ntfyMarkdown(param(r, "Markdown", "Md")) // ntfy's flag, as on a plain publish
+	var ps []PublishInput                          // render every item before publishing any, so a bad item publishes nothing
 	for _, item := range items {
 		out := map[string]string{}
 		for _, f := range webhookFields {
@@ -387,7 +388,7 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 			}
 		}
 		p := PublishInput{Topic: topic, ExternalID: out["id"], Title: out["title"], Message: out["message"],
-			Click: out["click"], Priority: prio, Tags: append(splitList(out["tags"]), splitList(param(r, "Tags", "Tag", "Ta"))...)}
+			Click: out["click"], Priority: prio, Markdown: md, Tags: append(splitList(out["tags"]), splitList(param(r, "Tags", "Tag", "Ta"))...)}
 		if p.Priority == 0 {
 			if p.Priority, err = ntfyPriority(out["priority"]); err != nil {
 				return err

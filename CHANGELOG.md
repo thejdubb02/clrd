@@ -132,6 +132,8 @@ Fixed, Removed, Security), as one line a user can understand.
   yet, and a restored backup keeps its old epoch.
 - Web: an open inbox reloads when the server comes back on a different database
   (a new epoch), instead of carrying on from a position that no longer exists.
+- Webhook templates honor `X-Markdown` and `?markdown=false`, so a webhook can
+  ask for its message to be shown as plain text.
 
 ### Changed
 
