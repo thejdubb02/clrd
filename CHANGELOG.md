@@ -194,6 +194,10 @@ Fixed, Removed, Security), as one line a user can understand.
   small `clrd.db.epoch` file next to the database for this.
 - Linking a phone: approving it in the last moments of the 2 minute code no
   longer leaves the browser saying Connected while the phone never connects.
+- Web: a snooze time just typed in Settings can be picked as the default
+  before saving; a settings change from another device no longer drops snooze
+  edits not yet saved; closing the Send box mid-send and starting a new note
+  no longer clears that note when the first send finishes.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.
