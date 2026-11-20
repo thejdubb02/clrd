@@ -280,7 +280,8 @@ the session cookie (same-origin only) as well as a Bearer token.
 - What each scope allows: `read` = list, get, events, WebSocket, plus the
   user's own actions (ack, reply, snooze, dismiss, reopen, bulk clear), because a
   phone that can see a notification must be able to clear it. `publish` =
-  publish, resolve (by id or by external id), ack by external id. `admin` =
+  publish, edit the message, resolve (by id or by external id), ack by
+  external id. `admin` =
   everything, including tokens. A token with a topic allow-list sees and
   touches only those topics; one with grants follows them, as above.
 - Session: `POST /api/v1/session` with `{"token":"clrd_..."}` (JSON or a form
@@ -368,6 +369,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/files/{id}` | Download an uploaded attachment. Scope read on its topic. 404 once the file is gone. |
 | GET | `/api/v1/notifications?topic=&state=open\|all\|<state>&q=&limit=&before=` | List. `open` = active+acknowledged+snoozed. |
 | GET | `/api/v1/notifications/{id}` | One. |
+| PATCH | `/api/v1/notifications/{id}` | Body `{"message":"..."}`: replace the message of an open notification in place (same id and state, an `updated` event). Scope publish on its topic; 409 once dismissed or resolved, or if it has reply buttons (a tap answers the text shown; link buttons are fine). |
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
 | POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`: answer with one of its reply actions (section 2). 400 if not one of them, 409 if already answered or final. |
 | POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. |
@@ -438,6 +440,7 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
 Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?)`, `list(topic?, state?)`,
+`topics()`, `get(id)`, `update(id, message)` (edit the message in place, for progress),
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,
 dismissed or an action is tapped; returns which, so an agent can ask a human

@@ -51,7 +51,8 @@ snippet() {
     inb { buf = buf $0 "\n" }' "$ROOT/docs/integrations/$1")
   [ -n "$out" ] || fail "no code block in $1 contains: $2"
   # Leading indentation is kept: YAML blocks need it.
-  sed -e "s|https://clrd.itsjustin.me|$CLRD|g" -e 's|ntfys://|ntfy://|g' \
+  sed -e "s|https://clrd.itsjustin.me|$CLRD|g" -e "s|https://clrd.example.com|$CLRD|g" \
+    -e 's|ntfys://|ntfy://|g' -e "s|clrd.example.com|127.0.0.1:$CLRD_PORT|g" \
     -e "s|clrd.itsjustin.me|127.0.0.1:$CLRD_PORT|g" -e "s|clrd_\.\.\.|$CLRD_TOKEN|g" <<<"$out"
 }
 

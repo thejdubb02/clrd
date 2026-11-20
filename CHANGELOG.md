@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- MCP: new tools `topics`, `get` and `update`, so an agent can see its topics,
+  read one notification and edit a progress message in place. The REST API has
+  the same edit as `PATCH /api/v1/notifications/{id}`. The MCP guide has setup
+  for Cursor, VS Code, Windsurf, Zed, Codex CLI and Gemini CLI.
 - Android: the app trusts certificate authorities you install in Android
   settings, so a server behind your own home-lab CA works over HTTPS.
 - Android: notifications from the same topic stack together in the phone's
