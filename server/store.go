@@ -903,6 +903,11 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 			return nil, err
 		}
 		if seq != 0 && seq != n.Seq {
+			// A seq the row never had, or one whose later events were pruned,
+			// cannot be checked against the log: refuse it (#280).
+			if seq > n.Seq || seq < s.pruned.Load() {
+				return nil, errf(409, "conflict", "notification changed since seq %d; show the current one", seq)
+			}
 			var changed int // a re-alert changes the seq, not the question
 			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE seq > ? AND type != ? AND json_extract(data, '$.notification.id') = ?`,
 				seq, EventRepeat, n.ID).Scan(&changed); err != nil {

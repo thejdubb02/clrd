@@ -567,6 +567,38 @@ func TestReplyActions(t *testing.T) {
 	}
 }
 
+// #280: once the update event is pruned, a tap on the old card still must
+// not answer the new question, and a seq from the future is refused too.
+func TestReplyStaleAfterPrune(t *testing.T) {
+	s, ts, admin := newTest(t)
+	r := func(v string) map[string]any { return map[string]any{"label": v, "reply": v} }
+	pub := func(msg string) map[string]any {
+		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "agents", "external_id": "q", "message": msg, "actions": []any{r("yes"), r("no")}})
+		return n
+	}
+	old := int64(pub("deploy?")["seq"].(float64))
+	n := pub("roll back?")
+	cur := int64(n["seq"].(float64))
+	if _, err := s.db.Exec(`DELETE FROM events WHERE seq <= ?`, cur); err != nil {
+		t.Fatal(err)
+	}
+	s.pruned.Store(cur)
+	phone := mkToken(t, s, "pixel-9", []string{ScopeRead}, nil)
+	reply := func(seq int64) int {
+		code, _ := call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/reply", phone, map[string]any{"reply": "yes", "seq": seq})
+		return code
+	}
+	if code := reply(cur + 5); code != 409 {
+		t.Errorf("seq newer than the notification: want 409, got %d", code)
+	}
+	if code := reply(old); code != 409 {
+		t.Errorf("tap on the old card after a prune: want 409, got %d", code)
+	}
+	if code := reply(cur); code != 200 {
+		t.Errorf("tap on the current card: want 200, got %d", code)
+	}
+}
+
 // A database made before reply existed gains the column on start.
 func TestReplyColumnAdded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "clrd.db")

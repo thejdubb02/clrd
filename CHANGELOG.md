@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a reply button on an old card can no longer answer a question that
+  was updated since, even after the update has aged out of the event log
+  (#280). The device gets a conflict and shows the current question.
 - Server: the "seen in the last 10 minutes" device list no longer shows a
   reader token devices from other people's sign-ins. It now shows the same
   devices as the full linked devices list (#263).
