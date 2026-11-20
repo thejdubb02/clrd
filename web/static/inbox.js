@@ -304,15 +304,38 @@
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   });
 
+  // Settings: a topic's icon (#199), saved when the box loses focus or on Enter.
+  const ticons = $('[data-topic-icons]');
+  ticons && ticons.addEventListener('submit', e => { e.preventDefault(); document.activeElement.blur(); });
+  ticons && ticons.addEventListener('change', async e => {
+    const box = e.target, status = $('[data-topic-icon-status]');
+    const r = await fetch(`/api/v1/topics/${encodeURIComponent(box.dataset.topic)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ icon: box.value.trim() }) }).catch(() => null);
+    if (r && r.ok) { box.defaultValue = box.value; status.textContent = `Saved the icon for ${box.dataset.topic}.`; return; }
+    status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  });
+
+  // An icon that fails to load (gone, host down) is hidden, not shown broken (#199).
+  document.addEventListener('error', e => { if (e.target.matches?.('img[data-icon]')) e.target.hidden = true; }, true);
+
   // Share and Copy (SPEC section 2): title, message and click, from the card.
-  // Both need a secure page (https or localhost); a plain http LAN address has neither.
+  // Share needs a secure page (https or localhost); a plain http LAN address has
+  // no navigator.clipboard either, so Copy falls back to a hidden text area there.
   document.documentElement.classList.toggle('no-share', !navigator.share);
-  document.documentElement.classList.toggle('no-copy', !navigator.clipboard);
+  document.documentElement.classList.toggle('no-copy', !navigator.clipboard && !document.queryCommandSupported?.('copy'));
+  const copyText = async text => {
+    if (navigator.clipboard) return navigator.clipboard.writeText(text);
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.readOnly = true; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.append(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (!ok) throw new Error('copy refused');
+  };
   async function shareCard(act, c) {
     const d = c.querySelector('[data-share]'), title = d.value, text = d.dataset.message, url = d.dataset.click;
     try {
       if (act === 'share') return await navigator.share({ title, text, ...(url && { url }) });
-      await navigator.clipboard.writeText([title, text].filter(Boolean).join('\n\n') + (url ? `\n${url}` : ''));
+      await copyText([title, text].filter(Boolean).join('\n\n') + (url ? `\n${url}` : ''));
       say('Copied.');
     } catch (err) {
       if (err.name !== 'AbortError') say(act === 'share' ? 'Could not share.' : 'Could not copy.');

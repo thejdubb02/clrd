@@ -189,6 +189,15 @@
       <span class="meta" role="status" data-display-status></span>
     </form>
   </section>
+  {{if .Snap.Topics}}<section class="js-only grid gap-3" aria-labelledby="ticon-h">
+    <h2 id="ticon-h" class="text-base font-semibold">Topic icons</h2>
+    <p class="text-body text-sm/relaxed">An image link shown on new notifications in the topic when the sender gives none. Leave it empty for no icon. Saved when you leave the box.</p>
+    <form class="grid gap-2" data-topic-icons>
+      {{range .Snap.Topics}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="ti-{{.Name}}">{{.Name}}</label>
+        <input id="ti-{{.Name}}" class="input min-w-0 flex-1" type="url" placeholder="https://" value="{{.Icon}}" data-topic="{{.Name}}" autocomplete="off" spellcheck="false"></div>
+      {{end}}<span class="meta" role="status" data-topic-icon-status></span>
+    </form>
+  </section>{{end}}
   <section class="js-only grid gap-3" aria-labelledby="snz-h">
     <h2 id="snz-h" class="text-base font-semibold">Snooze</h2>
     <p class="text-body text-sm/relaxed">Snooze on a card uses the default time. Long press it, or use the arrow next to it, for the other times. These settings apply to every device.</p>

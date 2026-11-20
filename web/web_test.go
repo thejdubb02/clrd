@@ -313,4 +313,21 @@ func TestAttachmentImage(t *testing.T) {
 			t.Errorf("%q: Image() = %v, want %v", typ, got, want)
 		}
 	}
+	// External files (no type) go by the name or the link's path (#199).
+	for _, c := range []struct {
+		a    Attachment
+		want bool
+	}{
+		{Attachment{URL: "https://example.com/graph.PNG"}, true},
+		{Attachment{URL: "https://example.com/g?id=1", Name: "graph.jpg"}, true},
+		{Attachment{URL: "https://example.com/g.webp?size=2#top"}, true},
+		{Attachment{URL: "https://example.com/r.pdf", Name: "r.pdf"}, false},
+		{Attachment{URL: "https://example.com/x?f=a.png"}, false},
+		{Attachment{URL: "https://example.com/i.svg"}, false},
+		{Attachment{URL: "/api/v1/files/1", Name: "a.png", Type: "application/octet-stream"}, false},
+	} {
+		if got := c.a.Image(); got != c.want {
+			t.Errorf("%+v: Image() = %v, want %v", c.a, got, c.want)
+		}
+	}
 }

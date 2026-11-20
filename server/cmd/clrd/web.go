@@ -155,7 +155,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return snap, err
 	}
 	for _, t := range tc {
-		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open})
+		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon})
 	}
 	if tok.Has("admin") { // device names are the owner's business, not every reader's
 		toks, err := a.s.Tokens(ctx, time.Now().Add(-10*time.Minute))

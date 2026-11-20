@@ -329,6 +329,34 @@ try {
   for (let i = 0; i < 50 && !await img.evaluate(i => i.complete); i++) await sharePage.waitForTimeout(100);
   assert.equal(await img.evaluate(i => i.naturalWidth), 1, 'uploaded image did not load on the card');
   await sharePage.close();
+  // On a plain http LAN address there is no navigator.clipboard: Copy still works.
+  const lan = await page.context().newPage();
+  await lan.addInitScript(() => {
+    delete Navigator.prototype.clipboard;
+    window.copied = [];
+    const exec = document.execCommand.bind(document);
+    document.execCommand = c => { if (c === 'copy') window.copied.push(document.activeElement.value); return c === 'copy' || exec(c); };
+  });
+  await lan.goto(`${base}/app`);
+  assert.equal(await lan.evaluate(() => !!navigator.clipboard), false);
+  await lan.locator('article.card', { hasText: 'Share me' }).getByRole('button', { name: 'Copy' }).click();
+  await lan.locator('[data-toast]').filter({ hasText: 'Copied.' }).waitFor();
+  assert.deepEqual(await lan.evaluate(() => window.copied), ['Share me\n\nline one\nhttps://example.com/run/7']);
+  // A topic's icon from Settings lands on its next notification; an icon that
+  // fails to load is hidden; an external image attachment shows inline.
+  await api(phone, '/api/v1/notifications', { topic: 'pics', title: 'First pic', message: 'x' });
+  await lan.goto(`${base}/app/settings`);
+  await lan.locator('#ti-pics').fill(`${base}/no-such-icon.png`);
+  await lan.locator('#ti-pics').press('Enter');
+  await lan.locator('[data-topic-icon-status]').filter({ hasText: 'Saved' }).waitFor();
+  const pic = await api(phone, '/api/v1/notifications', { topic: 'pics', title: 'Broken icon', message: 'x', attachment: { url: `${base}/static/vendor/none.png` } });
+  assert.equal((await get(laptop, pic.id)).icon, `${base}/no-such-icon.png`);
+  await lan.goto(`${base}/app`);
+  const bc = lan.locator('article.card', { hasText: 'Broken icon' });
+  for (let i = 0; i < 50 && await bc.locator('[data-icon]').isVisible(); i++) await lan.waitForTimeout(100);
+  assert.equal(await bc.locator('[data-icon]').isVisible(), false, 'icon that failed to load still shown');
+  assert.equal(await bc.locator('[data-attachment] img').count(), 1, 'external image attachment not inline');
+  await lan.close();
   console.log('ok: share, copy, icon and attachments on the card');
 
   // Markdown bodies: the subset renders, other HTML shows as typed, no images,
