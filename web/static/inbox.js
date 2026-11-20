@@ -489,7 +489,7 @@
     setInterval(() => {
       if (stopped || still.matches || document.hidden || !tipBox.offsetParent || tipBox.matches(':hover') || tipBox.contains(document.activeElement)) return;
       show(at + 1, false);
-    }, 15000);
+    }, 9000); // long enough to read one tip (#292)
   }
 
   const done = { ack: 'Acknowledged', dismiss: 'Cleared', reopen: 'Restored to the inbox' };
