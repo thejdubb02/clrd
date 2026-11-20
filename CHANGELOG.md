@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- ntfy compatibility: `GET /v1/account`, which the ntfy app and CLI use to check
+  a login and scripts use to check a token still works.
 - Web: a command palette on Ctrl+K (Cmd+K on a Mac) that lists every keyboard
   shortcut: J and K to move between notifications, C to clear, A to
   acknowledge, S to snooze, / to search, and G then I, S, C or comma to change

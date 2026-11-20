@@ -3283,6 +3283,43 @@
     ]
    }
   },
+  "/v1/account": {
+   "get": {
+    "summary": "ntfy account check",
+    "description": "Who the credentials belong to, as ntfy answers it. No credentials gives the anonymous account; wrong ones give 401.",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "username": {
+           "type": "string"
+          },
+          "role": {
+           "type": "string",
+           "enum": [
+            "admin",
+            "user",
+            "anonymous"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Wrong credentials"
+     }
+    }
+   }
+  },
   "/v1/health": {
    "get": {
     "summary": "ntfy health",

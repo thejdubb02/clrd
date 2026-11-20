@@ -139,6 +139,23 @@ func (s *Server) ntfyRoutes() {
 		writeJSON(w, 200, map[string]bool{"success": true})
 		return nil
 	})
+	// ntfy's app and CLI call this to check a login; scripts use it to
+	// check a token still works. Only the fields they read.
+	route("GET /v1/account", func(w http.ResponseWriter, r *http.Request) error {
+		tok := s.ntfyAuth(r)
+		if tok == nil && authHeader(r) != "" {
+			return tok.need(ScopeRead, "")
+		}
+		acct := map[string]string{"username": "*", "role": "anonymous"}
+		if tok != nil && tok.ID != anonymousID {
+			acct = map[string]string{"username": tok.Name, "role": "user"}
+			if tok.Has(ScopeAdmin) {
+				acct["role"] = "admin"
+			}
+		}
+		writeJSON(w, 200, acct)
+		return nil
+	})
 	route("GET /v1/health", func(w http.ResponseWriter, r *http.Request) error {
 		writeJSON(w, 200, map[string]bool{"healthy": s.db.PingContext(r.Context()) == nil})
 		return nil
