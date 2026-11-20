@@ -18,10 +18,11 @@ and the web inbox. Clear it on any one of them (swipe on a phone, Clear on the
 web) and it clears on all the others. When the problem fixes itself, the sender resolves it and it clears
 everywhere without anyone touching it.
 
-It works with no setup beyond one setting: start it with `CLRD_BASE_URL` set
-to your address, open the setup link it prints, scan a QR code to add your
-phone, and send. Everything else (check-ins, webhooks, icons, snooze times,
-display settings) is optional and has a default. Settings, topics, tokens and
+Getting started needs one setting: start it with `CLRD_BASE_URL` set to the
+HTTPS address your proxy serves it on, open the setup link it prints to make
+your admin token, scan the Link a phone code with the app and approve it, and
+send. Everything else (check-ins, webhooks, icons, snooze times, display
+settings) is optional and has a default. Server settings, topics, tokens and
 webhooks are all on the REST API (`/openapi.json` describes it), so a script or
 an AI agent can set them up without a person clicking through Settings.
 
@@ -33,7 +34,7 @@ an AI agent can set them up without a person clicking through Settings.
 > **Status: early, no tagged release yet.** The server, web inbox, Android app
 > and SDKs have tests that run in CI, and so do the integration guides (see the
 > [integrations table](docs/integrations/README.md) for what each one runs). The Android app
-> is not in the main F-Droid catalog yet; every build from `main` goes to clrd's own
+> is not in the main F-Droid catalog yet; every Android change on `main` goes to clrd's own
 > F-Droid repo ([how to add it](android/README.md#install-from-the-clrd-f-droid-repo)).
 > See [CHANGELOG.md](CHANGELOG.md).
 
@@ -65,8 +66,9 @@ offline catches up the moment it reconnects.
   [Switch from ntfy](docs/migrate-from-ntfy.md).
   Email is not supported.
 - **Files and icons.** Agents and scripts can attach a file or an icon to a
-  notification, and each topic can have its own icon. The server stores and
-  serves them; the Android app and the web inbox show them.
+  notification, and each topic can have its own icon. The server stores
+  uploaded files; icons are image links. The Android app and the web inbox
+  show both.
 - **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
   work without JavaScript, Markdown formatting and links, link previews,
   Share and Copy on each card, optional stacking by topic, a Ctrl+K command
