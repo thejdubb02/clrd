@@ -28,6 +28,7 @@ Tools:
 | `devices` | none | Every linked device this token can see: name, kind (token, browser or phone), how it was linked, last seen. Never a secret. |
 | `device_log` | none | The last 200 links, sign-ins and unlinks, newest first. |
 | `unlink` | `id` | Sign out a browser or phone from `devices` at once. Unlinking a phone also signs out the browsers it approved. |
+| `sound` | `id?, sound?` | Notification sounds, one choice per device. No arguments lists the valid names and the default (`default`, the device's own sound). With `id` from `devices` and `sound`, sets that device's sound; an unknown name is refused with the list. `devices` shows each device's current sound. |
 
 `wait_for_reply` returns at once if the notification is already acknowledged,
 dismissed or resolved. Otherwise it watches the server's committed events, so

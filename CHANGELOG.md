@@ -24,6 +24,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: each device can have its own notification sound (default, none,
+  chime, ding, pop, bell, alert or soft), read and set through the API and the
+  MCP `sound` tool; `GET /api/v1/sounds` lists the names. The Android app and
+  web inbox start playing the choice in their own follow-up releases (#282).
 - Server: every state change now records how it was made (`via`: the Android
   inbox, a tray button, the web inbox, an agent, ntfy, or the
   server itself), on the event and as one log line per change, so "I never

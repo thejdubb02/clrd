@@ -550,6 +550,7 @@ func (s *Server) routesSetup() {
 	s.pairRoutes()
 	s.linkRoutes()
 	s.deviceRoutes()
+	s.soundRoutes()
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in PublishInput
