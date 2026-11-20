@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Message formats (spec, Message formatting).
@@ -53,10 +55,41 @@ type Settings struct {
 	LinkPreviews     bool `json:"link_previews"`
 	// TopicPreviews overrides LinkPreviews for one topic.
 	TopicPreviews map[string]bool `json:"topic_previews"`
+	// SnoozeIntervals are the choices in a Snooze menu, as Go durations
+	// ("30m", "4h"). SnoozeDefault is one of them: a plain tap uses it.
+	SnoozeIntervals []string `json:"snooze_intervals"`
+	SnoozeDefault   string   `json:"snooze_default"`
+}
+
+// maxSnooze matches the web form's limit on a snooze duration.
+const maxSnooze = 31 * 24 * time.Hour
+
+// checkSnooze validates a snooze list and its default: 1 to 8 different
+// durations, each from 1 minute to 31 days, and the default one of them.
+func checkSnooze(list []string, def string) error {
+	if len(list) < 1 || len(list) > 8 {
+		return errf(400, "bad_request", "snooze_intervals needs 1 to 8 durations")
+	}
+	seen := map[time.Duration]bool{}
+	for _, v := range list {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < time.Minute || d > maxSnooze {
+			return errf(400, "bad_request", "snooze interval %q must be a duration like 30m or 4h, from 1m to 744h", v)
+		}
+		if seen[d] {
+			return errf(400, "bad_request", "snooze interval %q is listed twice", v)
+		}
+		seen[d] = true
+	}
+	if !slices.Contains(list, def) {
+		return errf(400, "bad_request", "snooze_default %q must be one of snooze_intervals", def)
+	}
+	return nil
 }
 
 func defaultSettings() Settings {
-	return Settings{RenderFormatting: true, Autolink: true, Favicons: true, TopicPreviews: map[string]bool{}}
+	return Settings{RenderFormatting: true, Autolink: true, Favicons: true, TopicPreviews: map[string]bool{},
+		SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}
 }
 
 // SettingsPatch is a PUT body: only the fields given change. A topic
@@ -67,6 +100,8 @@ type SettingsPatch struct {
 	Favicons         *bool            `json:"favicons"`
 	LinkPreviews     *bool            `json:"link_previews"`
 	TopicPreviews    map[string]*bool `json:"topic_previews"`
+	SnoozeIntervals  []string         `json:"snooze_intervals"`
+	SnoozeDefault    *string          `json:"snooze_default"`
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -115,8 +150,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return Settings{}, err
 	}
-	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil
-	if global && len(tok.Topics) > 0 {
+	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
+		p.SnoozeIntervals != nil || p.SnoozeDefault != nil
+	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews")
 	}
 	for t := range p.TopicPreviews {
@@ -151,6 +187,20 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 				st.TopicPreviews[t] = *v
 			}
 		}
+		if p.SnoozeIntervals != nil {
+			st.SnoozeIntervals = p.SnoozeIntervals
+			if p.SnoozeDefault == nil && len(st.SnoozeIntervals) > 0 && !slices.Contains(st.SnoozeIntervals, st.SnoozeDefault) {
+				st.SnoozeDefault = st.SnoozeIntervals[0] // the old default left the list
+			}
+		}
+		if p.SnoozeDefault != nil {
+			st.SnoozeDefault = *p.SnoozeDefault
+		}
+		if p.SnoozeIntervals != nil || p.SnoozeDefault != nil {
+			err = checkSnooze(st.SnoozeIntervals, st.SnoozeDefault)
+		}
+	}
+	if err == nil {
 		raw, _ := json.Marshal(st)
 		if _, err = tx.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('display', ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(raw)); err == nil {

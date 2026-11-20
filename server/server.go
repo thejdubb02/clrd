@@ -5,6 +5,7 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -13,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"mime"
 	"net"
@@ -38,9 +40,16 @@ type Options struct {
 	Retention time.Duration // CLRD_RETENTION, default 720h
 	Logger    *slog.Logger  // default slog.Default()
 
+	// HidePublicPages (CLRD_PUBLIC_PAGES=off) is for a private server: / goes to
+	// the inbox, /docs and /sitemap.xml are 404, and robots.txt disallows all.
+	HidePublicPages bool
+
 	Attachments     string // CLRD_ATTACHMENTS, default "attachments" next to DB
 	AttachmentMax   int64  // CLRD_ATTACHMENT_MAX_MB, bytes, default 15 MB
 	AttachmentTotal int64  // CLRD_ATTACHMENT_TOTAL_MB, bytes, default 5000 MB
+
+	RateToken int // CLRD_RATE_TOKEN, publishes a minute per token, default 60, -1 off
+	RateTopic int // CLRD_RATE_TOPIC, publishes a minute per topic, default 60, -1 off
 }
 
 // ConfigFromEnv reads the spec section 7 environment variables.
@@ -54,6 +63,13 @@ func ConfigFromEnv() (Options, error) {
 		o.Retention = d
 	}
 	o.Attachments = os.Getenv("CLRD_ATTACHMENTS")
+	switch v := os.Getenv("CLRD_PUBLIC_PAGES"); v {
+	case "", "on":
+	case "off":
+		o.HidePublicPages = true
+	default:
+		return o, fmt.Errorf("CLRD_PUBLIC_PAGES: want on or off, got %q", v)
+	}
 	for _, v := range []struct {
 		env string
 		to  *int64
@@ -64,6 +80,18 @@ func ConfigFromEnv() (Options, error) {
 				return o, fmt.Errorf("%s: want a whole number of megabytes, got %q", v.env, e)
 			}
 			*v.to = mb << 20
+		}
+	}
+	for _, v := range []struct {
+		env string
+		to  *int
+	}{{"CLRD_RATE_TOKEN", &o.RateToken}, {"CLRD_RATE_TOPIC", &o.RateTopic}} {
+		if e := os.Getenv(v.env); e != "" {
+			n, err := strconv.Atoi(e)
+			if err != nil || n < 0 || n > 1e6 {
+				return o, fmt.Errorf("%s: want publishes a minute (0 turns it off), got %q", v.env, e)
+			}
+			*v.to = cmp.Or(n, -1)
 		}
 	}
 	return o, nil
@@ -85,10 +113,12 @@ type Server struct {
 	revoked  sync.Map     // token ids deleted while the server runs
 	failing  sync.Map     // background job name -> true while it keeps failing; /healthz reports it
 
-	seen      sync.Map // token id -> time last written to last_seen_at
-	pwLimit   *limiter // ntfy password attempts per address
-	setupMu   sync.Mutex
-	setupCode string
+	seen       sync.Map // token id -> time last written to last_seen_at
+	pwLimit    *limiter // ntfy password attempts per address
+	tokLimit   *limiter // publishes per token, nil when off
+	topicLimit *limiter // publishes per topic, nil when off
+	setupMu    sync.Mutex
+	setupCode  string
 
 	settingsChanged signal // fires after every settings change
 	fetch           *fetcher
@@ -127,6 +157,7 @@ func New(opt Options) (*Server, error) {
 	if opt.AttachmentMax == 0 {
 		opt.AttachmentMax = 15 << 20
 	}
+	opt.RateToken, opt.RateTopic = cmp.Or(opt.RateToken, 60), cmp.Or(opt.RateTopic, 60)
 	if opt.AttachmentTotal == 0 {
 		opt.AttachmentTotal = 5000 << 20
 	}
@@ -138,7 +169,7 @@ func New(opt Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{opt: opt, db: db, log: opt.Logger, mux: http.NewServeMux(),
-		pwLimit: newLimiter(10, time.Minute)}
+		pwLimit: newLimiter(10, time.Minute), tokLimit: perMinute(opt.RateToken), topicLimit: perMinute(opt.RateTopic)}
 	s.hub.subs = map[chan Event]string{}
 	var seq, pruned int64
 	if err := db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'events'`).Scan(&seq); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -274,6 +305,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	go s.every(ctx, "snooze wake", wakeEvery, s.wakeSnoozed)
 	go s.every(ctx, "expiry", wakeEvery, s.expireDue)
+	go s.every(ctx, "check-ins", wakeEvery, s.checkins)
 	go s.every(ctx, "prune", time.Hour, s.prune)
 	go s.every(ctx, "cache sweep", time.Hour, s.fetch.sweep)
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
@@ -342,6 +374,9 @@ func (s *Server) api(pattern string, h func(http.ResponseWriter, *http.Request, 
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
 	status, code, msg := errorStatus(err)
+	if ae := (*apiError)(nil); errors.As(err, &ae) && ae.retry > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(ae.retry.Seconds())))))
+	}
 	if status == 500 {
 		s.log.Error("request failed", "err", err)
 	}
@@ -481,18 +516,42 @@ func (s *Server) routesSetup() {
 	})
 	s.api("PUT /api/v1/topics/{topic}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
-			Icon *string `json:"icon"`
+			Icon    *string `json:"icon"`
+			Checkin *string `json:"checkin"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		if in.Icon == nil { // a missing key must not wipe the icon
-			return errf(400, "bad_request", `body needs "icon": a URL, or "" to remove it`)
+		if in.Icon == nil && in.Checkin == nil { // a missing key must not wipe anything
+			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it) or "checkin" (like "25h", or "" for off)`)
 		}
-		if err := s.SetTopicIcon(r.Context(), tok, r.PathValue("topic"), *in.Icon); err != nil {
-			return err
+		topic, out := r.PathValue("topic"), map[string]string{"topic": r.PathValue("topic")}
+		if in.Icon != nil { // checked before the timer changes, so a bad icon changes nothing
+			if err := checkImageURL("icon", *in.Icon); err != nil {
+				return err
+			}
 		}
-		writeJSON(w, 200, map[string]string{"topic": r.PathValue("topic"), "icon": *in.Icon})
+		if in.Checkin != nil {
+			var every time.Duration
+			if *in.Checkin != "" {
+				d, err := time.ParseDuration(*in.Checkin)
+				if err != nil || d == 0 { // only "" turns it off
+					return errf(400, "bad_request", `checkin must be a duration like "25h" or "30m"`)
+				}
+				every = d
+			}
+			if err := s.SetTopicCheckin(r.Context(), tok, topic, every); err != nil {
+				return err
+			}
+			out["checkin"] = *in.Checkin
+		}
+		if in.Icon != nil {
+			if err := s.SetTopicIcon(r.Context(), tok, topic, *in.Icon); err != nil {
+				return err
+			}
+			out["icon"] = *in.Icon
+		}
+		writeJSON(w, 200, out)
 		return nil
 	})
 	s.api("GET /api/v1/devices", func(w http.ResponseWriter, r *http.Request, tok *Token) error {

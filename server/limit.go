@@ -4,7 +4,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,8 +48,10 @@ func (l *limiter) take(key string, now time.Time) time.Duration {
 			l.m[key] = b
 		}
 	}
-	b.tokens = math.Min(l.burst, b.tokens+float64(now.Sub(b.at))/float64(l.every))
-	b.at = now
+	if now.After(b.at) { // a racing caller with an older now must not turn the clock back
+		b.tokens = math.Min(l.burst, b.tokens+float64(now.Sub(b.at))/float64(l.every))
+		b.at = now
+	}
 	if b.tokens < 1 {
 		return time.Duration((1 - b.tokens) * float64(l.every))
 	}
@@ -98,8 +99,35 @@ func clientIP(r *http.Request) string {
 	return ip.String()
 }
 
-// retryAfter sets Retry-After in whole seconds (at least 1) and returns the 429.
-func retryAfter(w http.ResponseWriter, wait time.Duration, msg string) error {
-	w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(wait.Seconds())))))
-	return errf(429, "rate_limited", "%s", msg)
+// retryAfter returns the 429; Server.fail turns wait into Retry-After.
+func retryAfter(wait time.Duration, msg string) error {
+	return &apiError{status: 429, code: "rate_limited", msg: msg, retry: wait}
+}
+
+// perMinute is n a minute with a burst of n, or nil when n < 0 (off).
+func perMinute(n int) *limiter {
+	if n < 0 {
+		return nil
+	}
+	return newLimiter(n, time.Minute/time.Duration(n))
+}
+
+// publishLimit spends one publish from the token's and the topic's caps.
+// ponytail: anonymous publishers share one bucket; key them by address if that bites.
+func (s *Server) publishLimit(tok *Token, topic string) error {
+	now := time.Now()
+	if s.tokLimit != nil {
+		if wait := s.tokLimit.take(tok.ID, now); wait > 0 {
+			return retryAfter(wait, "this token is publishing too fast, try again later")
+		}
+	}
+	if s.topicLimit != nil {
+		if wait := s.topicLimit.take(topic, now); wait > 0 {
+			if s.tokLimit != nil {
+				s.tokLimit.give(tok.ID)
+			}
+			return retryAfter(wait, "this topic is getting too many messages, try again later")
+		}
+	}
+	return nil
 }

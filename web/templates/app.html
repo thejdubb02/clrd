@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := "/app"}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "/app/%s" .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -44,7 +44,7 @@
       </form>
     </header>
     <div class="grid grid-cols-[minmax(0,1fr)] gap-2" data-list>
-      {{range .Snap.Items}}{{template "card" (card . $.View $.Here)}}{{end}}
+      {{range .Snap.Items}}{{template "card" (card . $.View $.Here $.Snap)}}{{end}}
     </div>
     <div class="text-body grid max-w-xl gap-3 py-10 text-sm/relaxed"{{if .Snap.Items}} hidden{{end}} data-empty>
       {{if .Q}}<h2 class="text-foreground text-base font-semibold">No notifications match "{{.Q}}"</h2>
@@ -87,7 +87,7 @@
       {{with $n.Links}}<p class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium" data-links>{{range .}}<a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" rel="noopener noreferrer">{{.Label}}{{template "i-external-link"}}</a>{{end}}</p>{{end}}
     </div>
   </div>
-  <form class="flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="/app/act">
+  <form class="relative flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="/app/act">
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">
     <input type="hidden" name="seq" value="{{$n.Seq}}">
@@ -95,16 +95,17 @@
     {{else}}
       {{range $n.Replies}}<button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}
       {{if ne $n.State "acknowledged"}}<button class="btn" data-variant="outline" name="act" value="ack" data-act="ack">Ack</button>{{end}}
-      {{if ne $n.State "snoozed"}}<details class="popover relative">
-        <summary class="btn" data-variant="outline">Snooze</summary>
-        <div data-popover class="start-0 top-full mt-1 grid w-56 gap-0.5 p-1 md:start-auto md:end-0">
-          <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="1h" data-act="snooze" data-for="1h">1 hour</button>
-          <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="4h" data-act="snooze" data-for="4h">4 hours</button>
-          <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tonight">Tonight <span class="meta ms-auto">20:00</span></button>
+      {{if ne $n.State "snoozed"}}<span class="inline-flex">
+      <button class="btn rounded-e-none select-none [-webkit-touch-callout:none]" data-variant="outline" name="snooze" value="{{.SnoozeDefault}}" data-act="snooze" data-for="{{.SnoozeDefault}}" data-snooze-main title="Snooze {{snoozeLabel .SnoozeDefault}}. Long press for more times.">Snooze</button>
+      <details class="popover static">
+        <summary class="btn rounded-s-none border-s-0 px-2" data-variant="outline" aria-label="More snooze times" title="More snooze times">{{template "i-chevron-down"}}</summary>
+        <div data-popover class="start-5 top-full mt-1 grid w-72 gap-0.5 p-1 max-w-[calc(100%-1.25rem)] min-w-0">
+          {{range .Snooze}}<button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="{{.}}" data-act="snooze" data-for="{{.}}">{{snoozeLabel .}}</button>
+          {{end}}          <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tonight">Tonight <span class="meta ms-auto">20:00</span></button>
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tomorrow">Tomorrow <span class="meta ms-auto">09:00</span></button>
-          <span class="snooze-custom js-only flex gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 min-w-0 flex-1 text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
+          <span class="snooze-custom js-only flex min-w-0 flex-wrap gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 w-auto min-w-0 flex-auto text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
         </div>
-      </details>{{end}}
+      </details></span>{{end}}
       <button class="btn" data-variant="clear" name="act" value="dismiss" data-act="dismiss">{{template "i-check"}}Clear</button>
     {{end}}
   </form>
@@ -137,6 +138,18 @@
   -d '{"topic":"test","message":"Hello from clrd"}' \
   {{.Base}}/api/v1/notifications</code></pre>
   </section>
+  <section class="js-only grid gap-3" aria-labelledby="snz-h">
+    <h2 id="snz-h" class="text-base font-semibold">Snooze</h2>
+    <p class="text-body text-sm/relaxed">Snooze on a card uses the default time. Long press it, or use the arrow next to it, for the other times. These settings apply to every device.</p>
+    <form class="grid max-w-md gap-3" data-snooze-settings>
+      <div class="grid gap-1.5"><label class="label" for="snz-times">Times</label>
+        <input id="snz-times" class="input" name="times" value="{{range $i, $v := .Snap.SnoozeIntervals}}{{if $i}}, {{end}}{{$v}}{{end}}" aria-describedby="snz-hint" autocomplete="off" spellcheck="false">
+        <p id="snz-hint" class="meta">Up to 8, separated by commas. Use m, h or d: 15m, 1h, 2d.</p></div>
+      <div class="grid gap-1.5"><label class="label" for="snz-default">Default</label>
+        <select id="snz-default" class="select" name="default">{{range .Snap.SnoozeIntervals}}<option value="{{.}}"{{if eq . $.Snap.SnoozeDefault}} selected{{end}}>{{snoozeLabel .}}</option>{{end}}</select></div>
+      <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-snooze-status></span></div>
+    </form>
+  </section>
   <section class="grid gap-3" aria-labelledby="look-h">
     <h2 id="look-h" class="text-base font-semibold">Appearance</h2>
     <p class="text-body text-sm/relaxed">The inbox follows your system's light or dark setting.</p>
@@ -156,7 +169,7 @@
         {{if eq .View "cleared"}}<div role="menuitem" data-cmd="restore" data-keywords="reopen undo">{{template "i-rotate-ccw"}}Restore <kbd class="kbd" data-shortcut>R</kbd></div>
         {{else}}<div role="menuitem" data-cmd="dismiss" data-keywords="dismiss done">{{template "i-check"}}Clear <kbd class="kbd" data-shortcut>C</kbd></div>{{end}}
         {{if ne .View "cleared"}}<div role="menuitem" data-cmd="ack" data-keywords="acknowledge">{{template "i-reply"}}Acknowledge <kbd class="kbd" data-shortcut>A</kbd></div>
-        <div role="menuitem" data-cmd="snooze" data-keywords="later hour">{{template "i-clock"}}Snooze 1 hour <kbd class="kbd" data-shortcut>S</kbd></div>{{end}}
+        <div role="menuitem" data-cmd="snooze" data-keywords="later hour">{{template "i-clock"}}Snooze <kbd class="kbd" data-shortcut>S</kbd></div>{{end}}
         <div role="menuitem" data-cmd="next" data-keywords="down select">{{template "i-chevron-down"}}Next <kbd class="kbd" data-shortcut>J</kbd></div>
         <div role="menuitem" data-cmd="prev" data-keywords="up select">{{template "i-chevron-up"}}Previous <kbd class="kbd" data-shortcut>K</kbd></div>
       </div>

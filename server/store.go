@@ -92,7 +92,8 @@ CREATE TABLE IF NOT EXISTS tokens (
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 -- Display settings every device follows, as one JSON document (spec, Message formatting).
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '',
+	checkin_ms INTEGER, checkin_at INTEGER, checkin_late INTEGER NOT NULL DEFAULT 0);
 -- Webhook templates a topic owner saved (webhooks.go); spec is the Webhook as JSON.
 CREATE TABLE IF NOT EXISTS webhook_templates (topic TEXT NOT NULL, name TEXT NOT NULL, spec TEXT NOT NULL, PRIMARY KEY (topic, name));
 -- ntfy passwords (issue #117): each user signs in as its own token, on ntfy routes only.
@@ -217,6 +218,13 @@ func openDB(path string) (*sql.DB, error) {
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS notifications_expires ON notifications(expires_at) WHERE expires_at IS NOT NULL`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("expires index: %w", err)
+	}
+	for _, col := range []string{"checkin_ms INTEGER", "checkin_at INTEGER", "checkin_late INTEGER NOT NULL DEFAULT 0"} {
+		if _, err := db.Exec(`ALTER TABLE topics ADD COLUMN ` + col); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("add topics %s: %w", col, err)
+		}
 	}
 	if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN grants TEXT NOT NULL DEFAULT ''`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
@@ -400,6 +408,7 @@ type PublishInput struct {
 	Actions     []Action    `json:"actions"`
 	Attachment  *Attachment `json:"attachment"` // external only: {"url","name"}; uploads go through PublishFile
 	file        string
+	checkin     bool       // clrd's own missed check-in alert: does not reset the timer
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
 	Expires     string     `json:"expires"`      // optional: a duration ("30m") or RFC3339 time; then the server resolves it
 	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
@@ -418,6 +427,11 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	}
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
 		return nil, err
+	}
+	if in.file == "" { // PublishFile already spent it, before the upload
+		if err := s.publishLimit(tok, in.Topic); err != nil {
+			return nil, err
+		}
 	}
 	if err := checkImageURL("icon", in.Icon); err != nil {
 		return nil, err
@@ -455,6 +469,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if len(in.ExternalID) > 256 {
 		return nil, errf(400, "bad_request", "external_id longer than 256")
 	}
+	if in.ExternalID == checkinID && !in.checkin {
+		return nil, errf(400, "bad_request", "external_id %s is reserved for missed check-in alerts", checkinID)
+	}
 	if in.ExternalID == "." || in.ExternalID == ".." { // a URL path would drop it
 		return nil, errf(400, "bad_request", "external_id cannot be . or ..")
 	}
@@ -475,6 +492,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		return nil, err
 	}
 	var replaced string // file id an upsert drops, removed after commit
+	var extra []Event   // a check-in resolving the topic's missed check-in alert
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		if in.file != "" {
 			var used int64
@@ -494,6 +512,11 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 				return nil, err
 			}
 		}
+		if ev, err := s.checkIn(ctx, tx, in); err != nil {
+			return nil, err
+		} else if ev != nil {
+			extra = append(extra, *ev)
+		}
 		if in.ExternalID != "" {
 			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 				in.Topic, in.ExternalID)
@@ -510,7 +533,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 					n.State, n.SnoozeUntil = Snoozed, &u
 					n.setBy(tok)
 				}
-				return []Event{{Type: EventUpdated, Notification: n}}, nil
+				return append([]Event{{Type: EventUpdated, Notification: n}}, extra...), nil
 			}
 			if !isNotFound(err) {
 				return nil, err
@@ -524,7 +547,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
 		}
-		return []Event{{Type: EventCreated, Notification: n}}, nil
+		return append([]Event{{Type: EventCreated, Notification: n}}, extra...), nil
 	})
 	if err != nil {
 		return nil, err
@@ -566,6 +589,9 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 	}
 	if in.Status == "resolved" {
 		return nil, errf(400, "bad_request", "status resolved cannot carry a file")
+	}
+	if err := s.publishLimit(tok, in.Topic); err != nil {
+		return nil, err
 	}
 	f, err := os.CreateTemp(s.opt.Attachments, ".up-*") // dot: the sweep never mistakes it for a finished file
 	if err != nil {
@@ -1065,13 +1091,140 @@ func (s *Server) SetTopicIcon(ctx context.Context, tok *Token, topic, icon strin
 	if err := checkImageURL("icon", icon); err != nil {
 		return err
 	}
-	if icon == "" {
-		_, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ?`, topic)
+	if icon == "" { // keep the row while it holds a check-in
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ? AND checkin_ms IS NULL`, topic); err != nil {
+			return err
+		}
+		_, err := s.db.ExecContext(ctx, `UPDATE topics SET icon = '' WHERE topic = ?`, topic)
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO topics (topic, icon) VALUES (?, ?)
 		ON CONFLICT(topic) DO UPDATE SET icon = excluded.icon`, topic, icon)
 	return err
+}
+
+// checkinID is the external_id of clrd's own missed check-in alert.
+const checkinID = "clrd-checkin"
+
+// serverToken publishes and resolves clrd's own alerts.
+var serverToken = &Token{Name: "server", Scopes: []string{ScopeAdmin}}
+
+// SetTopicCheckin makes topic expect a message at least every interval (a
+// dead man's switch); 0 turns it off. The timer starts now.
+func (s *Server) SetTopicCheckin(ctx context.Context, tok *Token, topic string, every time.Duration) error {
+	if err := validTopic(topic); err != nil {
+		return err
+	}
+	if err := tok.need(ScopePublish, topic); err != nil {
+		return err
+	}
+	if every != 0 && (every < time.Minute || every > 366*24*time.Hour) {
+		return errf(400, "bad_request", "checkin must be 1m to 8784h")
+	}
+	// Turning it off or changing it starts over, so an open alert is resolved.
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		q, args := `INSERT INTO topics (topic, checkin_ms, checkin_at) VALUES (?, ?, ?)
+			ON CONFLICT(topic) DO UPDATE SET checkin_ms = excluded.checkin_ms, checkin_at = excluded.checkin_at, checkin_late = 0`,
+			[]any{topic, every.Milliseconds(), ms(time.Now())}
+		if every == 0 {
+			q, args = `UPDATE topics SET checkin_ms = NULL, checkin_at = NULL, checkin_late = 0 WHERE topic = ?`, []any{topic}
+		}
+		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+			return nil, err
+		}
+		n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`, topic, checkinID)
+		if isNotFound(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		ev, err := transition(n, Resolved, serverToken, nil)
+		if ev == nil {
+			return nil, err
+		}
+		return []Event{*ev}, err
+	})
+	return err
+}
+
+// errOnTime: the topic checked in between the sweep's query and its alert.
+var errOnTime = errors.New("checked in")
+
+// checkIn runs in a publish's write. clrd's own alert flags the topic late,
+// or gives up with errOnTime if a message got there first. Any other message
+// restarts the timer and, if the topic was late, resolves the alert.
+func (s *Server) checkIn(ctx context.Context, tx *sql.Tx, in PublishInput) (*Event, error) {
+	t := time.Now()
+	if in.checkin {
+		res, err := tx.ExecContext(ctx, `UPDATE topics SET checkin_late = 1 WHERE topic = ?
+			AND checkin_ms IS NOT NULL AND checkin_late = 0 AND checkin_at + checkin_ms <= ?`, in.Topic, ms(t))
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil, errOnTime
+		}
+		return nil, nil
+	}
+	var late bool
+	if err := tx.QueryRowContext(ctx, `SELECT checkin_late FROM topics WHERE topic = ? AND checkin_ms IS NOT NULL`,
+		in.Topic).Scan(&late); errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE topics SET checkin_at = ?, checkin_late = 0 WHERE topic = ?`, ms(t), in.Topic); err != nil {
+		return nil, err
+	}
+	if !late {
+		return nil, nil
+	}
+	n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`, in.Topic, checkinID)
+	if isNotFound(err) { // someone already cleared it
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return transition(n, Resolved, serverToken, nil)
+}
+
+// checkins raises an urgent alert in each topic whose check-in is overdue.
+// The next message to the topic resolves it (see Publish).
+func (s *Server) checkins(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, checkin_ms FROM topics
+		WHERE checkin_ms IS NOT NULL AND checkin_late = 0 AND checkin_at + checkin_ms <= ?`, ms(time.Now()))
+	if err != nil {
+		return err
+	}
+	type due struct {
+		topic string
+		every time.Duration
+	}
+	var ds []due
+	for rows.Next() {
+		var d due
+		var every int64
+		if err := rows.Scan(&d.topic, &every); err != nil {
+			rows.Close()
+			return err
+		}
+		d.every = time.Duration(every) * time.Millisecond
+		ds = append(ds, d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, d := range ds {
+		if _, err := s.Publish(ctx, serverToken, PublishInput{Topic: d.topic, ExternalID: checkinID, Priority: 5,
+			Title: d.topic + " missed its check-in", Message: "No message in " + d.every.String() + ".",
+			Tags: []string{"rotating_light"}, checkin: true}); err != nil && !errors.Is(err, errOnTime) {
+			return err
+		}
+	}
+	return nil
 }
 
 // checkImageURL accepts "" or an absolute http(s) URL: clients load it as an

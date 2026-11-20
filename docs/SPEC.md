@@ -144,7 +144,7 @@ shows messages the same way:
 
 ```json
 {"render_formatting": true, "autolink": true, "favicons": true, "link_previews": false,
- "topic_previews": {"news": true}}
+ "topic_previews": {"news": true}, "snooze_intervals": ["1h", "4h"], "snooze_default": "1h"}
 ```
 
 `render_formatting` off shows Markdown as plain text. `autolink` turns bare
@@ -153,7 +153,11 @@ http(s) URLs into links. `favicons` shows a site icon next to links.
 topic. `GET /api/v1/settings` reads them and `PUT` changes only the fields
 given (a topic mapped to `null` drops its override); both need scope read. A
 token limited to some topics sees and sets only those topics' overrides and
-cannot change the four switches (403). Every change goes to every open
+cannot change the four switches or the snooze times (403). `snooze_intervals`
+is the list of snooze times clients offer (1 to 8 Go durations such as `15m`
+or `48h`, each above 0 and at most 31 days, no two the same length) and
+`snooze_default` is the one a plain tap uses; it must be in the list. A list
+without the current default makes its first entry the default. Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
 
 **Fetchers.** Clients never contact a linked site; the server does, so the
@@ -324,7 +328,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). |
 | POST | `/api/v1/notifications/clear` | Bulk dismiss, body `{"topic":"infra"}` or `{"ids":[...]}`. |
 | GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
-| PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it; a missing `icon` is a 400. Scope publish on the topic. |
+| PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. A body with neither key is a 400. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
 | PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
 | DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
@@ -384,7 +388,7 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, priority?, id?, actions?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, format?, priority?, id?, actions?)`, `list(topic?, state?)`,
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,
 dismissed or an action is tapped; returns which, so an agent can ask a human
@@ -401,7 +405,13 @@ is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
   the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
   `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still
-  exist; open notifications are never pruned, so their files keep counting).
+  exist; open notifications are never pruned, so their files keep counting),
+  `CLRD_PUBLIC_PAGES` (`on`; `off` for a private server: `/` redirects to
+  `/app`, `/docs` and `/sitemap.xml` are 404, `robots.txt` disallows
+  everything, and the web pages send `X-Robots-Tag: noindex, nofollow`).
+  `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` (60 each, publishes a minute per
+  token and per topic, with a burst of the same size; `0` turns one off).
+  Every publish counts, on every route; over a cap is a 429 `rate_limited`.
   An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.

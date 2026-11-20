@@ -208,6 +208,39 @@
     }
   });
 
+  // Long press (or right click) on Snooze opens the other times instead of
+  // snoozing for the default; the click that ends a long press is dropped.
+  let hold = 0, held = null;
+  const more = b => { held = b; b.nextElementSibling.open = true; };
+  document.addEventListener('pointerdown', e => {
+    const b = e.button === 0 && e.target.closest('[data-snooze-main]');
+    held = null;
+    if (b) hold = setTimeout(() => more(b), 500);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => document.addEventListener(t, () => clearTimeout(hold), true));
+  document.addEventListener('contextmenu', e => {
+    const b = e.target.closest('[data-snooze-main]');
+    if (b) { e.preventDefault(); clearTimeout(hold); more(b); }
+  });
+  document.addEventListener('click', e => {
+    if (held && e.target.closest('[data-snooze-main]') === held) { e.preventDefault(); e.stopImmediatePropagation(); }
+    held = null;
+  }, true);
+  document.addEventListener('keydown', () => { held = null; }, true); // a touch long press may end with no click
+
+  // Settings: snooze times. "2d" is sent as "48h", the form the server reads.
+  const snz = $('[data-snooze-settings]');
+  snz && snz.addEventListener('submit', async e => {
+    e.preventDefault();
+    const times = snz.times.value.split(',').map(v => v.trim()).filter(Boolean).map(v => v.replace(/^(\d+)d$/, (_, n) => `${n * 24}h`));
+    const body = { snooze_intervals: times };
+    if (times.includes(snz.default.value)) body.snooze_default = snz.default.value; // otherwise the server keeps or picks the first
+    const status = $('[data-snooze-status]');
+    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+    if (r && r.ok) return location.reload();
+    status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  });
+
   const done = { ack: 'Acknowledged', dismiss: 'Cleared', reopen: 'Restored to the inbox' };
   const tell = text => { announce.textContent = text; };
   document.addEventListener('click', async e => {
@@ -278,7 +311,7 @@
     dismiss: () => press('[data-act=dismiss]'),
     restore: () => press('[data-act=reopen]'),
     ack: () => press('[data-act=ack]'),
-    snooze: () => press('[data-act=snooze][data-for="1h"]'),
+    snooze: () => press('[data-snooze-main]'),
     next: () => move(1),
     prev: () => move(-1),
     search: () => search && (search.focus(), search.select()),
@@ -337,6 +370,11 @@
         tries = 0; if (m.seq > seq) seq = m.seq; live(true);
       }
       else if (m.type === 'reset') reset();
+      else if (m.type === 'settings') {
+        // Snooze times changed on another device: the cards' menus are stale.
+        const st = m.settings || {};
+        if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) reset();
+      }
       else if (m.notification) onEvent(m);
     };
     ws.onclose = () => {

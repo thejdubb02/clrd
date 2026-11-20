@@ -44,6 +44,8 @@ offline catches up the moment it reconnects.
 - **Self-resolving alerts.** Senders tag an alert with their own ID and resolve
   it by that ID when the fault clears. Or give one `"expires": "30m"` and it
   clears itself then.
+- **Missed check-in alerts.** Give a topic an interval, say 25 hours, and clrd
+  raises an urgent alert when a backup or cron job stops reporting in.
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,

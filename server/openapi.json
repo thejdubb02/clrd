@@ -288,7 +288,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
-    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; over CLRD_ATTACHMENT_TOTAL_MB is a 507.",
+    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; over CLRD_ATTACHMENT_TOTAL_MB is a 507. Over the per-token or per-topic publish rate (CLRD_RATE_TOKEN, CLRD_RATE_TOPIC) is a 429 with Retry-After.",
     "requestBody": {
      "required": true,
      "content": {
@@ -1104,8 +1104,8 @@
   },
   "/api/v1/topics/{topic}": {
    "put": {
-    "summary": "Set the icon new notifications in a topic get when their sender gives none",
-    "description": "Scope publish on the topic. An empty icon removes it. Notifications already published keep their icon.",
+    "summary": "Set a topic's icon or its expected check-in interval",
+    "description": "Scope publish on the topic. An empty icon removes it; notifications already published keep their icon. A checkin interval makes the topic a dead man's switch: when no message arrives in time the server publishes an urgent notification with external_id clrd-checkin, and the next message resolves it.",
     "tags": [
      "notifications"
     ],
@@ -1115,13 +1115,14 @@
       "application/json": {
        "schema": {
         "type": "object",
-        "required": [
-         "icon"
-        ],
         "properties": {
          "icon": {
           "type": "string",
           "description": "http(s) image URL, at most 2048 characters, or \"\" to remove the topic icon."
+         },
+         "checkin": {
+          "type": "string",
+          "description": "Expected interval between messages, a Go duration from 1m to 8784h such as \"25h\", or \"\" to turn it off. The timer starts when set."
          }
         }
        }
@@ -1140,6 +1141,9 @@
            "type": "string"
           },
           "icon": {
+           "type": "string"
+          },
+          "checkin": {
            "type": "string"
           }
          }
