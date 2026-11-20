@@ -478,7 +478,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *To
 	if err := s.endSession(r); err != nil {
 		return nil, err
 	}
-	st, raw, err := s.childToken(context.WithoutCancel(r.Context()), parent, parent.ID, deviceName(name, r.UserAgent()))
+	st, raw, err := s.childToken(context.WithoutCancel(r.Context()), parent, parent.ID, deviceName(name, r.UserAgent()), false)
 	if err != nil {
 		return nil, err
 	}
@@ -488,14 +488,15 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *To
 
 // childToken mints a token named name with the scopes, topics and grants of
 // access, listed under parentID so revoking that token revokes this one.
+// phone marks a phone linked from a browser, capped apart from browsers.
 // Pass a context that is not cancelled mid-way: never leave a half-made token.
-func (s *Server) childToken(ctx context.Context, access *Token, parentID, name string) (*Token, string, error) {
+func (s *Server) childToken(ctx context.Context, access *Token, parentID, name string, phone bool) (*Token, string, error) {
 	st, raw, err := s.createToken(ctx, &Token{Name: name, Scopes: access.Scopes, Topics: access.Topics, Grants: access.Grants})
 	if err != nil {
 		return nil, "", err
 	}
 	// Only while the parent exists, so a racing revoke cannot miss this one.
-	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id) SELECT ?, id FROM tokens WHERE id = ?`, st.ID, parentID)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id, phone) SELECT ?, id, ? FROM tokens WHERE id = ?`, st.ID, phone, parentID)
 	if err == nil {
 		if n, _ := res.RowsAffected(); n == 0 {
 			err = errf(401, "unauthorized", "token revoked")
@@ -507,19 +508,21 @@ func (s *Server) childToken(ctx context.Context, access *Token, parentID, name s
 		}
 		return nil, "", err
 	}
-	s.capSessions(ctx, parentID)
+	s.capSessions(ctx, parentID, phone)
 	return st, raw, nil
 }
 
-// maxSessions is how many browsers one token may have signed in at once.
+// maxSessions is how many browsers one token may have signed in at once,
+// and separately how many linked phones it may have.
 // ponytail: fixed cap; make it an option if someone needs more.
 const maxSessions = 20
 
-// capSessions revokes the least recently used browsers of parent past
-// maxSessions, so a sign-in loop cannot grow the token table (issue #50).
-func (s *Server) capSessions(ctx context.Context, parent string) {
+// capSessions revokes the least recently used browsers (or phones) of parent
+// past maxSessions, so a sign-in loop cannot grow the token table (issue #50).
+// Browsers and phones are capped apart, so browsers never evict a phone (#180).
+func (s *Server) capSessions(ctx context.Context, parent string, phone bool) {
 	rows, err := s.db.QueryContext(ctx, `SELECT token_id FROM sessions JOIN tokens ON id = token_id
-	  WHERE parent_id = ? ORDER BY COALESCE(last_seen_at, created_at) DESC, tokens.rowid DESC LIMIT -1 OFFSET ?`, parent, maxSessions)
+	  WHERE parent_id = ? AND phone = ? ORDER BY COALESCE(last_seen_at, created_at) DESC, tokens.rowid DESC LIMIT -1 OFFSET ?`, parent, phone, maxSessions)
 	if err != nil {
 		s.log.Warn("cap sessions", "err", err)
 		return

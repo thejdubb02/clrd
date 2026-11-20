@@ -287,6 +287,8 @@ the session cookie (same-origin only) as well as a Bearer token.
   on Linux"), so each browser is its own device. Revoking the token typed in
   also revokes the browsers signed in with it. One token keeps at most 20
   browsers signed in: the 21st sign-in revokes the one used least recently.
+  Phones linked under a token have their own cap of 20, so browser sign-ins
+  never sign a phone out.
   `DELETE /api/v1/session` revokes
   the browser's token and clears the cookie. The cookie works on `/api/v1/*`
   only, never on the ntfy-style GET publish webhooks.
@@ -315,9 +317,11 @@ the session cookie (same-origin only) as well as a Bearer token.
   binds the secret and name to the code; a later claim with another secret
   gets 410. It gets 202 `{"state":"waiting"}` until approved, then 200
   `{"state":"approved", "token", "name"}` once: a new token with the creating
-  token's scopes, topics and grants, listed under the token typed in (the
-  session's parent when the creator is a browser session), so signing that
-  browser out keeps the phone and revoking the typed token revokes it. 410
+  token's scopes, topics and grants, listed under the token typed in (when
+  the creator is a browser session, the server follows its parents up past
+  every browser session to the first typed token or linked phone), so signing
+  out any browser on the way keeps the phone and revoking that token revokes
+  it. 410
   when denied, expired, used or unknown. Only the creating token may read
   `GET /api/v1/link/{code}` (`{name, state, check}`, state `waiting` or
   `claimed`; once claimed, `check` is a 4-digit match number: the first 4

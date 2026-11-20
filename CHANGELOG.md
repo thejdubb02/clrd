@@ -175,6 +175,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 - ntfy publish: a header such as `Prio: high` now wins over a query parameter
   such as `?priority=low`, the same order ntfy uses.
+- A phone linked from the web inbox is no longer signed out when the same
+  token signs in more than 20 browsers. Phones have their own limit of 20.
+- A phone linked from a browser that was itself signed in by another browser
+  now stays signed in when either browser signs out, like any linked phone.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.
