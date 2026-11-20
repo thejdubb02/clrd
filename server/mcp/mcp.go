@@ -237,8 +237,10 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		body := map[string]any{"topic": str(a, "topic"), "message": str(a, "message")}
-		if v := str(a, "title"); v != "" {
-			body["title"] = v
+		for _, k := range []string{"title", "format"} {
+			if v := str(a, k); v != "" {
+				body[k] = v
+			}
 		}
 		if v, ok := a["priority"].(float64); ok {
 			body["priority"] = int(v)
@@ -393,6 +395,7 @@ var tools = []map[string]any{
 			"topic":    p("string", "Topic, e.g. infra"),
 			"message":  p("string", "Body text"),
 			"title":    p("string", "Optional title"),
+			"format":   map[string]any{"type": "string", "enum": []string{"markdown", "text"}, "description": "markdown (default) or text, which is shown exactly as sent"},
 			"priority": map[string]any{"type": "integer", "minimum": 1, "maximum": 5, "description": "1..5, 5 = urgent"},
 			"id":       p("string", "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id)."),
 			"actions": map[string]any{"type": "array", "maxItems": 3,

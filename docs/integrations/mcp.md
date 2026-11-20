@@ -8,7 +8,7 @@ Tools:
 
 | Tool | Arguments | Does |
 |---|---|---|
-| `send` | `topic, message, title?, priority?, id?, actions?` | Publish. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. |
+| `send` | `topic, message, title?, format?, priority?, id?, actions?` | Publish. `format` is `markdown` (default) or `text`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. |
 | `list` | `topic?, state?` | List, default `open`. |
 | `ack` | `id` | Acknowledge by server id. |
 | `resolve` | `id` or `topic + external_id` | Clear it everywhere. |

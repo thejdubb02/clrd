@@ -14,18 +14,26 @@ Fixed, Removed, Security), as one line a user can understand.
 - Approve agent actions from your phone: point Claude Code's or Codex's
   permission hook at `/mcp/approve` and each prompt arrives as a notification
   with Allow and Deny. No answer in time means deny.
+- MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
+  send plain text that is shown exactly as written.
 - Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
   notification resolves itself then, leaving every inbox and phone.
 - Missed check-in alerts: give a topic an expected interval (for example
   `{"checkin":"25h"}` on `PUT /api/v1/topics/{topic}`) and clrd raises an
   urgent notification when no message arrives in time. The next message
   resolves it on every device.
+- `CLRD_PUBLIC_PAGES=off` for a private server: the address opens the inbox
+  instead of the landing page, the docs are gone, and search engines are told
+  to stay away.
 - ntfy compatibility: `GET /v1/account`, which the ntfy app and CLI use to check
   a login and scripts use to check a token still works.
 - Web: a command palette on Ctrl+K (Cmd+K on a Mac) that lists every keyboard
   shortcut: J and K to move between notifications, C to clear, A to
   acknowledge, S to snooze, / to search, and G then I, S, C or comma to change
   page.
+- Web: Snooze uses a default time from Settings. Long press it, right click
+  it, or tap the arrow next to it for the other times. Settings has a Snooze
+  section to pick up to 8 times and the default, shared by every device.
 - Web: times read as "5 min. ago" and similar. Hover a time to see the exact
   date.
 
