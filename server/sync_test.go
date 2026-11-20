@@ -476,17 +476,21 @@ func TestEpochRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(s.opt.DB + "-wal")
-	os.Remove(s.opt.DB + "-shm")
-	if err := os.WriteFile(s.opt.DB, b, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	restored, err := New(s.opt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer restored.Close()
-	if restored.Epoch() == was {
-		t.Fatalf("restored database kept epoch %q", was)
+	seen := map[string]bool{was: true}
+	for range 2 { // the second restore of the same backup must not bring back an old epoch either
+		os.Remove(s.opt.DB + "-wal")
+		os.Remove(s.opt.DB + "-shm")
+		if err := os.WriteFile(s.opt.DB, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := New(s.opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seen[restored.Epoch()] {
+			t.Fatalf("restored database reused epoch %q", restored.Epoch())
+		}
+		seen[restored.Epoch()] = true
+		restored.Close()
 	}
 }

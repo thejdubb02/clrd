@@ -226,13 +226,14 @@ func New(opt Options) (*Server, error) {
 	if b, err := os.ReadFile(opt.DB + ".epoch"); err == nil {
 		fmt.Sscan(string(b), &sideEpoch, &high)
 	}
-	if sideEpoch == strconv.FormatInt(epoch, 36) && seq < high {
+	// Another epoch there means a database swapped in under it, such as the same backup restored twice.
+	if sideEpoch != "" && (sideEpoch != strconv.FormatInt(epoch, 36) || seq < high) {
 		epoch = rand.Int64()
 		if _, err := db.Exec(`UPDATE meta SET value = ? WHERE key = 'epoch'`, epoch); err != nil {
 			db.Close()
 			return nil, err
 		}
-		opt.Logger.Warn("database is behind its last seq, so it was restored: new epoch, clients start over", "seq", seq, "was", high)
+		opt.Logger.Warn("database was restored or swapped: new epoch, clients start over", "seq", seq, "was", high)
 	}
 	s.epoch = strconv.FormatInt(epoch, 36)
 	s.seq.Store(seq)
