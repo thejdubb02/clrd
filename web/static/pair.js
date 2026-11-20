@@ -27,9 +27,10 @@
         img.hidden = false;
         btn.hidden = true;
         msg.textContent = waiting;
-        const until = Date.parse(p.expires_at);
+        // Time left by the server's clock, so a wrong clock here does not expire it early.
+        const until = performance.now() + (Date.parse(p.expires_at) - (Date.parse(r.headers.get('Date')) || Date.now()));
         const poll = async () => {
-          if (Date.now() > until) return stop('The code expired.');
+          if (performance.now() > until) return stop('The code expired.');
           try {
             if (await step(p.code, stop)) return;
           } catch { /* offline for a moment: keep trying until it expires */ }
