@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home-lab servers often use their own certificate authority. Trusting CAs the
+     person installed in Android settings lets the app reach them over HTTPS.
+     Cleartext stays allowed for plain http servers on a home network; this file
+     replaces android:usesCleartextTraffic, which Android ignores once it exists. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
