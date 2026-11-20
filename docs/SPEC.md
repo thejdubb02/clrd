@@ -260,8 +260,8 @@ the session cookie (same-origin only) as well as a Bearer token.
   lacks, and a grant never holds `admin`. A write-only grant (`publish` only)
   lets the token publish to the topic but not list, get, stream, download
   files from or act on its notifications, on the native API and on the ntfy
-  routes alike. A token with grants never manages tokens and only sees itself
-  in the device list. A browser signed in with it gets the same grants.
+  routes alike. A token with grants never manages tokens and sees only its
+  own devices in the device list (itself and what was linked from it). A browser signed in with it gets the same grants.
   Grants come from `clrd import ntfy` (ntfy's access control list, rules in
   ntfy's own order).
 - Bootstrap: first start with no users prints a one-time admin setup URL to the log.
@@ -419,7 +419,9 @@ resolved`) and `ntfy_import`.
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
-| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices". |
+| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min = "In sync on N devices". With `?all=1`: every linked device, `{devices:[{id,name,kind,via,linked_at,last_seen_at,this,can_unlink}]}`; `kind` is `token`, `browser` or `phone`. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
+| GET | `/api/v1/devices/log` | The last 200 links, sign-ins and unlinks for the same devices, newest first: `{events:[{at,action,device,device_id,by}]}`. |
+| DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin). |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
 | POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |
@@ -487,7 +489,9 @@ Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, a
 dismissed or an action is tapped; returns which, so an agent can ask a human
 "yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
-`reply` (the state). `wait_for_reply` waits at most 600 s.
+`reply` (the state). `wait_for_reply` waits at most 600 s. `devices()`,
+`device_log()` and `unlink(id)` are the device list, its log and unlink
+from section 5.
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
 `PermissionRequest` hook body, sends an Allow / Deny notification, waits, and

@@ -89,6 +89,7 @@ Sitemap: {{.}}/sitemap.xml
     <p class="text-body text-sm/relaxed">Your notifications are private to your clrd server. Paste a token to sign in on this browser. On a new server, open the setup link it printed to its log first.</p>
   </header>
   {{if .Failed}}<div class="alert" data-variant="destructive" role="alert">{{template "i-circle-alert"}}<h2>That token did not work</h2><section>Check it and try again.</section></div>{{end}}
+  {{if .SignedOut}}<div class="alert" role="status" data-signed-out>{{template "i-circle-alert"}}<h2>This browser was signed out</h2><section>Another device unlinked it, or its token was revoked. Sign in again to keep using it here.</section></div>{{end}}
   <form class="signin-form" method="post" action="{{base}}/api/v1/session">
     <div class="field"{{if .Failed}} data-invalid="true"{{end}}>
       <label for="token">Token</label>

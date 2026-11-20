@@ -96,6 +96,13 @@
     <footer><button type="button" class="btn" data-variant="outline" data-send-close>Cancel</button><button class="btn">{{template "i-send"}}Send</button></footer>
   </form>
 </dialog>{{end}}
+{{if eq .View "settings"}}<dialog id="unlink" class="dialog" aria-labelledby="unlink-t">
+  <form class="sm:max-w-md" data-unlink-form>
+    <header><h2 id="unlink-t">Unlink <span data-unlink-name></span>?</h2><p class="text-body">It is signed out at once and needs a token or a new link to come back. Unlinking a phone also signs out the browsers it approved.</p></header>
+    <p class="text-destructive text-sm" role="status" data-unlink-status></p>
+    <footer><button type="button" class="btn" data-variant="outline" data-unlink-close>Cancel</button><button class="btn" data-variant="destructive">Unlink</button></footer>
+  </form>
+</dialog>{{end}}
 <div class="notice" role="status" aria-live="polite" data-toast hidden></div>
 <p class="sr-only" aria-live="polite" data-announce></p>
 </body>
@@ -156,17 +163,28 @@
 </header>
 <div class="grid max-w-2xl gap-10">
   <section class="grid gap-3" aria-labelledby="dev-h">
-    <h2 id="dev-h" class="text-base font-semibold">Devices in sync</h2>
-    {{if .Snap.Devices}}<div class="bg-card overflow-x-auto rounded-xl border">
+    <h2 id="dev-h" class="text-base font-semibold">Linked devices</h2>
+    <p class="text-body text-sm/relaxed">Every token, browser and phone that can read this inbox. Unlink a browser or phone and it is signed out at once. Unlinking a phone also signs out the browsers it approved.</p>
+    {{if .Snap.Linked}}<div class="bg-card overflow-x-auto rounded-xl border">
       <table class="table">
-        <thead><tr><th scope="col">Device</th><th scope="col" class="text-right">Last seen</th></tr></thead>
+        <thead><tr><th scope="col">Device</th><th scope="col">Linked</th><th scope="col">Last seen</th><th scope="col"><span class="sr-only">Unlink</span></th></tr></thead>
         <tbody>
-          {{range .Snap.Devices}}<tr><td class="[overflow-wrap:anywhere]"><span>{{.Name}}</span>{{if and .ID (eq .ID $.Snap.MeID)}} <span class="text-muted-foreground">(this browser)</span>{{end}}</td><td class="meta text-right whitespace-nowrap"><time datetime="{{iso .LastSeen}}" title="{{clock .LastSeen}}">{{clock .LastSeen}}</time></td></tr>
+          {{range .Snap.Linked}}<tr data-device="{{.ID}}"><td class="[overflow-wrap:anywhere]"><span>{{.Name}}</span>{{if .This}} <span class="text-muted-foreground">(this browser)</span>{{end}}
+            <div class="meta">{{if eq .Kind "phone"}}Phone, linked to{{else if eq .Kind "browser"}}Browser, signed in with{{else}}Token{{end}}{{with .Via}} {{.}}{{end}}</div></td>
+            <td class="meta whitespace-nowrap"><time datetime="{{iso .LinkedAt}}" title="{{clock .LinkedAt}}">{{clock .LinkedAt}}</time></td>
+            <td class="meta whitespace-nowrap">{{with .LastSeenAt}}<time datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time>{{else}}Never{{end}}</td>
+            <td class="text-right">{{if and .CanUnlink (not .This)}}<button type="button" class="btn js-only" data-variant="outline" data-unlink="{{.ID}}" data-name="{{.Name}}">Unlink</button>{{end}}</td></tr>
           {{end}}
         </tbody>
       </table>
     </div>
-    {{else}}<p class="text-body text-sm">No devices connected in the last 10 minutes. Open the inbox or the Android app on a device and it shows up here.</p>{{end}}
+    {{else}}<p class="text-body text-sm">No devices yet. Open the inbox or the Android app on a device and it shows up here.</p>{{end}}
+    <details class="text-sm">
+      <summary class="cursor-pointer font-medium">Device activity</summary>
+      {{if .Snap.Log}}<ol class="mt-2 grid gap-1" data-device-log>{{range .Snap.Log}}
+        <li><time class="meta" datetime="{{iso .At}}" title="{{clock .At}}">{{clock .At}}</time> {{.Device}} {{if eq .Action "signed in"}}signed in with{{else}}{{.Action}} by{{end}} {{.By}}</li>{{end}}
+      </ol>{{else}}<p class="text-body mt-2">No links, sign-ins or unlinks yet.</p>{{end}}
+    </details>
   </section>
   <section class="grid gap-3" aria-labelledby="link-h" data-link hidden>
     <h2 id="link-h" class="text-base font-semibold">Link a phone</h2>

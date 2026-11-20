@@ -112,6 +112,18 @@ CREATE TABLE IF NOT EXISTS sessions (
   parent_id TEXT NOT NULL,
   phone INTEGER NOT NULL DEFAULT 0 -- 1 for a phone linked from a browser (issue #180)
 );
+-- Links, sign-ins and unlinks (issue #246). owner is the top token id of the
+-- device, so each person sees only their own lines; names, never secrets.
+CREATE TABLE IF NOT EXISTS device_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  owner TEXT NOT NULL,
+  action TEXT NOT NULL,
+  device TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  by_name TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS device_log_owner ON device_log(owner, id);
 -- Outgoing webhooks (issue #112): events is a JSON array of hook event names.
 CREATE TABLE IF NOT EXISTS hooks_out (
   topic TEXT NOT NULL,

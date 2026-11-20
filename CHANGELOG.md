@@ -26,6 +26,12 @@ Fixed, Removed, Security), as one line a user can understand.
   send it (#267, #265).
 - Server: `GET /api/v1/counts` and the MCP `counts` tool give the exact number
   of notifications in each state, plus inbox and cleared totals.
+- Settings lists every linked device (not only the last 10 minutes) with how
+  and when each was linked, unlinks a browser or phone from another device
+  after a confirm, and shows a log of links, sign-ins and unlinks. An unlinked
+  browser goes to sign-in at once with a plain message. The same is on the
+  API (`GET /api/v1/devices?all=1`, `GET /api/v1/devices/log`,
+  `DELETE /api/v1/devices/{id}`) and MCP (`devices`, `device_log`, `unlink`).
 
 - Docs: the README and landing page now open with the out-of-box path (one
   setting, the setup link, linking the phone by QR, send), point to the clrd F-Droid repo

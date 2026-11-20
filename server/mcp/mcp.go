@@ -279,6 +279,15 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		return h.api(r, "GET", "/api/v1/topics", nil)
 	case "counts":
 		return h.api(r, "GET", "/api/v1/counts", nil)
+	case "devices":
+		return h.api(r, "GET", "/api/v1/devices?all=1", nil)
+	case "device_log":
+		return h.api(r, "GET", "/api/v1/devices/log", nil)
+	case "unlink":
+		if err := need("id"); err != nil {
+			return nil, err
+		}
+		return h.api(r, "DELETE", "/api/v1/devices/"+id, nil)
 	case "get":
 		if err := need("id"); err != nil {
 			return nil, err
@@ -452,4 +461,10 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id"), "for": p("string", "Duration, e.g. 30m or 1h")}, "id", "for")},
 	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout, and answer = the reply value when one of send's actions was tapped.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "timeout_s": map[string]any{"type": "number", "description": "Seconds to wait, default 60, max 600"}}, "id")},
+	{"name": "devices", "description": "List every linked device this token can see: id, name, kind (token, browser or phone), linked and last seen times, and whether it can be unlinked.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "device_log", "description": "Recent links, sign-ins and unlinks of those devices, newest first, with the device that did each.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "unlink", "description": "Unlink a browser or phone by its id from devices. It is signed out at once, with every browser it approved.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices")}, "id")},
 }

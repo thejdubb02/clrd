@@ -147,11 +147,33 @@ type Device struct {
 	LastSeen time.Time `json:"last_seen"`
 }
 
+// LinkedDevice is one row of the Settings device list (issue #246), as
+// GET /api/v1/devices?all=1 returns it.
+type LinkedDevice struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Kind       string     `json:"kind"` // token, browser or phone
+	Via        string     `json:"via"`
+	LinkedAt   time.Time  `json:"linked_at"`
+	LastSeenAt *time.Time `json:"last_seen_at"`
+	This       bool       `json:"this"`
+	CanUnlink  bool       `json:"can_unlink"`
+}
+
+// DeviceEvent is one line of the device activity log, newest first.
+type DeviceEvent struct {
+	At     time.Time `json:"at"`
+	Action string    `json:"action"` // linked, signed in or unlinked
+	Device string    `json:"device"`
+	By     string    `json:"by"`
+}
+
 // Query selects the cards for one inbox view.
 type Query struct {
-	States []string // e.g. active, acknowledged
-	Topic  string   // empty = all topics
-	Q      string   // free-text search, empty = none
+	States  []string // e.g. active, acknowledged
+	Topic   string   // empty = all topics
+	Q       string   // free-text search, empty = none
+	Devices bool     // fill Linked and Log (the Settings page)
 }
 
 // Snapshot is everything one inbox page needs. Seq must be read before (or in
@@ -164,8 +186,10 @@ type Snapshot struct {
 	Counts  map[string]int // open and recent rows by state
 	Topics  []Topic
 	Devices []Device // seen in the last 10 minutes
-	Me      string   // device name of the signed-in token, the state_by its own actions get
-	MeID    string   // its token id, the state_by_id its own actions get (names can repeat)
+	Linked  []LinkedDevice
+	Log     []DeviceEvent
+	Me      string // device name of the signed-in token, the state_by its own actions get
+	MeID    string // its token id, the state_by_id its own actions get (names can repeat)
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
@@ -462,7 +486,7 @@ func Handler(api API, baseURL string) http.Handler {
 			if states == nil { // settings: no list, the rest of the snapshot still counts
 				states = []string{}
 			}
-			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q"))}
+			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings"}
 			snap, err := api.Snapshot(r, q)
 			if errors.Is(err, ErrUnauthorized) {
 				next := *r.URL // keep the filters, drop a stale ?auth= that would beat the new cookie
@@ -476,11 +500,12 @@ func Handler(api API, baseURL string) http.Handler {
 				v.Del("error")
 				v.Del("name")
 				next.RawQuery = v.Encode()
+				_, stale := r.Cookie("clrd_session") // a session that no longer works: unlinked or revoked (#246)
 				page(w, "signin", http.StatusUnauthorized, struct {
 					meta
-					Failed bool
-					Name   string
-				}{meta{Title: "Sign in: clrd", Path: next.RequestURI(), Base: base(r)}, failed, name})
+					Failed, SignedOut bool
+					Name              string
+				}{meta{Title: "Sign in: clrd", Path: next.RequestURI(), Base: base(r)}, failed, !failed && stale == nil, name})
 				return
 			}
 			if err != nil {
