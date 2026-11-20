@@ -92,6 +92,10 @@ Phones need HTTPS. The proxy must pass WebSocket upgrades and must not buffer
 streams. clrd sends a keepalive every 30 seconds, so idle timeouts of a
 minute or more are fine.
 
+Using your own certificate authority? Install its CA certificate on the phone
+(Settings, Security, Encryption and credentials, Install a certificate, CA
+certificate). The Android app trusts CAs installed that way.
+
 Caddy (handles certificates and WebSockets on its own):
 
 ```
