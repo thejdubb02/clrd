@@ -38,6 +38,11 @@ try {
   browser = await chromium.launch();
   const page = await (await browser.newContext({ timezoneId: 'America/Chicago' })).newPage();
   const card = title => page.locator('article.card', { hasText: title });
+  // Width the snooze date box has, and the width its own date and time fields need.
+  const dateFit = scope => scope.getByLabel('Snooze until').evaluate(i => {
+    const c = i.cloneNode(); c.style.cssText = 'position:absolute;visibility:hidden;width:auto;min-width:0;flex:none';
+    i.parentNode.append(c); const need = c.offsetWidth; c.remove(); return { has: i.offsetWidth, need };
+  });
   const toast = page.locator('[data-toast]');
   const announce = page.locator('[data-announce]');
 
@@ -146,6 +151,16 @@ try {
   const g = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Renew domain', message: 'expires in 30 days' });
   await page.reload();
   await card('Renew domain').getByText('Snooze', { exact: true }).click();
+  // The custom time box and its Set button fit inside the menu, not clipped by it.
+  const box = await card('Renew domain').locator('[data-popover]').boundingBox();
+  const set = await card('Renew domain').getByRole('button', { name: 'Set' }).boundingBox();
+  assert.ok(set.x >= box.x && set.x + set.width <= box.x + box.width, 'Set button clipped by the snooze menu');
+  const deskFit = await dateFit(card('Renew domain'));
+  assert.ok(deskFit.has >= deskFit.need, `snooze date box squeezed to ${deskFit.has} px, needs ${deskFit.need} px`);
+  assert.ok(Math.abs(set.y - (await card('Renew domain').getByLabel('Snooze until').boundingBox()).y) < 8, 'Set button wrapped under the date box on a wide screen');
+  // On a wide screen the menu opens inside its card, not over the sidebar.
+  const cardBox = await card('Renew domain').boundingBox();
+  assert.ok(box.x >= cardBox.x, `snooze menu starts at ${box.x}, left of its card at ${cardBox.x}`);
   await card('Renew domain').getByLabel('Snooze until').fill('2031-06-01T08:30');
   await card('Renew domain').getByLabel('Snooze until').press('Enter');
   await announce.filter({ hasText: 'Snoozed until' }).waitFor({ state: 'attached' });
@@ -165,6 +180,27 @@ try {
   await card('Merge 212?').getByText('Answered Yes').waitFor();
   assert.equal(await card('Merge 212?').getByRole('button', { name: 'No' }).count(), 0, 'answered card still offers replies');
   console.log('ok: reply button stores the answer');
+
+  // On a phone, the open Snooze menu stays on screen, even when Snooze ends the first row of buttons.
+  const narrow = await (await browser.newContext({ viewport: { width: 360, height: 740 } })).newPage();
+  await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Deploy 213?', message: 'staging green', actions: [{ label: 'Go', reply: 'go' }, { label: 'No', reply: 'no' }] });
+  await narrow.goto(`${base}/app?auth=${link}`);
+  const wide = narrow.locator('article.card', { hasText: 'Deploy 213?' });
+  await wide.getByText('Snooze', { exact: true }).click();
+  const menu = await wide.locator('[data-popover]').boundingBox();
+  assert.ok(menu.x >= 0 && menu.x + menu.width <= 360, `snooze menu spans ${menu.x} to ${menu.x + menu.width} on a 360 px screen`);
+  assert.equal(await narrow.evaluate(() => document.documentElement.scrollWidth), 360, 'page scrolls sideways with the menu open');
+  // A very small phone too.
+  await narrow.setViewportSize({ width: 300, height: 740 });
+  const small = await wide.locator('[data-popover]').boundingBox();
+  assert.ok(small.x >= 0 && small.x + small.width <= 300, `snooze menu spans ${small.x} to ${small.x + small.width} on a 300 px screen`);
+  const smallSet = await wide.getByRole('button', { name: 'Set' }).boundingBox();
+  assert.ok(smallSet.x >= small.x && smallSet.x + smallSet.width <= small.x + small.width, 'Set button clipped by the snooze menu on a 300 px screen');
+  // The date box keeps the width its own fields need (a squeezed one hides part of the time).
+  const fit = await dateFit(wide);
+  assert.ok(fit.has >= fit.need, `snooze date box squeezed to ${fit.has} px, needs ${fit.need} px on a 300 px screen`);
+  await narrow.context().close();
+  console.log('ok: snooze menu fits a phone screen');
 
   // With JavaScript off the buttons still work: a form post and back to the same page.
   const nojs = await (await browser.newContext({ javaScriptEnabled: false })).newPage();

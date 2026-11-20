@@ -120,6 +120,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: the open Snooze menu stays on screen on a phone, and on a wide screen
+  it no longer cuts off the custom time box.
 - ntfy compatibility: a JSON publish to `/` now reads priority, title, tags,
   click URL and icon from headers when the JSON leaves them out, as ntfy does,
   so Apprise's `?priority=high` arrives.

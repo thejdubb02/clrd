@@ -87,7 +87,7 @@
       {{with $n.Links}}<p class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium" data-links>{{range .}}<a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" rel="noopener noreferrer">{{.Label}}{{template "i-external-link"}}</a>{{end}}</p>{{end}}
     </div>
   </div>
-  <form class="flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="/app/act">
+  <form class="relative flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="/app/act">
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">
     <input type="hidden" name="seq" value="{{$n.Seq}}">
@@ -95,14 +95,14 @@
     {{else}}
       {{range $n.Replies}}<button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}
       {{if ne $n.State "acknowledged"}}<button class="btn" data-variant="outline" name="act" value="ack" data-act="ack">Ack</button>{{end}}
-      {{if ne $n.State "snoozed"}}<details class="popover relative">
+      {{if ne $n.State "snoozed"}}<details class="popover static">
         <summary class="btn" data-variant="outline">Snooze</summary>
-        <div data-popover class="start-0 top-full mt-1 grid w-56 gap-0.5 p-1 md:start-auto md:end-0">
+        <div data-popover class="start-5 top-full mt-1 grid w-72 gap-0.5 p-1 max-w-[calc(100%-1.25rem)] min-w-0">
           <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="1h" data-act="snooze" data-for="1h">1 hour</button>
           <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="4h" data-act="snooze" data-for="4h">4 hours</button>
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tonight">Tonight <span class="meta ms-auto">20:00</span></button>
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tomorrow">Tomorrow <span class="meta ms-auto">09:00</span></button>
-          <span class="snooze-custom js-only flex gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 min-w-0 flex-1 text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
+          <span class="snooze-custom js-only flex min-w-0 flex-wrap gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 w-auto min-w-0 flex-auto text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
         </div>
       </details>{{end}}
       <button class="btn" data-variant="clear" name="act" value="dismiss" data-act="dismiss">{{template "i-check"}}Clear</button>
