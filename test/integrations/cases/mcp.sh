@@ -8,8 +8,8 @@ send=$(snippet mcp.md 'wait_for_reply {' | sed -n '/^send /,/^wait_for_reply/p' 
 out=$(dock -e CLRD -e CLRD_TOKEN -e SEND="$send" -e HOME=/tmp -e npm_config_update_notifier=false \
   -v "$HERE/mcp:/d:ro" -v "$WORK/desktop.json:/w/desktop.json:ro" node:22-slim node /d/drive.mjs /w/desktop.json)
 res() { jq -c --arg t "$1" 'select(.tool == $t) | .out' <<<"$out" | head -1; }
-check "$(res tools/list)" '. == ["ack","counts","device_log","devices","get","list","resolve","send","settings","snooze","topics","unlink","update","wait_for_reply"]' "tools/list"
-ok "tools/list has the fourteen tools in the guide"
+check "$(res tools/list)" '. == ["ack","clear","counts","create_token","delete_hook","delete_template","device_log","devices","dismiss","end_silence","get","hook_deliveries","hooks","list","ntfy_ignored","reopen","resolve","revoke_token","send","server_env","set_hook","set_template","set_topic","settings","silence","silences","snooze","templates","tokens","topics","unlink","update","wait_for_reply"]' "tools/list"
+ok "tools/list has the 33 tools in the guide"
 check "$(res get)" '.message == "Step 3 of 3" and .state == "active"' "get after update"
 check "$(res topics)" 'tostring | contains("agents")' "topics lists agents"
 ok "update edits in place, get and topics read it back"
