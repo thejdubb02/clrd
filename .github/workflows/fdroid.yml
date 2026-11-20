@@ -7,7 +7,7 @@ name: fdroid
 on:
   push:
     branches: [main]
-    paths: ['android/**', '.github/workflows/fdroid.yml']
+    paths: ['android/**', 'assets/sounds/**', '.github/workflows/fdroid.yml']
   workflow_dispatch:
 
 concurrency:

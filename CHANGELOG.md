@@ -43,6 +43,10 @@ Fixed, Removed, Security), as one line a user can understand.
   chime, ding, pop, bell, alert or soft), read and set through the API and the
   MCP `sound` tool; `GET /api/v1/sounds` lists the names. The Android app and
   web inbox start playing the choice in their own follow-up releases (#282).
+- Android: pick the notification sound in Settings, with a Play button to
+  hear each one: the phone's default (still the default), none, or one of
+  the six built-in clrd sounds. Only that phone changes. If the phone's own
+  notification settings override the choice, Settings says so (#282).
 - Server: an admin can read every server setting in effect with
   `GET /api/v1/server`, and create a token with per-topic grants over the API
   (`grants` on `POST /api/v1/tokens`), so an agent can check and set up access

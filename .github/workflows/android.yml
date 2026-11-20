@@ -3,9 +3,9 @@ name: android
 on:
   push:
     branches: [main]
-    paths: ['android/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'assets/sounds/**', '.github/workflows/android.yml']
   pull_request:
-    paths: ['android/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'assets/sounds/**', '.github/workflows/android.yml']
   workflow_dispatch:
 
 # A new push to a pull request cancels its older run. Pushes to main each

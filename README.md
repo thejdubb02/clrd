@@ -76,7 +76,8 @@ offline catches up the moment it reconnects.
   palette, a Send box for a quick note to your phone, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, notifications stacked by
-  topic, Share and Copy, Markdown formatting and tappable links. Trusts
+  topic, Share and Copy, Markdown formatting and tappable links. A choice of
+  six built-in notification sounds (or the phone's default, or none). Trusts
   certificate authorities you install, for a server on a home-lab CA.
 - **Add devices by QR code.** Sign a new browser in by scanning its code with
   the app, or link a phone from Settings in a signed-in browser. Both screens

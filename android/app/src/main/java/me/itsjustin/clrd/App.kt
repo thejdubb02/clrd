@@ -58,6 +58,20 @@ class App : Application() {
         get() = prefs.getBoolean("stack", true)
         set(v) = prefs.edit().putBoolean("stack", v).apply()
 
+    /** This phone's notification sound (docs/SPEC.md section 2.2). Unset means the phone's own default. Change it with [saveSound]. */
+    val sound: String get() = Sounds.known(prefs.getString("sound", null))
+
+    /**
+     * Switches the sound: new channels first, then the choice, then the old channels go and the tray is
+     * reposted quietly onto the new ones (a post to a missing channel is dropped). Call on [io].
+     */
+    fun saveSound(name: String) = synchronized(configLock) {
+        val s = Sounds.known(name)
+        tray.createChannels(s)
+        prefs.edit().putString("sound", s).commit()
+        RoomStore(this).reconcile()
+    }
+
     /**
      * The server database the saved seq belongs to. Saved after the rows, not with them: a crash
      * in between only means one more reset on the next connect.

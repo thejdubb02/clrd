@@ -75,6 +75,19 @@
     <string name="topic_on">on</string>
     <string name="stack">Stack by topic</string>
     <string name="stack_explain">Notifications from the same topic fold into one stack in the phone\'s notification shade. Swiping a notification or stack away only hides it on this phone; clear it in the app to clear it everywhere.</string>
+    <string name="sound">Sound</string>
+    <string name="sound_explain">What this phone plays for a new notification. Only this phone changes. Low priority notifications stay silent, and a muted topic never plays.</string>
+    <string name="sound_preview">Play</string>
+    <string name="sound_default">Phone default</string>
+    <string name="sound_none">None (silent)</string>
+    <string name="sound_chime">Chime</string>
+    <string name="sound_ding">Ding</string>
+    <string name="sound_pop">Pop</string>
+    <string name="sound_bell">Bell</string>
+    <string name="sound_alert">Alert</string>
+    <string name="sound_soft">Soft</string>
+    <string name="sound_overridden">This phone\'s own notification settings changed the sound or turned it down for clrd, so they win over the choice above.</string>
+    <string name="sound_open_settings">Open notification settings</string>
     <!-- Group summary in the tray: how many notifications a topic's stack holds. -->
     <plurals name="tray_stack">
         <item quantity="one">%1$d notification</item>

@@ -32,8 +32,9 @@ These builds are signed with the project's own key, not a debug key and not F-Dr
 - Events replayed after a reconnect are merged per notification until the server sends `ready`, so a phone that was offline does not buzz for alerts that were already cleared elsewhere.
 - Rows live in a Room database with the last applied seq, written in the same transaction.
 - Every tap (Ack, Snooze, Clear, swipe) is saved to a local queue first, applied on screen at once, then sent. Anything that could not be sent goes out before the next WebSocket connect, so an action taken offline is not lost.
-- Each open notification is one system notification with `tag` = notification id. Swiping it away calls the server's `dismiss`. A `dismissed` or `resolved` event from the server cancels it.
+- Each open notification is one system notification with `tag` = notification id. Swiping it away only hides it on this phone (#265). A `dismissed` or `resolved` event from the server cancels it.
 - Channels by priority: p1 min, p2 low, p3 default, p4 and p5 high.
+- Sound (Settings, docs/SPEC.md section 2.2): Android fixes a channel's sound when it is created, so each sound has its own set of channels (`p3-chime`, `p5-alert`). `default` keeps the plain `p1` to `p5`, so phones that never pick a sound see no change. Picking a sound creates its channels, deletes the others and reposts open notifications quietly. The six sound files are copied in from `assets/sounds` at build time. If the phone's own notification settings changed the sound or turned a channel down, Settings says so and links there.
 
 ## Choices worth knowing
 

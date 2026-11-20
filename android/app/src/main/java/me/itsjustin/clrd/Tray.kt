@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -69,22 +70,41 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
 class Tray(private val ctx: Context) {
     private val nm = ctx.getSystemService(NotificationManager::class.java)
 
-    fun createChannels() {
+    /** Makes the channels for [sound] (see [Sounds]) and deletes the other sounds' channels. Posts go to the new ones. */
+    fun createChannels(sound: String = App.of(ctx).sound) {
+        val uri = Sounds.uri(ctx, sound)
+        val audio = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+        val names = listOf(R.string.channel_p1, R.string.channel_p2, R.string.channel_p3, R.string.channel_p4, R.string.channel_p5)
+        val importance = listOf(NotificationManager.IMPORTANCE_MIN, NotificationManager.IMPORTANCE_LOW, NotificationManager.IMPORTANCE_DEFAULT, NotificationManager.IMPORTANCE_HIGH, NotificationManager.IMPORTANCE_HIGH)
+        // A channel the user blocked or turned down in system settings stays that way on the new sound.
+        val ours = nm.notificationChannels.filter { Sounds.isOurs(it.id) }
+        val lowest = ours.groupBy { it.id[1].digitToInt() }.mapValues { (_, cs) -> cs.minOf { it.importance } }
+        val mine = (1..5).map { p ->
+            NotificationChannel(Sounds.channel(p, sound), ctx.getString(names[p - 1]), minOf(importance[p - 1], lowest[p] ?: importance[p - 1]))
+                .apply { if (Sounds.known(sound) != Sounds.DEFAULT) setSound(uri, audio) }
+        }
         nm.createNotificationChannels(
-            listOf(
-                NotificationChannel("p1", ctx.getString(R.string.channel_p1), NotificationManager.IMPORTANCE_MIN),
-                NotificationChannel("p2", ctx.getString(R.string.channel_p2), NotificationManager.IMPORTANCE_LOW),
-                NotificationChannel("p3", ctx.getString(R.string.channel_p3), NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel("p4", ctx.getString(R.string.channel_p4), NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel("p5", ctx.getString(R.string.channel_p5), NotificationManager.IMPORTANCE_HIGH),
+            mine + listOf(
                 // No badge: the always-on "in sync" notice must not put a dot on the app icon.
                 NotificationChannel(SERVICE_CHANNEL, ctx.getString(R.string.channel_service), NotificationManager.IMPORTANCE_MIN)
                     .apply { setShowBadge(false) },
             ),
         )
+        val keep = mine.map { it.id }.toSet()
+        val gone = ours.map { it.id }.filter { it !in keep }.toSet()
+        // Cancelled by us first: Android's own cancel on channel delete can fire the delete intent, which reads as a swipe.
+        nm.activeNotifications.filter { it.notification.channelId in gone }.forEach { nm.cancel(it.tag, it.id) }
+        gone.forEach(nm::deleteNotificationChannel)
         // Android never lets an app change a channel's badge setting after creation, so the old channel is replaced.
         nm.deleteNotificationChannel("service")
     }
+
+    /** True when the phone's own settings override the chosen sound (changed sound or importance on p3..p5). */
+    fun soundOverridden(sound: String = App.of(ctx).sound): Boolean =
+        Sounds.overridden(
+            Sounds.uri(ctx, sound),
+            (3..5).associateWith { p -> nm.getNotificationChannel(Sounds.channel(p, sound))?.let { it.sound to it.importance } },
+        )
 
     fun apply(step: TrayStep) {
         when (step) {
@@ -165,7 +185,7 @@ class Tray(private val ctx: Context) {
             app.trayHidden -= n.id
         }
         val text = Md.tray(n.message, n.isMarkdown)
-        val b = NotificationCompat.Builder(ctx, "p${n.priority}")
+        val b = NotificationCompat.Builder(ctx, Sounds.channel(n.priority, app.sound))
             .setSmallIcon(R.drawable.ic_stat_clrd)
             .setContentTitle(n.title.ifEmpty { n.topic })
             .setContentText(text)

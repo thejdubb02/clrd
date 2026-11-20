@@ -70,6 +70,29 @@ android {
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
+// The notification sounds live once in the repo (assets/sounds, docs/SPEC.md section 2.2) and ship
+// in both the server and this app. Copied in as res/raw at build time, so there is no second copy to drift.
+abstract class CopySounds : DefaultTask() {
+    @get:InputFiles abstract val wavs: ConfigurableFileCollection
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    @TaskAction fun copy() {
+        val raw = outputDir.get().dir("raw").asFile
+        raw.deleteRecursively()
+        raw.mkdirs()
+        check(!wavs.isEmpty) { "no sounds in assets/sounds" }
+        wavs.forEach { it.copyTo(raw.resolve(it.name)) }
+    }
+}
+
+val copySounds = tasks.register<CopySounds>("copySounds") {
+    wavs.from(fileTree(rootDir.resolve("../assets/sounds")) { include("*.wav") })
+}
+
+androidComponents {
+    onVariants { v -> v.sources.res?.addGeneratedSourceDirectory(copySounds, CopySounds::outputDir) }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
