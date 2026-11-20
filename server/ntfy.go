@@ -304,8 +304,9 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		file = "" // GET /{topic}/publish has no body to be the file
 	}
 	inline := ntfyMarkdown(param(r, "Template", "Tpl")) // ntfy's yes/true/1 (#272); any other ?template= is a named one
-	tpl := inline != nil && *inline && file == "" && r.Method != http.MethodGet
-	if t := r.URL.Query().Get("template"); t != "" && inline == nil && r.Method != http.MethodGet {
+	yes := inline != nil && *inline
+	tpl := yes && file == "" && r.Method != http.MethodGet
+	if t := r.URL.Query().Get("template"); t != "" && !yes && r.Method != http.MethodGet {
 		return s.webhookIn(w, r, tok, t) // webhooks.go
 	}
 	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid")}
