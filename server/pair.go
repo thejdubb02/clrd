@@ -253,6 +253,7 @@ func (s *Server) renderPairPage(w http.ResponseWriter, data map[string]any) erro
 var pairPage = template.Must(template.New("pair").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>{{.Title}}: clrd</title>
+<link rel="icon" href="{{.Base}}/favicon.svg" type="image/svg+xml"><link rel="icon" href="{{.Base}}/favicon.ico" sizes="16x16 32x32 48x48"><link rel="apple-touch-icon" href="{{.Base}}/apple-touch-icon.png">
 <style>body{font:16px system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;color:#0F1114;background:#F5F3EE}
 @media (prefers-color-scheme:dark){body{color:#F5F3EE;background:#0F1114}}
 button,a.btn{display:inline-block;font:inherit;padding:.6rem 1rem;border:1px solid #DEDAD1;border-radius:12px;background:transparent;color:inherit;text-decoration:none;margin:0 .5rem .5rem 0}

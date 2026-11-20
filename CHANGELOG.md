@@ -210,6 +210,10 @@ Fixed, Removed, Security), as one line a user can understand.
   lists its own devices: itself, the token or phone that signed it in, and
   that token's other sessions. It still never shows anyone else's. When the
   count is unknown the header says only "In sync". (#245)
+- Web: the clrd icon now shows in Ferdium, other app wrappers, bookmarks and
+  home screens. The server sends `/favicon.ico`, `/apple-touch-icon.png`, PNG
+  icons at 32, 192 and 512 pixels and a small web manifest, and every page
+  links them, also under a sub-path base URL (#243).
 - Android: switching to another server no longer keeps the old server's
   snooze times, and the snooze times box is no longer reset while you type in
   it when another device saves them.
