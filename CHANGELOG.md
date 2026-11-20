@@ -24,6 +24,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- MCP: tools to set up every feature except the environment settings (which
+  `server_env` reads), so an agent needs no web page or command line: dismiss, reopen and clear; silences; topic icon and check-in;
+  incoming webhook templates; and, with an admin token, outgoing webhooks,
+  tokens with per-topic grants, the server settings in effect and ignored ntfy
+  options (#252).
 - Server: an admin can read every server setting in effect with
   `GET /api/v1/server`, and create a token with per-topic grants over the API
   (`grants` on `POST /api/v1/tokens`), so an agent can check and set up access

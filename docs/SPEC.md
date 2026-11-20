@@ -532,7 +532,15 @@ dismissed or an action is tapped; returns which, so an agent can ask a human
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
 `reply` (the state). `wait_for_reply` waits at most 600 s. `devices()`,
 `device_log()` and `unlink(id)` are the device list, its log and unlink
-from section 5.
+from section 5. Setup tools, each one REST call: path arguments go in the URL,
+the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dismiss(id)`, `reopen(id)`, `clear(topic | ids)`, `silences()`,
+`silence(topic?, tag?, for | until, comment?)`, `end_silence(id)`,
+`set_topic(topic, icon?, checkin?)`, `templates(topic)`,
+`set_template(topic, name, ...)`, `delete_template(topic, name)`, and, admin
+only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?)`,
+`delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
+`create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
+`server_env()` (`GET /api/v1/server`) and `ntfy_ignored()`.
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
 `PermissionRequest` hook body, sends an Allow / Deny notification, waits, and
