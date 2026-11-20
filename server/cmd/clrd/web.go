@@ -90,6 +90,11 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	}
 	ctx := r.Context()
 	snap := web.Snapshot{Seq: a.s.CurrentSeq(), Epoch: a.s.Epoch(), Counts: map[string]int{}, Me: tok.Name, MeID: tok.ID} // seq first, so replay cannot skip an event
+	ds, err := a.s.Settings(ctx, tok)
+	if err != nil {
+		return snap, err
+	}
+	snap.SnoozeIntervals, snap.SnoozeDefault = ds.SnoozeIntervals, ds.SnoozeDefault
 	want := map[string]bool{}
 	for _, st := range q.States {
 		want[st] = true

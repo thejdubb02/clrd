@@ -139,7 +139,7 @@ try {
   const d = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Cert renews soon', message: '7 days left' });
   await page.reload();
   const want = await page.evaluate(() => { const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); return t.toISOString(); });
-  await card('Cert renews soon').getByText('Snooze', { exact: true }).click();
+  await card('Cert renews soon').getByLabel('More snooze times').click();
   await card('Cert renews soon').getByRole('button', { name: 'Tomorrow 09:00' }).click();
   await announce.filter({ hasText: 'Snoozed until' }).waitFor({ state: 'attached' });
   const got = await get(laptop, d.id);
@@ -150,7 +150,7 @@ try {
   // A custom time, confirmed with Enter, snoozes until that time (and does not Ack).
   const g = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Renew domain', message: 'expires in 30 days' });
   await page.reload();
-  await card('Renew domain').getByText('Snooze', { exact: true }).click();
+  await card('Renew domain').getByLabel('More snooze times').click();
   // The custom time box and its Set button fit inside the menu, not clipped by it.
   const box = await card('Renew domain').locator('[data-popover]').boundingBox();
   const set = await card('Renew domain').getByRole('button', { name: 'Set' }).boundingBox();
@@ -169,6 +169,48 @@ try {
   assert.equal(new Date(custom.snooze_until).toISOString(), '2031-06-01T13:30:00.000Z'); // 08:30 in Chicago (CDT)
   console.log('ok: custom snooze time with Enter');
 
+  // Snooze times from Settings: a tap uses the default, a long press or right
+  // click opens the list instead of snoozing, and an open page picks up a change.
+  const putSettings = async body => {
+    const r = await fetch(`${base}/api/v1/settings`, { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(r.status, 200, `PUT settings: ${r.status}`);
+  };
+  const tap = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Rotate keys', message: 'due' });
+  const hold = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Prune images', message: 'disk 80%' });
+  const sp = await page.context().newPage(); // page no longer hears live events (above)
+  await sp.goto(`${base}/app`);
+  const sc = t => sp.locator('article.card', { hasText: t });
+  await putSettings({ snooze_intervals: ['15m', '2h', '48h'], snooze_default: '2h' });
+  await sp.locator('[data-snooze="2h,15m,2h,48h"]').waitFor({ state: 'attached' }); // the open page reloaded itself
+  await sc('Prune images').getByText('Snooze', { exact: true }).click({ delay: 700 });
+  assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'long press did not open the snooze times');
+  assert.deepEqual(await sc('Prune images').locator('[data-popover] [data-for]').allTextContents(), ['15 min', '2 hours', '2 days']);
+  await sc('Prune images').locator('details').evaluate(d => { d.open = false; });
+  await sc('Prune images').getByText('Snooze', { exact: true }).click({ button: 'right' });
+  assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'right click did not open the snooze times');
+  await sp.waitForTimeout(300);
+  assert.equal((await get(laptop, hold.id)).state, 'active', 'long press or right click snoozed');
+  await sc('Prune images').locator('details').evaluate(d => { d.open = false; });
+  const before = Date.now();
+  await sc('Rotate keys').getByText('Snooze', { exact: true }).click();
+  await sc('Rotate keys').waitFor({ state: 'detached' });
+  const tapped = await get(laptop, tap.id);
+  assert.equal(tapped.state, 'snoozed');
+  assert.ok(Math.abs(new Date(tapped.snooze_until) - before - 2 * 3600e3) < 60e3, `tap snoozed until ${tapped.snooze_until}, not the 2 hour default`);
+  // The Settings form saves the list; a default left out of it falls back to its first entry.
+  await sp.goto(`${base}/app/settings`);
+  await sp.getByLabel('Times').fill('30m, 1d');
+  await sp.getByRole('button', { name: 'Save' }).click();
+  await sp.locator('[data-snooze="30m,30m,24h"]').waitFor({ state: 'attached' });
+  assert.equal(await sp.getByLabel('Default').inputValue(), '30m');
+  await sp.getByLabel('Times').fill('1h, soon');
+  await sp.getByRole('button', { name: 'Save' }).click();
+  await sp.locator('[data-snooze-status]').filter({ hasText: 'soon' }).waitFor();
+  await putSettings({ snooze_intervals: ['1h', '4h'], snooze_default: '1h' });
+  await sp.locator('[data-snooze="1h,1h,4h"]').waitFor({ state: 'attached' });
+  await sp.close();
+  console.log('ok: snooze default, long press, right click and Settings');
+
   // A reply button stores the answer for whoever waits on it; the card then shows it.
   const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Merge 212?', message: 'tests pass', actions: [{ label: 'Yes', reply: 'yes' }, { label: 'No', reply: 'no' }] });
   await page.reload();
@@ -178,7 +220,7 @@ try {
   assert.equal(answered.reply, 'yes');
   assert.equal(answered.state, 'acknowledged');
   await card('Merge 212?').getByText('Answered Yes').waitFor();
-  assert.equal(await card('Merge 212?').getByRole('button', { name: 'No' }).count(), 0, 'answered card still offers replies');
+  assert.equal(await card('Merge 212?').getByRole('button', { name: 'No', exact: true }).count(), 0, 'answered card still offers replies');
   console.log('ok: reply button stores the answer');
 
   // On a phone, the open Snooze menu stays on screen, even when Snooze ends the first row of buttons.
@@ -186,7 +228,7 @@ try {
   await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Deploy 213?', message: 'staging green', actions: [{ label: 'Go', reply: 'go' }, { label: 'No', reply: 'no' }] });
   await narrow.goto(`${base}/app?auth=${link}`);
   const wide = narrow.locator('article.card', { hasText: 'Deploy 213?' });
-  await wide.getByText('Snooze', { exact: true }).click();
+  await wide.getByLabel('More snooze times').click();
   const menu = await wide.locator('[data-popover]').boundingBox();
   assert.ok(menu.x >= 0 && menu.x + menu.width <= 360, `snooze menu spans ${menu.x} to ${menu.x + menu.width} on a 360 px screen`);
   assert.equal(await narrow.evaluate(() => document.documentElement.scrollWidth), 360, 'page scrolls sideways with the menu open');
@@ -214,7 +256,7 @@ try {
   await plain('Garage open').waitFor({ state: 'detached' });
   assert.equal(new URL(nojs.url()).search, '?topic=home');
   assert.equal((await get(laptop, e.id)).state, 'dismissed');
-  await plain('Washer done').getByText('Snooze', { exact: true }).click();
+  await plain('Washer done').getByLabel('More snooze times').click();
   await plain('Washer done').getByRole('button', { name: '4 hours' }).click();
   await plain('Washer done').waitFor({ state: 'detached' });
   assert.equal((await get(laptop, f.id)).state, 'snoozed');

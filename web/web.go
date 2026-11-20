@@ -6,6 +6,7 @@
 package web
 
 import (
+	"fmt"
 	"bytes"
 	"embed"
 	"errors"
@@ -133,6 +134,9 @@ type Snapshot struct {
 	Devices []Device // seen in the last 10 minutes
 	Me      string   // device name of the signed-in token, the state_by its own actions get
 	MeID    string   // its token id, the state_by_id its own actions get (names can repeat)
+	// Snooze times on each card's menu (Go durations) and the one a tap uses.
+	SnoozeIntervals []string
+	SnoozeDefault   string
 }
 
 // API is what the server provides. The request is passed so the server can
@@ -159,12 +163,15 @@ var views = map[string][]string{
 var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"iso":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 	"clock": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
-	"card": func(n Notification, view, here string) any {
+	"card": func(n Notification, view, here string, snap Snapshot) any {
 		return struct {
-			N          Notification
-			View, Here string
-		}{n, view, here}
+			N             Notification
+			View, Here    string
+			Snooze        []string
+			SnoozeDefault string
+		}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault}
 	},
+	"snoozeLabel": snoozeLabel,
 	"plural": func(n int, one, many string) string {
 		if n == 1 {
 			return one
@@ -172,6 +179,27 @@ var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 		return many
 	},
 }).ParseFS(files, "templates/*.html"))
+
+// snoozeLabel reads a Go duration as people say it: "1 hour", "2 days", "90 min".
+func snoozeLabel(v string) string {
+	d, err := time.ParseDuration(v)
+	if err != nil || d%time.Minute != 0 {
+		return v
+	}
+	n, unit := int(d/time.Minute), "min"
+	switch {
+	case d%(24*time.Hour) == 0:
+		n, unit = int(d/(24*time.Hour)), "day"
+	case d%time.Hour == 0:
+		n, unit = int(d/time.Hour), "hour"
+	default:
+		return fmt.Sprintf("%d min", n)
+	}
+	if n != 1 {
+		unit += "s"
+	}
+	return fmt.Sprintf("%d %s", n, unit)
+}
 
 type meta struct {
 	Title, Desc, Path, Base string
