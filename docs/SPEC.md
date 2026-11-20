@@ -17,7 +17,7 @@ Public instance: `https://clrd.itsjustin.me` (docs and examples use this host).
 | `sdk/python`, `sdk/js`, `sdk/go` | integrations | Thin clients over the REST API. |
 | `server/mcp/` | integrations | MCP server mounted at `/mcp`. |
 | `docs/` | everyone | This spec, `api.md`, `self-host.md`, `integrations/*.md`. |
-| `assets/` | web | `logo.svg`, `mark.svg`, icons. One source for every surface. |
+| `assets/` | web | `logo.svg`, `mark.svg`, icons, notification sounds (`sounds/`). One source for every surface. |
 
 One Go module at the repo root, `github.com/thejdubb02/clrd` (`go.mod`
 owned by the server thread). Reason: `go:embed` cannot reach outside its
@@ -219,6 +219,45 @@ special-use range (`0.0.0.0/8`, `192.0.0.0/24`, documentation nets,
 Each fetch has a 5 s timeout and a 1 MB cap, sends `User-Agent: clrd/1
 (+https://github.com/thejdubb02/clrd)`, and at most 8 run at once. Cache files
 live in `cache/` next to the database and are swept hourly.
+
+## 2.2 Sounds
+
+One set of built-in sounds, with the same names on every surface, so a choice
+means the same sound on a phone, the web inbox and a desktop:
+
+| Name | Sound |
+|---|---|
+| `default` | The platform's own notification sound. **Unset means this.** A browser has none, so the web inbox plays `chime`. |
+| `none` | No sound. |
+| `chime` | Two rising notes. |
+| `ding` | One bright note. |
+| `pop` | A short drop in pitch. |
+| `bell` | A small bell with a long ring. |
+| `alert` | Two tones back and forth, for urgent alerts. |
+| `soft` | One low, pure note that fades slowly. |
+
+The six built-in sounds are `assets/sounds/<name>.wav` (16-bit mono, 22050 Hz,
+under 40 KB each), served by the binary at `/assets/sounds/<name>.wav`. The
+Android build packs the same files. They are generated from sine waves by
+`go run ./assets/sounds/_gen` (no samples, so they ship under Apache-2.0); to
+change a sound, change the generator and commit both. New names may be added;
+a name is never renamed or reused for a different sound. A client that gets a
+name it does not know plays `default`.
+
+**Per device.** Each device keeps its own choice (a phone on `alert`, a desktop
+on `pop`); unset means `default`, so sound works with no setup. The choice is
+stored on the server per device, so an agent can read the valid names and read
+and set any device's choice through the API and MCP (the endpoints, MCP tools
+and WebSocket message go into sections 3, 5 and 6 with the server work, #282),
+and the device learns of a change over its WebSocket without a restart. A
+per-topic override is a later issue.
+
+What still wins over the choice: an event with `silenced: true` (section 2),
+quiet hours on the device, a muted topic, and the platform's own settings (on
+Android the user can change a channel's sound in system settings, and the app
+says so when that overrides its choice). Browsers block sound until the page
+has had a click or key press; the web inbox then shows a hint instead of an
+error.
 
 ## 3. Events and sync
 
