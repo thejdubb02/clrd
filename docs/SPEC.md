@@ -388,13 +388,19 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, format?, priority?, id?, actions?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?)`, `list(topic?, state?)`,
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,
 dismissed or an action is tapped; returns which, so an agent can ask a human
 "yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
-`reply` (the state).
+`reply` (the state). `wait_for_reply` waits at most 600 s.
+
+`POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
+`PermissionRequest` hook body, sends an Allow / Deny notification, waits, and
+returns `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny","message"?}}}`.
+Only an Allow tap allows; a timeout denies and resolves the notification. A
+failed send (502) or a request over 4000 characters (413) sends the agent back to its own prompt.
 
 ## 7. Server internals
 

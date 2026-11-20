@@ -157,8 +157,8 @@ func TestInitializeAndList(t *testing.T) {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
-	if props := send["inputSchema"].(map[string]any)["properties"].(map[string]any); props["format"] == nil {
-		t.Fatalf("send schema lacks format: %v", props)
+	if props := send["inputSchema"].(map[string]any)["properties"].(map[string]any); props["format"] == nil || props["icon"] == nil || props["attachment"] == nil {
+		t.Fatalf("send schema lacks format, icon or attachment: %v", props)
 	}
 	_, out = rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","id":3,"method":"nope"}`)
 	if out["error"].(map[string]any)["code"].(float64) != -32601 {
@@ -179,6 +179,8 @@ func TestTools(t *testing.T) {
 			"POST /api/v1/notifications", map[string]any{"topic": "infra", "message": "Disk 91%", "title": "build", "priority": float64(4), "external_id": "disk-build", "reopen": true}},
 		{"send", map[string]any{"topic": "infra", "message": "*raw*", "format": "text"},
 			"POST /api/v1/notifications", map[string]any{"topic": "infra", "message": "*raw*", "format": "text", "reopen": true}},
+		{"send", map[string]any{"topic": "infra", "message": "m", "icon": "https://x.test/i.png", "attachment": map[string]any{"url": "https://x.test/r.pdf", "name": "r.pdf", "size": 9}},
+			"POST /api/v1/notifications", map[string]any{"attachment": map[string]any{"name": "r.pdf", "url": "https://x.test/r.pdf"}, "icon": "https://x.test/i.png", "message": "m", "reopen": true, "topic": "infra"}},
 		{"list", map[string]any{"topic": "infra"}, "GET /api/v1/notifications?state=open&topic=infra", nil},
 		{"list", map[string]any{"state": "all"}, "GET /api/v1/notifications?state=all", nil},
 		{"ack", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/ack", nil},
@@ -205,6 +207,9 @@ func TestTools(t *testing.T) {
 		if f.auth != "Bearer clrd_good" {
 			t.Errorf("%s: auth not forwarded: %q", c.tool, f.auth)
 		}
+	}
+	if text, isErr := callTool(t, h, "send", map[string]any{"topic": "infra", "message": "m", "attachment": map[string]any{"name": "r.pdf"}}); !isErr || text != "attachment.url is required" {
+		t.Errorf("attachment without url: %v %q", isErr, text)
 	}
 	if text, _ := callTool(t, h, "list", nil); !strings.Contains(text, `"items"`) {
 		t.Errorf("list array not wrapped: %s", text)

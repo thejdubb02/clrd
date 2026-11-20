@@ -211,6 +211,62 @@ try {
   await sp.close();
   console.log('ok: snooze default, long press, right click and Settings');
 
+  // The tab shows the open count and follows a change on another device.
+  const titleIs = async (p, t) => { // the page's CSP refuses waitForFunction
+    for (let i = 0; i < 50 && await p.title() !== t; i++) await p.waitForTimeout(100);
+    assert.equal(await p.title(), t);
+  };
+  const tp = await page.context().newPage();
+  await tp.goto(`${base}/app`);
+  const open = Number((await tp.title()).match(/^\((\d+)\) Inbox: clrd$/)?.[1]);
+  assert.ok(open > 0, `no open count in the tab title: ${await tp.title()}`);
+  const tc = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Tab count', message: 'one more' });
+  await titleIs(tp, `(${open + 1}) Inbox: clrd`);
+  await api(phone, `/api/v1/notifications/${tc.id}/dismiss`);
+  await titleIs(tp, `(${open}) Inbox: clrd`);
+  await tp.close();
+  // Two days on, a card shows its date and time, not "2 days ago".
+  const later = await page.context().newPage();
+  await later.clock.setFixedTime(Date.now() + 2 * 86400e3);
+  await later.goto(`${base}/app`);
+  const when = await later.locator('article.card time').first().textContent();
+  assert.match(when, /\d{1,2}:\d{2}/, `old card time has no clock time: ${when}`);
+  assert.doesNotMatch(when, /ago|yesterday|UTC/i, `old card time is relative or not localized: ${when}`);
+  await later.close();
+  console.log('ok: open count in the tab, full time on older cards');
+
+  // Send from the inbox: the note lands on the server with its fields and shows
+  // live; a bad topic keeps the dialog open with the server's reason.
+  const sendPage = await page.context().newPage();
+  await sendPage.goto(`${base}/app`);
+  const sendBox = sendPage.getByRole('dialog', { name: 'Send a notification' });
+  await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
+  await sendBox.getByLabel('Topic').fill('bad topic!');
+  await sendBox.getByLabel('Message').fill('nope');
+  await sendBox.getByRole('button', { name: 'Send' }).click();
+  await sendBox.locator('[data-send-status]').filter({ hasText: /topic/i }).waitFor();
+  assert.ok(await sendBox.getByLabel('Message').isVisible(), 'dialog closed on an error');
+  await sendBox.getByRole('button', { name: 'Cancel' }).click();
+  await sendBox.getByLabel('Message').waitFor({ state: 'hidden' }); // the dialog fades out
+  await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
+  assert.equal(await sendBox.locator('[data-send-status]').textContent(), '', 'old error still shown');
+  await sendBox.getByLabel('Topic').fill('notes');
+  await sendBox.getByLabel('Title').fill('From the laptop');
+  await sendBox.getByLabel('Message').fill('https://example.com/read-later');
+  await sendBox.getByLabel('Priority').selectOption('4');
+  await sendBox.getByRole('button', { name: 'Send' }).click();
+  await sendBox.getByLabel('Message').waitFor({ state: 'hidden' });
+  await sendPage.locator('article.card', { hasText: 'From the laptop' }).waitFor();
+  const sent = (await (await fetch(`${base}/api/v1/notifications?topic=notes`, { headers: { Authorization: `Bearer ${phone}` } })).json()).notifications;
+  assert.equal(sent.length, 1, 'sent note not on the server');
+  assert.equal(sent[0].message, 'https://example.com/read-later');
+  assert.equal(sent[0].priority, 4);
+  await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
+  assert.equal(await sendBox.getByLabel('Message').inputValue(), '', 'message kept after sending');
+  await sendPage.keyboard.press('Escape');
+  await sendPage.close();
+  console.log('ok: send a notification from the inbox');
+
   // A reply button stores the answer for whoever waits on it; the card then shows it.
   const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Merge 212?', message: 'tests pass', actions: [{ label: 'Yes', reply: 'yes' }, { label: 'No', reply: 'no' }] });
   await page.reload();

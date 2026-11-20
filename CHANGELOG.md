@@ -18,8 +18,15 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: approve a browser sign-in from the phone. Opening a `clrd://pair`
   link asks before signing that browser in, and refuses a link made for a
   different server than the one the app is set up with.
+- Approve agent actions from your phone: point Claude Code's or Codex's
+  permission hook at `/mcp/approve` and each prompt arrives as a notification
+  with Allow and Deny. No answer in time means deny.
+- MCP: the `send` tool takes `icon` (an image URL) and `attachment` (a link to
+  a file by URL, with an optional name).
 - MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
   send plain text that is shown exactly as written.
+- Android: web links in plain text messages can be tapped, just like in
+  Markdown messages.
 - Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
   notification resolves itself then, leaving every inbox and phone.
 - Missed check-in alerts: give a topic an expected interval (for example
@@ -38,8 +45,14 @@ Fixed, Removed, Security), as one line a user can understand.
 - Web: Snooze uses a default time from Settings. Long press it, right click
   it, or tap the arrow next to it for the other times. Settings has a Snooze
   section to pick up to 8 times and the default, shared by every device.
-- Web: times read as "5 min. ago" and similar. Hover a time to see the exact
-  date.
+- Web: a Send button in the inbox opens a box to send a notification (topic,
+  title, message, priority) to every device, for a quick link or note from the
+  laptop to the phone.
+- Web: the browser tab shows how many notifications are open, as "(3) Inbox",
+  and keeps it current when another device clears one.
+- Web: times read as "5 min. ago" and similar for the last day, then as a date
+  and time ("Nov 18, 14:05", with the year when it is not this year). Hover a
+  time to see the exact date.
 
 - Android: messages show their formatting (bold, italic, underline, strike,
   code, lists, quotes, headings and tappable links) in the list, and bold and

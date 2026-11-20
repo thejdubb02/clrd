@@ -14,17 +14,19 @@
   let epoch = shell.dataset.epoch || ''; // the database seq belongs to
 
   // Times are rendered in UTC on the server. Recent ones read as relative
-  // ("5 min. ago"), the rest in the reader's zone; the title keeps the full time.
+  // ("5 min. ago"), the rest as a date in the reader's zone; the title keeps
+  // the full time.
   const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const fmtY = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const full = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'short' });
   const ago = d => {
     const s = (d - Date.now()) / 1000, a = Math.abs(s);
-    if (s > 30 || a >= 7 * 86400) return fmt.format(d); // the future (snooze until) and old news: a date
+    // The future (snooze until) and anything a day old or more: a date and time.
+    if (s > 30 || a >= 86400) return (d.getFullYear() === new Date().getFullYear() ? fmt : fmtY).format(d);
     if (a < 45) return rtf.format(0, 'second');
     if (a < 3600) return rtf.format(Math.round(s / 60), 'minute');
-    if (a < 86400) return rtf.format(Math.round(s / 3600), 'hour');
-    return rtf.format(Math.round(s / 86400), 'day');
+    return rtf.format(Math.round(s / 3600), 'hour');
   };
   const localize = el => el.querySelectorAll('time[datetime]').forEach(t => {
     const d = new Date(t.dateTime);
@@ -113,6 +115,7 @@
       pending = setTimeout(patch, 5000);
       return;
     }
+    document.title = doc.title; // the open count in the tab
     document.querySelectorAll('[data-live]').forEach(cur => {
       const next = doc.querySelector(`[data-live="${cur.dataset.live}"]`);
       if (next && !cur.contains(document.activeElement)) cur.replaceWith(document.adoptNode(next));
@@ -286,6 +289,34 @@
     refresh();
   });
 
+  // Send a notification from this browser, with its own token (#150).
+  const sendBox = $('#send');
+  if (sendBox) {
+    const f = sendBox.querySelector('form'), status = $('[data-send-status]');
+    document.addEventListener('click', e => {
+      if (e.target.closest('[data-send-open]')) { status.textContent = ''; sendBox.showModal(); }
+      if (e.target === sendBox || e.target.closest('[data-send-close]')) sendBox.close(); // the dim or Cancel
+    });
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const v = name => f.elements[name].value.trim();
+      const body = { topic: v('topic'), title: v('title') || undefined, message: v('message'), priority: Number(v('priority')) };
+      const btn = e.submitter;
+      if (btn) btn.disabled = true; // one tap, one notification
+      status.textContent = 'Sending...';
+      const r = await fetch('/api/v1/notifications', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+      if (btn) btn.disabled = false;
+      if (r && r.status === 401) return location.reload();
+      if (!r || !r.ok) {
+        status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not sent (${r.status}).` : 'Not sent: no connection.';
+        return;
+      }
+      f.elements.title.value = f.elements.message.value = '';
+      sendBox.close();
+      say('Sent.');
+    });
+  }
+
   // Command palette (Ctrl or Cmd+K) and single-key shortcuts. The palette
   // lists every shortcut; Basecoat's command.js filters it and runs Enter.
   const palette = $('#palette');
@@ -330,7 +361,7 @@
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return palette && (palette.open ? palette.close() : openPalette()); }
     const t = e.target;
-    if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || (palette && palette.open)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || $('dialog[open]')) return; // the palette or Send is open
     if (t.closest && t.closest('input, textarea, select, [contenteditable], details[open]')) {
       if (e.key === 'Escape' && t === search) search.blur();
       return;

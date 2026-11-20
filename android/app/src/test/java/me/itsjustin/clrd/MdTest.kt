@@ -71,10 +71,11 @@ class MdTest {
     }
 
     @Test fun textFormatIsShownAsSent() {
-        val s = "**raw** _x_ https://x.example"
+        val s = "**raw** *stars* _x_ see https://x.example/a?b=1\nand https://y.example."
         val a = Md.render(s, markdown = false)
         assertEquals(s, a.text)
-        assertTrue(a.spanStyles.isEmpty() && a.links().isEmpty())
+        assertTrue(a.spanStyles.isEmpty())
+        assertEquals(listOf("https://x.example/a?b=1" to "https://x.example/a?b=1", "https://y.example" to "https://y.example"), a.links())
         assertEquals(s, Md.tray(s, false).toString())
         assertFalse(Notif.fromJson(JSONObject("""{"id":"a","format":"text"}""")).isMarkdown)
         assertTrue(Notif.fromJson(JSONObject("""{"id":"a"}""")).isMarkdown) // events from before formats existed
