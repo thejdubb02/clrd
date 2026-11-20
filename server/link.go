@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // Linking a phone (issue #74): pairing run the other way. A signed-in browser
@@ -51,7 +52,9 @@ func (s *Server) linkRoutes() {
 		p := s.ownLinkLocked(r.PathValue("code"), tok)
 		claimed := p != nil && p.secret != ""
 		if claimed {
-			p.approved = true
+			// A fresh window for the bound phone to collect its token, so an
+			// approval near the end of the code's life is not lost (#184).
+			p.approved, p.created = true, time.Now()
 		}
 		s.pairMu.Unlock()
 		if p == nil {

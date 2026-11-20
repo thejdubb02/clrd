@@ -192,6 +192,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Restoring an older backup now makes every phone and browser drop its
   local copy and resync, instead of risking missed messages. clrd keeps a
   small `clrd.db.epoch` file next to the database for this.
+- Linking a phone: approving it in the last moments of the 2 minute code no
+  longer leaves the browser saying Connected while the phone never connects.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.
