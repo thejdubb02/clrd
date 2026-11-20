@@ -160,6 +160,7 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Changed
 
+- Building clrd from source now needs Go 1.24 or later.
 - Web: every page (inbox, snoozed, cleared, settings, sign-in, setup, the
   home page and the docs) uses the new design, with dark mode that follows
   the system. Clearing a notification plays one short "cleared" motion, which
@@ -170,6 +171,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- The server no longer serves stale data or fails writes with "database is
+  locked" after a request is cancelled mid-query, for example when the web
+  inbox reloads while it is still loading.
 - Web: the open Snooze menu stays on screen on a phone, and on a wide screen
   it no longer cuts off the custom time box.
 - ntfy compatibility: a JSON publish to `/` now reads priority, title, tags,

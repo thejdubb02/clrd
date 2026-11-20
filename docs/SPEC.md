@@ -446,7 +446,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 
 ## 7. Server internals
 
-- Go 1.23 (`GOTOOLCHAIN=local`; `modernc.org/sqlite` v1.38 is the last line that builds on 1.23), stdlib `net/http` router, `modernc.org/sqlite` (pure Go, no cgo),
+- Go 1.24 (`GOTOOLCHAIN=local`; `modernc.org/sqlite` must stay at v1.40.1 or later, where a query cancelled as its first row arrives no longer leaks an open read transaction, see #207), stdlib `net/http` router, `modernc.org/sqlite` (pure Go, no cgo),
   WAL mode, one writer goroutine or a mutex around writes.
 - Config by env: `CLRD_LISTEN` (`:8080`), `CLRD_DB` (`/data/clrd.db`),
   `CLRD_BASE_URL`, `CLRD_RETENTION` (`720h` for final rows and events),
