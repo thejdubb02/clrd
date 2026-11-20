@@ -11,6 +11,13 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: a command palette on Ctrl+K (Cmd+K on a Mac) that lists every keyboard
+  shortcut: J and K to move between notifications, C to clear, A to
+  acknowledge, S to snooze, / to search, and G then I, S, C or comma to change
+  page.
+- Web: times read as "5 min. ago" and similar. Hover a time to see the exact
+  date.
+
 - Android: messages show their formatting (bold, italic, underline, strike,
   code, lists, quotes, headings and tappable links) in the list, and bold and
   italic in the system notification. A message sent as plain text is shown
@@ -94,6 +101,11 @@ Fixed, Removed, Security), as one line a user can understand.
   (a new epoch), instead of carrying on from a position that no longer exists.
 
 ### Changed
+
+- Web: every page (inbox, snoozed, cleared, settings, sign-in, setup, the
+  home page and the docs) uses the new design, with dark mode that follows
+  the system. Clearing a notification plays one short "cleared" motion, which
+  is off when the system asks for reduced motion.
 
 - Web: the final logo. The three lines now end on one circle around the
   green disc, so every gap is the same. The README and site header use it.
