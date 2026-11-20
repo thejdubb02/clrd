@@ -39,6 +39,9 @@ func run(args []string) error {
 		cmd, args = args[0], args[1:]
 	}
 	switch cmd {
+	case "help", "-h", "-help", "--help":
+		fmt.Print(usage)
+		return nil
 	case "serve":
 		s, err := server.New(opt)
 		if err != nil {
@@ -57,8 +60,21 @@ func run(args []string) error {
 	case "import":
 		return importCmd(opt, args)
 	}
-	return fmt.Errorf("unknown command %q (want serve, token, import or health)", cmd)
+	return fmt.Errorf("unknown command %q (want serve, token, import or health; see clrd help)", cmd)
 }
+
+const usage = `clrd: self-hosted notifications. Dismiss once, gone everywhere.
+
+  clrd [serve]                 run the server (no settings needed)
+  clrd token create [--name me] [--scope read,publish|admin] [--topics a,b]
+  clrd token list
+  clrd import ntfy --auth-file user.db --cache-file cache.db [--dry-run]
+  clrd health                  exit 0 if the local server answers /healthz
+
+Settings are optional environment variables: CLRD_LISTEN (:8080), CLRD_DB
+(see the first log line), CLRD_BASE_URL (your public https URL), and more in
+docs/self-host.md. With no admin token yet, the server logs a one-time setup link.
+`
 
 func tokenCmd(opt server.Options, args []string) error {
 	if len(args) == 0 {
@@ -72,7 +88,7 @@ func tokenCmd(opt server.Options, args []string) error {
 	switch args[0] {
 	case "create":
 		fs := flag.NewFlagSet("token create", flag.ContinueOnError)
-		name := fs.String("name", "", "device name, shown as state_by")
+		name := fs.String("name", "cli", "device name, shown as state_by")
 		scope := fs.String("scope", "read,publish", "comma list of read, publish, admin")
 		topics := fs.String("topics", "", "optional comma list of allowed topics")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -82,7 +98,7 @@ func tokenCmd(opt server.Options, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "created %s (%s), scopes %s. Shown once:\n", t.Name, t.ID, strings.Join(t.Scopes, ","))
+		fmt.Fprintf(os.Stderr, "created %s (%s), scopes %s, in %s. Shown once:\n", t.Name, t.ID, strings.Join(t.Scopes, ","), s.DBPath())
 		fmt.Println(raw)
 	case "list":
 		ts, err := s.Tokens(context.Background(), time.Time{})

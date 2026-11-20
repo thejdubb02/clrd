@@ -12,8 +12,10 @@ CLRD_DB=./clrd.db go run ./server/cmd/clrd token create --name laptop --scope ad
 GOTOOLCHAIN=local go test ./...
 ```
 
-Config is env only: `CLRD_LISTEN` (`:8080`), `CLRD_DB` (`/data/clrd.db`),
-`CLRD_BASE_URL` (public URL, used in the setup link), `CLRD_RETENTION` (`720h`).
+Config is env only and all optional: `CLRD_LISTEN` (`:8080`), `CLRD_DB`
+(`/data/clrd.db` if it exists, else `~/.local/share/clrd/clrd.db`),
+`CLRD_BASE_URL` (public URL; unset, links use the request's address),
+`CLRD_RETENTION` (`720h`).
 
 ## Mounting pages: the one seam for web and MCP
 

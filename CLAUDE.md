@@ -13,6 +13,9 @@ Public open-source project: self-hosted notification server + Android app (F-Dro
 
 ## Rules
 
+- Works out of the box (Justin, #242): every new feature is off or safe by
+  default with zero config, and an agent can set it up through the API or MCP.
+
 - CI runs only on self-hosted cezar1 runners (`runs-on: [self-hosted, cezar1]`).
 - Local Android and Go builds and test runs go to cezar1, never the devbox (its CPU is throttled by the host).
 - Work tracked as GitHub issues on thejdubb02/clrd.

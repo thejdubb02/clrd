@@ -31,8 +31,10 @@ Or the binary (Go 1.24+, no C compiler needed):
 
 ```sh
 CGO_ENABLED=0 go build -o clrd ./server/cmd/clrd
-CLRD_DB=./clrd.db ./clrd serve
+./clrd
 ```
+
+No settings are needed. The first log line says where the database went.
 
 ## First run
 
@@ -75,8 +77,8 @@ at once.
 | Variable | Default | Meaning |
 |---|---|---|
 | `CLRD_LISTEN` | `:8080` | Address to listen on. |
-| `CLRD_DB` | `/data/clrd.db` | SQLite file. Its folder must be writable (WAL files live next to it). |
-| `CLRD_BASE_URL` | `http://localhost:<port>` | Public URL, used in the setup link. Set it to your https URL. A path in it (`https://example.com/clrd`) serves everything under that path. |
+| `CLRD_DB` | `/data/clrd.db` if it exists, else `~/.local/share/clrd/clrd.db` (or under `$XDG_DATA_HOME`) | SQLite file. Its folder must be writable (WAL files live next to it). |
+| `CLRD_BASE_URL` | unset: links use the address the browser opened clrd on | Public URL, used in the setup and phone pairing links. Set it to your https URL behind a proxy. A path in it (`https://example.com/clrd`) serves everything under that path. |
 | `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. |
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
 | `CLRD_PUBLIC_PAGES` | `on` | `off` hides the landing page and docs on a private server: `/` goes to the inbox, `/docs` is 404, and `robots.txt` asks every crawler to stay out. |

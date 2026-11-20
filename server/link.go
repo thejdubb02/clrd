@@ -26,7 +26,7 @@ func (s *Server) linkRoutes() {
 		if err != nil {
 			return err
 		}
-		return s.writeCode(w, "/link", code)
+		return s.writeCode(w, r, "/link", code)
 	})
 	s.route("POST /api/v1/link/claim", s.handleLinkClaim)
 	s.route("GET /link", s.handleLinkPage)
@@ -165,7 +165,7 @@ func (s *Server) handleLinkPage(w http.ResponseWriter, r *http.Request) error {
 		data["Msg"] = "That code expired or was already used. Make a new one in Settings on the computer."
 	} else {
 		data["Link"] = true
-		data["AppLink"] = template.URL("clrd://link?" + url.Values{"server": {s.opt.BaseURL}, "code": {code}}.Encode())
+		data["AppLink"] = template.URL("clrd://link?" + url.Values{"server": {s.baseFor(r)}, "code": {code}}.Encode())
 	}
 	return s.renderPairPage(w, data)
 }

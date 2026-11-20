@@ -16,6 +16,16 @@ Fixed, Removed, Security), as one line a user can understand.
   for the Android app, show Docker Compose as the way to run it, and list
   stacking by topic, snooze settings, topic icons, sub-path hosting and
   user-installed certificates. Landing page examples use `clrd.example.com`.
+- Server: `clrd help` lists the commands and settings.
+
+### Changed
+
+- Server: runs with no settings as any user. The database defaults to
+  `~/.local/share/clrd/clrd.db` (an existing `/data/clrd.db` is still used),
+  the phone pairing link uses the address your browser opened clrd on when
+  `CLRD_BASE_URL` is unset, and a missing token or topic error says what to
+  do next. `clrd token create` no longer needs `--name`.
+
 - Server: outgoing webhooks. A topic can POST to your URL when a notification
   is dismissed, acknowledged, resolved, snoozed or replied to, signed with
   HMAC, retried with backoff and turned off with a notice after a day of

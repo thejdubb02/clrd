@@ -22,7 +22,7 @@ Thanks for helping. Bug reports, ideas, docs fixes and code are all welcome.
 | JS SDK | Node 22 | `cd sdk/js && node --test test.js` |
 | Python SDK | Python 3.12 | `cd sdk/python && python -m unittest test_clrd.py` |
 
-Run a local server with `CGO_ENABLED=0 go build -o clrd ./server/cmd/clrd && CLRD_DB=./clrd.db ./clrd serve`.
+Run a local server with `CGO_ENABLED=0 go build -o clrd ./server/cmd/clrd && ./clrd`.
 [docs/self-host.md](docs/self-host.md) covers the settings.
 
 ## Pull requests
