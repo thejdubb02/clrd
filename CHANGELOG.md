@@ -188,6 +188,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: switching to another server no longer keeps the old server's
+  snooze times, and the snooze times box is no longer reset while you type in
+  it when another device saves them.
 - Android: a new alert no longer shows twice in the notification drawer, once
   bundled under the silent sync notice. The sync notice also shows the real
   connection state instead of staying on Connecting after the app is opened.
