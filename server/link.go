@@ -122,7 +122,7 @@ func (s *Server) handleLinkClaim(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	_, raw, err := s.childToken(ctx, p.owner, parent, p.name)
+	_, raw, err := s.childToken(ctx, p.owner, parent, p.name, true)
 	if err != nil {
 		return err
 	}
@@ -130,16 +130,23 @@ func (s *Server) handleLinkClaim(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// rootOf is the token a browser session was signed in with, or id itself
-// when id is not a session, so the phone outlives the browser's sign-out but
-// not a revoke of the token typed in.
+// rootOf walks up from id past browser sessions to the first token that is
+// not one: a typed-in token or a linked phone. A phone linked there outlives
+// the sign-out of every browser on the way (even one paired by another
+// browser, issue #185) but not a revoke of that token.
 func (s *Server) rootOf(ctx context.Context, id string) (string, error) {
-	var parent string
-	err := s.db.QueryRowContext(ctx, `SELECT parent_id FROM sessions WHERE token_id = ?`, id).Scan(&parent)
-	if errors.Is(err, sql.ErrNoRows) {
-		return id, nil
+	for {
+		var parent string
+		var phone bool
+		err := s.db.QueryRowContext(ctx, `SELECT parent_id, phone FROM sessions WHERE token_id = ?`, id).Scan(&parent, &phone)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && phone) {
+			return id, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		id = parent
 	}
-	return parent, err
 }
 
 // handleLinkPage is where the QR code leads when a phone camera, not the
