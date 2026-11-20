@@ -468,8 +468,12 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 
 - Go 1.24 (`GOTOOLCHAIN=local`; `modernc.org/sqlite` must stay at v1.40.1 or later, where a query cancelled as its first row arrives no longer leaks an open read transaction, see #207), stdlib `net/http` router, `modernc.org/sqlite` (pure Go, no cgo),
   WAL mode, one writer goroutine or a mutex around writes.
-- Config by env: `CLRD_LISTEN` (`:8080`), `CLRD_DB` (`/data/clrd.db`),
-  `CLRD_BASE_URL` (a path in it, like `/clrd`, serves every route, page,
+- Every setting is optional: the binary runs, as any user, with none set.
+- Config by env: `CLRD_LISTEN` (`:8080`), `CLRD_DB` (`/data/clrd.db` if that
+  file exists, else `clrd/clrd.db` under `$XDG_DATA_HOME` or
+  `~/.local/share`; the server logs the path it uses),
+  `CLRD_BASE_URL` (unset: links handed to a browser, such as the phone
+  pairing QR, use the address that browser opened clrd on; a path in it, like `/clrd`, serves every route, page,
   asset and the WebSocket under that path, and scopes the cookies to it;
   requests without the path are still answered, for a proxy that strips it),
   `CLRD_RETENTION` (`720h` for final rows and events),
