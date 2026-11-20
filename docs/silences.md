@@ -53,8 +53,9 @@ silence it; silence a tag instead.
 Each notification carries `silenced`: `true` when a silence matched at the
 moment it was published, updated, or woke from a snooze. Apps that speak the
 ntfy protocol get a silenced message at priority 1 (min), which shows it
-without a sound. The clrd Android app and web inbox are learning to read the
-flag; until they do, they still alert.
+without a sound. The web inbox plays no sound for a silenced notification.
+The clrd Android app is learning to read the flag; until it does, it still
+alerts.
 
 Quiet hours on a single phone (no sound from 22:00 to 07:00 on this device
 only) will be a setting in the Android app, not a server silence.

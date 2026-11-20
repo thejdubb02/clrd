@@ -81,8 +81,8 @@ A **notification**:
 set time (`POST /api/v1/silences`). Notifications still arrive, sync and show;
 the server sets `silenced: true` on every event it writes while a silence
 matches (publish, update, snooze wake, check-in), and clients must show those
-without sound or vibration (the Android app and web inbox do not read the
-flag yet). A silence mutes every priority, 5 included. It
+without sound or vibration (the web inbox does; the Android app does not
+read the flag yet). A silence mutes every priority, 5 included. It
 ends by itself; `DELETE` ends it early. Events logged before a server upgrade
 may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
 message at priority 1. Quiet hours on one device are a client setting, not a
@@ -97,8 +97,8 @@ Acknowledge, snooze, dismiss, resolve or a tapped reply stops it for good on
 every device; a reopen or snooze wake does not restart it. A scheduled send
 (`snooze_until`) counts from its delivery. A publish that updates the row
 replaces `repeat` with its own (none if it gave none). ntfy subscribers get
-each re-alert as a new message. The Android app and web inbox do not alert on
-`repeat` events yet.
+each re-alert as a new message. The web inbox plays its sound again on a
+`repeat` event; the Android app does not alert on `repeat` events yet.
 
 **Actions:** each action is a link (`url`) or an answer button (`reply`),
 exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the

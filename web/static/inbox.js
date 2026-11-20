@@ -160,6 +160,33 @@
   }
   addEventListener('storage', e => { if (e.key === 'clrd.stack') { stacking = e.newValue === '1'; restack(); tidy(); } });
 
+  // Sound for a new notification while the page is open (#282, SPEC 2.2).
+  // Kept in this browser for now. Unset, default or a name this page does not
+  // know plays chime: a browser has no sound of its own.
+  const sounds = ['chime', 'ding', 'pop', 'bell', 'alert', 'soft'];
+  const soundPick = () => { try { return localStorage.getItem('clrd.sound') || 'default'; } catch { return 'default'; } };
+  const soundFile = s => s === 'none' ? '' : sounds.includes(s) ? s : 'chime';
+  // A browser blocks sound until the page has had a click or key press: say so, never an error.
+  const blocked = 'Sound is blocked until you click or press a key on this page.';
+  let hinted = false;
+  const playSound = (s, onBlocked) => {
+    const f = soundFile(s);
+    if (f) new Audio(`${B}/assets/sounds/${f}.wav`).play().catch(e => { if (e.name === 'NotAllowedError') onBlocked(); });
+  };
+  const alertSound = n => {
+    if (n.silenced) return; // a silence wins over the choice
+    playSound(soundPick(), () => { if (!hinted) { hinted = true; say(blocked); } });
+  };
+  const soundSel = $('[data-sound-setting]');
+  if (soundSel) {
+    soundSel.value = soundPick();
+    if (!soundSel.value) soundSel.value = 'default';
+    const hint = $('[data-sound-hint]');
+    const preview = () => { hint.textContent = ''; playSound(soundSel.value, () => { hint.textContent = blocked; }); };
+    soundSel.addEventListener('change', () => { try { localStorage.setItem('clrd.sound', soundSel.value); } catch {} preview(); });
+    $('[data-sound-play]').addEventListener('click', preview);
+  }
+
   // A card that no longer belongs in this view: the cleared moment (clrd.css).
   // Green washes across it with a check and the reason, then it folds away.
   // Timers, not animation events: with reduced motion there are none.
@@ -640,6 +667,7 @@
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
     u.searchParams.set('since', seq);
     const ws = new WebSocket(u);
+    let ready = false;
     ws.onmessage = e => {
       let m;
       try { m = JSON.parse(e.data); } catch { return; }
@@ -649,7 +677,7 @@
         // this page's seq and cards mean nothing there: same as reset.
         if (epoch && m.epoch && m.epoch !== epoch) return reset();
         epoch ||= m.epoch || '';
-        tries = 0; if (m.seq > seq) seq = m.seq; live(true);
+        tries = 0; if (m.seq > seq) seq = m.seq; live(true); ready = true;
       }
       else if (m.type === 'reset') reset();
       else if (m.type === 'settings') {
@@ -661,7 +689,11 @@
         else if ('keep_cleared_days' in st && `${st.keep_cleared_days}` !== shell.dataset.keep) reset(); // a stale form would save the old period back
         else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
       }
-      else if (m.notification) onEvent(m);
+      else if (m.notification) {
+        // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
+        if (ready && m.notification.state === 'active' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')) alertSound(m.notification);
+        onEvent(m);
+      }
     };
     ws.onclose = e => {
       // Unlinked or revoked from another device: show the sign-in page now (#246).

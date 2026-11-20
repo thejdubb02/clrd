@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/thejdubb02/clrd"
 )
 
 func get(t *testing.T, h http.Handler, path string) (int, string) {
@@ -298,6 +300,27 @@ func TestAssets(t *testing.T) {
 		}
 		if m := inline.FindString(w.Body.String()); m != "" {
 			t.Errorf("%s: inline %q is blocked by the CSP", p, m)
+		}
+	}
+}
+
+// Every shared sound is offered in Settings and served (#282, SPEC 2.2).
+func TestSounds(t *testing.T) {
+	h := Handler(NewFake(), "")
+	_, page := get(t, h, "/app/settings")
+	wavs, _ := fs.Glob(clrd.Files, "assets/sounds/*.wav")
+	if len(wavs) == 0 {
+		t.Fatal("no sounds in assets/sounds")
+	}
+	for _, opt := range append([]string{"default", "none"}, wavs...) {
+		name := strings.TrimSuffix(filepath.Base(opt), ".wav")
+		if !strings.Contains(page, `<option value="`+name+`">`) {
+			t.Errorf("settings does not offer %q", name)
+		}
+		if strings.HasSuffix(opt, ".wav") {
+			if code, _ := get(t, h, "/assets/sounds/"+name+".wav"); code != 200 {
+				t.Errorf("%s: %d", name, code)
+			}
 		}
 	}
 }

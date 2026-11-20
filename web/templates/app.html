@@ -225,6 +225,14 @@
     <p class="text-body text-sm/relaxed">With stacking on, two or more notifications from one topic show as one card in the inbox. This setting is for this browser only.</p>
     <label class="label"><input type="checkbox" role="switch" class="input" data-stack-setting> Stack by topic</label>
   </section>
+  <section class="js-only grid gap-3" aria-labelledby="sound-h">
+    <h2 id="sound-h" class="text-base font-semibold">Sound</h2>
+    <p class="text-body text-sm/relaxed">Plays when a new notification arrives while clrd is open in this browser. Silenced notifications make no sound. This setting is for this browser only.</p>
+    <div class="flex flex-wrap items-center gap-2"><label for="sound" class="label">Sound</label>
+      <select id="sound" class="input w-auto" data-sound-setting><option value="default">Default (Chime)</option><option value="none">None</option><option value="chime">Chime</option><option value="ding">Ding</option><option value="pop">Pop</option><option value="bell">Bell</option><option value="alert">Alert</option><option value="soft">Soft</option></select>
+      <button type="button" class="btn" data-variant="outline" data-sound-play>Play</button></div>
+    <p class="text-muted-foreground text-sm" role="status" data-sound-hint></p>
+  </section>
   <section class="js-only grid gap-3" aria-labelledby="msg-h">
     <h2 id="msg-h" class="text-base font-semibold">Messages</h2>
     <p class="text-body text-sm/relaxed">How message text shows. These settings apply to every device.</p>
