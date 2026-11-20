@@ -4,6 +4,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -254,6 +255,19 @@ private val flushLock = Any()
  * sending again what its replacement already sent.
  */
 fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synchronized(flushLock) {
+    // Several dismisses at the head of the queue (a stack swiped away, #108) go out as one clear call.
+    // Only the head run, so a later reopen of the same row still lands after its dismiss.
+    val run = store.pending().takeWhile { it.action == "dismiss" }
+    if (run.size > 1 && live()) {
+        val sent = try {
+            api.post("/api/v1/notifications/clear", JSONObject().put("ids", JSONArray(run.map { it.notifId })).toString())
+            true
+        } catch (e: HttpError) {
+            if (!e.isPermanent) throw e
+            false // refused as a batch: the loop below sends them one by one
+        }
+        if (sent) run.forEach(store::removePending) // the server's events bring the rows themselves
+    }
     for (p in store.pending()) {
         if (!live()) break
         var mine = true // the row after our own action: the person just tapped it, so no sound

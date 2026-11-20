@@ -52,6 +52,11 @@ class App : Application() {
         get() = prefs.getStringSet("muted", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("muted", v).apply()
 
+    /** Stack tray notifications by topic (#108). On by default: it is how Android groups anyway. */
+    var stack: Boolean
+        get() = prefs.getBoolean("stack", true)
+        set(v) = prefs.edit().putBoolean("stack", v).apply()
+
     /**
      * The server database the saved seq belongs to. Saved after the rows, not with them: a crash
      * in between only means one more reset on the next connect.
@@ -113,7 +118,13 @@ class App : Application() {
      * An action for a server that is no longer configured is dropped, never sent to the new one, and so is
      * one that waited across a Settings switch.
      */
-    fun act(id: String, action: String, body: String = "{}", server: String? = null, done: () -> Unit = {}) {
+    fun act(id: String, action: String, body: String = "{}", server: String? = null, done: () -> Unit = {}) =
+        actAll(listOf(id), action, body, server, done)
+
+    /** Swiping a topic's stack away (#108): every row it held, queued together so they go out as one clear call. */
+    fun dismissAll(ids: List<String>, server: String?, done: () -> Unit = {}) = actAll(ids, "dismiss", "{}", server, done)
+
+    private fun actAll(ids: List<String>, action: String, body: String, server: String?, done: () -> Unit) {
         val gen = configGen // read now, not when the save runs
         acts.execute {
             try {
@@ -127,9 +138,15 @@ class App : Application() {
                 synchronized(configLock) {
                     if (gen != configGen || (server != null && server != serverUrl)) return@execute
                     val dao = db.dao()
-                    dao.addPending(Pending(notifId = id, action = action, body = body))
-                    if (local != null) dao.setState(id, local)
-                    if (local == Notif.DISMISSED || local == Notif.SNOOZED) tray.apply(TrayStep.Cancel(id))
+                    // One transaction: a stack swipe is saved whole or not at all, never half.
+                    val saved = db.runInTransaction<List<String>> {
+                        // A stack swipe may also fire each row's own delete intent: those rows are cleared already.
+                        ids.filterNot { action == "dismiss" && dao.get(it)?.state == Notif.DISMISSED }.onEach { id ->
+                            dao.addPending(Pending(notifId = id, action = action, body = body))
+                            if (local != null) dao.setState(id, local)
+                        }
+                    }
+                    if (local == Notif.DISMISSED || local == Notif.SNOOZED) saved.forEach { tray.apply(TrayStep.Cancel(it)) }
                 }
                 val s = sync
                 if (s != null) s.flushSoon() else sendAlone()

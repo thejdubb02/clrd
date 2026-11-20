@@ -313,7 +313,8 @@ class SyncClientTest {
         client!!.flushSoon() // a new tap does not cut the wait short either
         await { store.queue.isEmpty() }
         assertTrue("sent again too soon", postAt[1] - postAt[0] >= 1_000_000_000L) // flushRetryMs is 50
-        assertEquals(listOf("/api/v1/notifications/busy/dismiss", "/api/v1/notifications/busy/dismiss", "/api/v1/notifications/b/dismiss"), posts)
+        // The retry finds two dismisses queued and sends them as one clear (#108).
+        assertEquals(listOf("/api/v1/notifications/busy/dismiss", "/api/v1/notifications/clear"), posts)
     }
 
     @Test fun theAnswerToOurOwnTapIsSavedQuietly() {
@@ -323,6 +324,17 @@ class SyncClientTest {
         store.queue += Pending(2, "stale", "dismiss")
         flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
         assertEquals(listOf(true, false), store.quiet)
+    }
+
+    @Test fun aSwipedStackGoesOutAsOneClear() {
+        store.queue += Pending(1, "a", "dismiss")
+        store.queue += Pending(2, "b", "dismiss")
+        store.queue += Pending(3, "a", "reopen") // after the run: still its own call, after the clear
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(listOf("/api/v1/notifications/clear", "/api/v1/notifications/a/reopen"), posts)
+        val clear = server.takeRequest()
+        assertEquals("""{"ids":["a","b"]}""", clear.body.readUtf8())
+        assertTrue(store.queue.isEmpty())
     }
 
     @Test fun aFailedPartialSaveIsRetried() {
