@@ -16,6 +16,12 @@ on:
       - ".github/workflows/integrations.yml"
   workflow_dispatch:
 
+# A new push to a pull request cancels its older run. Pushes to main each
+# get their own group (by commit), so main always gets a full run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   guides:
     runs-on: [self-hosted, cezar1]

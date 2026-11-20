@@ -11,6 +11,12 @@ on:
       - "go.sum"
       - ".github/workflows/web-e2e.yml"
 
+# A new push to a pull request cancels its older run. Pushes to main each
+# get their own group (by commit), so main always gets a full run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   browser:
     runs-on: [self-hosted, cezar1]
