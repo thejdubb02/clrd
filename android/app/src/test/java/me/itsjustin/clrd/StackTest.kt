@@ -1,0 +1,90 @@
+package me.itsjustin.clrd
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationManager
+import android.content.Intent
+import androidx.test.core.app.ApplicationProvider
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
+
+/** Tray stacks by topic (#108): one summary per topic with 2 or more rows, and swiping it clears exactly those rows. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class StackTest {
+    private val app = ApplicationProvider.getApplicationContext<App>()
+    private val nm = app.getSystemService(NotificationManager::class.java)
+    private val dao get() = app.db.dao()
+
+    @Before fun setUp() {
+        shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        app.serverUrl = "https://a.example"
+        app.token = "" // not configured, so nothing here touches the network
+        app.stack = true
+    }
+
+    @After fun tearDown() { app.stack = true }
+
+    private fun <T> bg(f: () -> T): T {
+        var r: Result<T>? = null
+        Thread { r = runCatching(f) }.apply { start(); join(60_000) }
+        return checkNotNull(r) { "background step still running after 60 s" }.getOrThrow()
+    }
+
+    private fun row(id: String, topic: String) =
+        Notif(id, topic, "T", "m", 3, "", null, "[]", Notif.ACTIVE, null, null, 1, System.currentTimeMillis(), 1)
+    private fun summary(topic: String): Notification? = shadowOf(nm).getNotification(Tray.GROUP + topic, Tray.SUMMARY_ID)
+
+    @Test fun twoRowsOfOneTopicGetOneSummary() {
+        app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk"), row("c", "cpu")), emptySet())
+        val s = summary("disk")
+        assertNotNull(s)
+        s!!
+        assertEquals(Notification.FLAG_GROUP_SUMMARY, s.flags and Notification.FLAG_GROUP_SUMMARY)
+        assertEquals(Tray.GROUP + "disk", shadowOf(nm).getNotification("a", 0).group)
+        assertNull("one row needs no stack", summary("cpu"))
+    }
+
+    @Test fun theSummaryGoesOnlyWithItsLastRow() {
+        app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk")), emptySet())
+        app.tray.apply(TrayStep.Cancel("b"))
+        // On a phone, cancelling a summary also cancels the rows under it, so it stays while "a" does.
+        assertNotNull(summary("disk"))
+        assertNotNull(shadowOf(nm).getNotification("a", 0))
+        app.tray.apply(TrayStep.Cancel("a"))
+        assertNull(summary("disk"))
+    }
+
+    @Test fun stackingOffPostsNoGroups() {
+        app.stack = false
+        app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk")), emptySet())
+        // NotificationCompat puts a silent post in its own "silent" group; only ours must be absent.
+        assertEquals("silent", shadowOf(nm).getNotification("a", 0).group)
+        assertNull(summary("disk"))
+    }
+
+    @Test fun swipingTheStackDismissesEveryRowOnce() {
+        bg { dao.applyAll(listOf(row("a", "disk"), row("b", "disk")), 1) }
+        app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk")), emptySet())
+        val ids = shadowOf(summary("disk")!!.deleteIntent).savedIntent.getStringArrayExtra(Tray.EXTRA_IDS)!!.toList()
+        assertEquals(setOf("a", "b"), ids.toSet())
+        val intent = Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_DISMISS_STACK)
+            .putExtra(Tray.EXTRA_IDS, ids.toTypedArray()).putExtra(Tray.EXTRA_SERVER, "https://a.example")
+        app.sendBroadcast(intent)
+        app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_DISMISS).putExtra(Tray.EXTRA_ID, "a")) // the row's own swipe too
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        app.acts.submit {}.get(10, TimeUnit.SECONDS)
+        assertEquals(listOf("a", "b"), bg { dao.pending() }.map { it.notifId }.sorted()) // "a" queued once, not twice
+        assertNull(shadowOf(nm).getNotification("a", 0))
+        assertNull(summary("disk"))
+    }
+}
