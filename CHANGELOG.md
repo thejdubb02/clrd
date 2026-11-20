@@ -136,6 +136,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Server: publishing is rate limited, 60 a minute per token and 60 a minute per
+  topic by default, so a looping script cannot flood every device. Over the cap
+  gets 429 with `Retry-After`. Set `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` to
+  change them, or `0` to turn one off.
 - ntfy compatibility: ten wrong passwords from one address now block password
   logins from it for a while (429 with `Retry-After`, one more try each
   minute). Tokens are never blocked. Behind a proxy, the client address comes

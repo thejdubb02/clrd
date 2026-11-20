@@ -678,6 +678,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 type apiError struct {
 	status    int
 	code, msg string
+	retry     time.Duration // > 0 sends Retry-After
 }
 
 func (e *apiError) Error() string { return e.msg }
