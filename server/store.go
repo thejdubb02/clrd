@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS hooks_out (
 );
 -- One row per event per hook, written in the event's own transaction.
 CREATE TABLE IF NOT EXISTS hook_deliveries (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT, -- never reused: it is X-Clrd-Delivery
   topic TEXT NOT NULL,
   name TEXT NOT NULL,
   seq INTEGER NOT NULL,

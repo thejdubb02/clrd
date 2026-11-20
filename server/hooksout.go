@@ -278,14 +278,22 @@ func (s *Server) hookOutRoutes() {
 		if err != nil {
 			return err
 		}
-		res, err := s.db.ExecContext(r.Context(), `DELETE FROM hooks_out WHERE topic = ? AND name = ?`, topic, name)
+		tx, err := s.db.BeginTx(r.Context(), nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		res, err := tx.Exec(`DELETE FROM hooks_out WHERE topic = ? AND name = ?`, topic, name)
 		if err != nil {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			return errf(404, "not_found", "no webhook %q on topic %q", name, topic)
 		}
-		if _, err := s.db.ExecContext(r.Context(), `DELETE FROM hook_deliveries WHERE topic = ? AND name = ?`, topic, name); err != nil {
+		if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE topic = ? AND name = ?`, topic, name); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
 			return err
 		}
 		writeJSON(w, 200, map[string]bool{"deleted": true})
