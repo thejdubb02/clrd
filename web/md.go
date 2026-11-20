@@ -28,7 +28,7 @@ var (
 	mdLinks   = newMD(true)
 	mdNoLinks = newMD(false)
 	bareURL   = regexp.MustCompile(`https?://[^\s<>"]+[^\s<>".,;:!?)\]'*_]`)
-	linkHref  = regexp.MustCompile(`<a [^>]*href="(https?://[^"]+)"`)
+	linkHref  = regexp.MustCompile(`<a [^>]*href="((?i:https?)://[^"]+)"`)
 	uTag      = regexp.MustCompile(`</?u>|</(?:p|li|h[1-6]|blockquote)>`)
 )
 

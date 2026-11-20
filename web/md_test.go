@@ -72,6 +72,9 @@ func TestRenderBodyFavicons(t *testing.T) {
 	if got := string(renderBody("see https://b.example/", "text", snap)); !strings.Contains(got, `favicon?host=b.example"`) {
 		t.Errorf("plain text link has no icon: %q", got)
 	}
+	if got := string(renderBody("[a](HTTPS://b.example/)", "", snap)); !strings.Contains(got, `favicon?host=b.example"`) {
+		t.Errorf("upper case scheme has no icon: %q", got)
+	}
 	if got := string(renderBody("[a](https://b.example/)", "", Snapshot{Formatting: true})); strings.Contains(got, "<img") {
 		t.Errorf("icon with favicons off: %q", got)
 	}
