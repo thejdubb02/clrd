@@ -296,6 +296,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	go s.every(ctx, "snooze wake", wakeEvery, s.wakeSnoozed)
 	go s.every(ctx, "expiry", wakeEvery, s.expireDue)
+	go s.every(ctx, "check-ins", wakeEvery, s.checkins)
 	go s.every(ctx, "prune", time.Hour, s.prune)
 	go s.every(ctx, "cache sweep", time.Hour, s.fetch.sweep)
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
@@ -508,18 +509,42 @@ func (s *Server) routesSetup() {
 	})
 	s.api("PUT /api/v1/topics/{topic}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
-			Icon *string `json:"icon"`
+			Icon    *string `json:"icon"`
+			Checkin *string `json:"checkin"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		if in.Icon == nil { // a missing key must not wipe the icon
-			return errf(400, "bad_request", `body needs "icon": a URL, or "" to remove it`)
+		if in.Icon == nil && in.Checkin == nil { // a missing key must not wipe anything
+			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it) or "checkin" (like "25h", or "" for off)`)
 		}
-		if err := s.SetTopicIcon(r.Context(), tok, r.PathValue("topic"), *in.Icon); err != nil {
-			return err
+		topic, out := r.PathValue("topic"), map[string]string{"topic": r.PathValue("topic")}
+		if in.Icon != nil { // checked before the timer changes, so a bad icon changes nothing
+			if err := checkImageURL("icon", *in.Icon); err != nil {
+				return err
+			}
 		}
-		writeJSON(w, 200, map[string]string{"topic": r.PathValue("topic"), "icon": *in.Icon})
+		if in.Checkin != nil {
+			var every time.Duration
+			if *in.Checkin != "" {
+				d, err := time.ParseDuration(*in.Checkin)
+				if err != nil || d == 0 { // only "" turns it off
+					return errf(400, "bad_request", `checkin must be a duration like "25h" or "30m"`)
+				}
+				every = d
+			}
+			if err := s.SetTopicCheckin(r.Context(), tok, topic, every); err != nil {
+				return err
+			}
+			out["checkin"] = *in.Checkin
+		}
+		if in.Icon != nil {
+			if err := s.SetTopicIcon(r.Context(), tok, topic, *in.Icon); err != nil {
+				return err
+			}
+			out["icon"] = *in.Icon
+		}
+		writeJSON(w, 200, out)
 		return nil
 	})
 	s.api("GET /api/v1/devices", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
