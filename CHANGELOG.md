@@ -14,6 +14,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Approve agent actions from your phone: point Claude Code's or Codex's
   permission hook at `/mcp/approve` and each prompt arrives as a notification
   with Allow and Deny. No answer in time means deny.
+- MCP: the `send` tool takes `icon` (an image URL) and `attachment` (a link to
+  a file by URL, with an optional name).
 - MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
   send plain text that is shown exactly as written.
 - Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
@@ -34,8 +36,11 @@ Fixed, Removed, Security), as one line a user can understand.
 - Web: Snooze uses a default time from Settings. Long press it, right click
   it, or tap the arrow next to it for the other times. Settings has a Snooze
   section to pick up to 8 times and the default, shared by every device.
-- Web: times read as "5 min. ago" and similar. Hover a time to see the exact
-  date.
+- Web: the browser tab shows how many notifications are open, as "(3) Inbox",
+  and keeps it current when another device clears one.
+- Web: times read as "5 min. ago" and similar for the last day, then as a date
+  and time ("Nov 18, 14:05", with the year when it is not this year). Hover a
+  time to see the exact date.
 
 - Android: messages show their formatting (bold, italic, underline, strike,
   code, lists, quotes, headings and tappable links) in the list, and bold and

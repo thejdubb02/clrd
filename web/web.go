@@ -181,6 +181,14 @@ var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 }).ParseFS(files, "templates/*.html"))
 
 // snoozeLabel reads a Go duration as people say it: "1 hour", "2 days", "90 min".
+// badge is the open count a browser tab shows before the page name.
+func badge(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("(%d) ", n)
+}
+
 func snoozeLabel(v string) string {
 	d, err := time.ParseDuration(v)
 	if err != nil || d%time.Minute != 0 {
@@ -402,7 +410,7 @@ func Handler(api API, baseURL string) http.Handler {
 				Snap                          Snapshot
 				Inbox, Snoozed, Cleared       int
 			}{
-				meta: meta{Title: titles[view] + ": clrd", Path: r.URL.Path, Base: base(r)},
+				meta: meta{Title: badge(c["active"]+c["acknowledged"]) + titles[view] + ": clrd", Path: r.URL.Path, Base: base(r)},
 				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), Snap: snap,
 				Inbox:   c["active"] + c["acknowledged"],
 				Snoozed: c["snoozed"],
