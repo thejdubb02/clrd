@@ -406,9 +406,9 @@ func Handler(api API, baseURL string) http.Handler {
 	// Root icon paths that browsers, wrappers and home screens ask for by
 	// name. The manifest's relative URLs resolve under a sub-path base.
 	for p, f := range map[string][2]string{
-		"/favicon.svg":           {"mark.svg", "image/svg+xml"},
-		"/favicon.ico":           {"favicon.ico", "image/x-icon"},
-		"/apple-touch-icon.png":  {"apple-touch-icon.png", "image/png"},
+		"/favicon.svg":          {"mark.svg", "image/svg+xml"},
+		"/favicon.ico":          {"favicon.ico", "image/x-icon"},
+		"/apple-touch-icon.png": {"apple-touch-icon.png", "image/png"},
 		"/manifest.webmanifest": {"manifest.webmanifest", "application/manifest+json"},
 	} {
 		mux.HandleFunc("GET "+p, func(w http.ResponseWriter, r *http.Request) {
