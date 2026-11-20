@@ -154,7 +154,7 @@ try {
   // The custom time box and its Set button fit inside the menu, not clipped by it.
   const box = await card('Renew domain').locator('[data-popover]').boundingBox();
   const set = await card('Renew domain').getByRole('button', { name: 'Set' }).boundingBox();
-  assert.ok(set.x + set.width <= box.x + box.width, 'Set button clipped by the snooze menu');
+  assert.ok(set.x >= box.x && set.x + set.width <= box.x + box.width, 'Set button clipped by the snooze menu');
   const deskFit = await dateFit(card('Renew domain'));
   assert.ok(deskFit.has >= deskFit.need, `snooze date box squeezed to ${deskFit.has} px, needs ${deskFit.need} px`);
   assert.ok(Math.abs(set.y - (await card('Renew domain').getByLabel('Snooze until').boundingBox()).y) < 8, 'Set button wrapped under the date box on a wide screen');
@@ -195,7 +195,7 @@ try {
   const small = await wide.locator('[data-popover]').boundingBox();
   assert.ok(small.x >= 0 && small.x + small.width <= 300, `snooze menu spans ${small.x} to ${small.x + small.width} on a 300 px screen`);
   const smallSet = await wide.getByRole('button', { name: 'Set' }).boundingBox();
-  assert.ok(smallSet.x + smallSet.width <= small.x + small.width, 'Set button clipped by the snooze menu on a 300 px screen');
+  assert.ok(smallSet.x >= small.x && smallSet.x + smallSet.width <= small.x + small.width, 'Set button clipped by the snooze menu on a 300 px screen');
   // The date box keeps the width its own fields need (a squeezed one hides part of the time).
   const fit = await dateFit(wide);
   assert.ok(fit.has >= fit.need, `snooze date box squeezed to ${fit.has} px, needs ${fit.need} px on a 300 px screen`);
