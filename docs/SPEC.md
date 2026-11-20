@@ -460,6 +460,9 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` (60 each, publishes a minute per
   token and per topic, with a burst of the same size; `0` turns one off).
   Every publish counts, on every route; over a cap is a 429 `rate_limited`.
+  `CLRD_TRUSTED_PROXIES` (unset; comma-separated CIDRs or addresses): the
+  only peers whose rightmost `X-Forwarded-For` hop is taken as the client
+  address. Unset, any loopback or private-network peer is trusted.
   An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.

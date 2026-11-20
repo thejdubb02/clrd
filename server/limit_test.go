@@ -97,11 +97,26 @@ func TestPasswordLimit(t *testing.T) {
 	if c := try("phonepass", "203.0.113.9").StatusCode; c != 200 {
 		t.Fatalf("other address behind the proxy: %d, want 200", c)
 	}
-	if got := clientIP(&http.Request{RemoteAddr: "198.51.100.7:1", Header: http.Header{"X-Forwarded-For": {"203.0.113.9"}}}); got != "198.51.100.7" {
+	if got := clientIP(&http.Request{RemoteAddr: "198.51.100.7:1", Header: http.Header{"X-Forwarded-For": {"203.0.113.9"}}}, nil); got != "198.51.100.7" {
 		t.Fatalf("public peer trusted X-Forwarded-For: %s", got)
 	}
-	if got := clientIP(&http.Request{RemoteAddr: "[2001:db8::1]:1"}); got != "2001:db8::" {
+	if got := clientIP(&http.Request{RemoteAddr: "[2001:db8::1]:1"}, nil); got != "2001:db8::" {
 		t.Fatalf("IPv6 not cut to /64: %s", got)
+	}
+	// Issue #171: with CLRD_TRUSTED_PROXIES set, only those peers' X-Forwarded-For counts.
+	t.Setenv("CLRD_TRUSTED_PROXIES", "10.0.0.5, 172.16.0.0/12")
+	o, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for peer, want := range map[string]string{"10.0.0.5:1": "203.0.113.9", "172.20.1.1:1": "203.0.113.9", "10.0.0.6:1": "10.0.0.6", "127.0.0.1:1": "127.0.0.1"} {
+		if got := clientIP(&http.Request{RemoteAddr: peer, Header: http.Header{"X-Forwarded-For": {"203.0.113.9"}}}, o.TrustedProxies); got != want {
+			t.Errorf("peer %s with trusted proxies: %s, want %s", peer, got, want)
+		}
+	}
+	t.Setenv("CLRD_TRUSTED_PROXIES", "10.0.0.0/33")
+	if _, err := ConfigFromEnv(); err == nil {
+		t.Error("bad CLRD_TRUSTED_PROXIES accepted")
 	}
 }
 
