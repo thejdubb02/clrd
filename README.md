@@ -18,6 +18,13 @@ and the web inbox. Clear it on any one of them (swipe on a phone, Clear on the
 web) and it clears on all the others. When the problem fixes itself, the sender resolves it and it clears
 everywhere without anyone touching it.
 
+It works with no setup beyond one setting: start it with `CLRD_BASE_URL` set
+to your address, open the setup link it prints, scan a QR code to add your
+phone, and send. Everything else (check-ins, webhooks, icons, snooze times,
+display settings) is optional and has a default. Settings, topics, tokens and
+webhooks are all on the REST API (`/openapi.json` describes it), so a script or
+an AI agent can set them up without a person clicking through Settings.
+
 <p align="center">
   <img src=".github/images/inbox-light.png" alt="The clrd web inbox: an urgent backup failure, a disk warning, an alert acknowledged on a phone and an agent asking to merge a pull request" width="760">
   <img src=".github/images/inbox-phone-dark.png" alt="The same inbox on a phone in dark mode" width="200">
@@ -25,8 +32,10 @@ everywhere without anyone touching it.
 
 > **Status: early, no tagged release yet.** The server, web inbox, Android app
 > and SDKs have tests that run in CI, and so do the integration guides (see the
-> [integrations table](docs/integrations/README.md) for what each one runs). The Android app builds from source
-> until the F-Droid listing lands. See [CHANGELOG.md](CHANGELOG.md).
+> [integrations table](docs/integrations/README.md) for what each one runs). The Android app
+> is not in the main F-Droid catalog yet; every build from `main` goes to clrd's own
+> F-Droid repo ([how to add it](android/README.md#install-from-the-clrd-f-droid-repo)).
+> See [CHANGELOG.md](CHANGELOG.md).
 
 ## Why clrd
 
@@ -39,8 +48,10 @@ offline catches up the moment it reconnects.
 ## Features
 
 - **One binary, one SQLite file.** No Redis, no broker. Or one Docker container.
+  Runs at its own domain or under a sub-path behind your proxy.
 - **State that syncs.** Dismiss (hide it), acknowledge (someone is on it),
-  resolve (it is fixed) and snooze, each shown on every device.
+  resolve (it is fixed) and snooze, each shown on every device. Snooze times
+  and the default are one setting shared by every device.
 - **Self-resolving alerts.** Senders tag an alert with their own ID and resolve
   it by that ID when the fault clears. Or give one `"expires": "30m"` and it
   clears itself then.
@@ -54,15 +65,16 @@ offline catches up the moment it reconnects.
   [Switch from ntfy](docs/migrate-from-ntfy.md).
   Email is not supported.
 - **Files and icons.** Agents and scripts can attach a file or an icon to a
-  notification. The server stores and serves them; the Android app and the
-  web inbox show them.
+  notification, and each topic can have its own icon. The server stores and
+  serves them; the Android app and the web inbox show them.
 - **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
-  work without JavaScript, Markdown formatting and links, Share and Copy on
-  each card, a Ctrl+K command palette, a Send box for a quick note to your
-  phone, dark mode, phone width.
+  work without JavaScript, Markdown formatting and links, link previews,
+  Share and Copy on each card, optional stacking by topic, a Ctrl+K command
+  palette, a Send box for a quick note to your phone, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
-  and LineageOS. Reply and link buttons in the tray, Share and Copy on each
-  notification, Markdown formatting and tappable links.
+  and LineageOS. Reply and link buttons in the tray, notifications stacked by
+  topic, Share and Copy, Markdown formatting and tappable links. Trusts
+  certificate authorities you install, for a server on a home-lab CA.
 - **Add devices by QR code.** Sign a new browser in by scanning its code with
   the app, or link a phone from Settings in a signed-in browser. Both screens
   show the same 4-digit number, so no token is typed or copied.

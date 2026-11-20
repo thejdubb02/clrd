@@ -72,10 +72,10 @@
   -d '{"topic":"infra","title":"Disk full",
        "message":"web-1 at 95%","priority":4,
        "external_id":"disk-web-1"}' \
-  https://clrd.itsjustin.me/api/v1/notifications</code></pre>
+  https://clrd.example.com/api/v1/notifications</code></pre>
         <p>When the disk has room again, the sender clears it everywhere:</p>
 <pre tabindex="0"><code>curl -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
-  https://clrd.itsjustin.me/infra/disk-web-1/resolve</code></pre>
+  https://clrd.example.com/infra/disk-web-1/resolve</code></pre>
       </div>
       <div>
         <h3 class="text-foreground text-base font-semibold">AI agents (MCP)</h3>
@@ -97,7 +97,7 @@
       <div><dt>GitHub, Sentry, Stripe, Jira</dt><dd>Point the webhook at <code>/{topic}?template=github</code> (or <code>sentry</code>, <code>stripe</code>, <code>jira</code>). Signatures are checked. Closed issues clear.</dd></div>
       <div><dt>Homelab</dt><dd>Built-in templates for Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the *arr apps. Recoveries clear.</dd></div>
       <div><dt>Any webhook</dt><dd>Save a template that maps any service's JSON to a notification.</dd></div>
-      <div><dt>Webhooks out</dt><dd>Tell your own service when someone dismisses, acks, resolves or replies. Signed, retried, logged.</dd></div>
+      <div><dt>Webhooks out</dt><dd>Tell your own service when someone dismisses, acks, resolves, snoozes or replies. Signed, retried, logged.</dd></div>
       <div><dt>Any ntfy client</dt><dd>The ntfy app, CLI and libraries publish and subscribe unchanged.</dd></div>
     </dl>
   </div>
@@ -110,7 +110,7 @@
       <p>Point your scripts at clrd and keep going. Same publish endpoint, same headers, same JSON body, same subscribe streams.</p>
 <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -H "Title: Disk full" -H "Priority: high" \
-  -d "web-1 at 95%" https://clrd.itsjustin.me/infra</code></pre>
+  -d "web-1 at 95%" https://clrd.example.com/infra</code></pre>
       <p class="text-muted-foreground text-sm">Supported: <code>PUT</code> and <code>POST /{topic}</code>, the Title, Priority, Tags, Click and Actions headers, JSON publish to <code>/</code>, and <code>/json</code>, <code>/sse</code>, <code>/ws</code> and <code>/raw</code> subscriptions with <code>since=</code>.</p>
     </div>
     <div>
@@ -146,16 +146,16 @@
     <div>
       <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="self-host">Self-host it</h2>
       <p>One Go binary and one SQLite file. No Redis, no message broker, no account on anyone else's service. clrd sends no telemetry, and the only pages it fetches are site icons and link previews your devices ask for.</p>
-      <p class="text-muted-foreground text-sm">A Docker image and compose file ship with the first release. Until then, build from source with Go 1.24 or newer.</p>
+      <p class="mt-3">The only setting you need is the address it lives at. Open the setup link it prints, scan a QR code to add your phone, and send. Check-ins, webhooks, icons and snooze times are optional, and settings, topics, tokens and webhooks are all on the REST API, so an AI agent can set them up for you.</p>
+      <p class="text-muted-foreground mt-3 text-sm">No published image yet: the compose file builds one from the repository. Or build the binary with Go 1.24 or newer.</p>
     </div>
     <div>
 <pre tabindex="0"><code>git clone https://github.com/thejdubb02/clrd
-cd clrd &amp;&amp; go build -o clrd ./server/cmd/clrd
-
-CLRD_DB=./clrd.db \
-CLRD_BASE_URL=https://notify.example.com \
-./clrd</code></pre>
-      <p class="text-muted-foreground text-sm">On first start, clrd prints a one-time admin setup link to its log.</p>
+cd clrd
+# set CLRD_BASE_URL in docker-compose.yml
+docker compose up -d
+docker compose logs clrd</code></pre>
+      <p class="text-muted-foreground text-sm">On first start, clrd prints a one-time admin setup link to its log. It can also run under a sub-path, such as <code>https://example.com/clrd</code>.</p>
     </div>
   </div>
 </section>
@@ -164,7 +164,8 @@ CLRD_BASE_URL=https://notify.example.com \
   <div>
     <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="android">The Android app</h2>
     <p>Built for F-Droid. No Google Play Services, so it runs on GrapheneOS, LineageOS and any phone without Google. It keeps one connection to your server and removes an alert from the tray the moment it is cleared anywhere else.</p>
-    <p class="text-muted-foreground text-sm">Not released yet. Follow the <a href="https://github.com/thejdubb02/clrd">GitHub repository</a> for the first build.</p>
+    <p class="mt-3">Notifications from one topic stack together in the tray, Reply and link buttons work from the tray, and it trusts certificate authorities you install, so a home-lab server works over HTTPS.</p>
+    <p class="text-muted-foreground mt-3 text-sm">Not in the main F-Droid catalog yet. Every build from <code>main</code> goes to clrd's own F-Droid repository: <a href="https://github.com/thejdubb02/clrd/blob/main/android/README.md#install-from-the-clrd-f-droid-repo">how to add it</a>.</p>
   </div>
   <div>
     <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="source">Open source</h2>

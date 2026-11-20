@@ -11,6 +11,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Docs: the README and landing page now open with the out-of-box path (one
+  setting, the setup link, a QR scan, send), point to the clrd F-Droid repo
+  for the Android app, show Docker Compose as the way to run it, and list
+  stacking by topic, snooze settings, topic icons, sub-path hosting and
+  user-installed certificates. Landing page examples use `clrd.example.com`.
 - Server: outgoing webhooks. A topic can POST to your URL when a notification
   is dismissed, acknowledged, resolved, snoozed or replied to, signed with
   HMAC, retried with backoff and turned off with a notice after a day of
