@@ -95,9 +95,9 @@
     {{else}}
       {{range $n.Replies}}<button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}
       {{if ne $n.State "acknowledged"}}<button class="btn" data-variant="outline" name="act" value="ack" data-act="ack">Ack</button>{{end}}
-      {{if ne $n.State "snoozed"}}<details class="popover max-md:static">
+      {{if ne $n.State "snoozed"}}<details class="popover static">
         <summary class="btn" data-variant="outline">Snooze</summary>
-        <div data-popover class="start-5 top-full mt-1 grid w-64 gap-0.5 p-1 max-md:max-w-[calc(100%-1.25rem)] max-md:min-w-0 md:start-auto md:end-0">
+        <div data-popover class="start-5 top-full mt-1 grid w-64 gap-0.5 p-1 max-w-[calc(100%-1.25rem)] min-w-0">
           <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="1h" data-act="snooze" data-for="1h">1 hour</button>
           <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="4h" data-act="snooze" data-for="4h">4 hours</button>
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tonight">Tonight <span class="meta ms-auto">20:00</span></button>

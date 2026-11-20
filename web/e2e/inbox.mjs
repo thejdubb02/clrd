@@ -150,6 +150,9 @@ try {
   const box = await card('Renew domain').locator('[data-popover]').boundingBox();
   const set = await card('Renew domain').getByRole('button', { name: 'Set' }).boundingBox();
   assert.ok(set.x + set.width <= box.x + box.width, 'Set button clipped by the snooze menu');
+  // On a wide screen the menu opens inside its card, not over the sidebar.
+  const cardBox = await card('Renew domain').boundingBox();
+  assert.ok(box.x >= cardBox.x, `snooze menu starts at ${box.x}, left of its card at ${cardBox.x}`);
   await card('Renew domain').getByLabel('Snooze until').fill('2031-06-01T08:30');
   await card('Renew domain').getByLabel('Snooze until').press('Enter');
   await announce.filter({ hasText: 'Snoozed until' }).waitFor({ state: 'attached' });
