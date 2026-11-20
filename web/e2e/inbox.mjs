@@ -187,6 +187,25 @@ try {
   await plain('Lock the door?').getByText('Answered Lock').waitFor();
   assert.equal((await get(laptop, r.id)).reply, 'lock');
   console.log('ok: Clear, Snooze and reply work without JavaScript');
+
+  // QR sign-in (#74): a signed-out browser shows a code, a signed-in phone
+  // opens the link and taps Approve, and the waiting browser signs itself in.
+  const pc = await (await browser.newContext()).newPage();
+  await pc.goto(base + '/app');
+  const [res] = await Promise.all([
+    pc.waitForResponse(r => r.url().endsWith('/api/v1/pair')),
+    pc.getByRole('button', { name: 'Show sign-in code' }).click(),
+  ]);
+  const { code } = await res.json();
+  await pc.locator('[data-pair-qr]').waitFor({ state: 'visible' });
+  const phoneCtx = await browser.newContext();
+  assert.ok((await phoneCtx.request.post(base + '/api/v1/session', { data: { token: phone } })).ok(), 'phone sign-in');
+  const phonePage = await phoneCtx.newPage();
+  await phonePage.goto(`${base}/pair?c=${code}`);
+  await phonePage.getByRole('button', { name: 'Approve' }).click();
+  await phonePage.getByText('Approved.').waitFor();
+  await pc.locator('[data-inbox]').waitFor({ timeout: 5000 });
+  console.log('ok: sign in a browser by approving its QR code from a phone');
 } finally {
   await browser?.close();
   server.kill();

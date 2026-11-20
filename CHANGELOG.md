@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Sign in a browser with your phone: the web sign-in page shows a QR code,
+  you scan it with a phone that is already signed in and tap Approve, and the
+  browser signs itself in with the phone's access. No token to copy or type.
 - Android: messages show their formatting (bold, italic, underline, strike,
   code, lists, quotes, headings and tappable links) in the list, and bold and
   italic in the system notification. A message sent as plain text is shown

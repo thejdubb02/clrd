@@ -280,6 +280,22 @@ the session cookie (same-origin only) as well as a Bearer token.
   `DELETE /api/v1/session` revokes
   the browser's token and clears the cookie. The cookie works on `/api/v1/*`
   only, never on the ntfy-style GET publish webhooks.
+- **Sign in with a phone (pairing):** a signed-out browser posts
+  `POST /api/v1/pair` (same origin, no auth) and gets `{code, url, qr,
+  expires_at}`: a 22-character code, the link `<CLRD_BASE_URL>/pair?c=<code>`,
+  that link as a QR PNG data URL, and an expiry 2 minutes out. It also gets an
+  HttpOnly, SameSite=Strict `clrd_pair` cookie holding a secret only it knows.
+  It polls `POST /api/v1/pair/claim` with `{"code":...}`: 202 while waiting,
+  410 once denied, expired, used, or when the cookie does not match, and 200
+  once approved, which signs it in exactly like `POST /api/v1/session` with the
+  approving token as parent (same access, revoked with it). A signed-in device
+  reads `GET /api/v1/pair/{code}` (`{name, created_at}`) and posts
+  `/api/v1/pair/{code}/approve` (200 `{name}`) or `/deny` (204); unknown or
+  spent codes are 404. `GET /pair?c=` is the page the QR opens: Approve and
+  Deny when signed in, else an "Open in the clrd app" link to
+  `clrd://pair?server=<base>&code=<code>`. Codes are single use, kept in memory
+  only, and at most 64 wait at once (429 `busy` past that). The code alone
+  approves nothing and cannot be claimed by another browser.
 - Setup: with no admin token in the database the server logs
   `<CLRD_BASE_URL>/setup?code=<one-time code>`. Opening it shows a form; posting
   it creates an admin token, shows it once and signs the browser in.
@@ -288,7 +304,8 @@ the session cookie (same-origin only) as well as a Bearer token.
 
 Native (JSON in, JSON out, errors as `{"error":"...","code":"..."}`).
 Codes: `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found`
-404, `conflict` 409, `reset` 410, `internal` 500.
+404, `conflict` 409, `reset` 410, `gone` 410 (pairing), `busy` 429
+(pairing), `internal` 500.
 
 Notifications always carry every field: `""` for unset strings, `[]` for
 `tags` and `actions`, `null` for `snooze_until`. List returns

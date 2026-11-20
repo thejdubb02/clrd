@@ -95,7 +95,15 @@ Sitemap: {{.}}/sitemap.xml
     <button class="btn btn-ink" type="submit">Sign in</button>
   </form>
   <p class="quiet">Make a token with <code>clrd token create --name laptop --scope read</code>. <a href="/docs/spec">How sign-in works</a></p>
+  <section class="pair" data-pair hidden>
+    <h2>Or sign in with your phone</h2>
+    <p>Scan the code with the camera on a phone where clrd is signed in, then approve. This page signs itself in. No token to type.</p>
+    <button class="btn btn-ink" type="button" data-pair-start>Show sign-in code</button>
+    <img data-pair-qr alt="QR code to sign in this browser" width="232" height="232" hidden>
+    <p class="quiet" data-pair-msg role="status"></p>
+  </section>
 </main>
+<script src="/static/pair.js" defer></script>
 </body>
 </html>
 {{end}}

@@ -88,6 +88,8 @@ type Server struct {
 	seen      sync.Map // token id -> time last written to last_seen_at
 	setupMu   sync.Mutex
 	setupCode string
+	pairMu    sync.Mutex
+	pairs     map[string]*pairing // browser sign-ins waiting for approval, by code (pair.go)
 
 	settingsChanged signal // fires after every settings change
 	fetch           *fetcher
@@ -384,6 +386,7 @@ func (s *Server) routesSetup() {
 	s.settingsRoutes()
 	s.fetchRoutes()
 	s.route("DELETE /api/v1/session", s.handleSignOut)
+	s.pairRoutes()
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in PublishInput

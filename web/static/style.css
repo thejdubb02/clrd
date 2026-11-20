@@ -161,6 +161,8 @@ pre { margin: 0 0 1em; padding: 16px 18px; overflow-x: auto; background: var(--s
 .signin-form label { flex: 1 1 100%; font-weight: 500; color: var(--text); }
 .signin .signin-form input { flex: 1 1 240px; height: 40px; }
 .signin-form .btn { min-height: 40px; }
+.pair { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--line); }
+.pair img { display: block; margin: 16px 0; border-radius: 12px; image-rendering: pixelated; background: #fff; }
 
 /* Docs */
 .docs { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-top: 40px; padding-bottom: 72px; }

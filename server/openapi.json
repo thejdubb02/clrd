@@ -3480,6 +3480,138 @@
      }
     }
    }
+  },
+  "/api/v1/pair": {
+   "post": {
+    "summary": "Start a browser sign-in by QR code",
+    "tags": [
+     "auth"
+    ],
+    "description": "Must be same-origin, no token. Returns a short-lived code (2 minutes, single use), the link a phone opens and that link as a QR code PNG, and sets the clrd_pair cookie that only this browser holds. 429 when too many sign-ins are waiting.",
+    "responses": {
+     "201": {
+      "description": "code, url, qr (data: URI), expires_at"
+     },
+     "429": {
+      "description": "Too many sign-ins waiting"
+     }
+    }
+   }
+  },
+  "/api/v1/pair/claim": {
+   "post": {
+    "summary": "Poll a browser sign-in",
+    "tags": [
+     "auth"
+    ],
+    "description": "Same-origin, with the clrd_pair cookie from the same browser. Body {\"code\"}. 202 while waiting; 200 once approved, with the clrd_session cookie set (a token with the approver's access, revoked with it); 410 when denied, expired, used or claimed from another browser.",
+    "responses": {
+     "200": {
+      "description": "Signed in"
+     },
+     "202": {
+      "description": "Waiting for approval"
+     },
+     "410": {
+      "description": "Denied, expired or not this browser's"
+     }
+    }
+   }
+  },
+  "/api/v1/pair/{code}": {
+   "get": {
+    "summary": "Who is asking to sign in",
+    "tags": [
+     "auth"
+    ],
+    "description": "Any token. The browser name and when it asked, so the approving device can show them.",
+    "responses": {
+     "200": {
+      "description": "name, created_at"
+     },
+     "404": {
+      "description": "Expired, used or unknown"
+     }
+    },
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/pair/{code}/approve": {
+   "post": {
+    "summary": "Approve a browser sign-in",
+    "tags": [
+     "auth"
+    ],
+    "description": "The waiting browser is signed in with this token's access. A form post (from /pair) gets an HTML page back.",
+    "responses": {
+     "200": {
+      "description": "name"
+     },
+     "404": {
+      "description": "Expired, used or unknown"
+     }
+    },
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/pair/{code}/deny": {
+   "post": {
+    "summary": "Deny a browser sign-in",
+    "tags": [
+     "auth"
+    ],
+    "description": "The waiting browser is told no.",
+    "responses": {
+     "204": {
+      "description": "Denied"
+     },
+     "404": {
+      "description": "Expired, used or unknown"
+     }
+    },
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/pair": {
+   "get": {
+    "summary": "Approve page the QR code opens",
+    "tags": [
+     "auth"
+    ],
+    "description": "HTML. Query c is the code. Signed in: Approve and Deny buttons. Signed out: a clrd://pair?server=...&code=... link that hands the code to the app.",
+    "responses": {
+     "200": {
+      "description": "HTML page"
+     }
+    }
+   }
   }
  },
  "components": {

@@ -7,6 +7,7 @@ require (
 	github.com/yuin/goldmark v1.8.7
 	golang.org/x/crypto v0.31.0
 	modernc.org/sqlite v1.38.2
+	rsc.io/qr v0.2.0
 )
 
 require (
