@@ -126,14 +126,15 @@ func TestReplyButtons(t *testing.T) {
 		json.Unmarshal([]byte(res["content"].([]any)[0].(map[string]any)["text"].(string)), &v)
 		return v
 	}
-	sent := call("send", map[string]any{"topic": "agents", "message": "deploy?", "id": "deploy-2", "format": "text", "actions": []any{
-		map[string]any{"label": "Yes", "reply": "yes"}, map[string]any{"label": "No", "reply": "no"}}})
+	sent := call("send", map[string]any{"topic": "agents", "message": "deploy?", "id": "deploy-2", "format": "text", "icon": "https://x.test/i.png",
+		"attachment": map[string]any{"url": "https://x.test/r.pdf", "name": "r.pdf"}, "actions": []any{
+			map[string]any{"label": "Yes", "reply": "yes"}, map[string]any{"label": "No", "reply": "no"}}})
 	id, _ := sent["id"].(string)
 	if acts, _ := sent["actions"].([]any); len(acts) != 2 {
 		t.Fatalf("send dropped the buttons: %v", sent)
 	}
-	if sent["format"] != "text" {
-		t.Fatalf("send dropped the format: %v", sent)
+	if att, _ := sent["attachment"].(map[string]any); sent["format"] != "text" || sent["icon"] != "https://x.test/i.png" || att["url"] != "https://x.test/r.pdf" || att["name"] != "r.pdf" {
+		t.Fatalf("send dropped format, icon or attachment: %v", sent)
 	}
 	go func() {
 		time.Sleep(50 * time.Millisecond)
