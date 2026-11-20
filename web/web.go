@@ -32,23 +32,25 @@ var files embed.FS
 
 // Notification mirrors docs/SPEC.md section 2.
 type Notification struct {
-	ID          string     `json:"id"`
-	Topic       string     `json:"topic"`
-	ExternalID  string     `json:"external_id,omitempty"`
-	Title       string     `json:"title"`
-	Message     string     `json:"message"`
-	Priority    int        `json:"priority"`
-	Tags        []string   `json:"tags"`
-	Click       string     `json:"click,omitempty"`
-	Actions     []Action   `json:"actions,omitempty"`
-	State       string     `json:"state"`
-	StateBy     string     `json:"state_by"`
-	StateByID   string     `json:"state_by_id"`
-	Reply       string     `json:"reply"` // the reply action tapped, "" until someone answers
-	SnoozeUntil *time.Time `json:"snooze_until"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	Seq         int64      `json:"seq"`
+	ID          string      `json:"id"`
+	Topic       string      `json:"topic"`
+	ExternalID  string      `json:"external_id,omitempty"`
+	Title       string      `json:"title"`
+	Message     string      `json:"message"`
+	Priority    int         `json:"priority"`
+	Tags        []string    `json:"tags"`
+	Click       string      `json:"click,omitempty"`
+	Icon        string      `json:"icon,omitempty"` // http(s) image URL
+	Attachment  *Attachment `json:"attachment,omitempty"`
+	Actions     []Action    `json:"actions,omitempty"`
+	State       string      `json:"state"`
+	StateBy     string      `json:"state_by"`
+	StateByID   string      `json:"state_by_id"`
+	Reply       string      `json:"reply"` // the reply action tapped, "" until someone answers
+	SnoozeUntil *time.Time  `json:"snooze_until"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	Seq         int64       `json:"seq"`
 }
 
 // Action is a link (URL) or an answer button (Reply), never both.
@@ -57,6 +59,18 @@ type Action struct {
 	URL   string `json:"url"`
 	Reply string `json:"reply,omitempty"`
 }
+
+// Attachment is a file on a notification: uploaded (/api/v1/files/<id>, with
+// Type and Size) or external (an http(s) URL, Type "").
+type Attachment struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Type string `json:"type"`
+	Size int64  `json:"size"`
+}
+
+// Image reports whether the card can show the file inline.
+func (a Attachment) Image() bool { return strings.HasPrefix(a.Type, "image/") }
 
 // Links are the actions that open a URL.
 func (n Notification) Links() (out []Action) {
@@ -479,7 +493,7 @@ func Handler(api API, baseURL string) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https: http:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		mux.ServeHTTP(w, r)

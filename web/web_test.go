@@ -263,7 +263,7 @@ func TestAssets(t *testing.T) {
 		}
 	}
 	want := map[string]string{
-		"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+		"Content-Security-Policy": "default-src 'self'; img-src 'self' data: https: http:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "same-origin",
 	}
