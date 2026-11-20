@@ -102,7 +102,7 @@
           <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="4h" data-act="snooze" data-for="4h">4 hours</button>
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tonight">Tonight <span class="meta ms-auto">20:00</span></button>
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tomorrow">Tomorrow <span class="meta ms-auto">09:00</span></button>
-          <span class="snooze-custom js-only flex min-w-0 gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 min-w-0 flex-1 text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
+          <span class="snooze-custom js-only flex min-w-0 flex-wrap gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 min-w-0 flex-auto text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
         </div>
       </details>{{end}}
       <button class="btn" data-variant="clear" name="act" value="dismiss" data-act="dismiss">{{template "i-check"}}Clear</button>

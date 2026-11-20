@@ -188,6 +188,12 @@ try {
   assert.ok(small.x >= 0 && small.x + small.width <= 300, `snooze menu spans ${small.x} to ${small.x + small.width} on a 300 px screen`);
   const smallSet = await wide.getByRole('button', { name: 'Set' }).boundingBox();
   assert.ok(smallSet.x + smallSet.width <= small.x + small.width, 'Set button clipped by the snooze menu on a 300 px screen');
+  // The date box keeps the width its own fields need (a squeezed one hides part of the time).
+  const fit = await wide.getByLabel('Snooze until').evaluate(i => {
+    const c = i.cloneNode(); c.style.cssText = 'position:absolute;visibility:hidden;width:auto;min-width:0;flex:none';
+    i.parentNode.append(c); const need = c.offsetWidth; c.remove(); return { has: i.offsetWidth, need };
+  });
+  assert.ok(fit.has >= fit.need, `snooze date box squeezed to ${fit.has} px, needs ${fit.need} px on a 300 px screen`);
   await narrow.context().close();
   console.log('ok: snooze menu fits a phone screen');
 
