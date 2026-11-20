@@ -11,15 +11,16 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
-- Android: swiping away a stack or bundle, or the shade's Clear all, no longer
-  clears every notification on every device. It only hides them on this phone,
-  and they stay open in the inbox. Swiping away a single notification still
-  clears it everywhere (#265).
+- Android: swiping a notification out of the phone's notification shade (one,
+  a stack, or Clear all) no longer clears it on every device. It only hides it
+  on this phone, and it stays open in the inbox. Clear it in the app, on the
+  web, or with the notification's Clear button. Before, one swipe on a bundle
+  could clear every notification everywhere (#265).
 
 ### Added
 
 - Server: every state change now records how it was made (`via`: the Android
-  inbox, a tray button, a tray swipe, the web inbox, an agent, ntfy, or the
+  inbox, a tray button, the web inbox, an agent, ntfy, or the
   server itself), on the event and as one log line per change, so "I never
   cleared that" can be answered from the log. The Android app and the web inbox
   send it (#267, #265).

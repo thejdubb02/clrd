@@ -184,7 +184,7 @@ class Tray(private val ctx: Context) {
             .setSilent(silent)
             .setAutoCancel(false)
             .setContentIntent(open(n))
-            .setDeleteIntent(action(n, ACTION_DISMISS)) // a single swipe dismisses everywhere; a bulk clear only hides (App.swiped)
+            .setDeleteIntent(action(n, ACTION_DISMISS)) // a swipe only hides it on this phone (App.trayHidden)
         if (n.priority >= 5) b.setColor(0xFFC2410C.toInt())
         if (App.of(ctx).stack) b.setGroup(GROUP + n.topic)
         // Pictures never hold up a post: one not loaded yet is fetched in the background, then the tray is redrawn.

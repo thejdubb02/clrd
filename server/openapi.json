@@ -4352,7 +4352,7 @@
      },
      "via": {
       "type": "string",
-      "description": "On a state event: how the change was made (app, tray_button, tray_cleared, web, mcp, api, ...). See docs/SPEC.md section 5."
+      "description": "On a state event: how the change was made (app, tray_button, web, mcp, api, ...). See docs/SPEC.md section 5."
      },
      "epoch": {
       "type": "string",

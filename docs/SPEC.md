@@ -394,7 +394,6 @@ and via. Values clients send today:
 |---|---|
 | `app` | The Android app's inbox (a tap or swipe in the app) |
 | `tray_button` | A button on an Android tray notification (Ack, Snooze, Clear, a reply) |
-| `tray_cleared` | An Android tray notification swiped away on its own. Android sends the same signal for a swipe, a stack or bundle swipe and the shade's Clear all, so the app waits one second: one signal alone is a swipe and dismisses everywhere; several (a bulk clear) only hide the rows on that phone and send nothing. Clear all with exactly one clrd notification showing still looks like a swipe. |
 | `web` | The web inbox, one notification |
 | `web_bulk` | The web inbox's Clear all or a stack's Clear |
 | `web_form` | The web inbox's buttons with scripts off |
@@ -527,7 +526,10 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 - Kotlin, Jetpack Compose, minSdk 26, no Google Play Services (F-Droid).
 - Foreground service holds the WebSocket; reconnect with backoff; stores last seq in Room/DataStore.
 - Each open notification = one system notification, `tag` = notification id.
-  `setDeleteIntent` -> POST `/dismiss`. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR.
+  Swiping a system notification away (one, a stack, or the shade's Clear all) only hides it on
+  that phone and sends nothing: the system notification says there is something to see, and
+  clearing happens in the app, the web or the API (#265). A new alert for a hidden item shows it
+  again. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR are deliberate taps and do sync.
 - Incoming `dismissed`/`resolved` event -> `NotificationManager.cancel(tag)`. That is the headline feature.
 - Inbox screen per the brand board: filter pills by topic, swipe to clear with green reveal, tabs Inbox, Snoozed, Cleared, Settings.
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.

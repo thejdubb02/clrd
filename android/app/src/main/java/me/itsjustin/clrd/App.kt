@@ -2,8 +2,6 @@ package me.itsjustin.clrd
 
 import android.app.Application
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import androidx.room.Room
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.OkHttpClient
@@ -129,33 +127,9 @@ class App : Application() {
         actAll(listOf(id), action, body, server, via, done)
 
     /**
-     * Tray swipes (#265). Android fires one delete intent per notification for a single swipe, a swiped
-     * stack or bundle, and the shade's Clear all, and never says which. So the deletes are gathered until
-     * [SWEEP_MS] pass with no more: exactly one, and no stack's own delete, is a single swipe and dismisses
-     * everywhere. Anything more only hides the rows on this phone; they stay open in the inbox.
-     * Main thread only (broadcasts land there). The receiver returns at once: Android queues the next
-     * broadcast behind an unfinished one, so waiting inside it would make every delete look single.
-     * A process killed inside the window sends nothing, which is the safe side.
+     * Rows swiped out of the shade (#265). A swipe, a stack swipe or Clear all only hides them on this
+     * phone; clearing happens in the app, the web or the API. A new alert for one shows it again.
      */
-    private val swept = mutableListOf<Pair<String, String?>>() // id, server
-    private var stackSwept = false
-    private val main by lazy { Handler(Looper.getMainLooper()) }
-    private val endSweep = Runnable {
-        val one = swept.singleOrNull()
-        if (one != null && !stackSwept) act(one.first, "dismiss", server = one.second, via = VIA_TRAY_CLEARED)
-        else trayHidden += swept.map { it.first }
-        swept.clear()
-        stackSwept = false
-    }
-
-    fun swiped(ids: List<String>, server: String?, stack: Boolean) {
-        swept += ids.map { it to server }
-        stackSwept = stackSwept || stack
-        main.removeCallbacks(endSweep)
-        main.postDelayed(endSweep, SWEEP_MS)
-    }
-
-    /** Rows hidden on this phone only (a bundle swipe or Clear all). A new alert for one shows it again. */
     var trayHidden: Set<String>
         get() = prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
@@ -212,14 +186,9 @@ class App : Application() {
     companion object {
         fun of(ctx: Context) = ctx.applicationContext as App
 
-        // How an action was made, sent as "via" (docs/SPEC.md). tray_cleared is a lone delete intent: a single
-        // swipe, or Clear all (or a watch) with only one clrd notification showing, which look the same.
+        // How an action was made, sent as "via" (docs/SPEC.md).
         const val VIA_APP = "app"
         const val VIA_TRAY_BUTTON = "tray_button"
-        const val VIA_TRAY_CLEARED = "tray_cleared"
-
-        /** Quiet time that ends a burst of tray deletes. A bulk clear fires them all within milliseconds. */
-        const val SWEEP_MS = 1000L
     }
 }
 

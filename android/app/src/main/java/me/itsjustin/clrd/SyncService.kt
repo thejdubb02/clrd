@@ -123,13 +123,14 @@ class BootReceiver : BroadcastReceiver() {
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val server = intent.getStringExtra(Tray.EXTRA_SERVER) // null on items posted before it was added: the current server
-        if (intent.action == Tray.ACTION_DISMISS_STACK) { // a stack swiped away: never a single swipe (#265)
-            App.of(ctx).swiped(intent.getStringArrayExtra(Tray.EXTRA_IDS)?.toList().orEmpty(), server, stack = true)
+        val app = App.of(ctx)
+        if (intent.action == Tray.ACTION_DISMISS_STACK) { // a stack swiped away: hide here only (#265)
+            app.trayHidden += intent.getStringArrayExtra(Tray.EXTRA_IDS).orEmpty()
             return
         }
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
-        if (intent.action == Tray.ACTION_DISMISS) { // the delete intent: one swipe, or part of a bulk clear
-            App.of(ctx).swiped(listOf(id), server, stack = false)
+        if (intent.action == Tray.ACTION_DISMISS) { // a swipe or Clear all: hide here only, never a clear (#265)
+            app.trayHidden += id
             return
         }
         val (action, body) = when (intent.action) {

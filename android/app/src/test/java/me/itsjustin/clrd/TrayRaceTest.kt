@@ -176,8 +176,8 @@ class TrayRaceTest {
 
     @Test fun aTapOnATrayItemFromBeforeTheServerExtraIsSaved() {
         bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
-        app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_DISMISS).putExtra(Tray.EXTRA_ID, "a"))
-        shadowOf(Looper.getMainLooper()).idleFor(App.SWEEP_MS, TimeUnit.MILLISECONDS)
+        app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_CLEAR).putExtra(Tray.EXTRA_ID, "a"))
+        shadowOf(Looper.getMainLooper()).idle()
         drainIo()
         assertEquals(listOf("dismiss"), bg { dao.pending().map { it.action } })
     }
@@ -202,24 +202,26 @@ class TrayRaceTest {
         }
     }
 
-    private fun swipe(id: String) {
-        tray(id)!!.deleteIntent.send()
-        shadowOf(Looper.getMainLooper()).idleFor(App.SWEEP_MS, TimeUnit.MILLISECONDS) // a lone swipe waits out the window
+    private fun clearTap(id: String) {
+        tray(id)!!.actions.single { it.actionIntent.let { pi -> shadowOf(pi).savedIntent.action == Tray.ACTION_CLEAR } }.actionIntent.send()
+        shadowOf(Looper.getMainLooper()).idle()
         drainIo()
     }
 
-    @Test fun swipeAfterServerSwitchIsDropped() {
+    @Test fun aClearTapAfterServerSwitchIsDropped() {
         bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
         app.serverUrl = "https://b.example" // the tray item still belongs to server a
-        swipe("a")
+        clearTap("a")
         assertTrue(bg { dao.pending().isEmpty() })
         assertEquals(Notif.ACTIVE, bg { dao.openNow().single().state })
     }
 
-    @Test fun swipeOnTheSameServerIsSaved() {
+    @Test fun aClearTapOnTheSameServerIsSaved() {
         bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
-        swipe("a")
-        assertEquals(listOf("dismiss"), bg { dao.pending().map { it.action } })
+        clearTap("a")
+        val p = bg { dao.pending().single() }
+        assertEquals("dismiss", p.action)
+        assertEquals(App.VIA_TRAY_BUTTON, JSONObject(p.body).getString("via"))
     }
 
     @Test fun aTapIsSavedWhileIoIsBusy() {
@@ -315,15 +317,16 @@ class TrayRaceTest {
         assertEquals(Notif.ACKNOWLEDGED, bg { dao.openNow().single().state })
     }
 
-    @Test fun aSwipeAndTheClearButtonAreToldApart() { // #265: the server log says how each dismiss was made
-        bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 4), row("b", Notif.ACTIVE, 5)), 5) }
-        tray("a")!!.deleteIntent.send() // one swipe, alone
-        shadowOf(Looper.getMainLooper()).idleFor(App.SWEEP_MS, TimeUnit.MILLISECONDS)
-        app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_CLEAR).putExtra(Tray.EXTRA_ID, "b"))
+    @Test fun aSingleSwipeOnlyHidesItHere() { // #265: clearing happens in the app, never by a swipe
+        bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        tray("a")!!.deleteIntent.send()
+        nm.cancel("a", 0) // what the shade did
         shadowOf(Looper.getMainLooper()).idle()
         drainIo()
-        val via = bg { dao.pending() }.associate { it.notifId to JSONObject(it.body).getString("via") }
-        assertEquals(mapOf("a" to App.VIA_TRAY_CLEARED, "b" to App.VIA_TRAY_BUTTON), via)
+        assertEquals(emptyList<Pending>(), bg { dao.pending() })
+        assertEquals(Notif.ACTIVE, bg { dao.openNow().single().state })
+        app.tray.reconcile(bg { dao.openNow() }, emptySet())
+        assertNull("a resync must not bring it back", tray("a"))
     }
 
     @Test fun oneGestureThatClearsManyOnlyHidesThemHere() { // #265: one bundle swipe fired 6 deletes across 3 topics
@@ -331,7 +334,7 @@ class TrayRaceTest {
         bg { RoomStore(app).apply(rows, 1) }
         rows.forEach { tray(it.id)!!.deleteIntent.send() }
         nm.cancelAll() // what the shade did
-        shadowOf(Looper.getMainLooper()).idleFor(App.SWEEP_MS, TimeUnit.MILLISECONDS)
+        shadowOf(Looper.getMainLooper()).idle()
         drainIo()
         assertEquals(emptyList<Pending>(), bg { dao.pending() }) // nothing dismissed on the server
         assertEquals(6, bg { dao.openNow() }.size) // still open in the inbox

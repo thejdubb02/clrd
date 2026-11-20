@@ -34,7 +34,7 @@ func TestStateEventsRecordVia(t *testing.T) {
 			t.Fatalf("%s %v: via %q, want %q", action, body, v, wantVia)
 		}
 	}
-	act(a, "dismiss", map[string]string{"via": "tray_cleared"}, "tray_cleared")
+	act(a, "dismiss", map[string]string{"via": "tray_button"}, "tray_button")
 	act(b, "ack", nil, "api") // an older client sends no body
 	act(b, "snooze", map[string]string{"for": "1h", "via": "app"}, "app")
 	act(b, "reopen", "junk", "api")                                  // not an object: still done

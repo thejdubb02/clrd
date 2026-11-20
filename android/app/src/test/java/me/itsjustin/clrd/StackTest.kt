@@ -76,7 +76,7 @@ class StackTest {
         app.sendBroadcast(intent)
         app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_DISMISS).putExtra(Tray.EXTRA_ID, "a")) // the row's own swipe too
         nm.cancelAll() // what the shade did
-        shadowOf(android.os.Looper.getMainLooper()).idleFor(App.SWEEP_MS, TimeUnit.MILLISECONDS)
+        shadowOf(android.os.Looper.getMainLooper()).idle()
         app.acts.submit {}.get(10, TimeUnit.SECONDS)
         assertEquals(emptyList<Pending>(), bg { dao.pending() })
         assertEquals(setOf("a", "b"), app.trayHidden)
