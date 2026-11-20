@@ -330,7 +330,7 @@ try {
   const rbody = mp.locator('article.card', { hasText: 'Raw text' }).locator('[data-body]');
   assert.equal(await rbody.textContent(), '**not bold**');
   await putSettings({ render_formatting: false });
-  await mp.locator('[data-fmt="false,true,true"]').waitFor({ state: 'attached' }); // the open page reloaded itself
+  await mp.locator('[data-fmt="false,true,true,false"]').waitFor({ state: 'attached' }); // the open page reloaded itself
   assert.equal(await fbody.locator('strong, li').count(), 0, 'formatting off still renders Markdown');
   assert.ok((await fbody.textContent()).startsWith('**Disk** 91% on ++web1++'));
   await putSettings({ render_formatting: true });
@@ -341,9 +341,37 @@ try {
   assert.ok(await iconSw.isChecked());
   await Promise.all([setp.waitForEvent('load'), iconSw.click()]); // saved, then the page reloads
   assert.equal(await setp.getByRole('switch', { name: 'Show site icons next to links' }).isChecked(), false, 'switch not saved');
-  await mp.locator('[data-fmt="true,true,false"]').waitFor({ state: 'attached' });
+  await mp.locator('[data-fmt="true,true,false,false"]').waitFor({ state: 'attached' });
   assert.equal(await fbody.locator('img.favicon').count(), 0, 'site icon still shown with the setting off');
   await putSettings({ favicons: true });
+  await mp.locator('[data-fmt="true,true,true,false"]').waitFor({ state: 'attached' }); // its own reload is done
+  // Link previews: off by default; on for one topic from Settings, the card
+  // shows what the server returned (the server's fetch is stubbed here).
+  const asked = [];
+  await mp.route('**/api/v1/preview?*', route => {
+    asked.push(new URL(route.request().url()).searchParams);
+    route.fulfill({ json: { url: 'https://example.com/d', title: 'Disk <b>dash</b>', description: 'Grafana', site_name: 'Example', image: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' } });
+  });
+  await mp.reload();
+  assert.equal(asked.length, 0, 'preview fetched with previews off');
+  await setp.locator('#tp-infra').selectOption('on');
+  await setp.waitForEvent('load');
+  assert.equal(await setp.locator('#tp-infra').inputValue(), 'on', 'topic preview not saved');
+  await mp.locator('[data-tprev="infra=true;"]').waitFor({ state: 'attached' });
+  const prev = mp.locator('article.card', { hasText: 'Formatted' }).locator('a.preview');
+  await prev.waitFor();
+  assert.equal(await prev.locator('.title').textContent(), 'Disk <b>dash</b>', 'preview title not shown as text');
+  assert.equal(await prev.getAttribute('href'), 'https://example.com/d');
+  assert.equal(await prev.locator('.desc').textContent(), 'Grafana');
+  assert.equal(await prev.locator('.site').textContent(), 'Example');
+  assert.ok((await prev.locator('img').getAttribute('src')).startsWith('data:image/gif;'), 'preview image not shown');
+  assert.equal(asked.at(-1).get('url'), 'https://example.com/d');
+  assert.equal(asked.at(-1).get('topic'), 'infra');
+  assert.equal(await mp.locator('a.preview').count(), 1, 'preview on a topic left at the default');
+  await putSettings({ topic_previews: { infra: null } });
+  await mp.locator('[data-tprev=""]').waitFor({ state: 'attached' });
+  assert.equal(await mp.locator('[data-preview]').count(), 0, 'card still asks for a preview after the topic went back to default');
+  assert.equal(await mp.locator('a.preview').count(), 0, 'preview still shown after the topic went back to default');
   await setp.close();
   await mp.close();
   console.log('ok: Markdown bodies follow the formatting setting');
