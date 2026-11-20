@@ -711,7 +711,8 @@ private fun SoundSettings(app: App, resumes: Int) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     var sound by remember { mutableStateOf(app.sound) }
-    val overridden = remember(sound, resumes) { app.tray.soundOverridden(sound) }
+    var saves by remember { mutableStateOf(0) } // bumped once a save has made the channels, so the check reads them
+    val overridden = remember(sound, resumes, saves) { app.tray.soundOverridden(sound) }
     var playing by remember { mutableStateOf<android.media.Ringtone?>(null) }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { playing?.stop() } }
 
@@ -722,7 +723,7 @@ private fun SoundSettings(app: App, resumes: Int) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             RadioButton(selected = name == sound, onClick = {
                 sound = name
-                app.io.execute { app.saveSound(name) }
+                app.io.execute { app.saveSound(name); saves++ }
             })
             Text(stringResource(soundLabel(name)), color = b.ink, modifier = Modifier.weight(1f))
             Sounds.uri(ctx, name)?.let { uri ->

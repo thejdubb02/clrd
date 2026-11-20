@@ -63,6 +63,14 @@ class SoundsTest {
         assertEquals("a showing row moves to the new channel", "p4-none", shadowOf(nm).getNotification("a", 0).channelId)
     }
 
+    @Test fun aChannelTheUserBlockedStaysBlockedOnTheNewSound() {
+        nm.deleteNotificationChannel("p5")
+        nm.createNotificationChannel(android.app.NotificationChannel("p5", "Urgent", NotificationManager.IMPORTANCE_NONE))
+        bg { app.saveSound("chime") }
+        assertEquals(NotificationManager.IMPORTANCE_NONE, nm.getNotificationChannel("p5-chime").importance)
+        assertEquals("p4 untouched", NotificationManager.IMPORTANCE_HIGH, nm.getNotificationChannel("p4-chime").importance)
+    }
+
     @Test fun aSilentPostStaysSilentWhateverTheSound() {
         bg { app.saveSound("alert") }
         app.tray.apply(TrayStep.Show(row("a", priority = 5), silent = true))

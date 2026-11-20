@@ -76,8 +76,11 @@ class Tray(private val ctx: Context) {
         val audio = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
         val names = listOf(R.string.channel_p1, R.string.channel_p2, R.string.channel_p3, R.string.channel_p4, R.string.channel_p5)
         val importance = listOf(NotificationManager.IMPORTANCE_MIN, NotificationManager.IMPORTANCE_LOW, NotificationManager.IMPORTANCE_DEFAULT, NotificationManager.IMPORTANCE_HIGH, NotificationManager.IMPORTANCE_HIGH)
+        // A channel the user blocked or turned down in system settings stays that way on the new sound.
+        val ours = nm.notificationChannels.filter { Sounds.isOurs(it.id) }
+        val lowest = ours.groupBy { it.id[1].digitToInt() }.mapValues { (_, cs) -> cs.minOf { it.importance } }
         val mine = (1..5).map { p ->
-            NotificationChannel(Sounds.channel(p, sound), ctx.getString(names[p - 1]), importance[p - 1])
+            NotificationChannel(Sounds.channel(p, sound), ctx.getString(names[p - 1]), minOf(importance[p - 1], lowest[p] ?: importance[p - 1]))
                 .apply { if (Sounds.known(sound) != Sounds.DEFAULT) setSound(uri, audio) }
         }
         nm.createNotificationChannels(
@@ -88,7 +91,10 @@ class Tray(private val ctx: Context) {
             ),
         )
         val keep = mine.map { it.id }.toSet()
-        nm.notificationChannels.map { it.id }.filter { Sounds.isOurs(it) && it !in keep }.forEach(nm::deleteNotificationChannel)
+        val gone = ours.map { it.id }.filter { it !in keep }.toSet()
+        // Cancelled by us first: Android's own cancel on channel delete can fire the delete intent, which reads as a swipe.
+        nm.activeNotifications.filter { it.notification.channelId in gone }.forEach { nm.cancel(it.tag, it.id) }
+        gone.forEach(nm::deleteNotificationChannel)
         // Android never lets an app change a channel's badge setting after creation, so the old channel is replaced.
         nm.deleteNotificationChannel("service")
     }
