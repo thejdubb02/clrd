@@ -246,7 +246,8 @@ try {
   await sendBox.getByRole('button', { name: 'Send' }).click();
   await sendBox.locator('[data-send-status]').filter({ hasText: /topic/i }).waitFor();
   assert.ok(await sendBox.getByLabel('Message').isVisible(), 'dialog closed on an error');
-  await sendPage.keyboard.press('Escape');
+  await sendBox.getByRole('button', { name: 'Cancel' }).click();
+  await sendBox.getByLabel('Message').waitFor({ state: 'hidden' }); // the dialog fades out
   await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
   assert.equal(await sendBox.locator('[data-send-status]').textContent(), '', 'old error still shown');
   await sendBox.getByLabel('Topic').fill('notes');
