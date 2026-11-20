@@ -305,3 +305,12 @@ func TestNoBannedCharacters(t *testing.T) {
 		return nil
 	})
 }
+
+// Only types the server serves inline show as an image; a BMP would download.
+func TestAttachmentImage(t *testing.T) {
+	for typ, want := range map[string]bool{"image/png": true, "image/webp": true, "image/bmp": false, "image/svg+xml": false, "": false} {
+		if got := (Attachment{Type: typ}).Image(); got != want {
+			t.Errorf("%q: Image() = %v, want %v", typ, got, want)
+		}
+	}
+}

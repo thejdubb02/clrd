@@ -99,7 +99,7 @@
       {{else if eq $n.State "dismissed"}}<span class="badge" data-state="dismissed">Cleared{{with $n.StateBy}} on {{.}}{{end}}</span>
       {{else if eq $n.State "resolved"}}<span class="badge" data-state="resolved">Resolved{{with $n.StateBy}} by {{.}}{{end}}</span>
       {{else if ge $n.Priority 5}}<span class="badge" data-state="active">Urgent</span>{{end}}
-      <span class="js-only -my-1.5 -me-2 ms-auto inline-flex"><button type="button" class="btn [.no-share_&]:hidden" data-variant="ghost" data-size="icon" data-act="share" aria-label="Share" title="Share">{{template "i-share"}}</button><button type="button" class="btn" data-variant="ghost" data-size="icon" data-act="copy" aria-label="Copy" title="Copy">{{template "i-copy"}}</button></span>
+      <span class="js-only -my-1.5 -me-2 ms-auto inline-flex"><button type="button" class="btn [.no-share_&]:hidden" data-variant="ghost" data-size="icon" data-act="share" aria-label="Share" title="Share">{{template "i-share"}}</button><button type="button" class="btn [.no-copy_&]:hidden" data-variant="ghost" data-size="icon" data-act="copy" aria-label="Copy" title="Copy">{{template "i-copy"}}</button></span>
     </div>
     <div class="col-start-2 min-w-0">
       {{with $n.Body}}<p class="text-body mt-1 text-[15px]/normal whitespace-pre-line [overflow-wrap:anywhere]">{{.}}</p>{{end}}

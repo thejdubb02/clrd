@@ -245,7 +245,9 @@
   });
 
   // Share and Copy (SPEC section 2): title, message and click, from the card.
+  // Both need a secure page (https or localhost); a plain http LAN address has neither.
   document.documentElement.classList.toggle('no-share', !navigator.share);
+  document.documentElement.classList.toggle('no-copy', !navigator.clipboard);
   async function shareCard(act, c) {
     const d = c.querySelector('[data-share]'), title = d.value, text = d.dataset.message, url = d.dataset.click;
     try {

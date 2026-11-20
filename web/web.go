@@ -69,8 +69,15 @@ type Attachment struct {
 	Size int64  `json:"size"`
 }
 
-// Image reports whether the card can show the file inline.
-func (a Attachment) Image() bool { return strings.HasPrefix(a.Type, "image/") }
+// Image reports whether the card can show the file inline: the types the
+// server serves inline (server/files.go); anything else it sends as a download.
+func (a Attachment) Image() bool {
+	switch a.Type {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		return true
+	}
+	return false
+}
 
 // Links are the actions that open a URL.
 func (n Notification) Links() (out []Action) {
