@@ -612,6 +612,74 @@ try {
     await a.context().close(); await b.context().close();
     console.log('ok: unlink a browser from another; it goes to sign-in at once');
   }
+
+  // Sound (#282): a live new notification plays the chosen sound, chime with no
+  // setup; silenced or None plays nothing; a blocked browser gets a hint, not an error.
+  {
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'sound' } })).ok(), 'sound sign-in');
+    await ctx.addInitScript(() => {
+      window.played = [];
+      HTMLMediaElement.prototype.play = function () {
+        window.played.push(new URL(this.src).pathname);
+        return window.blockSound ? Promise.reject(new DOMException('blocked', 'NotAllowedError')) : Promise.resolve();
+      };
+    });
+    const sp = await ctx.newPage();
+    const played = () => sp.evaluate(() => window.played);
+    let n = 0;
+    const arrive = async (topic = 'sound') => {
+      const title = `Sound ${++n}`;
+      await api(phone, '/api/v1/notifications', { topic, title });
+      await sp.locator('article.card', { hasText: title }).waitFor();
+    };
+    const inbox = async () => { await sp.goto(base + '/app'); await sp.locator('.is-live').waitFor({ timeout: 5000 }); };
+    const pick = async name => { await sp.goto(base + '/app/settings'); await sp.getByRole('combobox', { name: 'Sound', exact: true }).selectOption(name); };
+
+    const wav = await ctx.request.get(base + '/assets/sounds/chime.wav');
+    assert.ok(wav.ok() && (await wav.body()).subarray(0, 4).toString() === 'RIFF', 'chime.wav is served');
+    await inbox();
+    assert.deepEqual(await played(), [], 'the catch-up replay plays nothing');
+    await arrive();
+    assert.deepEqual(await played(), ['/assets/sounds/chime.wav'], 'no setup plays chime');
+    const r = await fetch(base + '/api/v1/silences', { method: 'POST', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: 'hush', for: '1h' }) });
+    assert.ok(r.ok, `silence: ${r.status}`);
+    await arrive('hush');
+    assert.deepEqual(await played(), ['/assets/sounds/chime.wav'], 'a silenced one plays nothing');
+    await api(phone, '/api/v1/notifications', { topic: 'sound', title: 'Later', snooze_until: new Date(Date.now() + 2000).toISOString() });
+    await sp.waitForTimeout(1000);
+    assert.deepEqual(await played(), ['/assets/sounds/chime.wav'], 'a scheduled send is quiet while queued');
+    for (let i = 0; i < 50 && (await played()).length < 2; i++) await sp.waitForTimeout(500); // the server wakes snoozes every 15 s
+    assert.deepEqual(await played(), ['/assets/sounds/chime.wav', '/assets/sounds/chime.wav'], 'a scheduled send rings when it arrives');
+
+    await pick('pop');
+    assert.deepEqual(await played(), ['/assets/sounds/pop.wav'], 'choosing a sound previews it');
+    await sp.getByRole('button', { name: 'Play', exact: true }).click();
+    assert.equal((await played()).length, 2, 'Play previews again');
+    await inbox();
+    await arrive();
+    assert.deepEqual(await played(), ['/assets/sounds/pop.wav'], 'the chosen sound plays');
+
+    await pick('none');
+    await inbox();
+    await arrive();
+    assert.deepEqual(await played(), [], 'None plays nothing');
+
+    await sp.evaluate(() => localStorage.setItem('clrd.sound', 'klaxon'));
+    await inbox();
+    await arrive();
+    assert.deepEqual(await played(), ['/assets/sounds/chime.wav'], 'an unknown name plays the default');
+
+    await sp.evaluate(() => { window.blockSound = true; });
+    await arrive();
+    await sp.getByText('Sound is blocked until you click or press a key on this page.').waitFor();
+    await pick('ding');
+    await sp.evaluate(() => { window.blockSound = true; });
+    await sp.getByRole('button', { name: 'Play', exact: true }).click();
+    await sp.locator('[data-sound-hint]', { hasText: 'Sound is blocked' }).waitFor();
+    await ctx.close();
+    console.log('ok: sound for new notifications, picker with preview, blocked hint');
+  }
 } finally {
   await browser?.close();
   server.kill();

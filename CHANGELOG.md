@@ -47,6 +47,12 @@ Fixed, Removed, Security), as one line a user can understand.
   hear each one: the phone's default (still the default), none, or one of
   the six built-in clrd sounds. Only that phone changes. If the phone's own
   notification settings override the choice, Settings says so (#282).
+- Web: a sound plays when a new notification arrives while the inbox is open,
+  in a desktop browser or the installed app. Pick Chime, Ding, Pop, Bell,
+  Alert, Soft or None in Settings and hear it first. Chime plays with no
+  setup. Silenced notifications make no sound, and if the browser blocks
+  sound until you click the page, the inbox says so instead of failing
+  quietly. The choice is kept in this browser for now (#282).
 - Server: an admin can read every server setting in effect with
   `GET /api/v1/server`, and create a token with per-topic grants over the API
   (`grants` on `POST /api/v1/tokens`), so an agent can check and set up access
