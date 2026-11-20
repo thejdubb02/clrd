@@ -309,12 +309,17 @@ the session cookie (same-origin only) as well as a Bearer token.
   session's parent when the creator is a browser session), so signing that
   browser out keeps the phone and revoking the typed token revokes it. 410
   when denied, expired, used or unknown. Only the creating token may read
-  `GET /api/v1/link/{code}` (`{name, state}`, state `waiting` or `claimed`)
+  `GET /api/v1/link/{code}` (`{name, state, check}`, state `waiting` or
+  `claimed`; once claimed, `check` is a 4-digit match number: the first 4
+  bytes of SHA-256 of the secret as a big-endian unsigned int, mod 10000,
+  zero-padded. The app shows the same number, so the user approves only the
+  phone in their hand, not one that photographed the code first)
   and post `/api/v1/link/{code}/approve` (200 `{name}`, 409 before a phone
   claims) or `/deny` (204); anyone else gets 404. `GET /link?c=` is the page a
   phone camera opens: an "Open in the clrd app" link to
   `clrd://link?server=<base>&code=<code>`. Link codes share the pairing
-  expiry, single use and 64 cap.
+  expiry and single use; they have their own cap of 64, so waiting public
+  sign-ins cannot crowd them out.
 - Setup: with no admin token in the database the server logs
   `<CLRD_BASE_URL>/setup?code=<one-time code>`. Opening it shows a form; posting
   it creates an admin token, shows it once and signs the browser in.

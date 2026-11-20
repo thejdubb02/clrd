@@ -54,7 +54,7 @@ func TestLinkPhone(t *testing.T) {
 	if code, _ := linkClaim(t, ts.URL, lc, otherSecret); code != 410 {
 		t.Fatalf("claim with another secret: %d, want 410", code)
 	}
-	if code, info := as("GET", "/api/v1/link/"+lc); code != 200 || info["state"] != "claimed" || info["name"] != "Pixel 9" {
+	if code, info := as("GET", "/api/v1/link/"+lc); code != 200 || info["state"] != "claimed" || info["name"] != "Pixel 9" || info["check"] != linkCheck(phoneSecret) {
 		t.Fatalf("info after scan: %d %v", code, info)
 	}
 	// Only the browser that made the code sees or decides it, even an admin gets 404.
@@ -194,5 +194,28 @@ func TestLinkDenyExpiryAndPage(t *testing.T) {
 	_, p, _ := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/pair", "", nil)
 	if code, _ := linkClaim(t, ts.URL, p["code"].(string), phoneSecret); code != 410 {
 		t.Fatalf("link claim of a pair code: %d, want 410", code)
+	}
+}
+
+// The Android app computes the same number (LinkTest); keep the two in step.
+func TestLinkCheck(t *testing.T) {
+	if got := linkCheck("abc"); got != "2319" {
+		t.Fatalf("linkCheck(abc) = %s, want 2319", got)
+	}
+}
+
+// Waiting public sign-ins must not use up the codes a signed-in user links with.
+func TestLinkCapApartFromPairs(t *testing.T) {
+	s, ts, admin := newTest(t)
+	for i := 0; i < maxPairs; i++ {
+		if _, err := s.addPairing(&pairing{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code, _, _ := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/pair", "", nil); code != 429 {
+		t.Fatalf("pair when full: %d, want 429", code)
+	}
+	if code, _, raw := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/link", admin, nil); code != 201 {
+		t.Fatalf("link while pairs are full: %d %s", code, raw)
 	}
 }

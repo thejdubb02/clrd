@@ -66,6 +66,7 @@
       const s = await r.json();
       if (s.state !== 'claimed') return false;
       link.querySelector('[data-link-name]').textContent = s.name; // from the phone: text only
+      link.querySelector('[data-link-check]').textContent = s.check;
       img.hidden = true;
       msg.textContent = '';
       ask.hidden = false;

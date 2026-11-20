@@ -61,7 +61,13 @@ func (s *Server) addPairing(p *pairing) (string, error) {
 	if s.pairs == nil {
 		s.pairs = map[string]*pairing{}
 	}
-	if len(s.pairs) >= maxPairs {
+	n := 0 // pair and link codes are capped apart, so public sign-in codes cannot crowd out a signed-in user's link
+	for _, q := range s.pairs {
+		if (q.owner != nil) == (p.owner != nil) {
+			n++
+		}
+	}
+	if n >= maxPairs {
 		return "", errf(429, "busy", "too many codes waiting; try again in a minute")
 	}
 	p.created = time.Now()

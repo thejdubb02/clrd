@@ -12,7 +12,8 @@ Fixed, Removed, Security), as one line a user can understand.
 ### Added
 
 - Link a phone from Settings in the web inbox: show a QR code, scan it in the
-  clrd app, and approve the phone by name. It gets this browser's access.
+  clrd app, and approve the phone by name once both screens show the same
+  4-digit number. It gets this browser's access.
 - Sign in a browser with your phone: the web sign-in page shows a QR code,
   you scan it with a phone that is already signed in and tap Approve, and the
   browser signs itself in with the phone's access. No token to copy or type.

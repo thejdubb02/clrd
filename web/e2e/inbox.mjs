@@ -221,6 +221,10 @@ try {
       body: JSON.stringify({ code: lc, secret: 'p'.repeat(32), name: 'Pixel 9' }) });
     assert.equal((await claim()).status, 202, 'claim before approve');
     await page.getByText('Pixel 9 wants to connect').waitFor();
+    // The match number both screens show: SHA-256 of the secret, first 4 bytes, mod 10000.
+    const h = (await import('node:crypto')).createHash('sha256').update('p'.repeat(32)).digest();
+    const check = String(h.readUInt32BE(0) % 10000).padStart(4, '0');
+    assert.equal(await page.locator('[data-link-check]').textContent(), check, 'browser shows the match number');
     await page.getByRole('button', { name: 'Approve' }).click();
     await page.getByText('Connected: Pixel 9.').waitFor();
     const got = await claim();

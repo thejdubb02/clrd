@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/binary"
+	"fmt"
 	"database/sql"
 	"errors"
 	"html/template"
@@ -14,7 +17,7 @@ import (
 // shows a QR code, the clrd app scans it and claims the code with a secret it
 // made, and the browser approves that phone by name. The code alone gets
 // nothing. Link codes live in s.pairs next to pair codes (pair.go), with an
-// owner set, so they share its expiry, single use and cap.
+// owner set, so they share its expiry and single use; each kind has its own cap.
 
 func (s *Server) linkRoutes() {
 	s.api("POST /api/v1/link", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -29,18 +32,18 @@ func (s *Server) linkRoutes() {
 	s.api("GET /api/v1/link/{code}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		s.pairMu.Lock()
 		p := s.ownLinkLocked(r.PathValue("code"), tok)
-		var name, state string
+		var name, state, check string
 		if p != nil {
 			name, state = p.name, "waiting"
 			if p.secret != "" {
-				state = "claimed"
+				state, check = "claimed", linkCheck(p.secret)
 			}
 		}
 		s.pairMu.Unlock()
 		if p == nil {
 			return errPairGone
 		}
-		writeJSON(w, 200, map[string]string{"name": name, "state": state})
+		writeJSON(w, 200, map[string]string{"name": name, "state": state, "check": check})
 		return nil
 	})
 	s.api("POST /api/v1/link/{code}/approve", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -155,4 +158,12 @@ func (s *Server) handleLinkPage(w http.ResponseWriter, r *http.Request) error {
 		data["AppLink"] = template.URL("clrd://link?" + url.Values{"server": {s.opt.BaseURL}, "code": {code}}.Encode())
 	}
 	return s.renderPairPage(w, data)
+}
+
+// linkCheck is the 4-digit number the phone shows and the browser asks the
+// person to match, derived from the phone's secret. Someone who photographed
+// the QR and claimed it first cannot make the real phone show their number.
+func linkCheck(secret string) string {
+	h := sha256.Sum256([]byte(secret))
+	return fmt.Sprintf("%04d", binary.BigEndian.Uint32(h[:4])%10000)
 }
