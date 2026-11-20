@@ -11,7 +11,8 @@
 <meta name="theme-color" content="#0F1114" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/assets/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="preload" href="/assets/fonts/GeistMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/app.css">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="clrd">
 <meta property="og:title" content="{{.Title}}">
@@ -24,31 +25,31 @@
 <meta name="twitter:card" content="summary_large_image">
 {{end}}
 
-{{define "brand"}}<a class="brand" href="{{.}}"><img src="/assets/logo.svg" alt="" width="42" height="24"><span class="wordmark">clrd</span></a>{{end}}
+{{define "brand"}}<a class="inline-flex items-center gap-2.5" href="{{.}}"><img src="/assets/logo.svg" alt="" width="35" height="20"><span class="wordmark text-xl">clrd</span></a>{{end}}
 
 {{define "site-header"}}
 <a class="skip" href="#main">Skip to content</a>
-<header class="site-header">
-  <div class="wrap row">
+<header class="border-b">
+  <div class="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
     {{template "brand" "/"}}
-    <nav aria-label="Site">
-      <a href="/docs/">Docs</a>
-      <a href="https://github.com/thejdubb02/clrd">GitHub</a>
-      <a class="btn btn-quiet" href="/app">Open inbox</a>
+    <nav class="flex items-center gap-1 text-sm" aria-label="Site">
+      <a class="btn" data-variant="ghost" href="/docs/">Docs</a>
+      <a class="btn max-sm:hidden" data-variant="ghost" href="https://github.com/thejdubb02/clrd">GitHub</a>
+      <a class="btn" data-variant="outline" href="/app">Open inbox</a>
     </nav>
   </div>
 </header>
 {{end}}
 
 {{define "site-footer"}}
-<footer class="site-footer">
-  <div class="wrap row">
+<footer class="border-t">
+  <div class="text-muted-foreground mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-6 text-sm sm:px-6">
     {{template "brand" "/"}}
-    <p>Open source under the Apache 2.0 license. Self-hosted, no telemetry.</p>
-    <nav aria-label="Footer">
-      <a href="/docs/">Docs</a>
-      <a href="/docs/spec">Spec</a>
-      <a href="https://github.com/thejdubb02/clrd">GitHub</a>
+    <p class="flex-1 max-sm:basis-full">Open source under the Apache 2.0 license. Self-hosted, no telemetry.</p>
+    <nav class="flex gap-4" aria-label="Footer">
+      <a class="hover:text-foreground" href="/docs/">Docs</a>
+      <a class="hover:text-foreground" href="/docs/spec">Spec</a>
+      <a class="hover:text-foreground" href="https://github.com/thejdubb02/clrd">GitHub</a>
     </nav>
   </div>
 </footer>
@@ -82,19 +83,26 @@ Sitemap: {{.}}/sitemap.xml
 </head>
 <body>
 {{template "site-header" .}}
-<main id="main" class="wrap narrow signin">
-  <h1>Sign in to see your inbox</h1>
-  <p>Your notifications are private to your clrd server. Paste a token to sign in on this browser. On a new server, open the setup link it printed to its log first.</p>
-  {{if .Failed}}<p class="signin-error" role="alert">That token did not work. Check it and try again.</p>{{end}}
+<main id="main" class="mx-auto grid max-w-md gap-6 px-4 py-12 sm:py-20">
+  <header class="grid gap-2">
+    <h1 class="text-2xl font-semibold tracking-tight">Sign in to see your inbox</h1>
+    <p class="text-body text-sm/relaxed">Your notifications are private to your clrd server. Paste a token to sign in on this browser. On a new server, open the setup link it printed to its log first.</p>
+  </header>
+  {{if .Failed}}<div class="alert" data-variant="destructive" role="alert">{{template "i-circle-alert"}}<h2>That token did not work</h2><section>Check it and try again.</section></div>{{end}}
   <form class="signin-form" method="post" action="/api/v1/session">
-    <label for="token">Token</label>
-    <input id="token" name="token" type="password" autocomplete="current-password" required placeholder="clrd_">
-    <label for="device">Name this browser <span class="quiet">(optional, shown in your device list)</span></label>
-    <input id="device" name="name" type="text" autocomplete="off" placeholder="work laptop"{{with .Name}} value="{{.}}"{{end}}>
+    <div class="field"{{if .Failed}} data-invalid="true"{{end}}>
+      <label for="token">Token</label>
+      <input id="token" name="token" type="password" autocomplete="current-password" required placeholder="clrd_"{{if .Failed}} aria-invalid="true"{{end}}>
+    </div>
+    <div class="field">
+      <label for="device">Name this browser <span class="text-muted-foreground font-normal">(optional)</span></label>
+      <input id="device" name="name" type="text" autocomplete="off" aria-describedby="device-hint" placeholder="work laptop"{{with .Name}} value="{{.}}"{{end}}>
+      <p id="device-hint">Shown in your device list and when this browser clears something.</p>
+    </div>
     <input type="hidden" name="next" value="{{.Path}}">
-    <button class="btn btn-ink" type="submit">Sign in</button>
+    <button class="btn w-full" data-variant="primary" data-size="lg" type="submit">Sign in</button>
   </form>
-  <p class="quiet">Make a token with <code>clrd token create --name laptop --scope read</code>. <a href="/docs/spec">How sign-in works</a></p>
+  <p class="text-muted-foreground text-sm">Make a token with <code>clrd token create --name laptop --scope read</code>. <a href="/docs/spec">How sign-in works</a></p>
 </main>
 </body>
 </html>

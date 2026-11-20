@@ -39,6 +39,7 @@ try {
   const page = await (await browser.newContext({ timezoneId: 'America/Chicago' })).newPage();
   const card = title => page.locator('article.card', { hasText: title });
   const toast = page.locator('[data-toast]');
+  const announce = page.locator('[data-announce]');
 
   // Sign-in link: the token leaves the URL, the cookie stays.
   const link = Buffer.from(`Bearer ${laptop}`).toString('base64url');
@@ -135,7 +136,7 @@ try {
   const want = await page.evaluate(() => { const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); return t.toISOString(); });
   await card('Cert renews soon').getByText('Snooze', { exact: true }).click();
   await card('Cert renews soon').getByRole('button', { name: 'Tomorrow 09:00' }).click();
-  await toast.filter({ hasText: 'Snoozed until' }).waitFor();
+  await announce.filter({ hasText: 'Snoozed until' }).waitFor({ state: 'attached' });
   const got = await get(laptop, d.id);
   assert.equal(got.state, 'snoozed');
   assert.equal(new Date(got.snooze_until).toISOString(), want);
@@ -147,7 +148,7 @@ try {
   await card('Renew domain').getByText('Snooze', { exact: true }).click();
   await card('Renew domain').getByLabel('Snooze until').fill('2031-06-01T08:30');
   await card('Renew domain').getByLabel('Snooze until').press('Enter');
-  await toast.filter({ hasText: 'Snoozed until' }).waitFor();
+  await announce.filter({ hasText: 'Snoozed until' }).waitFor({ state: 'attached' });
   const custom = await get(laptop, g.id);
   assert.equal(custom.state, 'snoozed');
   assert.equal(new Date(custom.snooze_until).toISOString(), '2031-06-01T13:30:00.000Z'); // 08:30 in Chicago (CDT)
@@ -157,7 +158,7 @@ try {
   const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Merge 212?', message: 'tests pass', actions: [{ label: 'Yes', reply: 'yes' }, { label: 'No', reply: 'no' }] });
   await page.reload();
   await card('Merge 212?').getByRole('button', { name: 'Yes' }).click();
-  await toast.filter({ hasText: 'Answered Yes' }).waitFor();
+  await announce.filter({ hasText: 'Answered Yes' }).waitFor({ state: 'attached' });
   const answered = await get(laptop, q.id);
   assert.equal(answered.reply, 'yes');
   assert.equal(answered.state, 'acknowledged');
