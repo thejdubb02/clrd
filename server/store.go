@@ -806,7 +806,7 @@ func (s *Server) Clear(ctx context.Context, tok *Token, topic string, ids []stri
 func (s *Server) wakeSnoozed(ctx context.Context) error {
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		ns, err := queryNotifications(tx, `SELECT `+notifCols+` FROM notifications
-			WHERE state = 'snoozed' AND snooze_until <= ?`, ms(time.Now()))
+			WHERE state = 'snoozed' AND snooze_until <= ? AND (expires_at IS NULL OR expires_at > ?)`, ms(time.Now()), ms(time.Now()))
 		var evs []Event
 		for _, n := range ns {
 			ev, _ := transition(n, Active, &Token{Name: "server"}, nil)
@@ -823,7 +823,7 @@ func parseExpires(v string) (*time.Time, error) {
 	if v == "" {
 		return nil, nil
 	}
-	t := now()
+	t := time.Now()
 	if d, err := time.ParseDuration(v); err == nil {
 		t = t.Add(d)
 	} else if at, err := time.Parse(time.RFC3339, v); err == nil {
@@ -831,10 +831,10 @@ func parseExpires(v string) (*time.Time, error) {
 	} else {
 		return nil, errf(400, "bad_request", "expires: want a duration like 30m or an RFC3339 time, got %q", v)
 	}
-	if !t.After(now()) {
+	t = t.UTC().Truncate(time.Millisecond)
+	if !t.After(time.Now()) {
 		return nil, errf(400, "bad_request", "expires must be in the future")
 	}
-	t = t.UTC().Truncate(time.Millisecond)
 	return &t, nil
 }
 

@@ -10,7 +10,7 @@ func TestExpiry(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()
 
-	for _, bad := range []string{"soon", "-5m", "2001-01-01T00:00:00Z"} {
+	for _, bad := range []string{"soon", "-5m", "1ns", "2001-01-01T00:00:00Z"} {
 		if code, out := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "door", "message": "m", "expires": bad}); code != 400 {
 			t.Errorf("expires %q: %d %v", bad, code, out)
 		}
@@ -56,7 +56,24 @@ func TestExpiry(t *testing.T) {
 	if _, n = call(t, ts, "GET", "/api/v1/notifications/"+id, admin, nil); n["state"] != "active" {
 		t.Fatalf("reopened row expired again: %v", n)
 	}
+	if _, n = call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "door", "external_id": "front", "message": "open", "expires": "1h"}); n["id"] != id || n["expires_at"] == nil {
+		t.Fatalf("upsert sets expires: %v", n)
+	}
 	if _, n = call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "door", "external_id": "front", "message": "still open"}); n["id"] != id || n["expires_at"] != nil {
 		t.Fatalf("upsert without expires keeps none: %v", n)
+	}
+
+	// Snoozed past its expiry: it resolves, it never wakes and re-alerts.
+	code, n = call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "door", "message": "m", "expires": "1h",
+		"snooze_until": time.Now().Add(time.Hour).Format(time.RFC3339)})
+	if code != 200 {
+		t.Fatalf("snoozed publish: %d %v", code, n)
+	}
+	id = n["id"].(string)
+	past := ms(time.Now().Add(-time.Second))
+	s.db.Exec(`UPDATE notifications SET expires_at = ?, snooze_until = ? WHERE id = ?`, past, past, id)
+	s.wakeSnoozed(ctx)
+	if _, n = call(t, ts, "GET", "/api/v1/notifications/"+id, admin, nil); n["state"] != "snoozed" {
+		t.Fatalf("an expired snooze woke: %v", n)
 	}
 }
