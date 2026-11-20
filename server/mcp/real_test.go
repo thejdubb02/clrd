@@ -177,6 +177,11 @@ func TestClientSession(t *testing.T) {
 	if _, msg := tool(agent, "update", map[string]any{"id": ask["id"], "message": "Allow ls?"}); !strings.Contains(msg, "answer buttons") {
 		t.Fatalf("update rewrote a prompt under its buttons: %q", msg)
 	}
+	// A link button is not an answer, so the progress line stays editable.
+	link, _ := tool(agent, "send", map[string]any{"topic": "build", "message": "step 1", "actions": []any{map[string]any{"label": "Logs", "url": "https://x.test/l"}}})
+	if got, msg := tool(agent, "update", map[string]any{"id": link["id"], "message": "step 2"}); msg != "" || got["message"] != "step 2" {
+		t.Fatalf("update with a link button: %v %q", got, msg)
+	}
 	if _, msg := tool(agent, "get", map[string]any{"id": "nope"}); !strings.Contains(msg, "404") {
 		t.Fatalf("get unknown id: %q", msg)
 	}

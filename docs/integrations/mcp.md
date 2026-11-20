@@ -41,8 +41,9 @@ The first tap wins; a second phone gets told it is already answered. A plain
 ack (no button) has no `answer`, and dismiss means no.
 
 `update` needs `publish` on the topic and works until the notification is
-dismissed or resolved. It refuses a notification with `actions` buttons,
-because a tap answers the text that was shown. It counts against the publish rate limit like a send.
+dismissed or resolved. It refuses a notification with answer buttons
+(`actions` with a `reply`), because a tap answers the text that was shown.
+Link buttons are fine. It counts against the publish rate limit like a send.
 
 ## Add clrd to your client
 
