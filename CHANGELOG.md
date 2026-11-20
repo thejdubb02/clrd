@@ -16,6 +16,8 @@ Fixed, Removed, Security), as one line a user can understand.
   Settings has a section to change the times and the default for every device.
 - Web: the device list in Settings marks the browser you are using with
   "(this browser)".
+- `CLRD_TRUSTED_PROXIES` setting: list your reverse proxies so only they can
+  set the client address used by the wrong-password limit.
 - Web: link previews. With previews on, a message's first link shows a card
   with the page's title, summary and image, fetched by your server. Settings
   has a switch for previews and a Default, On or Off choice for each topic.

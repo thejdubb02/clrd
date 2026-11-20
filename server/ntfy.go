@@ -110,7 +110,7 @@ func (s *Server) ntfyRoutes() {
 		s.route(pattern, func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			if _, _, ok := ntfyPassword(r); ok { // taken before bcrypt, kept only if the password was wrong
-				ip := clientIP(r)
+				ip := clientIP(r, s.opt.TrustedProxies)
 				if wait := s.pwLimit.take(ip, time.Now()); wait > 0 {
 					return retryAfter(wait, "too many wrong passwords from this address, try again later")
 				}

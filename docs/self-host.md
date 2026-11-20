@@ -84,6 +84,7 @@ at once.
 | `CLRD_ATTACHMENT_TOTAL_MB` | `5000` | Space all stored files may use together, in MB. Uploads past it get 507. |
 | `CLRD_RATE_TOKEN` | `60` | Publishes a minute one token may send, with a burst of the same size. Past it gets 429 with `Retry-After`. `0` turns it off. |
 | `CLRD_RATE_TOPIC` | `60` | Publishes a minute one topic may take from all tokens together. `0` turns it off. |
+| `CLRD_TRUSTED_PROXIES` | unset | Comma-separated CIDRs or addresses of your reverse proxies, for example `127.0.0.1,172.16.0.0/12`. Only these may set the client address with `X-Forwarded-For`. Unset, any loopback or private-network peer may. |
 
 ## HTTPS and the reverse proxy
 
@@ -102,7 +103,8 @@ clrd.example.com {
 clrd limits wrong passwords per address. When the request comes from
 loopback or a private network it takes the address from the last
 `X-Forwarded-For` hop, which Caddy sends by default and the nginx block below
-sets.
+sets. If other machines on your private network can reach clrd directly, set
+`CLRD_TRUSTED_PROXIES` to your proxy's address so they cannot fake theirs.
 
 nginx (the `map` goes in the `http` block):
 
