@@ -205,7 +205,7 @@ func TestNtfyImport(t *testing.T) {
 	if got := acct(bearer(t, "GET", u+"/v1/account", boss, "")); !strings.Contains(got, `"role":"admin"`) || !strings.HasPrefix(got, "200") {
 		t.Errorf("account, admin token: %s", got)
 	}
-	req, _ := http.NewRequest("GET", u+"/v1/account", nil)
+	req, _ = http.NewRequest("GET", u+"/v1/account", nil)
 	req.SetBasicAuth("phone", "phonepass")
 	if got := acct(send(t, req)); got != `200 {"role":"user","username":"phone"}` {
 		t.Errorf("account, password: %s", got)
