@@ -279,6 +279,37 @@ try {
   assert.equal(await card('Merge 212?').getByRole('button', { name: 'No', exact: true }).count(), 0, 'answered card still offers replies');
   console.log('ok: reply button stores the answer');
 
+  // Share and Copy hand over the title, the message and the link; the icon and attachments show on the card.
+  const sharePage = await page.context().newPage();
+  await sharePage.addInitScript(() => {
+    window.shared = [];
+    navigator.share = d => { window.shared.push(d); return Promise.resolve(); };
+    navigator.clipboard.writeText = t => { window.shared.push(t); return Promise.resolve(); };
+  });
+  await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Share me', message: 'line one', click: 'https://example.com/run/7', icon: 'https://example.com/i.png', attachment: { url: 'https://example.com/r.pdf', name: 'r.pdf' } });
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const form = new FormData();
+  form.append('notification', JSON.stringify({ topic: 'infra', title: 'Graph attached', message: 'see image' }));
+  form.append('file', new Blob([png], { type: 'image/png' }), 'graph.png');
+  assert.equal((await fetch(`${base}/api/v1/notifications`, { method: 'POST', headers: { Authorization: `Bearer ${phone}` }, body: form })).status, 200);
+  await sharePage.goto(`${base}/app`);
+  const shareCard = sharePage.locator('article.card', { hasText: 'Share me' });
+  await shareCard.getByRole('button', { name: 'Share' }).click();
+  await shareCard.getByRole('button', { name: 'Copy' }).click();
+  await sharePage.locator('[data-toast]').filter({ hasText: 'Copied.' }).waitFor();
+  assert.deepEqual(await sharePage.evaluate(() => window.shared), [
+    { title: 'Share me', text: 'line one', url: 'https://example.com/run/7' },
+    'Share me\n\nline one\nhttps://example.com/run/7',
+  ]);
+  assert.equal(await shareCard.locator('[data-icon]').getAttribute('src'), 'https://example.com/i.png');
+  assert.equal(await shareCard.getByRole('link', { name: 'r.pdf' }).getAttribute('href'), 'https://example.com/r.pdf');
+  const img = sharePage.locator('article.card', { hasText: 'Graph attached' }).getByRole('img', { name: 'graph.png' });
+  await img.scrollIntoViewIfNeeded(); // lazy: loads once on screen
+  for (let i = 0; i < 50 && !await img.evaluate(i => i.complete); i++) await sharePage.waitForTimeout(100);
+  assert.equal(await img.evaluate(i => i.naturalWidth), 1, 'uploaded image did not load on the card');
+  await sharePage.close();
+  console.log('ok: share, copy, icon and attachments on the card');
+
   // On a phone, the open Snooze menu stays on screen, even when Snooze ends the first row of buttons.
   const narrow = await (await browser.newContext({ viewport: { width: 360, height: 740 } })).newPage();
   await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Deploy 213?', message: 'staging green', actions: [{ label: 'Go', reply: 'go' }, { label: 'No', reply: 'no' }] });
@@ -325,6 +356,53 @@ try {
   await plain('Lock the door?').getByText('Answered Lock').waitFor();
   assert.equal((await get(laptop, r.id)).reply, 'lock');
   console.log('ok: Clear, Snooze and reply work without JavaScript');
+
+  // QR sign-in (#74): a signed-out browser shows a code, a signed-in phone
+  // opens the link and taps Approve, and the waiting browser signs itself in.
+  const pc = await (await browser.newContext()).newPage();
+  await pc.goto(base + '/app');
+  const [res] = await Promise.all([
+    pc.waitForResponse(r => r.url().endsWith('/api/v1/pair')),
+    pc.getByRole('button', { name: 'Show sign-in code' }).click(),
+  ]);
+  const { code } = await res.json();
+  await pc.locator('[data-pair-qr]').waitFor({ state: 'visible' });
+  const phoneCtx = await browser.newContext();
+  assert.ok((await phoneCtx.request.post(base + '/api/v1/session', { data: { token: phone } })).ok(), 'phone sign-in');
+  const phonePage = await phoneCtx.newPage();
+  await phonePage.goto(`${base}/pair?c=${code}`);
+  await phonePage.getByRole('button', { name: 'Approve' }).click();
+  await phonePage.getByText('Approved.').waitFor();
+  await pc.locator('[data-inbox]').waitFor({ timeout: 5000 });
+  console.log('ok: sign in a browser by approving its QR code from a phone');
+
+  // Link a phone (#74): the signed-in browser shows a code in Settings, the
+  // app claims it, the browser approves it by name, and the app gets a token.
+  {
+    await page.goto(base + '/app/settings');
+    const [made] = await Promise.all([
+      page.waitForResponse(r => r.url().endsWith('/api/v1/link')),
+      page.getByRole('button', { name: 'Link a phone' }).click(),
+    ]);
+    const { code: lc } = await made.json();
+    await page.locator('[data-link] [data-pair-qr]').waitFor({ state: 'visible' });
+    const claim = () => fetch(base + '/api/v1/link/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: lc, secret: 'p'.repeat(32), name: 'Pixel 9' }) });
+    assert.equal((await claim()).status, 202, 'claim before approve');
+    await page.getByText('Pixel 9 wants to connect').waitFor();
+    // The match number both screens show: SHA-256 of the secret, first 4 bytes, mod 10000.
+    const h = (await import('node:crypto')).createHash('sha256').update('p'.repeat(32)).digest();
+    const check = String(h.readUInt32BE(0) % 10000).padStart(4, '0');
+    assert.equal(await page.locator('[data-link-check]').textContent(), check, 'browser shows the match number');
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await page.getByText('Connected: Pixel 9.').waitFor();
+    const got = await claim();
+    assert.equal(got.status, 200, 'claim after approve');
+    const { token: linked } = await got.json();
+    const list = await fetch(base + '/api/v1/notifications', { headers: { Authorization: `Bearer ${linked}` } });
+    assert.equal(list.status, 200, 'linked token lists notifications');
+    console.log('ok: link a phone from Settings by approving it by name');
+  }
 } finally {
   await browser?.close();
   server.kill();

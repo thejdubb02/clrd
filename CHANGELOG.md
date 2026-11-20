@@ -18,9 +18,19 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: approve a browser sign-in from the phone. Opening a `clrd://pair`
   link asks before signing that browser in, and refuses a link made for a
   different server than the one the app is set up with.
+- Link a phone from Settings in the web inbox: show a QR code, scan it in the
+  clrd app, and approve the phone by name once both screens show the same
+  4-digit number. It gets this browser's access.
+- Sign in a browser with your phone: the web sign-in page shows a QR code,
+  you scan it with a phone that is already signed in and tap Approve, and the
+  browser signs itself in with the phone's access. No token to copy or type.
 - Approve agent actions from your phone: point Claude Code's or Codex's
   permission hook at `/mcp/approve` and each prompt arrives as a notification
   with Allow and Deny. No answer in time means deny.
+- Web: Share and Copy on each card (Share only where the browser has a share
+  sheet), and cards show the notification's icon and attachment: an uploaded
+  image inline, any other file as a download link. An icon or file on another
+  site loads from that site, which then sees the reader's IP address.
 - MCP: the `send` tool takes `icon` (an image URL) and `attachment` (a link to
   a file by URL, with an optional name).
 - MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
@@ -135,6 +145,8 @@ Fixed, Removed, Security), as one line a user can understand.
   yet, and a restored backup keeps its old epoch.
 - Web: an open inbox reloads when the server comes back on a different database
   (a new epoch), instead of carrying on from a position that no longer exists.
+- Webhook templates honor `X-Markdown` and `?markdown=false`, so a webhook can
+  ask for its message to be shown as plain text.
 
 ### Changed
 

@@ -11,9 +11,9 @@ set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 BIN=$(realpath "${CLRD_BIN:?set CLRD_BIN to a built clrd binary}")
-RUN_ID=clrd-it-$$
+RUN_ID=${RUN_ID:-clrd-it-$$} # CI sets one per job: see integrations.yml
 export HERE ROOT RUN_ID
-# shellcheck source=lib.sh
+# shellcheck source=lib.sh disable=SC1091
 . "$HERE/lib.sh"
 set +e
 

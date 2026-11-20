@@ -50,6 +50,8 @@
   .signin-form { @apply bg-card grid gap-5 rounded-xl border p-5; }
   .side-link { @apply text-body hover:bg-accent hover:text-foreground flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-sm whitespace-nowrap [&_svg]:text-muted-foreground; }
   .side-link[aria-current] { @apply bg-card text-foreground ring-border font-medium ring-1 [&_svg]:text-foreground; }
+  /* Pairing QR codes (sign-in page, Settings): crisp pixels on white so phone cameras read them in dark mode. */
+  .pair-qr { @apply block rounded-xl bg-white; image-rendering: pixelated; }
   .count { @apply text-muted-foreground ms-auto ps-2 font-mono text-xs; font-variant-numeric: tabular-nums; }
   #sync.is-live .sync-dot { @apply bg-clear; }
 

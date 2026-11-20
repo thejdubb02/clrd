@@ -26,6 +26,10 @@ jobs:
   guides:
     runs-on: [self-hosted, cezar1]
     timeout-minutes: 30
+    # This job's own container label. cezar1 runs two jobs at once, so clean
+    # up must never touch the other job's tool containers (#190, #192).
+    env:
+      RUN_ID: clrd-it-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -95,5 +99,5 @@ jobs:
         if: always()
         run: |
           [ -f "$RUNNER_TEMP/action.pid" ] && kill "$(cat "$RUNNER_TEMP/action.pid")" || true
-          # Tool containers left behind if the job was cancelled mid-case.
-          docker ps -aq --filter label=clrd-it | xargs -r docker rm -f
+          # This job's tool containers left behind if it was cancelled mid-case.
+          docker ps -aq --filter "label=$RUN_ID" | xargs -r docker rm -f

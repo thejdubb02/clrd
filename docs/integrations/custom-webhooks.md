@@ -79,6 +79,9 @@ JSON body:
 | `id` | the `external_id`: the same id updates one notification instead of stacking |
 | `resolve` | `true` resolves the notification with that `id` (nothing happens if it is already gone) |
 
+The message is Markdown. To show it exactly as sent, add `&markdown=false` to
+the URL (or send an `X-Markdown: no` header), as on any ntfy style publish.
+
 Functions:
 
 - `get . "a.b" "c.0.d"`: the first path that is set, as text. Paths use dots,
