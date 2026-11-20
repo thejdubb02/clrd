@@ -1515,6 +1515,14 @@
           "items": {
            "type": "string"
           }
+         },
+         "grants": {
+          "description": "Per-topic rules instead of topics, first match decides (spec section 4). Not with topics or the admin scope; each grant's scopes must be held by the token.",
+          "allOf": [
+           {
+            "$ref": "#/components/schemas/Token/properties/grants"
+           }
+          ]
          }
         },
         "required": [
@@ -1523,6 +1531,41 @@
         ]
        }
       }
+     }
+    }
+   }
+  },
+  "/api/v1/server": {
+   "get": {
+    "summary": "Server settings in effect",
+    "tags": [
+     "auth"
+    ],
+    "description": "Admin only. Every CLRD_* environment setting in effect, defaults filled in, written the way the variable takes it (CLRD_BASE_URL is empty when unset; 0 turns a rate limit off). Read only: change one by setting the variable and restarting the server. Holds no secrets.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "env": {
+           "type": "object",
+           "additionalProperties": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
      }
     }
    }
@@ -4688,7 +4731,7 @@
      },
      "grants": {
       "type": "array",
-      "description": "Per-topic rules, first match decides (spec section 4). Set only on tokens imported from ntfy. A topic no grant matches is denied.",
+      "description": "Per-topic rules, first match decides (spec section 4). Set by clrd import ntfy or POST /api/v1/tokens. A topic no grant matches is denied.",
       "items": {
        "type": "object",
        "properties": {

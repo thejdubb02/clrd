@@ -24,6 +24,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: an admin can read every server setting in effect with
+  `GET /api/v1/server`, and create a token with per-topic grants over the API
+  (`grants` on `POST /api/v1/tokens`), so an agent can check and set up access
+  without the command line (#253).
 - Server: every state change now records how it was made (`via`: the Android
   inbox, a tray button, the web inbox, an agent, ntfy, or the
   server itself), on the event and as one log line per change, so "I never

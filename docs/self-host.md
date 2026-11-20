@@ -72,6 +72,10 @@ Scopes: `read` (see and act on notifications), `publish` (send), `admin`
 `DELETE /api/v1/tokens/{id}` (ids are in `GET /api/v1/tokens`); open streams for that token close
 at once.
 
+`POST /api/v1/tokens` with an admin token makes one over the API. Instead of
+`topics` it takes per-topic `grants`, first match wins, for example
+`{"name":"cam","scopes":["read","publish"],"grants":[{"topic":"home-*","scopes":["publish"]},{"topic":"alerts","scopes":["read"]}]}`.
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -87,6 +91,10 @@ at once.
 | `CLRD_RATE_TOKEN` | `60` | Publishes a minute one token may send, with a burst of the same size. Past it gets 429 with `Retry-After`. `0` turns it off. |
 | `CLRD_RATE_TOPIC` | `60` | Publishes a minute one topic may take from all tokens together. `0` turns it off. |
 | `CLRD_TRUSTED_PROXIES` | unset | Comma-separated CIDRs or addresses of your reverse proxies, for example `127.0.0.1,172.16.0.0/12`. Only these may set the client address with `X-Forwarded-For`. Unset, any loopback or private-network peer may. |
+
+`GET /api/v1/server` with an admin token returns every one of these as in
+effect, defaults filled in, so an agent can check a setup. They change only by
+setting the variable and restarting.
 
 ## HTTPS and the reverse proxy
 
