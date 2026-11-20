@@ -53,7 +53,8 @@ A **notification**:
   "created_at": "2026-11-19T05:00:00Z",
   "updated_at": "2026-11-19T05:00:00Z",
   "seq": 48211,                // seq of the last event that touched it
-  "silenced": false            // a silence matched when that event was written: show, do not alert
+  "silenced": false,           // a silence matched when that event was written: show, do not alert
+  "repeat": null               // or {"every": "5m", "left": 8, "count": 2, "next": "<RFC3339>" or null}
 }
 ```
 
@@ -85,6 +86,18 @@ ends by itself; `DELETE` ends it early. Events logged before a server upgrade
 may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
 message at priority 1. Quiet hours on one device are a client setting, not a
 silence.
+
+**Repeat:** `"repeat": "5m"` on publish (1m to 24h) re-alerts while the row
+stays `active`, up to `repeat_times` (1 to 100, default 10). Each re-alert is
+a `repeat` event with the full notification; `repeat.count` goes up and
+`repeat.next` says when the next one is due (null once it stopped). Clients
+alert again on a `repeat` event exactly as on `created`, unless `silenced`.
+Acknowledge, snooze, dismiss, resolve or a tapped reply stops it for good on
+every device; a reopen or snooze wake does not restart it. A scheduled send
+(`snooze_until`) counts from its delivery. A publish that updates the row
+replaces `repeat` with its own (none if it gave none). ntfy subscribers get
+each re-alert as a new message. The Android app and web inbox do not alert on
+`repeat` events yet.
 
 **Actions:** each action is a link (`url`) or an answer button (`reply`),
 exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
@@ -217,9 +230,10 @@ the row change):
 {"seq": 48212, "type": "state", "notification": { ...full notification... }}
 ```
 
-`type` is `created`, `updated` or `state`. A `state` event also carries
-`"via"`, how the change was made (section 5), when the server knows it.
-Clients only need the full
+`type` is `created`, `updated`, `state` or `repeat` (section 2). Clients
+ignore types they do not know. A `state` event also carries `"via"`, how
+the change was made (section 5), when the server knows it. Clients only
+need the full
 notification in the event; they never merge diffs.
 
 Clients store the highest `seq` they applied. On (re)connect they ask for

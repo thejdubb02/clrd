@@ -61,6 +61,10 @@ Fixed, Removed, Security), as one line a user can understand.
   slow rotation that pauses on hover or focus, and copy-ready commands and AI
   agent prompts that use your own server address. A first run starts with
   sending a test.
+- Server: alerts that repeat until someone acts. Publish with `"repeat": "5m"`
+  (and optional `repeat_times`, default 10) and the server alerts again while
+  the notification stays active; acknowledge, snooze, dismiss or resolve stops
+  it on every device. Also on the MCP `send` tool. docs/repeat.md.
 - Server: silences. Mute a topic, a tag, or a tag within a topic until a set
   time; notifications still arrive and sync but carry `silenced: true` so
   apps stay quiet, and ntfy apps get them at min priority. Set over the API:

@@ -41,6 +41,7 @@ const (
 	EventCreated = "created"
 	EventUpdated = "updated"
 	EventState   = "state"
+	EventRepeat  = "repeat" // a re-alert of an unanswered notification (#80)
 )
 
 const schema = `
@@ -67,7 +68,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   seq INTEGER NOT NULL DEFAULT 0,
-  silenced INTEGER NOT NULL DEFAULT 0
+  silenced INTEGER NOT NULL DEFAULT 0,
+  repeat TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -198,6 +200,7 @@ type Notification struct {
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Seq         int64       `json:"seq"`
 	Silenced    bool        `json:"silenced"` // a silence matched when this was written: show, do not alert
+	Repeat      *Repeat     `json:"repeat"`   // re-alert until answered, or null
 }
 
 // Attachment is a file on a notification: uploaded (URL is /api/v1/files/<id>)
@@ -268,7 +271,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -332,22 +335,28 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat`
 
 type scanner interface{ Scan(...any) error }
 
 func scanNotification(r scanner) (*Notification, error) {
 	var n Notification
-	var tags, actions, att string
+	var tags, actions, att, rep string
 	var snooze, expires sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
-		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires, &n.Silenced)
+		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
+		&n.Silenced, &rep)
 	if err != nil {
 		return nil, err
 	}
 	if att != "" {
 		if err := json.Unmarshal([]byte(att), &n.Attachment); err != nil {
+			return nil, err
+		}
+	}
+	if rep != "" {
+		if err := json.Unmarshal([]byte(rep), &n.Repeat); err != nil {
 			return nil, err
 		}
 	}
@@ -374,14 +383,20 @@ func saveNotification(tx *sql.Tx, n *Notification) error {
 		b, _ := json.Marshal(n.Attachment)
 		att = string(b)
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(23)+`)
+	rep := ""
+	if n.Repeat != nil {
+		b, _ := json.Marshal(n.Repeat)
+		rep = string(b)
+	}
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(24)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
-		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt), n.Silenced)
+		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
+		n.Silenced, rep)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -506,6 +521,8 @@ type PublishInput struct {
 	checkin     bool       // clrd's own missed check-in alert: does not reset the timer
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
 	Expires     string     `json:"expires"`      // optional: a duration ("30m") or RFC3339 time; then the server resolves it
+	Repeat      string     `json:"repeat"`       // optional: re-alert every this long ("5m") until someone acts
+	RepeatTimes int        `json:"repeat_times"` // how many re-alerts at most; 10 when repeat is set and this is 0
 	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
 	// notification with this external_id instead of creating one; 404 if none.
 	Status string `json:"status,omitempty"`
@@ -586,6 +603,14 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err != nil {
 		return nil, err
 	}
+	from := now()
+	if in.SnoozeUntil != nil && in.SnoozeUntil.After(from) { // scheduled: count from delivery
+		from = in.SnoozeUntil.UTC().Truncate(time.Millisecond)
+	}
+	repeat, err := parseRepeat(in.Repeat, in.RepeatTimes, from)
+	if err != nil {
+		return nil, err
+	}
 	var replaced string // file id an upsert drops, removed after commit
 	var extra []Event   // a check-in resolving the topic's missed check-in alert
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
@@ -618,7 +643,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			if err == nil {
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
-				replaced, n.Attachment, n.file, n.ExpiresAt = n.file, in.Attachment, in.file, expires
+				replaced, n.Attachment, n.file, n.ExpiresAt, n.Repeat = n.file, in.Attachment, in.file, expires, repeat
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -627,6 +652,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 					u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 					n.State, n.SnoozeUntil = Snoozed, &u
 					n.setBy(tok)
+				}
+				if n.State == Acknowledged || (n.State == Snoozed && !n.SnoozeUntil.Equal(from)) {
+					n.stopRepeat() // someone already answered this row
 				}
 				return append([]Event{{Type: EventUpdated, Notification: n}}, extra...), nil
 			}
@@ -637,7 +665,8 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		t := now()
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
 			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions,
-			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires}
+			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires,
+			Repeat: repeat}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
@@ -874,7 +903,14 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 			return nil, err
 		}
 		if seq != 0 && seq != n.Seq {
-			return nil, errf(409, "conflict", "notification changed since seq %d; show the current one", seq)
+			var changed int // a re-alert changes the seq, not the question
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE seq > ? AND type != ? AND json_extract(data, '$.notification.id') = ?`,
+				seq, EventRepeat, n.ID).Scan(&changed); err != nil {
+				return nil, err
+			}
+			if changed > 0 {
+				return nil, errf(409, "conflict", "notification changed since seq %d; show the current one", seq)
+			}
 		}
 		if reply == "" || !slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply == reply }) {
 			return nil, errf(400, "bad_request", "%q is not one of this notification's replies", reply)
@@ -887,6 +923,7 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 		}
 		n.Reply, n.State, n.SnoozeUntil = reply, Acknowledged, nil
 		n.setBy(tok)
+		n.stopRepeat()
 		return []Event{{Type: EventState, Notification: n, Via: via, replied: true}}, nil
 	})
 	if err != nil {
@@ -919,6 +956,13 @@ func transition(n *Notification, target string, by *Token, via string, until *ti
 	}
 	n.State, n.SnoozeUntil = target, nil
 	n.setBy(by)
+	if target != Active { // any answer ends the re-alerts; a wake or reopen does not restart them
+		n.stopRepeat()
+	} else if r := n.Repeat; r != nil && r.Next != nil { // a scheduled send delivered now: count from now
+		d, _ := parseDuration(r.Every)
+		next := time.Now().Add(d)
+		r.Next = &next
+	}
 	if target != Dismissed && target != Resolved {
 		n.Reply = "" // an answer stands only with the tap's own ack; dismiss and resolve keep it as history
 	}

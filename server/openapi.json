@@ -4496,6 +4496,31 @@
       "type": "boolean",
       "description": "A silence matched when this was written: show it, do not alert. Events logged before a server upgrade may omit it: treat missing as false."
      },
+     "repeat": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "Re-alert until someone acts, or null. next is null once it stopped.",
+      "properties": {
+       "every": {
+        "type": "string"
+       },
+       "left": {
+        "type": "integer"
+       },
+       "count": {
+        "type": "integer"
+       },
+       "next": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time"
+       }
+      }
+     },
      "created_at": {
       "type": "string",
       "format": "date-time"
@@ -4581,6 +4606,16 @@
       "type": "string",
       "description": "Auto-clear: a duration from now (30m, 2h) or an RFC3339 time. When it passes the server resolves the notification. Must be in the future."
      },
+     "repeat": {
+      "type": "string",
+      "description": "Re-alert every this long (1m to 24h, like 5m) while the notification stays active. Acknowledge, snooze, dismiss or resolve stops it."
+     },
+     "repeat_times": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "How many re-alerts at most. Default 10 when repeat is set."
+     },
      "status": {
       "type": "string",
       "enum": [
@@ -4608,6 +4643,7 @@
        "created",
        "updated",
        "state",
+       "repeat",
        "ready",
        "reset"
       ]
