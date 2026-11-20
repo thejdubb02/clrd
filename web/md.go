@@ -26,7 +26,7 @@ var (
 	mdLinks   = newMD(true)
 	mdNoLinks = newMD(false)
 	bareURL   = regexp.MustCompile(`https?://[^\s<>"]+[^\s<>".,;:!?)\]'*_]`)
-	uTag      = regexp.MustCompile(`</?u>`)
+	uTag      = regexp.MustCompile(`</?u>|</(?:p|li|h[1-6]|blockquote)>`)
 )
 
 func newMD(autolink bool) goldmark.Markdown {
@@ -42,11 +42,17 @@ func newMD(autolink bool) goldmark.Markdown {
 // addresses as links when autolink is on, as on Android.
 func renderBody(src, format string, formatting, autolink bool) template.HTML {
 	if format == "text" || !formatting {
-		esc := template.HTMLEscapeString(src)
+		var b strings.Builder
+		at := 0
 		if autolink {
-			esc = bareURL.ReplaceAllString(esc, `<a href="$0" rel="noopener noreferrer">$0</a>`)
+			for _, m := range bareURL.FindAllStringIndex(src, -1) {
+				u := template.HTMLEscapeString(src[m[0]:m[1]])
+				b.WriteString(template.HTMLEscapeString(src[at:m[0]]) + `<a href="` + u + `" rel="noopener noreferrer">` + u + `</a>`)
+				at = m[1]
+			}
 		}
-		return template.HTML(`<p class="whitespace-pre-line">` + esc + `</p>`)
+		b.WriteString(template.HTMLEscapeString(src[at:]))
+		return template.HTML(`<p class="whitespace-pre-line">` + b.String() + `</p>`)
 	}
 	md := mdNoLinks
 	if autolink {
@@ -60,12 +66,18 @@ func renderBody(src, format string, formatting, autolink bool) template.HTML {
 	return template.HTML(balanceU(out))
 }
 
-// balanceU drops a </u> that closes nothing and closes a <u> left open, so a
-// stray tag cannot underline the rest of the page. Only the renderer writes
-// these tags: a sender's own text is escaped.
+// balanceU drops a </u> that closes nothing and closes a <u> left open at
+// the end of its block, so a stray tag cannot underline the next paragraph or
+// the rest of the page. Only the renderer writes these tags: a sender's own
+// text is escaped.
 func balanceU(s string) string {
 	depth := 0
 	s = uTag.ReplaceAllStringFunc(s, func(t string) string {
+		if t != "<u>" && t != "</u>" { // end of a block
+			t = strings.Repeat("</u>", depth) + t
+			depth = 0
+			return t
+		}
 		if t == "<u>" {
 			depth++
 			return t

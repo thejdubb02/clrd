@@ -50,7 +50,10 @@ func TestRenderBody(t *testing.T) {
 		{"see https://e.example/x", "", true, false, "<p>see https://e.example/x</p>\n"},
 		{"**raw** https://e.example/x.", "text", true, true, `<p class="whitespace-pre-line">**raw** <a href="https://e.example/x" rel="noopener noreferrer">https://e.example/x</a>.</p>`},
 		{"**raw** <b>", "markdown", false, false, `<p class="whitespace-pre-line">**raw** &lt;b&gt;</p>`},
-		{"<u>open", "", true, true, "<p><u>open</p>\n</u>"},
+		{"<u>open", "", true, true, "<p><u>open</u></p>\n"},
+		{"<u>open\n\nnext", "", true, true, "<p><u>open</u></p>\n<p>next</p>\n"},
+		{"<https://e.example/a>", "text", true, true, `<p class="whitespace-pre-line">&lt;<a href="https://e.example/a" rel="noopener noreferrer">https://e.example/a</a>&gt;</p>`},
+		{"x https://e.example/?a=1&b=2", "text", true, true, `<p class="whitespace-pre-line">x <a href="https://e.example/?a=1&amp;b=2" rel="noopener noreferrer">https://e.example/?a=1&amp;b=2</a></p>`},
 		{"a ++ b ++ c", "", true, true, "<p>a ++ b ++ c</p>\n"},
 	} {
 		if got := string(renderBody(c.src, c.format, c.formatting, c.links)); got != c.want {
