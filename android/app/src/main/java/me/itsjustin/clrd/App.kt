@@ -95,6 +95,9 @@ class App : Application() {
             synchronized(configLock) {
                 db.dao().forget()
                 epoch = ""
+                // The old server's snooze times are not the new one's; defaults until its settings message arrives.
+                prefs.edit().remove("snooze").apply()
+                snooze.value = Snooze()
                 tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
                 token = newToken

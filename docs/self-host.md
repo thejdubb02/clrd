@@ -76,7 +76,7 @@ at once.
 |---|---|---|
 | `CLRD_LISTEN` | `:8080` | Address to listen on. |
 | `CLRD_DB` | `/data/clrd.db` | SQLite file. Its folder must be writable (WAL files live next to it). |
-| `CLRD_BASE_URL` | `http://localhost:<port>` | Public URL, used in the setup link. Set it to your https URL. |
+| `CLRD_BASE_URL` | `http://localhost:<port>` | Public URL, used in the setup link. Set it to your https URL. A path in it (`https://example.com/clrd`) serves everything under that path. |
 | `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. |
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
 | `CLRD_PUBLIC_PAGES` | `on` | `off` hides the landing page and docs on a private server: `/` goes to the inbox, `/docs` is 404, and `robots.txt` asks every crawler to stay out. |
@@ -130,6 +130,16 @@ location / {
     proxy_read_timeout 1h;
 }
 ```
+
+### Under a sub-path
+
+To serve clrd at `https://example.com/clrd/` instead of its own host name, put
+the path in `CLRD_BASE_URL` (`https://example.com/clrd`). Every page, link,
+asset, API route and the WebSocket then live under `/clrd/`, and the sign-in
+cookie is scoped to it. The proxy can pass the path through or strip it; both
+work. The path cannot start with `/api`. In Caddy, `handle /clrd/*` with the same `reverse_proxy` line; in nginx,
+the same block as `location /clrd/`. In the Android app, enter the full
+address with the path.
 
 ## Health
 

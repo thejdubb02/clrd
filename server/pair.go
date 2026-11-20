@@ -133,7 +133,7 @@ func (s *Server) handlePairCreate(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: pairCookie, Value: secret, Path: "/api/v1/pair", MaxAge: int(pairTTL / time.Second),
+	http.SetCookie(w, &http.Cookie{Name: pairCookie, Value: secret, Path: s.Path("/api/v1/pair"), MaxAge: int(pairTTL / time.Second),
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.https(r) || r.Header.Get("X-Forwarded-Proto") == "https"})
 	return s.writeCode(w, "/pair", code)
 }
@@ -173,7 +173,7 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.startSession(w, r, p.approver, p.name); err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: pairCookie, Path: "/api/v1/pair", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: pairCookie, Path: s.Path("/api/v1/pair"), MaxAge: -1})
 	writeJSON(w, 200, map[string]string{"state": "approved"})
 	return nil
 }
@@ -246,6 +246,7 @@ func (s *Server) renderPairPage(w http.ResponseWriter, data map[string]any) erro
 	if data["Title"] == nil {
 		data["Title"] = "Sign in a browser"
 	}
+	data["Base"] = s.prefix
 	return pairPage.Execute(w, data)
 }
 
@@ -264,8 +265,8 @@ button,a.btn{display:inline-block;font:inherit;padding:.6rem 1rem;border:1px sol
 <p><b>{{.Name}}</b> wants to sign in to your clrd inbox.</p>
 <p>Only approve if you just scanned this code on your own screen. Never approve a code someone sent you.</p>
 {{if .As}}<p>It will get the same access as <b>{{.As}}</b>.</p>
-<form method="post" action="/api/v1/pair/{{.Code}}/approve" style="display:inline"><button class="go">Approve</button></form>
-<form method="post" action="/api/v1/pair/{{.Code}}/deny" style="display:inline"><button>Deny</button></form>
+<form method="post" action="{{.Base}}/api/v1/pair/{{.Code}}/approve" style="display:inline"><button class="go">Approve</button></form>
+<form method="post" action="{{.Base}}/api/v1/pair/{{.Code}}/deny" style="display:inline"><button>Deny</button></form>
 {{else}}<p><a class="btn go" href="{{.AppLink}}">Open in the clrd app</a></p>
 <p>The app asks you to approve. Needs the clrd app, signed in to this server.</p>{{end}}
 {{end}}

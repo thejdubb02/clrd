@@ -2,7 +2,9 @@
 // from a signed-in phone ([data-pair]), or link a phone from this signed-in
 // browser ([data-link]). Without this script the token form still works.
 (() => {
-  const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const B = document.documentElement.dataset.base || ''; // the sub-path of CLRD_BASE_URL, if any
+  const fetch = (u, o) => window.fetch(u.startsWith('/') ? B + u : u, o);
+  const post =(url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 
   // On click, make a code at url and show its QR, then run step every 1.5 s
   // until it returns true or the code expires. step gets the code and stop.

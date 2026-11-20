@@ -2,6 +2,10 @@
 // The page works without this file; it adds the buttons, the WebSocket, relative
 // times, the command palette (Ctrl or Cmd+K) with its shortcuts, and Undo.
 (() => {
+  // A server under a sub-path (CLRD_BASE_URL) puts it in data-base; every
+  // site path below goes through fetch or B.
+  const B = document.documentElement.dataset.base || '';
+  const fetch = (u, o) => window.fetch(u.startsWith('/') ? B + u : u, o);
   document.documentElement.classList.remove('no-js');
   const shell = document.querySelector('[data-inbox]');
   if (!shell) return;
@@ -70,11 +74,12 @@
   setInterval(() => localize(document), 30000);
 
   const card = id => list && [...list.children].find(c => c.dataset.id === id);
-  const cards = () => list ? [...list.querySelectorAll('.card:not(.is-leaving)')] : [];
+  const cards = () => list ? [...list.querySelectorAll('.card[data-id]:not(.is-leaving)')] : [];
+  const shown = () => cards().filter(c => !c.hidden); // not folded into a stack
 
   // The card the keyboard works on (J and K). Kept by id: a refresh swaps the nodes.
   let selId = null;
-  const selected = () => (selId && card(selId)) || null;
+  const selected = () => { const c = selId && card(selId); return c && !c.hidden ? c : null; };
   function select(c, focus = true) {
     list && list.querySelectorAll('.is-selected').forEach(x => x.classList.remove('is-selected'));
     selId = c ? c.dataset.id : null;
@@ -83,7 +88,7 @@
     if (focus) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest' }); }
   }
   const move = by => {
-    const all = cards(), i = all.indexOf(selected());
+    const all = shown(), i = all.indexOf(selected());
     const next = all[i < 0 ? (by > 0 ? 0 : all.length - 1) : Math.max(0, Math.min(all.length - 1, i + by))];
     if (next) select(next);
   };
@@ -94,6 +99,67 @@
     if (clearAll) clearAll.hidden = cards().length === 0;
   };
 
+  // Stack by topic (#108), a setting kept in this browser: two or more
+  // notifications from one topic fold into one card. Rebuilt from scratch after
+  // every refresh, so a new one only bumps the count. Not on a single topic's page.
+  const stackTpl = $('[data-stack-tpl]'), unfolded = new Set();
+  let stacking = false;
+  try { stacking = localStorage.getItem('clrd.stack') === '1'; } catch {}
+  const stackOn = () => stacking && !new URLSearchParams(location.search).has('topic');
+  const byTopic = cs => { const m = new Map(); for (const c of cs) m.set(c.dataset.topic, [...(m.get(c.dataset.topic) || []), c]); return m; };
+  // Where the cards go with stacking on: each topic's cards together, at its newest one's place.
+  const stackOrder = cs => stackOn() ? [...byTopic(cs).values()].flat() : cs;
+  // Focus inside a stack, as the topic and which button, so a rebuild can put it back.
+  const stackFocus = () => {
+    const el = document.activeElement, s = el && el.closest && el.closest('[data-stack]:not(.is-leaving)');
+    return s && { t: s.dataset.stack, sel: el.matches('[data-act]') ? '[data-act]' : '[data-stack-toggle]' };
+  };
+  function restack(focus = stackFocus()) {
+    if (!list || !stackTpl) return;
+    list.querySelectorAll('[data-stack]:not(.is-leaving)').forEach(s => s.remove());
+    const groups = byTopic(cards());
+    cards().forEach(c => { c.hidden = false; });
+    if (!stackOn()) return;
+    for (const [t, g] of groups) {
+      if (g.length < 2) continue;
+      const s = stackTpl.content.firstElementChild.cloneNode(true), open = unfolded.has(t);
+      s.dataset.stack = t;
+      s.querySelector('[data-stack-topic]').textContent = t;
+      s.querySelector('[data-stack-count]').textContent = `${g.length} notifications`;
+      s.querySelector('[data-stack-latest]').textContent = g[0].querySelector('.card-title').textContent.trim();
+      const top = Math.max(...g.map(c => Number(c.dataset.priority)));
+      s.querySelector('[data-stack-dot]').classList.replace('bg-border', top >= 5 ? 'bg-destructive' : top === 4 ? 'bg-foreground' : 'bg-border');
+      const side = [...document.querySelectorAll('[data-topic-icon]')].find(a => a.dataset.name === t);
+      const icon = (side && side.dataset.topicIcon) || g[0].querySelector('img[data-icon]')?.getAttribute('src');
+      if (icon) Object.assign(s.querySelector('img'), { src: icon, hidden: false });
+      const tg = s.querySelector('[data-stack-toggle]');
+      tg.setAttribute('aria-expanded', open);
+      tg.textContent = open ? 'Hide' : 'Show all';
+      g[0].before(s);
+      // The topic's cards sit under its stack. Move only what is out of place:
+      // moving a node drops the focus inside it.
+      g.reduce((prev, c) => { if (prev.nextElementSibling !== c) prev.after(c); return c; }, s);
+      g.forEach(c => { c.hidden = !open; });
+      if (focus && focus.t === t) s.querySelector(focus.sel).focus();
+    }
+  }
+  restack();
+  // Tap a stack to open or close it in place.
+  list && list.addEventListener('click', e => {
+    const s = e.target.closest('[data-stack]');
+    if (!s || e.target.closest('[data-act]') || s.classList.contains('is-leaving')) return;
+    const t = s.dataset.stack;
+    if (!unfolded.delete(t)) unfolded.add(t);
+    restack({ t, sel: '[data-stack-toggle]' });
+  });
+  // The switch in Settings, and the same switch flipped in another tab.
+  const stackSw = $('[data-stack-setting]');
+  if (stackSw) {
+    stackSw.checked = stacking;
+    stackSw.addEventListener('change', () => { try { localStorage.setItem('clrd.stack', stackSw.checked ? '1' : '0'); } catch {} });
+  }
+  addEventListener('storage', e => { if (e.key === 'clrd.stack') { stacking = e.newValue === '1'; restack(); tidy(); } });
+
   // A card that no longer belongs in this view: the cleared moment (clrd.css).
   // Green washes across it with a check and the reason, then it folds away.
   // Timers, not animation events: with reduced motion there are none.
@@ -101,7 +167,7 @@
   const check = '<svg class="size-4 shrink-0" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
   function leave(c, why) {
     if (!c || c.classList.contains('is-leaving')) return;
-    if (c.dataset.id === selId) { const all = cards(), i = all.indexOf(c); select(all[i + 1] || all[i - 1] || null, c.contains(document.activeElement)); }
+    if (c.dataset.id === selId) { const all = shown(), i = all.indexOf(c); select(all[i + 1] || all[i - 1] || null, c.contains(document.activeElement)); }
     const p = document.createElement('p');
     p.className = 'gone';
     p.innerHTML = check;
@@ -154,19 +220,22 @@
     });
     const nextList = doc.querySelector('[data-list]');
     if (!list || !nextList) return tidy();
-    const keep = [...nextList.children].map(n => {
+    const sf = stackFocus();
+    const keep = stackOrder([...nextList.children].map(n => {
       const old = card(n.dataset.id);
       if (old && old.dataset.seq === n.dataset.seq) return old;
       const fresh = document.adoptNode(n);
       localize(fresh);
       previews(fresh);
       return fresh;
-    });
-    if (keep.some(c => c.contains(document.activeElement)) || keep.length !== list.children.length || keep.some((c, i) => c !== list.children[i])) {
-      const had = list.contains(document.activeElement) && document.activeElement;
+    }));
+    const now = [...list.children].filter(c => !c.matches('[data-stack]'));
+    if (keep.some(c => c.contains(document.activeElement)) || keep.length !== now.length || keep.some((c, i) => c !== now[i])) {
+      const had = list.contains(document.activeElement) && !document.activeElement.closest('[data-stack]') && document.activeElement;
       list.replaceChildren(...keep);
       if (had && !had.isConnected) select(selected()); // focus was on a node the refresh replaced
     }
+    restack(sf);
     const s = selected();
     if (s) select(s, false); else selId = null;
     tidy();
@@ -354,11 +423,17 @@
     if (!b || b.disabled) return;
     e.preventDefault(); // the buttons are also a form for when this script is off
     const act = b.dataset.act;
-    if (act === 'clear-all') {
-      const ids = cards().map(c => c.dataset.id);
+    if (act === 'clear-all' || act === 'clear-stack') {
+      // A stack sends the ids it holds, not its topic: clearing a topic on the
+      // server would also clear that topic's snoozed notifications.
+      const s = act === 'clear-stack' && b.closest('[data-stack]');
+      const ids = cards().filter(c => !s || c.dataset.topic === s.dataset.stack).map(c => c.dataset.id);
+      b.disabled = true; // one tap, one clear
       const r = ids.length && await post('/api/v1/notifications/clear', { ids });
+      b.disabled = false;
       if (!r) return;
       const n = (await r.json().catch(() => ({}))).cleared;
+      if (s) { unfolded.delete(s.dataset.stack); leave(s, 'Cleared'); }
       ids.forEach(id => leave(card(id), 'Cleared'));
       // Undo only when we know every id was ours to clear; otherwise it could
       // reopen something another device cleared first.
@@ -438,7 +513,8 @@
   palette && palette.addEventListener('click', e => { if (e.target === palette) palette.close(); }); // click on the dim
   const search = $('[data-search]');
   // Each command presses the selected card's own button, so Undo and errors work the same.
-  const press = (sel, c = selected() || cards()[0]) => {
+  const press = (sel, c = selected() || shown()[0]) => {
+    if (stackFocus()) return tell('Open the stack to act on one notification.'); // not the card next to it
     const b = c && c.querySelector(sel);
     if (!b) return tell(c ? 'Not available on this notification.' : 'No notification to act on.');
     select(c);
@@ -458,11 +534,11 @@
     if (e.target.closest('[data-palette]')) return openPalette();
     const cmd = e.target.closest('[data-cmd]');
     if (cmd && run[cmd.dataset.cmd]) setTimeout(run[cmd.dataset.cmd]); // after the dialog closes and gives focus back
-    const c = e.target.closest('.card');
+    const c = e.target.closest('.card[data-id]');
     if (c && !c.classList.contains('is-leaving')) select(c, false);
   });
   const keys = { c: 'dismiss', r: 'restore', a: 'ack', s: 'snooze', j: 'next', k: 'prev', '/': 'search' };
-  const go = { i: '/app', s: '/app/snoozed', c: '/app/cleared', ',': '/app/settings' };
+  const go = { i: B + '/app', s: B + '/app/snoozed', c: B + '/app/cleared', ',': B + '/app/settings' };
   let g = 0;
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return palette && (palette.open ? palette.close() : openPalette()); }
@@ -491,7 +567,7 @@
     else staleTimer ??= setTimeout(() => { offline.hidden = false; }, 180000);
   };
   function connect() {
-    const u = new URL('/api/v1/ws', location.href);
+    const u = new URL(B + '/api/v1/ws', location.href);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
     u.searchParams.set('since', seq);
     const ws = new WebSocket(u);
