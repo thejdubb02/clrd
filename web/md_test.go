@@ -1,0 +1,60 @@
+package web
+
+import (
+	"regexp"
+	"strings"
+	"testing"
+)
+
+func TestRenderBodyAllowList(t *testing.T) {
+	allowed := map[string]bool{"p": true, "br": true, "strong": true, "em": true, "u": true, "del": true, "code": true,
+		"pre": true, "ul": true, "ol": true, "li": true, "blockquote": true, "a": true, "hr": true,
+		"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true}
+	tag := regexp.MustCompile(`<(/?)([a-zA-Z0-9]+)([^>]*)>`)
+	for _, src := range []string{
+		"<script>alert(1)</script>", "hi <iframe src=x></iframe>", "<style>body{}</style>", "<!-- c -->",
+		`<img src=x onerror=alert(1)>`, `<u onclick="x()">u</u>`, "![pixel](https://e.example/p.png)",
+		"[x](javascript:alert(1))", `[t](https://e.example "a\">b")`, "<div>\nblock\n</div>", "| a | b |\n|---|---|\n| 1 | 2 |",
+		"- [ ] task", "<https://e.example/>", "go to https://e.example/x now", "a <nil> b <stdin>", "<u>open",
+		"</u>stray", "```\n<b>x</b>\n```",
+	} {
+		out := string(renderBody(src, "", true, true))
+		for _, m := range tag.FindAllStringSubmatch(out, -1) {
+			if !allowed[strings.ToLower(m[2])] {
+				t.Errorf("%q: tag <%s> in %q", src, m[2], out)
+			}
+			if m[2] == "a" && m[1] == "" && (!strings.Contains(m[3], `rel="noopener noreferrer"`) || strings.Contains(m[3], "javascript")) {
+				t.Errorf("%q: bad link %q", src, m[0])
+			}
+			if m[2] == "u" && m[3] != "" {
+				t.Errorf("%q: <u> with attributes %q", src, m[0])
+			}
+		}
+		if strings.Count(out, "<u>") != strings.Count(out, "</u>") {
+			t.Errorf("%q: unbalanced <u> in %q", src, out)
+		}
+	}
+}
+
+func TestRenderBody(t *testing.T) {
+	for _, c := range []struct {
+		src, format       string
+		formatting, links bool
+		want              string
+	}{
+		{"**b** *i* ++u++ <u>v</u> ~~s~~ `c`", "", true, true, "<p><strong>b</strong> <em>i</em> <u>u</u> <u>v</u> <del>s</del> <code>c</code></p>\n"},
+		{"Disk 91%\nHost web1\nCheck it", "", true, true, "<p>Disk 91%<br>\nHost web1<br>\nCheck it</p>\n"},
+		{"a <nil> b", "", true, true, "<p>a &lt;nil&gt; b</p>\n"},
+		{"![pixel](https://e.example/p.png)", "", true, true, "<p>pixel</p>\n"},
+		{"see https://e.example/x.", "", true, true, `<p>see <a rel="noopener noreferrer" href="https://e.example/x">https://e.example/x</a>.</p>` + "\n"},
+		{"see https://e.example/x", "", true, false, "<p>see https://e.example/x</p>\n"},
+		{"**raw** https://e.example/x.", "text", true, true, `<p class="whitespace-pre-line">**raw** <a href="https://e.example/x" rel="noopener noreferrer">https://e.example/x</a>.</p>`},
+		{"**raw** <b>", "markdown", false, false, `<p class="whitespace-pre-line">**raw** &lt;b&gt;</p>`},
+		{"<u>open", "", true, true, "<p><u>open</p>\n</u>"},
+		{"a ++ b ++ c", "", true, true, "<p>a ++ b ++ c</p>\n"},
+	} {
+		if got := string(renderBody(c.src, c.format, c.formatting, c.links)); got != c.want {
+			t.Errorf("renderBody(%q, %q, %v, %v)\n got %q\nwant %q", c.src, c.format, c.formatting, c.links, got, c.want)
+		}
+	}
+}

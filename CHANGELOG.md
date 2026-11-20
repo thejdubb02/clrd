@@ -17,6 +17,10 @@ Fixed, Removed, Security), as one line a user can understand.
 - Sign in a browser with your phone: the web sign-in page shows a QR code,
   you scan it with a phone that is already signed in and tap Approve, and the
   browser signs itself in with the phone's access. No token to copy or type.
+- Web: messages show their Markdown formatting (bold, lists, code, quotes,
+  links) and web addresses become links, following the server's
+  `render_formatting` and `autolink` settings. Other HTML shows as typed and
+  images in a message are never loaded.
 - Approve agent actions from your phone: point Claude Code's or Codex's
   permission hook at `/mcp/approve` and each prompt arrives as a notification
   with Allow and Deny. No answer in time means deny.

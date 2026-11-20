@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := "/app"}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "/app/%s" .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -102,7 +102,7 @@
       <span class="js-only -my-1.5 -me-2 ms-auto inline-flex"><button type="button" class="btn [.no-share_&]:hidden" data-variant="ghost" data-size="icon" data-act="share" aria-label="Share" title="Share">{{template "i-share"}}</button><button type="button" class="btn [.no-copy_&]:hidden" data-variant="ghost" data-size="icon" data-act="copy" aria-label="Copy" title="Copy">{{template "i-copy"}}</button></span>
     </div>
     <div class="col-start-2 min-w-0">
-      {{with $n.Body}}<p class="text-body mt-1 text-[15px]/normal whitespace-pre-line [overflow-wrap:anywhere]">{{.}}</p>{{end}}
+      {{if $n.Body}}<div class="msg text-body mt-1 text-[15px]/normal [overflow-wrap:anywhere]" data-body>{{.Text}}</div>{{end}}
       {{with $n.Attachment}}{{if .Image}}<a class="mt-2 block w-fit" href="{{.URL}}" rel="noopener noreferrer" data-attachment><img class="max-h-64 max-w-full rounded-md border" src="{{.URL}}" alt="{{.Name}}" loading="lazy" referrerpolicy="no-referrer"></a>
       {{else}}<p class="mt-2 text-sm font-medium" data-attachment><a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" download="{{.Name}}" rel="noopener noreferrer">{{template "i-paperclip"}}{{or .Name "Attachment"}}</a></p>{{end}}{{end}}
       <p class="meta mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5"><a class="hover:text-foreground hover:underline" href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}" title="{{clock $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{range $n.Tags}}<span>#{{.}}</span>{{end}}</p>

@@ -88,6 +88,18 @@
     .mini-cleared { animation: clrd-cleared 7s ease infinite; }
   }
 
+  /* Message bodies (docs/SPEC.md section 2.1): compact, headings small. */
+  .msg :is(p, ul, ol, pre, blockquote, h1, h2, h3, h4, h5, h6) { @apply mb-1.5 last:mb-0; }
+  .msg :is(h1, h2, h3, h4, h5, h6) { @apply text-foreground text-[15px] font-semibold; }
+  .msg :is(ul, ol) { @apply ps-5; }
+  .msg ul { @apply list-disc; }
+  .msg ol { @apply list-decimal; }
+  .msg blockquote { @apply border-s-2 ps-3; }
+  .msg a { @apply text-foreground underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground; }
+  .msg code { @apply bg-muted rounded px-1 font-mono text-[13px]; }
+  .msg pre { @apply bg-muted overflow-x-auto rounded-md p-2.5; }
+  .msg pre code { @apply bg-transparent p-0; }
+
   /* Docs pages rendered from docs/*.md. */
   .prose { @apply text-body max-w-[76ch] min-w-0 text-[15px]/relaxed; }
   .prose :is(h1, h2, h3, h4) { @apply text-foreground font-semibold tracking-tight; }
