@@ -147,7 +147,7 @@
       <table class="table">
         <thead><tr><th scope="col">Device</th><th scope="col" class="text-right">Last seen</th></tr></thead>
         <tbody>
-          {{range .Snap.Devices}}<tr><td class="[overflow-wrap:anywhere]"><span>{{.Name}}</span></td><td class="meta text-right whitespace-nowrap"><time datetime="{{iso .LastSeen}}" title="{{clock .LastSeen}}">{{clock .LastSeen}}</time></td></tr>
+          {{range .Snap.Devices}}<tr><td class="[overflow-wrap:anywhere]"><span>{{.Name}}</span>{{if and .ID (eq .ID $.Snap.MeID)}} <span class="text-muted-foreground">(this browser)</span>{{end}}</td><td class="meta text-right whitespace-nowrap"><time datetime="{{iso .LastSeen}}" title="{{clock .LastSeen}}">{{clock .LastSeen}}</time></td></tr>
           {{end}}
         </tbody>
       </table>
