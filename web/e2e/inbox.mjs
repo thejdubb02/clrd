@@ -587,7 +587,7 @@ try {
     await b.locator('.is-live').waitFor({ timeout: 5000 });
     await a.goto(base + '/app/settings');
     const row = a.locator('tr', { hasText: 'browser b' });
-    assert.match(await row.textContent(), /Browser, signed in from laptop/, 'row says how it was linked');
+    assert.match(await row.textContent(), /Browser, signed in with laptop/, 'row says how it was linked');
     assert.equal(await a.locator('tr', { hasText: 'browser a' }).getByRole('button', { name: 'Unlink' }).count(), 0, 'no unlink on this browser');
     await row.getByRole('button', { name: 'Unlink' }).click();
     await a.getByRole('dialog').getByRole('button', { name: 'Unlink' }).click();

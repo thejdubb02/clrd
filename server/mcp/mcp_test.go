@@ -225,6 +225,12 @@ func TestMissingArgsAreToolErrors(t *testing.T) {
 			t.Errorf("%s: want isError", tool)
 		}
 	}
+	// an id with a bad escape reaches the API escaped once, never panics building the request
+	f := &fakeAPI{}
+	callTool(t, New(f), "unlink", map[string]any{"id": "%zz"})
+	if strings.Join(f.calls, ",") != "DELETE /api/v1/devices/%25zz" {
+		t.Errorf("unlink %%zz: calls %v", f.calls)
+	}
 }
 
 func ev(seq int64, id, state string) server.Event {

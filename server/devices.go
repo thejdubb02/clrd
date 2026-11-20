@@ -19,7 +19,7 @@ type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
 	Kind       string     `json:"kind"`          // token, browser or phone
-	Via        string     `json:"via,omitempty"` // the device it was linked or signed in from
+	Via        string     `json:"via,omitempty"` // the token or device it hangs under: revoking that one signs this one out too
 	LinkedAt   time.Time  `json:"linked_at"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	This       bool       `json:"this"` // the token asking
