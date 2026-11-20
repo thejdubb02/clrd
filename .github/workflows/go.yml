@@ -14,6 +14,7 @@ on:
       - "go.sum"
       - "Dockerfile"
       - ".github/workflows/go.yml"
+      - ".github/size-*"
 
 # A new push to a pull request cancels its older run. Pushes to main each
 # get their own group (by commit), so main always gets a full run.
@@ -46,5 +47,8 @@ jobs:
       - name: test
         # -race needs a C compiler; run without it if the runner has none.
         run: go test $(command -v gcc >/dev/null && echo -race) -count=1 ./...
-      - name: static build
-        run: CGO_ENABLED=0 go build -o /dev/null ./server/cmd/clrd
+      - name: static build and size budget
+        # Same flags as the Dockerfile, so this is the size people download.
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
+          .github/size-check.sh server "$RUNNER_TEMP/clrd"

@@ -93,6 +93,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Changed
 
+- Android: the release APK is shrunk with R8 and resource shrinking, from
+  7.8 MB to 1.9 MB. CI now fails if the server binary or the APK grows past
+  its size budget, and prints both sizes in the job summary.
 - SDKs and GitHub Action: no default server. The Go, JavaScript and Python
   clients used to fall back to `clrd.itsjustin.me`, which is not a clrd
   server; now a call with no URL and no `CLRD_URL` fails saying to set it, and
