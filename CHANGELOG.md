@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: the linked devices list in Settings fits a phone screen again (the
+  Linked date column hides on narrow screens; Last seen stays).
 - Android: swiping a notification out of the phone's notification shade (one,
   a stack, or Clear all) no longer clears it on every device. It only hides it
   on this phone, and it stays open in the inbox. Clear it in the app, on the
