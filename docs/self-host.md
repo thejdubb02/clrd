@@ -96,6 +96,11 @@ clrd.example.com {
 }
 ```
 
+clrd limits wrong passwords per address. When the request comes from
+loopback or a private network it takes the address from the last
+`X-Forwarded-For` hop, which Caddy sends by default and the nginx block below
+sets.
+
 nginx (the `map` goes in the `http` block):
 
 ```nginx
@@ -111,6 +116,7 @@ location / {
     proxy_set_header Connection $connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_buffering off;
     proxy_read_timeout 1h;
 }

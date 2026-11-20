@@ -128,6 +128,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- ntfy compatibility: ten wrong passwords from one address now block password
+  logins from it for a while (429 with `Retry-After`, one more try each
+  minute). Tokens are never blocked. Behind a proxy, the client address comes
+  from `X-Forwarded-For`; the nginx example in the self-host guide now sets it.
 - Server: a token that can publish to a topic but not read it no longer gets
   another sender's message back when it acks, resolves or overwrites one by
   external id.
