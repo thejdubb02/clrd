@@ -43,8 +43,8 @@ func (h *Handler) approve(w http.ResponseWriter, r *http.Request) {
 		topic = "agents"
 	}
 	d := ApproveWait
-	if v, err := strconv.ParseFloat(q.Get("timeout"), 64); err == nil && v > 0 {
-		d = time.Duration(v * float64(time.Second))
+	if v, err := strconv.ParseFloat(q.Get("timeout"), 64); err == nil && v > 0 && v < ApproveWait.Seconds() {
+		d = time.Duration(v * float64(time.Second)) // never past ApproveWait, or the agent gives up first
 	}
 	tool := in.ToolName
 	if tool == "" {
@@ -54,8 +54,16 @@ func (h *Handler) approve(w http.ResponseWriter, r *http.Request) {
 	if in.Cwd != "" {
 		title += " (" + path.Base(in.Cwd) + ")"
 	}
+	msg := summary(in.ToolInput)
+	if len([]rune(msg)) > maxShown {
+		// Allow would approve text the phone never showed: send it back to the agent's own prompt.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		json.NewEncoder(w).Encode(map[string]string{"error": "too long to show on a phone, answer on screen", "code": "too_large"})
+		return
+	}
 	sent, err := h.api(r, "POST", "/api/v1/notifications", map[string]any{
-		"topic": topic, "title": title, "message": summary(in.ToolInput), "priority": 4,
+		"topic": topic, "title": title, "message": msg, "priority": 4,
 		"actions": []map[string]any{{"label": "Allow", "reply": "allow"}, {"label": "Deny", "reply": "deny"}},
 	})
 	if err != nil {
@@ -100,8 +108,12 @@ func hookAnswer(w http.ResponseWriter, behavior, message string) {
 		"hookEventName": "PermissionRequest", "decision": dec}})
 }
 
+// maxShown is the longest summary clrd will ask about. Anything longer is never
+// cut, since Allow would approve the hidden part too.
+const maxShown = 4000
+
 // summary is what the phone shows: the command, else a description, else the
-// raw input, cut to fit a notification.
+// raw input.
 func summary(raw json.RawMessage) string {
 	var in map[string]any
 	_ = json.Unmarshal(raw, &in)
@@ -117,9 +129,6 @@ func summary(raw json.RawMessage) string {
 	}
 	if s == "" {
 		s = "(no details)"
-	}
-	if r := []rune(s); len(r) > 500 {
-		s = string(r[:500]) + "..."
 	}
 	return s
 }

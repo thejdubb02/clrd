@@ -396,7 +396,7 @@ is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
 `PermissionRequest` hook body, sends an Allow / Deny notification, waits, and
 returns `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny","message"?}}}`.
 Only an Allow tap allows; a timeout denies and resolves the notification. A
-failed send returns 502, so the agent falls back to its own prompt.
+failed send (502) or a request over 4000 characters (413) sends the agent back to its own prompt.
 
 ## 7. Server internals
 

@@ -212,4 +212,8 @@ func TestApproveHook(t *testing.T) {
 	if code, dec := ask("Bearer clrd_wrong", "", ""); code != 502 || dec != nil {
 		t.Fatalf("bad token must fail, not answer: %d %v", code, dec)
 	}
+	body = `{"tool_name":"Bash","tool_input":{"command":"echo ok; ` + strings.Repeat("x", 4000) + `"}}`
+	if code, dec := ask("Bearer "+raw, "", "allow"); code != 413 || dec != nil {
+		t.Fatalf("too long to show must go back to the agent: %d %v", code, dec)
+	}
 }

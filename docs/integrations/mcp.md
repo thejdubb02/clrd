@@ -44,8 +44,9 @@ answers the agent. The tap clears the notification on every other device.
 - Only an **Allow** tap allows. Deny, dismiss, resolve or no answer in time
   all deny, and the agent is told why.
 - It waits 590 s by default, just under the agents' 600 s hook limit. Set
-  `?timeout=` (seconds, max 600) and `?topic=` to change either.
-- If clrd cannot send the notification (bad token, server down), it answers
+  `?timeout=` (seconds, max 590) and `?topic=` to change either.
+- If clrd cannot send the notification (bad token, server down), or the
+  request is too long to show in full (over 4000 characters), it answers
   with an error and the agent shows its normal prompt on screen.
 - The token needs `read` and `publish`. Behind a reverse proxy, allow requests
   to run 10 minutes (nginx: `proxy_read_timeout 600s;`).
