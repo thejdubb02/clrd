@@ -29,6 +29,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
       - name: gofmt
         run: test -z "$(gofmt -l server web)" || { gofmt -l server web; exit 1; }
       - run: go vet ./...
