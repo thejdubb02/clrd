@@ -464,6 +464,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if len(in.ExternalID) > 256 {
 		return nil, errf(400, "bad_request", "external_id longer than 256")
 	}
+	if in.ExternalID == checkinID && !in.checkin {
+		return nil, errf(400, "bad_request", "external_id %s is reserved for missed check-in alerts", checkinID)
+	}
 	if in.ExternalID == "." || in.ExternalID == ".." { // a URL path would drop it
 		return nil, errf(400, "bad_request", "external_id cannot be . or ..")
 	}
@@ -484,7 +487,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		return nil, err
 	}
 	var replaced string // file id an upsert drops, removed after commit
-	var late bool       // the topic had missed its check-in: resolve the alert
+	var extra []Event   // a check-in resolving the topic's missed check-in alert
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		if in.file != "" {
 			var used int64
@@ -504,15 +507,10 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 				return nil, err
 			}
 		}
-		if !in.checkin { // any message but clrd's own alert is a check-in
-			if err := tx.QueryRowContext(ctx, `SELECT checkin_late FROM topics WHERE topic = ? AND checkin_ms IS NOT NULL`,
-				in.Topic).Scan(&late); err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return nil, err
-			}
-			if _, err := tx.ExecContext(ctx, `UPDATE topics SET checkin_at = ?, checkin_late = 0
-				WHERE topic = ? AND checkin_ms IS NOT NULL`, ms(time.Now()), in.Topic); err != nil {
-				return nil, err
-			}
+		if ev, err := s.checkIn(ctx, tx, in); err != nil {
+			return nil, err
+		} else if ev != nil {
+			extra = append(extra, *ev)
 		}
 		if in.ExternalID != "" {
 			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
@@ -530,7 +528,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 					n.State, n.SnoozeUntil = Snoozed, &u
 					n.setBy(tok)
 				}
-				return []Event{{Type: EventUpdated, Notification: n}}, nil
+				return append([]Event{{Type: EventUpdated, Notification: n}}, extra...), nil
 			}
 			if !isNotFound(err) {
 				return nil, err
@@ -544,18 +542,13 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
 		}
-		return []Event{{Type: EventCreated, Notification: n}}, nil
+		return append([]Event{{Type: EventCreated, Notification: n}}, extra...), nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	if replaced != "" && replaced != in.file {
 		os.Remove(filepath.Join(s.opt.Attachments, replaced))
-	}
-	if late {
-		if _, err := s.ActByKey(ctx, serverToken, in.Topic, checkinID, "resolve"); err != nil && !isNotFound(err) {
-			s.log.Error("resolve check-in alert", "topic", in.Topic, "err", err)
-		}
 	}
 	return senderView(tok, evs[0].Notification, true), nil
 }
@@ -1130,6 +1123,48 @@ func (s *Server) SetTopicCheckin(ctx context.Context, tok *Token, topic string, 
 	return err
 }
 
+// errOnTime: the topic checked in between the sweep's query and its alert.
+var errOnTime = errors.New("checked in")
+
+// checkIn runs in a publish's write. clrd's own alert flags the topic late,
+// or gives up with errOnTime if a message got there first. Any other message
+// restarts the timer and, if the topic was late, resolves the alert.
+func (s *Server) checkIn(ctx context.Context, tx *sql.Tx, in PublishInput) (*Event, error) {
+	t := time.Now()
+	if in.checkin {
+		res, err := tx.ExecContext(ctx, `UPDATE topics SET checkin_late = 1 WHERE topic = ?
+			AND checkin_ms IS NOT NULL AND checkin_late = 0 AND checkin_at + checkin_ms <= ?`, in.Topic, ms(t))
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil, errOnTime
+		}
+		return nil, nil
+	}
+	var late bool
+	if err := tx.QueryRowContext(ctx, `SELECT checkin_late FROM topics WHERE topic = ? AND checkin_ms IS NOT NULL`,
+		in.Topic).Scan(&late); errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE topics SET checkin_at = ?, checkin_late = 0 WHERE topic = ?`, ms(t), in.Topic); err != nil {
+		return nil, err
+	}
+	if !late {
+		return nil, nil
+	}
+	n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`, in.Topic, checkinID)
+	if isNotFound(err) { // someone already cleared it
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return transition(n, Resolved, serverToken, nil)
+}
+
 // checkins raises an urgent alert in each topic whose check-in is overdue.
 // The next message to the topic resolves it (see Publish).
 func (s *Server) checkins(ctx context.Context) error {
@@ -1158,13 +1193,9 @@ func (s *Server) checkins(ctx context.Context) error {
 		return err
 	}
 	for _, d := range ds {
-		// Flag first: a failed publish is not retried every tick.
-		if _, err := s.db.ExecContext(ctx, `UPDATE topics SET checkin_late = 1 WHERE topic = ?`, d.topic); err != nil {
-			return err
-		}
 		if _, err := s.Publish(ctx, serverToken, PublishInput{Topic: d.topic, ExternalID: checkinID, Priority: 5,
 			Title: d.topic + " missed its check-in", Message: "No message in " + d.every.String() + ".",
-			Tags: []string{"rotating_light"}, checkin: true}); err != nil {
+			Tags: []string{"rotating_light"}, checkin: true}); err != nil && !errors.Is(err, errOnTime) {
 			return err
 		}
 	}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -10,17 +11,32 @@ func TestCheckin(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()
 
-	for _, bad := range []string{"daily", "10s", "-1h", "9000h"} {
-		if code, out := call(t, ts, "PUT", "/api/v1/topics/backup", admin, map[string]any{"checkin": bad}); code != 400 {
-			t.Errorf("checkin %q: %d %v", bad, code, out)
+	for _, bad := range []map[string]any{{"checkin": "daily"}, {"checkin": "10s"}, {"checkin": "-1h"}, {"checkin": "9000h"},
+		{"checkin": "0s"}, {"checkin": "1h", "icon": "javascript:x"}} {
+		if code, out := call(t, ts, "PUT", "/api/v1/topics/backup", admin, bad); code != 400 {
+			t.Errorf("%v: %d %v", bad, code, out)
 		}
+	}
+	var on int
+	if s.db.QueryRow(`SELECT COUNT(*) FROM topics WHERE checkin_ms IS NOT NULL`).Scan(&on); on != 0 {
+		t.Fatal("a rejected PUT set the check-in")
+	}
+	if code, out := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "backup", "external_id": checkinID}); code != 400 {
+		t.Fatalf("reserved external_id: %d %v", code, out)
 	}
 	if code, out := call(t, ts, "PUT", "/api/v1/topics/backup", admin, map[string]any{"checkin": "25h"}); code != 200 || out["checkin"] != "25h" {
 		t.Fatalf("set checkin: %d %v", code, out)
 	}
 	// Removing the icon keeps the check-in.
+	if code, out := call(t, ts, "PUT", "/api/v1/topics/backup", admin, map[string]any{"icon": "https://example.com/i.png"}); code != 200 {
+		t.Fatalf("set icon: %d %v", code, out)
+	}
 	if code, out := call(t, ts, "PUT", "/api/v1/topics/backup", admin, map[string]any{"icon": ""}); code != 200 {
 		t.Fatalf("clear icon: %d %v", code, out)
+	}
+	var icon string
+	if err := s.db.QueryRow(`SELECT icon FROM topics WHERE topic = 'backup' AND checkin_ms = ?`, (25 * time.Hour).Milliseconds()).Scan(&icon); err != nil || icon != "" {
+		t.Fatalf("after clearing the icon: %q %v", icon, err)
 	}
 	overdue := func() {
 		t.Helper()
@@ -76,6 +92,21 @@ func TestCheckin(t *testing.T) {
 	}
 	if a = alert(); a["state"] != "resolved" {
 		t.Fatalf("timer not restarted: %v", a)
+	}
+
+	// A check-in that lands between the sweep's query and its alert wins.
+	overdue()
+	if _, err := s.Publish(ctx, serverToken, PublishInput{Topic: "backup", ExternalID: checkinID, Message: "late", checkin: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Publish(ctx, &Token{Name: "cron", Scopes: []string{ScopePublish}}, PublishInput{Topic: "backup", Message: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Publish(ctx, serverToken, PublishInput{Topic: "backup", ExternalID: checkinID, Message: "stale", checkin: true}); !errors.Is(err, errOnTime) {
+		t.Fatalf("stale alert: %v", err)
+	}
+	if a = alert(); a["state"] != "resolved" {
+		t.Fatalf("stale alert reopened: %v", a)
 	}
 
 	// Off: never alerts again.

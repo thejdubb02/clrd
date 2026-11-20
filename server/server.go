@@ -492,11 +492,16 @@ func (s *Server) routesSetup() {
 			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it) or "checkin" (like "25h", or "" for off)`)
 		}
 		topic, out := r.PathValue("topic"), map[string]string{"topic": r.PathValue("topic")}
+		if in.Icon != nil { // checked before the timer changes, so a bad icon changes nothing
+			if err := checkImageURL("icon", *in.Icon); err != nil {
+				return err
+			}
+		}
 		if in.Checkin != nil {
 			var every time.Duration
 			if *in.Checkin != "" {
 				d, err := time.ParseDuration(*in.Checkin)
-				if err != nil {
+				if err != nil || d == 0 { // only "" turns it off
 					return errf(400, "bad_request", `checkin must be a duration like "25h" or "30m"`)
 				}
 				every = d
