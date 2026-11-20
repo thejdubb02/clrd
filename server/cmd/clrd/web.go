@@ -174,6 +174,22 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			snap.Devices = append(snap.Devices, web.Device{ID: t.ID, Name: t.Name, LastSeen: *t.LastSeenAt})
 		}
 	}
+	if q.Devices {
+		ds, err := a.s.Devices(ctx, tok)
+		if err != nil {
+			return snap, err
+		}
+		evs, err := a.s.DeviceLog(ctx, tok)
+		if err != nil {
+			return snap, err
+		}
+		if err := convert(ds, &snap.Linked); err != nil {
+			return snap, err
+		}
+		if err := convert(evs, &snap.Log); err != nil {
+			return snap, err
+		}
+	}
 	return snap, nil
 }
 

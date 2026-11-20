@@ -573,6 +573,31 @@ try {
     assert.equal(list.status, 200, 'linked token lists notifications');
     console.log('ok: link a phone from Settings by approving it by name');
   }
+
+  // Unlink (#246): browser a unlinks browser b from Settings; b's open inbox
+  // goes straight to sign-in with a plain message, and the log says who did it.
+  {
+    const open = async name => {
+      const ctx = await browser.newContext();
+      assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name } })).ok(), name + ' sign-in');
+      return ctx.newPage();
+    };
+    const a = await open('browser a'), b = await open('browser b');
+    await b.goto(base + '/app');
+    await b.locator('.is-live').waitFor({ timeout: 5000 });
+    await a.goto(base + '/app/settings');
+    const row = a.locator('tr', { hasText: 'browser b' });
+    assert.match(await row.textContent(), /Browser, signed in from laptop/, 'row says how it was linked');
+    assert.equal(await a.locator('tr', { hasText: 'browser a' }).getByRole('button', { name: 'Unlink' }).count(), 0, 'no unlink on this browser');
+    await row.getByRole('button', { name: 'Unlink' }).click();
+    await a.getByRole('dialog').getByRole('button', { name: 'Unlink' }).click();
+    await b.locator('[data-signed-out]').waitFor({ timeout: 5000 });
+    await a.locator('tr', { hasText: 'browser b' }).waitFor({ state: 'detached' });
+    await a.getByText('Device activity').click();
+    await a.getByText('browser b unlinked by browser a').waitFor();
+    await a.context().close(); await b.context().close();
+    console.log('ok: unlink a browser from another; it goes to sign-in at once');
+  }
 } finally {
   await browser?.close();
   server.kill();

@@ -473,6 +473,26 @@
     refresh();
   });
 
+  // Unlink a device from Settings, after a confirm (#246).
+  const unlinkBox = $('#unlink');
+  if (unlinkBox) {
+    const status = $('[data-unlink-status]');
+    let id = '';
+    document.addEventListener('click', e => {
+      const b = e.target.closest('[data-unlink]');
+      if (b) { id = b.dataset.unlink; $('[data-unlink-name]').textContent = b.dataset.name; status.textContent = ''; unlinkBox.showModal(); }
+      if (e.target === unlinkBox || e.target.closest('[data-unlink-close]')) unlinkBox.close();
+    });
+    unlinkBox.querySelector('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      if (e.submitter) e.submitter.disabled = true;
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' }).catch(() => null);
+      if (e.submitter) e.submitter.disabled = false;
+      if (r && (r.ok || r.status === 401)) return location.reload();
+      status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not unlinked (${r.status}).` : 'Not unlinked: no connection.';
+    });
+  }
+
   // Send a notification from this browser, with its own token (#150).
   const sendBox = $('#send');
   if (sendBox) {
@@ -598,7 +618,11 @@
       }
       else if (m.notification) onEvent(m);
     };
-    ws.onclose = () => {
+    ws.onclose = e => {
+      // Unlinked or revoked from another device: show the sign-in page now (#246).
+      if (e.reason === 'token revoked') return location.reload();
+      // A refused reconnect gives no reason, so ask: signed out means reload too.
+      fetch('/api/v1/topics', { credentials: 'same-origin' }).then(r => r.status === 401 && location.reload(), () => {});
       live(false);
       setTimeout(connect, Math.min(30000, 1000 * 2 ** tries++));
     };
