@@ -382,6 +382,7 @@ By external id (what scripts and monitors use):
   under `/api/v1/topics/{topic}/templates/{name}`. With a secret saved, GitHub,
   Jira, Sentry and Stripe signatures are checked on the raw body; other
   services send it in `X-Clrd-Secret` or `?secret=`. A failed check is 401.
+  `X-Markdown` / `?markdown=` work as on any ntfy publish (section 2.1).
   Docs: `docs/integrations/custom-webhooks.md`.
 
 Full ntfy parity checklist lives in issue #2; tick it off there.

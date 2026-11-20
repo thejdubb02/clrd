@@ -68,6 +68,8 @@ func TestFormatFromEveryPublishPath(t *testing.T) {
 		{"POST", "/", `{"topic":"t8","message":"hi","markdown":false}`, nil, "t8", FormatText},
 		{"POST", "/", `{"topic":"t9","message":"hi"}`, nil, "t9", FormatMarkdown},
 		{"POST", "/t10?template=alertmanager", `{"alerts":[{"status":"firing","fingerprint":"f","labels":{"alertname":"A"},"annotations":{"summary":"s"}}]}`, nil, "t10", FormatMarkdown},
+		{"POST", "/t11?template=alertmanager", `{"alerts":[{"status":"firing","fingerprint":"f","labels":{"alertname":"A"},"annotations":{"summary":"s"}}]}`, map[string]string{"X-Markdown": "no"}, "t11", FormatText},
+		{"POST", "/t12?template=alertmanager&md=0", `{"alerts":[{"status":"firing","fingerprint":"f","labels":{"alertname":"A"},"annotations":{"summary":"s"}}]}`, nil, "t12", FormatText},
 	} {
 		if code, out := raw(t, c.method, ts.URL+c.path, admin, c.body, c.hdr); code != 200 {
 			t.Fatalf("%s %s: %d %s", c.method, c.path, code, out)
