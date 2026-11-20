@@ -279,6 +279,37 @@ try {
   assert.equal(await card('Merge 212?').getByRole('button', { name: 'No', exact: true }).count(), 0, 'answered card still offers replies');
   console.log('ok: reply button stores the answer');
 
+  // Share and Copy hand over the title, the message and the link; the icon and attachments show on the card.
+  const sharePage = await page.context().newPage();
+  await sharePage.addInitScript(() => {
+    window.shared = [];
+    navigator.share = d => { window.shared.push(d); return Promise.resolve(); };
+    navigator.clipboard.writeText = t => { window.shared.push(t); return Promise.resolve(); };
+  });
+  await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Share me', message: 'line one', click: 'https://example.com/run/7', icon: 'https://example.com/i.png', attachment: { url: 'https://example.com/r.pdf', name: 'r.pdf' } });
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const form = new FormData();
+  form.append('notification', JSON.stringify({ topic: 'infra', title: 'Graph attached', message: 'see image' }));
+  form.append('file', new Blob([png], { type: 'image/png' }), 'graph.png');
+  assert.equal((await fetch(`${base}/api/v1/notifications`, { method: 'POST', headers: { Authorization: `Bearer ${phone}` }, body: form })).status, 200);
+  await sharePage.goto(`${base}/app`);
+  const shareCard = sharePage.locator('article.card', { hasText: 'Share me' });
+  await shareCard.getByRole('button', { name: 'Share' }).click();
+  await shareCard.getByRole('button', { name: 'Copy' }).click();
+  await sharePage.locator('[data-toast]').filter({ hasText: 'Copied.' }).waitFor();
+  assert.deepEqual(await sharePage.evaluate(() => window.shared), [
+    { title: 'Share me', text: 'line one', url: 'https://example.com/run/7' },
+    'Share me\n\nline one\nhttps://example.com/run/7',
+  ]);
+  assert.equal(await shareCard.locator('[data-icon]').getAttribute('src'), 'https://example.com/i.png');
+  assert.equal(await shareCard.getByRole('link', { name: 'r.pdf' }).getAttribute('href'), 'https://example.com/r.pdf');
+  const img = sharePage.locator('article.card', { hasText: 'Graph attached' }).getByRole('img', { name: 'graph.png' });
+  await img.scrollIntoViewIfNeeded(); // lazy: loads once on screen
+  for (let i = 0; i < 50 && !await img.evaluate(i => i.complete); i++) await sharePage.waitForTimeout(100);
+  assert.equal(await img.evaluate(i => i.naturalWidth), 1, 'uploaded image did not load on the card');
+  await sharePage.close();
+  console.log('ok: share, copy, icon and attachments on the card');
+
   // On a phone, the open Snooze menu stays on screen, even when Snooze ends the first row of buttons.
   const narrow = await (await browser.newContext({ viewport: { width: 360, height: 740 } })).newPage();
   await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Deploy 213?', message: 'staging green', actions: [{ label: 'Go', reply: 'go' }, { label: 'No', reply: 'no' }] });

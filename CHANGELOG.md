@@ -20,6 +20,10 @@ Fixed, Removed, Security), as one line a user can understand.
 - Approve agent actions from your phone: point Claude Code's or Codex's
   permission hook at `/mcp/approve` and each prompt arrives as a notification
   with Allow and Deny. No answer in time means deny.
+- Web: Share and Copy on each card (Share only where the browser has a share
+  sheet), and cards show the notification's icon and attachment: an uploaded
+  image inline, any other file as a download link. An icon or file on another
+  site loads from that site, which then sees the reader's IP address.
 - MCP: the `send` tool takes `icon` (an image URL) and `attachment` (a link to
   a file by URL, with an optional name).
 - MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
