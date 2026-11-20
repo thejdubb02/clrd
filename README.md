@@ -57,7 +57,8 @@ offline catches up the moment it reconnects.
   notification. The server stores and serves them and the Android app shows
   them; the web inbox does not show them yet.
 - **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
-  work without JavaScript, a Ctrl+K command palette, dark mode, phone width.
+  work without JavaScript, a Ctrl+K command palette, a Send box for a quick
+  note to your phone, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, Share and Copy on each
   notification, Markdown formatting and tappable links.

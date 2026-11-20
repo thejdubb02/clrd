@@ -72,7 +72,8 @@ The other paths contain a dot, which a topic name cannot.
 From `docs/SPEC.md`: `POST /api/v1/notifications/{id}/{ack|snooze|dismiss|reopen}`,
 `POST /api/v1/notifications/clear` with `{"ids": [...]}`, and the WebSocket at
 `/api/v1/ws?since={seq}`. The page sends `{"for": "<snooze_default>"}` with snooze and reads and
-changes the snooze times with `GET/PUT /api/v1/settings`. On a `reset`
+changes the snooze times with `GET/PUT /api/v1/settings`. The Send box posts to
+`POST /api/v1/notifications` with the session cookie. On a `reset`
 message, or a `settings` message that changes the snooze times, it reloads.
 
 ## Run it locally
