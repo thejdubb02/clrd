@@ -425,6 +425,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	go s.every(ctx, "snooze wake", wakeEvery, s.wakeSnoozed)
 	go s.every(ctx, "expiry", wakeEvery, s.expireDue)
+	go s.every(ctx, "repeats", wakeEvery, s.repeatDue)
 	go s.every(ctx, "check-ins", wakeEvery, s.checkins)
 	go s.every(ctx, "prune", time.Hour, s.prune)
 	go s.every(ctx, "cache sweep", time.Hour, s.fetch.sweep)
