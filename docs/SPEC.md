@@ -296,6 +296,25 @@ the session cookie (same-origin only) as well as a Bearer token.
   `clrd://pair?server=<base>&code=<code>`. Codes are single use, kept in memory
   only, and at most 64 wait at once (429 `busy` past that). The code alone
   approves nothing and cannot be claimed by another browser.
+- **Link a phone from a signed-in browser:** the reverse of pairing. A
+  signed-in browser (any token or session, any scope) posts
+  `POST /api/v1/link` and gets `{code, url, qr, expires_at}` with the link
+  `<CLRD_BASE_URL>/link?c=<code>`. The clrd app scans it and polls
+  `POST /api/v1/link/claim` (no auth) with `{code, secret, name}`: `secret`
+  is 32+ characters the app made, `name` its device name. The first claim
+  binds the secret and name to the code; a later claim with another secret
+  gets 410. It gets 202 `{"state":"waiting"}` until approved, then 200
+  `{"state":"approved", "token", "name"}` once: a new token with the creating
+  token's scopes, topics and grants, listed under the token typed in (the
+  session's parent when the creator is a browser session), so signing that
+  browser out keeps the phone and revoking the typed token revokes it. 410
+  when denied, expired, used or unknown. Only the creating token may read
+  `GET /api/v1/link/{code}` (`{name, state}`, state `waiting` or `claimed`)
+  and post `/api/v1/link/{code}/approve` (200 `{name}`, 409 before a phone
+  claims) or `/deny` (204); anyone else gets 404. `GET /link?c=` is the page a
+  phone camera opens: an "Open in the clrd app" link to
+  `clrd://link?server=<base>&code=<code>`. Link codes share the pairing
+  expiry, single use and 64 cap.
 - Setup: with no admin token in the database the server logs
   `<CLRD_BASE_URL>/setup?code=<one-time code>`. Opening it shows a form; posting
   it creates an admin token, shows it once and signs the browser in.
@@ -304,8 +323,8 @@ the session cookie (same-origin only) as well as a Bearer token.
 
 Native (JSON in, JSON out, errors as `{"error":"...","code":"..."}`).
 Codes: `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found`
-404, `conflict` 409, `reset` 410, `gone` 410 (pairing), `busy` 429
-(pairing), `internal` 500.
+404, `conflict` 409, `reset` 410, `gone` 410 (pairing, linking), `busy` 429
+(pairing, linking), `internal` 500.
 
 Notifications always carry every field: `""` for unset strings, `[]` for
 `tags` and `actions`, `null` for `snooze_until`. List returns

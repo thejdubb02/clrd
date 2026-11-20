@@ -32,16 +32,58 @@ type pairing struct {
 	created  time.Time
 	approver *Token // set on approve; the browser gets this token's access
 	denied   bool
+	// owner is set on a phone link (link.go): the browser token that made it.
+	// Pair and link codes share this map and its cap, never each other's routes.
+	owner    *Token
+	approved bool
 }
 
-// pairingLocked returns the live request for code, dropping expired ones. Call with pairMu held.
-func (s *Server) pairingLocked(code string) *pairing {
+// pairingLocked returns the live pair (link false) or link (link true)
+// request for code, dropping expired ones. Call with pairMu held.
+func (s *Server) pairingLocked(code string, link bool) *pairing {
 	for c, p := range s.pairs {
 		if time.Since(p.created) > pairTTL {
 			delete(s.pairs, c)
 		}
 	}
-	return s.pairs[code]
+	if p := s.pairs[code]; p != nil && (p.owner != nil) == link {
+		return p
+	}
+	return nil
+}
+
+// addPairing stores p under a new code, or returns 429 when too many wait.
+func (s *Server) addPairing(p *pairing) (string, error) {
+	code := randomString(22) // 22 base62 chars is 130 bits
+	s.pairMu.Lock()
+	defer s.pairMu.Unlock()
+	s.pairingLocked("", false)
+	if s.pairs == nil {
+		s.pairs = map[string]*pairing{}
+	}
+	if len(s.pairs) >= maxPairs {
+		return "", errf(429, "busy", "too many codes waiting; try again in a minute")
+	}
+	p.created = time.Now()
+	s.pairs[code] = p
+	return code, nil
+}
+
+// writeCode answers a create: the code, its link at path and that link as a QR code.
+func (s *Server) writeCode(w http.ResponseWriter, path, code string) error {
+	link := s.opt.BaseURL + path + "?c=" + code
+	img, err := qr.Encode(link, qr.M)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 201, map[string]any{
+		"code":       code,
+		"url":        link,
+		"qr":         "data:image/png;base64," + base64.StdEncoding.EncodeToString(img.PNG()),
+		"expires_at": time.Now().Add(pairTTL).UTC(),
+	})
+	return nil
 }
 
 func (s *Server) pairRoutes() {
@@ -50,7 +92,7 @@ func (s *Server) pairRoutes() {
 	s.route("GET /pair", s.handlePairPage)
 	s.api("GET /api/v1/pair/{code}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		s.pairMu.Lock()
-		p := s.pairingLocked(r.PathValue("code"))
+		p := s.pairingLocked(r.PathValue("code"), false)
 		var name string
 		var created time.Time
 		ok := p != nil && p.approver == nil && !p.denied
@@ -80,35 +122,14 @@ func (s *Server) handlePairCreate(w http.ResponseWriter, r *http.Request) error 
 	if !s.sameOrigin(r) {
 		return errf(403, "forbidden", "sign-in must come from this site")
 	}
-	code, secret := randomString(22), randomString(32) // 22 base62 chars is 130 bits
-	s.pairMu.Lock()
-	s.pairingLocked("")
-	if s.pairs == nil {
-		s.pairs = map[string]*pairing{}
-	}
-	full := len(s.pairs) >= maxPairs
-	if !full {
-		s.pairs[code] = &pairing{secret: secret, name: deviceName("", r.UserAgent()), created: time.Now()}
-	}
-	s.pairMu.Unlock()
-	if full {
-		return errf(429, "busy", "too many sign-ins waiting; try again in a minute")
-	}
-	link := s.opt.BaseURL + "/pair?c=" + code
-	img, err := qr.Encode(link, qr.M)
+	secret := randomString(32)
+	code, err := s.addPairing(&pairing{secret: secret, name: deviceName("", r.UserAgent())})
 	if err != nil {
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{Name: pairCookie, Value: secret, Path: "/api/v1/pair", MaxAge: int(pairTTL / time.Second),
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.https(r) || r.Header.Get("X-Forwarded-Proto") == "https"})
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 201, map[string]any{
-		"code":       code,
-		"url":        link,
-		"qr":         "data:image/png;base64," + base64.StdEncoding.EncodeToString(img.PNG()),
-		"expires_at": time.Now().Add(pairTTL).UTC(),
-	})
-	return nil
+	return s.writeCode(w, "/pair", code)
 }
 
 // handlePairClaim is polled by the waiting browser. Once approved it signs
@@ -128,7 +149,7 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) error {
 		return errf(410, "gone", "no sign-in waiting in this browser")
 	}
 	s.pairMu.Lock()
-	p := s.pairingLocked(in.Code)
+	p := s.pairingLocked(in.Code, false)
 	if p == nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(p.secret)) != 1 {
 		s.pairMu.Unlock()
 		return errf(410, "gone", "that code expired or was already used")
@@ -154,7 +175,7 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) decidePair(w http.ResponseWriter, r *http.Request, tok *Token, approve bool) error {
 	code := r.PathValue("code")
 	s.pairMu.Lock()
-	p := s.pairingLocked(code)
+	p := s.pairingLocked(code, false)
 	ok := p != nil && p.approver == nil && !p.denied
 	name := ""
 	if ok {
@@ -192,7 +213,7 @@ func (s *Server) decidePair(w http.ResponseWriter, r *http.Request, tok *Token, 
 func (s *Server) handlePairPage(w http.ResponseWriter, r *http.Request) error {
 	code := r.URL.Query().Get("c")
 	s.pairMu.Lock()
-	p := s.pairingLocked(code)
+	p := s.pairingLocked(code, false)
 	name := ""
 	if p != nil && p.approver == nil && !p.denied {
 		name = p.name
@@ -216,18 +237,24 @@ func (s *Server) renderPairPage(w http.ResponseWriter, data map[string]any) erro
 	h.Set("Cache-Control", "no-store")
 	h.Set("Referrer-Policy", "same-origin") // the code is in the URL; no-referrer would send Origin: null and break Approve
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+	if data["Title"] == nil {
+		data["Title"] = "Sign in a browser"
+	}
 	return pairPage.Execute(w, data)
 }
 
 var pairPage = template.Must(template.New("pair").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>Sign in a browser: clrd</title>
+<meta name="robots" content="noindex"><title>{{.Title}}: clrd</title>
 <style>body{font:16px system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;color:#0F1114;background:#F5F3EE}
 @media (prefers-color-scheme:dark){body{color:#F5F3EE;background:#0F1114}}
 button,a.btn{display:inline-block;font:inherit;padding:.6rem 1rem;border:1px solid #DEDAD1;border-radius:12px;background:transparent;color:inherit;text-decoration:none;margin:0 .5rem .5rem 0}
 .go{background:#0B7A55;color:#fff;border:0}</style></head><body>
-<h1>Sign in a browser</h1>
-{{with .Msg}}<p>{{.}}</p>{{else}}
+<h1>{{.Title}}</h1>
+{{if .Msg}}<p>{{.Msg}}</p>{{else if .Link}}
+<p><a class="btn go" href="{{.AppLink}}">Open in the clrd app</a></p>
+<p>No app yet? Install clrd on this phone, then tap Scan QR code inside the app and scan the code again.</p>
+{{else}}
 <p><b>{{.Name}}</b> wants to sign in to your clrd inbox.</p>
 <p>Only approve if you just scanned this code on your own screen. Never approve a code someone sent you.</p>
 {{if .As}}<p>It will get the same access as <b>{{.As}}</b>.</p>

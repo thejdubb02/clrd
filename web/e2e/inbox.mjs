@@ -206,6 +206,30 @@ try {
   await phonePage.getByText('Approved.').waitFor();
   await pc.locator('[data-inbox]').waitFor({ timeout: 5000 });
   console.log('ok: sign in a browser by approving its QR code from a phone');
+
+  // Link a phone (#74): the signed-in browser shows a code in Settings, the
+  // app claims it, the browser approves it by name, and the app gets a token.
+  {
+    await page.goto(base + '/app/settings');
+    const [made] = await Promise.all([
+      page.waitForResponse(r => r.url().endsWith('/api/v1/link')),
+      page.getByRole('button', { name: 'Link a phone' }).click(),
+    ]);
+    const { code: lc } = await made.json();
+    await page.locator('[data-link] [data-pair-qr]').waitFor({ state: 'visible' });
+    const claim = () => fetch(base + '/api/v1/link/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: lc, secret: 'p'.repeat(32), name: 'Pixel 9' }) });
+    assert.equal((await claim()).status, 202, 'claim before approve');
+    await page.getByText('Pixel 9 wants to connect').waitFor();
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await page.getByText('Connected: Pixel 9.').waitFor();
+    const got = await claim();
+    assert.equal(got.status, 200, 'claim after approve');
+    const { token: linked } = await got.json();
+    const list = await fetch(base + '/api/v1/notifications', { headers: { Authorization: `Bearer ${linked}` } });
+    assert.equal(list.status, 200, 'linked token lists notifications');
+    console.log('ok: link a phone from Settings by approving it by name');
+  }
 } finally {
   await browser?.close();
   server.kill();

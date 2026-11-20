@@ -106,6 +106,19 @@
   </ul>
   {{else}}<p>No devices connected in the last 10 minutes.</p>{{end}}
 </section>
+<section class="panel pair" aria-labelledby="link-h" data-link hidden>
+  <h2 id="link-h">Link a phone</h2>
+  <p>Open the clrd app on your phone, tap Scan QR code and scan the code. You approve the phone here before it connects, and it gets the same access as this browser.</p>
+  <button class="btn btn-ink" type="button" data-pair-start>Link a phone</button>
+  <img data-pair-qr alt="QR code to link a phone" width="232" height="232" hidden>
+  <p class="quiet" data-pair-msg role="status"></p>
+  <div data-link-ask hidden>
+    <p><b data-link-name></b> wants to connect.</p>
+    <button class="btn btn-ink" type="button" data-link-approve>Approve</button>
+    <button class="btn" type="button" data-link-deny>Deny</button>
+  </div>
+</section>
+<script src="/static/pair.js" defer></script>
 <section class="panel" aria-labelledby="send-h">
   <h2 id="send-h">Send a test notification</h2>
   <p>Run this with a token that has the publish scope. It should appear on every device within a second.</p>

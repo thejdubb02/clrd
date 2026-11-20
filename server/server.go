@@ -387,6 +387,7 @@ func (s *Server) routesSetup() {
 	s.fetchRoutes()
 	s.route("DELETE /api/v1/session", s.handleSignOut)
 	s.pairRoutes()
+	s.linkRoutes()
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in PublishInput

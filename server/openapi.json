@@ -3599,6 +3599,147 @@
     ]
    }
   },
+  "/api/v1/link": {
+   "post": {
+    "summary": "Start linking a phone by QR code",
+    "tags": [
+     "auth"
+    ],
+    "description": "Any token or signed-in browser. Returns a short-lived code (2 minutes, single use), the link <base>/link?c=<code> and that link as a QR code PNG. The clrd app scans it and claims the code; this token then approves the phone by name. 429 when too many codes are waiting.",
+    "responses": {
+     "201": {
+      "description": "code, url, qr (data: URI), expires_at"
+     },
+     "401": {
+      "description": "No token"
+     },
+     "429": {
+      "description": "Too many codes waiting"
+     }
+    }
+   }
+  },
+  "/api/v1/link/claim": {
+   "post": {
+    "summary": "Claim a phone link",
+    "tags": [
+     "auth"
+    ],
+    "description": "No auth; called by the clrd app. Body {\"code\", \"secret\", \"name\"}: secret is 32+ characters the app made, name the device name. The first claim binds the secret and name; later claims must send the same secret. 202 {\"state\":\"waiting\"} until approved; 200 {\"state\":\"approved\", \"token\", \"name\"} once approved, with a new token that has the approving token's access and is revoked with it; 410 when denied, expired, used, unknown or the secret does not match.",
+    "responses": {
+     "200": {
+      "description": "Approved: state, token, name"
+     },
+     "202": {
+      "description": "Waiting for approval"
+     },
+     "400": {
+      "description": "Secret shorter than 32 characters"
+     },
+     "410": {
+      "description": "Denied, expired, used or another secret"
+     }
+    }
+   }
+  },
+  "/api/v1/link/{code}": {
+   "get": {
+    "summary": "Which phone scanned a link code",
+    "tags": [
+     "auth"
+    ],
+    "description": "Only the token that made the code. name is the phone's name, empty until one scans; state is waiting or claimed.",
+    "responses": {
+     "200": {
+      "description": "name, state"
+     },
+     "404": {
+      "description": "Expired, used, unknown or not made by this token"
+     }
+    },
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/link/{code}/approve": {
+   "post": {
+    "summary": "Approve a phone link",
+    "tags": [
+     "auth"
+    ],
+    "description": "Only the token that made the code. The phone's next claim gets its token.",
+    "responses": {
+     "200": {
+      "description": "name"
+     },
+     "404": {
+      "description": "Expired, used, unknown or not made by this token"
+     },
+     "409": {
+      "description": "No phone has scanned the code yet"
+     }
+    },
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/link/{code}/deny": {
+   "post": {
+    "summary": "Deny a phone link",
+    "tags": [
+     "auth"
+    ],
+    "description": "Only the token that made the code. The code is dropped and the phone's next claim gets 410.",
+    "responses": {
+     "204": {
+      "description": "Denied"
+     },
+     "404": {
+      "description": "Expired, used, unknown or not made by this token"
+     }
+    },
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/link": {
+   "get": {
+    "summary": "Page a phone link QR code opens",
+    "tags": [
+     "auth"
+    ],
+    "description": "HTML, for a phone camera that scanned the code outside the app. Query c is the code. A clrd://link?server=...&code=... link that hands the code to the app, or a note that it expired.",
+    "responses": {
+     "200": {
+      "description": "HTML page"
+     }
+    }
+   }
+  },
   "/pair": {
    "get": {
     "summary": "Approve page the QR code opens",

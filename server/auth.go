@@ -478,13 +478,24 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *To
 	if err := s.endSession(r); err != nil {
 		return nil, err
 	}
-	ctx := context.WithoutCancel(r.Context()) // never leave a half-made session
-	st, raw, err := s.createToken(ctx, &Token{Name: deviceName(name, r.UserAgent()), Scopes: parent.Scopes, Topics: parent.Topics, Grants: parent.Grants})
+	st, raw, err := s.childToken(context.WithoutCancel(r.Context()), parent, parent.ID, deviceName(name, r.UserAgent()))
 	if err != nil {
 		return nil, err
 	}
+	s.setCookie(w, r, raw, 365*24*3600)
+	return st, nil
+}
+
+// childToken mints a token named name with the scopes, topics and grants of
+// access, listed under parentID so revoking that token revokes this one.
+// Pass a context that is not cancelled mid-way: never leave a half-made token.
+func (s *Server) childToken(ctx context.Context, access *Token, parentID, name string) (*Token, string, error) {
+	st, raw, err := s.createToken(ctx, &Token{Name: name, Scopes: access.Scopes, Topics: access.Topics, Grants: access.Grants})
+	if err != nil {
+		return nil, "", err
+	}
 	// Only while the parent exists, so a racing revoke cannot miss this one.
-	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id) SELECT ?, id FROM tokens WHERE id = ?`, st.ID, parent.ID)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id) SELECT ?, id FROM tokens WHERE id = ?`, st.ID, parentID)
 	if err == nil {
 		if n, _ := res.RowsAffected(); n == 0 {
 			err = errf(401, "unauthorized", "token revoked")
@@ -494,11 +505,10 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *To
 		if derr := s.DeleteToken(ctx, st.ID); derr != nil {
 			s.log.Warn("drop half-made session", "err", derr)
 		}
-		return nil, err
+		return nil, "", err
 	}
-	s.capSessions(ctx, parent.ID)
-	s.setCookie(w, r, raw, 365*24*3600)
-	return st, nil
+	s.capSessions(ctx, parentID)
+	return st, raw, nil
 }
 
 // maxSessions is how many browsers one token may have signed in at once.
