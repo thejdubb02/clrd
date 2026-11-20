@@ -299,17 +299,20 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	}
 	tok := s.ntfyAuth(r)
 	s.noteIgnored(r)
-	if t := r.URL.Query().Get("template"); t != "" && r.Method != http.MethodGet {
+	file := ntfyFilename(r)
+	if r.Method == http.MethodGet {
+		file = "" // GET /{topic}/publish has no body to be the file
+	}
+	inline := ntfyMarkdown(param(r, "Template", "Tpl")) // ntfy's yes/true/1 (#272); any other ?template= is a named one
+	tpl := inline != nil && *inline && file == "" && r.Method != http.MethodGet
+	if t := r.URL.Query().Get("template"); t != "" && inline == nil && r.Method != http.MethodGet {
 		return s.webhookIn(w, r, tok, t) // webhooks.go
 	}
 	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid")}
 	if in.ExternalID == "" {
 		in.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
 	}
-	file := ntfyFilename(r)
-	if r.Method == http.MethodGet {
-		file = "" // GET /{topic}/publish has no body to be the file
-	}
+	title, prio := param(r, "Title", "Ti", "T"), param(r, "Priority", "Prio", "P")
 	if file == "" {
 		body, err := io.ReadAll(io.LimitReader(r.Body, ntfyMaxBody+1))
 		if err != nil {
@@ -319,8 +322,17 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 			return errf(413, "too_large", "message longer than %d bytes (send a file with X-Filename)", ntfyMaxBody)
 		}
 		in.Message = strings.TrimSpace(string(body))
+		if tpl {
+			msg := param(r, "Message", "M")
+			if err := ntfyTemplate(r, body, &msg, &title, &prio); err != nil {
+				return err
+			}
+			if param(r, "Message", "M") != "" {
+				in.Message = msg
+			}
+		}
 	}
-	if in.Message == "" {
+	if in.Message == "" && !tpl {
 		in.Message = param(r, "Message", "M")
 	}
 	if in.Message == "" && file != "" {
@@ -330,11 +342,11 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		in.Attachment = &Attachment{URL: a}
 	}
 	var err error
-	in.Title = param(r, "Title", "Ti", "T")
+	in.Title = title
 	in.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
 	in.Click = param(r, "Click")
 	in.Icon = ntfyIcon(param(r, "Icon"))
-	if in.Priority, err = ntfyPriority(param(r, "Priority", "Prio", "P")); err != nil {
+	if in.Priority, err = ntfyPriority(prio); err != nil {
 		return err
 	}
 	if in.Actions, err = ntfyActions(param(r, "Actions", "Action")); err != nil {
@@ -354,6 +366,29 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	return s.ntfyReply(w, r.Context(), tok, in)
+}
+
+// ntfyTemplate renders ntfy's inline templates (?tpl=yes): the message,
+// title and priority are Go templates over the JSON body, with the same
+// functions and limits as a saved webhook template. An empty one stays empty.
+func ntfyTemplate(r *http.Request, body []byte, msg, title, prio *string) error {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var data any
+	if err := dec.Decode(&data); err != nil {
+		return errf(400, "bad_request", "template: the body must be JSON: %v", err)
+	}
+	h := Webhook{Message: *msg, Title: *title, Priority: *prio}
+	t, err := h.parse(r.Header)
+	if err != nil {
+		return err
+	}
+	for f, p := range map[string]*string{"message": msg, "title": title, "priority": prio} {
+		if *p, err = render(t, f, data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ntfyFilename is the file name that makes a ntfy publish body a file.
