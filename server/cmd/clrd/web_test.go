@@ -295,6 +295,35 @@ func act(t *testing.T, c *http.Client, base, id, action string) server.Notificat
 	return n
 }
 
+// TestDeviceFamily: a browser signed in with a read,publish token sees itself
+// and that token in sync, never another person's devices (issue #245).
+func TestDeviceFamily(t *testing.T) {
+	s, ts, _ := realServer(t)
+	ctx := context.Background()
+	_, mine, err := s.CreateToken(ctx, "my phone", []string{"read", "publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, theirs, err := s.CreateToken(ctx, "their phone", []string{"read", "publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish(t, ts, mine, "home", "from mine")
+	publish(t, ts, theirs, "work", "from theirs")
+	c := browser()
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	if code, _ := submit(t, c, ts.URL, page, mine, "laptop"); code != 200 {
+		t.Fatalf("sign in: %d", code)
+	}
+	_, body, _ := fetch(t, c, ts.URL+"/app/settings")
+	if !strings.Contains(body, "In sync on 2 devices") || !strings.Contains(body, "<span>laptop</span>") || !strings.Contains(body, "<span>my phone</span>") {
+		t.Errorf("want this browser and its phone in sync, got header %q", regexp.MustCompile(`data-live="devices">[^<]*`).FindString(body))
+	}
+	if strings.Contains(body, "their phone") {
+		t.Error("a non-admin browser sees another person's device")
+	}
+}
+
 // TestHidePublicPages: CLRD_PUBLIC_PAGES=off keeps a private server's
 // address from showing the landing page or docs, or being indexed.
 func TestHidePublicPages(t *testing.T) {

@@ -157,15 +157,21 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	for _, t := range tc {
 		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon})
 	}
-	if tok.Has("admin") { // device names are the owner's business, not every reader's
-		toks, err := a.s.Tokens(ctx, time.Now().Add(-10*time.Minute))
-		if err != nil {
-			return snap, err
-		}
-		for _, t := range toks {
-			if t.LastSeenAt != nil {
-				snap.Devices = append(snap.Devices, web.Device{ID: t.ID, Name: t.Name, LastSeen: *t.LastSeenAt})
-			}
+	// An admin sees every device; anyone else only their own (issue #245), so
+	// a reader never learns other people's device names.
+	since := time.Now().Add(-10 * time.Minute)
+	var toks []*server.Token
+	if tok.Has("admin") {
+		toks, err = a.s.Tokens(ctx, since)
+	} else {
+		toks, err = a.s.Family(ctx, tok.ID, since)
+	}
+	if err != nil {
+		return snap, err
+	}
+	for _, t := range toks {
+		if t.LastSeenAt != nil {
+			snap.Devices = append(snap.Devices, web.Device{ID: t.ID, Name: t.Name, LastSeen: *t.LastSeenAt})
 		}
 	}
 	return snap, nil
