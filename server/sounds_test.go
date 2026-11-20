@@ -70,4 +70,11 @@ func TestDeviceSound(t *testing.T) {
 	if code, _ := call(t, ts, "PUT", "/api/v1/settings", phone, map[string]any{"sound": "kazoo"}); code != 400 {
 		t.Fatalf("settings unknown sound: %d", code)
 	}
+	// A save refused for another field leaves the sound alone.
+	if code, _ := call(t, ts, "PUT", "/api/v1/settings", phone, map[string]any{"sound": "none", "snooze_intervals": []string{}}); code != 400 {
+		t.Fatalf("bad snooze list: %d", code)
+	}
+	if st, _ := soundIn(phone); st != "default" {
+		t.Fatalf("a refused settings save changed the sound: %v", st)
+	}
 }

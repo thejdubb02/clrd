@@ -214,7 +214,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		return Settings{}, err
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
-		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil
+		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil
 	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews")
 	}
@@ -234,10 +234,8 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 			return Settings{}, errf(403, "forbidden", "token may not use topic %q", t)
 		}
 	}
-	if p.Sound != nil {
-		if err := s.SetSound(ctx, tok, tok.ID, *p.Sound); err != nil {
-			return Settings{}, err
-		}
+	if p.Sound != nil && !slices.Contains(soundNames, *p.Sound) { // checked now, set once the rest is saved
+		return Settings{}, errf(400, "bad_request", "unknown sound %q, use one of: %s", *p.Sound, strings.Join(soundNames, ", "))
 	}
 	s.mu.Lock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -287,6 +285,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 	}
 	s.mu.Unlock()
+	if err == nil && p.Sound != nil {
+		err = s.SetSound(ctx, tok, tok.ID, *p.Sound)
+	}
 	if err != nil {
 		return Settings{}, err
 	}
