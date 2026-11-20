@@ -61,6 +61,10 @@ Fixed, Removed, Security), as one line a user can understand.
   slow rotation that pauses on hover or focus, and copy-ready commands and AI
   agent prompts that use your own server address. A first run starts with
   sending a test.
+- Server: silences. Mute a topic, a tag, or a tag within a topic until a set
+  time; notifications still arrive and sync but carry `silenced: true` so
+  apps stay quiet, and ntfy apps get them at min priority. Set over the API:
+  docs/silences.md.
 - Server: outgoing webhooks. A topic can POST to your URL when a notification
   is dismissed, acknowledged, resolved, snoozed or replied to, signed with
   HMAC, retried with backoff and turned off with a notice after a day of
