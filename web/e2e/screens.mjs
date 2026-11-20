@@ -87,6 +87,7 @@ try {
     ['inbox', '/app'],
     ['inbox-topic', '/app?topic=infra'],
     ['inbox-empty-search', '/app?q=nothing-matches-this'],
+    ['inbox-empty', '/app?topic=quiet'],
     ['snoozed', '/app/snoozed'],
     ['cleared', '/app/cleared'],
     ['settings', '/app/settings'],

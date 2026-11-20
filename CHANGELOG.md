@@ -50,6 +50,10 @@ Fixed, Removed, Security), as one line a user can understand.
   `CLRD_BASE_URL` is unset, and a missing token or topic error says what to
   do next. `clrd token create` no longer needs `--name`.
 
+- Web: the empty inbox shows one tip at a time, with previous and next, a
+  slow rotation that pauses on hover or focus, and copy-ready commands and AI
+  agent prompts that use your own server address. A first run starts with
+  sending a test.
 - Server: outgoing webhooks. A topic can POST to your URL when a notification
   is dismissed, acknowledged, resolved, snoozed or replied to, signed with
   HMAC, retried with backoff and turned off with a notice after a day of
