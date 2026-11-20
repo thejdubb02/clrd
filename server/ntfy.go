@@ -112,7 +112,7 @@ func (s *Server) ntfyRoutes() {
 			if _, _, ok := ntfyPassword(r); ok { // taken before bcrypt, kept only if the password was wrong
 				ip := clientIP(r)
 				if wait := s.pwLimit.take(ip, time.Now()); wait > 0 {
-					return retryAfter(w, wait, "too many wrong passwords from this address, try again later")
+					return retryAfter(wait, "too many wrong passwords from this address, try again later")
 				}
 				var once sync.Once
 				settle := func(wrong bool) { // a right or unchecked password gets its token back

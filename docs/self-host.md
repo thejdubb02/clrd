@@ -81,6 +81,8 @@ at once.
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
 | `CLRD_ATTACHMENT_MAX_MB` | `15` | Largest file one notification can carry, in MB. |
 | `CLRD_ATTACHMENT_TOTAL_MB` | `5000` | Space all stored files may use together, in MB. Uploads past it get 507. |
+| `CLRD_RATE_TOKEN` | `60` | Publishes a minute one token may send, with a burst of the same size. Past it gets 429 with `Retry-After`. `0` turns it off. |
+| `CLRD_RATE_TOPIC` | `60` | Publishes a minute one topic may take from all tokens together. `0` turns it off. |
 
 ## HTTPS and the reverse proxy
 

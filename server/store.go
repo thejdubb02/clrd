@@ -419,6 +419,11 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
 		return nil, err
 	}
+	if in.file == "" { // PublishFile already spent it, before the upload
+		if err := s.publishLimit(tok, in.Topic); err != nil {
+			return nil, err
+		}
+	}
 	if err := checkImageURL("icon", in.Icon); err != nil {
 		return nil, err
 	}
@@ -566,6 +571,9 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 	}
 	if in.Status == "resolved" {
 		return nil, errf(400, "bad_request", "status resolved cannot carry a file")
+	}
+	if err := s.publishLimit(tok, in.Topic); err != nil {
+		return nil, err
 	}
 	f, err := os.CreateTemp(s.opt.Attachments, ".up-*") // dot: the sweep never mistakes it for a finished file
 	if err != nil {

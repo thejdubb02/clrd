@@ -402,6 +402,9 @@ is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
   the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
   `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still
   exist; open notifications are never pruned, so their files keep counting).
+  `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` (60 each, publishes a minute per
+  token and per topic, with a burst of the same size; `0` turns one off).
+  Every publish counts, on every route; over a cap is a 429 `rate_limited`.
   An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.

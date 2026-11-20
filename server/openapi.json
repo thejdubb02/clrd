@@ -288,7 +288,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
-    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; over CLRD_ATTACHMENT_TOTAL_MB is a 507.",
+    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; over CLRD_ATTACHMENT_TOTAL_MB is a 507. Over the per-token or per-topic publish rate (CLRD_RATE_TOKEN, CLRD_RATE_TOPIC) is a 429 with Retry-After.",
     "requestBody": {
      "required": true,
      "content": {
