@@ -438,10 +438,11 @@
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   });
 
-  // An icon that fails to load (gone, host down) is hidden, not shown broken (#199).
-  document.addEventListener('error', e => { if (e.target.matches?.('img[data-icon]')) e.target.hidden = true; }, true);
+  // An icon that fails to load (gone, host down) is hidden, not shown broken (#199), so no gap is left (#309).
+  const icons = 'img[data-icon], img.favicon';
+  document.addEventListener('error', e => { if (e.target.matches?.(icons)) e.target.hidden = true; }, true);
   // An icon that failed before this script ran.
-  document.querySelectorAll('img[data-icon]').forEach(i => { if (i.complete && !i.naturalWidth) i.hidden = true; });
+  document.querySelectorAll(icons).forEach(i => { if (i.complete && !i.naturalWidth) i.hidden = true; });
 
   // Share and Copy (SPEC section 2): title, message and click, from the card.
   // Share needs a secure page (https or localhost); a plain http LAN address has

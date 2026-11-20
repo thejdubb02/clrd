@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: dark site icons (GitHub's and others) no longer vanish in dark mode.
+  Link, topic and notification icons sit on a small light tile there, and a
+  link icon that fails to load is hidden instead of leaving a gap (#309).
 - Server: behind a TLS proxy with `CLRD_BASE_URL` unset, the app link on the
   pair and link pages now says `https://` instead of `http://`, taken from the
   proxy's `X-Forwarded-Proto` (#254).

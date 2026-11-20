@@ -417,6 +417,9 @@ try {
   assert.equal(await fbody.locator('img:not(.favicon), script, iframe').count(), 0, 'raw HTML or an image got through');
   assert.deepEqual(await fbody.locator('img.favicon').evaluateAll(i => i.map(e => e.getAttribute('src'))), ['/api/v1/favicon?host=example.com'], 'site icon missing');
   assert.ok(await fbody.locator('img.favicon').evaluate(i => i.complete && i.naturalWidth > 0), 'site icon did not load');
+  await mp.emulateMedia({ colorScheme: 'dark' });
+  assert.notEqual(await fbody.locator('img.favicon').evaluate(i => getComputedStyle(i).backgroundColor), 'rgba(0, 0, 0, 0)', 'no tile behind the site icon in dark mode (#309)');
+  await mp.emulateMedia({ colorScheme: null });
   assert.ok((await fbody.textContent()).includes('<script>window.pwned=1</script>'), 'raw HTML not shown as typed');
   assert.equal(await mp.evaluate(() => window.pwned), undefined);
   const rbody = mp.locator('article.card', { hasText: 'Raw text' }).locator('[data-body]');
