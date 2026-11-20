@@ -536,6 +536,10 @@ func TestReplyColumnAdded(t *testing.T) {
 		}
 		old = strings.Replace(old, line, "", 1)
 	}
+	if !strings.Contains(old, "  expires_at INTEGER,\n") {
+		t.Fatal("schema has no expires_at line to drop")
+	}
+	old = strings.Replace(old, "  expires_at INTEGER,\n", "", 1)
 	if _, err := db.Exec(old); err != nil {
 		t.Fatal(err)
 	}

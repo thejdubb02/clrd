@@ -19,7 +19,7 @@ web) and it clears on all the others. When the problem fixes itself, the sender 
 everywhere without anyone touching it.
 
 <p align="center">
-  <img src=".github/images/inbox-light.png" alt="The clrd web inbox with three open notifications, one acknowledged on a phone" width="760">
+  <img src=".github/images/inbox-light.png" alt="The clrd web inbox: an urgent backup failure, a disk warning, an alert acknowledged on a phone and an agent asking to merge a pull request" width="760">
   <img src=".github/images/inbox-phone-dark.png" alt="The same inbox on a phone in dark mode" width="200">
 </p>
 
@@ -42,7 +42,8 @@ offline catches up the moment it reconnects.
 - **State that syncs.** Dismiss (hide it), acknowledge (someone is on it),
   resolve (it is fixed) and snooze, each shown on every device.
 - **Self-resolving alerts.** Senders tag an alert with their own ID and resolve
-  it by that ID when the fault clears.
+  it by that ID when the fault clears. Or give one `"expires": "30m"` and it
+  clears itself then.
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
@@ -54,7 +55,7 @@ offline catches up the moment it reconnects.
   notification. The server stores and serves them and the Android app shows
   them; the web inbox does not show them yet.
 - **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
-  work without JavaScript, dark mode, phone width.
+  work without JavaScript, a Ctrl+K command palette, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, Share and Copy on each
   notification, Markdown formatting and tappable links.

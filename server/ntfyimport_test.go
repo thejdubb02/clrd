@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -197,6 +198,23 @@ func TestNtfyImport(t *testing.T) {
 	}
 	if c := basic(t, "GET", u+"/alerts/json?poll=1", "phone", "wrong", ""); c != 401 {
 		t.Errorf("wrong password: %d, want 401", c)
+	}
+
+	// /v1/account: what ntfy's app and scripts use to check a login.
+	acct := func(c int, b string) string { return fmt.Sprint(c, " ", strings.TrimSpace(b)) }
+	if got := acct(bearer(t, "GET", u+"/v1/account", boss, "")); !strings.Contains(got, `"role":"admin"`) || !strings.HasPrefix(got, "200") {
+		t.Errorf("account, admin token: %s", got)
+	}
+	req, _ = http.NewRequest("GET", u+"/v1/account", nil)
+	req.SetBasicAuth("phone", "phonepass")
+	if got := acct(send(t, req)); got != `200 {"role":"user","username":"phone"}` {
+		t.Errorf("account, password: %s", got)
+	}
+	if got := acct(bearer(t, "GET", u+"/v1/account", "", "")); got != `200 {"role":"anonymous","username":"*"}` {
+		t.Errorf("account, no credentials: %s", got)
+	}
+	if c := basic(t, "GET", u+"/v1/account", "phone", "wrong", ""); c != 401 {
+		t.Errorf("account, wrong password: %d", c)
 	}
 
 	// Anonymous: ntfy's * rules, no credentials, ntfy routes only.

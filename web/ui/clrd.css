@@ -1,6 +1,17 @@
 /* clrd's own parts on top of Basecoat. Keep this short: prefer a Basecoat
    component with our tokens over a new class. */
 
+@layer base {
+  /* Running text: links stay underlined so they read as links without colour. */
+  :is(p, li, dd, td, figcaption, blockquote) a:not([class]) {
+    @apply underline decoration-foreground/35 decoration-1 underline-offset-3 hover:decoration-foreground;
+  }
+  pre { @apply bg-card text-body overflow-x-auto rounded-xl border px-4 py-3.5 font-mono text-[13px]/relaxed; }
+  :not(pre) > code:not([class]) { @apply bg-card rounded-sm border px-1 py-px font-mono text-[0.85em]; overflow-wrap: anywhere; }
+  summary { list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+}
+
 @layer components {
   /* Clear is the one green button. It means "dismiss everywhere". */
   .btn[data-variant='clear'] {
@@ -34,4 +45,75 @@
 
   /* A closed <details> keeps its absolute menu in layout, which widens a phone page. */
   details.popover:not([open]) > [data-popover] { display: none; }
+
+  /* Inbox sidebar: views and topics. */
+  .signin-form { @apply bg-card grid gap-5 rounded-xl border p-5; }
+  .side-link { @apply text-body hover:bg-accent hover:text-foreground flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-sm whitespace-nowrap [&_svg]:text-muted-foreground; }
+  .side-link[aria-current] { @apply bg-card text-foreground ring-border font-medium ring-1 [&_svg]:text-foreground; }
+  /* Pairing QR codes (sign-in page, Settings): crisp pixels on white so phone cameras read them in dark mode. */
+  .pair-qr { @apply block rounded-xl bg-white; image-rendering: pixelated; }
+  .count { @apply text-muted-foreground ms-auto ps-2 font-mono text-xs; font-variant-numeric: tabular-nums; }
+  #sync.is-live .sync-dot { @apply bg-clear; }
+
+  /* A notification. Basecoat's card ring and clipping are off: the snooze menu
+     hangs outside it. The card under the keyboard (J and K) gets an ink edge. */
+  article.card { @apply isolate relative has-[details[open]]:z-10 gap-0 overflow-visible py-0 ring-0; }
+  article.card.is-selected { @apply border-foreground/45; }
+
+  /* The cleared moment, the one signature motion (Android plays the same):
+     green washes across the card from the left, a check draws in with the
+     reason, then the card folds away. inbox.js runs the fold. */
+  article.card::before { @apply bg-clear/8 pointer-events-none absolute inset-0 -z-10 origin-left scale-x-0 rounded-[inherit] content-['']; }
+  article.card .gone { @apply hidden; }
+  article.card.is-leaving { @apply border-clear; }
+  article.card.is-leaving::before { @apply scale-x-100; }
+  article.card.is-leaving .gone { @apply text-clear col-span-full flex items-center gap-2 pb-3 text-sm font-medium; }
+  article.card.is-folding { @apply overflow-hidden; }
+  @media (prefers-reduced-motion: no-preference) {
+    article.card::before { transition: transform 420ms cubic-bezier(.2, .7, .2, 1); }
+    article.card.is-leaving .gone path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: clrd-draw 260ms 180ms ease-out forwards; }
+  }
+
+  /* Undo and error notices only; never one per action. */
+  .notice { @apply bg-foreground text-background fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg py-1.5 ps-4 pe-1.5 text-sm shadow-lg motion-safe:animate-[clrd-up_180ms_ease-out]; }
+  .notice:not(:has(button)) { @apply pe-4; }
+
+  /* Landing: one alert on three devices. Swiped on the phone, the others follow. */
+  .device { @apply bg-card relative overflow-hidden rounded-xl border px-3 py-3.5; }
+  .mini { @apply bg-card rounded-lg border px-3 py-2.5; }
+  .mini-cleared { @apply text-clear absolute inset-x-3 top-10 flex items-center gap-2 px-3 py-2.5 text-xs font-medium opacity-0; }
+  @media (prefers-reduced-motion: no-preference) {
+    .swipe { animation: clrd-swipe 7s cubic-bezier(.4, 0, .2, 1) infinite; }
+    .follow { animation: clrd-follow 7s ease infinite; }
+    .mini-cleared { animation: clrd-cleared 7s ease infinite; }
+  }
+
+  /* Docs pages rendered from docs/*.md. */
+  .prose { @apply text-body max-w-[76ch] min-w-0 text-[15px]/relaxed; }
+  .prose :is(h1, h2, h3, h4) { @apply text-foreground font-semibold tracking-tight; }
+  .prose h1 { @apply mb-4 text-3xl tracking-[-0.03em]; }
+  .prose h2 { @apply mt-10 mb-3 border-t pt-8 text-xl; }
+  .prose h3 { @apply mt-8 mb-2 text-base; }
+  .prose h4 { @apply mt-6 mb-2 text-sm; }
+  .prose :is(p, ul, ol, pre, blockquote, table) { @apply mb-4; }
+  .prose :is(ul, ol) { @apply ps-5; }
+  .prose ul { @apply list-disc; }
+  .prose ol { @apply list-decimal; }
+  .prose li { @apply mb-1 marker:text-muted-foreground; }
+  .prose a { @apply text-foreground underline decoration-foreground/35 decoration-1 underline-offset-3 hover:decoration-foreground; }
+  .prose blockquote { @apply border-s-2 ps-4; }
+  .prose table { @apply block overflow-x-auto text-sm; }
+  .prose :is(th, td) { @apply border-b py-2 pe-4 text-start align-top; }
+  .prose th { @apply text-foreground font-medium; }
+  .prose hr { @apply my-8; }
 }
+
+/* Radius rule (docs/SPEC.md section 10): inputs are 6, like chips. Basecoat
+   ships 8. Unlayered, so it wins over the component layer. */
+:where(input:not([type='checkbox'], [type='radio'], [type='hidden']), textarea, select, .input-group) { border-radius: 6px; }
+
+@keyframes clrd-draw { to { stroke-dashoffset: 0; } }
+@keyframes clrd-up { from { opacity: 0; transform: translateY(8px); } }
+@keyframes clrd-swipe { 0%, 18% { transform: none; opacity: 1; } 26% { transform: translateX(120%); opacity: 0; } 88% { transform: translateX(120%); opacity: 0; } 89% { transform: none; opacity: 0; } 96%, 100% { opacity: 1; } }
+@keyframes clrd-follow { 0%, 27% { opacity: 1; border-color: var(--border); } 30% { border-color: var(--clear); opacity: 1; } 36% { opacity: 0; transform: scale(.97); } 88% { opacity: 0; transform: none; } 96%, 100% { opacity: 1; } }
+@keyframes clrd-cleared { 0%, 32% { opacity: 0; } 38%, 78% { opacity: 1; } 86%, 100% { opacity: 0; } }

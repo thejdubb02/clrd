@@ -1,134 +1,198 @@
 {{define "app"}}{{template "head" .}}<meta name="robots" content="noindex">
+<script src="/static/vendor/basecoat.min.js" defer></script>
+<script src="/static/vendor/command.min.js" defer></script>
 <script src="/static/inbox.js" defer></script>
 </head>
-<body class="app">
+<body>
 <a class="skip" href="#main">Skip to notifications</a>
-<div class="shell" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}">
-  <aside class="side">
-    {{template "brand" "/app"}}
-    <nav class="views" aria-label="Views" data-live="views">
-      <a href="/app"{{if eq .View "inbox"}} aria-current="page"{{end}}>Inbox <span class="count">{{.Inbox}}</span></a>
-      <a href="/app/snoozed"{{if eq .View "snoozed"}} aria-current="page"{{end}}>Snoozed <span class="count">{{.Snoozed}}</span></a>
-      <a href="/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>Cleared <span class="count">{{.Cleared}}</span></a>
-      <a href="/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>Settings</a>
+{{$base := "/app"}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "/app/%s" .View}}{{end}}
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}">
+  <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
+    <div class="md:px-2">{{template "brand" "/app"}}</div>
+    <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
+      <a class="side-link" href="/app"{{if eq .View "inbox"}} aria-current="page"{{end}}>{{template "i-inbox"}}Inbox <span class="count">{{.Inbox}}</span></a>
+      <a class="side-link" href="/app/snoozed"{{if eq .View "snoozed"}} aria-current="page"{{end}}>{{template "i-clock"}}Snoozed <span class="count">{{.Snoozed}}</span></a>
+      <a class="side-link" href="/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>{{template "i-check-check"}}Cleared <span class="count">{{.Cleared}}</span></a>
+      <a class="side-link" href="/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>{{template "i-settings"}}Settings</a>
     </nav>
-    <nav class="topics" aria-labelledby="topics-h" data-live="topics"{{if not .Snap.Topics}} hidden{{end}}>
-      <h2 id="topics-h">Topics</h2>
-      {{$base := "/app"}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "/app/%s" .View}}{{end}}
-      <a href="{{$base}}"{{if and (not .Topic) (ne .View "settings")}} aria-current="true"{{end}}>All topics</a>
-      {{range .Snap.Topics}}<a href="{{$base}}?topic={{.Name}}"{{if eq .Name $.Topic}} aria-current="true"{{end}}>{{.Name}} <span class="count">{{.Open}}</span></a>
+    <nav class="order-3 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-labelledby="topics-h" data-live="topics"{{if not .Snap.Topics}} hidden{{end}}>
+      <h2 id="topics-h" class="text-muted-foreground px-2 pb-1 text-xs font-medium max-md:sr-only">Topics</h2>
+      <a class="side-link" href="{{$base}}"{{if and (not .Topic) (ne .View "settings")}} aria-current="true"{{end}}>All topics</a>
+      {{range .Snap.Topics}}<a class="side-link" href="{{$base}}?topic={{.Name}}"{{if eq .Name $.Topic}} aria-current="true"{{end}}>{{template "i-hash"}}{{.Name}} <span class="count">{{.Open}}</span></a>
       {{end}}
     </nav>
-    <div class="sync" id="sync">
-      <span class="sync-dot" aria-hidden="true"></span>
-      <span data-live="devices">In sync on {{len .Snap.Devices}} {{plural (len .Snap.Devices) "device" "devices"}}</span>
-      <span class="sync-state" data-conn></span>
+    <div class="ms-auto flex items-center gap-2 text-xs md:bg-card md:ms-0 md:mt-auto md:flex-wrap md:rounded-lg md:border md:p-3 md:text-sm" id="sync">
+      <span class="sync-dot bg-border size-2 shrink-0 rounded-full" aria-hidden="true"></span>
+      <span class="tabular-nums" data-live="devices">In sync on {{len .Snap.Devices}} {{plural (len .Snap.Devices) "device" "devices"}}</span>
+      <span class="meta empty:hidden md:basis-full md:ps-4" data-conn></span>
     </div>
   </aside>
 
-  <main id="main" class="main">
-    <p class="offline" role="alert" data-offline hidden>Lost the live connection to the server, so this page may be out of date. Still trying. <a href="">Reload</a></p>
+  <main id="main" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
+    <div class="alert mb-4" data-variant="destructive" role="alert" data-offline hidden>{{template "i-wifi-off"}}<h2>Lost the live connection</h2><section>This page may be out of date. Still trying. <a href="" class="underline">Reload</a></section></div>
     {{if eq .View "settings"}}{{template "settings" .}}{{else}}
-    <header class="bar">
-      <h1>{{.Heading}}{{with .Topic}} <span class="in-topic">in {{.}}</span>{{end}}</h1>
-      <form class="search" role="search" method="get">
+    <header class="mb-4 flex flex-wrap items-center gap-2 md:min-h-9 md:flex-nowrap">
+      <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{.Heading}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
+      {{if eq .View "inbox"}}<button type="button" class="btn js-only" data-variant="outline" data-act="clear-all"{{if not .Snap.Items}} hidden{{end}}>{{template "i-check-check"}}Clear all</button>{{end}}
+      <button type="button" class="btn js-only" data-variant="outline" data-palette aria-label="Commands" title="Commands">{{template "i-command"}}<kbd class="kbd max-md:hidden" data-mod>Ctrl K</kbd></button>
+      <form class="input-group bg-card max-md:order-last max-md:basis-full md:w-60" role="search" method="get">
         {{with .Topic}}<input type="hidden" name="topic" value="{{.}}">{{end}}
         <label class="sr-only" for="q">Search notifications</label>
-        <input id="q" type="search" name="q" value="{{.Q}}" placeholder="Search" autocomplete="off">
+        <input id="q" type="search" name="q" value="{{.Q}}" placeholder="Search" autocomplete="off" data-search>
+        <span data-align="inline-start">{{template "i-search"}}</span>
+        <kbd class="kbd js-only max-md:hidden" data-align="inline-end">/</kbd>
       </form>
-      {{if eq .View "inbox"}}<button type="button" class="btn btn-quiet js-only" data-act="clear-all"{{if not .Snap.Items}} hidden{{end}}>Clear all</button>{{end}}
     </header>
-    <div class="list" data-list>
+    <div class="grid grid-cols-[minmax(0,1fr)] gap-2" data-list>
       {{range .Snap.Items}}{{template "card" (card . $.View $.Here)}}{{end}}
     </div>
-    <div class="empty"{{if .Snap.Items}} hidden{{end}} data-empty>
-      {{if .Q}}<p>No notifications match "{{.Q}}".</p>
-      {{else if eq .View "inbox"}}<h2>All clear</h2><p>New alerts land here the moment they are sent.</p>
+    <div class="text-body grid max-w-xl gap-3 py-10 text-sm/relaxed"{{if .Snap.Items}} hidden{{end}} data-empty>
+      {{if .Q}}<h2 class="text-foreground text-base font-semibold">No notifications match "{{.Q}}"</h2>
+      <p>Search looks at titles, messages and tags{{with .Topic}} in {{.}}{{end}}. <a href="{{$base}}{{with .Topic}}?topic={{.}}{{end}}">Clear the search</a></p>
+      {{else if eq .View "inbox"}}<h2 class="text-foreground text-base font-semibold">Nothing waiting</h2>
+      <p>New notifications land here the moment they are sent. Send one to check the setup:</p>
 <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"test","message":"Hello from clrd"}' \
   {{.Base}}/api/v1/notifications</code></pre>
-      {{else if eq .View "snoozed"}}<p>Nothing snoozed. Snoozed alerts wait here until their time comes.</p>
-      {{else}}<p>Nothing cleared yet. Cleared and resolved alerts stay here for a while so you can restore them.</p>{{end}}
+      {{else if eq .View "snoozed"}}<h2 class="text-foreground text-base font-semibold">Nothing snoozed</h2>
+      <p>Snooze a notification from its menu in the <a href="/app">inbox</a> to hide it until later. It comes back and notifies again at that time.</p>
+      {{else}}<h2 class="text-foreground text-base font-semibold">Nothing cleared yet</h2>
+      <p>Cleared and resolved notifications stay here for a while, so you can restore one you cleared by mistake.</p>{{end}}
     </div>
     {{end}}
   </main>
 </div>
-<div class="toast" role="status" aria-live="polite" data-toast hidden></div>
+{{template "palette" .}}
+<div class="notice" role="status" aria-live="polite" data-toast hidden></div>
 <p class="sr-only" aria-live="polite" data-announce></p>
 </body>
 </html>
 {{end}}
 
 {{define "card"}}{{$n := .N}}
-<article class="card prio-{{$n.Priority}}" data-id="{{$n.ID}}" data-seq="{{$n.Seq}}" data-state="{{$n.State}}" aria-labelledby="t-{{$n.ID}}">
-  <div class="card-head">
-    <span class="dot{{if ge $n.Priority 5}} dot-urgent{{else if eq $n.Priority 4}} dot-high{{end}}" aria-hidden="true"></span>
-    <h2 class="card-title" id="t-{{$n.ID}}">{{if $n.Click}}<a href="{{$n.Click}}" rel="noopener noreferrer">{{$n.Heading}}</a>{{else}}{{$n.Heading}}{{end}}</h2>
-    {{if eq $n.State "acknowledged"}}<span class="chip chip-acknowledged">{{if $n.Reply}}Answered {{$n.Answer}}{{else}}Acknowledged{{end}}{{with $n.StateBy}} on {{.}}{{end}}</span>
-    {{else if eq $n.State "snoozed"}}<span class="chip chip-snoozed">Snoozed{{with $n.SnoozeUntil}} until <time datetime="{{iso .}}">{{clock .}}</time>{{end}}</span>
-    {{else if eq $n.State "dismissed"}}<span class="chip chip-dismissed">Cleared{{with $n.StateBy}} on {{.}}{{end}}</span>
-    {{else if eq $n.State "resolved"}}<span class="chip chip-resolved">Resolved{{with $n.StateBy}} by {{.}}{{end}}</span>
-    {{else if ge $n.Priority 5}}<span class="chip chip-active">Urgent</span>{{end}}
+<article class="card border px-4" tabindex="-1" data-id="{{$n.ID}}" data-seq="{{$n.Seq}}" data-state="{{$n.State}}" aria-labelledby="t-{{$n.ID}}">
+  <div class="grid min-w-0 grid-cols-[0.5rem_minmax(0,1fr)] gap-x-3 py-3.5">
+    <span class="mt-2 size-2 rounded-full {{if ge $n.Priority 5}}bg-destructive{{else if eq $n.Priority 4}}bg-foreground{{else}}bg-border{{end}}" aria-hidden="true"></span>
+    <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <h2 class="card-title text-[17px]/snug font-semibold tracking-tight [overflow-wrap:anywhere]" id="t-{{$n.ID}}">{{if $n.Click}}<a class="hover:underline" href="{{$n.Click}}" rel="noopener noreferrer">{{$n.Heading}}</a>{{else}}{{$n.Heading}}{{end}}</h2>
+      {{if eq $n.State "acknowledged"}}<span class="badge" data-state="acknowledged">{{if $n.Reply}}Answered {{$n.Answer}}{{else}}Acknowledged{{end}}{{with $n.StateBy}} on {{.}}{{end}}</span>
+      {{else if eq $n.State "snoozed"}}<span class="badge" data-state="snoozed">Snoozed{{with $n.SnoozeUntil}} until <time datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time>{{end}}</span>
+      {{else if eq $n.State "dismissed"}}<span class="badge" data-state="dismissed">Cleared{{with $n.StateBy}} on {{.}}{{end}}</span>
+      {{else if eq $n.State "resolved"}}<span class="badge" data-state="resolved">Resolved{{with $n.StateBy}} by {{.}}{{end}}</span>
+      {{else if ge $n.Priority 5}}<span class="badge" data-state="active">Urgent</span>{{end}}
+    </div>
+    <div class="col-start-2 min-w-0">
+      {{with $n.Body}}<p class="text-body mt-1 text-[15px]/normal whitespace-pre-line [overflow-wrap:anywhere]">{{.}}</p>{{end}}
+      <p class="meta mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5"><a class="hover:text-foreground hover:underline" href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}" title="{{clock $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{range $n.Tags}}<span>#{{.}}</span>{{end}}</p>
+      {{with $n.Links}}<p class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium" data-links>{{range .}}<a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" rel="noopener noreferrer">{{.Label}}{{template "i-external-link"}}</a>{{end}}</p>{{end}}
+    </div>
   </div>
-  {{with $n.Body}}<p class="card-body">{{.}}</p>{{end}}
-  <p class="meta"><a href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{range $n.Tags}}<span>#{{.}}</span>{{end}}</p>
-  {{with $n.Links}}<p class="links">{{range .}}<a href="{{.URL}}" rel="noopener noreferrer">{{.Label}}</a>{{end}}</p>{{end}}
-  <form class="actions" method="post" action="/app/act">
+  <form class="flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="/app/act">
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">
     <input type="hidden" name="seq" value="{{$n.Seq}}">
-    {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button class="btn btn-quiet" name="act" value="reopen" data-act="reopen">Restore</button>{{end}}
+    {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button class="btn" data-variant="outline" name="act" value="reopen" data-act="reopen">{{template "i-rotate-ccw"}}Restore</button>{{end}}
     {{else}}
-      {{range $n.Replies}}<button class="btn btn-quiet" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}
-      {{if ne $n.State "acknowledged"}}<button class="btn btn-quiet" name="act" value="ack" data-act="ack">Ack</button>{{end}}
-      {{if ne $n.State "snoozed"}}<details class="snooze">
-        <summary class="btn btn-quiet">Snooze</summary>
-        <div class="snooze-menu">
-          <button class="btn btn-quiet" name="snooze" value="1h" data-act="snooze" data-for="1h">1 hour</button>
-          <button class="btn btn-quiet" name="snooze" value="4h" data-act="snooze" data-for="4h">4 hours</button>
-          <button type="button" class="btn btn-quiet js-only" data-act="snooze" data-at="tonight">Tonight 20:00</button>
-          <button type="button" class="btn btn-quiet js-only" data-act="snooze" data-at="tomorrow">Tomorrow 09:00</button>
-          <span class="snooze-custom js-only"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" type="datetime-local" data-until><button type="button" class="btn btn-quiet" data-act="snooze" data-at="custom">Set</button></span>
+      {{range $n.Replies}}<button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}
+      {{if ne $n.State "acknowledged"}}<button class="btn" data-variant="outline" name="act" value="ack" data-act="ack">Ack</button>{{end}}
+      {{if ne $n.State "snoozed"}}<details class="popover relative">
+        <summary class="btn" data-variant="outline">Snooze</summary>
+        <div data-popover class="start-0 top-full mt-1 grid w-56 gap-0.5 p-1 md:start-auto md:end-0">
+          <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="1h" data-act="snooze" data-for="1h">1 hour</button>
+          <button class="btn justify-start" data-variant="ghost" data-size="sm" name="snooze" value="4h" data-act="snooze" data-for="4h">4 hours</button>
+          <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tonight">Tonight <span class="meta ms-auto">20:00</span></button>
+          <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tomorrow">Tomorrow <span class="meta ms-auto">09:00</span></button>
+          <span class="snooze-custom js-only flex gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 min-w-0 flex-1 text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
         </div>
       </details>{{end}}
-      <button class="btn btn-clear" name="act" value="dismiss" data-act="dismiss">Clear</button>
+      <button class="btn" data-variant="clear" name="act" value="dismiss" data-act="dismiss">{{template "i-check"}}Clear</button>
     {{end}}
   </form>
 </article>
 {{end}}
 
 {{define "settings"}}
-<header class="bar"><h1>Settings</h1></header>
-<section class="panel" aria-labelledby="dev-h">
-  <h2 id="dev-h">Devices in sync</h2>
-  {{if .Snap.Devices}}<ul class="devices-list">
-    {{range .Snap.Devices}}<li><span>{{.Name}}</span><span class="meta">seen <time datetime="{{iso .LastSeen}}">{{clock .LastSeen}}</time></span></li>{{end}}
-  </ul>
-  {{else}}<p>No devices connected in the last 10 minutes.</p>{{end}}
-</section>
-<section class="panel pair" aria-labelledby="link-h" data-link hidden>
-  <h2 id="link-h">Link a phone</h2>
-  <p>Open the clrd app on your phone, tap Scan QR code and scan the code. You approve the phone here before it connects, and it gets the same access as this browser.</p>
-  <button class="btn btn-ink" type="button" data-pair-start>Link a phone</button>
-  <img data-pair-qr alt="QR code to link a phone" width="232" height="232" hidden>
-  <p class="quiet" data-pair-msg role="status"></p>
-  <div data-link-ask hidden>
-    <p><b data-link-name></b> wants to connect.</p>
-    <p>Approve only if your phone shows <b data-link-check></b>.</p>
-    <button class="btn btn-ink" type="button" data-link-approve>Approve</button>
-    <button class="btn" type="button" data-link-deny>Deny</button>
-  </div>
-</section>
-<script src="/static/pair.js" defer></script>
-<section class="panel" aria-labelledby="send-h">
-  <h2 id="send-h">Send a test notification</h2>
-  <p>Run this with a token that has the publish scope. It should appear on every device within a second.</p>
+<header class="mb-6 flex min-h-9 items-center gap-2">
+  <h1 class="me-auto text-xl font-semibold tracking-tight">Settings</h1>
+  <button type="button" class="btn js-only" data-variant="outline" data-palette aria-label="Commands" title="Commands">{{template "i-command"}}<kbd class="kbd max-md:hidden" data-mod>Ctrl K</kbd></button>
+</header>
+<div class="grid max-w-2xl gap-10">
+  <section class="grid gap-3" aria-labelledby="dev-h">
+    <h2 id="dev-h" class="text-base font-semibold">Devices in sync</h2>
+    {{if .Snap.Devices}}<div class="bg-card overflow-x-auto rounded-xl border">
+      <table class="table">
+        <thead><tr><th scope="col">Device</th><th scope="col" class="text-right">Last seen</th></tr></thead>
+        <tbody>
+          {{range .Snap.Devices}}<tr><td class="[overflow-wrap:anywhere]"><span>{{.Name}}</span></td><td class="meta text-right whitespace-nowrap"><time datetime="{{iso .LastSeen}}" title="{{clock .LastSeen}}">{{clock .LastSeen}}</time></td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}<p class="text-body text-sm">No devices connected in the last 10 minutes. Open the inbox or the Android app on a device and it shows up here.</p>{{end}}
+  </section>
+  <section class="grid gap-3" aria-labelledby="link-h" data-link hidden>
+    <h2 id="link-h" class="text-base font-semibold">Link a phone</h2>
+    <p class="text-body text-sm/relaxed">Open the clrd app on your phone, tap Scan QR code and scan the code. You approve the phone here before it connects, and it gets the same access as this browser.</p>
+    <div><button class="btn" data-variant="primary" type="button" data-pair-start>Link a phone</button></div>
+    <img class="pair-qr" data-pair-qr alt="QR code to link a phone" width="232" height="232" hidden>
+    <p class="text-muted-foreground text-sm" data-pair-msg role="status"></p>
+    <div class="grid gap-3" data-link-ask hidden>
+      <p class="text-sm"><b data-link-name></b> wants to connect.</p>
+      <p class="text-sm">Approve only if your phone shows <b data-link-check></b>.</p>
+      <div class="flex gap-2"><button class="btn" data-variant="primary" type="button" data-link-approve>Approve</button><button class="btn" data-variant="outline" type="button" data-link-deny>Deny</button></div>
+    </div>
+  </section>
+  <script src="/static/pair.js" defer></script>
+  <section class="grid gap-3" aria-labelledby="send-h">
+    <h2 id="send-h" class="text-base font-semibold">Send a test notification</h2>
+    <p class="text-body text-sm/relaxed">Run this with a token that has the publish scope. It should appear on every device within a second.</p>
 <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"test","message":"Hello from clrd"}' \
   {{.Base}}/api/v1/notifications</code></pre>
-</section>
-<section class="panel" aria-labelledby="look-h">
-  <h2 id="look-h">Appearance</h2>
-  <p>The inbox follows your system's light or dark setting.</p>
-</section>
+  </section>
+  <section class="grid gap-3" aria-labelledby="look-h">
+    <h2 id="look-h" class="text-base font-semibold">Appearance</h2>
+    <p class="text-body text-sm/relaxed">The inbox follows your system's light or dark setting.</p>
+  </section>
+</div>
 {{end}}
+
+{{define "palette"}}<dialog id="palette" class="command-dialog" aria-label="Commands">
+  <div class="command">
+    <header>
+      {{template "i-search"}}
+      <input type="text" id="palette-input" placeholder="Type a command or a topic" autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="true" aria-controls="palette-menu">
+    </header>
+    <div role="menu" id="palette-menu" aria-orientation="vertical" data-empty="No command matches.">
+      {{if ne .View "settings"}}<div role="group" aria-labelledby="pal-card">
+        <span data-heading id="pal-card">Selected notification</span>
+        {{if eq .View "cleared"}}<div role="menuitem" data-cmd="restore" data-keywords="reopen undo">{{template "i-rotate-ccw"}}Restore <kbd class="kbd" data-shortcut>R</kbd></div>
+        {{else}}<div role="menuitem" data-cmd="dismiss" data-keywords="dismiss done">{{template "i-check"}}Clear <kbd class="kbd" data-shortcut>C</kbd></div>{{end}}
+        {{if ne .View "cleared"}}<div role="menuitem" data-cmd="ack" data-keywords="acknowledge">{{template "i-reply"}}Acknowledge <kbd class="kbd" data-shortcut>A</kbd></div>
+        <div role="menuitem" data-cmd="snooze" data-keywords="later hour">{{template "i-clock"}}Snooze 1 hour <kbd class="kbd" data-shortcut>S</kbd></div>{{end}}
+        <div role="menuitem" data-cmd="next" data-keywords="down select">{{template "i-chevron-down"}}Next <kbd class="kbd" data-shortcut>J</kbd></div>
+        <div role="menuitem" data-cmd="prev" data-keywords="up select">{{template "i-chevron-up"}}Previous <kbd class="kbd" data-shortcut>K</kbd></div>
+      </div>
+      <hr role="separator">
+      <div role="group" aria-labelledby="pal-list">
+        <span data-heading id="pal-list">This list</span>
+        <div role="menuitem" data-cmd="search" data-keywords="find filter">{{template "i-search"}}Search <kbd class="kbd" data-shortcut>/</kbd></div>
+        {{if eq .View "inbox"}}<div role="menuitem" data-cmd="clear-all" data-keywords="dismiss everything">{{template "i-check-check"}}Clear all</div>{{end}}
+      </div>
+      <hr role="separator">{{end}}
+      <div role="group" aria-labelledby="pal-go">
+        <span data-heading id="pal-go">Go to</span>
+        <a role="menuitem" href="/app" data-keywords="home">{{template "i-inbox"}}Inbox <kbd class="kbd" data-shortcut>G I</kbd></a>
+        <a role="menuitem" href="/app/snoozed" data-keywords="later">{{template "i-clock"}}Snoozed <kbd class="kbd" data-shortcut>G S</kbd></a>
+        <a role="menuitem" href="/app/cleared" data-keywords="done history restore">{{template "i-check-check"}}Cleared <kbd class="kbd" data-shortcut>G C</kbd></a>
+        <a role="menuitem" href="/app/settings" data-keywords="devices token">{{template "i-settings"}}Settings <kbd class="kbd" data-shortcut>G ,</kbd></a>
+      </div>
+      {{with .Snap.Topics}}<hr role="separator">
+      <div role="group" aria-labelledby="pal-topics">
+        <span data-heading id="pal-topics">Topics</span>
+        {{range .}}<a role="menuitem" href="/app?topic={{.Name}}" data-keywords="topic">{{template "i-hash"}}{{.Name}} <span class="meta ms-auto">{{.Open}}</span></a>
+        {{end}}
+      </div>{{end}}
+    </div>
+  </div>
+</dialog>{{end}}

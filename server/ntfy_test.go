@@ -83,6 +83,12 @@ func TestNtfyPublish(t *testing.T) {
 	if m := ntfyDecode(t, out); code != 200 || m.Message != "j" || m.Priority != 2 || len(m.Actions) != 1 {
 		t.Fatalf("JSON publish past a root mount: %d %s", code, out)
 	}
+	code, out = raw(t, "POST", ts.URL+"/", admin, `{"topic":"alerts","message":"a","title":"json wins"}`,
+		map[string]string{"X-Priority": "high", "X-Tags": "warn", "X-Click": "https://example.com/c", "X-Title": "header"})
+	if m := ntfyDecode(t, out); code != 200 || m.Priority != 4 || len(m.Tags) != 1 || m.Tags[0] != "warn" ||
+		m.Click != "https://example.com/c" || m.Title != "json wins" {
+		t.Fatalf("JSON publish with header options (Apprise, #130): %d %s", code, out)
+	}
 	if _, out = raw(t, "GET", ts.URL+"/", "", "", nil); out != "landing" {
 		t.Fatalf("GET / should still reach the mount: %q", out)
 	}

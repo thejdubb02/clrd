@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -108,6 +109,22 @@ func (s *Server) ntfyRoutes() {
 	route := func(pattern string, h func(http.ResponseWriter, *http.Request) error) {
 		s.route(pattern, func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+			if _, _, ok := ntfyPassword(r); ok { // taken before bcrypt, kept only if the password was wrong
+				ip := clientIP(r)
+				if wait := s.pwLimit.take(ip, time.Now()); wait > 0 {
+					return retryAfter(w, wait, "too many wrong passwords from this address, try again later")
+				}
+				var once sync.Once
+				settle := func(wrong bool) { // a right or unchecked password gets its token back
+					once.Do(func() {
+						if !wrong {
+							s.pwLimit.give(ip)
+						}
+					})
+				}
+				defer settle(false)
+				r = r.WithContext(context.WithValue(r.Context(), passwordSettle{}, settle))
+			}
 			return h(w, r)
 		})
 	}
@@ -137,6 +154,23 @@ func (s *Server) ntfyRoutes() {
 			}
 		}
 		writeJSON(w, 200, map[string]bool{"success": true})
+		return nil
+	})
+	// ntfy's app and CLI call this to check a login; scripts use it to
+	// check a token still works. Only the fields they read.
+	route("GET /v1/account", func(w http.ResponseWriter, r *http.Request) error {
+		tok := s.ntfyAuth(r)
+		if tok == nil && authHeader(r) != "" {
+			return tok.need(ScopeRead, "")
+		}
+		acct := map[string]string{"username": "*", "role": "anonymous"}
+		if tok != nil && tok.ID != anonymousID {
+			acct = map[string]string{"username": tok.Name, "role": "user"}
+			if tok.Has(ScopeAdmin) {
+				acct["role"] = "admin"
+			}
+		}
+		writeJSON(w, 200, acct)
 		return nil
 	})
 	route("GET /v1/health", func(w http.ResponseWriter, r *http.Request) error {
@@ -388,6 +422,25 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	}
 	if p.SnoozeUntil, err = ntfyDelay(in.Delay); err != nil {
 		return err
+	}
+	// Like ntfy, headers and query params fill what the JSON leaves out
+	// (Apprise sends X-Priority, X-Tags, X-Click next to a JSON body).
+	if p.Title == "" {
+		p.Title = param(r, "Title", "Ti", "T")
+	}
+	if len(p.Tags) == 0 {
+		p.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
+	}
+	if p.Click == "" {
+		p.Click = param(r, "Click")
+	}
+	if p.Icon == "" {
+		p.Icon = ntfyIcon(param(r, "Icon"))
+	}
+	if p.Priority == 0 {
+		if p.Priority, err = ntfyPriority(param(r, "Priority", "Prio", "P")); err != nil {
+			return err
+		}
 	}
 	return s.ntfyReply(w, r.Context(), s.ntfyAuth(r), p)
 }

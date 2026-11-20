@@ -1,5 +1,6 @@
 // clrd inbox: live updates on top of the server-rendered page. No framework.
-// The page works without this file; it adds the buttons, the WebSocket and the toasts.
+// The page works without this file; it adds the buttons, the WebSocket, relative
+// times, the command palette (Ctrl or Cmd+K) with its shortcuts, and Undo.
 (() => {
   document.documentElement.classList.remove('no-js');
   const shell = document.querySelector('[data-inbox]');
@@ -7,18 +8,51 @@
 
   const show = { inbox: ['active', 'acknowledged'], snoozed: ['snoozed'], cleared: ['dismissed', 'resolved'] }[shell.dataset.view] || [];
   const $ = s => document.querySelector(s);
-  const list = $('[data-list]'), empty = $('[data-empty]'), clearAll = $('[data-act=clear-all]');
+  const list = $('[data-list]'), empty = $('main [data-empty]'), clearAll = $('[data-act=clear-all]');
   const toast = $('[data-toast]'), announce = $('[data-announce]'), conn = $('[data-conn]'), sync = $('#sync');
   let seq = Number(shell.dataset.seq) || 0;
   let epoch = shell.dataset.epoch || ''; // the database seq belongs to
 
-  // Times are rendered in UTC on the server; show them in the reader's zone.
+  // Times are rendered in UTC on the server. Recent ones read as relative
+  // ("5 min. ago"), the rest in the reader's zone; the title keeps the full time.
   const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const localize = el => el.querySelectorAll('time[datetime]').forEach(t => { t.textContent = fmt.format(new Date(t.dateTime)); });
+  const full = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'short' });
+  const ago = d => {
+    const s = (d - Date.now()) / 1000, a = Math.abs(s);
+    if (s > 30 || a >= 7 * 86400) return fmt.format(d); // the future (snooze until) and old news: a date
+    if (a < 45) return rtf.format(0, 'second');
+    if (a < 3600) return rtf.format(Math.round(s / 60), 'minute');
+    if (a < 86400) return rtf.format(Math.round(s / 3600), 'hour');
+    return rtf.format(Math.round(s / 86400), 'day');
+  };
+  const localize = el => el.querySelectorAll('time[datetime]').forEach(t => {
+    const d = new Date(t.dateTime);
+    if (isNaN(d)) return;
+    t.textContent = ago(d);
+    t.title = full.format(d);
+  });
   localize(document);
+  setInterval(() => localize(document), 30000);
 
   const card = id => list && [...list.children].find(c => c.dataset.id === id);
   const cards = () => list ? [...list.querySelectorAll('.card:not(.is-leaving)')] : [];
+
+  // The card the keyboard works on (J and K). Kept by id: a refresh swaps the nodes.
+  let selId = null;
+  const selected = () => (selId && card(selId)) || null;
+  function select(c, focus = true) {
+    list && list.querySelectorAll('.is-selected').forEach(x => x.classList.remove('is-selected'));
+    selId = c ? c.dataset.id : null;
+    if (!c) return;
+    c.classList.add('is-selected');
+    if (focus) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest' }); }
+  }
+  const move = by => {
+    const all = cards(), i = all.indexOf(selected());
+    const next = all[i < 0 ? (by > 0 ? 0 : all.length - 1) : Math.max(0, Math.min(all.length - 1, i + by))];
+    if (next) select(next);
+  };
   const tidy = () => {
     if (!list) return;
     const none = cards().length === 0 && !list.querySelector('.is-leaving');
@@ -26,19 +60,29 @@
     if (clearAll) clearAll.hidden = cards().length === 0;
   };
 
-  // A card that no longer belongs in this view: green line and the reason, then it folds away.
+  // A card that no longer belongs in this view: the cleared moment (clrd.css).
+  // Green washes across it with a check and the reason, then it folds away.
+  // Timers, not animation events: with reduced motion there are none.
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const check = '<svg class="size-4 shrink-0" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
   function leave(c, why) {
     if (!c || c.classList.contains('is-leaving')) return;
+    if (c.dataset.id === selId) { const all = cards(), i = all.indexOf(c); select(all[i + 1] || all[i - 1] || null, c.contains(document.activeElement)); }
     const p = document.createElement('p');
     p.className = 'gone';
-    p.textContent = why;
+    p.innerHTML = check;
+    p.append(why);
     c.append(p);
     c.classList.add('is-leaving');
     c.querySelectorAll('button').forEach(b => { b.disabled = true; });
     announce.textContent = `${c.querySelector('.card-title').textContent.trim()}: ${why}`;
     setTimeout(() => {
       c.classList.add('is-folding');
-      setTimeout(() => { c.remove(); tidy(); }, 260);
+      if (!still.matches) {
+        c.animate([{ height: `${c.offsetHeight}px` }, { height: '0px', opacity: 0, marginBottom: '-0.5rem', borderWidth: 0 }],
+          { duration: 260, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
+      }
+      setTimeout(() => { c.remove(); tidy(); }, still.matches ? 0 : 260);
     }, 1400);
   }
 
@@ -83,8 +127,12 @@
       return fresh;
     });
     if (keep.some(c => c.contains(document.activeElement)) || keep.length !== list.children.length || keep.some((c, i) => c !== list.children[i])) {
+      const had = list.contains(document.activeElement) && document.activeElement;
       list.replaceChildren(...keep);
+      if (had && !had.isConnected) select(selected()); // focus was on a node the refresh replaced
     }
+    const s = selected();
+    if (s) select(s, false); else selId = null;
     tidy();
   }
 
@@ -97,7 +145,8 @@
     refresh();
   }
 
-  // Toast, with Undo when the action can be reversed.
+  // A notice only for Undo and for errors; everything else shows on the card
+  // and is read out by the live region.
   let toastTimer;
   function say(text, undoIds) {
     const span = document.createElement('span');
@@ -106,6 +155,7 @@
     if (undoIds) {
       const b = document.createElement('button');
       b.type = 'button';
+      b.className = 'h-7 rounded-md px-2.5 font-semibold underline underline-offset-3 hover:bg-background/10';
       b.textContent = 'Undo';
       b.addEventListener('click', async () => {
         toast.hidden = true;
@@ -159,6 +209,7 @@
   });
 
   const done = { ack: 'Acknowledged', dismiss: 'Cleared', reopen: 'Restored to the inbox' };
+  const tell = text => { announce.textContent = text; };
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled) return;
@@ -188,7 +239,7 @@
     b.disabled = false;
     if (!r) return;
     const n = await r.json().catch(() => ({}));
-    if (act === 'reply') { say(`Answered ${b.textContent}.`); return refresh(); }
+    if (act === 'reply') { tell(`Answered ${b.textContent}.`); return refresh(); }
     done.snooze = n.snooze_until ? `Snoozed until ${fmt.format(new Date(n.snooze_until))}` : 'Snoozed';
     if (act === 'dismiss' && !(n.state === 'dismissed' && n.state_by_id === shell.dataset.meId)) {
       // Another device or the sender got there first: no Undo, it would reopen their change.
@@ -196,10 +247,67 @@
       say(`${reason(n)}.`);
     } else {
       if (act !== 'ack') leave(c, done[act]);
+      else tell(`${c.querySelector('.card-title').textContent.trim()}: Acknowledged`);
       if (act === 'dismiss') say('Cleared.', [c.dataset.id]);
-      else say(`${done[act]}.`);
     }
     refresh();
+  });
+
+  // Command palette (Ctrl or Cmd+K) and single-key shortcuts. The palette
+  // lists every shortcut; Basecoat's command.js filters it and runs Enter.
+  const palette = $('#palette');
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+  if (mac) document.querySelectorAll('[data-mod]').forEach(k => { k.textContent = '\u2318 K'; });
+  const openPalette = () => {
+    if (!palette || palette.open) return;
+    const input = palette.querySelector('input');
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    palette.showModal();
+  };
+  palette && palette.addEventListener('click', e => { if (e.target === palette) palette.close(); }); // click on the dim
+  const search = $('[data-search]');
+  // Each command presses the selected card's own button, so Undo and errors work the same.
+  const press = (sel, c = selected() || cards()[0]) => {
+    const b = c && c.querySelector(sel);
+    if (!b) return tell(c ? 'Not available on this notification.' : 'No notification to act on.');
+    select(c);
+    b.click();
+  };
+  const run = {
+    dismiss: () => press('[data-act=dismiss]'),
+    restore: () => press('[data-act=reopen]'),
+    ack: () => press('[data-act=ack]'),
+    snooze: () => press('[data-act=snooze][data-for="1h"]'),
+    next: () => move(1),
+    prev: () => move(-1),
+    search: () => search && (search.focus(), search.select()),
+    'clear-all': () => clearAll && !clearAll.hidden && clearAll.click(),
+  };
+  document.addEventListener('click', e => {
+    if (e.target.closest('[data-palette]')) return openPalette();
+    const cmd = e.target.closest('[data-cmd]');
+    if (cmd && run[cmd.dataset.cmd]) setTimeout(run[cmd.dataset.cmd]); // after the dialog closes and gives focus back
+    const c = e.target.closest('.card');
+    if (c && !c.classList.contains('is-leaving')) select(c, false);
+  });
+  const keys = { c: 'dismiss', r: 'restore', a: 'ack', s: 'snooze', j: 'next', k: 'prev', '/': 'search' };
+  const go = { i: '/app', s: '/app/snoozed', c: '/app/cleared', ',': '/app/settings' };
+  let g = 0;
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return palette && (palette.open ? palette.close() : openPalette()); }
+    const t = e.target;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || (palette && palette.open)) return;
+    if (t.closest && t.closest('input, textarea, select, [contenteditable], details[open]')) {
+      if (e.key === 'Escape' && t === search) search.blur();
+      return;
+    }
+    const k = e.key.toLowerCase();
+    if (g && Date.now() - g < 1200 && go[k]) { e.preventDefault(); g = 0; location.href = go[k]; return; }
+    g = k === 'g' ? Date.now() : 0;
+    if (k === 'g' || e.shiftKey && k !== '?') return;
+    if (k === '?') { e.preventDefault(); return openPalette(); }
+    if (keys[k] && list) { e.preventDefault(); run[keys[k]](); }
   });
 
   // Live sync. Replays everything after the last seq on every (re)connect.

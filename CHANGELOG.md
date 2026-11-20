@@ -17,6 +17,17 @@ Fixed, Removed, Security), as one line a user can understand.
 - Sign in a browser with your phone: the web sign-in page shows a QR code,
   you scan it with a phone that is already signed in and tap Approve, and the
   browser signs itself in with the phone's access. No token to copy or type.
+- Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
+  notification resolves itself then, leaving every inbox and phone.
+- ntfy compatibility: `GET /v1/account`, which the ntfy app and CLI use to check
+  a login and scripts use to check a token still works.
+- Web: a command palette on Ctrl+K (Cmd+K on a Mac) that lists every keyboard
+  shortcut: J and K to move between notifications, C to clear, A to
+  acknowledge, S to snooze, / to search, and G then I, S, C or comma to change
+  page.
+- Web: times read as "5 min. ago" and similar. Hover a time to see the exact
+  date.
+
 - Android: messages show their formatting (bold, italic, underline, strike,
   code, lists, quotes, headings and tappable links) in the list, and bold and
   italic in the system notification. A message sent as plain text is shown
@@ -101,11 +112,19 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Changed
 
+- Web: every page (inbox, snoozed, cleared, settings, sign-in, setup, the
+  home page and the docs) uses the new design, with dark mode that follows
+  the system. Clearing a notification plays one short "cleared" motion, which
+  is off when the system asks for reduced motion.
+
 - Web: the final logo. The three lines now end on one circle around the
   green disc, so every gap is the same. The README and site header use it.
 
 ### Fixed
 
+- ntfy compatibility: a JSON publish to `/` now reads priority, title, tags,
+  click URL and icon from headers when the JSON leaves them out, as ntfy does,
+  so Apprise's `?priority=high` arrives.
 - Android: the always-on "in sync" notice no longer puts a dot on the app icon.
 - Web: the inbox no longer scrolls sideways on a phone (long titles, the
   closed Snooze menu and the action row pushed it wider than the screen), and
@@ -117,6 +136,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- ntfy compatibility: ten wrong passwords from one address now block password
+  logins from it for a while (429 with `Retry-After`, one more try each
+  minute). Tokens are never blocked. Behind a proxy, the client address comes
+  from `X-Forwarded-For`; the nginx example in the self-host guide now sets it.
 - Server: a token that can publish to a topic but not read it no longer gets
   another sender's message back when it acks, resolves or overwrites one by
   external id.

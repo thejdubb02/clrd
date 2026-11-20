@@ -13,7 +13,7 @@ import (
 const anonymousID = "anonymous"
 
 // bcryptSlots caps concurrent password checks, so a flood of Basic
-// requests cannot pin every CPU. ponytail: no per-IP limit yet.
+// requests cannot pin every CPU. Server.pwLimit caps them per address.
 var bcryptSlots = make(chan struct{}, 4)
 
 // dummyHash is compared against when the user does not exist, so an
@@ -37,11 +37,26 @@ func (s *Server) ntfyAuth(r *http.Request) *Token {
 		}
 		return t
 	}
-	user, pass, ok := (&http.Request{Header: http.Header{"Authorization": {h}}}).BasicAuth()
-	if !ok || pass == "" || isToken(pass) {
+	user, pass, ok := ntfyPassword(r)
+	if !ok {
 		return nil // a wrong credential is never anonymous
 	}
-	return s.passwordUser(ctx, user, pass)
+	t := s.passwordUser(ctx, user, pass)
+	if settle, _ := ctx.Value(passwordSettle{}).(func(bool)); settle != nil {
+		settle(t == nil) // now, not when a long stream ends
+	}
+	return t
+}
+
+// passwordSettle is the context key for the ntfy route's func that keeps
+// the limiter token after a wrong password and gives it back otherwise.
+type passwordSettle struct{}
+
+// ntfyPassword is the Basic user:password on a request, when it is a
+// password and not a token. The ntfy routes rate-limit these per address.
+func ntfyPassword(r *http.Request) (user, pass string, ok bool) {
+	user, pass, ok = (&http.Request{Header: http.Header{"Authorization": {authHeader(r)}}}).BasicAuth()
+	return user, pass, ok && pass != "" && !isToken(pass)
 }
 
 func (s *Server) passwordUser(ctx context.Context, user, pass string) *Token {

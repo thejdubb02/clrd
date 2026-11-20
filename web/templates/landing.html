@@ -1,23 +1,23 @@
 {{define "landing"}}{{template "head" .}}</head>
-<body class="site">
+<body class="text-body">
 {{template "site-header" .}}
-<main id="main">
+<main id="main" class="[&_p]:leading-relaxed">
 
-<section class="hero wrap">
-  <div class="hero-text">
-    <h1>Dismiss once. Gone everywhere.</h1>
-    <p class="lede">clrd is a self-hosted notification server. Send an alert with one HTTP call. It lands on your phone, your tablet and the web inbox. Swipe it away on any of them and it clears on all the others.</p>
-    <p class="cta">
-      <a class="btn btn-ink" href="#self-host">Self-host clrd</a>
-      <a class="btn btn-quiet" href="/docs/">Read the docs</a>
+<section class="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-4 pt-12 pb-14 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14 lg:py-22">
+  <div>
+    <h1 class="text-foreground mb-6 max-w-[9ch] text-[44px]/[0.98] font-semibold tracking-[-0.05em] sm:text-7xl/[0.98]">Dismiss once. Gone everywhere.</h1>
+    <p class="max-w-[34em] text-lg/relaxed">clrd is a self-hosted notification server. Send an alert with one HTTP call. It lands on your phone, your tablet and the web inbox. Swipe it away on any of them and it clears on all the others.</p>
+    <p class="mt-7 mb-5 flex flex-wrap gap-2">
+      <a class="btn" data-variant="primary" data-size="lg" href="#self-host">Self-host clrd</a>
+      <a class="btn" data-variant="outline" data-size="lg" href="/docs/">Read the docs</a>
     </p>
-    <p class="status">In early development. The API is settling; expect changes before 1.0.</p>
+    <p class="meta">In early development. The API is settling; expect changes before 1.0.</p>
   </div>
 
-  <figure class="demo" aria-labelledby="demo-cap">
-    <div class="devices">
-      <div class="device phone">
-        <p class="device-name">pixel-9</p>
+  <figure aria-labelledby="demo-cap">
+    <div class="grid grid-cols-[1fr_1.3fr] items-end gap-3 sm:grid-cols-[.8fr_1.25fr_1fr]">
+      <div class="device min-h-70">
+        <p class="meta mb-3.5 text-[11px]">pixel-9</p>
         <div class="mini swipe">
           {{template "mini"}}
         </div>
@@ -25,15 +25,15 @@
       {{template "follower" "web inbox"}}
       {{template "follower" "tablet"}}
     </div>
-    <figcaption id="demo-cap">Swiped away on the phone. The web inbox and the tablet clear in the same second.</figcaption>
+    <figcaption id="demo-cap" class="text-muted-foreground mt-3.5 text-sm">Swiped away on the phone. The web inbox and the tablet clear in the same second.</figcaption>
   </figure>
 </section>
 
-<section class="band" aria-labelledby="how">
-  <div class="wrap split">
+<section class="bg-card border-y" aria-labelledby="how">
+  <div class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-18">
     <div>
-      <h2 id="how">How it works</h2>
-      <ol class="steps">
+      <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="how">How it works</h2>
+      <ol class="mt-5 grid list-decimal gap-3.5 ps-5 marker:font-mono marker:text-sm marker:text-muted-foreground [&_strong]:text-foreground [&_strong]:font-semibold">
         <li><strong>Send.</strong> A script, a monitor or an AI agent posts an alert to a topic.</li>
         <li><strong>It arrives everywhere.</strong> Every phone, tablet and browser signed in to that topic shows it.</li>
         <li><strong>Clear it anywhere.</strong> Swipe it on the phone, click Clear on the web, or let the sender resolve it when the fault is fixed.</li>
@@ -41,33 +41,33 @@
       </ol>
     </div>
     <div>
-      <h3>No clocks, no conflicts</h3>
+      <h3 class="text-foreground text-base font-semibold">No clocks, no conflicts</h3>
       <p>Every change is an event with a number. Each device remembers the last number it saw and asks for everything after it when it reconnects.</p>
-      <pre class="log" tabindex="0" aria-label="Example event log"><code><span>48211</span>  created    backups  Nightly backup failed
-<span>48212</span>  dismissed  backups  by pixel-9</code></pre>
+      <pre class="bg-background my-4 text-xs" tabindex="0" aria-label="Example event log"><code><span class="text-clear">48211</span>  created    backups  Nightly backup failed
+<span class="text-clear">48212</span>  dismissed  backups  by pixel-9</code></pre>
       <p>A tablet that was off overnight asks for everything after 48211 and drops the alert before you look at it.</p>
     </div>
   </div>
 </section>
 
-<section class="wrap" aria-labelledby="states">
-  <h2 id="states">More than read and unread</h2>
-  <p class="section-lede">Four states, all synced, all with the device that set them.</p>
-  <dl class="states">
-    <div><dt><span class="chip chip-dismissed">Cleared</span></dt><dd>You swiped it away. Gone from every device.</dd></div>
-    <div><dt><span class="chip chip-acknowledged">Acknowledged</span></dt><dd>Someone is on it. It stays in the inbox and stops buzzing.</dd></div>
-    <div><dt><span class="chip chip-resolved">Resolved</span></dt><dd>The sender cleared it because the fault is fixed. Monitors close their own alerts by id.</dd></div>
-    <div><dt><span class="chip chip-snoozed">Snoozed</span></dt><dd>Hidden until a time you pick, then it comes back and notifies again.</dd></div>
+<section class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:py-18" aria-labelledby="states">
+  <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="states">More than read and unread</h2>
+  <p class="mt-2 mb-8 max-w-[60ch] text-lg">Four states, all synced, all with the device that set them.</p>
+  <dl class="grid border-t sm:grid-cols-2 lg:grid-cols-4 [&>div]:grid [&>div]:content-start [&>div]:gap-3 [&>div]:border-b [&>div]:py-5 sm:[&>div]:pe-5 lg:[&>div]:border-b-0 lg:[&>div+div]:border-s lg:[&>div+div]:ps-5">
+    <div><dt><span class="badge" data-state="dismissed">Cleared</span></dt><dd>You swiped it away. Gone from every device.</dd></div>
+    <div><dt><span class="badge" data-state="acknowledged">Acknowledged</span></dt><dd>Someone is on it. It stays in the inbox and stops buzzing.</dd></div>
+    <div><dt><span class="badge" data-state="resolved">Resolved</span></dt><dd>The sender cleared it because the fault is fixed. Monitors close their own alerts by id.</dd></div>
+    <div><dt><span class="badge" data-state="snoozed">Snoozed</span></dt><dd>Hidden until a time you pick, then it comes back and notifies again.</dd></div>
   </dl>
 </section>
 
-<section class="band" aria-labelledby="plug">
-  <div class="wrap">
-    <h2 id="plug">Plug it into what you already run</h2>
-    <p class="section-lede">One HTTP call to send. One more to clear it when the problem goes away.</p>
-    <div class="split">
+<section class="bg-card border-y" aria-labelledby="plug">
+  <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:py-18 [&_pre]:bg-background [&_:not(pre)>code]:bg-background">
+    <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="plug">Plug it into what you already run</h2>
+    <p class="mt-2 mb-8 max-w-[60ch] text-lg">One HTTP call to send. One more to clear it when the problem goes away.</p>
+    <div class="grid grid-cols-1 items-start gap-10 lg:grid-cols-2 lg:gap-14 [&_h3]:mb-2 [&_h3:not(:first-child)]:mt-6 [&_pre]:mb-4">
       <div>
-        <h3>curl</h3>
+        <h3 class="text-foreground text-base font-semibold">curl</h3>
 <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"infra","title":"Disk full",
        "message":"web-1 at 95%","priority":4,
@@ -78,15 +78,15 @@
   https://clrd.itsjustin.me/infra/disk-web-1/resolve</code></pre>
       </div>
       <div>
-        <h3>AI agents (MCP)</h3>
+        <h3 class="text-foreground text-base font-semibold">AI agents (MCP)</h3>
         <p>clrd serves MCP at <code>/mcp</code>. Agents can send, list, acknowledge and resolve, and <code>wait_for_reply</code> lets an agent ask you a yes or no question and wait for your tap.</p>
-        <h3>SDKs</h3>
+        <h3 class="text-foreground text-base font-semibold">SDKs</h3>
         <p>Thin clients for Python, JavaScript and Go wrap the same API. The <a href="/docs/spec">API reference</a> lists every endpoint.</p>
       </div>
     </div>
 
-    <h3 class="tools-h">Works with</h3>
-    <dl class="tools">
+    <h3 class="text-foreground mt-12 mb-3 text-base font-semibold">Works with</h3>
+    <dl class="grid border-t text-sm sm:grid-cols-2 lg:grid-cols-4 [&_dt]:text-foreground [&_dt]:mb-1 [&_dt]:font-semibold [&>div]:border-b [&>div]:py-4 [&>div]:pe-4">
       <div><dt>Apprise</dt><dd>Use an <code>ntfys://</code> URL pointed at your clrd server.</dd></div>
       <div><dt>Gatus</dt><dd>Use the ntfy alert provider. When the endpoint recovers, the alert clears itself.</dd></div>
       <div><dt>Uptime Kuma</dt><dd>Pick the ntfy notification type and enter your clrd server URL.</dd></div>
@@ -102,19 +102,19 @@
   </div>
 </section>
 
-<section class="wrap" aria-labelledby="ntfy">
-  <div class="split">
+<section class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:py-18" aria-labelledby="ntfy">
+  <div class="grid grid-cols-1 items-start gap-10 lg:grid-cols-2 lg:gap-14 [&_pre]:my-4">
     <div>
-      <h2 id="ntfy">Already on ntfy?</h2>
+      <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="ntfy">Already on ntfy?</h2>
       <p>Point your scripts at clrd and keep going. Same publish endpoint, same headers, same JSON body, same subscribe streams.</p>
 <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -H "Title: Disk full" -H "Priority: high" \
   -d "web-1 at 95%" https://clrd.itsjustin.me/infra</code></pre>
-      <p class="quiet">Supported: <code>PUT</code> and <code>POST /{topic}</code>, the Title, Priority, Tags, Click and Actions headers, JSON publish to <code>/</code>, and <code>/json</code>, <code>/sse</code>, <code>/ws</code> and <code>/raw</code> subscriptions with <code>since=</code>.</p>
+      <p class="text-muted-foreground text-sm">Supported: <code>PUT</code> and <code>POST /{topic}</code>, the Title, Priority, Tags, Click and Actions headers, JSON publish to <code>/</code>, and <code>/json</code>, <code>/sse</code>, <code>/ws</code> and <code>/raw</code> subscriptions with <code>since=</code>.</p>
     </div>
     <div>
-      <h3>What changes</h3>
-      <table class="compare">
+      <h3 class="text-foreground text-base font-semibold">What changes</h3>
+      <table class="mt-3 w-full border-collapse text-sm [&_td]:border-b [&_td]:py-3 [&_td]:pe-3 [&_td]:align-top [&_th]:border-b [&_th]:py-3 [&_th]:pe-3 [&_th]:text-start [&_th]:align-top [&_tbody_th]:text-foreground [&_tbody_th]:w-[44%] [&_tbody_th]:font-medium [&_thead_th]:meta [&_thead_th]:font-normal [&_.yes]:text-clear [&_.yes]:font-medium">
         <thead><tr><th scope="col"><span class="sr-only">Situation</span></th><th scope="col">ntfy</th><th scope="col">clrd</th></tr></thead>
         <tbody>
           <tr><th scope="row">You swipe an alert away on one device</th><td>The others keep it</td><td class="yes">Gone everywhere</td></tr>
@@ -125,24 +125,27 @@
       </table>
     </div>
   </div>
-</section>
-
-<section class="wrap" aria-labelledby="switch">
-  <h2 id="switch">Switch from ntfy in five minutes</h2>
-  <p>Stop ntfy, run one command, point its hostname at clrd. Users, passwords, <code>tk_</code> tokens, per-topic access rules, anonymous access, message history and attachments come across, so every script and phone keeps its credentials. Keep ntfy stopped, not deleted, and you can roll back by pointing the hostname back.</p>
-<pre><code>clrd import ntfy --dry-run \
+  <div class="mt-12 grid grid-cols-1 items-start gap-10 border-t pt-12 lg:grid-cols-2 lg:gap-14 [&_pre]:my-0">
+    <div>
+      <h3 class="text-foreground text-xl font-semibold tracking-[-0.02em]" id="switch">Switch from ntfy in five minutes</h3>
+      <p>Stop ntfy, run one command, point its hostname at clrd. Users, passwords, <code>tk_</code> tokens, per-topic access rules, anonymous access, message history and attachments come across, so every script and phone keeps its credentials. Keep ntfy stopped, not deleted, and you can roll back by pointing the hostname back.</p>
+      <p><a href="/docs/migrate-from-ntfy">Migration guide</a></p>
+    </div>
+    <div>
+<pre tabindex="0" aria-label="Import from ntfy"><code>clrd import ntfy --dry-run \
   --auth-file /var/lib/ntfy/user.db \
   --cache-file /var/cache/ntfy/cache.db \
   --attachment-dir /var/cache/ntfy/attachments</code></pre>
-  <p><a href="/docs/migrate-from-ntfy">Migration guide</a></p>
+    </div>
+  </div>
 </section>
 
-<section class="band" aria-labelledby="self-host">
-  <div class="wrap split">
+<section class="bg-card border-y" aria-labelledby="self-host">
+  <div class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-18 [&_pre]:bg-background [&_pre]:mb-3">
     <div>
-      <h2 id="self-host">Self-host it</h2>
+      <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="self-host">Self-host it</h2>
       <p>One Go binary and one SQLite file. No Redis, no message broker, no account on anyone else's service. clrd sends no telemetry, and the only pages it fetches are site icons and link previews your devices ask for.</p>
-      <p class="quiet">A Docker image and compose file ship with the first release. Until then, build from source with Go 1.23 or newer.</p>
+      <p class="text-muted-foreground text-sm">A Docker image and compose file ship with the first release. Until then, build from source with Go 1.23 or newer.</p>
     </div>
     <div>
 <pre tabindex="0"><code>git clone https://github.com/thejdubb02/clrd
@@ -151,21 +154,21 @@ cd clrd &amp;&amp; go build -o clrd ./server/cmd/clrd
 CLRD_DB=./clrd.db \
 CLRD_BASE_URL=https://notify.example.com \
 ./clrd</code></pre>
-      <p class="quiet">On first start, clrd prints a one-time admin setup link to its log.</p>
+      <p class="text-muted-foreground text-sm">On first start, clrd prints a one-time admin setup link to its log.</p>
     </div>
   </div>
 </section>
 
-<section class="wrap split" aria-labelledby="android">
+<section class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-18" aria-labelledby="android">
   <div>
-    <h2 id="android">The Android app</h2>
+    <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="android">The Android app</h2>
     <p>Built for F-Droid. No Google Play Services, so it runs on GrapheneOS, LineageOS and any phone without Google. It keeps one connection to your server and removes an alert from the tray the moment it is cleared anywhere else.</p>
-    <p class="quiet">Not released yet. Follow the <a href="https://github.com/thejdubb02/clrd">GitHub repository</a> for the first build.</p>
+    <p class="text-muted-foreground text-sm">Not released yet. Follow the <a href="https://github.com/thejdubb02/clrd">GitHub repository</a> for the first build.</p>
   </div>
   <div>
-    <h2 id="source">Open source</h2>
+    <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="source">Open source</h2>
     <p>Apache 2.0. The server, the web inbox and the Android app live in one repository, built against one written contract.</p>
-    <p><a class="btn btn-quiet" href="https://github.com/thejdubb02/clrd">View on GitHub</a></p>
+    <p class="mt-4"><a class="btn" data-variant="outline" href="https://github.com/thejdubb02/clrd">View on GitHub</a></p>
   </div>
 </section>
 
@@ -175,14 +178,14 @@ CLRD_BASE_URL=https://notify.example.com \
 </html>
 {{end}}
 
-{{define "mini"}}<p class="mini-title"><span class="dot dot-urgent" aria-hidden="true"></span>Nightly backup failed</p>
-          <p class="mini-body">restic exited 1 after 4m 12s.</p>
-          <p class="meta">backups</p>{{end}}
+{{define "mini"}}<p class="text-foreground flex items-center gap-2 text-[13px]/snug font-semibold"><span class="bg-destructive size-2 shrink-0 rounded-full" aria-hidden="true"></span>Nightly backup failed</p>
+          <p class="mt-1 mb-1.5 text-xs/snug">restic exited 1 after 4m 12s.</p>
+          <p class="meta text-[10.5px]">backups</p>{{end}}
 
-{{define "follower"}}<div class="device {{if eq . "tablet"}}tablet{{else}}web{{end}}">
-        <p class="device-name">{{.}}</p>
+{{define "follower"}}<div class="device {{if eq . "tablet"}}min-h-59 max-sm:hidden{{else}}min-h-50 rounded-lg{{end}}">
+        <p class="meta mb-3.5 text-[11px]">{{.}}</p>
         <div class="mini follow">
           {{template "mini"}}
         </div>
-        <p class="mini-cleared">Cleared on pixel-9</p>
+        <p class="mini-cleared">{{template "i-check"}}Cleared on pixel-9</p>
       </div>{{end}}
