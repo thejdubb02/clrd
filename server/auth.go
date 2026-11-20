@@ -611,15 +611,16 @@ func (s *Server) bootstrap(ctx context.Context) error {
 
 var setupPage = template.Must(template.New("setup").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>clrd setup</title><style>body{font:16px system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem;color:#0F1114;background:#F5F3EE}
-input,button{font:inherit;padding:.5rem .75rem;border:1px solid #DEDAD1;border-radius:12px}button{background:#0B7A55;color:#fff;border:0}
-code{font-family:ui-monospace,monospace;background:#fff;padding:.25rem .5rem;border-radius:8px;word-break:break-all}</style></head><body>
-<h1>clrd setup</h1>
-{{if .Token}}<p>Admin token for <b>{{.Name}}</b>. Copy it now; it is not shown again.</p><p><code>{{.Token}}</code></p>
-<p>This browser is signed in. <a href="/app">Open the inbox</a>.</p>
-{{else}}<p>Create the first admin token.</p>
-<form method="post" action="/setup"><input type="hidden" name="code" value="{{.Code}}">
-<p><label>Device name <input name="name" value="admin" required></label></p><p><button>Create admin token</button></p></form>{{end}}
+<title>clrd setup</title><link rel="stylesheet" href="/static/app.css"></head><body class="text-body">
+<main class="mx-auto max-w-md px-4 py-16">
+<h1 class="text-foreground mb-4 text-2xl font-semibold tracking-tight">clrd setup</h1>
+{{if .Token}}<p class="mb-3">Admin token for <b class="text-foreground">{{.Name}}</b>. Copy it now; it is not shown again.</p><pre class="mb-3 whitespace-pre-wrap break-all"><code>{{.Token}}</code></pre>
+<p>This browser is signed in. <a class="underline" href="/app">Open the inbox</a>.</p>
+{{else}}<p class="mb-4">Create the first admin token.</p>
+<form class="bg-card grid gap-4 rounded-xl border p-5" method="post" action="/setup"><input type="hidden" name="code" value="{{.Code}}">
+<div class="field"><label for="name">Device name</label><input class="input" id="name" name="name" value="admin" required></div>
+<button class="btn" data-variant="primary">Create admin token</button></form>{{end}}
+</main>
 </body></html>`))
 
 // handleSetup: GET or HEAD shows the form (and never uses the code up), POST
