@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -455,5 +456,41 @@ func TestStalledStreamTimesOut(t *testing.T) {
 		} else if !bytes.HasPrefix(b, []byte("HTTP/1.1 200")) || !bytes.Contains(b, []byte(big[:1000])) || len(b) > 1_000_000 {
 			t.Errorf("%s: want a 200 stream cut short mid replay, got %d bytes: %.40q", path, len(b), b)
 		}
+	}
+}
+
+// Issue #63: a database restored from an older backup keeps its epoch, so the
+// server must notice it is behind and mint a new one.
+func TestEpochRestore(t *testing.T) {
+	s, ts, admin := newTest(t)
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "kept"})
+	backup := filepath.Join(t.TempDir(), "backup.db")
+	if _, err := s.db.Exec(`VACUUM INTO ?`, backup); err != nil {
+		t.Fatal(err)
+	}
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "lost"})
+	was := s.Epoch()
+	ts.Close()
+	s.Close()
+	b, err := os.ReadFile(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{was: true}
+	for range 2 { // the second restore of the same backup must not bring back an old epoch either
+		os.Remove(s.opt.DB + "-wal")
+		os.Remove(s.opt.DB + "-shm")
+		if err := os.WriteFile(s.opt.DB, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := New(s.opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seen[restored.Epoch()] {
+			t.Fatalf("restored database reused epoch %q", restored.Epoch())
+		}
+		seen[restored.Epoch()] = true
+		restored.Close()
 	}
 }

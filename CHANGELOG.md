@@ -189,6 +189,9 @@ Fixed, Removed, Security), as one line a user can understand.
   token signs in more than 20 browsers. Phones have their own limit of 20.
 - A phone linked from a browser that was itself signed in by another browser
   now stays signed in when either browser signs out, like any linked phone.
+- Restoring an older backup now makes every phone and browser drop its
+  local copy and resync, instead of risking missed messages. clrd keeps a
+  small `clrd.db.epoch` file next to the database for this.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.
