@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -153,7 +154,9 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,counts,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound" {
+	if strings.Join(names, ",") != "send,list,topics,counts,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,"+
+		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,"+
+		"hooks,set_hook,delete_hook,hook_deliveries,tokens,create_token,revoke_token,server_env,ntfy_ignored" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
@@ -233,6 +236,18 @@ func TestMissingArgsAreToolErrors(t *testing.T) {
 	callTool(t, New(f), "unlink", map[string]any{"id": "%zz"})
 	if strings.Join(f.calls, ",") != "DELETE /api/v1/devices/%25zz" {
 		t.Errorf("unlink %%zz: calls %v", f.calls)
+	}
+	// Every {x} in a REST tool's path is required and escaped, and never in the body.
+	if text, isErr := callTool(t, New(f), "delete_hook", map[string]any{"topic": "ops"}); !isErr || text != "name is required" {
+		t.Errorf("delete_hook without name: %v %q", isErr, text)
+	}
+	callTool(t, New(f), "set_template", map[string]any{"topic": "a/b", "name": "x", "message": "m"})
+	if call, body := f.last(); call != "PUT /api/v1/topics/a%2Fb/templates/x" || fmt.Sprint(body) != "map[message:m]" {
+		t.Errorf("set_template: %s %v", call, body)
+	}
+	callTool(t, New(f), "dismiss", map[string]any{"id": "01J"})
+	if call, body := f.last(); call != "POST /api/v1/notifications/01J/dismiss" || fmt.Sprint(body) != "map[via:mcp]" {
+		t.Errorf("dismiss: %s %v", call, body)
 	}
 }
 

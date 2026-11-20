@@ -72,6 +72,99 @@ func TestAgainstRealServer(t *testing.T) {
 	}
 }
 
+// TestSetupToolsAgainstRealServer runs every setup tool against the real REST
+// API, so a wrong path or body shape fails here.
+func TestSetupToolsAgainstRealServer(t *testing.T) {
+	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.Mount("/mcp", New(s))
+	_, admin, err := s.CreateToken(context.Background(), "agent", []string{"read", "publish", "admin"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, pub, err := s.CreateToken(context.Background(), "sender", []string{"read", "publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := func(token, name string, args map[string]any) (string, bool) {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
+		code, out := rpc(t, s, "Bearer "+token, string(b))
+		res, _ := out["result"].(map[string]any)
+		if code != 200 || res == nil {
+			t.Fatalf("%s: http %d %v", name, code, out)
+		}
+		return res["content"].([]any)[0].(map[string]any)["text"].(string), res["isError"] == true
+	}
+	ok := func(name string, args map[string]any, want ...string) map[string]any {
+		t.Helper()
+		text, isErr := tool(admin, name, args)
+		if isErr {
+			t.Fatalf("%s: %s", name, text)
+		}
+		for _, w := range want {
+			if !strings.Contains(text, w) {
+				t.Fatalf("%s: %s lacks %s", name, text, w)
+			}
+		}
+		var v map[string]any
+		json.Unmarshal([]byte(text), &v)
+		return v
+	}
+
+	a := ok("send", map[string]any{"topic": "agents", "message": "a"})
+	ok("dismiss", map[string]any{"id": a["id"]}, `"state":"dismissed"`)
+	ok("reopen", map[string]any{"id": a["id"]}, `"state":"active"`)
+	ok("send", map[string]any{"topic": "agents", "message": "b"})
+	ok("clear", map[string]any{"topic": "agents"}, `"cleared":2`)
+
+	sl := ok("silence", map[string]any{"topic": "agents", "for": "2h", "comment": "deploy"}, `"comment":"deploy"`)
+	ok("silences", nil, sl["id"].(string))
+	ok("end_silence", map[string]any{"id": sl["id"]})
+	if text := fmt.Sprint(ok("silences", nil)); strings.Contains(text, sl["id"].(string)) {
+		t.Fatalf("silence not ended: %s", text)
+	}
+
+	ok("set_topic", map[string]any{"topic": "backups", "checkin": "25h"}, `"checkin":"25h"`)
+
+	ok("set_template", map[string]any{"topic": "ci", "name": "build", "title": "{{.repo}}", "id": "{{.run}}"}, `"id":"{{.run}}"`)
+	ok("templates", map[string]any{"topic": "ci"}, `"title":"{{.repo}}"`, `"builtin"`)
+	ok("delete_template", map[string]any{"topic": "ci", "name": "build"}, `"deleted":true`)
+
+	ok("set_hook", map[string]any{"topic": "ops", "name": "audit", "url": "https://example.com/h", "events": []string{"acknowledged"}, "secret": "s"}, `"has_secret":true`)
+	ok("hooks", map[string]any{"topic": "ops"}, `"name":"audit"`)
+	ok("hook_deliveries", map[string]any{"topic": "ops", "name": "audit"}, `"deliveries"`)
+	ok("delete_hook", map[string]any{"topic": "ops", "name": "audit"}, `"deleted":true`)
+
+	cam := ok("create_token", map[string]any{"name": "cam", "scopes": []string{"read", "publish"},
+		"grants": []any{map[string]any{"topic": "home-*", "scopes": []string{"publish"}}}}, `"topic":"home-*"`, `"token":"clrd_`)
+	ok("tokens", nil, `"name":"cam"`)
+	ok("revoke_token", map[string]any{"id": cam["id"]})
+	if text, isErr := tool(cam["token"].(string), "topics", nil); !isErr || !strings.Contains(text, "401") {
+		t.Fatalf("revoked token still works: %v %s", isErr, text)
+	}
+
+	ok("server_env", nil, `"CLRD_RETENTION":"720h0m0s"`)
+	ok("ntfy_ignored", nil, `"ignored"`)
+
+	// Errors say what to fix: a missing path argument, and the API's own message.
+	if text, isErr := tool(admin, "set_hook", map[string]any{"topic": "ops", "url": "https://example.com/h"}); !isErr || text != "name is required" {
+		t.Fatalf("set_hook without name: %v %q", isErr, text)
+	}
+	if text, isErr := tool(admin, "set_hook", map[string]any{"topic": "ops", "name": "x", "url": "ftp://x"}); !isErr || !strings.Contains(text, "url must be an http(s) URL") {
+		t.Fatalf("set_hook bad url: %v %q", isErr, text)
+	}
+	// Admin tools stay admin: the API refuses a token without the scope.
+	for _, name := range []string{"tokens", "server_env", "hooks"} {
+		if text, isErr := tool(pub, name, map[string]any{"topic": "ops"}); !isErr || !strings.Contains(text, "403") {
+			t.Fatalf("%s as non-admin: %v %q", name, isErr, text)
+		}
+	}
+}
+
 // TestClientSession drives /mcp over real HTTP the way an MCP client does:
 // initialize, the initialized notification, tools/list, then tool calls with
 // the negotiated MCP-Protocol-Version header on every request.

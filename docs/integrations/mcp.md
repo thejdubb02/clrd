@@ -29,6 +29,31 @@ Tools:
 | `device_log` | none | The last 200 links, sign-ins and unlinks, newest first. |
 | `unlink` | `id` | Sign out a browser or phone from `devices` at once. Unlinking a phone also signs out the browsers it approved. |
 | `sound` | `id?, sound?` | Notification sounds, one choice per device. No arguments lists the valid names and the default (`default`, the device's own sound). With `id` from `devices` and `sound`, sets that device's sound; an unknown name is refused with the list. `devices` shows each device's current sound. |
+| `dismiss` | `id` | Clear it on every device. `reopen` undoes it. |
+| `reopen` | `id` | Make it active again. |
+| `clear` | `topic` or `ids` | Dismiss every open notification in a topic, or the listed ones. Returns `cleared`. |
+| `silences` | none | Silences that have not ended. |
+| `silence` | `topic?, tag?, for? or until?, comment?` | Mute a topic, a tag, or a tag in one topic until a set time (`for: "2h"`, or `until` in RFC 3339). Notifications still arrive and sync, without a sound. |
+| `end_silence` | `id` | End a silence now. |
+| `set_topic` | `topic, icon?, checkin?` | Set the topic icon (an image URL), or a check-in timer (`"25h"`): the topic alerts when nothing arrives for that long. `""` turns either off. |
+| `templates` | `topic` | Incoming webhook templates, saved and built in. A service posts to `/{topic}?template={name}`. |
+| `set_template` | `topic, name, title?, message?, priority?, tags?, click?, id?, resolve?, each?, secret?` | Save how a service's JSON becomes a notification. Fields are Go templates over the posted JSON, e.g. `{{.alert.name}}`; `each` is a plain dotted path and `secret` a plain value. |
+| `delete_template` | `topic, name` | Delete a saved template. |
+| `hooks` | `topic` | Outgoing webhooks: URLs clrd calls when a notification is dismissed, acknowledged, resolved, snoozed or a button tapped. Admin. |
+| `set_hook` | `topic, name, url, events?, secret?` | Add or replace one. `events` defaults to all; `secret` signs each call. Saving again turns a failing hook back on. Admin. |
+| `delete_hook` | `topic, name` | Delete one. Admin. |
+| `hook_deliveries` | `topic, name` | Its recent calls, with status and error. Admin. |
+| `tokens` | none | API tokens, never their secrets. Admin. |
+| `create_token` | `name, scopes, topics? or grants?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. Admin. |
+| `revoke_token` | `id` | Revoke a token; its streams close at once. Admin. |
+| `server_env` | none | Every `CLRD_*` setting in effect, defaults filled in. Read only: those change by setting the variable and restarting. Admin. |
+| `ntfy_ignored` | none | ntfy publish options senders used that clrd accepts but ignores, with counts. Admin. |
+
+With an admin token an agent can set up every feature from this list; only
+the `CLRD_*` environment settings need a restart, so `server_env` just reads
+them. Tools marked Admin need the `admin` scope, and the three token tools
+also need a token with no topic limit. The others follow the token's scopes and topics like the REST API, and their
+errors are the API's own message (for example `url must be an http(s) URL`).
 
 `wait_for_reply` returns at once if the notification is already acknowledged,
 dismissed or resolved. Otherwise it watches the server's committed events, so

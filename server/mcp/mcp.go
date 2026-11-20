@@ -234,6 +234,29 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		}
 		return nil
 	}
+	if t, ok := restTools[name]; ok {
+		body, path := map[string]any{}, t.path
+		for k, v := range a {
+			body[k] = v
+		}
+		for strings.Contains(path, "{") {
+			i := strings.Index(path, "{")
+			j := i + strings.Index(path[i:], "}")
+			k := path[i+1 : j]
+			if err := need(k); err != nil {
+				return nil, err
+			}
+			path = path[:i] + url.PathEscape(str(a, k)) + path[j+1:]
+			delete(body, k)
+		}
+		if t.method == "GET" || t.method == "DELETE" {
+			return h.api(r, t.method, path, nil)
+		}
+		if t.via {
+			body["via"] = "mcp"
+		}
+		return h.api(r, t.method, path, body)
+	}
 	switch name {
 	case "send":
 		if err := need("topic", "message"); err != nil {
@@ -503,4 +526,82 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices")}, "id")},
 	{"name": "sound", "description": "Notification sounds, chosen per device. No arguments lists the valid sound names and the default; devices shows each device's current sound. With id and sound, sets that device's sound.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices"), "sound": p("string", "A name from the list, e.g. chime or none")})},
+	{"name": "dismiss", "description": "Dismiss (clear) a notification by its server id. It goes away on every device; reopen undoes it.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
+	{"name": "reopen", "description": "Make a dismissed, acknowledged, snoozed or resolved notification active again, by its server id.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
+	{"name": "clear", "description": "Dismiss every open notification in a topic, or a list of them by server id. Give topic or ids, not both. Returns how many were cleared.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic to clear"), "ids": strs("Server ids to clear")})},
+	{"name": "silences", "description": "List silences that have not ended yet.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "silence", "description": "Mute a topic, a tag, or a tag in one topic until a set time. Notifications still arrive and sync but do not ring. Give for or until.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic to mute"), "tag": p("string", "Tag to mute, in every topic unless topic is set"),
+			"for": p("string", "How long, like 2h or 30m"), "until": p("string", "End time, RFC 3339"), "comment": p("string", "Why, shown in the list")})},
+	{"name": "end_silence", "description": "End a silence now, by its id from silences.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Silence id")}, "id")},
+	{"name": "set_topic", "description": "Set a topic's icon or its check-in timer. With checkin, the topic alerts if nothing arrives for that long (a dead man's switch). \"\" removes either one.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "icon": p("string", "Image URL, or \"\" to remove"), "checkin": p("string", "Duration like 25h, or \"\" for off")}, "topic")},
+	{"name": "templates", "description": "List a topic's incoming webhook templates, saved and built in. A service posts to /{topic}?template={name}.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic")}, "topic")},
+	{"name": "set_template", "description": "Save an incoming webhook template: how a service's JSON becomes a notification. Fields other than each and secret are Go templates over the posted JSON, like {{.alert.name}}. Needs title or message unless name is a built-in template.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Template name, used as ?template={name}"),
+			"title": p("string", "Title template"), "message": p("string", "Message template"), "priority": p("string", "Renders to 1-5 or min, low, default, high, urgent"),
+			"tags": p("string", "Renders to a comma separated list"), "click": p("string", "Link to open"), "id": p("string", "Renders to an external id, so the same id updates one notification"),
+			"resolve": p("string", "Renders to true to resolve the notification with that id"), "each": p("string", "Dotted path to an array: one notification per item"),
+			"secret": p("string", "Shared secret the service sends; never returned")}, "topic", "name")},
+	{"name": "delete_template", "description": "Delete a saved incoming webhook template.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Template name")}, "topic", "name")},
+	{"name": "hooks", "description": "List a topic's outgoing webhooks: URLs clrd calls when its notifications are dismissed, acknowledged, resolved, snoozed or an action is tapped. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic")}, "topic")},
+	{"name": "set_hook", "description": "Add or replace an outgoing webhook. Saving again turns a failing hook back on. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Hook name"), "url": p("string", "http(s) URL to call"),
+			"events": strs("Any of dismissed, acknowledged, resolved, snoozed, action; default all"), "secret": p("string", "Signs each call with HMAC-SHA256; never returned")}, "topic", "name", "url")},
+	{"name": "delete_hook", "description": "Delete an outgoing webhook. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Hook name")}, "topic", "name")},
+	{"name": "hook_deliveries", "description": "Recent calls of one outgoing webhook, with status and error. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Hook name")}, "topic", "name")},
+	{"name": "tokens", "description": "List API tokens (never their secrets). Needs an admin token.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "create_token", "description": "Create an API token for a phone, script or agent. The secret is in the result once and never again. Limit it with topics, or with grants (per-topic scopes, first match wins), not both. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"name": p("string", "Who uses it, e.g. backup-job"), "scopes": strs("Any of read, publish, admin"),
+			"topics": strs("Topics it may use; leave out for every topic"),
+			"grants": map[string]any{"type": "array", "description": "Per-topic rules, like [{\"topic\":\"home-*\",\"scopes\":[\"publish\"]}]; each grant's scopes must be in scopes",
+				"items": schema(map[string]any{"topic": p("string", "Topic or prefix ending in *"), "scopes": strs("Scopes on that topic")}, "topic", "scopes")}}, "name", "scopes")},
+	{"name": "revoke_token", "description": "Revoke an API token by its id from tokens. Its open streams close at once. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Token id")}, "id")},
+	{"name": "server_env", "description": "Every CLRD_* environment setting in effect, defaults filled in. Read only: these change by setting the variable and restarting. Needs an admin token.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "ntfy_ignored", "description": "ntfy publish options senders used that clrd accepts but ignores (email, call and the like), with counts, so a migrated sender can be fixed. Needs an admin token.",
+		"inputSchema": schema(map[string]any{})},
+}
+
+// restTools are tools that are one REST call: {x} in the path comes from the
+// argument x, the other arguments are the JSON body.
+var restTools = map[string]struct {
+	method, path string
+	via          bool // a state change: log it as made by an agent
+}{
+	"dismiss":         {"POST", "/api/v1/notifications/{id}/dismiss", true},
+	"reopen":          {"POST", "/api/v1/notifications/{id}/reopen", true},
+	"clear":           {"POST", "/api/v1/notifications/clear", true},
+	"silences":        {"GET", "/api/v1/silences", false},
+	"silence":         {"POST", "/api/v1/silences", false},
+	"end_silence":     {"DELETE", "/api/v1/silences/{id}", false},
+	"set_topic":       {"PUT", "/api/v1/topics/{topic}", false},
+	"templates":       {"GET", "/api/v1/topics/{topic}/templates", false},
+	"set_template":    {"PUT", "/api/v1/topics/{topic}/templates/{name}", false},
+	"delete_template": {"DELETE", "/api/v1/topics/{topic}/templates/{name}", false},
+	"hooks":           {"GET", "/api/v1/topics/{topic}/hooks", false},
+	"set_hook":        {"PUT", "/api/v1/topics/{topic}/hooks/{name}", false},
+	"delete_hook":     {"DELETE", "/api/v1/topics/{topic}/hooks/{name}", false},
+	"hook_deliveries": {"GET", "/api/v1/topics/{topic}/hooks/{name}/deliveries", false},
+	"tokens":          {"GET", "/api/v1/tokens", false},
+	"create_token":    {"POST", "/api/v1/tokens", false},
+	"revoke_token":    {"DELETE", "/api/v1/tokens/{id}", false},
+	"server_env":      {"GET", "/api/v1/server", false},
+	"ntfy_ignored":    {"GET", "/api/v1/ntfy/ignored", false},
+}
+
+func strs(desc string) map[string]any {
+	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
 }

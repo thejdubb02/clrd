@@ -31,6 +31,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- MCP: tools to set up every feature except the environment settings (which
+  `server_env` reads), so an agent needs no web page or command line: dismiss, reopen and clear; silences; topic icon and check-in;
+  incoming webhook templates; and, with an admin token, outgoing webhooks,
+  tokens with per-topic grants, the server settings in effect and ignored ntfy
+  options (#252).
 - Server: each device can have its own notification sound (default, none,
   chime, ding, pop, bell, alert or soft), read and set through the API and the
   MCP `sound` tool; `GET /api/v1/sounds` lists the names. The Android app and
