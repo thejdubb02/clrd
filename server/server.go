@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"math"
 	"math/rand/v2"
@@ -132,7 +133,9 @@ var legacyDB = "/data/clrd.db"
 // ~/.local/share). Same file from any working directory, so `clrd token
 // create` finds the server's database, and no root needed.
 func DefaultDB() string {
-	if _, err := os.Stat(legacyDB); err == nil {
+	// Anything but "not there" (even permission denied) keeps the old file, so
+	// a server never silently starts over on an empty database.
+	if _, err := os.Stat(legacyDB); !errors.Is(err, fs.ErrNotExist) {
 		return legacyDB
 	}
 	dir := os.Getenv("XDG_DATA_HOME")
@@ -152,6 +155,10 @@ func DefaultDB() string {
 func (s *Server) baseFor(r *http.Request) string {
 	if s.baseSet || r.Host == "" {
 		return s.opt.BaseURL
+	}
+	// The browser's Origin carries the scheme it used, which a TLS proxy hides.
+	if o, err := url.Parse(r.Header.Get("Origin")); err == nil && o.Host == r.Host && (o.Scheme == "https" || o.Scheme == "http") {
+		return o.Scheme + "://" + r.Host
 	}
 	if r.TLS != nil {
 		return "https://" + r.Host

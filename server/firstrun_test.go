@@ -36,10 +36,11 @@ func TestDefaultDB(t *testing.T) {
 }
 
 // With CLRD_BASE_URL unset, a pairing link uses the address the browser came
-// in on, so a phone on the LAN can open it; set, the setting wins.
+// in on (scheme from the browser's Origin, which a TLS proxy would hide), so a
+// phone on the LAN can open it; set, the setting wins.
 func TestPairLinkFollowsHost(t *testing.T) {
 	for _, tc := range []struct{ base, want string }{
-		{"", "http://192.168.1.50:8080/pair?c="},
+		{"", "https://192.168.1.50:8080/pair?c="},
 		{"https://clrd.example.com", "https://clrd.example.com/pair?c="},
 	} {
 		s, err := New(Options{DB: filepath.Join(t.TempDir(), "clrd.db"), BaseURL: tc.base,

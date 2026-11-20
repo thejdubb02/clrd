@@ -68,7 +68,7 @@ const usage = `clrd: self-hosted notifications. Dismiss once, gone everywhere.
   clrd [serve]                 run the server (no settings needed)
   clrd token create [--name me] [--scope read,publish|admin] [--topics a,b]
   clrd token list
-  clrd import ntfy --auth-file user.db --cache-file cache.db [--dry-run]
+  clrd import ntfy --auth-file user.db --cache-file cache.db --default-access deny-all [--dry-run]
   clrd health                  exit 0 if the local server answers /healthz
 
 Settings are optional environment variables: CLRD_LISTEN (:8080), CLRD_DB
