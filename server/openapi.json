@@ -3283,6 +3283,43 @@
     ]
    }
   },
+  "/v1/account": {
+   "get": {
+    "summary": "ntfy account check",
+    "description": "Who the credentials belong to, as ntfy answers it. No credentials gives the anonymous account; wrong ones give 401.",
+    "tags": [
+     "ntfy"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "username": {
+           "type": "string"
+          },
+          "role": {
+           "type": "string",
+           "enum": [
+            "admin",
+            "user",
+            "anonymous"
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Wrong credentials"
+     }
+    }
+   }
+  },
   "/v1/health": {
    "get": {
     "summary": "ntfy health",
@@ -3627,6 +3664,14 @@
       ],
       "format": "date-time"
      },
+     "expires_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "When the server resolves it on its own; null for never."
+     },
      "created_at": {
       "type": "string",
       "format": "date-time"
@@ -3707,6 +3752,10 @@
      "snooze_until": {
       "type": "string",
       "format": "date-time"
+     },
+     "expires": {
+      "type": "string",
+      "description": "Auto-clear: a duration from now (30m, 2h) or an RFC3339 time. When it passes the server resolves the notification. Must be in the future."
      },
      "status": {
       "type": "string",

@@ -86,6 +86,7 @@ type Server struct {
 	failing  sync.Map     // background job name -> true while it keeps failing; /healthz reports it
 
 	seen      sync.Map // token id -> time last written to last_seen_at
+	pwLimit   *limiter // ntfy password attempts per address
 	setupMu   sync.Mutex
 	setupCode string
 
@@ -136,7 +137,8 @@ func New(opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{opt: opt, db: db, log: opt.Logger, mux: http.NewServeMux()}
+	s := &Server{opt: opt, db: db, log: opt.Logger, mux: http.NewServeMux(),
+		pwLimit: newLimiter(10, time.Minute)}
 	s.hub.subs = map[chan Event]string{}
 	var seq, pruned int64
 	if err := db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'events'`).Scan(&seq); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -271,6 +273,7 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 	go s.every(ctx, "snooze wake", wakeEvery, s.wakeSnoozed)
+	go s.every(ctx, "expiry", wakeEvery, s.expireDue)
 	go s.every(ctx, "prune", time.Hour, s.prune)
 	go s.every(ctx, "cache sweep", time.Hour, s.fetch.sweep)
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,

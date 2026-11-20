@@ -9,7 +9,6 @@ eq=$(grep -o 'ntfys://clrd.itsjustin.me/infra?token=clrd_\.\.\.' "$ROOT/docs/int
 dock python:3.12-slim sh -ec "pip install -q --root-user-action=ignore --disable-pip-version-check apprise==1.9.3 && apprise -t Equivalent -b body '$eq&priority=high'"
 check "$(rows infra "")" 'map(select(.title == "Equivalent")) | length == 1' "?token= form"
 ok "?token= form"
-# Known bug #130: Apprise sends priority as X-Priority next to a JSON body,
-# and clrd reads only the JSON. Fails once fixed, so the check gets tightened.
-check "$(rows infra "")" 'map(select(.title == "Equivalent")) | .[0].priority == 3' "#130 looks fixed: expect priority 4 here now"
-ok "known bug #130: ?priority=high is dropped"
+# Apprise sends priority as X-Priority next to a JSON body (#130).
+check "$(rows infra "")" 'map(select(.title == "Equivalent")) | .[0].priority == 4' "?priority=high arrives as priority 4"
+ok "?priority=high arrives"

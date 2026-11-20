@@ -27,7 +27,7 @@ func get(t *testing.T, h http.Handler, path string) (int, string) {
 func TestPages(t *testing.T) {
 	h := Handler(NewFake(), "https://clrd.example.com")
 	for path, want := range map[string][]string{
-		"/":                          {"<h1>Dismiss once. Gone everywhere.</h1>", `og:image" content="https://clrd.example.com/assets/og.png`, "Uptime Kuma", "Alertmanager", "F-Droid", "github.com/thejdubb02/clrd"},
+		"/":                          {">Dismiss once. Gone everywhere.</h1>", `og:image" content="https://clrd.example.com/assets/og.png`, "Uptime Kuma", "Alertmanager", "F-Droid", "github.com/thejdubb02/clrd"},
 		"/docs/":                     {"<h1>Docs</h1>", `href="/docs/spec"`},
 		"/docs/spec":                 {"clrd spec", `aria-current="page">clrd spec`},
 		"/docs/integrations/":        {`href="/docs/integrations/curl"`, `href="/docs/integrations/mcp"`},
@@ -38,7 +38,7 @@ func TestPages(t *testing.T) {
 		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css"`, `data-variant="clear"`, `class="command-dialog"`},
 		"/app/settings":              {"Devices in sync", "pixel-9", "https://clrd.example.com/api/v1/notifications"},
 		"/app?q=disk":                {"Disk 91% full on web-1"},
-		"/app?topic=home":            {"Front door open", `<span class="in-topic">in home</span>`},
+		"/app?topic=home":            {"Front door open", `data-topic>in home</span>`},
 		"/robots.txt":                {"User-agent: GPTBot", "User-agent: ClaudeBot", "User-agent: PerplexityBot", "User-agent: OAI-SearchBot", "Sitemap: https://clrd.example.com/sitemap.xml"},
 	} {
 		code, body := get(t, h, path)
@@ -202,7 +202,7 @@ func TestActForm(t *testing.T) {
 	}
 	// A reply button posts its answer and the seq the card was drawn at.
 	agent := id("Agent wants approval")
-	if _, body := get(t, h, "/app?topic=agents"); !strings.Contains(body, `name="reply" value="yes" data-act="reply">Approve</button>`) || strings.Contains(body, `<p class="links">`) {
+	if _, body := get(t, h, "/app?topic=agents"); !strings.Contains(body, `name="reply" value="yes" data-act="reply">Approve</button>`) || strings.Contains(body, ` data-links>`) {
 		t.Fatal("reply actions are not answer buttons, or show as empty links")
 	}
 	seq := strconv.FormatInt(f.items[agent].Seq, 10)
@@ -246,7 +246,7 @@ func TestMountBesideNtfy(t *testing.T) {
 		mux.Handle(p, ntfy)
 	}
 	mux.Handle("GET /", Handler(NewFake(), ""))
-	for path, ours := range map[string]bool{"/": true, "/app": true, "/app/cleared": true, "/docs/spec": true, "/static/style.css": true,
+	for path, ours := range map[string]bool{"/": true, "/app": true, "/app/cleared": true, "/docs/spec": true, "/static/app.css": true,
 		"/robots.txt": true, "/alerts/json": false, "/alerts/sse": false, "/healthz": false, "/api/v1/ws": false} {
 		code, body := get(t, mux, path)
 		if (body == "ntfy") == ours || (ours && code != 200) {
@@ -293,7 +293,7 @@ func TestNoBannedCharacters(t *testing.T) {
 		}
 	}
 	h := Handler(NewFake(), "")
-	for _, p := range []string{"/", "/docs/", "/docs/spec", "/app", "/app/snoozed", "/app/cleared", "/app/settings", "/robots.txt", "/static/style.css", "/static/inbox.js"} {
+	for _, p := range []string{"/", "/docs/", "/docs/spec", "/app", "/app/snoozed", "/app/cleared", "/app/settings", "/robots.txt", "/static/app.css", "/static/inbox.js"} {
 		_, body := get(t, h, p)
 		check(p, body)
 	}

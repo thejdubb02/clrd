@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   state_by TEXT NOT NULL DEFAULT '',
   state_by_id TEXT NOT NULL DEFAULT '',
   snooze_until INTEGER,
+  expires_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   seq INTEGER NOT NULL DEFAULT 0
@@ -139,6 +140,7 @@ type Notification struct {
 	StateBy     string      `json:"state_by"`
 	StateByID   string      `json:"state_by_id"` // token id: names can repeat
 	SnoozeUntil *time.Time  `json:"snooze_until"`
+	ExpiresAt   *time.Time  `json:"expires_at"` // the server resolves it then
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Seq         int64       `json:"seq"`
@@ -207,6 +209,15 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add format column: %w", err)
 	}
+	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN expires_at INTEGER`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add expires_at column: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS notifications_expires ON notifications(expires_at) WHERE expires_at IS NOT NULL`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("expires index: %w", err)
+	}
 	if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN grants TEXT NOT NULL DEFAULT ''`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
@@ -232,17 +243,17 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at`
 
 type scanner interface{ Scan(...any) error }
 
 func scanNotification(r scanner) (*Notification, error) {
 	var n Notification
 	var tags, actions, att string
-	var snooze sql.NullInt64
+	var snooze, expires sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
-		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq)
+		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +266,10 @@ func scanNotification(r scanner) (*Notification, error) {
 	if snooze.Valid {
 		t := fromMS(snooze.Int64)
 		n.SnoozeUntil = &t
+	}
+	if expires.Valid {
+		t := fromMS(expires.Int64)
+		n.ExpiresAt = &t
 	}
 	if err := json.Unmarshal([]byte(tags), &n.Tags); err != nil {
 		return nil, err
@@ -270,14 +285,14 @@ func saveNotification(tx *sql.Tx, n *Notification) error {
 		b, _ := json.Marshal(n.Attachment)
 		att = string(b)
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(21)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(22)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
-		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq)
+		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt))
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -386,6 +401,7 @@ type PublishInput struct {
 	Attachment  *Attachment `json:"attachment"` // external only: {"url","name"}; uploads go through PublishFile
 	file        string
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
+	Expires     string     `json:"expires"`      // optional: a duration ("30m") or RFC3339 time; then the server resolves it
 	// Status "resolved" (Alertmanager, Grafana, Gatus) resolves the open
 	// notification with this external_id instead of creating one; 404 if none.
 	Status string `json:"status,omitempty"`
@@ -454,6 +470,10 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err := checkActions(in.Actions); err != nil {
 		return nil, err
 	}
+	expires, err := parseExpires(in.Expires)
+	if err != nil {
+		return nil, err
+	}
 	var replaced string // file id an upsert drops, removed after commit
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		if in.file != "" {
@@ -480,7 +500,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			if err == nil {
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
-				replaced, n.Attachment, n.file = n.file, in.Attachment, in.file
+				replaced, n.Attachment, n.file, n.ExpiresAt = n.file, in.Attachment, in.file, expires
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -499,7 +519,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		t := now()
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
 			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions,
-			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t}
+			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
@@ -524,8 +544,8 @@ func senderView(tok *Token, n *Notification, own bool) *Notification {
 	}
 	v := &Notification{ID: n.ID, Topic: n.Topic, ExternalID: n.ExternalID, State: n.State, CreatedAt: n.UpdatedAt, UpdatedAt: n.UpdatedAt, Seq: n.Seq}
 	if own { // a publish: the content is the sender's own; the state is not
-		v.Title, v.Message, v.Priority, v.Tags, v.Click, v.Icon, v.Actions, v.Attachment =
-			n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Attachment
+		v.Title, v.Message, v.Priority, v.Tags, v.Click, v.Icon, v.Actions, v.Attachment, v.ExpiresAt =
+			n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Attachment, n.ExpiresAt
 		v.State = Active
 	}
 	return v
@@ -786,10 +806,47 @@ func (s *Server) Clear(ctx context.Context, tok *Token, topic string, ids []stri
 func (s *Server) wakeSnoozed(ctx context.Context) error {
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		ns, err := queryNotifications(tx, `SELECT `+notifCols+` FROM notifications
-			WHERE state = 'snoozed' AND snooze_until <= ?`, ms(time.Now()))
+			WHERE state = 'snoozed' AND snooze_until <= ? AND (expires_at IS NULL OR expires_at > ?)`, ms(time.Now()), ms(time.Now()))
 		var evs []Event
 		for _, n := range ns {
 			ev, _ := transition(n, Active, &Token{Name: "server"}, nil)
+			evs = append(evs, *ev)
+		}
+		return evs, err
+	})
+	return err
+}
+
+// parseExpires reads a publish's expires: "" for none, a duration from now,
+// or an RFC3339 time. It must be in the future.
+func parseExpires(v string) (*time.Time, error) {
+	if v == "" {
+		return nil, nil
+	}
+	t := time.Now()
+	if d, err := time.ParseDuration(v); err == nil {
+		t = t.Add(d)
+	} else if at, err := time.Parse(time.RFC3339, v); err == nil {
+		t = at
+	} else {
+		return nil, errf(400, "bad_request", "expires: want a duration like 30m or an RFC3339 time, got %q", v)
+	}
+	t = t.UTC().Truncate(time.Millisecond)
+	if !t.After(time.Now()) {
+		return nil, errf(400, "bad_request", "expires must be in the future")
+	}
+	return &t, nil
+}
+
+// expireDue resolves open notifications whose expires_at has passed.
+func (s *Server) expireDue(ctx context.Context) error {
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		ns, err := queryNotifications(tx, `SELECT `+notifCols+` FROM notifications
+			WHERE expires_at <= ? AND state NOT IN ('dismissed', 'resolved')`, ms(time.Now()))
+		var evs []Event
+		for _, n := range ns {
+			n.ExpiresAt = nil // done: a reopen must not expire it again at once
+			ev, _ := transition(n, Resolved, &Token{Name: "server"}, nil)
 			evs = append(evs, *ev)
 		}
 		return evs, err
