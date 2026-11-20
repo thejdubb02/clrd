@@ -61,6 +61,32 @@ func TestPairLinkFollowsHost(t *testing.T) {
 	}
 }
 
+// #254: a GET page (pair, link) has no Origin, so behind a TLS proxy the
+// scheme comes from X-Forwarded-Proto, but only from a trusted proxy.
+func TestLinkSchemeBehindProxy(t *testing.T) {
+	s, err := New(Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, tc := range []struct{ peer, proto, want string }{
+		{"10.0.0.2:5000", "https", "https://clrd.example.com"},
+		{"10.0.0.2:5000", "", "http://clrd.example.com"},
+		{"10.0.0.2:5000", "http, https", "https://clrd.example.com"}, // the client's own value comes first
+
+		{"203.0.113.9:5000", "https", "http://clrd.example.com"}, // not a proxy: ignored
+	} {
+		req := httptest.NewRequest("GET", "http://clrd.example.com/pair?c=x", nil)
+		req.RemoteAddr = tc.peer
+		if tc.proto != "" {
+			req.Header.Set("X-Forwarded-Proto", tc.proto)
+		}
+		if got := s.baseFor(req); got != tc.want {
+			t.Errorf("peer %s proto %q: %q, want %q", tc.peer, tc.proto, got, tc.want)
+		}
+	}
+}
+
 // A request with no token is told how to get one.
 func TestNoTokenSaysWhatToDo(t *testing.T) {
 	_, ts, _ := newTest(t)

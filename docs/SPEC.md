@@ -618,7 +618,9 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   Every publish counts, on every route; over a cap is a 429 `rate_limited`.
   `CLRD_TRUSTED_PROXIES` (unset; comma-separated CIDRs or addresses): the
   only peers whose rightmost `X-Forwarded-For` hop is taken as the client
-  address. Unset, any loopback or private-network peer is trusted.
+  address, and whose `X-Forwarded-Proto` sets the scheme of links built from
+  the request when `CLRD_BASE_URL` is unset. Unset, any loopback or
+  private-network peer is trusted.
   An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.

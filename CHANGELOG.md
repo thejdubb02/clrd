@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: behind a TLS proxy with `CLRD_BASE_URL` unset, the app link on the
+  pair and link pages now says `https://` instead of `http://`, taken from the
+  proxy's `X-Forwarded-Proto` (#254).
 - Server: a reply button on an old card can no longer answer a question that
   was updated since, even after the update has aged out of the event log
   (#280). The device gets a conflict and shows the current question.

@@ -160,6 +160,19 @@ func (s *Server) baseFor(r *http.Request) string {
 	if o, err := url.Parse(r.Header.Get("Origin")); err == nil && o.Host == r.Host && (o.Scheme == "https" || o.Scheme == "http") {
 		return o.Scheme + "://" + r.Host
 	}
+	// A GET page has no Origin: trust the proxy's X-Forwarded-Proto (#254).
+	// The rightmost hop is the one our proxy added, as for X-Forwarded-For.
+	var p string
+	if xfp := r.Header.Values("X-Forwarded-Proto"); len(xfp) > 0 {
+		last := xfp[len(xfp)-1]
+		p = strings.TrimSpace(last[strings.LastIndex(last, ",")+1:])
+	}
+	if p == "https" || p == "http" {
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if ip := net.ParseIP(host); ip != nil && isTrustedProxy(ip, s.opt.TrustedProxies) {
+			return p + "://" + r.Host
+		}
+	}
 	if r.TLS != nil {
 		return "https://" + r.Host
 	}
