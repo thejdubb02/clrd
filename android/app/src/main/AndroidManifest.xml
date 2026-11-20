@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -8,6 +9,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- The in-app QR scanner. Asked for only when the person taps Scan QR code; no camera is required to install. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- Cleartext is allowed because self-hosted servers on a home network are often plain http.
          Settings warns when the URL is http://. -->
@@ -30,7 +34,25 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- clrd://pair?server=...&code=... from a browser's sign-in page: this phone approves that browser.
+                 clrd://link?server=...&code=... from a browser's Link a phone page: that browser approves this phone. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="clrd" />
+                <data android:host="pair" />
+                <data android:host="link" />
+            </intent-filter>
         </activity>
+
+        <!-- The scanner turns with the phone instead of staying in the library's landscape default.
+             Lint flags any screenOrientation, but this one removes a lock rather than adding one. -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="unspecified"
+            tools:ignore="DiscouragedApi"
+            tools:replace="screenOrientation" />
 
         <!-- specialUse: a long-lived connection to the user's own server. dataSync would be cut off
              after 6 hours on Android 15 and may not start at boot. -->

@@ -57,6 +57,13 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
         }
     }
 
+    /** Name of the browser waiting on pairing [code] (issue #74). 404 when unknown, expired or used. */
+    fun pairInfo(code: String): String = JSONObject(get("/api/v1/pair/$code")).getString("name")
+
+    fun pairApprove(code: String) { post("/api/v1/pair/$code/approve") }
+
+    fun pairDeny(code: String) { post("/api/v1/pair/$code/deny") }
+
     fun wsRequest(since: Long): Request = req("/api/v1/ws?since=$since").build()
 
     private fun req(path: String) = Request.Builder().url(base + path).header("Authorization", "Bearer $token")
@@ -70,5 +77,31 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
     companion object {
         private val JSON = "application/json".toMediaType()
         const val PAGE = 500 // server max
+    }
+}
+
+/** The answer to one link claim poll (issue #74, Flow A). */
+sealed interface Claim {
+    data object Waiting : Claim
+    data object Gone : Claim
+    data class Approved(val token: String) : Claim
+}
+
+/**
+ * Claims link [code] on [server] for this phone. No Authorization header: [server] came from a scan,
+ * and this phone's token (if it has one) belongs to the server it is set up with.
+ */
+fun linkClaim(http: OkHttpClient, server: String, code: String, secret: String, name: String): Claim {
+    val body = JSONObject().put("code", code).put("secret", secret).put("name", name).toString()
+    val req = Request.Builder().url(server.trimEnd('/') + "/api/v1/link/claim").post(body.toRequestBody("application/json".toMediaType())).build()
+    return http.newCall(req).execute().use { r ->
+        val text = r.body?.string().orEmpty()
+        when (r.code) {
+            202 -> Claim.Waiting
+            410 -> Claim.Gone
+            200 -> JSONObject(text).optString("token").takeIf { it.isNotBlank() }?.let { Claim.Approved(it) }
+                ?: throw HttpError(200, "no token in the answer")
+            else -> throw HttpError(r.code, runCatching { JSONObject(text).optString("error") }.getOrNull() ?: text.take(200), retryAfterMs(r))
+        }
     }
 }
