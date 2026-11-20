@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"sort"
@@ -194,27 +195,40 @@ var views = map[string][]string{
 	"cleared": {"dismissed", "resolved"},
 }
 
-var tpl = template.Must(template.New("").Funcs(template.FuncMap{
-	"iso":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
-	"clock": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
-	"card": func(n Notification, view, here string, snap Snapshot) any {
-		return struct {
-			N             Notification
-			View, Here    string
-			Snooze        []string
-			SnoozeDefault string
-			Text          template.HTML
-			Preview       bool
-		}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap), snap.PreviewsOn(n.Topic)}
-	},
-	"snoozeLabel": snoozeLabel,
-	"plural": func(n int, one, many string) string {
-		if n == 1 {
-			return one
-		}
-		return many
-	},
-}).ParseFS(files, "templates/*.html"))
+// templates parses the pages for a site served under base: "" at the root,
+// else the path of CLRD_BASE_URL, like "/clrd". Every link to the site
+// starts with {{base}}.
+func templates(base string) *template.Template {
+	return template.Must(template.New("").Funcs(template.FuncMap{
+		"base": func() string { return base },
+		// local puts base in front of a path on this server ("/api/v1/files/x").
+		"local": func(u string) string {
+			if strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") {
+				return base + u
+			}
+			return u
+		},
+		"iso":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
+		"clock": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
+		"card": func(n Notification, view, here string, snap Snapshot) any {
+			return struct {
+				N             Notification
+				View, Here    string
+				Snooze        []string
+				SnoozeDefault string
+				Text          template.HTML
+				Preview       bool
+			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic)}
+		},
+		"snoozeLabel": snoozeLabel,
+		"plural": func(n int, one, many string) string {
+			if n == 1 {
+				return one
+			}
+			return many
+		},
+	}).ParseFS(files, "templates/*.html"))
+}
 
 // PreviewsOn says whether a topic's cards show link previews, as the server
 // decides for GET /api/v1/preview.
@@ -350,6 +364,11 @@ func loadDocs() (map[string]doc, []doc) {
 // Open Graph URLs absolute; empty falls back to the request host.
 func Handler(api API, baseURL string) http.Handler {
 	baseURL = strings.TrimRight(baseURL, "/")
+	prefix := "" // the sub-path the site is served under, from baseURL
+	if u, err := url.Parse(baseURL); err == nil {
+		prefix = u.Path
+	}
+	tpl := templates(prefix)
 	base := func(r *http.Request) string {
 		if baseURL != "" {
 			return baseURL
@@ -421,6 +440,7 @@ func Handler(api API, baseURL string) http.Handler {
 				page(w, "docs", http.StatusNotFound, data)
 				return
 			}
+			d.HTML = template.HTML(strings.ReplaceAll(string(d.HTML), `href="/docs/`, `href="`+prefix+`/docs/`))
 			data.Doc, data.Title, data.Path = d, d.Title+": clrd docs", "/docs/"+key
 		}
 		page(w, "docs", 200, data)
@@ -539,6 +559,23 @@ func Handler(api API, baseURL string) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https: http:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
+		if prefix != "" {
+			w = prefixed{w, prefix}
+		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// prefixed puts the sub-path in front of every redirect to a path on this
+// site, including the ones ServeMux makes itself (/docs to /docs/).
+type prefixed struct {
+	http.ResponseWriter
+	prefix string
+}
+
+func (w prefixed) WriteHeader(code int) {
+	if l := w.Header().Get("Location"); strings.HasPrefix(l, "/") && !strings.HasPrefix(l, "//") {
+		w.Header().Set("Location", w.prefix+l)
+	}
+	w.ResponseWriter.WriteHeader(code)
 }

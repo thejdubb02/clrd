@@ -19,7 +19,7 @@ import (
 func mountWeb(s *server.Server, baseURL string, hide bool) {
 	h := signInLink(s, web.Handler(webAPI{s}, baseURL))
 	if hide {
-		h = private(h)
+		h = private(s, h)
 	}
 	for _, p := range []string{"/", "/docs", "/app", "/static", "/assets", "/favicon.svg", "/robots.txt", "/sitemap.xml"} {
 		s.Mount(p, h)
@@ -28,12 +28,12 @@ func mountWeb(s *server.Server, baseURL string, hide bool) {
 
 // private hides the public site of a private server: / goes to the inbox,
 // /docs and the sitemap are gone, and robots.txt turns every crawler away.
-func private(h http.Handler) http.Handler {
+func private(s *server.Server, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 		switch p := r.URL.Path; {
 		case p == "/":
-			http.Redirect(w, r, "/app", http.StatusFound)
+			http.Redirect(w, r, s.Path("/app"), http.StatusFound)
 		case p == "/robots.txt":
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			io.WriteString(w, "User-agent: *\nDisallow: /\n")
@@ -65,7 +65,7 @@ func signInLink(s *server.Server, h http.Handler) http.Handler {
 		next.RawQuery = q.Encode()
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if f := r.Header.Get("Sec-Fetch-Site"); f == "cross-site" || f == "same-site" {
-			http.Redirect(w, r, next.RequestURI(), http.StatusSeeOther)
+			http.Redirect(w, r, s.Path(next.RequestURI()), http.StatusSeeOther)
 			return
 		}
 		form := url.Values{"token": {linkToken(a)}, "next": {next.RequestURI()}}

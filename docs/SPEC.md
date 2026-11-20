@@ -456,7 +456,10 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 - Go 1.24 (`GOTOOLCHAIN=local`; `modernc.org/sqlite` must stay at v1.40.1 or later, where a query cancelled as its first row arrives no longer leaks an open read transaction, see #207), stdlib `net/http` router, `modernc.org/sqlite` (pure Go, no cgo),
   WAL mode, one writer goroutine or a mutex around writes.
 - Config by env: `CLRD_LISTEN` (`:8080`), `CLRD_DB` (`/data/clrd.db`),
-  `CLRD_BASE_URL`, `CLRD_RETENTION` (`720h` for final rows and events),
+  `CLRD_BASE_URL` (a path in it, like `/clrd`, serves every route, page,
+  asset and the WebSocket under that path, and scopes the cookies to it;
+  requests without the path are still answered, for a proxy that strips it),
+  `CLRD_RETENTION` (`720h` for final rows and events),
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
   the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
   `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still

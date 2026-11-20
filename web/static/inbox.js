@@ -2,6 +2,10 @@
 // The page works without this file; it adds the buttons, the WebSocket, relative
 // times, the command palette (Ctrl or Cmd+K) with its shortcuts, and Undo.
 (() => {
+  // A server under a sub-path (CLRD_BASE_URL) puts it in data-base; every
+  // site path below goes through fetch or B.
+  const B = document.documentElement.dataset.base || '';
+  const fetch = (u, o) => window.fetch(u.startsWith('/') ? B + u : u, o);
   document.documentElement.classList.remove('no-js');
   const shell = document.querySelector('[data-inbox]');
   if (!shell) return;
@@ -462,7 +466,7 @@
     if (c && !c.classList.contains('is-leaving')) select(c, false);
   });
   const keys = { c: 'dismiss', r: 'restore', a: 'ack', s: 'snooze', j: 'next', k: 'prev', '/': 'search' };
-  const go = { i: '/app', s: '/app/snoozed', c: '/app/cleared', ',': '/app/settings' };
+  const go = { i: B + '/app', s: B + '/app/snoozed', c: B + '/app/cleared', ',': B + '/app/settings' };
   let g = 0;
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return palette && (palette.open ? palette.close() : openPalette()); }
@@ -491,7 +495,7 @@
     else staleTimer ??= setTimeout(() => { offline.hidden = false; }, 180000);
   };
   function connect() {
-    const u = new URL('/api/v1/ws', location.href);
+    const u = new URL(B + '/api/v1/ws', location.href);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
     u.searchParams.set('since', seq);
     const ws = new WebSocket(u);
