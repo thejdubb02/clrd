@@ -3664,6 +3664,14 @@
       ],
       "format": "date-time"
      },
+     "expires_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "When the server resolves it on its own; null for never."
+     },
      "created_at": {
       "type": "string",
       "format": "date-time"
@@ -3744,6 +3752,10 @@
      "snooze_until": {
       "type": "string",
       "format": "date-time"
+     },
+     "expires": {
+      "type": "string",
+      "description": "Auto-clear: a duration from now (30m, 2h) or an RFC3339 time. When it passes the server resolves the notification. Must be in the future."
      },
      "status": {
       "type": "string",
