@@ -76,8 +76,8 @@ func (s *Server) addPairing(p *pairing) (string, error) {
 }
 
 // writeCode answers a create: the code, its link at path and that link as a QR code.
-func (s *Server) writeCode(w http.ResponseWriter, path, code string) error {
-	link := s.opt.BaseURL + path + "?c=" + code
+func (s *Server) writeCode(w http.ResponseWriter, r *http.Request, path, code string) error {
+	link := s.baseFor(r) + path + "?c=" + code
 	img, err := qr.Encode(link, qr.M)
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func (s *Server) handlePairCreate(w http.ResponseWriter, r *http.Request) error 
 	}
 	http.SetCookie(w, &http.Cookie{Name: pairCookie, Value: secret, Path: s.Path("/api/v1/pair"), MaxAge: int(pairTTL / time.Second),
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.https(r) || r.Header.Get("X-Forwarded-Proto") == "https"})
-	return s.writeCode(w, "/pair", code)
+	return s.writeCode(w, r, "/pair", code)
 }
 
 // handlePairClaim is polled by the waiting browser. Once approved it signs
@@ -232,7 +232,7 @@ func (s *Server) handlePairPage(w http.ResponseWriter, r *http.Request) error {
 	if tok := s.auth(r, true); tok != nil {
 		data["As"] = tok.Name
 	} else {
-		data["AppLink"] = template.URL("clrd://pair?" + url.Values{"server": {s.opt.BaseURL}, "code": {code}}.Encode())
+		data["AppLink"] = template.URL("clrd://pair?" + url.Values{"server": {s.baseFor(r)}, "code": {code}}.Encode())
 	}
 	return s.renderPairPage(w, data)
 }

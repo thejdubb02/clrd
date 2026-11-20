@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"math"
 	"math/rand/v2"
@@ -37,8 +38,8 @@ var openapiJSON []byte
 // Options configure a Server. ConfigFromEnv fills them from CLRD_* variables.
 type Options struct {
 	Listen    string        // CLRD_LISTEN, default ":8080"
-	DB        string        // CLRD_DB, default "/data/clrd.db"
-	BaseURL   string        // CLRD_BASE_URL, public URL used in links
+	DB        string        // CLRD_DB, default DefaultDB()
+	BaseURL   string        // CLRD_BASE_URL, public URL used in links; unset, links use the address the request came in on
 	Retention time.Duration // CLRD_RETENTION, default 720h
 	Logger    *slog.Logger  // default slog.Default()
 
@@ -124,12 +125,54 @@ func ConfigFromEnv() (Options, error) {
 	return o, nil
 }
 
+// legacyDB was the only default before #242; a server already using it keeps it.
+var legacyDB = "/data/clrd.db"
+
+// DefaultDB is the database used when CLRD_DB is unset: legacyDB if it
+// exists, else clrd/clrd.db under the user's data folder ($XDG_DATA_HOME or
+// ~/.local/share). Same file from any working directory, so `clrd token
+// create` finds the server's database, and no root needed.
+func DefaultDB() string {
+	// Anything but "not there" (even permission denied) keeps the old file, so
+	// a server never silently starts over on an empty database.
+	if _, err := os.Stat(legacyDB); !errors.Is(err, fs.ErrNotExist) {
+		return legacyDB
+	}
+	dir := os.Getenv("XDG_DATA_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return legacyDB
+		}
+		dir = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(dir, "clrd", "clrd.db")
+}
+
+// baseFor is the public URL for links handed to this request: CLRD_BASE_URL
+// when set, else the address the request came in on, so a phone on the LAN
+// gets a link it can open instead of localhost.
+func (s *Server) baseFor(r *http.Request) string {
+	if s.baseSet || r.Host == "" {
+		return s.opt.BaseURL
+	}
+	// The browser's Origin carries the scheme it used, which a TLS proxy hides.
+	if o, err := url.Parse(r.Header.Get("Origin")); err == nil && o.Host == r.Host && (o.Scheme == "https" || o.Scheme == "http") {
+		return o.Scheme + "://" + r.Host
+	}
+	if r.TLS != nil {
+		return "https://" + r.Host
+	}
+	return "http://" + r.Host
+}
+
 // Server is the clrd server. Create it with New, add pages with Mount, then Run.
 type Server struct {
-	opt Options
-	db  *sql.DB
-	log *slog.Logger
-	hub hub
+	opt     Options
+	baseSet bool // CLRD_BASE_URL given; else links follow the request's address
+	db      *sql.DB
+	log     *slog.Logger
+	hub     hub
 
 	mu       sync.Mutex // serialises writes: seq order = delivery order
 	lastMS   int64      // newID state, guarded by mu
@@ -169,9 +212,10 @@ func New(opt Options) (*Server, error) {
 		opt.Listen = ":8080"
 	}
 	if opt.DB == "" {
-		opt.DB = "/data/clrd.db"
+		opt.DB = DefaultDB()
 	}
-	if opt.BaseURL == "" {
+	baseSet := opt.BaseURL != ""
+	if !baseSet {
 		opt.BaseURL = "http://localhost" + opt.Listen[strings.LastIndex(opt.Listen, ":"):]
 	}
 	opt.BaseURL = strings.TrimSuffix(opt.BaseURL, "/")
@@ -205,7 +249,7 @@ func New(opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{opt: opt, db: db, log: opt.Logger, mux: http.NewServeMux(), prefix: strings.TrimSuffix(base.Path, "/"),
+	s := &Server{opt: opt, baseSet: baseSet, db: db, log: opt.Logger, mux: http.NewServeMux(), prefix: strings.TrimSuffix(base.Path, "/"),
 		pwLimit: newLimiter(10, time.Minute), tokLimit: perMinute(opt.RateToken), topicLimit: perMinute(opt.RateTopic)}
 	s.hub.subs = map[chan Event]string{}
 	var seq, pruned int64
@@ -265,6 +309,9 @@ func (s *Server) CurrentSeq() int64 { return s.seq.Load() }
 
 // Epoch is this database's id, sent with every seq (see SPEC, Epoch).
 func (s *Server) Epoch() string { return s.epoch }
+
+// DBPath is the database file in use (CLRD_DB or DefaultDB).
+func (s *Server) DBPath() string { return s.opt.DB }
 
 // Path is p (a path from the root, like "/app") as the browser must see it:
 // under the sub-path of CLRD_BASE_URL, if it has one.
@@ -386,7 +433,10 @@ func (s *Server) Run(ctx context.Context) error {
 		BaseContext: func(net.Listener) context.Context { return ctx }} // ends open streams on shutdown
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	s.log.Info("clrd listening", "addr", s.opt.Listen, "base_url", s.opt.BaseURL)
+	s.log.Info("clrd listening", "addr", s.opt.Listen, "base_url", s.opt.BaseURL, "db", s.opt.DB)
+	if !s.baseSet {
+		s.log.Info("CLRD_BASE_URL not set: phone links use the address each browser opened clrd on; set it to your public https URL behind a proxy")
+	}
 	select {
 	case err := <-errc:
 		return err
@@ -440,7 +490,7 @@ func (s *Server) api(pattern string, h func(http.ResponseWriter, *http.Request, 
 	s.route(pattern, func(w http.ResponseWriter, r *http.Request) error {
 		tok := s.auth(r, true)
 		if tok == nil {
-			return errf(401, "unauthorized", "missing or invalid token")
+			return errf(401, "unauthorized", noToken)
 		}
 		return h(w, r, tok)
 	})

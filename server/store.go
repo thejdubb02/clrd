@@ -204,6 +204,9 @@ var reserved = map[string]bool{"api": true, "app": true, "assets": true, "docs":
 	"login": true, "logout": true, "mcp": true, "setup": true, "static": true, "v1": true}
 
 func validTopic(t string) error {
+	if t == "" {
+		return errf(400, "bad_request", "topic is required: name one, like \"alerts\" (letters, digits, _ and -, at most 64)")
+	}
 	if !topicRe.MatchString(t) {
 		return errf(400, "bad_request", "invalid topic %q: use letters, digits, _ and -, at most 64", t)
 	}
@@ -700,7 +703,7 @@ func (s *Server) Act(ctx context.Context, tok *Token, id, action string, until *
 // state, every device redraws it. An agent's progress line, not a new alert.
 func (s *Server) Edit(ctx context.Context, tok *Token, id, message string) (*Notification, error) {
 	if tok == nil {
-		return nil, errf(401, "unauthorized", "missing or invalid token")
+		return nil, errf(401, "unauthorized", noToken)
 	}
 	if message == "" {
 		return nil, errf(400, "bad_request", "message is required")
@@ -743,7 +746,7 @@ func (s *Server) ActByKey(ctx context.Context, tok *Token, topic, externalID, ac
 
 func (s *Server) act(ctx context.Context, tok *Token, action string, until *time.Time, byKey bool, where string, args ...any) (*Notification, error) {
 	if tok == nil {
-		return nil, errf(401, "unauthorized", "missing or invalid token")
+		return nil, errf(401, "unauthorized", noToken)
 	}
 	target, ok := actionState[action]
 	if !ok {
@@ -805,7 +808,7 @@ func checkActions(as []Action) error {
 // sender put a new question under the same key), the tap gets 409.
 func (s *Server) Reply(ctx context.Context, tok *Token, id, reply string, seq int64) (*Notification, error) {
 	if tok == nil {
-		return nil, errf(401, "unauthorized", "missing or invalid token")
+		return nil, errf(401, "unauthorized", noToken)
 	}
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		n, err := getNotification(ctx, tx, `id = ?`, id)

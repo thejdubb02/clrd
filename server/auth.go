@@ -116,7 +116,7 @@ func (t *Token) seesAll(o *Token) bool {
 
 func (t *Token) need(scope, topic string) error {
 	if t == nil {
-		return errf(401, "unauthorized", "missing or invalid token")
+		return errf(401, "unauthorized", noToken)
 	}
 	if !t.Has(scope) {
 		return errf(403, "forbidden", "token lacks the %s scope", scope)
@@ -636,7 +636,7 @@ func (s *Server) bootstrap(ctx context.Context) error {
 	s.setupMu.Lock()
 	s.setupCode = randomString(24)
 	s.setupMu.Unlock()
-	s.log.Info("no admin token yet: open this link once to create one (or run `clrd token create`)",
+	s.log.Info("no admin token yet: open this link once to create one (or run `clrd token create --name me --scope admin`)",
 		"url", strings.TrimSuffix(s.opt.BaseURL, "/")+"/setup?code="+s.setupCode)
 	return nil
 }
@@ -704,6 +704,10 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string { return e.msg }
+
+// noToken is the 401 text: it says how to get a token, so a first request
+// without one shows the next step.
+const noToken = "missing or invalid token: send Authorization: Bearer <token>; make one with `clrd token create --name me` on the server, or in the web app under Settings"
 
 func errf(status int, code, format string, args ...any) error {
 	return &apiError{status: status, code: code, msg: fmt.Sprintf(format, args...)}
