@@ -401,7 +401,10 @@ is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
   the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
   `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still
-  exist; open notifications are never pruned, so their files keep counting).
+  exist; open notifications are never pruned, so their files keep counting),
+  `CLRD_PUBLIC_PAGES` (`on`; `off` for a private server: `/` redirects to
+  `/app`, `/docs` and `/sitemap.xml` are 404, `robots.txt` disallows
+  everything, and the web pages send `X-Robots-Tag: noindex, nofollow`).
   `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` (60 each, publishes a minute per
   token and per topic, with a burst of the same size; `0` turns one off).
   Every publish counts, on every route; over a cap is a 429 `rate_limited`.

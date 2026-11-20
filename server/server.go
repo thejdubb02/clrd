@@ -40,6 +40,10 @@ type Options struct {
 	Retention time.Duration // CLRD_RETENTION, default 720h
 	Logger    *slog.Logger  // default slog.Default()
 
+	// HidePublicPages (CLRD_PUBLIC_PAGES=off) is for a private server: / goes to
+	// the inbox, /docs and /sitemap.xml are 404, and robots.txt disallows all.
+	HidePublicPages bool
+
 	Attachments     string // CLRD_ATTACHMENTS, default "attachments" next to DB
 	AttachmentMax   int64  // CLRD_ATTACHMENT_MAX_MB, bytes, default 15 MB
 	AttachmentTotal int64  // CLRD_ATTACHMENT_TOTAL_MB, bytes, default 5000 MB
@@ -59,6 +63,13 @@ func ConfigFromEnv() (Options, error) {
 		o.Retention = d
 	}
 	o.Attachments = os.Getenv("CLRD_ATTACHMENTS")
+	switch v := os.Getenv("CLRD_PUBLIC_PAGES"); v {
+	case "", "on":
+	case "off":
+		o.HidePublicPages = true
+	default:
+		return o, fmt.Errorf("CLRD_PUBLIC_PAGES: want on or off, got %q", v)
+	}
 	for _, v := range []struct {
 		env string
 		to  *int64

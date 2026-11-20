@@ -79,6 +79,7 @@ at once.
 | `CLRD_BASE_URL` | `http://localhost:<port>` | Public URL, used in the setup link. Set it to your https URL. |
 | `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. |
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
+| `CLRD_PUBLIC_PAGES` | `on` | `off` hides the landing page and docs on a private server: `/` goes to the inbox, `/docs` is 404, and `robots.txt` asks every crawler to stay out. |
 | `CLRD_ATTACHMENT_MAX_MB` | `15` | Largest file one notification can carry, in MB. |
 | `CLRD_ATTACHMENT_TOTAL_MB` | `5000` | Space all stored files may use together, in MB. Uploads past it get 507. |
 | `CLRD_RATE_TOKEN` | `60` | Publishes a minute one token may send, with a burst of the same size. Past it gets 429 with `Retry-After`. `0` turns it off. |

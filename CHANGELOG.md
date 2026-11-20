@@ -17,6 +17,9 @@ Fixed, Removed, Security), as one line a user can understand.
   `{"checkin":"25h"}` on `PUT /api/v1/topics/{topic}`) and clrd raises an
   urgent notification when no message arrives in time. The next message
   resolves it on every device.
+- `CLRD_PUBLIC_PAGES=off` for a private server: the address opens the inbox
+  instead of the landing page, the docs are gone, and search engines are told
+  to stay away.
 - ntfy compatibility: `GET /v1/account`, which the ntfy app and CLI use to check
   a login and scripts use to check a token still works.
 - Web: a command palette on Ctrl+K (Cmd+K on a Mac) that lists every keyboard
