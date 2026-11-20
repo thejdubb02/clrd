@@ -1181,6 +1181,33 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	return out, rows.Err()
 }
 
+// Counts returns exactly how many notifications tok may read are in each
+// state, plus inbox (active and acknowledged) and cleared (dismissed and
+// resolved), as the inbox sidebar shows them.
+func (s *Server) Counts(ctx context.Context, tok *Token) (map[string]int, error) {
+	if err := tok.need(ScopeRead, ""); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, state, COUNT(*) FROM notifications GROUP BY topic, state`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{Active: 0, Acknowledged: 0, Snoozed: 0, Dismissed: 0, Resolved: 0}
+	for rows.Next() {
+		var topic, state string
+		var k int
+		if err := rows.Scan(&topic, &state, &k); err != nil {
+			return nil, err
+		}
+		if tok.may(ScopeRead, topic) {
+			out[state] += k
+		}
+	}
+	out["inbox"], out["cleared"] = out[Active]+out[Acknowledged], out[Dismissed]+out[Resolved]
+	return out, rows.Err()
+}
+
 // SetTopicIcon sets the icon new notifications in topic get when their
 // sender gives none. "" removes it. Rows already published keep theirs.
 func (s *Server) SetTopicIcon(ctx context.Context, tok *Token, topic, icon string) error {

@@ -77,6 +77,40 @@ func TestWebOnRealServer(t *testing.T) {
 	}
 }
 
+// The sidebar and the API count every row, past the 500 the page lists.
+func TestExactCounts(t *testing.T) {
+	s, ts, raw := realServer(t)
+	ctx, tok := context.Background(), mustTok(t, s, raw)
+	for i := range 503 {
+		n, err := s.Publish(ctx, tok, server.PublishInput{Topic: "home", Message: "m"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i > 1 {
+			if _, err := s.Act(ctx, tok, n.ID, "dismiss", nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	_, body, _ := fetch(t, browser(), ts.URL+"/app/cleared?auth="+base64.RawURLEncoding.EncodeToString([]byte("Bearer "+raw)))
+	for _, want := range []string{`Inbox <span class="count">2</span>`, `Cleared <span class="count">501</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page misses %s", want)
+		}
+	}
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/counts", nil)
+	req.Header.Set("Authorization", "Bearer "+raw)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var c map[string]int
+	if err := json.NewDecoder(res.Body).Decode(&c); err != nil || c["dismissed"] != 501 || c["cleared"] != 501 || c["inbox"] != 2 || c["active"] != 2 {
+		t.Fatalf("api counts: %v %v", err, c)
+	}
+}
+
 func mustTok(t *testing.T, s *server.Server, raw string) *server.Token {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer "+raw)
@@ -126,7 +160,7 @@ func TestSignInLink(t *testing.T) {
 
 func realServer(t *testing.T) (*server.Server, *httptest.Server, string) {
 	t.Helper()
-	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RateToken: -1, RateTopic: -1})
 	if err != nil {
 		t.Fatal(err)
 	}

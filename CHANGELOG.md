@@ -24,6 +24,8 @@ Fixed, Removed, Security), as one line a user can understand.
   server itself), on the event and as one log line per change, so "I never
   cleared that" can be answered from the log. The Android app and the web inbox
   send it (#267, #265).
+- Server: `GET /api/v1/counts` and the MCP `counts` tool give the exact number
+  of notifications in each state, plus inbox and cleared totals.
 
 - Docs: the README and landing page now open with the out-of-box path (one
   setting, the setup link, linking the phone by QR, send), point to the clrd F-Droid repo
@@ -237,6 +239,9 @@ Fixed, Removed, Security), as one line a user can understand.
   home screens. The server sends `/favicon.ico`, `/apple-touch-icon.png`, PNG
   icons at 32, 192 and 512 pixels and a small web manifest, and every page
   links them, also under a sub-path base URL (#243).
+- Web: the Inbox, Snoozed and Cleared counts in the sidebar are exact; they
+  stopped at 500 before.
+
 - Android: switching to another server no longer keeps the old server's
   snooze times, and the snooze times box is no longer reset while you type in
   it when another device saves them.
