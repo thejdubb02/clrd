@@ -37,8 +37,10 @@ android {
 
     buildTypes {
         release {
-            // ponytail: no minify yet, smaller APK is a later win, not a v0 need.
-            isMinifyEnabled = false
+            // R8 and resource shrinking keep the APK small (#298). Sounds are looked up
+            // by name, so res/raw/keep.xml keeps them.
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.findByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

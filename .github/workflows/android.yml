@@ -3,9 +3,9 @@ name: android
 on:
   push:
     branches: [main]
-    paths: ['android/**', 'assets/sounds/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'assets/sounds/**', '.github/workflows/android.yml', '.github/size-*']
   pull_request:
-    paths: ['android/**', 'assets/sounds/**', '.github/workflows/android.yml']
+    paths: ['android/**', 'assets/sounds/**', '.github/workflows/android.yml', '.github/size-*']
   workflow_dispatch:
 
 # A new push to a pull request cancels its older run. Pushes to main each
@@ -27,6 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug assembleRelease
+      - name: size budget
+        run: ../.github/size-check.sh apk app/build/outputs/apk/release/app-release-unsigned.apk
       - uses: actions/upload-artifact@v4
         with:
           name: apks

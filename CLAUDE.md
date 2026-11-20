@@ -15,6 +15,11 @@ Public open-source project: self-hosted notification server + Android app (F-Dro
 
 - Works out of the box (Justin, #242): every new feature is off or safe by
   default with zero config, and an agent can set it up through the API or MCP.
+- Smaller and lighter than ntfy and the rest (Justin, #298): weigh size in
+  every change. No new dependency when a few lines or the platform covers it;
+  keep bundled assets small. CI fails when the server binary or the release
+  APK grows past its budget in `.github/size-budget`; raising one is a
+  reviewed one-line change.
 
 - CI runs only on self-hosted cezar1 runners (`runs-on: [self-hosted, cezar1]`).
 - Local Android and Go builds and test runs go to cezar1, never the devbox (its CPU is throttled by the host).

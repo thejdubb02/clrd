@@ -1,0 +1,6 @@
+# Size budgets in bytes, checked by .github/size-check.sh in CI (#298).
+# clrd stays smaller and lighter than ntfy. Raising a budget is a reviewed
+# one-line change: say in the PR what grew and why it is worth it.
+# Measured 2026-11-20: server 15,593,656, apk 1,945,004.
+server 16500000
+apk 2100000
