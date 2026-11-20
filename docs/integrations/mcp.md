@@ -17,6 +17,7 @@ Tools:
 | `send` | `topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?` | Publish. `format` is `markdown` (default) or `text`. `icon` is an http(s) image URL. `attachment` links a file, `{"url":"https://...","name":"report.pdf"}`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. |
 | `list` | `topic?, state?` | List, default `open`. |
 | `topics` | none | Topics the token can read, with how many are open in each. |
+| `counts` | none | Exact number of notifications in each state, plus `inbox` and `cleared` totals, over the topics the token can read. |
 | `get` | `id` | One notification by server id, with its current state. |
 | `update` | `id, message` | Replace the message of an open notification. The id and state stay, so a progress line ("step 3 of 10") is one notification, not ten. |
 | `ack` | `id` | Acknowledge by server id. |

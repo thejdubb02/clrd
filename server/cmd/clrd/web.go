@@ -104,7 +104,7 @@ func linkToken(a string) string {
 // webAPI reads the inbox for the signed-in browser straight from the store.
 type webAPI struct{ s *server.Server }
 
-// ponytail: up to 500 rows per state, so counts cap at 500; add a COUNT query if an inbox grows past that.
+// ponytail: the page lists up to 500 rows per state (the counts are exact); add paging if an inbox needs more on screen.
 const webLimit = 500
 
 func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
@@ -113,7 +113,12 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return web.Snapshot{}, web.ErrUnauthorized
 	}
 	ctx := r.Context()
-	snap := web.Snapshot{Seq: a.s.CurrentSeq(), Epoch: a.s.Epoch(), Counts: map[string]int{}, Me: tok.Name, MeID: tok.ID} // seq first, so replay cannot skip an event
+	snap := web.Snapshot{Seq: a.s.CurrentSeq(), Epoch: a.s.Epoch(), Me: tok.Name, MeID: tok.ID} // seq first, so replay cannot skip an event
+	counts, err := a.s.Counts(ctx, tok)
+	if err != nil {
+		return snap, err
+	}
+	snap.Counts = counts
 	ds, err := a.s.Settings(ctx, tok)
 	if err != nil {
 		return snap, err
@@ -130,18 +135,12 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		topics = []string{q.Topic}
 	}
 	for _, st := range []string{"active", "acknowledged", "snoozed", "dismissed", "resolved"} {
-		rows, err := a.s.List(ctx, tok, server.ListQuery{State: st, Limit: webLimit})
-		if err != nil {
-			return snap, err
-		}
-		snap.Counts[st] = len(rows)
 		if !want[st] {
 			continue
 		}
-		if q.Topic != "" || q.Q != "" {
-			if rows, err = a.s.List(ctx, tok, server.ListQuery{State: st, Topics: topics, Q: q.Q, Limit: webLimit}); err != nil {
-				return snap, err
-			}
+		rows, err := a.s.List(ctx, tok, server.ListQuery{State: st, Topics: topics, Q: q.Q, Limit: webLimit})
+		if err != nil {
+			return snap, err
 		}
 		var items []web.Notification
 		if err := convert(rows, &items); err != nil {

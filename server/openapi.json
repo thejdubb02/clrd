@@ -1125,6 +1125,39 @@
     }
    }
   },
+  "/api/v1/counts": {
+   "get": {
+    "summary": "Exact counts by state",
+    "description": "How many notifications this token can read are in each state, plus inbox (active and acknowledged) and cleared (dismissed and resolved). Every key is always present.",
+    "tags": [
+     "notifications"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "integer"
+         },
+         "example": {
+          "active": 3,
+          "acknowledged": 1,
+          "snoozed": 2,
+          "dismissed": 640,
+          "resolved": 12,
+          "inbox": 4,
+          "cleared": 652
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/topics": {
    "get": {
     "summary": "Topics with open counts",

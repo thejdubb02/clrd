@@ -665,6 +665,14 @@ func (s *Server) routesSetup() {
 		writeJSON(w, 200, map[string]any{"topics": ts})
 		return nil
 	})
+	s.api("GET /api/v1/counts", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		c, err := s.Counts(r.Context(), tok)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, c)
+		return nil
+	})
 	s.api("PUT /api/v1/topics/{topic}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
 			Icon    *string `json:"icon"`

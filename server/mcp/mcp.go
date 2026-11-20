@@ -277,6 +277,8 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		return h.api(r, "GET", "/api/v1/notifications?"+q.Encode(), nil)
 	case "topics":
 		return h.api(r, "GET", "/api/v1/topics", nil)
+	case "counts":
+		return h.api(r, "GET", "/api/v1/counts", nil)
 	case "devices":
 		return h.api(r, "GET", "/api/v1/devices?all=1", nil)
 	case "device_log":
@@ -440,6 +442,8 @@ var tools = []map[string]any{
 			"state": p("string", "open (default), all, active, acknowledged, snoozed, dismissed or resolved"),
 		})},
 	{"name": "topics", "description": "List the topics this token can read, with how many notifications are open in each.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "counts", "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved).",
 		"inputSchema": schema(map[string]any{})},
 	{"name": "get", "description": "Get one notification by its server id, with its current state.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
