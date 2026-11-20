@@ -3,8 +3,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -150,5 +152,72 @@ func TestReplyButtons(t *testing.T) {
 	call("resolve", map[string]any{"topic": "agents", "external_id": "deploy-2"})
 	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "resolved" || got["answer"] != nil {
 		t.Fatalf("wait after resolve: %v", got)
+	}
+}
+
+// /mcp/approve answers a permission hook from a tap: Allow allows, anything
+// else denies, and a timeout denies and clears the phones.
+func TestApproveHook(t *testing.T) {
+	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, raw, err := s.CreateToken(context.Background(), "laptop", []string{"read", "publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone, _, err := s.CreateToken(context.Background(), "pixel-9", []string{"read"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(s)
+	body := `{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf build"},"cwd":"/home/me/app"}`
+	ask := func(auth, query string, tap string) (int, map[string]any) {
+		t.Helper()
+		if tap != "" {
+			go func() {
+				for i := 0; i < 200; i++ {
+					time.Sleep(10 * time.Millisecond)
+					open, _ := s.List(context.Background(), phone, server.ListQuery{Topics: []string{"agents"}, State: "active"})
+					if len(open) > 0 {
+						s.Reply(context.Background(), phone, open[0].ID, tap, 0)
+						return
+					}
+				}
+			}()
+		}
+		req := httptest.NewRequest("POST", "/mcp/approve"+query, strings.NewReader(body))
+		req.Header.Set("Authorization", auth)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var out map[string]any
+		json.Unmarshal(rec.Body.Bytes(), &out)
+		hso, _ := out["hookSpecificOutput"].(map[string]any)
+		dec, _ := hso["decision"].(map[string]any)
+		return rec.Code, dec
+	}
+	if code, dec := ask("Bearer "+raw, "", "allow"); code != 200 || dec["behavior"] != "allow" {
+		t.Fatalf("allow tap: %d %v", code, dec)
+	}
+	if code, dec := ask("Bearer "+raw, "", "deny"); code != 200 || dec["behavior"] != "deny" || !strings.Contains(fmt.Sprint(dec["message"]), "pixel-9") {
+		t.Fatalf("deny tap: %d %v", code, dec)
+	}
+	if code, dec := ask("Bearer "+raw, "?timeout=0.1", ""); code != 200 || dec["behavior"] != "deny" {
+		t.Fatalf("timeout: %d %v", code, dec)
+	}
+	if open, _ := s.List(context.Background(), phone, server.ListQuery{Topics: []string{"agents"}, State: "active"}); len(open) != 0 {
+		t.Fatalf("timed-out ask still rings: %v", open)
+	}
+	all, _ := s.List(context.Background(), phone, server.ListQuery{Topics: []string{"agents"}, State: "all"})
+	if len(all) != 3 || all[0].Message != "rm -rf build" || !strings.Contains(all[0].Title, "Bash") || !strings.Contains(all[0].Title, "(app)") {
+		t.Fatalf("notifications: %+v", all)
+	}
+	if code, dec := ask("Bearer clrd_wrong", "", ""); code != 502 || dec != nil {
+		t.Fatalf("bad token must fail, not answer: %d %v", code, dec)
+	}
+	body = `{"tool_name":"Bash","tool_input":{"command":"echo ok; ` + strings.Repeat("x", 4000) + `"}}`
+	if code, dec := ask("Bearer "+raw, "", "allow"); code != 413 || dec != nil {
+		t.Fatalf("too long to show must go back to the agent: %d %v", code, dec)
 	}
 }

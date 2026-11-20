@@ -17,10 +17,15 @@ Fixed, Removed, Security), as one line a user can understand.
 - Sign in a browser with your phone: the web sign-in page shows a QR code,
   you scan it with a phone that is already signed in and tap Approve, and the
   browser signs itself in with the phone's access. No token to copy or type.
+- Approve agent actions from your phone: point Claude Code's or Codex's
+  permission hook at `/mcp/approve` and each prompt arrives as a notification
+  with Allow and Deny. No answer in time means deny.
 - MCP: the `send` tool takes `icon` (an image URL) and `attachment` (a link to
   a file by URL, with an optional name).
 - MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
   send plain text that is shown exactly as written.
+- Android: web links in plain text messages can be tapped, just like in
+  Markdown messages.
 - Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
   notification resolves itself then, leaving every inbox and phone.
 - Missed check-in alerts: give a topic an expected interval (for example
