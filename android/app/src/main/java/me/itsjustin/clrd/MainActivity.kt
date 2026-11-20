@@ -652,17 +652,25 @@ private fun SnoozeSettings(app: App) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val s by app.snooze.collectAsState()
-    var times by remember(s) { mutableStateOf(s.times.joinToString(", ")) }
-    var def by remember(s) { mutableStateOf(s.default) }
+    var times by remember { mutableStateOf(s.times.joinToString(", ")) }
+    var def by remember { mutableStateOf(s.default) }
     var result by remember { mutableStateOf<String?>(null) }
+    // Unsaved edits win over a settings message from another device; after a save the server's answer shows.
+    var edited by remember { mutableStateOf(false) }
+    LaunchedEffect(s) {
+        if (!edited) {
+            times = s.times.joinToString(", ")
+            def = s.default
+        }
+    }
     val typed = Snooze.parse(times)
     Spacer(Modifier.height(8.dp))
     Text(stringResource(R.string.snooze_settings), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
     Text(stringResource(R.string.snooze_explain), color = b.slate, fontSize = 13.sp)
-    OutlinedTextField(times, { times = it }, label = { Text(stringResource(R.string.snooze_times)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    OutlinedTextField(times, { times = it; edited = true }, label = { Text(stringResource(R.string.snooze_times)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
     Text(stringResource(R.string.snooze_default), color = b.body, fontSize = 14.sp)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        typed.forEach { t -> FilterChip(selected = t == def, onClick = { def = t }, label = { Text(snoozeLabel(t)) }) }
+        typed.forEach { t -> FilterChip(selected = t == def, onClick = { def = t; edited = true }, label = { Text(snoozeLabel(t)) }) }
     }
     Button(
         onClick = {
@@ -673,6 +681,8 @@ private fun SnoozeSettings(app: App) {
                 result = try {
                     // The server sends the new times to every device, this one too, as a settings message.
                     api.put("/api/v1/settings", body)
+                    edited = false
+                    times = typed.joinToString(", ") // what was saved, until the server's own message replaces it
                     ctx.getString(R.string.snooze_saved)
                 } catch (e: Exception) {
                     ctx.getString(R.string.snooze_not_saved, e.message)
