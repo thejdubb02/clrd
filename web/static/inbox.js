@@ -101,14 +101,22 @@
   const stackTpl = $('[data-stack-tpl]'), unfolded = new Set();
   let stacking = false;
   try { stacking = localStorage.getItem('clrd.stack') === '1'; } catch {}
-  function restack(focus) {
+  const stackOn = () => stacking && !new URLSearchParams(location.search).has('topic');
+  const byTopic = cs => { const m = new Map(); for (const c of cs) m.set(c.dataset.topic, [...(m.get(c.dataset.topic) || []), c]); return m; };
+  // Where the cards go with stacking on: each topic's cards together, at its newest one's place.
+  const stackOrder = cs => stackOn() ? [...byTopic(cs).values()].flat() : cs;
+  // Focus inside a stack, as the topic and which button, so a rebuild can put it back.
+  const stackFocus = () => {
+    const el = document.activeElement, s = el && el.closest && el.closest('[data-stack]:not(.is-leaving)');
+    return s && { t: s.dataset.stack, sel: el.matches('[data-act]') ? '[data-act]' : '[data-stack-toggle]' };
+  };
+  function restack(focus = stackFocus()) {
     if (!list || !stackTpl) return;
-    focus ||= document.activeElement?.closest('[data-stack]:not(.is-leaving)')?.dataset.stack; // keep focus across a live refresh
     list.querySelectorAll('[data-stack]:not(.is-leaving)').forEach(s => s.remove());
-    const groups = {};
-    for (const c of cards()) { c.hidden = false; (groups[c.dataset.topic] ||= []).push(c); }
-    if (!stacking || new URLSearchParams(location.search).has('topic')) return;
-    for (const [t, g] of Object.entries(groups)) {
+    const groups = byTopic(cards());
+    cards().forEach(c => { c.hidden = false; });
+    if (!stackOn()) return;
+    for (const [t, g] of groups) {
       if (g.length < 2) continue;
       const s = stackTpl.content.firstElementChild.cloneNode(true), open = unfolded.has(t);
       s.dataset.stack = t;
@@ -124,9 +132,11 @@
       tg.setAttribute('aria-expanded', open);
       tg.textContent = open ? 'Hide' : 'Show all';
       g[0].before(s);
-      s.after(...g); // the topic's cards sit under its stack
+      // The topic's cards sit under its stack. Move only what is out of place:
+      // moving a node drops the focus inside it.
+      g.reduce((prev, c) => { if (prev.nextElementSibling !== c) prev.after(c); return c; }, s);
       g.forEach(c => { c.hidden = !open; });
-      if (focus === t) tg.focus();
+      if (focus && focus.t === t) s.querySelector(focus.sel).focus();
     }
   }
   restack();
@@ -136,7 +146,7 @@
     if (!s || e.target.closest('[data-act]') || s.classList.contains('is-leaving')) return;
     const t = s.dataset.stack;
     if (!unfolded.delete(t)) unfolded.add(t);
-    restack(t);
+    restack({ t, sel: '[data-stack-toggle]' });
   });
   // The switch in Settings, and the same switch flipped in another tab.
   const stackSw = $('[data-stack-setting]');
@@ -206,21 +216,22 @@
     });
     const nextList = doc.querySelector('[data-list]');
     if (!list || !nextList) return tidy();
-    const keep = [...nextList.children].map(n => {
+    const sf = stackFocus();
+    const keep = stackOrder([...nextList.children].map(n => {
       const old = card(n.dataset.id);
       if (old && old.dataset.seq === n.dataset.seq) return old;
       const fresh = document.adoptNode(n);
       localize(fresh);
       previews(fresh);
       return fresh;
-    });
+    }));
     const now = [...list.children].filter(c => !c.matches('[data-stack]'));
     if (keep.some(c => c.contains(document.activeElement)) || keep.length !== now.length || keep.some((c, i) => c !== now[i])) {
       const had = list.contains(document.activeElement) && !document.activeElement.closest('[data-stack]') && document.activeElement;
       list.replaceChildren(...keep);
       if (had && !had.isConnected) select(selected()); // focus was on a node the refresh replaced
     }
-    restack();
+    restack(sf);
     const s = selected();
     if (s) select(s, false); else selId = null;
     tidy();
@@ -413,7 +424,9 @@
       // server would also clear that topic's snoozed notifications.
       const s = act === 'clear-stack' && b.closest('[data-stack]');
       const ids = cards().filter(c => !s || c.dataset.topic === s.dataset.stack).map(c => c.dataset.id);
+      b.disabled = true; // one tap, one clear
       const r = ids.length && await post('/api/v1/notifications/clear', { ids });
+      b.disabled = false;
       if (!r) return;
       const n = (await r.json().catch(() => ({}))).cleared;
       if (s) { unfolded.delete(s.dataset.stack); leave(s, 'Cleared'); }
@@ -497,6 +510,7 @@
   const search = $('[data-search]');
   // Each command presses the selected card's own button, so Undo and errors work the same.
   const press = (sel, c = selected() || shown()[0]) => {
+    if (stackFocus()) return tell('Open the stack to act on one notification.'); // not the card next to it
     const b = c && c.querySelector(sel);
     if (!b) return tell(c ? 'Not available on this notification.' : 'No notification to act on.');
     select(c);

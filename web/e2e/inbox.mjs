@@ -499,6 +499,12 @@ try {
     await stack.getByRole('button', { name: 'Show all' }).click();
     for (const n of [1, 2, 3, 4]) await item(`Build ${n} failed`).waitFor({ state: 'visible' });
     assert.equal(await stack.getByRole('button', { name: 'Hide' }).getAttribute('aria-expanded'), 'true');
+    // A live refresh keeps keyboard focus on the stack, and a topic named like
+    // an Object property does not break the page.
+    await stack.getByRole('button', { name: 'Hide' }).focus();
+    await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' });
+    await item('Odd topic name').waitFor();
+    assert.equal(await stack.getByRole('button', { name: 'Hide' }).evaluate(b => b === document.activeElement), true, 'focus lost from the stack on refresh');
     // Clear all on the stack clears all four on the server, and Undo reopens them.
     await stack.getByRole('button', { name: 'Clear all' }).click();
     await sp.locator('[data-toast]').filter({ hasText: 'Cleared 4 notifications.' }).waitFor();
