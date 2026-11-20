@@ -518,7 +518,7 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
             n.file?.let { f -> Attached(f) }
             Spacer(Modifier.height(8.dp))
             val ctx = LocalContext.current
-            Text(meta(ctx, n), style = Mono, color = b.slate, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(meta(ctx, n), style = Mono, color = b.slate, maxLines = 2, overflow = TextOverflow.Ellipsis) // 2: a full date is long
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 IconButton(onClick = { share(ctx, n) }) { Icon(Icons.Filled.Share, stringResource(R.string.share), tint = b.slate) }
                 IconButton(onClick = { copy(ctx, n) }) { Icon(painterResource(R.drawable.ic_copy), stringResource(R.string.copy), tint = b.slate, modifier = Modifier.size(20.dp)) }
