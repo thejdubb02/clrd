@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: the device list in Settings marks the browser you are using with
+  "(this browser)".
 - Web: link previews. With previews on, a message's first link shows a card
   with the page's title, summary and image, fetched by your server. Settings
   has a switch for previews and a Default, On or Off choice for each topic.

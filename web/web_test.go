@@ -36,7 +36,7 @@ func TestPages(t *testing.T) {
 		"/app/snoozed":               {"TLS certificate renews in 7 days", "Snoozed until"},
 		"/app/cleared":               {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
 		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css"`, `data-variant="clear"`, `class="command-dialog"`},
-		"/app/settings":              {"Devices in sync", "pixel-9", "https://clrd.example.com/api/v1/notifications"},
+		"/app/settings":              {"Devices in sync", "pixel-9", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications"},
 		"/app?q=disk":                {"Disk 91% full on web-1"},
 		"/app?topic=home":            {"Front door open", `data-topic>in home</span>`},
 		"/robots.txt":                {"User-agent: GPTBot", "User-agent: ClaudeBot", "User-agent: PerplexityBot", "User-agent: OAI-SearchBot", "Sitemap: https://clrd.example.com/sitemap.xml"},
