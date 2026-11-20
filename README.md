@@ -42,7 +42,8 @@ offline catches up the moment it reconnects.
 - **State that syncs.** Dismiss (hide it), acknowledge (someone is on it),
   resolve (it is fixed) and snooze, each shown on every device.
 - **Self-resolving alerts.** Senders tag an alert with their own ID and resolve
-  it by that ID when the fault clears.
+  it by that ID when the fault clears. Or give one `"expires": "30m"` and it
+  clears itself then.
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,

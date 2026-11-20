@@ -49,6 +49,7 @@ A **notification**:
   "state_by": "pixel-9",       // device name that made the last change
   "state_by_id": "k3j9x2m1q8wz", // that device's token id ("" for the server); names can repeat, ids cannot
   "snooze_until": null,        // RFC3339 when state = snoozed
+  "expires_at": null,          // RFC3339 when the server resolves it on its own, or null
   "created_at": "2026-11-19T05:00:00Z",
   "updated_at": "2026-11-19T05:00:00Z",
   "seq": 48211                 // seq of the last event that touched it
@@ -62,6 +63,11 @@ A **notification**:
 - `acknowledged` keeps it in the inbox, stops repeat alerting, shows "Acknowledged on <device>".
 - `snoozed` hides it until `snooze_until`; then the server moves it back to
   `active` with a new event (and re-notifies).
+- `expires` on publish (a duration like `30m`, or an RFC3339 time, in the
+  future) sets `expires_at`. When it passes, the server moves a non-final row
+  to `resolved` (`state_by` "server") with a normal event and clears
+  `expires_at`, so a reopen does not expire it again. A publish that updates
+  the row replaces `expires_at` with its own (none if it gave none).
 - Publishing again with the same `external_id` while the row is non-final
   updates that row (title/message/priority) instead of making a new one,
   and clears `reply`. With `"reopen": true` an acknowledged row also goes

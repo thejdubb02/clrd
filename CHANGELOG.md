@@ -11,6 +11,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
+  notification resolves itself then, leaving every inbox and phone.
 - ntfy compatibility: `GET /v1/account`, which the ntfy app and CLI use to check
   a login and scripts use to check a token still works.
 - Web: a command palette on Ctrl+K (Cmd+K on a Mac) that lists every keyboard
