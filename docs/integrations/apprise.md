@@ -9,9 +9,8 @@ ntfys://clrd_...@clrd.itsjustin.me/infra?auth=token
 - `ntfys://` is HTTPS, `ntfy://` is HTTP.
 - `?auth=token` is required: Apprise only treats the user part as a token on
   its own when it starts with `tk_`. Equivalent: `ntfys://clrd.itsjustin.me/infra?token=clrd_...`.
-- Title and message arrive. Apprise's priority, tags and click URL options
-  (`?priority=high` etc.) are currently ignored by clrd: priority arrives as 3
-  (bug [#130](https://github.com/thejdubb02/clrd/issues/130)).
+- Title, message and Apprise's priority, tags and click URL options
+  (`?priority=high` etc.) all arrive.
 
 ```sh
 apprise -t "Disk 91%" -b "/var on build is 91% full" "ntfys://clrd_...@clrd.itsjustin.me/infra?auth=token"

@@ -26,7 +26,7 @@ notification on every device without anyone touching it.
 | [Sonarr, Radarr, Lidarr, Readarr](arr.md) | today | health only | `?template=arr` | the guide's URL and token form, with a real Sonarr webhook body: sends, then resolves |
 | [Watchtower](watchtower.md) | today | no | ntfy publish | Watchtower 1.7 with the guide's URL: a run report arrives |
 | [Any other service](custom-webhooks.md) | today | if you map it | a saved template | the guide's template saved and fed events (send, resolve, secret), both token forms, a saved GitHub secret rejecting unsigned requests |
-| [Apprise](apprise.md) | today | no | ntfy JSON publish to `POST /` | Apprise 1.9: both URL forms. `?priority=` is dropped ([#130](https://github.com/thejdubb02/clrd/issues/130)) |
+| [Apprise](apprise.md) | today | no | ntfy JSON publish to `POST /` | Apprise 1.9: both URL forms, `?priority=` included |
 | [ntfy clients](ntfy-clients.md) | today | by key, via `X-Id` | ntfy publish/subscribe, Basic auth | ntfy CLI 2.14: publish, subscribe, Basic auth; then resolve by key |
 | Home Assistant ntfy integration | today | no | ntfy publish | not run |
 
