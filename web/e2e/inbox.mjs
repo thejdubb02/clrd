@@ -53,6 +53,20 @@ try {
   // The browser gets its own token, named from its User-Agent (HeadlessChrome on Linux).
   assert.equal(await page.locator('[data-me]').getAttribute('data-me'), 'Chrome on Linux');
 
+  // Empty first run: one tip card, send-a-test first; Next moves on, and Copy
+  // holds this instance's own address.
+  const tip = page.locator('[data-tip]:visible');
+  assert.equal(await tip.count(), 1, 'one tip shows');
+  assert.equal(await tip.locator('h4').textContent(), 'Send your first notification');
+  await page.evaluate(() => { window.copied = []; navigator.clipboard.writeText = async t => { window.copied.push(t); }; });
+  await tip.getByRole('button', { name: 'Copy' }).click();
+  assert.ok((await page.evaluate(() => window.copied[0])).includes(`${base}/api/v1/notifications`), 'copy holds the base URL');
+  await page.getByRole('button', { name: 'Next tip' }).click();
+  assert.notEqual(await tip.locator('h4').textContent(), 'Send your first notification', 'Next changes the tip');
+  assert.equal(await page.locator('[data-tip-count]').textContent(), '2 of 9');
+  assert.equal(await announce.textContent(), await tip.locator('h4').textContent(), 'Next announces the new tip');
+  console.log('ok: tip card shows, Next changes it, Copy has the base URL');
+
   // Clearing it here offers Undo, and Undo brings it back.
   const a = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Disk full on web-1', message: '/var at 99%' });
   await page.reload();

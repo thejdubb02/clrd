@@ -65,10 +65,24 @@
       {{if .Q}}<h2 class="text-foreground text-base font-semibold">No notifications match "{{.Q}}"</h2>
       <p>Search looks at titles, messages and tags{{with .Topic}} in {{.}}{{end}}. <a href="{{$base}}{{with .Topic}}?topic={{.}}{{end}}">Clear the search</a></p>
       {{else if eq .View "inbox"}}<h2 class="text-foreground text-base font-semibold">Nothing waiting</h2>
-      <p>New notifications land here the moment they are sent. Send one to check the setup:</p>
-<pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
-  -d '{"topic":"test","message":"Hello from clrd"}' \
-  {{.Base}}/api/v1/notifications</code></pre>
+      <p>New notifications land here the moment they are sent.</p>
+      <section class="bg-card mt-3 grid gap-3 rounded-xl border p-4" aria-roledescription="carousel" aria-labelledby="tips-h" data-tips>
+        <div class="flex items-center gap-2">
+          <h3 id="tips-h" class="text-muted-foreground text-xs font-medium tracking-wide uppercase">Tip</h3>
+          <span class="js-only text-muted-foreground ms-auto inline-flex items-center gap-1 text-xs tabular-nums"><span data-tip-count>{{add .Tip 1}} of {{len .Tips}}</span>
+          <button type="button" class="btn" data-variant="ghost" data-size="icon-sm" aria-label="Previous tip" aria-controls="tips" data-tip-step="-1">{{template "i-chevron-left"}}</button>
+          <button type="button" class="btn" data-variant="ghost" data-size="icon-sm" aria-label="Next tip" aria-controls="tips" data-tip-step="1">{{template "i-chevron-right"}}</button></span>
+        </div>
+        <div id="tips" aria-live="off">{{range $i, $t := .Tips}}
+          <div class="grid gap-2" role="group" aria-roledescription="tip" aria-label="{{.Title}}" data-tip{{if ne $i $.Tip}} hidden{{end}}>
+            <h4 class="text-foreground font-semibold">{{.Title}}</h4>
+            <p>{{.Text}}</p>
+            {{with .Copy}}<pre tabindex="0" class="whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-tip-copy>{{.}}</code></pre>
+            <div class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="outline" data-size="sm" data-tip-copy-btn>{{template "i-copy"}}Copy</button></div>{{end}}
+            {{with .Link}}<p><a href="{{base}}{{.}}">{{$t.LinkText}}</a></p>{{end}}
+          </div>{{end}}
+        </div>
+      </section>
       {{else if eq .View "snoozed"}}<h2 class="text-foreground text-base font-semibold">Nothing snoozed</h2>
       <p>Snooze a notification from its menu in the <a href="{{base}}/app">inbox</a> to hide it until later. It comes back and notifies again at that time.</p>
       {{else}}<h2 class="text-foreground text-base font-semibold">Nothing cleared yet</h2>
