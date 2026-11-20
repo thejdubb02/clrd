@@ -22,7 +22,9 @@ class SyncClientTest {
     private val store = FakeStore()
     private val statuses = CopyOnWriteArrayList<SyncClient.Status>()
     private val wsSince = CopyOnWriteArrayList<String>()
+    private val wsAt = CopyOnWriteArrayList<Long>() // System.nanoTime() of each connect, as the server saw it
     private val posts = CopyOnWriteArrayList<String>()
+    private val postAt = CopyOnWriteArrayList<Long>()
     private val serverSockets = CopyOnWriteArrayList<WebSocket>()
 
     /** What the fake server sends on each WebSocket connect, by connect number. */
@@ -49,6 +51,7 @@ class SyncClientTest {
                 val path = request.path.orEmpty()
                 return when {
                     path.startsWith("/api/v1/ws") -> {
+                        wsAt += System.nanoTime()
                         wsSince += request.requestUrl!!.queryParameter("since")!!
                         val n = wsSince.size
                         wsResponse() ?: MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
@@ -66,6 +69,7 @@ class SyncClientTest {
                             ?: MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
                     }
                     request.method == "POST" -> {
+                        postAt += System.nanoTime()
                         posts += path
                         if (path.contains("flaky") && posts.count { it == path } == 1) MockResponse().setResponseCode(503)
                         else if (path.contains("busy") && posts.count { it == path } == 1) MockResponse().setResponseCode(429).setHeader("Retry-After", "1")
@@ -92,9 +96,11 @@ class SyncClientTest {
         server.shutdown()
     }
 
+    private val settings = CopyOnWriteArrayList<String>()
+
     private fun start(replayQuietMs: Long = 5_000) {
         val api = Api(http, server.url("/").toString().trimEnd('/'), "tok")
-        client = SyncClient(http, api, store, onStatus = { statuses += it }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
+        client = SyncClient(http, api, store, onStatus = { statuses += it }, onSettings = { settings += it.toString() }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
             .also { it.start() }
     }
 
@@ -120,6 +126,16 @@ class SyncClientTest {
         onConnect = { _, ws -> ws.send("""{"type":"ready","seq":900}""") }
         start()
         await { store.lastSeq() == 900L }
+    }
+
+    @Test fun settingsMessageReachesTheApp() {
+        onConnect = { _, ws ->
+            ws.send("""{"type":"settings","settings":{"snooze_intervals":["15m","2h"],"snooze_default":"2h"}}""")
+            ws.send("""{"type":"ready","seq":0}""")
+        }
+        start()
+        await { SyncClient.Status.CONNECTED in statuses }
+        assertEquals(Snooze("2h", listOf("15m", "2h")), Snooze.from(org.json.JSONObject(settings.single())))
     }
 
     @Test fun liveEventAfterReadyIsAppliedAtOnce() {
@@ -281,9 +297,9 @@ class SyncClientTest {
         start()
         await { SyncClient.Status.BUSY in statuses }
         client!!.kick(force = true) // a network switch does not cut the wait short either
-        Thread.sleep(600) // the 20 ms backoff alone would have retried many times by now
-        assertEquals(1, wsSince.size)
         await { SyncClient.Status.CONNECTED in statuses }
+        // Measured, not slept: the 20 ms backoff alone would have retried within a few ms.
+        assertTrue("retried too soon", wsAt[1] - wsAt[0] >= 1_000_000_000L)
     }
 
     @Test fun busySendWaitsForRetryAfter() {
@@ -295,9 +311,8 @@ class SyncClientTest {
         await { posts.isNotEmpty() }
         store.queue += Pending(2, "b", "dismiss")
         client!!.flushSoon() // a new tap does not cut the wait short either
-        Thread.sleep(600) // flushRetryMs is 50
-        assertEquals(1, posts.size)
         await { store.queue.isEmpty() }
+        assertTrue("sent again too soon", postAt[1] - postAt[0] >= 1_000_000_000L) // flushRetryMs is 50
         assertEquals(listOf("/api/v1/notifications/busy/dismiss", "/api/v1/notifications/busy/dismiss", "/api/v1/notifications/b/dismiss"), posts)
     }
 
@@ -342,13 +357,14 @@ class SyncClientTest {
     }
 
     @Test fun aReplayDroppedBeforeASaveDoesNotMoveTheCursor() {
-        onConnect = { n, ws -> if (n == 1) (11..20L).forEach { ws.send(ev(it, "r$it", "active")) } } // no `ready`; the new socket says nothing
-        start(replayQuietMs = 1_500)
-        await { serverSockets.size >= 1 } // socket 1 is open and sending
-        Thread.sleep(500) // the replay is in the buffer, not saved
-        client!!.kick(force = true) // the socket drops before the quiet save
-        await { wsSince.size >= 2 }
-        Thread.sleep(3_000) // past the new socket's quiet save
+        // Socket 1 replays 11..20, then drops with no `ready`. The close arrives after the events on the
+        // same socket, so they are in the buffer when it drops; no timer race (#75). The quiet save is off.
+        onConnect = { n, ws ->
+            if (n == 1) { (11..20L).forEach { ws.send(ev(it, "r$it", "active")) }; ws.close(1001, "dropped") }
+            else ws.send("""{"type":"ready","seq":0}""") // the new socket has nothing to replay
+        }
+        start(replayQuietMs = 600_000)
+        await { SyncClient.Status.CONNECTED in statuses }
         assertEquals("0", wsSince[1])
         assertEquals(0L, store.lastSeq()) // events 11..20 must still be replayed
     }
@@ -387,7 +403,7 @@ class SyncClientTest {
     }
 
     private fun await(cond: () -> Boolean) {
-        val end = System.currentTimeMillis() + 5_000
+        val end = System.currentTimeMillis() + 30_000 // a ceiling only: a loaded build box can be slow (#75)
         while (!cond()) {
             check(System.currentTimeMillis() < end) { "timed out; statuses=$statuses since=$wsSince rows=${store.rows.keys}" }
             Thread.sleep(10)

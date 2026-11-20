@@ -24,7 +24,8 @@ unless they are plain text, so ntfy apps render them the same way.
 Settings live on the server, so a change on one device shows on all of them.
 Change the formatting, link, site icon and link preview switches under
 Messages on the web inbox's Settings page, and each topic's preview choice
-under Link previews by topic, or any setting with the API.
+under Link previews by topic, or any setting with the API. The snooze times
+and default can also be changed in the Android app's Settings.
 
 | Setting | Default | What it does |
 |---|---|---|

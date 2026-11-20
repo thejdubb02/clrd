@@ -109,7 +109,8 @@ CREATE TABLE IF NOT EXISTS ntfy_ignored (name TEXT PRIMARY KEY, count INTEGER NO
 -- A web sign-in mints its own token; parent_id is the token typed in.
 CREATE TABLE IF NOT EXISTS sessions (
   token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
-  parent_id TEXT NOT NULL
+  parent_id TEXT NOT NULL,
+  phone INTEGER NOT NULL DEFAULT 0 -- 1 for a phone linked from a browser (issue #180)
 );
 `
 
@@ -230,6 +231,11 @@ func openDB(path string) (*sql.DB, error) {
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
 		return nil, fmt.Errorf("add grants column: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN phone INTEGER NOT NULL DEFAULT 0`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add sessions phone column: %w", err)
 	}
 	// After the loop: an old database only has the column once it ran.
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS notifications_file ON notifications(file) WHERE file != ''`); err != nil {

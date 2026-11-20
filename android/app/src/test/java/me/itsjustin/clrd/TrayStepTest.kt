@@ -46,14 +46,14 @@ class TrayStepTest {
         assertTrue(!n.isFinal)
     }
 
-    private val ours = mapOf(R.string.tray_ack to "Ack", R.string.tray_snooze to "Snooze 1h", R.string.tray_clear to "Clear", R.string.tray_open to "Open")
+    private val ours = mapOf(R.string.tray_ack to "Ack", R.string.tray_snooze to "Snooze", R.string.tray_clear to "Clear", R.string.tray_open to "Open")
     private fun TrayButton.text() = if (res != 0) ours.getValue(res) else label
     private fun labels(state: String, actions: String = "[]") = TrayButton.pick(event(state, actions = actions)).map { it.text() }
     private fun links(n: Int) = (1..n).joinToString(",", "[", "]") { """{"label":"L$it","url":"https://x.example/$it"}""" }
 
-    @Test fun noSenderLinksKeepsOurThree() = assertEquals(listOf("Ack", "Snooze 1h", "Clear"), labels("active"))
+    @Test fun noSenderLinksKeepsOurThree() = assertEquals(listOf("Ack", "Snooze", "Clear"), labels("active"))
 
-    @Test fun ackedHasNoAck() = assertEquals(listOf("Snooze 1h", "Clear"), labels("acknowledged"))
+    @Test fun ackedHasNoAck() = assertEquals(listOf("Snooze", "Clear"), labels("acknowledged"))
 
     @Test fun oneLinkDropsSnooze() = assertEquals(listOf("L1", "Ack", "Clear"), labels("active", links(1)))
 
@@ -84,6 +84,6 @@ class TrayStepTest {
     @Test fun anAnsweredOneShowsNoReplies() {
         val n = event("acknowledged", actions = yesNo, reply = "yes")
         assertEquals("yes", n.reply)
-        assertEquals(listOf("L1", "Snooze 1h", "Clear"), TrayButton.pick(n).map { it.text() })
+        assertEquals(listOf("L1", "Snooze", "Clear"), TrayButton.pick(n).map { it.text() })
     }
 }

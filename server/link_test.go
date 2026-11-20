@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -217,5 +218,71 @@ func TestLinkCapApartFromPairs(t *testing.T) {
 	}
 	if code, _, raw := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/link", admin, nil); code != 201 {
 		t.Fatalf("link while pairs are full: %d %s", code, raw)
+	}
+}
+
+// linkPhone links a phone from tok end to end and returns the phone's token.
+func linkPhone(t *testing.T, ts *httptest.Server, tok string) string {
+	t.Helper()
+	lc := linkStart(t, ts, tok)
+	linkClaim(t, ts.URL, lc, phoneSecret)
+	if code, _ := call(t, ts, "POST", "/api/v1/link/"+lc+"/approve", tok, nil); code != 200 {
+		t.Fatalf("approve: %d", code)
+	}
+	_, out := linkClaim(t, ts.URL, lc, phoneSecret)
+	return out["token"].(string)
+}
+
+// Issue #180: signing in more browsers than the cap leaves a linked phone alone.
+func TestLinkedPhoneOutsideSessionCap(t *testing.T) {
+	s, ts, _ := newTest(t)
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	phone := linkPhone(t, ts, typed)
+	var first *http.Cookie
+	for i := 0; i <= maxSessions; i++ {
+		_, _, c := signIn(t, ts, `{"token":"`+typed+`"}`, firefoxLinux, nil)
+		if i == 0 {
+			first = c
+		}
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/notifications", phone, nil); code != 200 {
+		t.Fatalf("phone after %d browser sign-ins: %d, want 200", maxSessions+1, code)
+	}
+	if withCookie(t, ts, "GET", "/api/v1/topics", first) != 401 {
+		t.Fatal("the cap should still sign out the oldest browser")
+	}
+}
+
+// Issue #185: a phone linked from a browser that another browser paired
+// survives both browsers signing out, and goes with the typed token.
+func TestLinkFromPairedBrowser(t *testing.T) {
+	s, ts, _ := newTest(t)
+	ctx := context.Background()
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	b1, b1raw, err := s.childToken(ctx, s.lookupToken(ctx, typed), s.lookupToken(ctx, typed).ID, "b1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2, b2raw, err := s.childToken(ctx, b1, b1.ID, "b2", false) // b2 paired by b1
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone := linkPhone(t, ts, b2raw)
+	for _, id := range []string{b1.ID, b2.ID} {
+		if err := s.DeleteToken(ctx, id); err != nil && !isNotFound(err) {
+			t.Fatal(err)
+		}
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/notifications", b1raw, nil); code != 401 {
+		t.Fatalf("b1 after sign-out: %d, want 401", code)
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/notifications", phone, nil); code != 200 {
+		t.Fatalf("phone after both browsers signed out: %d, want 200", code)
+	}
+	if err := s.DeleteToken(ctx, s.lookupToken(ctx, typed).ID); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/notifications", phone, nil); code != 401 {
+		t.Fatalf("phone after the typed token is revoked: %d, want 401", code)
 	}
 }

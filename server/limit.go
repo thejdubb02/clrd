@@ -4,6 +4,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -71,18 +72,17 @@ func (l *limiter) give(key string) {
 	}
 }
 
-// clientIP is the caller's address. Behind a proxy on loopback or a
-// private network it is the rightmost X-Forwarded-For hop, the one that
-// proxy added. IPv6 is cut to its /64.
-// ponytail: a client connecting directly from a private network can set
-// X-Forwarded-For itself; a trusted-proxy setting would close that.
-func clientIP(r *http.Request) string {
+// clientIP is the caller's address. Behind a trusted proxy it is the
+// rightmost X-Forwarded-For hop, the one that proxy added. Trusted is the
+// trusted list, or with none set any loopback or private-network peer.
+// IPv6 is cut to its /64.
+func clientIP(r *http.Request, trusted []netip.Prefix) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
 	ip := net.ParseIP(host)
-	if ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+	if ip != nil && isTrustedProxy(ip, trusted) {
 		if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
 			hops := strings.Split(xff[len(xff)-1], ",")
 			if p := net.ParseIP(strings.TrimSpace(hops[len(hops)-1])); p != nil {
@@ -97,6 +97,19 @@ func clientIP(r *http.Request) string {
 		return ip.Mask(net.CIDRMask(64, 128)).String()
 	}
 	return ip.String()
+}
+
+func isTrustedProxy(ip net.IP, trusted []netip.Prefix) bool {
+	if trusted == nil {
+		return ip.IsLoopback() || ip.IsPrivate()
+	}
+	a, _ := netip.AddrFromSlice(ip)
+	for _, p := range trusted {
+		if p.Contains(a.Unmap()) {
+			return true
+		}
+	}
+	return false
 }
 
 // retryAfter returns the 429; Server.fail turns wait into Retry-After.

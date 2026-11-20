@@ -11,8 +11,13 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: Snooze uses the snooze default from your server settings instead
+  of always 1 hour, a long press on Snooze offers the other saved times, and
+  Settings has a section to change the times and the default for every device.
 - Web: the device list in Settings marks the browser you are using with
   "(this browser)".
+- `CLRD_TRUSTED_PROXIES` setting: list your reverse proxies so only they can
+  set the client address used by the wrong-password limit.
 - Web: link previews. With previews on, a message's first link shows a card
   with the page's title, summary and image, fetched by your server. Settings
   has a switch for previews and a Default, On or Off choice for each topic.
@@ -176,8 +181,14 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: a new alert no longer shows twice in the notification drawer, once
   bundled under the silent sync notice. The sync notice also shows the real
   connection state instead of staying on Connecting after the app is opened.
+- Android: the topic chips above the inbox have a solid background and a
+  gap below, so cards no longer show through them while scrolling.
 - ntfy publish: a header such as `Prio: high` now wins over a query parameter
   such as `?priority=low`, the same order ntfy uses.
+- A phone linked from the web inbox is no longer signed out when the same
+  token signs in more than 20 browsers. Phones have their own limit of 20.
+- A phone linked from a browser that was itself signed in by another browser
+  now stays signed in when either browser signs out, like any linked phone.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.

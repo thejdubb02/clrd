@@ -19,6 +19,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -50,6 +51,11 @@ type Options struct {
 
 	RateToken int // CLRD_RATE_TOKEN, publishes a minute per token, default 60, -1 off
 	RateTopic int // CLRD_RATE_TOPIC, publishes a minute per topic, default 60, -1 off
+
+	// TrustedProxies (CLRD_TRUSTED_PROXIES, comma-separated CIDRs or
+	// addresses) are the only peers whose X-Forwarded-For is read. Unset,
+	// any loopback or private-network peer is trusted.
+	TrustedProxies []netip.Prefix
 }
 
 // ConfigFromEnv reads the spec section 7 environment variables.
@@ -93,6 +99,26 @@ func ConfigFromEnv() (Options, error) {
 			}
 			*v.to = cmp.Or(n, -1)
 		}
+	}
+	for _, v := range strings.Split(os.Getenv("CLRD_TRUSTED_PROXIES"), ",") {
+		if v = strings.TrimSpace(v); v == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(v)
+		if err != nil {
+			a, aerr := netip.ParseAddr(v)
+			if aerr != nil {
+				return o, fmt.Errorf("CLRD_TRUSTED_PROXIES: want CIDRs or addresses, got %q", v)
+			}
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		if p.Addr().Is4In6() && p.Bits() >= 96 { // the peer is unmapped before matching
+			p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+		}
+		o.TrustedProxies = append(o.TrustedProxies, p.Masked())
+	}
+	if o.TrustedProxies == nil && os.Getenv("CLRD_TRUSTED_PROXIES") != "" {
+		return o, errors.New("CLRD_TRUSTED_PROXIES: set but lists no proxies")
 	}
 	return o, nil
 }

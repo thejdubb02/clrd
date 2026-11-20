@@ -37,7 +37,7 @@ class SyncService : Service() {
         if (intent?.action == ACTION_RESTART) app.sync?.stop()?.also { app.sync = null }
         if (app.sync == null) {
             app.io.execute { store.reconcile() } // the tray is empty after a reboot; refill it quietly
-            app.sync = SyncClient(app.http, api, store, onStatus = ::status).also { it.start() }
+            app.sync = SyncClient(app.http, api, store, onStatus = ::status, onSettings = app::saveSettings).also { it.start() }
         }
         if (netCallback == null) {
             netCallback = object : ConnectivityManager.NetworkCallback() {
@@ -119,14 +119,14 @@ class BootReceiver : BroadcastReceiver() {
     }
 }
 
-/** Ack / Snooze 1h / Clear / reply buttons and the swipe-away (delete intent) on a tray notification. */
+/** Ack / Snooze (the default time) / Clear / reply buttons and the swipe-away (delete intent) on a tray notification. */
 class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
         val server = intent.getStringExtra(Tray.EXTRA_SERVER) // null on items posted before it was added: the current server
         val (action, body) = when (intent.action) {
             Tray.ACTION_ACK -> "ack" to "{}"
-            Tray.ACTION_SNOOZE -> "snooze" to """{"for":"1h"}"""
+            Tray.ACTION_SNOOZE -> "snooze" to Snooze.body(App.of(ctx).snooze.value.default)
             Tray.ACTION_DISMISS -> "dismiss" to "{}"
             // seq = the version the person saw: if the question changed since, the server answers 409 and the tap is dropped
             Tray.ACTION_REPLY -> "reply" to JSONObject().put("reply", intent.getStringExtra(Tray.EXTRA_REPLY) ?: return)

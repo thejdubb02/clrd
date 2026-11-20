@@ -287,6 +287,8 @@ the session cookie (same-origin only) as well as a Bearer token.
   on Linux"), so each browser is its own device. Revoking the token typed in
   also revokes the browsers signed in with it. One token keeps at most 20
   browsers signed in: the 21st sign-in revokes the one used least recently.
+  Phones linked under a token have their own cap of 20, so browser sign-ins
+  never sign a phone out.
   `DELETE /api/v1/session` revokes
   the browser's token and clears the cookie. The cookie works on `/api/v1/*`
   only, never on the ntfy-style GET publish webhooks.
@@ -315,9 +317,11 @@ the session cookie (same-origin only) as well as a Bearer token.
   binds the secret and name to the code; a later claim with another secret
   gets 410. It gets 202 `{"state":"waiting"}` until approved, then 200
   `{"state":"approved", "token", "name"}` once: a new token with the creating
-  token's scopes, topics and grants, listed under the token typed in (the
-  session's parent when the creator is a browser session), so signing that
-  browser out keeps the phone and revoking the typed token revokes it. 410
+  token's scopes, topics and grants, listed under the token typed in (when
+  the creator is a browser session, the server follows its parents up past
+  every browser session to the first typed token or linked phone), so signing
+  out any browser on the way keeps the phone and revoking that token revokes
+  it. 410
   when denied, expired, used or unknown. Only the creating token may read
   `GET /api/v1/link/{code}` (`{name, state, check}`, state `waiting` or
   `claimed`; once claimed, `check` is a 4-digit match number: the first 4
@@ -460,6 +464,9 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` (60 each, publishes a minute per
   token and per topic, with a burst of the same size; `0` turns one off).
   Every publish counts, on every route; over a cap is a 429 `rate_limited`.
+  `CLRD_TRUSTED_PROXIES` (unset; comma-separated CIDRs or addresses): the
+  only peers whose rightmost `X-Forwarded-For` hop is taken as the client
+  address. Unset, any loopback or private-network peer is trusted.
   An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.
@@ -473,7 +480,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 - Kotlin, Jetpack Compose, minSdk 26, no Google Play Services (F-Droid).
 - Foreground service holds the WebSocket; reconnect with backoff; stores last seq in Room/DataStore.
 - Each open notification = one system notification, `tag` = notification id.
-  `setDeleteIntent` -> POST `/dismiss`. Buttons ACK, SNOOZE 1H, CLEAR.
+  `setDeleteIntent` -> POST `/dismiss`. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR.
 - Incoming `dismissed`/`resolved` event -> `NotificationManager.cancel(tag)`. That is the headline feature.
 - Inbox screen per the brand board: filter pills by topic, swipe to clear with green reveal, tabs Inbox, Snoozed, Cleared, Settings.
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.
