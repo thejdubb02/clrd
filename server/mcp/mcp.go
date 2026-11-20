@@ -233,7 +233,7 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		body := map[string]any{"topic": str(a, "topic"), "message": str(a, "message")}
-		for _, k := range []string{"title", "format"} {
+		for _, k := range []string{"title", "format", "icon"} {
 			if v := str(a, k); v != "" {
 				body[k] = v
 			}
@@ -246,6 +246,12 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		}
 		if v, ok := a["actions"].([]any); ok {
 			body["actions"] = v
+		}
+		if v, ok := a["attachment"].(map[string]any); ok {
+			if str(v, "url") == "" {
+				return nil, fmt.Errorf("attachment.url is required")
+			}
+			body["attachment"] = map[string]any{"url": str(v, "url"), "name": str(v, "name")} // link only; type and size are the server's
 		}
 		// Core keeps an existing row's state when a key is reused, so a new
 		// question could inherit the last answer. Reopen it in the same write.
@@ -388,12 +394,14 @@ func p(typ, desc string) map[string]any { return map[string]any{"type": typ, "de
 var tools = []map[string]any{
 	{"name": "send", "description": "Send a notification to a topic. Reusing an id while the previous one is still open updates it instead of making a new one.",
 		"inputSchema": schema(map[string]any{
-			"topic":    p("string", "Topic, e.g. infra"),
-			"message":  p("string", "Body text"),
-			"title":    p("string", "Optional title"),
-			"format":   map[string]any{"type": "string", "enum": []string{"markdown", "text"}, "description": "markdown (default) or text, which is shown exactly as sent"},
-			"priority": map[string]any{"type": "integer", "minimum": 1, "maximum": 5, "description": "1..5, 5 = urgent"},
-			"id":       p("string", "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id)."),
+			"topic":      p("string", "Topic, e.g. infra"),
+			"message":    p("string", "Body text"),
+			"title":      p("string", "Optional title"),
+			"format":     map[string]any{"type": "string", "enum": []string{"markdown", "text"}, "description": "markdown (default) or text, which is shown exactly as sent"},
+			"icon":       p("string", "Optional http(s) image URL shown with the notification; the topic's icon when omitted"),
+			"attachment": schema(map[string]any{"url": p("string", "http(s) URL of the file"), "name": p("string", "Optional file name")}, "url"),
+			"priority":   map[string]any{"type": "integer", "minimum": 1, "maximum": 5, "description": "1..5, 5 = urgent"},
+			"id":         p("string", "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id)."),
 			"actions": map[string]any{"type": "array", "maxItems": 3,
 				"description": "Optional answer buttons, e.g. [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]. wait_for_reply returns the tapped one as answer.",
 				"items":       schema(map[string]any{"label": p("string", "Button text"), "reply": map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Value returned as answer, unique"}}, "label", "reply")},
