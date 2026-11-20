@@ -48,8 +48,10 @@ func (l *limiter) take(key string, now time.Time) time.Duration {
 			l.m[key] = b
 		}
 	}
-	b.tokens = math.Min(l.burst, b.tokens+float64(now.Sub(b.at))/float64(l.every))
-	b.at = now
+	if now.After(b.at) { // a racing caller with an older now must not turn the clock back
+		b.tokens = math.Min(l.burst, b.tokens+float64(now.Sub(b.at))/float64(l.every))
+		b.at = now
+	}
 	if b.tokens < 1 {
 		return time.Duration((1 - b.tokens) * float64(l.every))
 	}

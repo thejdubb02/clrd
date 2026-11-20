@@ -15,6 +15,9 @@ func TestLimiterRefill(t *testing.T) {
 	if l.take("a", t0) != 0 || l.take("a", t0) != 0 {
 		t.Fatal("burst of 2 refused")
 	}
+	if w := l.take("a", t0.Add(-time.Second)); w != time.Minute { // an older now changes nothing
+		t.Fatalf("stale now: wait %v", w)
+	}
 	if w := l.take("a", t0); w != time.Minute {
 		t.Fatalf("third take: wait %v, want 1m", w)
 	}
@@ -106,6 +109,11 @@ func TestPublishLimit(t *testing.T) {
 	s, ts, _ := newTest(t)
 	if s.opt.RateToken != 60 || s.opt.RateTopic != 60 || s.tokLimit == nil || s.topicLimit == nil {
 		t.Fatalf("limits should default on at 60: %+v", s.opt)
+	}
+	for _, l := range []*limiter{s.tokLimit, s.topicLimit} {
+		if l.burst != 60 || l.every != time.Second {
+			t.Fatalf("default limiter: burst %v every %v", l.burst, l.every)
+		}
 	}
 	s.tokLimit, s.topicLimit = newLimiter(3, time.Hour), newLimiter(5, time.Hour)
 	a := mkToken(t, s, "a", []string{ScopePublish}, nil)
