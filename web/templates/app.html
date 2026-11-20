@@ -33,6 +33,7 @@
     {{if eq .View "settings"}}{{template "settings" .}}{{else}}
     <header class="mb-4 flex flex-wrap items-center gap-2 md:min-h-9 md:flex-nowrap">
       <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{.Heading}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
+      {{if eq .View "inbox"}}<button type="button" class="btn js-only" data-variant="outline" data-send-open title="Send a notification">{{template "i-send"}}<span class="max-md:sr-only">Send</span></button>{{end}}
       {{if eq .View "inbox"}}<button type="button" class="btn js-only" data-variant="outline" data-act="clear-all"{{if not .Snap.Items}} hidden{{end}}>{{template "i-check-check"}}Clear all</button>{{end}}
       <button type="button" class="btn js-only" data-variant="outline" data-palette aria-label="Commands" title="Commands">{{template "i-command"}}<kbd class="kbd max-md:hidden" data-mod>Ctrl K</kbd></button>
       <form class="input-group bg-card max-md:order-last max-md:basis-full md:w-60" role="search" method="get">
@@ -63,6 +64,24 @@
   </main>
 </div>
 {{template "palette" .}}
+{{if eq .View "inbox"}}<dialog id="send" class="dialog" aria-labelledby="send-t">
+  <form class="sm:max-w-md" data-send>
+    <header><h2 id="send-t">Send a notification</h2><p class="text-body">It shows on every device, this one too.</p></header>
+    <section class="grid gap-3">
+      <div class="grid gap-1.5"><label class="label" for="send-topic">Topic</label>
+        <input id="send-topic" class="input" name="topic" value="{{.Topic}}" list="send-topics" required autocomplete="off" spellcheck="false" placeholder="notes">
+        <datalist id="send-topics">{{range .Snap.Topics}}<option value="{{.Name}}">{{end}}</datalist></div>
+      <div class="grid gap-1.5"><label class="label" for="send-title">Title <span class="text-muted-foreground font-normal">(optional)</span></label>
+        <input id="send-title" class="input" name="title" autocomplete="off"></div>
+      <div class="grid gap-1.5"><label class="label" for="send-message">Message</label>
+        <textarea id="send-message" class="textarea" name="message" rows="3" required></textarea></div>
+      <div class="grid gap-1.5"><label class="label" for="send-priority">Priority</label>
+        <select id="send-priority" class="input" name="priority"><option value="1">Min</option><option value="2">Low</option><option value="3" selected>Default</option><option value="4">High</option><option value="5">Urgent</option></select></div>
+      <p class="text-destructive text-sm" role="status" data-send-status></p>
+    </section>
+    <footer><button type="button" class="btn" data-variant="outline" data-send-close>Cancel</button><button class="btn">{{template "i-send"}}Send</button></footer>
+  </form>
+</dialog>{{end}}
 <div class="notice" role="status" aria-live="polite" data-toast hidden></div>
 <p class="sr-only" aria-live="polite" data-announce></p>
 </body>
@@ -159,7 +178,7 @@
         <input id="snz-times" class="input" name="times" value="{{range $i, $v := .Snap.SnoozeIntervals}}{{if $i}}, {{end}}{{$v}}{{end}}" aria-describedby="snz-hint" autocomplete="off" spellcheck="false">
         <p id="snz-hint" class="meta">Up to 8, separated by commas. Use m, h or d: 15m, 1h, 2d.</p></div>
       <div class="grid gap-1.5"><label class="label" for="snz-default">Default</label>
-        <select id="snz-default" class="select" name="default">{{range .Snap.SnoozeIntervals}}<option value="{{.}}"{{if eq . $.Snap.SnoozeDefault}} selected{{end}}>{{snoozeLabel .}}</option>{{end}}</select></div>
+        <select id="snz-default" class="input" name="default">{{range .Snap.SnoozeIntervals}}<option value="{{.}}"{{if eq . $.Snap.SnoozeDefault}} selected{{end}}>{{snoozeLabel .}}</option>{{end}}</select></div>
       <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-snooze-status></span></div>
     </form>
   </section>
