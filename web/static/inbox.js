@@ -244,6 +244,18 @@
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   });
 
+  // Settings: message display switches, each saved on its own.
+  const disp = $('[data-display-settings]');
+  disp && disp.addEventListener('change', async e => {
+    const sw = e.target, status = $('[data-display-status]');
+    sw.disabled = true; // one save at a time, so an older save cannot land last
+    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [sw.name]: sw.checked }) }).catch(() => null);
+    if (r && r.ok) return location.reload();
+    sw.checked = !sw.checked;
+    sw.disabled = false;
+    status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  });
+
   // Share and Copy (SPEC section 2): title, message and click, from the card.
   // Both need a secure page (https or localhost); a plain http LAN address has neither.
   document.documentElement.classList.toggle('no-share', !navigator.share);
@@ -421,7 +433,7 @@
         // Snooze times or formatting changed on another device: the cards are stale.
         const st = m.settings || {};
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) reset();
-        else if ('render_formatting' in st && `${st.render_formatting},${st.autolink}` !== shell.dataset.fmt) reset();
+        else if ('render_formatting' in st && `${st.render_formatting},${st.autolink},${st.favicons}` !== shell.dataset.fmt) reset();
       }
       else if (m.notification) onEvent(m);
     };

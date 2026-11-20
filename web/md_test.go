@@ -18,7 +18,7 @@ func TestRenderBodyAllowList(t *testing.T) {
 		"- [ ] task", "<https://e.example/>", "go to https://e.example/x now", "a <nil> b <stdin>", "<u>open",
 		"</u>stray", "```\n<b>x</b>\n```",
 	} {
-		out := string(renderBody(src, "", true, true))
+		out := string(renderBody(src, "", Snapshot{Formatting: true, Autolink: true}))
 		for _, m := range tag.FindAllStringSubmatch(out, -1) {
 			if !allowed[strings.ToLower(m[2])] {
 				t.Errorf("%q: tag <%s> in %q", src, m[2], out)
@@ -56,8 +56,26 @@ func TestRenderBody(t *testing.T) {
 		{"x https://e.example/?a=1&b=2", "text", true, true, `<p class="whitespace-pre-line">x <a href="https://e.example/?a=1&amp;b=2" rel="noopener noreferrer">https://e.example/?a=1&amp;b=2</a></p>`},
 		{"a ++ b ++ c", "", true, true, "<p>a ++ b ++ c</p>\n"},
 	} {
-		if got := string(renderBody(c.src, c.format, c.formatting, c.links)); got != c.want {
+		if got := string(renderBody(c.src, c.format, Snapshot{Formatting: c.formatting, Autolink: c.links})); got != c.want {
 			t.Errorf("renderBody(%q, %q, %v, %v)\n got %q\nwant %q", c.src, c.format, c.formatting, c.links, got, c.want)
 		}
+	}
+}
+
+func TestRenderBodyFavicons(t *testing.T) {
+	snap := Snapshot{Formatting: true, Autolink: true, Favicons: true}
+	got := string(renderBody("[a](https://user@Sub.example.com:8443/x?y=1&z=2) and https://b.example/", "", snap))
+	want := `<p><img class="favicon" src="/api/v1/favicon?host=Sub.example.com" alt="" width="16" height="16" loading="lazy"><a rel="noopener noreferrer" href="https://user@Sub.example.com:8443/x?y=1&amp;z=2">a</a> and <img class="favicon" src="/api/v1/favicon?host=b.example" alt="" width="16" height="16" loading="lazy"><a rel="noopener noreferrer" href="https://b.example/">https://b.example/</a></p>` + "\n"
+	if got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+	if got := string(renderBody("see https://b.example/", "text", snap)); !strings.Contains(got, `favicon?host=b.example"`) {
+		t.Errorf("plain text link has no icon: %q", got)
+	}
+	if got := string(renderBody("[a](HTTPS://b.example/)", "", snap)); !strings.Contains(got, `favicon?host=b.example"`) {
+		t.Errorf("upper case scheme has no icon: %q", got)
+	}
+	if got := string(renderBody("[a](https://b.example/)", "", Snapshot{Formatting: true})); strings.Contains(got, "<img") {
+		t.Errorf("icon with favicons off: %q", got)
 	}
 }

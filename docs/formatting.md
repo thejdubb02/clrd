@@ -22,6 +22,8 @@ unless they are plain text, so ntfy apps render them the same way.
 ## Display settings
 
 Settings live on the server, so a change on one device shows on all of them.
+Change the formatting, link and site icon switches under Messages on the web
+inbox's Settings page, or any setting with the API.
 
 | Setting | Default | What it does |
 |---|---|---|

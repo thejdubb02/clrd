@@ -160,7 +160,7 @@ type Snapshot struct {
 	SnoozeIntervals []string
 	SnoozeDefault   string
 	// Display settings for message bodies (docs/SPEC.md section 2.1).
-	Formatting, Autolink bool
+	Formatting, Autolink, Favicons bool
 }
 
 // API is what the server provides. The request is passed so the server can
@@ -194,7 +194,7 @@ var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 			Snooze        []string
 			SnoozeDefault string
 			Text          template.HTML
-		}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap.Formatting, snap.Autolink)}
+		}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap)}
 	},
 	"snoozeLabel": snoozeLabel,
 	"plural": func(n int, one, many string) string {

@@ -129,3 +129,5 @@
 @keyframes clrd-swipe { 0%, 18% { transform: none; opacity: 1; } 26% { transform: translateX(120%); opacity: 0; } 88% { transform: translateX(120%); opacity: 0; } 89% { transform: none; opacity: 0; } 96%, 100% { opacity: 1; } }
 @keyframes clrd-follow { 0%, 27% { opacity: 1; border-color: var(--border); } 30% { border-color: var(--clear); opacity: 1; } 36% { opacity: 0; transform: scale(.97); } 88% { opacity: 0; transform: none; } 96%, 100% { opacity: 1; } }
 @keyframes clrd-cleared { 0%, 32% { opacity: 0; } 38%, 78% { opacity: 1; } 86%, 100% { opacity: 0; } }
+
+.msg .favicon { display: inline; width: 1em; height: 1em; margin-inline-end: 0.25em; vertical-align: -0.125em; border-radius: 2px; }

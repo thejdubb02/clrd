@@ -2,7 +2,9 @@ package web
 
 import (
 	"bytes"
+	"html"
 	"html/template"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -11,7 +13,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer"
-	"github.com/yuin/goldmark/renderer/html"
+	gmhtml "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
@@ -26,6 +28,7 @@ var (
 	mdLinks   = newMD(true)
 	mdNoLinks = newMD(false)
 	bareURL   = regexp.MustCompile(`https?://[^\s<>"]+[^\s<>".,;:!?)\]'*_]`)
+	linkHref  = regexp.MustCompile(`<a [^>]*href="((?i:https?)://[^"]+)"`)
 	uTag      = regexp.MustCompile(`</?u>|</(?:p|li|h[1-6]|blockquote)>`)
 )
 
@@ -34,13 +37,29 @@ func newMD(autolink bool) goldmark.Markdown {
 	if autolink {
 		ext = append(ext, extension.NewLinkify(extension.WithLinkifyAllowedProtocols([][]byte{[]byte("http:"), []byte("https:")})))
 	}
-	return goldmark.New(goldmark.WithExtensions(ext...), goldmark.WithRendererOptions(html.WithHardWraps()))
+	return goldmark.New(goldmark.WithExtensions(ext...), goldmark.WithRendererOptions(gmhtml.WithHardWraps()))
 }
 
-// renderBody renders a message for its card. A plain text message (format "text",
-// or every message while formatting is off) shows exactly as sent, with web
-// addresses as links when autolink is on, as on Android.
-func renderBody(src, format string, formatting, autolink bool) template.HTML {
+// renderBody renders a message for its card, following the display settings
+// in snap. A plain text message (format "text", or every message while
+// formatting is off) shows exactly as sent, with web addresses as links when
+// autolink is on, as on Android. With favicons on, each web link gets its
+// site's icon, fetched by the server (the browser never contacts the site).
+func renderBody(src, format string, snap Snapshot) template.HTML {
+	out := body(src, format, snap.Formatting, snap.Autolink)
+	if !snap.Favicons {
+		return template.HTML(out)
+	}
+	return template.HTML(linkHref.ReplaceAllStringFunc(out, func(a string) string {
+		u, err := url.Parse(html.UnescapeString(linkHref.FindStringSubmatch(a)[1]))
+		if err != nil || u.Hostname() == "" {
+			return a
+		}
+		return `<img class="favicon" src="/api/v1/favicon?host=` + url.QueryEscape(u.Hostname()) + `" alt="" width="16" height="16" loading="lazy">` + a
+	}))
+}
+
+func body(src, format string, formatting, autolink bool) string {
 	if format == "text" || !formatting {
 		var b strings.Builder
 		at := 0
@@ -52,7 +71,7 @@ func renderBody(src, format string, formatting, autolink bool) template.HTML {
 			}
 		}
 		b.WriteString(template.HTMLEscapeString(src[at:]))
-		return template.HTML(`<p class="whitespace-pre-line">` + b.String() + `</p>`)
+		return `<p class="whitespace-pre-line">` + b.String() + `</p>`
 	}
 	md := mdNoLinks
 	if autolink {
@@ -60,10 +79,10 @@ func renderBody(src, format string, formatting, autolink bool) template.HTML {
 	}
 	var b bytes.Buffer
 	if err := md.Convert([]byte(src), &b); err != nil {
-		return template.HTML(`<p class="whitespace-pre-line">` + template.HTMLEscapeString(src) + `</p>`)
+		return `<p class="whitespace-pre-line">` + template.HTMLEscapeString(src) + `</p>`
 	}
 	out := strings.NewReplacer(`<a href=`, `<a rel="noopener noreferrer" href=`, `<pre>`, `<pre tabindex="0">`).Replace(b.String())
-	return template.HTML(balanceU(out))
+	return balanceU(out)
 }
 
 // balanceU drops a </u> that closes nothing and closes a <u> left open at
