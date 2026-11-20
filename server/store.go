@@ -685,6 +685,11 @@ func (s *Server) Edit(ctx context.Context, tok *Token, id, message string) (*Not
 		if n.Final() {
 			return nil, errf(409, "conflict", "notification is %s", n.State)
 		}
+		// A tap answers the text shown with the buttons (an approve prompt's
+		// Allow), so that text must not change under them.
+		if len(n.Actions) > 0 {
+			return nil, errf(409, "conflict", "notification has answer buttons")
+		}
 		if err := s.publishLimit(tok, n.Topic); err != nil {
 			return nil, err
 		}

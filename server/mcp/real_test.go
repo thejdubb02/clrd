@@ -172,6 +172,11 @@ func TestClientSession(t *testing.T) {
 	if _, msg := tool(agent, "update", map[string]any{"id": id, "message": "too late"}); !strings.Contains(msg, "409") {
 		t.Fatalf("update after resolve: %q", msg)
 	}
+	// A question with buttons keeps its text: a tap answers what was shown.
+	ask, _ := tool(agent, "send", map[string]any{"topic": "build", "message": "Allow rm?", "actions": []any{map[string]any{"label": "Allow", "reply": "allow"}}})
+	if _, msg := tool(agent, "update", map[string]any{"id": ask["id"], "message": "Allow ls?"}); !strings.Contains(msg, "answer buttons") {
+		t.Fatalf("update rewrote a prompt under its buttons: %q", msg)
+	}
 	if _, msg := tool(agent, "get", map[string]any{"id": "nope"}); !strings.Contains(msg, "404") {
 		t.Fatalf("get unknown id: %q", msg)
 	}
