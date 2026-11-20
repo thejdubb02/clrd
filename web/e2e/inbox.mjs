@@ -356,6 +356,53 @@ try {
   await plain('Lock the door?').getByText('Answered Lock').waitFor();
   assert.equal((await get(laptop, r.id)).reply, 'lock');
   console.log('ok: Clear, Snooze and reply work without JavaScript');
+
+  // QR sign-in (#74): a signed-out browser shows a code, a signed-in phone
+  // opens the link and taps Approve, and the waiting browser signs itself in.
+  const pc = await (await browser.newContext()).newPage();
+  await pc.goto(base + '/app');
+  const [res] = await Promise.all([
+    pc.waitForResponse(r => r.url().endsWith('/api/v1/pair')),
+    pc.getByRole('button', { name: 'Show sign-in code' }).click(),
+  ]);
+  const { code } = await res.json();
+  await pc.locator('[data-pair-qr]').waitFor({ state: 'visible' });
+  const phoneCtx = await browser.newContext();
+  assert.ok((await phoneCtx.request.post(base + '/api/v1/session', { data: { token: phone } })).ok(), 'phone sign-in');
+  const phonePage = await phoneCtx.newPage();
+  await phonePage.goto(`${base}/pair?c=${code}`);
+  await phonePage.getByRole('button', { name: 'Approve' }).click();
+  await phonePage.getByText('Approved.').waitFor();
+  await pc.locator('[data-inbox]').waitFor({ timeout: 5000 });
+  console.log('ok: sign in a browser by approving its QR code from a phone');
+
+  // Link a phone (#74): the signed-in browser shows a code in Settings, the
+  // app claims it, the browser approves it by name, and the app gets a token.
+  {
+    await page.goto(base + '/app/settings');
+    const [made] = await Promise.all([
+      page.waitForResponse(r => r.url().endsWith('/api/v1/link')),
+      page.getByRole('button', { name: 'Link a phone' }).click(),
+    ]);
+    const { code: lc } = await made.json();
+    await page.locator('[data-link] [data-pair-qr]').waitFor({ state: 'visible' });
+    const claim = () => fetch(base + '/api/v1/link/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: lc, secret: 'p'.repeat(32), name: 'Pixel 9' }) });
+    assert.equal((await claim()).status, 202, 'claim before approve');
+    await page.getByText('Pixel 9 wants to connect').waitFor();
+    // The match number both screens show: SHA-256 of the secret, first 4 bytes, mod 10000.
+    const h = (await import('node:crypto')).createHash('sha256').update('p'.repeat(32)).digest();
+    const check = String(h.readUInt32BE(0) % 10000).padStart(4, '0');
+    assert.equal(await page.locator('[data-link-check]').textContent(), check, 'browser shows the match number');
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await page.getByText('Connected: Pixel 9.').waitFor();
+    const got = await claim();
+    assert.equal(got.status, 200, 'claim after approve');
+    const { token: linked } = await got.json();
+    const list = await fetch(base + '/api/v1/notifications', { headers: { Authorization: `Bearer ${linked}` } });
+    assert.equal(list.status, 200, 'linked token lists notifications');
+    console.log('ok: link a phone from Settings by approving it by name');
+  }
 } finally {
   await browser?.close();
   server.kill();

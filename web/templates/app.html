@@ -154,6 +154,19 @@
     </div>
     {{else}}<p class="text-body text-sm">No devices connected in the last 10 minutes. Open the inbox or the Android app on a device and it shows up here.</p>{{end}}
   </section>
+  <section class="grid gap-3" aria-labelledby="link-h" data-link hidden>
+    <h2 id="link-h" class="text-base font-semibold">Link a phone</h2>
+    <p class="text-body text-sm/relaxed">Open the clrd app on your phone, tap Scan QR code and scan the code. You approve the phone here before it connects, and it gets the same access as this browser.</p>
+    <div><button class="btn" data-variant="primary" type="button" data-pair-start>Link a phone</button></div>
+    <img class="pair-qr" data-pair-qr alt="QR code to link a phone" width="232" height="232" hidden>
+    <p class="text-muted-foreground text-sm" data-pair-msg role="status"></p>
+    <div class="grid gap-3" data-link-ask hidden>
+      <p class="text-sm"><b data-link-name></b> wants to connect.</p>
+      <p class="text-sm">Approve only if your phone shows <b data-link-check></b>.</p>
+      <div class="flex gap-2"><button class="btn" data-variant="primary" type="button" data-link-approve>Approve</button><button class="btn" data-variant="outline" type="button" data-link-deny>Deny</button></div>
+    </div>
+  </section>
+  <script src="/static/pair.js" defer></script>
   <section class="grid gap-3" aria-labelledby="send-h">
     <h2 id="send-h" class="text-base font-semibold">Send a test notification</h2>
     <p class="text-body text-sm/relaxed">Run this with a token that has the publish scope. It should appear on every device within a second.</p>
