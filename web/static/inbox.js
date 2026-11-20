@@ -35,6 +35,38 @@
     t.title = full.format(d);
   });
   localize(document);
+
+  // Link previews (docs/formatting.md): a card for the first web link, fetched
+  // by the server. Built with textContent only; the image is a data: URL.
+  const previews = el => el.querySelectorAll('[data-preview]').forEach(async b => {
+    const a = [...b.querySelectorAll('a[href]')].find(x => /^https?:\/\//i.test(x.getAttribute('href')));
+    if (!a || b.dataset.previewDone) return;
+    b.dataset.previewDone = 1;
+    const r = await fetch(`/api/v1/preview?${new URLSearchParams({ url: a.href, topic: b.dataset.preview })}`, { credentials: 'same-origin' }).catch(() => null);
+    const p = r && r.ok && await r.json().catch(() => null);
+    if (!p || !p.title) return;
+    const card = document.createElement('a');
+    card.className = 'preview';
+    card.href = a.href;
+    card.rel = 'noopener noreferrer';
+    if (/^data:image\//.test(p.image || '')) {
+      const img = document.createElement('img');
+      img.src = p.image;
+      img.alt = '';
+      card.append(img);
+    }
+    const text = document.createElement('span');
+    for (const [cls, v] of [['site', p.site_name], ['title', p.title], ['desc', p.description]]) {
+      if (!v) continue;
+      const s = document.createElement('span');
+      s.className = cls;
+      s.textContent = v;
+      text.append(s);
+    }
+    card.append(text);
+    b.after(card);
+  });
+  previews(document);
   setInterval(() => localize(document), 30000);
 
   const card = id => list && [...list.children].find(c => c.dataset.id === id);
@@ -127,6 +159,7 @@
       if (old && old.dataset.seq === n.dataset.seq) return old;
       const fresh = document.adoptNode(n);
       localize(fresh);
+      previews(fresh);
       return fresh;
     });
     if (keep.some(c => c.contains(document.activeElement)) || keep.length !== list.children.length || keep.some((c, i) => c !== list.children[i])) {
@@ -247,12 +280,14 @@
   // Settings: message display switches, each saved on its own.
   const disp = $('[data-display-settings]');
   disp && disp.addEventListener('change', async e => {
-    const sw = e.target, status = $('[data-display-status]');
-    sw.disabled = true; // one save at a time, so an older save cannot land last
-    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [sw.name]: sw.checked }) }).catch(() => null);
+    const sw = e.target, status = $('[data-display-status]'), t = sw.dataset.topic;
+    const body = t ? { topic_previews: { [t]: sw.value ? sw.value === 'on' : null } } : { [sw.name]: sw.checked }; // null: back to the default
+    const ctl = [...disp.elements];
+    ctl.forEach(c => { c.disabled = true; }); // one save at a time: an older save cannot land last, a reload cannot drop a newer one
+    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     if (r && r.ok) return location.reload();
-    sw.checked = !sw.checked;
-    sw.disabled = false;
+    if (t) sw.value = [...sw.options].find(o => o.defaultSelected).value; else sw.checked = !sw.checked;
+    ctl.forEach(c => { c.disabled = false; });
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   });
 
@@ -433,7 +468,7 @@
         // Snooze times or formatting changed on another device: the cards are stale.
         const st = m.settings || {};
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) reset();
-        else if ('render_formatting' in st && `${st.render_formatting},${st.autolink},${st.favicons}` !== shell.dataset.fmt) reset();
+        else if ('render_formatting' in st && (`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) reset();
       }
       else if (m.notification) onEvent(m);
     };

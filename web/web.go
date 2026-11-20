@@ -160,7 +160,8 @@ type Snapshot struct {
 	SnoozeIntervals []string
 	SnoozeDefault   string
 	// Display settings for message bodies (docs/SPEC.md section 2.1).
-	Formatting, Autolink, Favicons bool
+	Formatting, Autolink, Favicons, LinkPreviews bool
+	TopicPreviews                                map[string]bool // overrides LinkPreviews for one topic
 }
 
 // API is what the server provides. The request is passed so the server can
@@ -194,7 +195,8 @@ var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 			Snooze        []string
 			SnoozeDefault string
 			Text          template.HTML
-		}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap)}
+			Preview       bool
+		}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap), snap.PreviewsOn(n.Topic)}
 	},
 	"snoozeLabel": snoozeLabel,
 	"plural": func(n int, one, many string) string {
@@ -204,6 +206,27 @@ var tpl = template.Must(template.New("").Funcs(template.FuncMap{
 		return many
 	},
 }).ParseFS(files, "templates/*.html"))
+
+// PreviewsOn says whether a topic's cards show link previews, as the server
+// decides for GET /api/v1/preview.
+func (s Snapshot) PreviewsOn(topic string) bool {
+	if v, ok := s.TopicPreviews[topic]; ok {
+		return v
+	}
+	return s.LinkPreviews
+}
+
+// TopicPreview is a topic's override for the Settings select: "", "on" or "off".
+func (s Snapshot) TopicPreview(topic string) string {
+	v, ok := s.TopicPreviews[topic]
+	switch {
+	case !ok:
+		return ""
+	case v:
+		return "on"
+	}
+	return "off"
+}
 
 // snoozeLabel reads a Go duration as people say it: "1 hour", "2 days", "90 min".
 // badge is the open count a browser tab shows before the page name.

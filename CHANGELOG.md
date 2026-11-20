@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: link previews. With previews on, a message's first link shows a card
+  with the page's title, summary and image, fetched by your server. Settings
+  has a switch for previews and a Default, On or Off choice for each topic.
 - Web: links in messages show the site's icon, fetched by your server, and
   Settings has switches for Markdown formatting, links and site icons that
   apply to every device.

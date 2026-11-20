@@ -79,3 +79,14 @@ func TestRenderBodyFavicons(t *testing.T) {
 		t.Errorf("icon with favicons off: %q", got)
 	}
 }
+
+func TestPreviewsOn(t *testing.T) {
+	s := Snapshot{LinkPreviews: true, TopicPreviews: map[string]bool{"quiet": false, "on": true}}
+	if !s.PreviewsOn("infra") || s.PreviewsOn("quiet") || s.TopicPreview("quiet") != "off" || s.TopicPreview("infra") != "" {
+		t.Error("topic override ignored")
+	}
+	s.LinkPreviews = false
+	if s.PreviewsOn("infra") || !s.PreviewsOn("on") || s.TopicPreview("on") != "on" {
+		t.Error("default ignored")
+	}
+}
