@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- F-Droid: updating the app no longer fails with a 404 when the phone's
+  F-Droid app list is a few builds old. The clrd F-Droid repo now keeps the
+  last 30 builds instead of 5 (#277).
 - Web: the linked devices list in Settings fits a phone screen again (the
   Linked date column hides on narrow screens; Last seen stays).
 - Android: swiping a notification out of the phone's notification shade (one,

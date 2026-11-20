@@ -75,8 +75,11 @@ jobs:
           printf '%s\n' config.yml '*.p12' '*.jks' '*.keystore' tmp/ > fdroid/.gitignore
           cp "$GITHUB_WORKSPACE/android/app/build/outputs/apk/release/app-release.apk" \
             "fdroid/repo/me.itsjustin.clrd_${VERSION_CODE}.apk"
-          # Keep the newest 5 APKs.
-          ls fdroid/repo/me.itsjustin.clrd_*.apk | sort -V | head -n -5 | xargs -r rm --
+          # Keep the newest 30 APKs. A phone whose F-Droid app list is a few
+          # hours old still asks for the build that was newest then; deleting
+          # it sooner makes the update fail with 404 (#277). Older builds stay
+          # listed only as older versions; the highest one is the update.
+          ls fdroid/repo/me.itsjustin.clrd_*.apk | sort -V | head -n -30 | xargs -r rm --
 
           cat > fdroid/metadata/me.itsjustin.clrd.yml <<'EOF'
           Name: clrd
