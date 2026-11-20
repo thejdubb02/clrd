@@ -246,6 +246,9 @@ try {
   await sendBox.getByRole('button', { name: 'Send' }).click();
   await sendBox.locator('[data-send-status]').filter({ hasText: /topic/i }).waitFor();
   assert.ok(await sendBox.getByLabel('Message').isVisible(), 'dialog closed on an error');
+  await sendPage.keyboard.press('Escape');
+  await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
+  assert.equal(await sendBox.locator('[data-send-status]').textContent(), '', 'old error still shown');
   await sendBox.getByLabel('Topic').fill('notes');
   await sendBox.getByLabel('Title').fill('From the laptop');
   await sendBox.getByLabel('Message').fill('https://example.com/read-later');
@@ -259,7 +262,6 @@ try {
   assert.equal(sent[0].priority, 4);
   await sendPage.getByRole('button', { name: 'Send', exact: true }).click();
   assert.equal(await sendBox.getByLabel('Message').inputValue(), '', 'message kept after sending');
-  assert.equal(await sendBox.locator('[data-send-status]').textContent(), '', 'old error still shown');
   await sendPage.keyboard.press('Escape');
   await sendPage.close();
   console.log('ok: send a notification from the inbox');

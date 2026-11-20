@@ -301,8 +301,11 @@
       e.preventDefault();
       const v = name => f.elements[name].value.trim();
       const body = { topic: v('topic'), title: v('title') || undefined, message: v('message'), priority: Number(v('priority')) };
+      const btn = e.submitter;
+      if (btn) btn.disabled = true; // one tap, one notification
       status.textContent = 'Sending...';
       const r = await fetch('/api/v1/notifications', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+      if (btn) btn.disabled = false;
       if (r && r.status === 401) return location.reload();
       if (!r || !r.ok) {
         status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not sent (${r.status}).` : 'Not sent: no connection.';
