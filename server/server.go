@@ -313,6 +313,30 @@ func (s *Server) Epoch() string { return s.epoch }
 // DBPath is the database file in use (CLRD_DB or DefaultDB).
 func (s *Server) DBPath() string { return s.opt.DB }
 
+// effectiveEnv is each CLRD_* setting in effect, defaults filled in, written
+// the way the env variable takes it, so an agent can tell a user what to set.
+// Nothing in Options is a secret.
+func (s *Server) effectiveEnv() map[string]string {
+	o, base, proxies := s.opt, "", make([]string, len(s.opt.TrustedProxies))
+	if u, err := url.Parse(o.BaseURL); s.baseSet && err == nil {
+		base = u.Redacted() // a password in it stays hidden
+	}
+	for i, p := range o.TrustedProxies {
+		proxies[i] = p.String()
+	}
+	public := "on"
+	if o.HidePublicPages {
+		public = "off"
+	}
+	rate := func(n int) string { return strconv.Itoa(max(n, 0)) } // -1 is off, set as 0
+	return map[string]string{
+		"CLRD_LISTEN": o.Listen, "CLRD_DB": o.DB, "CLRD_BASE_URL": base, "CLRD_RETENTION": o.Retention.String(),
+		"CLRD_ATTACHMENTS": o.Attachments, "CLRD_ATTACHMENT_MAX_MB": strconv.FormatInt(o.AttachmentMax>>20, 10),
+		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
+		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
+	}
+}
+
 // Path is p (a path from the root, like "/app") as the browser must see it:
 // under the sub-path of CLRD_BASE_URL, if it has one.
 func (s *Server) Path(p string) string { return s.prefix + p }
@@ -743,11 +767,15 @@ func (s *Server) routesSetup() {
 			Name   string   `json:"name"`
 			Scopes []string `json:"scopes"`
 			Topics []string `json:"topics"`
+			Grants []Grant  `json:"grants"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		t, raw, err := s.CreateToken(r.Context(), in.Name, in.Scopes, in.Topics)
+		if in.Grants != nil && len(in.Grants) == 0 { // empty would mean every topic, not none
+			return errf(400, "bad_request", "grants is empty: leave it out for every topic, or list at least one grant")
+		}
+		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants})
 		if err != nil {
 			return err
 		}
@@ -765,6 +793,13 @@ func (s *Server) routesSetup() {
 			return err
 		}
 		w.WriteHeader(http.StatusNoContent)
+		return nil
+	})
+	s.api("GET /api/v1/server", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		if err := tok.need(ScopeAdmin, ""); err != nil {
+			return err
+		}
+		writeJSON(w, 200, map[string]any{"env": s.effectiveEnv()})
 		return nil
 	})
 	s.api("GET /api/v1/ntfy/ignored", s.handleNtfyIgnored)

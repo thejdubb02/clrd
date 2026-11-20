@@ -371,6 +371,52 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 	}
 }
 
+// #253: an admin reads the settings in effect, and creates a token with grants.
+func TestServerEnvAndGrantsOverAPI(t *testing.T) {
+	s, ts, admin := newTest(t)
+	reader := mkToken(t, s, "phone", []string{ScopeRead}, nil)
+	if code, _ := call(t, ts, "GET", "/api/v1/server", reader, nil); code != 403 {
+		t.Errorf("non-admin read the server settings: %d", code)
+	}
+	code, out := call(t, ts, "GET", "/api/v1/server", admin, nil)
+	env, _ := out["env"].(map[string]any)
+	if code != 200 || env["CLRD_RATE_TOKEN"] != "60" || env["CLRD_BASE_URL"] != "" || env["CLRD_PUBLIC_PAGES"] != "on" ||
+		env["CLRD_RETENTION"] != "720h0m0s" || env["CLRD_DB"] != s.DBPath() || len(env) != 11 {
+		t.Fatalf("server settings: %d %v", code, out)
+	}
+	s2, err := New(Options{DB: filepath.Join(t.TempDir(), "c.db"), BaseURL: "https://u:pw@clrd.example.com/c", RateToken: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	if e := s2.effectiveEnv(); e["CLRD_BASE_URL"] != "https://u:xxxxx@clrd.example.com/c" || e["CLRD_RATE_TOKEN"] != "0" {
+		t.Errorf("base URL password or rate off: %v", e)
+	}
+
+	if code, out := call(t, ts, "POST", "/api/v1/tokens", admin, map[string]any{"name": "x", "scopes": []string{"read"},
+		"grants": []map[string]any{{"topic": "home", "scopes": []string{"publish"}}}}); code != 400 {
+		t.Errorf("grant above the token's scopes: %d %v", code, out)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/tokens", admin, map[string]any{"name": "x", "scopes": []string{"read"}, "grants": []any{}}); code != 400 {
+		t.Errorf("empty grants made an unlimited token: %d", code)
+	}
+	code, tk := call(t, ts, "POST", "/api/v1/tokens", admin, map[string]any{"name": "cam", "scopes": []string{"read", "publish"},
+		"grants": []map[string]any{{"topic": "home-*", "scopes": []string{"publish"}}}})
+	if code != 200 || tk["grants"] == nil {
+		t.Fatalf("create with grants: %d %v", code, tk)
+	}
+	cam := tk["token"].(string)
+	if c, _ := call(t, ts, "POST", "/api/v1/notifications", cam, map[string]any{"topic": "home-door", "message": "x"}); c != 200 {
+		t.Errorf("granted publish: %d", c)
+	}
+	if c, _ := call(t, ts, "POST", "/api/v1/notifications", cam, map[string]any{"topic": "infra", "message": "x"}); c != 403 {
+		t.Errorf("publish outside the grants: %d", c)
+	}
+	if c, _ := call(t, ts, "GET", "/api/v1/notifications?topic=home-door", cam, nil); c != 403 {
+		t.Errorf("write-only grant read: %d", c)
+	}
+}
+
 // A key of . or .. is dropped from every by-key URL, so it is refused.
 func TestDotKeysRejected(t *testing.T) {
 	_, ts, admin := newTest(t)

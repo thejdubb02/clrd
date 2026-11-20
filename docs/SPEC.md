@@ -299,7 +299,7 @@ the session cookie (same-origin only) as well as a Bearer token.
   routes alike. A token with grants never manages tokens and sees only its
   own devices in the device list (itself and what was linked from it). A browser signed in with it gets the same grants.
   Grants come from `clrd import ntfy` (ntfy's access control list, rules in
-  ntfy's own order).
+  ntfy's own order) or from `grants` on `POST /api/v1/tokens`.
 - Bootstrap: first start with no users prints a one-time admin setup URL to the log.
   `clrd token create --name pixel-9 --scope read,publish` on the CLI.
 - Basic auth (`user:token`) and `?auth=` query param accepted for ntfy-client compatibility.
@@ -463,7 +463,8 @@ resolved`) and `ntfy_import`.
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
 | PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
 | DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. |
-| GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin). |
+| GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. |
+| GET | `/api/v1/server` | Admin. The section 7 settings in effect, defaults filled in: `{"env":{"CLRD_LISTEN":":8080",...}}`, each written the way its variable takes it (`CLRD_BASE_URL` empty when unset, a password in it shown as `xxxxx`; `0` for a rate limit that is off). Read only; no secrets. |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
 | POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |
 | GET | `/openapi.json` | OpenAPI 3.1 spec of all of the above. |
