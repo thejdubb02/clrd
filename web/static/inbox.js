@@ -14,17 +14,19 @@
   let epoch = shell.dataset.epoch || ''; // the database seq belongs to
 
   // Times are rendered in UTC on the server. Recent ones read as relative
-  // ("5 min. ago"), the rest in the reader's zone; the title keeps the full time.
+  // ("5 min. ago"), the rest as a date in the reader's zone; the title keeps
+  // the full time.
   const fmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const fmtY = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const full = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'short' });
   const ago = d => {
     const s = (d - Date.now()) / 1000, a = Math.abs(s);
-    if (s > 30 || a >= 7 * 86400) return fmt.format(d); // the future (snooze until) and old news: a date
+    // The future (snooze until) and anything a day old or more: a date and time.
+    if (s > 30 || a >= 86400) return (d.getFullYear() === new Date().getFullYear() ? fmt : fmtY).format(d);
     if (a < 45) return rtf.format(0, 'second');
     if (a < 3600) return rtf.format(Math.round(s / 60), 'minute');
-    if (a < 86400) return rtf.format(Math.round(s / 3600), 'hour');
-    return rtf.format(Math.round(s / 86400), 'day');
+    return rtf.format(Math.round(s / 3600), 'hour');
   };
   const localize = el => el.querySelectorAll('time[datetime]').forEach(t => {
     const d = new Date(t.dateTime);
@@ -113,6 +115,7 @@
       pending = setTimeout(patch, 5000);
       return;
     }
+    document.title = doc.title; // the open count in the tab
     document.querySelectorAll('[data-live]').forEach(cur => {
       const next = doc.querySelector(`[data-live="${cur.dataset.live}"]`);
       if (next && !cur.contains(document.activeElement)) cur.replaceWith(document.adoptNode(next));
