@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -250,6 +251,43 @@ func TestLinkedPhoneOutsideSessionCap(t *testing.T) {
 	}
 	if withCookie(t, ts, "GET", "/api/v1/topics", first) != 401 {
 		t.Fatal("the cap should still sign out the oldest browser")
+	}
+}
+
+// Issue #245: a device family stops at a linked phone in both directions, as
+// rootOf does, so a browser never lists devices outside its own top token.
+func TestFamilyStopsAtLinkedPhone(t *testing.T) {
+	s, _, _ := newTest(t)
+	ctx := context.Background()
+	top := s.lookupToken(ctx, mkToken(t, s, "laptop", []string{ScopeRead}, nil))
+	b1, _, err := s.childToken(ctx, top, top.ID, "b1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone, _, err := s.childToken(ctx, b1, b1.ID, "phone", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2, _, err := s.childToken(ctx, phone, phone.ID, "b2", false) // signed in by QR from the phone
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tok := range []*Token{top, b1, phone, b2} {
+		s.touch(ctx, tok)
+	}
+	for id, want := range map[string]string{b1.ID: "b1 laptop", top.ID: "b1 laptop", b2.ID: "b2 phone", phone.ID: "b2 phone"} {
+		toks, err := s.Family(ctx, id, time.Now().Add(-time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, tok := range toks {
+			names = append(names, tok.Name)
+		}
+		sort.Strings(names)
+		if got := strings.Join(names, " "); got != want {
+			t.Errorf("family of %s: %q, want %q", id, got, want)
+		}
 	}
 }
 
