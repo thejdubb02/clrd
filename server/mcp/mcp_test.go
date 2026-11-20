@@ -153,7 +153,7 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,get,update,ack,resolve,snooze,wait_for_reply" {
+	if strings.Join(names, ",") != "send,list,topics,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
@@ -219,11 +219,17 @@ func TestTools(t *testing.T) {
 func TestMissingArgsAreToolErrors(t *testing.T) {
 	h := New(&fakeAPI{})
 	for tool, args := range map[string]map[string]any{
-		"send": {"topic": "infra"}, "ack": {}, "resolve": {"topic": "infra"}, "snooze": {"id": "01J"}, "wait_for_reply": {}, "bogus": {},
+		"send": {"topic": "infra"}, "ack": {}, "resolve": {"topic": "infra"}, "snooze": {"id": "01J"}, "wait_for_reply": {}, "unlink": {}, "bogus": {},
 	} {
 		if _, isErr := callTool(t, h, tool, args); !isErr {
 			t.Errorf("%s: want isError", tool)
 		}
+	}
+	// an id with a bad escape reaches the API escaped once, never panics building the request
+	f := &fakeAPI{}
+	callTool(t, New(f), "unlink", map[string]any{"id": "%zz"})
+	if strings.Join(f.calls, ",") != "DELETE /api/v1/devices/%25zz" {
+		t.Errorf("unlink %%zz: calls %v", f.calls)
 	}
 }
 

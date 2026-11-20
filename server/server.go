@@ -548,6 +548,7 @@ func (s *Server) routesSetup() {
 	s.route("DELETE /api/v1/session", s.handleSignOut)
 	s.pairRoutes()
 	s.linkRoutes()
+	s.deviceRoutes()
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in PublishInput
@@ -702,28 +703,6 @@ func (s *Server) routesSetup() {
 			out["icon"] = *in.Icon
 		}
 		writeJSON(w, 200, out)
-		return nil
-	})
-	s.api("GET /api/v1/devices", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		if err := tok.need(ScopeRead, ""); err != nil {
-			return err
-		}
-		ts, err := s.Tokens(r.Context(), time.Now().Add(-10*time.Minute))
-		if err != nil {
-			return err
-		}
-		type device struct {
-			ID         string     `json:"id"`
-			Name       string     `json:"name"`
-			LastSeenAt *time.Time `json:"last_seen_at"`
-		}
-		out := []device{}
-		for _, t := range ts {
-			if tok.seesAll(t) {
-				out = append(out, device{t.ID, t.Name, t.LastSeenAt})
-			}
-		}
-		writeJSON(w, 200, map[string]any{"devices": out})
 		return nil
 	})
 	s.api("GET /api/v1/tokens", func(w http.ResponseWriter, r *http.Request, tok *Token) error {

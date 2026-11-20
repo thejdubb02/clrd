@@ -1294,7 +1294,71 @@
       "$ref": "#/components/responses/Error"
      }
     },
-    "description": "Scope read. A topic-limited token only sees devices limited to its own topics."
+    "description": "Scope read. A topic-limited token only sees devices limited to its own topics. With all=1, every linked device instead (see the parameter).",
+    "parameters": [
+     {
+      "name": "all",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this and can_unlink. A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
+     }
+    ]
+   }
+  },
+  "/api/v1/devices/log": {
+   "get": {
+    "summary": "Device activity log",
+    "description": "Scope read. Links, sign-ins and unlinks, newest first, at most 200: {\"events\":[{\"at\",\"action\",\"device\",\"device_id\",\"by\"}]}. action is linked, signed in or unlinked; by is the name of the device that did it. A full admin sees every line; anyone else only the lines for their own devices, as in GET /api/v1/devices?all=1.",
+    "tags": [
+     "sync"
+    ],
+    "responses": {
+     "200": {
+      "description": "OK"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/devices/{id}": {
+   "delete": {
+    "summary": "Unlink a browser or phone (signed out at once)",
+    "description": "Scope read. Signs the device out at once with every browser it approved: open streams close and the next request gets 401. The caller must see the device in GET /api/v1/devices?all=1 (else 404). A typed-in token is revoked with DELETE /api/v1/tokens/{id} instead (403 here).",
+    "tags": [
+     "sync"
+    ],
+    "responses": {
+     "204": {
+      "description": "Unlinked"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
    }
   },
   "/api/v1/tokens": {

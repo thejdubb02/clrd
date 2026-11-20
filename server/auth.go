@@ -528,6 +528,13 @@ func (s *Server) childToken(ctx context.Context, access *Token, parentID, name s
 		return nil, "", err
 	}
 	s.capSessions(ctx, parentID, phone)
+	if top, err := s.topOf(ctx, st.ID); err == nil {
+		action := "signed in"
+		if phone {
+			action = "linked"
+		}
+		s.logDevice(ctx, top, action, name, st.ID, access.Name)
+	}
 	return st, raw, nil
 }
 
