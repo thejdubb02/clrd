@@ -17,7 +17,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
 
-/** Tray stacks by topic (#108): one summary per topic with 2 or more rows, and swiping it clears exactly those rows. */
+/** Tray stacks by topic (#108): one summary per topic with 2 or more rows, and swiping it only hides those rows on this phone (#265). */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class StackTest {
@@ -33,12 +33,6 @@ class StackTest {
     }
 
     @After fun tearDown() { app.stack = true }
-
-    private fun <T> bg(f: () -> T): T {
-        var r: Result<T>? = null
-        Thread { r = runCatching(f) }.apply { start(); join(60_000) }
-        return checkNotNull(r) { "background step still running after 60 s" }.getOrThrow()
-    }
 
     private fun row(id: String, topic: String) =
         Notif(id, topic, "T", "m", 3, "", null, "[]", Notif.ACTIVE, null, null, 1, System.currentTimeMillis(), 1)
@@ -72,7 +66,7 @@ class StackTest {
         assertNull(summary("disk"))
     }
 
-    @Test fun swipingTheStackDismissesEveryRowOnce() {
+    @Test fun swipingTheStackOnlyHidesItsRowsHere() { // #265: a bundle swipe must not clear everywhere
         bg { dao.applyAll(listOf(row("a", "disk"), row("b", "disk")), 1) }
         app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk")), emptySet())
         val ids = shadowOf(summary("disk")!!.deleteIntent).savedIntent.getStringArrayExtra(Tray.EXTRA_IDS)!!.toList()
@@ -81,9 +75,12 @@ class StackTest {
             .putExtra(Tray.EXTRA_IDS, ids.toTypedArray()).putExtra(Tray.EXTRA_SERVER, "https://a.example")
         app.sendBroadcast(intent)
         app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_DISMISS).putExtra(Tray.EXTRA_ID, "a")) // the row's own swipe too
-        shadowOf(android.os.Looper.getMainLooper()).idle()
+        nm.cancelAll() // what the shade did
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(App.SWEEP_MS, TimeUnit.MILLISECONDS)
         app.acts.submit {}.get(10, TimeUnit.SECONDS)
-        assertEquals(listOf("a", "b"), bg { dao.pending() }.map { it.notifId }.sorted()) // "a" queued once, not twice
+        assertEquals(emptyList<Pending>(), bg { dao.pending() })
+        assertEquals(setOf("a", "b"), app.trayHidden)
+        app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk")), emptySet())
         assertNull(shadowOf(nm).getNotification("a", 0))
         assertNull(summary("disk"))
     }

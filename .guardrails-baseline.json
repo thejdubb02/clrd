@@ -6,6 +6,11 @@
    1
   ],
   [
+   "android/app/src/test/java/me/itsjustin/clrd/StackTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/TrayRaceTest.kt",
+   1
+  ],
+  [
    "server/files_test.go",
    "server/files_test.go",
    1

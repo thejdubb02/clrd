@@ -183,10 +183,10 @@ func TestTools(t *testing.T) {
 			"POST /api/v1/notifications", map[string]any{"attachment": map[string]any{"name": "r.pdf", "url": "https://x.test/r.pdf"}, "icon": "https://x.test/i.png", "message": "m", "reopen": true, "topic": "infra"}},
 		{"list", map[string]any{"topic": "infra"}, "GET /api/v1/notifications?state=open&topic=infra", nil},
 		{"list", map[string]any{"state": "all"}, "GET /api/v1/notifications?state=all", nil},
-		{"ack", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/ack", nil},
-		{"resolve", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/resolve", nil},
-		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", nil},
-		{"snooze", map[string]any{"id": "01J", "for": "1h"}, "POST /api/v1/notifications/01J/snooze", map[string]any{"for": "1h"}},
+		{"ack", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/ack", map[string]any{"via": "mcp"}},
+		{"resolve", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/resolve", map[string]any{"via": "mcp"}},
+		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", map[string]any{"via": "mcp"}},
+		{"snooze", map[string]any{"id": "01J", "for": "1h"}, "POST /api/v1/notifications/01J/snooze", map[string]any{"for": "1h", "via": "mcp"}},
 	}
 	for _, c := range cases {
 		text, isErr := callTool(t, h, c.tool, c.args)

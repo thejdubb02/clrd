@@ -38,7 +38,7 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
     companion object {
         val ACK = TrayButton(res = R.string.tray_ack, action = Tray.ACTION_ACK)
         val SNOOZE = TrayButton(res = R.string.tray_snooze, action = Tray.ACTION_SNOOZE)
-        val CLEAR = TrayButton(res = R.string.tray_clear, action = Tray.ACTION_DISMISS)
+        val CLEAR = TrayButton(res = R.string.tray_clear, action = Tray.ACTION_CLEAR) // not the delete intent's, so the log tells them apart
 
         /**
          * Android shows 3 buttons at most. The sender's replies come first (at most 3, until someone answers),
@@ -100,6 +100,8 @@ class Tray(private val ctx: Context) {
      * ponytail: newest 40 only (32 when stacking); a "N more" summary if people hit it.
      */
     fun reconcile(rows: List<Notif>, muted: Set<String>) {
+        val open = rows.map { it.id }.toSet()
+        App.of(ctx).run { trayHidden = trayHidden.filterTo(HashSet()) { it in open } } // closed rows need no hiding
         val want = rows.map { TrayStep.plan(it, muted) }.filterIsInstance<TrayStep.Show>()
             .sortedByDescending { it.n.createdAt }.take(if (App.of(ctx).stack) 32 else 40)
         val wantIds = want.map { it.n.id }.toSet()
@@ -157,6 +159,11 @@ class Tray(private val ctx: Context) {
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
+        val app = App.of(ctx)
+        if (n.id in app.trayHidden) { // hidden by a bulk clear on this phone (#265): only a new alert brings it back
+            if (silent) return
+            app.trayHidden -= n.id
+        }
         val text = Md.tray(n.message, n.isMarkdown)
         val b = NotificationCompat.Builder(ctx, "p${n.priority}")
             .setSmallIcon(R.drawable.ic_stat_clrd)
@@ -177,7 +184,7 @@ class Tray(private val ctx: Context) {
             .setSilent(silent)
             .setAutoCancel(false)
             .setContentIntent(open(n))
-            .setDeleteIntent(action(n, ACTION_DISMISS)) // swipe away here = dismiss everywhere
+            .setDeleteIntent(action(n, ACTION_DISMISS)) // a single swipe dismisses everywhere; a bulk clear only hides (App.swiped)
         if (n.priority >= 5) b.setColor(0xFFC2410C.toInt())
         if (App.of(ctx).stack) b.setGroup(GROUP + n.topic)
         // Pictures never hold up a post: one not loaded yet is fetched in the background, then the tray is redrawn.
@@ -246,7 +253,8 @@ class Tray(private val ctx: Context) {
         const val SERVICE_CHANNEL = "sync"
         const val ACTION_ACK = "me.itsjustin.clrd.ACK"
         const val ACTION_SNOOZE = "me.itsjustin.clrd.SNOOZE"
-        const val ACTION_DISMISS = "me.itsjustin.clrd.DISMISS"
+        const val ACTION_DISMISS = "me.itsjustin.clrd.DISMISS" // the delete intent only
+        const val ACTION_CLEAR = "me.itsjustin.clrd.CLEAR" // the Clear button
         const val ACTION_REPLY = "me.itsjustin.clrd.REPLY"
         const val ACTION_DISMISS_STACK = "me.itsjustin.clrd.DISMISS_STACK"
         const val EXTRA_IDS = "ids"

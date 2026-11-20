@@ -257,7 +257,7 @@ func TestReplyButtons(t *testing.T) {
 	}
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		s.Reply(context.Background(), phone, id, "yes", 0)
+		s.Reply(context.Background(), phone, id, "yes", "app", 0)
 	}()
 	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "acknowledged" || got["answer"] != "yes" || got["by"] != "pixel-9" {
 		t.Fatalf("wait_for_reply: %v", got)
@@ -298,7 +298,7 @@ func TestApproveHook(t *testing.T) {
 					time.Sleep(10 * time.Millisecond)
 					open, _ := s.List(context.Background(), phone, server.ListQuery{Topics: []string{"agents"}, State: "active"})
 					if len(open) > 0 {
-						s.Reply(context.Background(), phone, open[0].ID, tap, 0)
+						s.Reply(context.Background(), phone, open[0].ID, tap, "app", 0)
 						return
 					}
 				}

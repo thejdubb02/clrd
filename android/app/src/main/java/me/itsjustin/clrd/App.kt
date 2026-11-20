@@ -2,9 +2,12 @@ package me.itsjustin.clrd
 
 import android.app.Application
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.room.Room
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.OkHttpClient
+import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -120,14 +123,45 @@ class App : Application() {
      * [server] is the server the tray item came from (null = the inbox, which always shows the current one).
      * An action for a server that is no longer configured is dropped, never sent to the new one, and so is
      * one that waited across a Settings switch.
+     * [via] says how the person did it (docs/SPEC.md "via"), so the server log can answer "I did not clear that".
      */
-    fun act(id: String, action: String, body: String = "{}", server: String? = null, done: () -> Unit = {}) =
-        actAll(listOf(id), action, body, server, done)
+    fun act(id: String, action: String, body: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) =
+        actAll(listOf(id), action, body, server, via, done)
 
-    /** Swiping a topic's stack away (#108): every row it held, queued together so they go out as one clear call. */
-    fun dismissAll(ids: List<String>, server: String?, done: () -> Unit = {}) = actAll(ids, "dismiss", "{}", server, done)
+    /**
+     * Tray swipes (#265). Android fires one delete intent per notification for a single swipe, a swiped
+     * stack or bundle, and the shade's Clear all, and never says which. So the deletes are gathered until
+     * [SWEEP_MS] pass with no more: exactly one, and no stack's own delete, is a single swipe and dismisses
+     * everywhere. Anything more only hides the rows on this phone; they stay open in the inbox.
+     * Main thread only (broadcasts land there). The receiver returns at once: Android queues the next
+     * broadcast behind an unfinished one, so waiting inside it would make every delete look single.
+     * A process killed inside the window sends nothing, which is the safe side.
+     */
+    private val swept = mutableListOf<Pair<String, String?>>() // id, server
+    private var stackSwept = false
+    private val main by lazy { Handler(Looper.getMainLooper()) }
+    private val endSweep = Runnable {
+        val one = swept.singleOrNull()
+        if (one != null && !stackSwept) act(one.first, "dismiss", server = one.second, via = VIA_TRAY_CLEARED)
+        else trayHidden += swept.map { it.first }
+        swept.clear()
+        stackSwept = false
+    }
 
-    private fun actAll(ids: List<String>, action: String, body: String, server: String?, done: () -> Unit) {
+    fun swiped(ids: List<String>, server: String?, stack: Boolean) {
+        swept += ids.map { it to server }
+        stackSwept = stackSwept || stack
+        main.removeCallbacks(endSweep)
+        main.postDelayed(endSweep, SWEEP_MS)
+    }
+
+    /** Rows hidden on this phone only (a bundle swipe or Clear all). A new alert for one shows it again. */
+    var trayHidden: Set<String>
+        get() = prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
+        set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
+
+    private fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
+        val body = JSONObject(rawBody).put("via", via).toString()
         val gen = configGen // read now, not when the save runs
         acts.execute {
             try {
@@ -177,6 +211,15 @@ class App : Application() {
 
     companion object {
         fun of(ctx: Context) = ctx.applicationContext as App
+
+        // How an action was made, sent as "via" (docs/SPEC.md). tray_cleared is a lone delete intent: a single
+        // swipe, or Clear all (or a watch) with only one clrd notification showing, which look the same.
+        const val VIA_APP = "app"
+        const val VIA_TRAY_BUTTON = "tray_button"
+        const val VIA_TRAY_CLEARED = "tray_cleared"
+
+        /** Quiet time that ends a burst of tray deletes. A bulk clear fires them all within milliseconds. */
+        const val SWEEP_MS = 1000L
     }
 }
 

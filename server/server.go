@@ -551,14 +551,22 @@ func (s *Server) routesSetup() {
 	})
 	for _, action := range []string{"ack", "snooze", "dismiss", "resolve", "reopen"} {
 		s.api("POST /api/v1/notifications/{id}/"+action, func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+			var in struct {
+				For   string     `json:"for"`
+				Until *time.Time `json:"until"`
+				Via   string     `json:"via"`
+			}
+			err := decodeJSON(r, &in) // optional for every action but snooze: an old client sends no body
 			var until *time.Time
 			if action == "snooze" {
-				var err error
-				if until, err = snoozeUntil(r); err != nil {
+				if err != nil {
+					return err
+				}
+				if until, err = snoozeUntil(in.For, in.Until); err != nil {
 					return err
 				}
 			}
-			n, err := s.Act(r.Context(), tok, r.PathValue("id"), action, until)
+			n, err := s.Act(r.Context(), tok, r.PathValue("id"), action, cleanVia(in.Via, "api"), until)
 			if err != nil {
 				return err
 			}
@@ -570,11 +578,12 @@ func (s *Server) routesSetup() {
 		var in struct {
 			Reply string `json:"reply"`
 			Seq   int64  `json:"seq"`
+			Via   string `json:"via"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		n, err := s.Reply(r.Context(), tok, r.PathValue("id"), in.Reply, in.Seq)
+		n, err := s.Reply(r.Context(), tok, r.PathValue("id"), in.Reply, cleanVia(in.Via, "api"), in.Seq)
 		if err != nil {
 			return err
 		}
@@ -585,11 +594,12 @@ func (s *Server) routesSetup() {
 		var in struct {
 			Topic string   `json:"topic"`
 			IDs   []string `json:"ids"`
+			Via   string   `json:"via"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		n, err := s.Clear(r.Context(), tok, in.Topic, in.IDs)
+		n, err := s.Clear(r.Context(), tok, in.Topic, in.IDs, cleanVia(in.Via, "api"))
 		if err != nil {
 			return err
 		}
@@ -717,7 +727,11 @@ func (s *Server) routesSetup() {
 	// By external id, for scripts and monitors. No cookie: never a browser.
 	for _, action := range []string{"resolve", "ack"} {
 		s.route("POST /{topic}/{external_id}/"+action, func(w http.ResponseWriter, r *http.Request) error {
-			n, err := s.ActByKey(r.Context(), s.auth(r, false), r.PathValue("topic"), r.PathValue("external_id"), action)
+			var in struct {
+				Via string `json:"via"`
+			}
+			_ = decodeJSON(r, &in) // optional: scripts send no body
+			n, err := s.ActByKey(r.Context(), s.auth(r, false), r.PathValue("topic"), r.PathValue("external_id"), action, cleanVia(in.Via, "api"))
 			if err != nil {
 				return err
 			}
@@ -731,18 +745,11 @@ func (s *Server) routesSetup() {
 }
 
 // snoozeUntil reads {"for":"1h"} or {"until":"RFC3339"}.
-func snoozeUntil(r *http.Request) (*time.Time, error) {
-	var in struct {
-		For   string     `json:"for"`
-		Until *time.Time `json:"until"`
+func snoozeUntil(forStr string, until *time.Time) (*time.Time, error) {
+	if until != nil {
+		return until, nil
 	}
-	if err := decodeJSON(r, &in); err != nil {
-		return nil, err
-	}
-	if in.Until != nil {
-		return in.Until, nil
-	}
-	d, err := parseDuration(in.For)
+	d, err := parseDuration(forStr)
 	if err != nil || d <= 0 {
 		return nil, errf(400, "bad_request", "snooze needs \"for\" (like 1h) or \"until\" (RFC3339)")
 	}

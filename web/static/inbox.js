@@ -279,8 +279,8 @@
       const r = await fetch(url, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: body ? { 'Content-Type': 'application/json' } : {},
-        body: body ? JSON.stringify(body) : undefined,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ via: 'web', ...body }), // via: so the server log says the web inbox did it (#267)
       });
       if (r.status === 401) { location.reload(); return null; } // signed out: show the sign-in page
       if (!r.ok) { say(`The server refused that (${r.status}). Nothing changed.`); return null; }
@@ -434,7 +434,7 @@
       const s = act === 'clear-stack' && b.closest('[data-stack]');
       const ids = cards().filter(c => !s || c.dataset.topic === s.dataset.stack).map(c => c.dataset.id);
       b.disabled = true; // one tap, one clear
-      const r = ids.length && await post('/api/v1/notifications/clear', { ids });
+      const r = ids.length && await post('/api/v1/notifications/clear', { ids, via: 'web_bulk' });
       b.disabled = false;
       if (!r) return;
       const n = (await r.json().catch(() => ({}))).cleared;

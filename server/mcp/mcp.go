@@ -27,6 +27,9 @@ import (
 // proxy idle timeout in front of it.
 var MaxWait = 600 * time.Second
 
+// viaMCP marks a state change an agent made, so the log tells it from a person's tap.
+var viaMCP = map[string]any{"via": "mcp"}
+
 const latestProtocol = "2025-06-18"
 
 // Streamable HTTP versions. 2024-11-05 is the older HTTP+SSE transport, which
@@ -288,20 +291,20 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		if err := need("id"); err != nil {
 			return nil, err
 		}
-		return h.api(r, "POST", "/api/v1/notifications/"+id+"/ack", nil)
+		return h.api(r, "POST", "/api/v1/notifications/"+id+"/ack", viaMCP)
 	case "resolve":
 		if str(a, "topic") != "" && str(a, "external_id") != "" {
-			return h.api(r, "POST", "/"+url.PathEscape(str(a, "topic"))+"/"+url.PathEscape(str(a, "external_id"))+"/resolve", nil)
+			return h.api(r, "POST", "/"+url.PathEscape(str(a, "topic"))+"/"+url.PathEscape(str(a, "external_id"))+"/resolve", viaMCP)
 		}
 		if err := need("id"); err != nil {
 			return nil, fmt.Errorf("id, or topic and external_id, is required")
 		}
-		return h.api(r, "POST", "/api/v1/notifications/"+id+"/resolve", nil)
+		return h.api(r, "POST", "/api/v1/notifications/"+id+"/resolve", viaMCP)
 	case "snooze":
 		if err := need("id", "for"); err != nil {
 			return nil, err
 		}
-		return h.api(r, "POST", "/api/v1/notifications/"+id+"/snooze", map[string]any{"for": str(a, "for")})
+		return h.api(r, "POST", "/api/v1/notifications/"+id+"/snooze", map[string]any{"for": str(a, "for"), "via": "mcp"})
 	case "wait_for_reply":
 		if err := need("id"); err != nil {
 			return nil, err

@@ -244,6 +244,9 @@ class SyncClient(
 
 private val flushLock = Any()
 
+/** How a queued action was made ("" for one queued before it was recorded). */
+private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via") }.getOrDefault("")
+
 /**
  * Send queued user actions in order. A 4xx that retrying cannot fix (404, 409) drops the action
  * and saves the server's current row; anything else, the fetch of that row included, throws and
@@ -257,10 +260,15 @@ private val flushLock = Any()
 fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synchronized(flushLock) {
     // Several dismisses at the head of the queue (a stack swiped away, #108) go out as one clear call.
     // Only the head run, so a later reopen of the same row still lands after its dismiss.
-    val run = store.pending().takeWhile { it.action == "dismiss" }
+    // Only one via per run, so the server logs each clear the way it was made (#267).
+    val head = store.pending()
+    val via = head.firstOrNull()?.let(::viaOf)
+    val run = head.takeWhile { it.action == "dismiss" && viaOf(it) == via }
     if (run.size > 1 && live()) {
         val sent = try {
-            api.post("/api/v1/notifications/clear", JSONObject().put("ids", JSONArray(run.map { it.notifId })).toString())
+            val body = JSONObject().put("ids", JSONArray(run.map { it.notifId }))
+            if (!via.isNullOrEmpty()) body.put("via", via)
+            api.post("/api/v1/notifications/clear", body.toString())
             true
         } catch (e: HttpError) {
             if (!e.isPermanent) throw e

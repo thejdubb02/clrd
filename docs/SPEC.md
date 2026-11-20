@@ -195,7 +195,9 @@ the row change):
 {"seq": 48212, "type": "state", "notification": { ...full notification... }}
 ```
 
-`type` is `created`, `updated` or `state`. Clients only need the full
+`type` is `created`, `updated` or `state`. A `state` event also carries
+`"via"`, how the change was made (section 5), when the server knows it.
+Clients only need the full
 notification in the event; they never merge diffs.
 
 Clients store the highest `seq` they applied. On (re)connect they ask for
@@ -377,6 +379,32 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | POST | `/api/v1/notifications/{id}/resolve` | Sender clears it. |
 | POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). |
 | POST | `/api/v1/notifications/clear` | Bulk dismiss, body `{"topic":"infra"}` or `{"ids":[...]}`. |
+
+Every state change above (ack, reply, snooze, dismiss, resolve, reopen, clear,
+and `POST /{topic}/{external_id}/resolve|ack`) takes an optional `"via"` in its
+body: how the change was made, so the server log can answer "I never cleared
+that". The body is optional except for snooze, reply and clear; a missing,
+empty or malformed one never blocks the action. `via` is 1 to 32 characters of
+`a-z`, `0-9` and `_`, starting with a letter; anything else is recorded as
+`api`. The server records it on the `state` event (`"via"` next to `"seq"`) and
+logs one `state` line per change with id, topic, state, device name, device id
+and via. Values clients send today:
+
+| via | Made by |
+|---|---|
+| `app` | The Android app's inbox (a tap or swipe in the app) |
+| `tray_button` | A button on an Android tray notification (Ack, Snooze, Clear, a reply) |
+| `tray_cleared` | An Android tray notification swiped away on its own. Android sends the same signal for a swipe, a stack or bundle swipe and the shade's Clear all, so the app waits one second: one signal alone is a swipe and dismisses everywhere; several (a bulk clear) only hide the rows on that phone and send nothing. Clear all with exactly one clrd notification showing still looks like a swipe. |
+| `web` | The web inbox, one notification |
+| `web_bulk` | The web inbox's Clear all or a stack's Clear |
+| `web_form` | The web inbox's buttons with scripts off |
+| `mcp` | An agent through the MCP endpoint |
+| `ntfy` | An ntfy-compatible clear or delete |
+| `api` | Anything else (scripts, older clients) |
+
+The server's own changes use `snooze_end`, `expired`, `checkin` (a late
+check-in resolved by the next message), `publish` (a publish with `status
+resolved`) and `ntfy_import`.
 | GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
 | PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. A body with neither key is a 400. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
