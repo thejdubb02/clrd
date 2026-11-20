@@ -26,6 +26,9 @@ Fixed, Removed, Security), as one line a user can understand.
   shortcut: J and K to move between notifications, C to clear, A to
   acknowledge, S to snooze, / to search, and G then I, S, C or comma to change
   page.
+- Web: Snooze uses a default time from Settings. Long press it, right click
+  it, or tap the arrow next to it for the other times. Settings has a Snooze
+  section to pick up to 8 times and the default, shared by every device.
 - Web: times read as "5 min. ago" and similar. Hover a time to see the exact
   date.
 
