@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: the "seen in the last 10 minutes" device list no longer shows a
+  reader token devices from other people's sign-ins. It now shows the same
+  devices as the full linked devices list (#263).
 - Server: ntfy publish URLs with `tpl=yes` now render their templated
   message, title and priority from the JSON body, as ntfy does. Before, a
   templated priority was refused with "invalid priority" and the alert was
