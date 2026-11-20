@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- MCP: new tools `topics`, `get` and `update`, so an agent can see its topics,
+  read one notification and edit a progress message in place. The REST API has
+  the same edit as `PATCH /api/v1/notifications/{id}`. The MCP guide has setup
+  for Cursor, VS Code, Windsurf, Zed, Codex CLI and Gemini CLI.
 - Android: Snooze uses the snooze default from your server settings instead
   of always 1 hour, a long press on Snooze offers the other saved times, and
   Settings has a section to change the times and the default for every device.

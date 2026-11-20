@@ -368,6 +368,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/files/{id}` | Download an uploaded attachment. Scope read on its topic. 404 once the file is gone. |
 | GET | `/api/v1/notifications?topic=&state=open\|all\|<state>&q=&limit=&before=` | List. `open` = active+acknowledged+snoozed. |
 | GET | `/api/v1/notifications/{id}` | One. |
+| PATCH | `/api/v1/notifications/{id}` | Body `{"message":"..."}`: replace the message of an open notification in place (same id and state, an `updated` event). Scope publish on its topic; 409 once dismissed or resolved. |
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
 | POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`: answer with one of its reply actions (section 2). 400 if not one of them, 409 if already answered or final. |
 | POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. |
@@ -438,6 +439,7 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
 Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?)`, `list(topic?, state?)`,
+`topics()`, `get(id)`, `update(id, message)` (edit the message in place, for progress),
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,
 dismissed or an action is tapped; returns which, so an agent can ask a human

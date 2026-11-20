@@ -511,6 +511,20 @@ func (s *Server) routesSetup() {
 		writeJSON(w, 200, n)
 		return nil
 	})
+	s.api("PATCH /api/v1/notifications/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		var in struct {
+			Message string `json:"message"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		n, err := s.Edit(r.Context(), tok, r.PathValue("id"), in.Message)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, n)
+		return nil
+	})
 	for _, action := range []string{"ack", "snooze", "dismiss", "resolve", "reopen"} {
 		s.api("POST /api/v1/notifications/{id}/"+action, func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 			var until *time.Time

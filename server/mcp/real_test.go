@@ -1,11 +1,13 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -67,6 +69,111 @@ func TestAgainstRealServer(t *testing.T) {
 	}
 	if got := call("resolve", map[string]any{"topic": "agents", "external_id": "deploy-1"}); got["state"] != "resolved" {
 		t.Fatalf("resolve by key: %v", got)
+	}
+}
+
+// TestClientSession drives /mcp over real HTTP the way an MCP client does:
+// initialize, the initialized notification, tools/list, then tool calls with
+// the negotiated MCP-Protocol-Version header on every request.
+func TestClientSession(t *testing.T) {
+	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.Mount("/mcp", New(s))
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+	_, agent, err := s.CreateToken(context.Background(), "agent", []string{"read", "publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, reader, err := s.CreateToken(context.Background(), "pixel-9", []string{"read"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := ""
+	post := func(token string, msg map[string]any) (int, map[string]any) {
+		t.Helper()
+		msg["jsonrpc"] = "2.0"
+		b, _ := json.Marshal(msg)
+		req, _ := http.NewRequest("POST", ts.URL+"/mcp", bytes.NewReader(b))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		if version != "" {
+			req.Header.Set("MCP-Protocol-Version", version)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out map[string]any
+		json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out
+	}
+	tool := func(token, name string, args map[string]any) (map[string]any, string) {
+		t.Helper()
+		code, out := post(token, map[string]any{"id": name, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
+		res, _ := out["result"].(map[string]any)
+		if code != 200 || res == nil {
+			t.Fatalf("%s: http %d %v", name, code, out)
+		}
+		text := res["content"].([]any)[0].(map[string]any)["text"].(string)
+		if res["isError"] == true {
+			return nil, text
+		}
+		var v map[string]any
+		json.Unmarshal([]byte(text), &v)
+		return v, ""
+	}
+
+	code, out := post(agent, map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
+		"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "test", "version": "1"}}})
+	res, _ := out["result"].(map[string]any)
+	if code != 200 || res["protocolVersion"] != "2025-06-18" {
+		t.Fatalf("initialize: %d %v", code, out)
+	}
+	version = "2025-06-18"
+	if code, _ := post(agent, map[string]any{"method": "notifications/initialized"}); code != 202 {
+		t.Fatalf("initialized: %d", code)
+	}
+	_, out = post(agent, map[string]any{"id": 2, "method": "tools/list"})
+	listed := map[string]bool{}
+	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
+		listed[tl.(map[string]any)["name"].(string)] = true
+	}
+	for _, n := range []string{"send", "list", "topics", "get", "update", "ack", "resolve", "snooze", "wait_for_reply"} {
+		if !listed[n] {
+			t.Errorf("tools/list lacks %s", n)
+		}
+	}
+
+	sent, _ := tool(agent, "send", map[string]any{"topic": "build", "message": "step 1 of 3", "title": "Release"})
+	id, _ := sent["id"].(string)
+	tool(agent, "ack", map[string]any{"id": id})
+	if got, msg := tool(agent, "update", map[string]any{"id": id, "message": "step 2 of 3"}); msg != "" || got["message"] != "step 2 of 3" || got["state"] != "acknowledged" || got["title"] != "Release" {
+		t.Fatalf("update must change only the message: %v %s", got, msg)
+	}
+	if got, _ := tool(agent, "get", map[string]any{"id": id}); got["id"] != id || got["message"] != "step 2 of 3" || got["state"] != "acknowledged" {
+		t.Fatalf("get: %v", got)
+	}
+	if got, _ := tool(agent, "topics", nil); fmt.Sprint(got["topics"]) != "[map[icon: open:1 topic:build]]" {
+		t.Fatalf("topics: %v", got)
+	}
+	if _, msg := tool(reader, "update", map[string]any{"id": id, "message": "hijacked"}); !strings.Contains(msg, "403") {
+		t.Fatalf("a read-only token edited a message: %q", msg)
+	}
+	if _, msg := tool(agent, "update", map[string]any{"id": id}); msg != "message is required" {
+		t.Fatalf("update without a message: %q", msg)
+	}
+	tool(agent, "resolve", map[string]any{"id": id})
+	if _, msg := tool(agent, "update", map[string]any{"id": id, "message": "too late"}); !strings.Contains(msg, "409") {
+		t.Fatalf("update after resolve: %q", msg)
+	}
+	if _, msg := tool(agent, "get", map[string]any{"id": "nope"}); !strings.Contains(msg, "404") {
+		t.Fatalf("get unknown id: %q", msg)
 	}
 }
 

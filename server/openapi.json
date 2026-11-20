@@ -453,6 +453,73 @@
       "description": "Notification id (ULID)"
      }
     ]
+   },
+   "patch": {
+    "summary": "Edit the message",
+    "tags": [
+     "notifications"
+    ],
+    "description": "Replaces the message of an open notification in place; its id and state stay. Needs publish scope on the topic. 409 once it is dismissed or resolved.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "message"
+        ],
+        "properties": {
+         "message": {
+          "type": "string",
+          "example": "step 3 of 10"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ]
    }
   },
   "/api/v1/notifications/{id}/ack": {
