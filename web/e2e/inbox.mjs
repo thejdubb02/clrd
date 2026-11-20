@@ -231,7 +231,7 @@ try {
   await later.goto(`${base}/app`);
   const when = await later.locator('article.card time').first().textContent();
   assert.match(when, /\d{1,2}:\d{2}/, `old card time has no clock time: ${when}`);
-  assert.doesNotMatch(when, /ago|yesterday/i, `old card time is relative: ${when}`);
+  assert.doesNotMatch(when, /ago|yesterday|UTC/i, `old card time is relative or not localized: ${when}`);
   await later.close();
   console.log('ok: open count in the tab, full time on older cards');
 
