@@ -59,6 +59,58 @@ type Settings struct {
 	// ("30m", "4h"). SnoozeDefault is one of them: a plain tap uses it.
 	SnoozeIntervals []string `json:"snooze_intervals"`
 	SnoozeDefault   string   `json:"snooze_default"`
+	// KeepClearedDays is how long a dismissed or resolved notification is
+	// kept, counted from when it was cleared; 0 keeps it forever. Stored
+	// only once set; until then CLRD_RETENTION decides, and reads show
+	// that in whole days (rounded up).
+	KeepClearedDays *int `json:"keep_cleared_days"`
+}
+
+// maxKeepDays is the longest keep_cleared_days a number can ask for (100 years).
+const maxKeepDays = 36500
+
+// keepCleared is how long cleared notifications are kept (0 = forever).
+func (s *Server) keepCleared(st Settings) time.Duration {
+	if st.KeepClearedDays == nil {
+		return s.opt.Retention
+	}
+	return time.Duration(*st.KeepClearedDays) * 24 * time.Hour
+}
+
+// prunable picks the cleared notifications prune deletes: final, and last
+// changed before the cutoff. The Settings preview counts the same rows.
+const prunable = `state IN ('dismissed', 'resolved') AND updated_at < ?`
+
+// WouldRemove counts the cleared notifications tok can read that a keep of
+// days would delete on the next prune run (0 days = forever, so none).
+func (s *Server) WouldRemove(ctx context.Context, tok *Token, days int) (int, error) {
+	if err := tok.need(ScopeRead, ""); err != nil {
+		return 0, err
+	}
+	if days < 0 || days > maxKeepDays {
+		return 0, errf(400, "bad_request", "keep_cleared_days must be 0 (forever) to %d", maxKeepDays)
+	}
+	if days == 0 {
+		return 0, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, COUNT(*) FROM notifications WHERE `+prunable+` GROUP BY topic`,
+		ms(time.Now().Add(-time.Duration(days)*24*time.Hour)))
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var topic string
+		var k int
+		if err := rows.Scan(&topic, &k); err != nil {
+			return 0, err
+		}
+		if tok.may(ScopeRead, topic) {
+			n += k
+		}
+	}
+	return n, rows.Err()
 }
 
 // maxSnooze matches the web form's limit on a snooze duration.
@@ -102,6 +154,7 @@ type SettingsPatch struct {
 	TopicPreviews    map[string]*bool `json:"topic_previews"`
 	SnoozeIntervals  []string         `json:"snooze_intervals"`
 	SnoozeDefault    *string          `json:"snooze_default"`
+	KeepClearedDays  *int             `json:"keep_cleared_days"`
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -118,6 +171,10 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 		if !tok.Allows(t) {
 			delete(st.TopicPreviews, t)
 		}
+	}
+	if st.KeepClearedDays == nil { // filled on reads only, so a save never pins CLRD_RETENTION
+		d := int((s.opt.Retention + 24*time.Hour - 1) / (24 * time.Hour))
+		st.KeepClearedDays = &d
 	}
 	return st, nil
 }
@@ -151,9 +208,17 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		return Settings{}, err
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
-		p.SnoozeIntervals != nil || p.SnoozeDefault != nil
+		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil
 	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews")
+	}
+	if p.KeepClearedDays != nil { // it deletes data, so admin only
+		if err := tok.need(ScopeAdmin, ""); err != nil {
+			return Settings{}, err
+		}
+		if *p.KeepClearedDays < 0 || *p.KeepClearedDays > maxKeepDays {
+			return Settings{}, errf(400, "bad_request", "keep_cleared_days must be 0 (forever) to %d", maxKeepDays)
+		}
 	}
 	for t := range p.TopicPreviews {
 		if err := validTopic(t); err != nil {
@@ -198,6 +263,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 		if p.SnoozeIntervals != nil || p.SnoozeDefault != nil {
 			err = checkSnooze(st.SnoozeIntervals, st.SnoozeDefault)
+		}
+		if p.KeepClearedDays != nil {
+			st.KeepClearedDays = p.KeepClearedDays
 		}
 	}
 	if err == nil {

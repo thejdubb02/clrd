@@ -991,9 +991,13 @@ func (s *Server) expireDue(ctx context.Context) error {
 	return err
 }
 
-// prune drops events and final notifications older than the retention.
+// prune drops events older than the retention and cleared notifications
+// older than the keep_cleared_days setting. The event log never outlives
+// the cleared rows, so a client further behind gets a reset instead of
+// replaying changes to notifications that are gone.
 func (s *Server) prune(ctx context.Context) error {
-	cutoff := ms(time.Now().Add(-s.opt.Retention))
+	now := time.Now()
+	cutoff := ms(now.Add(-s.opt.Retention))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -1001,8 +1005,17 @@ func (s *Server) prune(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
+	st, err := s.loadSettings(ctx, tx)
+	if err != nil {
+		return err
+	}
+	keep := s.keepCleared(st)
+	evCutoff := cutoff
+	if keep > 0 && keep < s.opt.Retention {
+		evCutoff = ms(now.Add(-keep))
+	}
 	var upTo sql.NullInt64
-	if err := tx.QueryRow(`SELECT MAX(seq) FROM events WHERE created_at < ?`, cutoff).Scan(&upTo); err != nil {
+	if err := tx.QueryRow(`SELECT MAX(seq) FROM events WHERE created_at < ?`, evCutoff).Scan(&upTo); err != nil {
 		return err
 	}
 	if upTo.Valid {
@@ -1014,8 +1027,10 @@ func (s *Server) prune(ctx context.Context) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`DELETE FROM notifications WHERE state IN ('dismissed', 'resolved') AND updated_at < ?`, cutoff); err != nil {
-		return err
+	if keep != 0 { // 0 = forever
+		if _, err := tx.Exec(`DELETE FROM notifications WHERE `+prunable, ms(now.Add(-keep))); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {
 		return err

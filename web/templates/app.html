@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := printf "%s/app" base}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "%s/app/%s" base .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -245,6 +245,17 @@
       <div class="grid gap-1.5"><label class="label" for="snz-default">Default</label>
         <select id="snz-default" class="input" name="default">{{range .Snap.SnoozeIntervals}}<option value="{{.}}"{{if eq . $.Snap.SnoozeDefault}} selected{{end}}>{{snoozeLabel .}}</option>{{end}}</select></div>
       <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-snooze-status></span></div>
+    </form>
+  </section>
+  <section class="js-only grid gap-3" aria-labelledby="keep-h">
+    <h2 id="keep-h" class="text-base font-semibold">Cleared messages</h2>
+    <p class="text-body text-sm/relaxed">Dismissed and resolved messages are deleted this long after they were cleared. Open and snoozed messages are never deleted. This applies to every device; changing it needs an admin sign-in.</p>
+    {{$k := .Snap.KeepClearedDays}}{{$preset := eq $k 0 1 5 7 30 90}}<form class="grid max-w-md gap-3" data-keep-settings>
+      <div class="grid gap-1.5"><label class="label" for="keep-days">Keep cleared messages for</label>
+        <select id="keep-days" class="input" name="days"><option value="1"{{if eq $k 1}} selected{{end}}>1 day</option><option value="5"{{if eq $k 5}} selected{{end}}>5 days</option><option value="7"{{if eq $k 7}} selected{{end}}>7 days</option><option value="30"{{if eq $k 30}} selected{{end}}>30 days</option><option value="90"{{if eq $k 90}} selected{{end}}>90 days</option><option value="0"{{if eq $k 0}} selected{{end}}>Forever</option><option value="custom"{{if not $preset}} selected{{end}}>Custom</option></select></div>
+      <div class="grid gap-1.5"{{if $preset}} hidden{{end}} data-keep-custom><label class="label" for="keep-custom">Days</label>
+        <input id="keep-custom" class="input" type="number" min="1" max="36500" name="custom" value="{{if not $preset}}{{$k}}{{end}}"></div>
+      <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-keep-status></span></div>
     </form>
   </section>
   <section class="grid gap-3" aria-labelledby="look-h">

@@ -157,7 +157,17 @@ cannot change the four switches or the snooze times (403). `snooze_intervals`
 is the list of snooze times clients offer (1 to 8 Go durations such as `15m`
 or `48h`, each above 0 and at most 31 days, no two the same length) and
 `snooze_default` is the one a plain tap uses; it must be in the list. A list
-without the current default makes its first entry the default. Every change goes to every open
+without the current default makes its first entry the default.
+`keep_cleared_days` is how many days a dismissed or resolved notification is
+kept after it was cleared (its `updated_at`); `0` keeps them forever. Open,
+acknowledged and snoozed notifications are never deleted. Until it is set it
+follows `CLRD_RETENTION` (30 days by default); once set, the setting wins.
+Changing it needs scope admin and takes 0 to 36500. The hourly prune applies
+it, so a shorter value deletes older cleared rows within the hour, and the
+event log is cut to the shorter of the two periods: a client whose last
+`seq` is older gets 410 and resyncs. `GET /api/v1/counts?keep_cleared_days=N`
+previews it: `would_remove` is how many cleared notifications N would delete
+now. Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
 
 **Fetchers.** Clients never contact a linked site; the server does, so the
@@ -483,7 +493,8 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
 Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?)`, `list(topic?, state?)`,
-`topics()`, `counts()`, `get(id)`, `update(id, message)` (edit the message in place, for progress),
+`topics()`, `counts(keep_cleared_days?)`, `settings(...)` (no arguments reads
+the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,
 dismissed or an action is tapped; returns which, so an agent can ask a human
@@ -511,7 +522,8 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   pairing QR, use the address that browser opened clrd on; a path in it, like `/clrd`, serves every route, page,
   asset and the WebSocket under that path, and scopes the cookies to it;
   requests without the path are still answered, for a proxy that strips it),
-  `CLRD_RETENTION` (`720h` for final rows and events),
+  `CLRD_RETENTION` (`720h` for final rows and events; the
+  `keep_cleared_days` setting overrides it once set),
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
   the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
   `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still

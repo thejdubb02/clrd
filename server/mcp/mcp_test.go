@@ -153,7 +153,7 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,counts,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink" {
+	if strings.Join(names, ",") != "send,list,topics,counts,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
@@ -187,6 +187,9 @@ func TestTools(t *testing.T) {
 		{"resolve", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/resolve", map[string]any{"via": "mcp"}},
 		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", map[string]any{"via": "mcp"}},
 		{"snooze", map[string]any{"id": "01J", "for": "1h"}, "POST /api/v1/notifications/01J/snooze", map[string]any{"for": "1h", "via": "mcp"}},
+		{"counts", map[string]any{"keep_cleared_days": 5}, "GET /api/v1/counts?keep_cleared_days=5", nil},
+		{"settings", nil, "GET /api/v1/settings", nil},
+		{"settings", map[string]any{"keep_cleared_days": 5}, "PUT /api/v1/settings", map[string]any{"keep_cleared_days": float64(5)}},
 	}
 	for _, c := range cases {
 		text, isErr := callTool(t, h, c.tool, c.args)

@@ -670,6 +670,15 @@ func (s *Server) routesSetup() {
 		if err != nil {
 			return err
 		}
+		if v := r.URL.Query().Get("keep_cleared_days"); v != "" { // preview before shortening the setting
+			days, err := strconv.Atoi(v)
+			if err != nil {
+				return errf(400, "bad_request", "keep_cleared_days must be a whole number of days")
+			}
+			if c["would_remove"], err = s.WouldRemove(r.Context(), tok, days); err != nil {
+				return err
+			}
+		}
 		writeJSON(w, 200, c)
 		return nil
 	})
