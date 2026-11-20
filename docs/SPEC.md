@@ -484,7 +484,10 @@ By external id (what scripts and monitors use):
   file and the message comes from `X-Message`/`Message`/`m`, default "You
   received a file: <name>"), `X-Markdown`/`Markdown`/`md` (`no`/`false`/`0` publishes
   plain text, section 2.1), `X-Email` (ignored, documented),
-  plus clrd's own `X-Id` = `external_id`. A body over 4096 bytes without a file
+  plus clrd's own `X-Id` = `external_id`. `X-Template`/`Template`/`tpl` set
+  to yes/true/1 makes the message, title and priority Go templates over the
+  JSON body, as in ntfy (any other `?template=` value is a webhook template,
+  below). A body over 4096 bytes without a file
   name is still a 413; clrd does not turn it into an attachment. ntfy output
   carries `icon` and `attachment` (`name`, `url`, `type`, `size`, with `url`
   made absolute from `CLRD_BASE_URL`). Unlike ntfy, clrd's file URLs need a

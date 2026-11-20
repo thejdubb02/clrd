@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: ntfy publish URLs with `tpl=yes` now render their templated
+  message, title and priority from the JSON body, as ntfy does. Before, a
+  templated priority was refused with "invalid priority" and the alert was
+  lost, and a templated message arrived as raw JSON (#272).
 - F-Droid: updating the app no longer fails with a 404 when the phone's
   F-Droid app list is a few builds old. The clrd F-Droid repo now keeps the
   last 30 builds instead of 5 (#277).
