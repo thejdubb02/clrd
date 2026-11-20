@@ -171,6 +171,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: a new alert no longer shows twice in the notification drawer, once
+  bundled under the silent sync notice. The sync notice also shows the real
+  connection state instead of staying on Connecting after the app is opened.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.
