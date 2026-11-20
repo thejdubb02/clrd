@@ -183,6 +183,8 @@ try {
   await narrow.setViewportSize({ width: 300, height: 740 });
   const small = await wide.locator('[data-popover]').boundingBox();
   assert.ok(small.x >= 0 && small.x + small.width <= 300, `snooze menu spans ${small.x} to ${small.x + small.width} on a 300 px screen`);
+  const smallSet = await wide.getByRole('button', { name: 'Set' }).boundingBox();
+  assert.ok(smallSet.x + smallSet.width <= small.x + small.width, 'Set button clipped by the snooze menu on a 300 px screen');
   await narrow.context().close();
   console.log('ok: snooze menu fits a phone screen');
 
