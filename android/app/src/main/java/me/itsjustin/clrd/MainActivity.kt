@@ -95,10 +95,13 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
+import kotlin.concurrent.thread
 
 /**
  * Null when the phone already lets clrd run in the background, else the system prompt that allows it.
@@ -122,8 +125,18 @@ class MainActivity : ComponentActivity() {
     /** Rechecked on every resume, so a change made in Android's settings shows when the person comes back. */
     val battery = mutableStateOf<Intent?>(null)
 
-    /** The browser sign-in in progress, if any. */
+    /** The browser sign-in or phone link in progress, if any. */
     val pair = mutableStateOf<PairUi?>(null)
+
+    /** In-app QR scanner (zxing, no Google services). Null contents means the person backed out. */
+    private val scanner = registerForActivityResult(ScanContract()) { r ->
+        r.contents?.let { route(parseScan(it), getString(R.string.scan_not_clrd)) }
+    }
+
+    private fun scan() = scanner.launch(
+        ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE).setPrompt(getString(R.string.scan_prompt))
+            .setBeepEnabled(false).setOrientationLocked(false),
+    )
 
     override fun onResume() {
         super.onResume()
@@ -140,8 +153,8 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handlePair(intent)
         setContent {
             ClrdTheme {
-                Home(app, battery.value)
-                PairDialog(pair.value, { pair.value = it }) { ask -> approvePair(ask) }
+                Home(app, battery.value, ::scan)
+                PairDialog(pair.value, { pair.value = it }, ::approvePair, ::claimLink)
             }
         }
     }
@@ -153,8 +166,62 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePair(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
-        val data = intent.dataString ?: return
-        val link = parsePairLink(data) ?: return run { pair.value = PairUi.Note(getString(R.string.pair_bad_link)) }
+        route(parseScan(intent.dataString ?: return), getString(R.string.pair_bad_link))
+    }
+
+    /** One way in for scanned codes and opened links, so both get the same checks. */
+    private fun route(scan: Scan, bad: String) {
+        when (scan) {
+            is Scan.Pair -> pairWith(scan.link)
+            // Nothing is sent until the person has seen the server address and said Yes.
+            is Scan.Link -> App.of(this).let { app ->
+                pair.value = PairUi.Confirm(scan.link, app.serverUrl.takeIf { app.configured })
+            }
+            Scan.Bad -> pair.value = PairUi.Note(bad)
+        }
+    }
+
+    /**
+     * Claims the link on the scanned server, polling until the browser approves, denies or the code expires.
+     * On its own thread: two minutes on [App.io] would hold up Settings.
+     */
+    private fun claimLink(link: LinkCode) {
+        val app = App.of(this)
+        val secret = newLinkSecret() // one per attempt, sent on every poll
+        val waiting = PairUi.Waiting(link, linkCheck(secret))
+        pair.value = waiting
+        val name = deviceName(this)
+        thread(isDaemon = true) {
+            val deadline = System.nanoTime() + LINK_TTL_NS
+            var outcome: Claim = Claim.Gone
+            var error: Exception? = null
+            while (pair.value === waiting && System.nanoTime() < deadline) {
+                try {
+                    outcome = linkClaim(app.http, link.server, link.code, secret, name)
+                    error = null
+                    if (outcome != Claim.Waiting) break
+                } catch (e: Exception) {
+                    error = e
+                    if (!claimRetries(e)) break // otherwise keep trying until the code expires
+                }
+                Thread.sleep(LINK_POLL_MS)
+            }
+            if (pair.value !== waiting) return@thread // closed by the person: the code just expires
+            val got = outcome
+            if (got is Claim.Approved) {
+                app.io.execute {
+                    app.saveServer(link.server, got.token)
+                    SyncService.start(this, restart = true)
+                    pair.value = PairUi.Note(getString(R.string.link_done))
+                }
+            } else {
+                // A failed last attempt says why; otherwise it was refused, denied or ran out of time.
+                pair.value = PairUi.Note(error?.let { pairError(it) } ?: getString(R.string.link_expired))
+            }
+        }
+    }
+
+    private fun pairWith(link: PairLink) {
         val app = App.of(this)
         // One snapshot: the gate and every request use the same server and token, never the link's server.
         val url = app.serverUrl
@@ -196,16 +263,24 @@ class MainActivity : ComponentActivity() {
         e is HttpError -> getString(R.string.test_http_error, e.code)
         else -> getString(R.string.test_unreachable, e.message)
     }
+
+    private companion object {
+        const val LINK_TTL_NS = 120_000_000_000L
+        const val LINK_POLL_MS = 1_500L
+    }
 }
 
 /** What the sign-in dialog shows: a question to approve, or a one-line result. */
 sealed interface PairUi {
     class Ask(val api: Api, val code: String, val name: String, val server: String) : PairUi
     class Note(val text: String) : PairUi
+    /** Link this phone to [link]'s server? [replaces] is the server it is set up with now, if any. */
+    class Confirm(val link: LinkCode, val replaces: String?) : PairUi
+    class Waiting(val link: LinkCode, val check: String) : PairUi
 }
 
 @Composable
-private fun PairDialog(ui: PairUi?, set: (PairUi?) -> Unit, approve: (PairUi.Ask) -> Unit) {
+private fun PairDialog(ui: PairUi?, set: (PairUi?) -> Unit, approve: (PairUi.Ask) -> Unit, claim: (LinkCode) -> Unit) {
     val app = App.of(LocalContext.current)
     when (ui) {
         null -> Unit
@@ -227,6 +302,26 @@ private fun PairDialog(ui: PairUi?, set: (PairUi?) -> Unit, approve: (PairUi.Ask
                 }) { Text(stringResource(R.string.pair_deny)) }
             },
         )
+        is PairUi.Confirm -> AlertDialog(
+            onDismissRequest = { set(null) },
+            title = { Text(stringResource(R.string.link_title, ui.link.server)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.link_text))
+                    ui.replaces?.let { Text(stringResource(R.string.link_replaces, it)) }
+                    if (ui.link.server.startsWith("http://")) Text(stringResource(R.string.plain_http_warning), color = LocalBrand.current.signal)
+                }
+            },
+            confirmButton = { TextButton(onClick = { claim(ui.link) }) { Text(stringResource(R.string.link_yes)) } },
+            dismissButton = { TextButton(onClick = { set(null) }) { Text(stringResource(R.string.link_no)) } },
+        )
+        // Closing it stops the polling; the code then expires on the server.
+        is PairUi.Waiting -> AlertDialog(
+            onDismissRequest = { set(null) },
+            title = { Text(stringResource(R.string.link_waiting_title)) },
+            text = { Text(stringResource(R.string.link_waiting_text, ui.link.server, ui.check)) },
+            confirmButton = { TextButton(onClick = { set(null) }) { Text(stringResource(R.string.link_cancel)) } },
+        )
     }
 }
 
@@ -238,7 +333,7 @@ private enum class Tab(val label: Int, val icon: ImageVector) {
 }
 
 @Composable
-private fun Home(app: App, battery: Intent?) {
+private fun Home(app: App, battery: Intent?, scan: () -> Unit) {
     val b = LocalBrand.current
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
@@ -278,7 +373,7 @@ private fun Home(app: App, battery: Intent?) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(app)
             when (tab) {
-                Tab.Settings -> SettingsScreen(app, battery)
+                Tab.Settings -> SettingsScreen(app, battery, scan)
                 else -> {
                     val flow = when (tab) { Tab.Inbox -> dao.inbox(); Tab.Snoozed -> dao.snoozed(); else -> dao.cleared() }
                     val rows by remember(tab) { flow }.collectAsState(emptyList())
@@ -517,11 +612,12 @@ private fun Empty(tab: Tab) {
 }
 
 @Composable
-private fun SettingsScreen(app: App, battery: Intent?) {
+private fun SettingsScreen(app: App, battery: Intent?, scan: () -> Unit) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
-    var url by rememberSaveable { mutableStateOf(app.serverUrl.ifEmpty { "https://" }) }
-    var token by rememberSaveable { mutableStateOf(app.token) }
+    val saved by app.saved.collectAsState() // a linked phone's new server and token show here at once
+    var url by rememberSaveable(saved) { mutableStateOf(app.serverUrl.ifEmpty { "https://" }) }
+    var token by rememberSaveable(saved) { mutableStateOf(app.token) }
     var result by remember { mutableStateOf<String?>(null) }
     var muted by remember { mutableStateOf(app.muted) }
     val topics by app.db.dao().topics().collectAsState(emptyList())
@@ -544,25 +640,7 @@ private fun SettingsScreen(app: App, battery: Intent?) {
                 url = newUrl
                 val newToken = token.trim()
                 app.io.execute {
-                    if (newUrl != app.serverUrl || newToken != app.token) {
-                        // Old server's rows, cursor and queue must not reach the new one. Blanking the token
-                        // and bumping configGen fence the old client (RoomStore.ifMine) and keeps the service from starting
-                        // one; a crash before the final save leaves the app unconfigured, never mixed.
-                        synchronized(app.configLock) { app.configGen++; app.token = "" }
-                        val old = app.sync
-                        app.sync = null
-                        old?.stop()
-                        synchronized(app.configLock) {
-                            app.db.dao().forget()
-                            app.epoch = ""
-                            app.tray.reconcile(emptyList(), app.muted)
-                            app.serverUrl = newUrl
-                            app.token = newToken
-                        }
-                    } else {
-                        app.serverUrl = newUrl
-                        app.token = newToken
-                    }
+                    app.saveServer(newUrl, newToken)
                     // /api/v1/topics needs the read scope, so this checks the URL and the token together.
                     result = try {
                         app.api().get("/api/v1/topics")
@@ -577,6 +655,8 @@ private fun SettingsScreen(app: App, battery: Intent?) {
             },
             colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),
         ) { Text(stringResource(R.string.save_and_test)) }
+        // Signed in on a browser already? Its Settings page shows a code that sets this phone up.
+        TextButton(onClick = scan) { Text(stringResource(R.string.scan_qr), color = b.ink) }
         result?.let { Text(it, color = b.body, fontSize = 14.sp) }
         battery?.takeIf { app.configured }?.let { prompt ->
             Text(stringResource(R.string.battery_explain), color = b.slate, fontSize = 13.sp)

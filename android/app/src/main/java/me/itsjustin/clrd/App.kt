@@ -64,6 +64,33 @@ class App : Application() {
 
     fun api() = Api(http, serverUrl, token)
 
+    /** Bumped on every [saveServer], so Settings shows a server and token saved from elsewhere (a scanned link). */
+    val saved = MutableStateFlow(0)
+
+    /** Saves the server and token from Settings or a scanned link. Call on [io]. */
+    fun saveServer(newUrl: String, newToken: String) {
+        if (newUrl != serverUrl || newToken != token) {
+            // Old server's rows, cursor and queue must not reach the new one. Blanking the token
+            // and bumping configGen fence the old client (RoomStore.ifMine) and keeps the service from starting
+            // one; a crash before the final save leaves the app unconfigured, never mixed.
+            synchronized(configLock) { configGen++; token = "" }
+            val old = sync
+            sync = null
+            old?.stop()
+            synchronized(configLock) {
+                db.dao().forget()
+                epoch = ""
+                tray.reconcile(emptyList(), muted)
+                serverUrl = newUrl
+                token = newToken
+            }
+        } else {
+            serverUrl = newUrl
+            token = newToken
+        }
+        saved.value++
+    }
+
     override fun onCreate() {
         super.onCreate()
         tray.createChannels()

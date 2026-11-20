@@ -84,6 +84,10 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // In-app QR scanner. Apache-2.0, camera only, no Google Play Services (F-Droid).
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation("com.google.zxing:core:3.5.3")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // Android's org.json is a stub on the JVM; tests need the real one.

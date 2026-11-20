@@ -8,19 +8,28 @@ import java.net.URLDecoder
 /** A browser asking this phone to sign it in. [server] is only compared, never called: requests go to the configured server. */
 data class PairLink(val server: String, val code: String)
 
-private val CODE = Regex("[A-Za-z0-9]{16,64}")
+internal val CODE = Regex("[A-Za-z0-9]{16,64}")
 
-/** The pairing link from `clrd://pair?server=<url-encoded>&code=<code>`, or null when it is anything else. */
-fun parsePairLink(uri: String): PairLink? {
-    val u = runCatching { URI(uri) }.getOrNull() ?: return null
-    if (!u.scheme.equals("clrd", ignoreCase = true) || !u.host.equals("pair", ignoreCase = true)) return null
+/** The decoded query of [u], or null when a value does not decode or a key repeats (a crafted link). */
+internal fun queryParams(u: URI): Map<String, String>? {
     val params = mutableMapOf<String, String>()
     for (part in u.rawQuery.orEmpty().split('&')) {
         val i = part.indexOf('=')
         if (i < 0) continue
         val value = runCatching { URLDecoder.decode(part.substring(i + 1), "UTF-8") }.getOrNull() ?: return null
-        if (params.put(part.substring(0, i), value) != null) return null // a repeated key is a crafted link
+        if (params.put(part.substring(0, i), value) != null) return null
     }
+    return params
+}
+
+/** The pairing link from `clrd://pair?server=<url-encoded>&code=<code>`, or null when it is anything else. */
+fun parsePairLink(uri: String): PairLink? = parseClrdLink(uri, "pair")
+
+/** `clrd://<host>?server=<url-encoded>&code=<code>` as (server, code), or null when it is anything else. */
+internal fun parseClrdLink(uri: String, host: String): PairLink? {
+    val u = runCatching { URI(uri) }.getOrNull() ?: return null
+    if (!u.scheme.equals("clrd", ignoreCase = true) || !u.host.equals(host, ignoreCase = true)) return null
+    val params = queryParams(u) ?: return null
     val server = params["server"] ?: return null
     val code = params["code"] ?: return null
     if (!CODE.matches(code)) return null

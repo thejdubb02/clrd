@@ -102,4 +102,19 @@
     <string name="pair_not_set_up">Set up the app first: add your server and token in Settings, then scan the code again.</string>
     <string name="pair_bad_link">This sign-in link is not valid. Make a new one on the browser.</string>
     <string name="ok">OK</string>
+
+    <!-- Linking this phone from a signed-in browser (QR code or clrd://link) -->
+    <string name="scan_qr">Scan QR code</string>
+    <string name="scan_prompt">Point at the code on your clrd Settings page</string>
+    <string name="scan_not_clrd">Not a clrd code</string>
+    <string name="link_title">Connect to %1$s?</string>
+    <string name="link_text">Only say Yes if you just made this code on your own browser, signed in to that server. The browser then asks you to approve this phone.</string>
+    <string name="link_replaces">This replaces the server this app uses now (%1$s) and clears its notifications from this phone.</string>
+    <string name="link_yes">Yes</string>
+    <string name="link_no">No</string>
+    <string name="link_waiting_title">Approve on your computer</string>
+    <string name="link_waiting_text">Your browser on %1$s now shows this phone. Approve it there only if it shows %2$s.</string>
+    <string name="link_cancel">Cancel</string>
+    <string name="link_done">Phone linked. Syncing now.</string>
+    <string name="link_expired">That code expired, was denied or was already used. Make a new one on the browser.</string>
 </resources>
