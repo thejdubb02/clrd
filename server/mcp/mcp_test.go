@@ -156,6 +156,10 @@ func TestInitializeAndList(t *testing.T) {
 	if strings.Join(names, ",") != "send,list,ack,resolve,snooze,wait_for_reply" {
 		t.Fatalf("tools: %v", names)
 	}
+	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
+	if props := send["inputSchema"].(map[string]any)["properties"].(map[string]any); props["format"] == nil {
+		t.Fatalf("send schema lacks format: %v", props)
+	}
 	_, out = rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","id":3,"method":"nope"}`)
 	if out["error"].(map[string]any)["code"].(float64) != -32601 {
 		t.Fatalf("want method not found: %v", out)
@@ -173,6 +177,8 @@ func TestTools(t *testing.T) {
 	}{
 		{"send", map[string]any{"topic": "infra", "message": "Disk 91%", "title": "build", "priority": 4, "id": "disk-build"},
 			"POST /api/v1/notifications", map[string]any{"topic": "infra", "message": "Disk 91%", "title": "build", "priority": float64(4), "external_id": "disk-build", "reopen": true}},
+		{"send", map[string]any{"topic": "infra", "message": "*raw*", "format": "text"},
+			"POST /api/v1/notifications", map[string]any{"topic": "infra", "message": "*raw*", "format": "text", "reopen": true}},
 		{"list", map[string]any{"topic": "infra"}, "GET /api/v1/notifications?state=open&topic=infra", nil},
 		{"list", map[string]any{"state": "all"}, "GET /api/v1/notifications?state=all", nil},
 		{"ack", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/ack", nil},
