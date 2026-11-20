@@ -244,6 +244,21 @@
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   });
 
+  // Share and Copy (SPEC section 2): title, message and click, from the card.
+  // Both need a secure page (https or localhost); a plain http LAN address has neither.
+  document.documentElement.classList.toggle('no-share', !navigator.share);
+  document.documentElement.classList.toggle('no-copy', !navigator.clipboard);
+  async function shareCard(act, c) {
+    const d = c.querySelector('[data-share]'), title = d.value, text = d.dataset.message, url = d.dataset.click;
+    try {
+      if (act === 'share') return await navigator.share({ title, text, ...(url && { url }) });
+      await navigator.clipboard.writeText([title, text].filter(Boolean).join('\n\n') + (url ? `\n${url}` : ''));
+      say('Copied.');
+    } catch (err) {
+      if (err.name !== 'AbortError') say(act === 'share' ? 'Could not share.' : 'Could not copy.');
+    }
+  }
+
   const done = { ack: 'Acknowledged', dismiss: 'Cleared', reopen: 'Restored to the inbox' };
   const tell = text => { announce.textContent = text; };
   document.addEventListener('click', async e => {
@@ -263,6 +278,7 @@
       return refresh();
     }
     const c = b.closest('.card');
+    if (act === 'share' || act === 'copy') return shareCard(act, c);
     let body;
     if (act === 'snooze') {
       const t = !b.dataset.for && snoozeAt(b.dataset.at, c);

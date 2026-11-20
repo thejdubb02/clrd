@@ -93,15 +93,18 @@
   <div class="grid min-w-0 grid-cols-[0.5rem_minmax(0,1fr)] gap-x-3 py-3.5">
     <span class="mt-2 size-2 rounded-full {{if ge $n.Priority 5}}bg-destructive{{else if eq $n.Priority 4}}bg-foreground{{else}}bg-border{{end}}" aria-hidden="true"></span>
     <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <h2 class="card-title text-[17px]/snug font-semibold tracking-tight [overflow-wrap:anywhere]" id="t-{{$n.ID}}">{{if $n.Click}}<a class="hover:underline" href="{{$n.Click}}" rel="noopener noreferrer">{{$n.Heading}}</a>{{else}}{{$n.Heading}}{{end}}</h2>
+      <h2 class="card-title text-[17px]/snug font-semibold tracking-tight [overflow-wrap:anywhere]" id="t-{{$n.ID}}">{{with $n.Icon}}<img class="me-2 inline-block size-6 rounded object-cover align-[-5px]" src="{{.}}" alt="" width="24" height="24" loading="lazy" referrerpolicy="no-referrer" data-icon>{{end}}{{if $n.Click}}<a class="hover:underline" href="{{$n.Click}}" rel="noopener noreferrer">{{$n.Heading}}</a>{{else}}{{$n.Heading}}{{end}}</h2>
       {{if eq $n.State "acknowledged"}}<span class="badge" data-state="acknowledged">{{if $n.Reply}}Answered {{$n.Answer}}{{else}}Acknowledged{{end}}{{with $n.StateBy}} on {{.}}{{end}}</span>
       {{else if eq $n.State "snoozed"}}<span class="badge" data-state="snoozed">Snoozed{{with $n.SnoozeUntil}} until <time datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time>{{end}}</span>
       {{else if eq $n.State "dismissed"}}<span class="badge" data-state="dismissed">Cleared{{with $n.StateBy}} on {{.}}{{end}}</span>
       {{else if eq $n.State "resolved"}}<span class="badge" data-state="resolved">Resolved{{with $n.StateBy}} by {{.}}{{end}}</span>
       {{else if ge $n.Priority 5}}<span class="badge" data-state="active">Urgent</span>{{end}}
+      <span class="js-only -my-1.5 -me-2 ms-auto inline-flex"><button type="button" class="btn [.no-share_&]:hidden" data-variant="ghost" data-size="icon" data-act="share" aria-label="Share" title="Share">{{template "i-share"}}</button><button type="button" class="btn [.no-copy_&]:hidden" data-variant="ghost" data-size="icon" data-act="copy" aria-label="Copy" title="Copy">{{template "i-copy"}}</button></span>
     </div>
     <div class="col-start-2 min-w-0">
       {{with $n.Body}}<p class="text-body mt-1 text-[15px]/normal whitespace-pre-line [overflow-wrap:anywhere]">{{.}}</p>{{end}}
+      {{with $n.Attachment}}{{if .Image}}<a class="mt-2 block w-fit" href="{{.URL}}" rel="noopener noreferrer" data-attachment><img class="max-h-64 max-w-full rounded-md border" src="{{.URL}}" alt="{{.Name}}" loading="lazy" referrerpolicy="no-referrer"></a>
+      {{else}}<p class="mt-2 text-sm font-medium" data-attachment><a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" download="{{.Name}}" rel="noopener noreferrer">{{template "i-paperclip"}}{{or .Name "Attachment"}}</a></p>{{end}}{{end}}
       <p class="meta mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5"><a class="hover:text-foreground hover:underline" href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}" title="{{clock $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{range $n.Tags}}<span>#{{.}}</span>{{end}}</p>
       {{with $n.Links}}<p class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium" data-links>{{range .}}<a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{.URL}}" rel="noopener noreferrer">{{.Label}}{{template "i-external-link"}}</a>{{end}}</p>{{end}}
     </div>
@@ -110,6 +113,7 @@
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">
     <input type="hidden" name="seq" value="{{$n.Seq}}">
+    <input type="hidden" data-share value="{{$n.Title}}" data-message="{{$n.Message}}" data-click="{{$n.Click}}">
     {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button class="btn" data-variant="outline" name="act" value="reopen" data-act="reopen">{{template "i-rotate-ccw"}}Restore</button>{{end}}
     {{else}}
       {{range $n.Replies}}<button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}

@@ -54,11 +54,11 @@ offline catches up the moment it reconnects.
   [Switch from ntfy](docs/migrate-from-ntfy.md).
   Email is not supported.
 - **Files and icons.** Agents and scripts can attach a file or an icon to a
-  notification. The server stores and serves them and the Android app shows
-  them; the web inbox does not show them yet.
+  notification. The server stores and serves them; the Android app and the
+  web inbox show them.
 - **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
-  work without JavaScript, a Ctrl+K command palette, a Send box for a quick
-  note to your phone, dark mode, phone width.
+  work without JavaScript, Share and Copy on each card, a Ctrl+K command
+  palette, a Send box for a quick note to your phone, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, Share and Copy on each
   notification, Markdown formatting and tappable links.
