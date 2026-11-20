@@ -76,6 +76,13 @@ func (a Attachment) Image() bool {
 	switch a.Type {
 	case "image/png", "image/jpeg", "image/gif", "image/webp":
 		return true
+	case "": // external: the server never saw it, so go by the name or the link
+		for _, s := range []string{a.Name, strings.SplitN(strings.SplitN(a.URL, "?", 2)[0], "#", 2)[0]} {
+			switch strings.ToLower(path.Ext(s)) {
+			case ".png", ".jpg", ".jpeg", ".gif", ".webp":
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -130,6 +137,7 @@ func (n Notification) Body() string {
 type Topic struct {
 	Name string `json:"name"`
 	Open int    `json:"open"`
+	Icon string `json:"icon"` // image URL new notifications in the topic get, "" for none
 }
 
 type Device struct {

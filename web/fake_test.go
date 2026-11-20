@@ -88,7 +88,7 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	}
 	sort.Slice(s.Items, func(i, j int) bool { return s.Items[i].CreatedAt.After(s.Items[j].CreatedAt) })
 	for name, open := range topics {
-		s.Topics = append(s.Topics, Topic{name, open})
+		s.Topics = append(s.Topics, Topic{Name: name, Open: open})
 	}
 	sort.Slice(s.Topics, func(i, j int) bool { return s.Topics[i].Name < s.Topics[j].Name })
 	now := time.Now().UTC()

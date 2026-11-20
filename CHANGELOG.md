@@ -18,6 +18,7 @@ Fixed, Removed, Security), as one line a user can understand.
   "(this browser)".
 - `CLRD_TRUSTED_PROXIES` setting: list your reverse proxies so only they can
   set the client address used by the wrong-password limit.
+- Web: set a topic's icon in Settings, under Topic icons.
 - Web: link previews. With previews on, a message's first link shows a card
   with the page's title, summary and image, fetched by your server. Settings
   has a switch for previews and a Default, On or Off choice for each topic.
@@ -198,6 +199,9 @@ Fixed, Removed, Security), as one line a user can understand.
   before saving; a settings change from another device no longer drops snooze
   edits not yet saved; closing the Send box mid-send and starting a new note
   no longer clears that note when the first send finishes.
+- Web: an icon that fails to load is hidden instead of shown broken; Copy
+  works on a page served over plain http; external image attachments show
+  inline when their name or link ends in an image type.
 - The server no longer serves stale data or fails writes with "database is
   locked" after a request is cancelled mid-query, for example when the web
   inbox reloads while it is still loading.
