@@ -5,6 +5,7 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"database/sql"
 	_ "embed"
@@ -13,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"mime"
 	"net"
@@ -41,6 +43,9 @@ type Options struct {
 	Attachments     string // CLRD_ATTACHMENTS, default "attachments" next to DB
 	AttachmentMax   int64  // CLRD_ATTACHMENT_MAX_MB, bytes, default 15 MB
 	AttachmentTotal int64  // CLRD_ATTACHMENT_TOTAL_MB, bytes, default 5000 MB
+
+	RateToken int // CLRD_RATE_TOKEN, publishes a minute per token, default 60, -1 off
+	RateTopic int // CLRD_RATE_TOPIC, publishes a minute per topic, default 60, -1 off
 }
 
 // ConfigFromEnv reads the spec section 7 environment variables.
@@ -66,6 +71,18 @@ func ConfigFromEnv() (Options, error) {
 			*v.to = mb << 20
 		}
 	}
+	for _, v := range []struct {
+		env string
+		to  *int
+	}{{"CLRD_RATE_TOKEN", &o.RateToken}, {"CLRD_RATE_TOPIC", &o.RateTopic}} {
+		if e := os.Getenv(v.env); e != "" {
+			n, err := strconv.Atoi(e)
+			if err != nil || n < 0 || n > 1e6 {
+				return o, fmt.Errorf("%s: want publishes a minute (0 turns it off), got %q", v.env, e)
+			}
+			*v.to = cmp.Or(n, -1)
+		}
+	}
 	return o, nil
 }
 
@@ -85,10 +102,12 @@ type Server struct {
 	revoked  sync.Map     // token ids deleted while the server runs
 	failing  sync.Map     // background job name -> true while it keeps failing; /healthz reports it
 
-	seen      sync.Map // token id -> time last written to last_seen_at
-	pwLimit   *limiter // ntfy password attempts per address
-	setupMu   sync.Mutex
-	setupCode string
+	seen       sync.Map // token id -> time last written to last_seen_at
+	pwLimit    *limiter // ntfy password attempts per address
+	tokLimit   *limiter // publishes per token, nil when off
+	topicLimit *limiter // publishes per topic, nil when off
+	setupMu    sync.Mutex
+	setupCode  string
 
 	settingsChanged signal // fires after every settings change
 	fetch           *fetcher
@@ -127,6 +146,7 @@ func New(opt Options) (*Server, error) {
 	if opt.AttachmentMax == 0 {
 		opt.AttachmentMax = 15 << 20
 	}
+	opt.RateToken, opt.RateTopic = cmp.Or(opt.RateToken, 60), cmp.Or(opt.RateTopic, 60)
 	if opt.AttachmentTotal == 0 {
 		opt.AttachmentTotal = 5000 << 20
 	}
@@ -138,7 +158,7 @@ func New(opt Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{opt: opt, db: db, log: opt.Logger, mux: http.NewServeMux(),
-		pwLimit: newLimiter(10, time.Minute)}
+		pwLimit: newLimiter(10, time.Minute), tokLimit: perMinute(opt.RateToken), topicLimit: perMinute(opt.RateTopic)}
 	s.hub.subs = map[chan Event]string{}
 	var seq, pruned int64
 	if err := db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'events'`).Scan(&seq); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -342,6 +362,9 @@ func (s *Server) api(pattern string, h func(http.ResponseWriter, *http.Request, 
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
 	status, code, msg := errorStatus(err)
+	if ae := (*apiError)(nil); errors.As(err, &ae) && ae.retry > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(ae.retry.Seconds())))))
+	}
 	if status == 500 {
 		s.log.Error("request failed", "err", err)
 	}
