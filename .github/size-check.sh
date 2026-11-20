@@ -5,7 +5,7 @@
 set -eu
 name=$1 file=$2
 budget=$(awk -v n="$name" '$1 == n { print $2 }' "$(dirname "$0")/size-budget")
-[ -n "$budget" ] || { echo "no budget for $name in .github/size-budget" >&2; exit 1; }
+case $budget in '' | *[!0-9]*) echo "no single whole-byte budget for $name in .github/size-budget" >&2; exit 1 ;; esac
 size=$(wc -c < "$file")
 mb() { awk -v b="$1" 'BEGIN { printf "%.2f MB", b / 1000000 }'; }
 line="$name: $(mb "$size") ($size bytes), budget $(mb "$budget")"
