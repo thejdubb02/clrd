@@ -126,11 +126,14 @@ func TestReplyButtons(t *testing.T) {
 		json.Unmarshal([]byte(res["content"].([]any)[0].(map[string]any)["text"].(string)), &v)
 		return v
 	}
-	sent := call("send", map[string]any{"topic": "agents", "message": "deploy?", "id": "deploy-2", "actions": []any{
+	sent := call("send", map[string]any{"topic": "agents", "message": "deploy?", "id": "deploy-2", "format": "text", "actions": []any{
 		map[string]any{"label": "Yes", "reply": "yes"}, map[string]any{"label": "No", "reply": "no"}}})
 	id, _ := sent["id"].(string)
 	if acts, _ := sent["actions"].([]any); len(acts) != 2 {
 		t.Fatalf("send dropped the buttons: %v", sent)
+	}
+	if sent["format"] != "text" {
+		t.Fatalf("send dropped the format: %v", sent)
 	}
 	go func() {
 		time.Sleep(50 * time.Millisecond)
