@@ -368,6 +368,16 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
             }
         }
     }
+    // A stack's Clear clears every row in it, one bulk clear as on the web (#360).
+    val clearAll: (List<Notif>) -> Unit = { rows ->
+        val ids = rows.map { it.id }
+        app.act(ids, "dismiss", App.VIA_APP_BULK)
+        scope.launch {
+            if (snackbar.showSnackbar(ctx.getString(R.string.cleared_everywhere), ctx.getString(R.string.undo), duration = androidx.compose.material3.SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                app.act(ids, "reopen")
+            }
+        }
+    }
 
     Scaffold(
         containerColor = b.paper,
@@ -409,7 +419,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                         items(entries, key = { it.key }) { e ->
                             if (e is Stack) {
                                 val open = e.topic in unfolded
-                                StackCard(e, open) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
+                                StackCard(e, open, if (tab == Tab.Cleared) null else ({ clearAll(e.rows) })) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
                                 return@items
                             }
                             val n = (e as One).n
@@ -671,7 +681,7 @@ internal fun stacked(rows: List<Notif>, open: Set<String>): List<Entry> = rows.g
 }
 
 @Composable
-private fun StackCard(s: Stack, open: Boolean, onToggle: () -> Unit) {
+private fun StackCard(s: Stack, open: Boolean, onClear: (() -> Unit)?, onToggle: () -> Unit) {
     val b = LocalBrand.current
     val top = s.rows.maxOf { it.priority }
     Surface(
@@ -687,6 +697,7 @@ private fun StackCard(s: Stack, open: Boolean, onToggle: () -> Unit) {
                 Text(s.rows[0].title.ifEmpty { s.rows[0].message }, color = b.body, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(pluralStringResource(R.plurals.tray_stack, s.rows.size, s.rows.size), style = Mono, color = b.slate)
             }
+            if (onClear != null) TextButton(onClick = onClear) { Text(stringResource(R.string.clear), color = b.ink) }
             TextButton(onClick = onToggle) { Text(stringResource(if (open) R.string.stack_hide else R.string.stack_show), color = b.ink) }
         }
     }
