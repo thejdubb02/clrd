@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.net.Uri
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
@@ -71,8 +72,11 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
 class Tray(private val ctx: Context) {
     private val nm = ctx.getSystemService(NotificationManager::class.java)
 
-    /** Makes the channels for [sound] (see [Sounds]) and deletes the other sounds' channels. Posts go to the new ones. */
-    fun createChannels(sound: String = App.of(ctx).sound) {
+    /**
+     * Makes the channels for [sound] (see [Sounds]) and deletes the other sounds' channels. Posts go to the new ones.
+     * True when this change took the Urgent channel's Do Not Disturb pass with it.
+     */
+    fun createChannels(sound: String = App.of(ctx).sound): Boolean {
         val uri = Sounds.uri(ctx, sound)
         val audio = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
         val names = listOf(R.string.channel_p1, R.string.channel_p2, R.string.channel_p3, R.string.channel_p4, R.string.channel_p5)
@@ -93,12 +97,35 @@ class Tray(private val ctx: Context) {
         )
         val keep = mine.map { it.id }.toSet()
         val gone = ours.map { it.id }.filter { it !in keep }.toSet()
+        val noticeUp = nm.activeNotifications.any { it.id == DND_ID && it.tag == null }
         // Cancelled by us first: Android's own cancel on channel delete can fire the delete intent, which reads as a swipe.
         nm.activeNotifications.filter { it.notification.channelId in gone }.forEach { nm.cancel(it.tag, it.id) }
         gone.forEach(nm::deleteNotificationChannel)
         // Android never lets an app change a channel's badge setting after creation, so the old channel is replaced.
         nm.deleteNotificationChannel("service")
-        dndLost(sound, ours.any { it.id in gone && it.id[1] == '5' && it.canBypassDnd() })
+        val had = ours.any { it.id in gone && it.id[1] == '5' && it.canBypassDnd() }
+        // A notice still up went with its old channel above; it comes back on the new one while the pass is still off.
+        return dndLost(sound, had) && (had || noticeUp)
+    }
+
+    /**
+     * A sound change from the server or an agent took the Do Not Disturb pass (#380). The person is not in
+     * Settings to see the note there, so the tray says it once; a tap opens the switch.
+     */
+    fun dndNotice(sound: String = App.of(ctx).sound) {
+        val open = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+            .putExtra(Settings.EXTRA_CHANNEL_ID, Sounds.channel(5, sound))
+        nm.notify(
+            DND_ID,
+            NotificationCompat.Builder(ctx, Sounds.channel(5, sound)) // the channel it is about: muted only if urgent ones are
+                .setSmallIcon(R.drawable.ic_stat_clrd)
+                .setContentTitle(ctx.getString(R.string.dnd_notice_title))
+                .setContentText(ctx.getString(R.string.dnd_notice))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(ctx.getString(R.string.dnd_notice)))
+                .setContentIntent(PendingIntent.getActivity(ctx, DND_ID, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+                .build(), // no auto cancel: it stays until the pass is back (see [dndLost])
+        )
     }
 
     /** True when a sound change dropped the Urgent channel's Do Not Disturb pass and the person has not set it again (#346). */
@@ -107,6 +134,7 @@ class Tray(private val ctx: Context) {
         val prefs = App.of(ctx).prefs
         val lost = Sounds.dndLost(prefs.getBoolean("dnd_lost", false), replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
         prefs.edit().putBoolean("dnd_lost", lost).apply()
+        if (!lost) nm.cancel(DND_ID) // turned back on: the tray notice has done its job
         return lost
     }
 
@@ -133,6 +161,7 @@ class Tray(private val ctx: Context) {
     fun reconcile(rows: List<Notif>, muted: Set<String>) {
         val open = rows.map { it.id }.toSet()
         App.of(ctx).run { trayHidden = trayHidden.filterTo(HashSet()) { it in open } } // closed rows need no hiding
+        dndLost() // a pass turned back on in Android's settings takes the #380 notice with it on the next sync or launch
         val want = rows.map { TrayStep.plan(it, muted) }.filterIsInstance<TrayStep.Show>()
             .sortedByDescending { it.n.createdAt }.take(if (App.of(ctx).stack) 32 else 40)
         val wantIds = want.map { it.n.id }.toSet()
@@ -291,6 +320,7 @@ class Tray(private val ctx: Context) {
         const val EXTRA_IDS = "ids"
         const val GROUP = "topic:"
         const val SUMMARY_ID = 1
+        const val DND_ID = 2 // no tag, so the tray rebuild (tagged, id 0 or 1) never touches it
         const val EXTRA_ID = "id"
         const val EXTRA_SERVER = "server"
         const val EXTRA_REPLY = "reply"
