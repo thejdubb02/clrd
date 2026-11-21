@@ -119,6 +119,9 @@ Fixed, Removed, Security), as one line a user can understand.
   Two or more notifications of one topic show as one card with the count and
   the top one's title; tap it to show or hide them. Not when one topic is picked.
   (#231)
+- Web: manage a topic's webhook templates in Settings. Add, edit and delete
+  them, set or keep the secret, and try the unsaved fields on a sample post
+  before saving. Needs a token that can publish on the topic.
 - Server: try a webhook template before pointing a service at it.
   `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
   `preview_template`) takes a sample payload and returns the notifications a

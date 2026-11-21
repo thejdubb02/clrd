@@ -198,6 +198,17 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		for _, t := range snap.Topics {
 			snap.CanSilence = snap.CanSilence || tok.MaySilence(t.Name)
 		}
+		// Webhook templates (#129): publish on the topic, listed only where allowed.
+		if tok.Has(server.ScopePublish) {
+			tpls, err := a.s.Templates(ctx, tok, "")
+			if err != nil {
+				return snap, err
+			}
+			if err := convert(tpls, &snap.Templates); err != nil {
+				return snap, err
+			}
+			snap.CanTemplates, snap.BuiltinTemplates = true, server.BuiltinTemplates()
+		}
 		// Webhooks are admin only (#238): anyone else gets no hook URLs at all.
 		if hooks, err := a.s.OutHooks(ctx, tok, ""); err == nil {
 			snap.CanHooks = true
@@ -273,6 +284,28 @@ func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []stri
 		return web.ErrUnauthorized
 	}
 	return webError(a.s.SaveHook(r.Context(), tok, topic, name, server.OutHook{URL: url, Events: events, Secret: secret}, !clearSecret))
+}
+
+func (a webAPI) SaveTemplate(r *http.Request, t web.Template, secret string, clearSecret bool) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	h := server.Webhook{Each: t.Each, Title: t.Title, Message: t.Message, Priority: t.Priority, Tags: t.Tags,
+		Click: t.Click, ID: t.ID, Resolve: t.Resolve, Secret: secret}
+	return webError(a.s.SaveTemplate(r.Context(), tok, t.Topic, t.Name, h, !clearSecret))
+}
+
+func (a webAPI) DeleteTemplate(r *http.Request, topic, name string) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	err := a.s.DeleteTemplate(r.Context(), tok, topic, name)
+	if status, _ := server.PublicError(err); status == 404 {
+		return nil // already gone: the page was stale
+	}
+	return webError(err)
 }
 
 func (a webAPI) DeleteHook(r *http.Request, topic, name string) error {

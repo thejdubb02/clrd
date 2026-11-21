@@ -80,6 +80,9 @@ try {
   // A webhook with a delivery in its log, for Settings (#238). .invalid never resolves, so nothing leaves the box.
   const hook = await fetch(main.base + '/api/v1/topics/infra/hooks/ops-bot', { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ url: 'https://ops.example.invalid/clrd', events: ['dismissed', 'resolved'], secret: 's3' }) });
   if (!hook.ok) throw new Error(`hook: ${hook.status}`);
+  // A saved template with long fields, for Settings at phone width (#129).
+  const tpl = await fetch(main.base + '/api/v1/topics/infra/templates/uptime-robot-monitor', { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ each: 'monitors', title: '{{get . "monitor.friendly_name" "monitor.url"}} is {{get . "alert.type_name"}}', message: '{{get . "alert.details"}} for {{get . "alert.duration"}} seconds', id: '{{get . "monitor.id"}}', resolve: '{{eq (get . "alert.type") "2"}}', secret: 's3' }) });
+  if (!tpl.ok) throw new Error(`template: ${tpl.status}`);
   const hooked = await send({ topic: 'infra', title: 'Swap in use on web-2', message: 'Back under 10%.' });
   await api(`/api/v1/notifications/${hooked.id}/dismiss`);
   await new Promise(r => setTimeout(r, 3000)); // the delivery job runs every 2 seconds

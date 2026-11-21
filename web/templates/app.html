@@ -320,6 +320,42 @@
     </form>
     {{else}}<p class="meta">Webhooks need an admin sign-in.</p>{{end}}
   </section>
+  <section class="grid gap-3" aria-labelledby="tpl-h" data-templates>
+    <h2 id="tpl-h" class="text-base font-semibold">Webhook templates</h2>
+    <p class="text-body text-sm/relaxed">Turn another service's own webhook JSON into notifications: the service posts to a topic with <code>?template=</code> and a template name. The built-ins work with no setup; save one here to add a secret, change a field or make your own. <a class="underline" href="{{base}}/docs/integrations/custom-webhooks">How templates work</a></p>
+    {{if .Snap.CanTemplates}}
+    {{range .Snap.Templates}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-template="{{.Topic}}/{{.Name}}">
+      <div class="grid gap-1">
+        <h3 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h3>
+        <p class="meta [overflow-wrap:anywhere]">Post to /{{.Topic}}?template={{.Name}}{{if has $.Snap.BuiltinTemplates .Name}}. Overrides the built-in for the fields set{{end}}.{{if .HasSecret}} Checked with a secret.{{end}}</p>
+      </div>
+      <details class="text-sm">
+        <summary class="cursor-pointer font-medium">Edit</summary>
+        <form class="mt-3 grid max-w-md gap-3" method="post" action="{{base}}/app/templates" data-template-form>
+          <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
+          {{template "tpl-fields" .}}
+          <div><button class="btn" data-variant="outline">Save template</button></div>
+        </form>
+      </details>
+      <form method="post" action="{{base}}/app/templates" data-template-delete="{{.Name}}">
+        <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
+        <button class="btn" data-variant="outline" data-size="sm" name="delete" value="1">Delete</button>
+      </form>
+    </div>{{else}}<p class="text-body text-sm">No saved templates yet.</p>{{end}}
+    <form class="grid max-w-md gap-3" method="post" action="{{base}}/app/templates" data-template-form data-template-add>
+      <h3 class="text-sm font-semibold">Add a template</h3>
+      <div class="grid gap-1.5"><label class="label" for="tpl-topic">Topic</label>
+        <input id="tpl-topic" class="input" name="topic" list="tpl-topics" required autocomplete="off" spellcheck="false">
+        <datalist id="tpl-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
+      <div class="grid gap-1.5"><label class="label" for="tpl-name">Name</label>
+        <input id="tpl-name" class="input" name="name" list="tpl-builtins" required maxlength="64" pattern="[A-Za-z0-9_\-]+" aria-describedby="tpl-name-hint" autocomplete="off" spellcheck="false">
+        <datalist id="tpl-builtins">{{range .Snap.BuiltinTemplates}}<option value="{{.}}"></option>{{end}}</datalist>
+        <p id="tpl-name-hint" class="meta">Letters, digits, _ and -. A built-in's name keeps the built-in and changes only the fields you fill in. Saving a name that exists replaces it.</p></div>
+      {{template "tpl-fields" newTemplate}}
+      <div><button class="btn" data-variant="outline">Add template</button></div>
+    </form>
+    {{else}}<p class="meta">This device cannot save templates: its token cannot publish.</p>{{end}}
+  </section>
   <section class="js-only grid gap-3" aria-labelledby="msg-h">
     <h2 id="msg-h" class="text-base font-semibold">Messages</h2>
     <p class="text-body text-sm/relaxed">How message text shows. These settings apply to every device.</p>
@@ -440,4 +476,42 @@
   <input id="{{$id}}-secret" class="input" type="password" name="secret" maxlength="256" autocomplete="new-password" aria-describedby="{{$id}}-secret-hint">
   <p id="{{$id}}-secret-hint" class="meta">{{if .HasSecret}}A secret is saved. Leave this empty to keep it.{{else}}Optional. Signs each delivery so the receiver can check it came from here.{{end}}</p>
   {{if .HasSecret}}<label class="label font-normal"><input type="checkbox" class="input" name="clear_secret" value="1"> Remove the saved secret</label>{{end}}</div>
+{{end}}
+{{define "tpl-fields"}}{{$id := print "tpl-" .Topic "/" .Name}}
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-each">Each</label>
+  <input id="{{$id}}-each" class="input" name="each" value="{{.Each}}" maxlength="256" aria-describedby="{{$id}}-each-hint" autocomplete="off" spellcheck="false">
+  <p id="{{$id}}-each-hint" class="meta">A dotted path to a list in the JSON, for one notification per item. Empty makes the whole post one notification.</p></div>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-title">Title</label>
+  <input id="{{$id}}-title" class="input" name="title" value="{{.Title}}" autocomplete="off" spellcheck="false"></div>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-message">Message</label>
+  <textarea id="{{$id}}-message" class="textarea" name="message" rows="3" spellcheck="false">{{.Message}}</textarea></div>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-priority">Priority</label>
+  <input id="{{$id}}-priority" class="input" name="priority" value="{{.Priority}}" autocomplete="off" spellcheck="false"></div>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-tags">Tags</label>
+  <input id="{{$id}}-tags" class="input" name="tags" value="{{.Tags}}" autocomplete="off" spellcheck="false"></div>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-click">Click link</label>
+  <input id="{{$id}}-click" class="input" name="click" value="{{.Click}}" autocomplete="off" spellcheck="false"></div>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-id">ID</label>
+  <input id="{{$id}}-id" class="input" name="id" value="{{.ID}}" aria-describedby="{{$id}}-id-hint" autocomplete="off" spellcheck="false">
+  <p id="{{$id}}-id-hint" class="meta">The same ID updates one notification instead of adding another.</p></div>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-resolve">Resolve when</label>
+  <input id="{{$id}}-resolve" class="input" name="resolve" value="{{.Resolve}}" aria-describedby="{{$id}}-resolve-hint" autocomplete="off" spellcheck="false">
+  <p id="{{$id}}-resolve-hint" class="meta">Renders to true to resolve the notification with that ID.</p></div>
+<p class="meta">Every field but Each is a Go template run over the posted JSON. Empty fields are left out.</p>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-secret">Secret</label>
+  <input id="{{$id}}-secret" class="input" type="password" name="secret" maxlength="256" autocomplete="new-password" aria-describedby="{{$id}}-secret-hint">
+  <p id="{{$id}}-secret-hint" class="meta">{{if .HasSecret}}A secret is saved. Leave this empty to keep it.{{else}}Optional. Posts without it get 401 and publish nothing.{{end}}</p>
+  {{if .HasSecret}}<label class="label font-normal"><input type="checkbox" class="input" name="clear_secret" value="1"> Remove the saved secret</label>{{end}}</div>
+<details class="js-only text-sm" data-template-try>
+  <summary class="cursor-pointer font-medium">Try it on a sample</summary>
+  <div class="mt-3 grid gap-3">
+    <div class="grid gap-1.5"><label class="label" for="{{$id}}-payload">Sample JSON</label>
+      <textarea id="{{$id}}-payload" class="textarea" rows="4" spellcheck="false" data-template-payload></textarea></div>
+    <div class="grid gap-1.5"><label class="label" for="{{$id}}-headers">Headers</label>
+      <textarea id="{{$id}}-headers" class="textarea" rows="2" spellcheck="false" aria-describedby="{{$id}}-headers-hint" data-template-headers></textarea>
+      <p id="{{$id}}-headers-hint" class="meta">Optional, one per line, such as X-GitHub-Event: issues.</p></div>
+    <div class="flex items-center gap-3"><button type="button" class="btn" data-variant="outline" data-template-preview>Preview</button><span class="meta" role="status" data-template-status></span></div>
+    <div class="grid gap-2" data-template-out></div>
+  </div>
+</details>
 {{end}}
