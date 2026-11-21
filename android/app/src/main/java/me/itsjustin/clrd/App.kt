@@ -264,7 +264,7 @@ class RoomStore(private val app: App) : Store {
 
     override fun lastSeq() = dao.lastSeq() ?: 0
 
-    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean) = ifMine {
+    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
         val kept = dao.applyAll(notifs, seq)
         val muted = app.muted
@@ -272,7 +272,13 @@ class RoomStore(private val app: App) : Store {
         val acting = dao.pending().filter { it.action == "reopen" }.map { it.notifId }.toSet() // our own reopen's event may beat its answer here
         for (n in kept) {
             val step = if (n.id in waiting) TrayStep.Cancel(n.id) else TrayStep.plan(n, muted)
-            app.tray.apply(if ((quiet || n.id in acting) && step is TrayStep.Show) step.copy(silent = true) else step)
+            app.tray.apply(
+                when {
+                    step !is TrayStep.Show -> step
+                    quiet || n.id in acting -> step.copy(silent = true)
+                    else -> step.copy(again = again && !step.silent)
+                },
+            )
         }
         dao.prune(System.currentTimeMillis() - 7 * 24 * 3600_000L)
     }

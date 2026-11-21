@@ -768,6 +768,17 @@ private fun SoundSettings(app: App, resumes: Int) {
             runCatching { ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)) }
         }) { Text(stringResource(R.string.sound_open_settings), color = b.ink) }
     }
+    // Only the person can let a channel through Do Not Disturb; an app cannot switch it on by itself (#259).
+    Text(stringResource(R.string.dnd_explain), color = b.slate, fontSize = 13.sp)
+    TextButton(onClick = {
+        runCatching {
+            ctx.startActivity(
+                Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                    .putExtra(Settings.EXTRA_CHANNEL_ID, Sounds.channel(5, sound)),
+            )
+        }
+    }) { Text(stringResource(R.string.dnd_open), color = b.ink) }
 }
 
 private fun soundLabel(name: String) = when (name) {

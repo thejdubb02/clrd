@@ -39,6 +39,10 @@ Fixed, Removed, Security), as one line a user can understand.
 - Web: in a topic's empty inbox, the first tip's test command sends to that
   topic, so the test shows up where you are looking. The topic icon tip only
   shows once there is a topic to set an icon on (#258).
+- Android: a notification sent with `repeat` rings again on the phone each
+  time it repeats, even while it is still in the tray, until someone deals
+  with it. Settings has a new button that opens Android's own screen for
+  letting urgent (priority 5) notifications through Do Not Disturb. (#259)
 - Android: the sound you pick is saved on the server for this phone, so an
   agent can read and change it over the API or MCP and the phone follows at
   once. A sound picked before this moves to the server on the next connect,
