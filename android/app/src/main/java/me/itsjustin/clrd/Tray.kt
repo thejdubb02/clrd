@@ -21,13 +21,13 @@ sealed interface TrayStep {
 
     companion object {
         /**
-         * active: show and alert. acknowledged: keep showing, quietly, with who acked it.
+         * active: show and alert, unless a server silence matched it (then show quietly). acknowledged: keep showing, quietly, with who acked it.
          * snoozed: hide (the server re-activates it later, which shows it again).
          * dismissed / resolved: cancel everywhere. That is the headline feature.
          */
         fun plan(n: Notif, muted: Set<String>): TrayStep = when {
             n.topic in muted -> Cancel(n.id)
-            n.state == Notif.ACTIVE -> Show(n, silent = false)
+            n.state == Notif.ACTIVE -> Show(n, silent = n.silenced)
             n.state == Notif.ACKNOWLEDGED -> Show(n, silent = true)
             else -> Cancel(n.id)
         }

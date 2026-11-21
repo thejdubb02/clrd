@@ -32,6 +32,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: dark notification icons (GitHub's and others) no longer vanish in
   the dark theme. They sit on a small light tile there, as on the web inbox
   (#313).
+- Android: a silenced topic or tag no longer rings the phone. The message
+  still shows in the shade and the inbox, without sound or vibration (#328).
 
 - Server: the format check's example message, which goes into the prompt you
   paste into your agent, now shows passwords, keys and tokens in it as

@@ -89,8 +89,7 @@ as emoji but leave the tag emoji out, since ntfy apps add those themselves.
 set time (`POST /api/v1/silences`). Notifications still arrive, sync and show;
 the server sets `silenced: true` on every event it writes while a silence
 matches (publish, update, snooze wake, check-in), and clients must show those
-without sound or vibration (the web inbox does; the Android app does not
-read the flag yet). A silence mutes every priority, 5 included. It
+without sound or vibration (the web inbox and the Android app do). A silence mutes every priority, 5 included. It
 ends by itself; `DELETE` ends it early. Events logged before a server upgrade
 may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
 message at priority 1. Quiet hours on one device are a client setting, not a

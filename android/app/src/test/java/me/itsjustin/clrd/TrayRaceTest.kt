@@ -395,6 +395,7 @@ class TrayRaceTest {
         val db = Room.databaseBuilder(app, Db::class.java, "old.db").build()
         try {
             assertEquals("", bg { db.dao().openNow().single().reply })
+            assertEquals(false, bg { db.dao().openNow().single().silenced })
             assertEquals(listOf("dismiss"), bg { db.dao().pending().map { it.action } })
         } finally {
             db.close()
