@@ -90,7 +90,9 @@ func TestDeviceActionChecks(t *testing.T) {
 	for name, a := range map[string]Action{
 		"method":       {HTTP: &HTTPAction{Method: "CONNECT", URL: "https://example.com"}},
 		"scheme":       {HTTP: &HTTPAction{URL: "file:///etc/passwd"}},
-		"no host":      {HTTP: &HTTPAction{URL: "https://"}},
+		"no host":      {HTTP: &HTTPAction{URL: "https://:443/run"}},
+		"get body":     {Label: "x", HTTP: &HTTPAction{Method: "GET", URL: "https://example.com", Body: "b"}},
+		"no label":     {Broadcast: &BroadcastAction{}},
 		"header name":  {HTTP: &HTTPAction{URL: "https://example.com", Headers: map[string]string{"X Bad": "v"}}},
 		"header value": {HTTP: &HTTPAction{URL: "https://example.com", Headers: map[string]string{"X-A": "v\r\nX-B: w"}}},
 		"body":         {HTTP: &HTTPAction{URL: "https://example.com", Body: strings.Repeat("b", 4097)}},
@@ -105,6 +107,13 @@ func TestDeviceActionChecks(t *testing.T) {
 	if err := checkActions([]Action{{Label: "x", URL: "https://example.com", HTTP: ok.HTTP}}); err == nil {
 		t.Error("url and http together: want an error")
 	}
+	four := Action{Label: "b", Broadcast: &BroadcastAction{}}
+	if err := checkActions([]Action{four, four, four}); err != nil {
+		t.Errorf("3 broadcasts: %v", err)
+	}
+	if err := checkActions([]Action{four, four, four, four}); err == nil {
+		t.Error("4 broadcasts: want an error")
+	}
 	// view and reply JSON stays as it was before #401.
 	b, _ := json.Marshal([]Action{{Label: "Open", URL: "https://example.com"}, {Label: "Yes", Reply: "yes"}})
 	if string(b) != `[{"label":"Open","url":"https://example.com"},{"label":"Yes","url":"","reply":"yes"}]` {
@@ -117,6 +126,11 @@ func TestNtfyShortActions(t *testing.T) {
 	if err != nil || len(as) != 2 || as[0].Label != "Don't" || as[1].Broadcast == nil || as[1].Broadcast.Extras["cmd"] != "go" ||
 		as[1].Broadcast.Intent != "io.x.P" {
 		t.Fatalf("short form: %v %+v", err, as)
+	}
+	// A named field keeps the rest at their own index; a quote may follow "= ".
+	as, _ = ntfyActions(`action=http, Close door, https://example.com/c, body= 'a,b'`)
+	if len(as) != 1 || as[0].Label != "Close door" || as[0].HTTP.URL != "https://example.com/c" || as[0].HTTP.Body != "a,b" {
+		t.Fatalf("named then positional: %+v", as)
 	}
 	if _, err := ntfyActions(`http, X, https://example.com, body='open`); err == nil {
 		t.Fatal("unclosed quote: want an error")

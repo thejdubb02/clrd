@@ -99,7 +99,7 @@ func ntfySplitActions(v string) ([][]string, error) {
 			q = 0
 		case q != 0:
 			b.WriteRune(c)
-		case (c == '\'' || c == '"') && (strings.TrimSpace(cur) == "" || strings.HasSuffix(cur, "=")):
+		case (c == '\'' || c == '"') && (strings.TrimSpace(cur) == "" || strings.HasSuffix(strings.TrimSpace(cur), "=")):
 			q = c
 			if strings.TrimSpace(cur) == "" {
 				b.Reset()
@@ -124,9 +124,9 @@ func ntfySplitActions(v string) ([][]string, error) {
 // position, the rest as key=value, headers.X=... and extras.x=...
 func ntfyShortAction(fields []string) ntfyAction {
 	var a ntfyAction
-	pos := []*string{&a.Action, &a.Label, &a.URL}
+	pos := []*string{&a.Action, &a.Label, &a.URL} // by index, as ntfy reads them
 	keys := map[string]*string{"action": &a.Action, "label": &a.Label, "url": &a.URL, "method": &a.Method, "body": &a.Body, "intent": &a.Intent}
-	for _, f := range fields {
+	for i, f := range fields {
 		rawK, v, eq := strings.Cut(f, "=")
 		rawK, v = strings.TrimSpace(rawK), strings.TrimSpace(v)
 		k := strings.ToLower(rawK)
@@ -139,8 +139,8 @@ func ntfyShortAction(fields []string) ntfyAction {
 			a.Headers = setKey(a.Headers, rawK[len("headers."):], v)
 		case eq && strings.HasPrefix(k, "extras.") && len(k) > len("extras."):
 			a.Extras = setKey(a.Extras, rawK[len("extras."):], v)
-		case f != "" && len(pos) > 0:
-			*pos[0], pos = f, pos[1:]
+		case !eq && i < len(pos):
+			*pos[i] = f
 		}
 	}
 	return a

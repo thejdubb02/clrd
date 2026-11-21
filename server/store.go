@@ -921,8 +921,11 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 // broadcast; reply values are short, unique, and at most 3 (what an Android
 // tray entry shows).
 func checkActions(as []Action) error {
-	seen := map[string]bool{}
+	seen, dev := map[string]bool{}, 0
 	for _, a := range as {
+		if dev += btoi(isDeviceAction(a)); dev > 3 {
+			return errf(400, "bad_request", "at most 3 http or broadcast actions")
+		}
 		if n := btoi(a.URL != "") + btoi(a.Reply != "") + btoi(a.HTTP != nil) + btoi(a.Broadcast != nil); n != 1 {
 			return errf(400, "bad_request", "action %q needs exactly one of url, reply, http or broadcast", a.Label)
 		}

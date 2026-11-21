@@ -53,6 +53,9 @@ func checkDeviceAction(a Action) error {
 	bad := func(f string, v ...any) error {
 		return errf(400, "bad_request", "action %q: "+f, append([]any{a.Label}, v...)...)
 	}
+	if isDeviceAction(a) && strings.TrimSpace(a.Label) == "" {
+		return bad("needs a label")
+	}
 	if h := a.HTTP; h != nil {
 		if h.Method = strings.ToUpper(h.Method); h.Method == "" {
 			h.Method = "POST" // ntfy's default
@@ -61,8 +64,11 @@ func checkDeviceAction(a Action) error {
 			return bad("method must be one of %s", strings.Join(methodsOK, ", "))
 		}
 		u, err := url.Parse(h.URL)
-		if err != nil || len(h.URL) > 2048 || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		if err != nil || len(h.URL) > 2048 || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
 			return bad("http.url must be an http(s) URL of at most 2048 characters")
+		}
+		if h.Body != "" && (h.Method == "GET" || h.Method == "HEAD") {
+			return bad("a %s request has no body", h.Method)
 		}
 		if len(h.Headers) > 10 || len(h.Body) > 4096 {
 			return bad("at most 10 headers and a 4096 byte body")
