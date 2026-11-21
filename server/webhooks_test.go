@@ -158,3 +158,64 @@ func TestWebhookSaved(t *testing.T) {
 		t.Fatalf("deleted template still used: %d", code)
 	}
 }
+
+// TestWebhookPreview: a dry run renders like a real post (built-in, saved
+// secret skipped, headers, each, resolve, URL priority) and stores nothing (#332).
+func TestWebhookPreview(t *testing.T) {
+	s, ts, admin := newTest(t)
+	pub := mkToken(t, s, "pub", []string{ScopePublish}, []string{"ci"})
+	other := mkToken(t, s, "other", []string{ScopePublish}, []string{"elsewhere"})
+	preview := func(tok, name, query string, body map[string]any) (int, map[string]any) {
+		t.Helper()
+		return call(t, ts, "POST", "/api/v1/topics/ci/templates/"+name+"/preview"+query, tok, body)
+	}
+	gh := map[string]any{"payload": map[string]any{"repository": map[string]any{"full_name": "a/b"}, "action": "opened"},
+		"headers": map[string]string{"X-GitHub-Event": "issues"}}
+	if code, _ := preview(other, "github", "", gh); code != 403 {
+		t.Fatalf("other topic's token previewed: %d", code)
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/topics/ci/templates/github", pub, map[string]string{"secret": "x"}); code != 200 {
+		t.Fatalf("save secret: %d", code)
+	}
+	code, out := preview(pub, "github", "", gh)
+	ns, _ := out["notifications"].([]any)
+	if code != 200 || len(ns) != 1 || ns[0].(map[string]any)["title"] != "a/b: issues opened" || ns[0].(map[string]any)["priority"].(float64) != 3 {
+		t.Fatalf("built-in preview: %d %v", code, out)
+	}
+
+	tpl := map[string]string{"each": "items", "title": `{{get . "name"}}`, "id": `{{get . "id"}}`, "resolve": `{{eq (get . "ok") "true"}}`}
+	items := map[string]any{"items": []map[string]any{{"id": "a", "name": "Disk full"}, {"id": "b", "ok": true}}}
+	code, out = preview(pub, "my-app", "?priority=urgent", map[string]any{"template": tpl, "payload": items})
+	ns, _ = out["notifications"].([]any)
+	if code != 200 || len(ns) != 2 {
+		t.Fatalf("unsaved preview: %d %v", code, out)
+	}
+	if a, b := ns[0].(map[string]any), ns[1].(map[string]any); a["title"] != "Disk full" || a["external_id"] != "a" || a["priority"].(float64) != 5 || b["status"] != "resolved" {
+		t.Fatalf("unsaved fields: %v", ns)
+	}
+	// the sample's headers act as the post's; Publish's defaults show
+	code, out = preview(pub, "my-app", "", map[string]any{"template": map[string]string{"title": `{{get . "name"}}`},
+		"payload": map[string]any{}, "headers": map[string]string{"X-Priority": "urgent"}})
+	ns, _ = out["notifications"].([]any)
+	if code != 200 || len(ns) != 1 || ns[0].(map[string]any)["priority"].(float64) != 5 || ns[0].(map[string]any)["message"] != "triggered" {
+		t.Fatalf("header priority, empty body: %d %v", code, out)
+	}
+	for _, c := range []struct {
+		name string
+		body map[string]any
+	}{
+		{"my-app", map[string]any{"payload": items}},                                                                // not saved, no template given
+		{"my-app", map[string]any{"template": tpl}},                                                                 // no payload
+		{"my-app", map[string]any{"template": map[string]string{"title": `{{range .}}x{{end}}`}, "payload": items}}, // refused like a save
+		{"my-app", map[string]any{"template": map[string]string{}, "payload": items}},                               // no title or message, refused like a save
+		{"my-app", map[string]any{"template": map[string]string{"title": "x", "id": "."}, "payload": items}},        // refused like a post
+	} {
+		if code, out := preview(pub, c.name, "", c.body); code != 400 {
+			t.Errorf("bad preview %v: %d %v", c.body, code, out)
+		}
+	}
+	_, l := call(t, ts, "GET", "/api/v1/notifications?topic=ci&state=all", admin, nil)
+	if n := l["notifications"].([]any); len(n) != 0 {
+		t.Fatalf("preview stored notifications: %v", n)
+	}
+}

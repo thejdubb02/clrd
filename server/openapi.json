@@ -4302,6 +4302,81 @@
     }
    }
   },
+  "/api/v1/topics/{topic}/templates/{name}/preview": {
+   "post": {
+    "summary": "Dry run a webhook template over a sample payload: returns the notifications a post would publish, stores and sends nothing",
+    "description": "Scope publish on the topic. Same render path as POST /{topic}?template=<name> (each, resolve, template limits, built-ins, ?priority= and ?tags=), without the secret or signature check. Give template to preview an unsaved one (over the built-in of that name); otherwise the saved or built-in template is used. headers stand in for the service's request headers.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "payload"
+        ],
+        "properties": {
+         "payload": {
+          "description": "The JSON body a service would post"
+         },
+         "headers": {
+          "type": "object",
+          "additionalProperties": {
+           "type": "string"
+          }
+         },
+         "template": {
+          "type": "object",
+          "description": "An unsaved template: each, title, message, priority, tags, click, id, resolve"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "notifications": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/pair": {
    "post": {
     "summary": "Start a browser sign-in by QR code",

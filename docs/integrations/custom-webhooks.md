@@ -100,3 +100,21 @@ built-in's name keeps the built-in and overrides only the fields you give, so
 `GET /api/v1/topics/{topic}/templates` lists the saved templates (with
 `has_secret` in place of the secret) and the built-in names.
 `DELETE /api/v1/topics/{topic}/templates/{name}` removes one.
+
+## Try a template first
+
+`POST /api/v1/topics/{topic}/templates/{name}/preview` runs a template over a
+sample payload and returns the notifications a real post would make, without
+publishing or storing anything. The secret and signature are not checked.
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" -d '{
+  "payload": {"items": [{"id": "a", "name": "Disk full"}]},
+  "template": {"each": "items", "title": "{{get . \"name\"}}", "id": "{{get . \"id\"}}"}
+}' https://clrd.example.com/api/v1/topics/ci/templates/my-app/preview
+```
+
+Leave out `template` to try the saved or built-in template of that name.
+`headers` stands in for the service's request headers, for templates that
+use `header`, such as GitHub's `X-GitHub-Event`. `?priority=` and `?tags=`
+work as on a real post.

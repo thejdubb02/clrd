@@ -298,18 +298,36 @@ func (s *Server) webhook(ctx context.Context, topic, name string) (*Webhook, err
 	if err := json.Unmarshal([]byte(spec), &h); err != nil {
 		return nil, err
 	}
-	if builtin {
-		for _, f := range webhookFields {
-			if *h.field(f) == "" {
-				*h.field(f) = *b.field(f)
-			}
-		}
-		if h.Each == "" {
-			h.Each = b.Each
-		}
-		h.sign = b.sign
-	}
+	h.overBuiltin(name)
 	return &h, nil
+}
+
+// overBuiltin fills the fields h leaves empty from the built-in named name, if any.
+// check refuses a template a save would refuse.
+func (h *Webhook) check(name string) error {
+	if _, err := h.parse(nil); err != nil {
+		return err
+	}
+	if _, builtin := builtinWebhooks[name]; !builtin && h.Title == "" && h.Message == "" {
+		return errf(400, "bad_request", "a template needs a title or a message")
+	}
+	return nil
+}
+
+func (h *Webhook) overBuiltin(name string) {
+	b, ok := builtinWebhooks[name]
+	if !ok {
+		return
+	}
+	for _, f := range webhookFields {
+		if *h.field(f) == "" {
+			*h.field(f) = *b.field(f)
+		}
+	}
+	if h.Each == "" {
+		h.Each = b.Each
+	}
+	h.sign = b.sign
 }
 
 func builtinNames() []string {
@@ -319,6 +337,66 @@ func builtinNames() []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// renderWebhook turns one posted body into what it would publish on topic:
+// every item rendered before any is published, so a bad item publishes nothing.
+// The preview route runs it too, so a dry run matches a real post.
+func renderWebhook(r *http.Request, topic string, h *Webhook, body []byte) ([]PublishInput, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber() // ids past 2^53 stay exact
+	var data any
+	if err := dec.Decode(&data); err != nil {
+		return nil, errf(400, "bad_request", "bad JSON body: %v", err)
+	}
+	items := []any{data}
+	if h.Each != "" {
+		v := walk(data, h.Each)
+		if v != nil {
+			var ok bool
+			if items, ok = v.([]any); !ok {
+				return nil, errf(400, "bad_request", "%s is not a list", h.Each)
+			}
+			if len(items) > webhookItemsMax {
+				return nil, errf(400, "bad_request", "%s has over %d items", h.Each, webhookItemsMax)
+			}
+		} else {
+			items = nil
+		}
+	}
+	t, err := h.parse(r.Header)
+	if err != nil {
+		return nil, err
+	}
+	prio, err := ntfyPriority(param(r, "Priority", "Prio", "P")) // the URL's priority wins over the template's
+	if err != nil {
+		return nil, err
+	}
+	md := ntfyMarkdown(param(r, "Markdown", "Md")) // ntfy's flag, as on a plain publish
+	ps := []PublishInput{}
+	for _, item := range items {
+		out := map[string]string{}
+		for _, f := range webhookFields {
+			if out[f], err = render(t, f, item); err != nil {
+				return nil, err
+			}
+		}
+		p := PublishInput{Topic: topic, ExternalID: out["id"], Title: out["title"], Message: out["message"],
+			Click: out["click"], Priority: prio, Markdown: md, Tags: append(splitList(out["tags"]), splitList(param(r, "Tags", "Tag", "Ta"))...)}
+		if p.Priority == 0 {
+			if p.Priority, err = ntfyPriority(out["priority"]); err != nil {
+				return nil, err
+			}
+		}
+		if out["resolve"] == "true" {
+			if p.ExternalID == "" {
+				continue // nothing to resolve by
+			}
+			p.Status = "resolved"
+		}
+		ps = append(ps, p)
+	}
+	return ps, nil
 }
 
 // webhookIn: POST /{topic}?template=<name>. Each item becomes one
@@ -349,58 +427,9 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 			return errf(401, "unauthorized", "webhook signature or secret does not match")
 		}
 	}
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber() // ids past 2^53 stay exact
-	var data any
-	if err := dec.Decode(&data); err != nil {
-		return errf(400, "bad_request", "bad JSON body: %v", err)
-	}
-	items := []any{data}
-	if h.Each != "" {
-		v := walk(data, h.Each)
-		if v != nil {
-			var ok bool
-			if items, ok = v.([]any); !ok {
-				return errf(400, "bad_request", "%s is not a list", h.Each)
-			}
-			if len(items) > webhookItemsMax {
-				return errf(400, "bad_request", "%s has over %d items", h.Each, webhookItemsMax)
-			}
-		} else {
-			items = nil
-		}
-	}
-	t, err := h.parse(r.Header)
+	ps, err := renderWebhook(r, topic, h, body)
 	if err != nil {
 		return err
-	}
-	prio, err := ntfyPriority(param(r, "Priority", "Prio", "P")) // the URL's priority wins over the template's
-	if err != nil {
-		return err
-	}
-	md := ntfyMarkdown(param(r, "Markdown", "Md")) // ntfy's flag, as on a plain publish
-	var ps []PublishInput                          // render every item before publishing any, so a bad item publishes nothing
-	for _, item := range items {
-		out := map[string]string{}
-		for _, f := range webhookFields {
-			if out[f], err = render(t, f, item); err != nil {
-				return err
-			}
-		}
-		p := PublishInput{Topic: topic, ExternalID: out["id"], Title: out["title"], Message: out["message"],
-			Click: out["click"], Priority: prio, Markdown: md, Tags: append(splitList(out["tags"]), splitList(param(r, "Tags", "Tag", "Ta"))...)}
-		if p.Priority == 0 {
-			if p.Priority, err = ntfyPriority(out["priority"]); err != nil {
-				return err
-			}
-		}
-		if out["resolve"] == "true" {
-			if p.ExternalID == "" {
-				continue // nothing to resolve by
-			}
-			p.Status = "resolved"
-		}
-		ps = append(ps, p)
 	}
 	var created, resolved int
 	for _, p := range ps { // ponytail: a 429 mid-batch keeps the ones before it; senders give external ids, so a retry upserts
@@ -475,11 +504,8 @@ func (s *Server) webhookRoutes() {
 		if err := decodeJSON(r, &h); err != nil {
 			return err
 		}
-		if _, err := h.parse(nil); err != nil {
+		if err := h.check(name); err != nil {
 			return err
-		}
-		if _, builtin := builtinWebhooks[name]; !builtin && h.Title == "" && h.Message == "" {
-			return errf(400, "bad_request", "a template needs a title or a message")
 		}
 		spec, _ := json.Marshal(h)
 		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO webhook_templates (topic, name, spec) VALUES (?, ?, ?)
@@ -488,6 +514,53 @@ func (s *Server) webhookRoutes() {
 		}
 		h.Secret = ""
 		writeJSON(w, 200, h)
+		return nil
+	})
+	// preview: what a post of payload would publish, stored and sent nowhere.
+	// template, if given, is an unsaved one (over the built-in of that name);
+	// headers stand in for the service's. No secret or signature check.
+	s.api("POST /api/v1/topics/{topic}/templates/{name}/preview", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		topic, name, err := owner(r, tok)
+		if err != nil {
+			return err
+		}
+		var in struct {
+			Payload  json.RawMessage   `json:"payload"`
+			Headers  map[string]string `json:"headers"`
+			Template *Webhook          `json:"template"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if len(in.Payload) == 0 {
+			return errf(400, "bad_request", "payload is required: the JSON a service would post")
+		}
+		h := in.Template
+		if h != nil {
+			if err := h.check(name); err != nil {
+				return err
+			}
+			h.overBuiltin(name)
+		} else if h, err = s.webhook(r.Context(), topic, name); err != nil {
+			return err
+		}
+		post := r.Clone(r.Context()) // the service's post: our URL query, its headers
+		post.Header = http.Header{}
+		for k, v := range in.Headers {
+			post.Header.Set(k, v)
+		}
+		ps, err := renderWebhook(post, topic, h, in.Payload)
+		if err != nil {
+			return err
+		}
+		for i := range ps {
+			if ps[i].Status != "resolved" {
+				if err := ps[i].fill(); err != nil {
+					return err
+				}
+			}
+		}
+		writeJSON(w, 200, map[string]any{"notifications": ps})
 		return nil
 	})
 	s.api("DELETE /api/v1/topics/{topic}/templates/{name}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {

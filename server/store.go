@@ -593,31 +593,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		}
 		return s.ActByKey(ctx, tok, in.Topic, in.ExternalID, "resolve", "publish")
 	}
-	if in.Priority == 0 {
-		in.Priority = 3
-	}
-	if in.Priority < 1 || in.Priority > 5 {
-		return nil, errf(400, "bad_request", "priority must be 1 to 5")
-	}
-	if len(in.ExternalID) > 256 {
-		return nil, errf(400, "bad_request", "external_id longer than 256")
-	}
-	if in.ExternalID == checkinID && !in.checkin {
-		return nil, errf(400, "bad_request", "external_id %s is reserved for missed check-in alerts", checkinID)
-	}
-	if in.ExternalID == "." || in.ExternalID == ".." { // a URL path would drop it
-		return nil, errf(400, "bad_request", "external_id cannot be . or ..")
-	}
-	if in.Title == "" && in.Message == "" {
-		in.Message = "triggered" // what ntfy sends for an empty body
-	}
-	if in.Tags == nil {
-		in.Tags = []string{}
-	}
-	if in.Actions == nil {
-		in.Actions = []Action{}
-	}
-	if err := checkActions(in.Actions); err != nil {
+	if err := in.fill(); err != nil {
 		return nil, err
 	}
 	expires, err := parseExpires(in.Expires)
@@ -1591,4 +1567,37 @@ func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Eve
 func isNotFound(err error) bool {
 	var ae *apiError
 	return errors.As(err, &ae) && ae.status == 404
+}
+
+// fill checks a new notification and sets the defaults Publish stores; a
+// template preview runs it too, so it shows what a post would store.
+func (in *PublishInput) fill() error {
+	if in.Priority == 0 {
+		in.Priority = 3
+	}
+	if in.Priority < 1 || in.Priority > 5 {
+		return errf(400, "bad_request", "priority must be 1 to 5")
+	}
+	if len(in.ExternalID) > 256 {
+		return errf(400, "bad_request", "external_id longer than 256")
+	}
+	if in.ExternalID == checkinID && !in.checkin {
+		return errf(400, "bad_request", "external_id %s is reserved for missed check-in alerts", checkinID)
+	}
+	if in.ExternalID == "." || in.ExternalID == ".." { // a URL path would drop it
+		return errf(400, "bad_request", "external_id cannot be . or ..")
+	}
+	if in.Title == "" && in.Message == "" {
+		in.Message = "triggered" // what ntfy sends for an empty body
+	}
+	if in.Tags == nil {
+		in.Tags = []string{}
+	}
+	if in.Actions == nil {
+		in.Actions = []Action{}
+	}
+	if err := checkActions(in.Actions); err != nil {
+		return err
+	}
+	return nil
 }

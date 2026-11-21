@@ -89,6 +89,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: try a webhook template before pointing a service at it.
+  `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
+  `preview_template`) takes a sample payload and returns the notifications a
+  real post would make, without publishing anything. (#332)
+
 - Web: Settings lists outgoing webhooks with their recent delivery log, and
   an admin can add, edit and delete them there, with or without JavaScript
   (#238).
