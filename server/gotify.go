@@ -26,16 +26,13 @@ func gotifyKey(r *http.Request) string {
 // gotifyMessage: POST /message. Without a Gotify key this is ntfy's publish
 // to the topic "message", as before.
 func (s *Server) gotifyMessage(w http.ResponseWriter, r *http.Request) error {
-	key := gotifyKey(r)
-	if key == "" {
+	// A key that is sent but empty is a wrong key, never the ntfy path.
+	if _, hdr := r.Header["X-Gotify-Key"]; !hdr && !r.URL.Query().Has("token") {
 		r.SetPathValue("topic", "message")
 		return s.ntfyPublish(w, r)
 	}
-	if err := s.gotifyPublish(w, r, key); err != nil {
-		status, _, msg := errorStatus(err)
-		if status == 500 {
-			s.log.Error("request failed", "err", err)
-		}
+	if err := s.gotifyPublish(w, r, gotifyKey(r)); err != nil {
+		status, _, msg := s.failStatus(w, err)
 		// Gotify's error shape, so its clients show the reason.
 		writeJSON(w, status, map[string]any{"error": http.StatusText(status), "errorCode": status, "errorDescription": msg})
 	}
@@ -80,7 +77,7 @@ func (s *Server) gotifyPublish(w http.ResponseWriter, r *http.Request, key strin
 		return errf(400, "bad_request", "Field 'message' is required")
 	}
 	pub := PublishInput{Topic: topic, Title: in.Title, Message: in.Message, Markdown: new(bool)}
-	if pub.Title == "" {
+	if strings.TrimSpace(pub.Title) == "" {
 		pub.Title = tok.Name // Gotify uses the app name
 	}
 	if in.Priority != nil {

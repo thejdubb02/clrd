@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func gotifyPost(t *testing.T, target, ctype, body string, hdr map[string]string) (int, map[string]any) {
@@ -103,9 +104,34 @@ func TestGotifyAuth(t *testing.T) {
 	if code, _ := post(wild); code != 400 {
 		t.Fatalf("wildcard grant: %d", code)
 	}
+	// An empty key is a wrong key, not the ntfy path, even where anonymous
+	// senders may publish to "message".
+	anon := &Token{ID: anonymousID, Name: "anonymous", Scopes: []string{ScopePublish}, Grants: []Grant{{Topic: "message", Scopes: []string{ScopePublish}}}, CreatedAt: now()}
+	if err := insertToken(context.Background(), s.db, anon, hashToken(tokenPrefix+randomString(32))); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := gotifyPost(t, ts.URL+"/message?token=", "application/json", `{"message":"m"}`, nil); code != 401 {
+		t.Fatalf("empty ?token=: %d", code)
+	}
 	if s.seq.Load() != before {
 		t.Fatal("a refused Gotify publish stored something")
 	}
+
+	// A rate-limited sender is told when to retry.
+	s.tokLimit = newLimiter(1, time.Hour)
+	tv := mkToken(t, s, "tv", []string{ScopePublish}, []string{"tv"})
+	post(tv)
+	req, _ := http.NewRequest("POST", ts.URL+"/message?token="+tv, strings.NewReader(`{"message":"m"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 429 || res.Header.Get("Retry-After") == "" {
+		t.Fatalf("rate limited: %d Retry-After %q", res.StatusCode, res.Header.Get("Retry-After"))
+	}
+	s.tokLimit = nil
 
 	// One publish grant among read grants: that topic.
 	_, one, err := s.createToken(context.Background(), &Token{Name: "g", Scopes: []string{ScopeRead, ScopePublish}, Grants: []Grant{{Topic: "logs", Scopes: []string{ScopeRead}}, {Topic: "tv", Scopes: []string{ScopePublish}}}})
