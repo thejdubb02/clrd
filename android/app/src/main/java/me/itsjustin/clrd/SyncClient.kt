@@ -61,6 +61,7 @@ class SyncClient(
     private val store: Store,
     private val onStatus: (Status) -> Unit = {},
     private val onSettings: (JSONObject) -> Unit = {},
+    private val onDevices: () -> Unit = {},
     private val baseDelayMs: Long = 1_000,
     private val flushRetryMs: Long = 30_000,
     private val replayQuietMs: Long = 5_000,
@@ -193,9 +194,11 @@ class SyncClient(
                 // falls behind retention and resets on every reconnect.
                 bufferSeq = maxOf(bufferSeq, o.optLong("seq"))
                 endReplay()
+                onDevices() // changes while offline send no devices message; the server expects a reload on ready
             }
             "reset" -> reset()
             "settings" -> o.optJSONObject("settings")?.let(onSettings) // sent on every connect and on every change
+            "devices" -> onDevices() // a linked device connected, dropped or had its approve setting changed (#345)
             // Unknown types (pings, future additions) are ignored on purpose.
         }
     }
@@ -254,6 +257,10 @@ class SyncClient(
 
 private val flushLock = Any()
 
+// Taps whose outcome message has shown, so a retry after a failed refetch does not show it again (#345).
+// ponytail: in memory, so a restart between the two tries shows it once more; store it on Pending if that matters.
+private val told = HashSet<Long>()
+
 /** How a queued action was made ("" for one queued before it was recorded). */
 private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via") }.getOrDefault("")
 
@@ -296,14 +303,14 @@ fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synch
                 if (!prompt) body else {
                     // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
                     store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
-                    store.replyOutcome(p, "confirm")
+                    if (told.add(p.key)) store.replyOutcome(p, "confirm")
                     try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
                 }
             }
         } catch (e: HttpError) {
             if (!e.isPermanent) throw e
             // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
-            if (p.action == "reply" && (e.code == 403 || e.code == 409)) store.replyOutcome(p, if (e.code == 409) "conflict" else e.reason)
+            if (p.action == "reply" && (e.code == 403 || e.code == 409)) { if (told.add(p.key)) store.replyOutcome(p, if (e.code == 409) "conflict" else e.reason) }
             else mine = false
             // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
             // so take the server's current row instead. A fetch that may work later throws and keeps the
@@ -312,5 +319,6 @@ fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synch
         }
         answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine) }
         store.removePending(p)
+        told.remove(p.key)
     }
 }

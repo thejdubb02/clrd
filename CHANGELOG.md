@@ -48,6 +48,9 @@ Fixed, Removed, Security), as one line a user can understand.
   title at once, and Clear all takes every stack with it. (#227)
 
 - Settings: choosing Default for a topic's keep now counts what it would delete against the exact server keep, not whole days, and By topic lists a topic with its own keep even after its last notification is gone. `GET /api/v1/counts?keep_cleared_days=default&topic=T` (and the MCP `counts` tool) previews that. (#336)
+- Android: a refused approval tap that has to be sent again shows its message
+  once, not twice, and the Linked devices list in Settings updates as soon as a
+  device connects, drops or has its approve setting changed.
 - Web: on a phone, the Linked devices table in Settings fits the screen; the
   "May approve" menu now sits under its label.
 - Android: changing the sound replaces the notification channels, which

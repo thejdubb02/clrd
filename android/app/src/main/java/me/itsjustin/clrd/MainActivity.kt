@@ -751,7 +751,8 @@ private fun DeviceSettings(app: App, resumes: Int) {
     var unlink by remember { mutableStateOf<org.json.JSONObject?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var showLog by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(server, resumes, reload) {
+    val changed by app.devicesChanged.collectAsState() // another device changed this phone's approve setting, or one came or went
+    LaunchedEffect(server, resumes, reload, changed) {
         val api = app.api()
         app.io.execute {
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices?all=1")), "devices") }.getOrNull()?.let { devices = it }
