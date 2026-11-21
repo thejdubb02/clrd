@@ -80,6 +80,28 @@ class SoundsTest {
         assertEquals(android.app.Notification.GROUP_ALERT_SUMMARY, n.groupAlertBehavior)
     }
 
+    @Test fun aSoundChangeFromTheServerThatDropsTheDndPassSaysSoInTheTray() { // #380
+        app.tray.createChannels(Sounds.DEFAULT)
+        nm.getNotificationChannel("p5").setBypassDnd(true) // the person let urgent ones through
+        bg { app.saveSettings(org.json.JSONObject("""{"sound":"chime"}""")) }
+        val n = shadowOf(nm).getNotification(null, Tray.DND_ID)
+        assertTrue("the tray says so", n != null)
+        val open = shadowOf(n.contentIntent).savedIntent
+        assertEquals(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS, open.action)
+        assertEquals("p5-chime", open.getStringExtra(Settings.EXTRA_CHANNEL_ID))
+
+        nm.getNotificationChannel("p5-chime").setBypassDnd(true) // turned back on
+        assertFalse(app.tray.dndLost())
+        assertNull("the notice goes once the pass is back", shadowOf(nm).getNotification(null, Tray.DND_ID))
+
+        bg { app.saveSettings(org.json.JSONObject("""{"sound":"ding"}""")) }
+        assertTrue(app.tray.dndLost()) // dropped again, so a new notice
+        shadowOf(nm).cancelAll()
+        bg { app.saveSettings(org.json.JSONObject("""{"sound":"alert"}""")) }
+        assertNull("no pass to lose, no notice", shadowOf(nm).getNotification(null, Tray.DND_ID))
+        app.prefs.edit().remove("dnd_lost").commit()
+    }
+
     @Test fun theAppSaysWhenThePhoneSettingsWin() {
         val chime = Uri.parse("android.resource://me.itsjustin.clrd/raw/chime")
         val ok = (3..5).associateWith { chime to NotificationManager.IMPORTANCE_HIGH }

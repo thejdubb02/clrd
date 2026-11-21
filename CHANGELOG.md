@@ -57,6 +57,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: changing the sound replaces the notification channels, which
   drops a Do Not Disturb pass you set for urgent ones (Android lets only you
   set it). Settings now tells you and offers one tap to turn it back on. (#346)
+  When the sound is changed from the web inbox, the API or an agent, a
+  notification on the phone says so too, and a tap on it opens the switch. (#380)
 
 - Android: a refused approval tap now says why (this phone may not answer,
   the request came from this phone's own token, or the question changed)
