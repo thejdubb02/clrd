@@ -292,6 +292,17 @@ class RoomStore(private val app: App) : Store {
      * The queued action no longer hides the row, so the tray shows what Room says (another device may have reopened it).
      * Quietly: it follows the person's own tap (a reopen from the inbox), and a row that alerted already did so once.
      */
+    /** Says it plainly, whether the tap came from the app or the tray (#330). */
+    override fun replyOutcome(p: Pending, outcome: String) = ifMine {
+        val text = when (outcome) {
+            "confirm" -> R.string.reply_sent_to_confirm
+            "approve_denied" -> R.string.reply_approve_denied
+            "own_request" -> R.string.reply_own_request
+            else -> R.string.reply_changed
+        }
+        android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show() }
+    }
+
     override fun removePending(p: Pending) = ifMine {
         dao.removePending(p.key)
         val n = dao.get(p.notifId)

@@ -26,6 +26,12 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: a refused approval tap now says why (this phone may not answer,
+  the request came from this phone's own token, or the question changed)
+  and is not retried. An answer from an ask phone says it was sent for
+  confirmation and the Confirm prompt shows. Settings shows whether this
+  phone can answer approval requests. (#330)
+
 - Android: the sound you pick is saved on the server for this phone, so an
   agent can read and change it over the API or MCP and the phone follows at
   once. A sound picked before this moves to the server on the next connect,
