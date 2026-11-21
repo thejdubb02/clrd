@@ -6,6 +6,9 @@ on:
     paths:
       - "server/**"
       - "web/**"
+      - "docs/**"
+      - "assets/**"
+      - "*.go"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/web-e2e.yml"
@@ -13,6 +16,9 @@ on:
     paths:
       - "server/**"
       - "web/**"
+      - "docs/**"
+      - "assets/**"
+      - "*.go"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/web-e2e.yml"
