@@ -7,7 +7,9 @@ package web
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html"
@@ -33,6 +35,23 @@ import (
 
 //go:embed templates static
 var files embed.FS
+
+// staticHash maps each file under static/ to a short hash of its bytes. A page
+// names its scripts and stylesheet with ?v=<hash>, so after an upgrade a
+// browser fetches the new file instead of pairing the new page with an old
+// cached one (#410).
+var staticHash = func() map[string]string {
+	m := map[string]string{}
+	fs.WalkDir(files, "static", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			b, _ := files.ReadFile(p)
+			s := sha256.Sum256(b)
+			m[strings.TrimPrefix(p, "static/")] = hex.EncodeToString(s[:6])
+		}
+		return nil
+	})
+	return m
+}()
 
 // Notification mirrors docs/SPEC.md section 2.
 type Notification struct {
@@ -498,6 +517,14 @@ func templates(base string) *template.Template {
 	var t *template.Template
 	t = template.Must(template.New("").Funcs(template.FuncMap{
 		"base": func() string { return base },
+		// static is the URL of a file under static/, named by its content (#410).
+		"static": func(p string) (string, error) {
+			h, ok := staticHash[p]
+			if !ok {
+				return "", fmt.Errorf("no static file %q", p)
+			}
+			return base + "/static/" + p + "?v=" + h, nil
+		},
 		// multiline: a template field saved with a newline edits in a textarea,
 		// since a one-line input would drop it (#376).
 		"multiline": func(s string) bool { return strings.Contains(s, "\n") },
@@ -776,6 +803,9 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if w.Header().Get("Cache-Control") == "" {
+			w.Header().Set("Cache-Control", "no-cache") // a page always names current assets (#410)
+		}
 		w.WriteHeader(status)
 		w.Write(b.Bytes())
 	}
@@ -789,8 +819,23 @@ func Handler(api API, baseURL string) http.Handler {
 		})
 	}
 
+	statics := http.StripPrefix("/static/", http.FileServerFS(static))
 	mux := http.NewServeMux()
-	mux.Handle("GET /static/", cached("/static/", static))
+	// A URL that carries the file's current hash never changes content, so it
+	// is cached for good. Any other (no ?v=, or an old one) is revalidated by
+	// ETag, so a stale request still gets today's file (#410).
+	mux.HandleFunc("GET /static/", func(w http.ResponseWriter, r *http.Request) {
+		h, ok := staticHash[strings.TrimPrefix(r.URL.Path, "/static/")]
+		if ok {
+			w.Header().Set("ETag", `"`+h+`"`)
+		}
+		if ok && r.URL.Query().Get("v") == h {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		statics.ServeHTTP(w, r)
+	})
 	mux.Handle("GET /assets/", cached("/assets/", assets))
 	// Root icon paths that browsers, wrappers and home screens ask for by
 	// name. The manifest's relative URLs resolve under a sub-path base.

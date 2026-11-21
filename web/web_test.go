@@ -1,6 +1,8 @@
 package web
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"html"
 	"io"
@@ -38,7 +40,7 @@ func TestPages(t *testing.T) {
 		"/app":                       {`data-view="inbox"`, "Nightly backup failed", "Urgent", "Acknowledged on pixel-9", "In sync on 2 devices", `aria-label="pixel-9: connected"`, `aria-label="tablet: offline"`, `href="/app/settings#dev-h"`, `data-act="dismiss"`},
 		"/app/snoozed":               {"TLS certificate renews in 7 days", "Snoozed until"},
 		"/app/cleared":               {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
-		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css"`, `data-variant="clear"`, `class="command-dialog"`},
+		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css?v=`, `data-variant="clear"`, `class="command-dialog"`},
 		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", `data-live="linked"`, ">Status</th>", "Offline", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications", `<option value="14" selected>14 days</option>`, `data-tkeep="gone=3;home=14;"`, `<select id="tk-gone" class="input w-auto" data-topic="gone">`, `data-approve="tok-laptop" data-name="laptop" data-own aria-label="May approve: laptop"><option value="denied" selected>Denied</option></select>`, `data-approve="tok-pixel" data-name="pixel-9" aria-label="May approve: pixel-9"><option value="denied">Denied</option><option value="ask" selected>Ask</option><option value="allowed">Allowed</option></select>`},
 		"/app?q=disk":                {"Disk 91% full on web-1"},
 		"/app?topic=home":            {"Front door open", `data-topic>in home</span>`},
@@ -346,6 +348,65 @@ func TestMountBesideNtfy(t *testing.T) {
 		if (body == "ntfy") == ours || (ours && code != 200) {
 			t.Errorf("%s routed to the wrong side (%d)", path, code)
 		}
+	}
+}
+
+// A page names every script and stylesheet by its content, so after an upgrade
+// it never runs with an older cached file (#410).
+func TestStaticVersioned(t *testing.T) {
+	h := Handler(NewFake(), "")
+	ref := regexp.MustCompile(`(?:src|href)="/static/([^"?]+)([^"]*)"`)
+	named := map[string]bool{}
+	for _, p := range []string{"/", "/docs/spec", "/app", "/app/ui", "/app/settings"} {
+		_, body := get(t, h, p)
+		for _, m := range ref.FindAllStringSubmatch(body, -1) {
+			b, err := files.ReadFile("static/" + m[1])
+			if err != nil {
+				t.Fatalf("%s names a missing file %s", p, m[1])
+			}
+			sum := sha256.Sum256(b)
+			if want := "?v=" + hex.EncodeToString(sum[:6]); m[2] != want {
+				t.Errorf("%s: /static/%s%s, want %s", p, m[1], m[2], want)
+			}
+			named[p+" "+m[1]] = true
+		}
+	}
+	for _, k := range []string{"/ app.css", "/app app.css", "/app inbox.js", "/app vendor/basecoat.min.js", "/app vendor/command.min.js",
+		"/app/ui app.css", "/app/ui vendor/basecoat.min.js", "/app/ui vendor/command.min.js", "/app/settings pair.js"} {
+		if !named[k] {
+			t.Errorf("%s: not named", k)
+		}
+	}
+
+	// Each GET runs once with the current hash, an old one and none.
+	do := func(path, etag string) *http.Response {
+		r := httptest.NewRequest("GET", path, nil)
+		if etag != "" {
+			r.Header.Set("If-None-Match", etag)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Result()
+	}
+	v := staticHash["inbox.js"]
+	for path, want := range map[string]string{
+		"/static/inbox.js?v=" + v:   "public, max-age=31536000, immutable",
+		"/static/inbox.js?v=000000": "no-cache",
+		"/static/inbox.js":          "no-cache",
+	} {
+		res := do(path, "")
+		if res.StatusCode != 200 || res.Header.Get("Cache-Control") != want || res.Header.Get("ETag") != `"`+v+`"` {
+			t.Errorf("%s: %d %q %q, want 200 %q", path, res.StatusCode, res.Header.Get("Cache-Control"), res.Header.Get("ETag"), want)
+		}
+	}
+	if res := do("/static/inbox.js", `"`+v+`"`); res.StatusCode != 304 {
+		t.Errorf("revalidate with the current ETag: %d, want 304", res.StatusCode)
+	}
+	if res := do("/static/inbox.js", `"000000"`); res.StatusCode != 200 {
+		t.Errorf("revalidate with an old ETag: %d, want 200", res.StatusCode)
+	}
+	if res := do("/app/ui", ""); res.Header.Get("Cache-Control") != "no-cache" {
+		t.Errorf("/app/ui Cache-Control %q, want no-cache", res.Header.Get("Cache-Control"))
 	}
 }
 
