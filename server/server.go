@@ -421,8 +421,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.ContentLength != 0 && mounted == nil && isUpload(r) {
 		// Streamed to disk by the handler, under a longer deadline and the file cap.
+		limit := s.opt.AttachmentMax + maxBody
+		if r.URL.Path == "/1/messages.json" { // Pushover's base64 is a third bigger, and more once form-escaped
+			limit += s.opt.AttachmentMax / 2
+		}
 		http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadTimeout))
-		r.Body = http.MaxBytesReader(w, r.Body, s.opt.AttachmentMax+maxBody)
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 	} else if r.ContentLength != 0 { // read the whole body now, under a deadline
 		rc := http.NewResponseController(w)
 		rc.SetReadDeadline(time.Now().Add(bodyTimeout))

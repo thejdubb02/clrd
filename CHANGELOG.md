@@ -49,6 +49,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- A Pushover image sent as `attachment_base64` near the attachment cap is
+  accepted. Before, base64 made the request a third bigger than the file, so
+  it was refused as too large although the file itself fit (#404).
 - An ntfy subscription with `?scheduled=1` no longer shows a delayed message
   sent just after the stream opened as if it were due now. Only messages that
   were already waiting when you subscribed are listed early; new delayed ones
