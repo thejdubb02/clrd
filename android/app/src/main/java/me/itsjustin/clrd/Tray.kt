@@ -13,6 +13,7 @@ import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** What the phone tray should do for one notification. Pure, so it is unit tested on the JVM. */
@@ -50,11 +51,10 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
          * A swipe still clears, so Clear is never the only way out. Pure, so it is unit tested on the JVM.
          */
         fun pick(n: Notif): List<TrayButton> {
-            val a = runCatching { JSONArray(n.actions) }.getOrNull() ?: JSONArray()
-            val objs = (0 until a.length()).mapNotNull { a.optJSONObject(it) }
-            val replies = if (n.reply.isNotEmpty()) emptyList() else objs.mapNotNull { o ->
-                o.optString("reply").takeIf { it.isNotEmpty() }?.let { TrayButton(o.optString("label").ifBlank { it }, reply = it) }
-            }.take(3)
+            val objs = objs(n)
+            // An answer approves the whole text (#366), so a text the tray may cut answers in the app, where it shows in full.
+            // A picture's tray style shows the text as a short summary only.
+            val replies = if (fitsTray(n.message) && n.file?.isImage != true) replies(n) else emptyList()
             val links = objs.mapNotNull { o ->
                 val url = o.optString("url")
                 // Web links only, and short: a huge URL would not fit through Binder and would crash the post.
@@ -65,6 +65,21 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
             val ours = listOfNotNull(ACK.takeIf { n.state != Notif.ACKNOWLEDGED }, CLEAR, SNOOZE).take(3 - replies.size - links.size)
             return replies + links + listOf(ACK, SNOOZE, CLEAR).filter { it in ours } // ours keep their usual order
         }
+
+        /** The sender's answer buttons, at most 3, until someone answers. The app card shows them too. */
+        fun replies(n: Notif): List<TrayButton> = if (n.reply.isNotEmpty()) emptyList() else objs(n).mapNotNull { o ->
+            o.optString("reply").takeIf { it.isNotEmpty() }?.let { TrayButton(o.optString("label").ifBlank { it }, reply = it) }
+        }.take(3)
+
+        private fun objs(n: Notif): List<JSONObject> {
+            val a = runCatching { JSONArray(n.actions) }.getOrNull() ?: JSONArray()
+            return (0 until a.length()).mapNotNull { a.optJSONObject(it) }
+        }
+
+        // ponytail: a guess at what an expanded tray row shows on a small phone, not measured. Lower it if a phone cuts sooner.
+        const val TRAY_CHARS = 400
+        const val TRAY_LINES = 8
+        fun fitsTray(text: String) = text.length <= TRAY_CHARS && text.count { it == '\n' } < TRAY_LINES
     }
 }
 

@@ -87,6 +87,19 @@ class TrayStepTest {
         assertEquals(listOf("R1", "R2", "R3"), labels("active", four))
     }
 
+    /** #366: an answer approves the whole text, so a text the tray may cut is answered in the app, where it shows in full. */
+    @Test fun aTextTooLongForTheTrayIsAnsweredInTheApp() {
+        val short = event("active", actions = yesNo)
+        val long = short.copy(message = "x".repeat(TrayButton.TRAY_CHARS + 1))
+        val tall = short.copy(message = "-a\n+b\n".repeat(TrayButton.TRAY_LINES))
+        assertEquals(listOf("Yes", "no", "L1"), TrayButton.pick(short).map { it.text() })
+        assertEquals(listOf("L1", "Ack", "Clear"), TrayButton.pick(long).map { it.text() })
+        assertEquals("many short lines, as a diff is", listOf("L1", "Ack", "Clear"), TrayButton.pick(tall).map { it.text() })
+        assertEquals("the app card still offers them", listOf("yes", "no"), TrayButton.replies(long).map { it.reply })
+        val pic = short.copy(attachment = """{"name":"a.png","url":"https://x.example/a.png","type":"image/png","size":1}""")
+        assertEquals("a picture shows the text as a summary only", listOf("L1", "Ack", "Clear"), TrayButton.pick(pic).map { it.text() })
+    }
+
     @Test fun anAnsweredOneShowsNoReplies() {
         val n = event("acknowledged", actions = yesNo, reply = "yes")
         assertEquals("yes", n.reply)

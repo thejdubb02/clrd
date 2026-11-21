@@ -13,6 +13,7 @@
     <string name="cleared_everywhere">Cleared everywhere</string>
     <string name="undo">Undo</string>
     <string name="restore">Restore</string>
+    <string name="tap_to_answer">Tap to read it all and answer</string>
     <string name="ack">Ack</string>
     <string name="snooze_for">Snooze %1$s</string>
     <string name="clear">Clear</string>
