@@ -129,9 +129,29 @@ class App : Application() {
     /** Keeps the snooze part of a server `settings` message. */
     fun saveSettings(o: org.json.JSONObject) {
         if (o.has("sound")) serverSound(o.optString("sound"))
+        if (o.has("keep_cleared_days")) { // the server's keep for cleared rows (#261): drop what it deleted
+            val keep = org.json.JSONObject().put("days", o.optInt("keep_cleared_days", KEEP_DAYS))
+                .put("topics", o.optJSONObject("topic_keep_cleared_days") ?: org.json.JSONObject())
+            prefs.edit().putString("keep", keep.toString()).apply()
+            io.execute { pruneCleared() }
+        }
         val s = Snooze.from(o) ?: return
         prefs.edit().putString("snooze", s.json()).apply()
         snooze.value = s
+    }
+
+    /**
+     * Drops cleared rows older than the server keeps them, and never more than [KEEP_DAYS] on this phone.
+     * A topic's own keep wins over the global one; 0 means the server keeps them forever.
+     */
+    fun pruneCleared(now: Long = System.currentTimeMillis()) {
+        val k = runCatching { org.json.JSONObject(prefs.getString("keep", null) ?: "{}") }.getOrDefault(org.json.JSONObject())
+        fun before(days: Int) = now - (if (days in 1..KEEP_DAYS) days else KEEP_DAYS) * 24 * 3600_000L
+        val topics = k.optJSONObject("topics") ?: org.json.JSONObject()
+        val own = topics.keys().asSequence().toList()
+        val dao = db.dao()
+        dao.prune(before(k.optInt("days", KEEP_DAYS)), own)
+        own.forEach { dao.pruneTopic(it, before(topics.optInt(it, KEEP_DAYS))) }
     }
 
     val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
@@ -155,7 +175,7 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
                 tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
@@ -251,6 +271,8 @@ class App : Application() {
         // How an action was made, sent as "via" (docs/SPEC.md).
         const val VIA_APP = "app"
         const val VIA_TRAY_BUTTON = "tray_button"
+        /** The most days of cleared history this phone keeps, whatever the server keeps. */
+        const val KEEP_DAYS = 7
     }
 }
 
@@ -274,7 +296,7 @@ class RoomStore(private val app: App) : Store {
             val step = if (n.id in waiting) TrayStep.Cancel(n.id) else TrayStep.plan(n, muted)
             app.tray.apply(if ((quiet || n.id in acting) && step is TrayStep.Show) step.copy(silent = true) else step)
         }
-        dao.prune(System.currentTimeMillis() - 7 * 24 * 3600_000L)
+        app.pruneCleared()
     }
 
     override fun replaceAll(open: List<Notif>, seq: Long, epoch: String) = ifMine {

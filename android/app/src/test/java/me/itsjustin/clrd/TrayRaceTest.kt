@@ -436,4 +436,15 @@ class TrayRaceTest {
             assertNull(tray("a"))
         }
     }
+
+    @Test fun clearedRowsFollowTheServerKeep() {
+        val day = 24 * 3600_000L
+        fun aged(id: String, topic: String, days: Int) = Notif(id, topic, "T", "m", 3, "", null, "[]", "dismissed", null, null, 1,
+            System.currentTimeMillis() - days * day, 1)
+        listOf(aged("ci3", "ci", 3), aged("ci1", "ci", 1), aged("o3", "other", 3), aged("o8", "other", 8)).forEach { bg { dao.put(it) } }
+        app.saveSettings(org.json.JSONObject("""{"keep_cleared_days":30,"topic_keep_cleared_days":{"ci":2}}"""))
+        drainIo()
+        val left = listOf("ci3", "ci1", "o3", "o8").filter { bg { dao.get(it) } != null }
+        assertEquals(listOf("ci1", "o3"), left) // ci keeps 2 days; the global 30 is capped at the phone's 7
+    }
 }

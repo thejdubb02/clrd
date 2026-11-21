@@ -96,6 +96,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -394,6 +395,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                     val topics = counts.keys.sorted()
                     val picked = topic?.takeIf { it in topics }
                     if (topics.size > 1) Pills(topics, counts, rows.size, picked) { topic = it }
+                    if (tab == Tab.Cleared) ServerCleared(app, rows.size, rows.firstOrNull()?.id)
                     val shown = rows.filter { picked == null || it.topic == picked }
                     if (shown.isEmpty()) Empty(tab) else LazyColumn(
                         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 16.dp),
@@ -414,6 +416,23 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
             }
         }
     }
+}
+
+/** The phone keeps only recent cleared history; this says the server's exact count when it holds more (#261). */
+@Composable
+private fun ServerCleared(app: App, here: Int, newest: String?) {
+    val b = LocalBrand.current
+    var total by remember { mutableStateOf(-1) }
+    LaunchedEffect(here, newest) { // a new clear at the 200-row cap keeps the size but changes the top row
+        app.io.execute { app.pruneCleared() } // rows age out while the tab is open on an idle connection
+        if (!app.configured) return@LaunchedEffect
+        val api = app.api()
+        app.io.execute { runCatching { org.json.JSONObject(api.get("/api/v1/counts")).getInt("cleared") }.getOrNull()?.let { total = it } }
+    }
+    if (total > here) Text(
+        pluralStringResource(R.plurals.cleared_on_server, total, total, App.KEEP_DAYS),
+        color = b.slate, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp),
+    )
 }
 
 @Composable

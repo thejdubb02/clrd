@@ -40,9 +40,12 @@ interface NotifDao {
     @Query("DELETE FROM notif")
     fun clearAll()
 
-    /** Final rows are history only; keep a week of it. */
-    @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before")
-    fun prune(before: Long)
+    /** Final rows are history only: drop those cleared before [before], outside the topics in [skip]. */
+    @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before AND topic NOT IN (:skip)")
+    fun prune(before: Long, skip: List<String>)
+
+    @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before AND topic = :topic")
+    fun pruneTopic(topic: String, before: Long)
 
     @Query("SELECT v FROM meta WHERE k = 'seq'")
     fun lastSeq(): Long?

@@ -35,6 +35,7 @@ Fixed, Removed, Security), as one line a user can understand.
   and is not retried. An answer from an ask phone says it was sent for
   confirmation and the Confirm prompt shows. Settings shows whether this
   phone can answer approval requests. (#330)
+- Android: the Cleared tab follows the server keep setting, so a cleared item the server deleted (globally or for its topic) leaves the phone too, and the tab says when the server holds more cleared items than the phone shows (#261).
 
 - Web: in a topic's empty inbox, the first tip's test command sends to that
   topic, so the test shows up where you are looking. The topic icon tip only
