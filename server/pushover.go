@@ -41,7 +41,16 @@ func (s *Server) pushoverRoutes() {
 			if err != nil {
 				return nil, err
 			}
-			if _, err := s.pushoverToken(r.Context(), f); err != nil {
+			// Valid means this key could send: the same checks a publish makes.
+			tok, err := s.pushoverToken(r.Context(), f)
+			if err != nil {
+				return nil, err
+			}
+			topic, err := appTopic(tok, "Pushover")
+			if err != nil {
+				return nil, err
+			}
+			if err := tok.need(ScopePublish, topic); err != nil {
 				return nil, err
 			}
 			return map[string]any{"group": 0, "devices": []string{}, "licenses": []string{}}, nil
@@ -204,9 +213,11 @@ func (s *Server) pushoverPublish(r *http.Request) (map[string]any, error) {
 		if err2 != nil || expire < 1 || expire > 10800 {
 			return nil, pushoverBad("expire", "expire is required for priority 2 and must be at most 10800 seconds")
 		}
-		retry = max(retry, 60) // clrd's shortest repeat
-		if n := min(expire/retry, 50); n > 0 {
-			pub.Repeat, pub.RepeatTimes = strconv.Itoa(retry)+"s", n
+		// Pushover rings again if expire reaches the first retry; clrd's
+		// shortest repeat is 60s, so a short window still gets one.
+		if expire >= retry {
+			retry = max(retry, 60)
+			pub.Repeat, pub.RepeatTimes = strconv.Itoa(retry)+"s", min(max(expire/retry, 1), 50)
 		}
 		out["receipt"] = randomString(30)
 	} else if v := f["ttl"]; v != "" {

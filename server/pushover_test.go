@@ -54,6 +54,11 @@ func TestPushoverPublish(t *testing.T) {
 	if n = latest(t, ts.URL, admin, "up"); code != 200 || len(r) != 30 || n["priority"] != 5.0 || n["repeat"] == nil {
 		t.Fatalf("emergency: %d %v %v", code, m, n)
 	}
+	// A window shorter than clrd's 60s repeat still rings once more.
+	pushoverPost(t, ts.URL, url.Values{"token": {key}, "user": {"u"}, "message": {"short"}, "priority": {"2"}, "retry": {"30"}, "expire": {"45"}})
+	if n = latest(t, ts.URL, admin, "up"); n["repeat"] == nil {
+		t.Fatalf("short emergency: %v", n)
+	}
 	for _, bad := range []url.Values{
 		{"priority": {"2"}, "expire": {"600"}},
 		{"priority": {"2"}, "retry": {"20"}, "expire": {"600"}},
@@ -130,6 +135,10 @@ func TestPushoverAuth(t *testing.T) {
 	}
 	if code, _ := post(stored); code != 400 {
 		t.Fatalf("other stored key: %d", code)
+	}
+	// validate.json says valid only for a key that could send.
+	if code, m := gotifyPost(t, ts.URL+"/1/users/validate.json", "application/x-www-form-urlencoded", url.Values{"token": {mkToken(t, s, "r2", []string{ScopeRead}, []string{"up"})}, "user": {"u"}}.Encode(), nil); code != 403 || m["status"] != 0.0 {
+		t.Fatalf("validate read-only: %d %v", code, m)
 	}
 	if s.seq.Load() != before {
 		t.Fatal("a refused Pushover publish stored something")
