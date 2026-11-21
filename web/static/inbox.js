@@ -172,11 +172,16 @@
   const keepLocal = s => { try { s ? localStorage.setItem('clrd.sound', s) : localStorage.removeItem('clrd.sound'); } catch {} };
   const soundPick = () => localSound() || serverSound;
   // Saves s for this device; returns '' or why it is kept in this browser only.
-  const saveSound = async s => {
-    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sound: s }) }).catch(() => null);
-    if (r && r.ok) { serverSound = s; keepLocal(null); return ''; }
+  // Kept in the browser first, so leaving the page mid-save loses nothing, and
+  // saves go one at a time, so an older one never lands after a newer one.
+  let saving = Promise.resolve();
+  const saveSound = s => {
     keepLocal(s);
-    return 'Saved in this browser only: ' + (r ? ((await r.json().catch(() => ({}))).error || `the server said ${r.status}.`) : 'no connection.');
+    return saving = saving.then(async () => {
+      const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sound: s }) }).catch(() => null);
+      if (r && r.ok) { serverSound = s; if (localSound() === s) keepLocal(null); return ''; }
+      return 'Saved in this browser only: ' + (r ? ((await r.json().catch(() => ({}))).error || `the server said ${r.status}.`) : 'no connection.');
+    });
   };
   if (localSound()) saveSound(localSound());
   const soundFile = s => s === 'none' ? '' : sounds.includes(s) ? s : 'chime';
