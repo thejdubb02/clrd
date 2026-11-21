@@ -601,6 +601,7 @@ func (s *Server) routesSetup() {
 	s.pairRoutes()
 	s.linkRoutes()
 	s.deviceRoutes()
+	s.userRoutes()
 	s.soundRoutes()
 	s.approveRoutes()
 
@@ -845,6 +846,7 @@ func (s *Server) routesSetup() {
 			Topics  []string `json:"topics"`
 			Grants  []Grant  `json:"grants"`
 			Approve string   `json:"approve"`
+			User    string   `json:"user"` // the person it belongs to (#143)
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
@@ -857,7 +859,7 @@ func (s *Server) routesSetup() {
 		if in.Approve != "" && in.Approve != ApproveDenied {
 			return errf(400, "bad_request", "a new token starts denied; raise it with PUT /api/v1/devices/{id}/approve")
 		}
-		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants, Approve: ApproveDenied})
+		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants, Approve: ApproveDenied, User: in.User})
 		if err != nil {
 			return err
 		}

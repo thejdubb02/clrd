@@ -271,12 +271,11 @@ func TestSetApprove(t *testing.T) {
 	}
 }
 
-// TestApproveMigration: on upgrade, linked browsers and phones keep working
-// (allowed) and plain tokens start denied, once only (#187).
-func TestApproveMigration(t *testing.T) {
-	ctx := context.Background()
+// reopener returns a func that opens the same database file each call, for
+// upgrade tests that change the schema and start again.
+func reopener(t *testing.T) func() *Server {
 	db := filepath.Join(t.TempDir(), "clrd.db")
-	open := func() *Server {
+	return func() *Server {
 		t.Helper()
 		s, err := New(Options{DB: db, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 		if err != nil {
@@ -284,6 +283,13 @@ func TestApproveMigration(t *testing.T) {
 		}
 		return s
 	}
+}
+
+// TestApproveMigration: on upgrade, linked browsers and phones keep working
+// (allowed) and plain tokens start denied, once only (#187).
+func TestApproveMigration(t *testing.T) {
+	ctx := context.Background()
+	open := reopener(t)
 	s := open()
 	tok, _, err := s.CreateToken(ctx, "laptop", ApproveAllowed, []string{ScopeAdmin}, nil)
 	if err != nil {

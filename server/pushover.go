@@ -152,10 +152,7 @@ func (s *Server) pushoverToken(ctx context.Context, f map[string]string) (*Token
 	key := f["token"]
 	tok := s.lookupToken(ctx, key)
 	if tok == nil && key != "" && !isToken(key) {
-		if t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE hash = ? AND id LIKE 'pushover-%'`, hashToken(key))); err == nil {
-			s.touch(ctx, t)
-			tok = t
-		}
+		tok = s.tokenWhere(ctx, `hash = ? AND id LIKE 'pushover-%'`, hashToken(key))
 	}
 	if tok == nil {
 		return nil, pushoverBad("token", "application token is invalid")

@@ -102,7 +102,16 @@ CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DE
 CREATE TABLE IF NOT EXISTS format_ignore (topic TEXT NOT NULL, rule TEXT NOT NULL, sender TEXT NOT NULL, PRIMARY KEY (topic, rule, sender));
 -- Webhook templates a topic owner saved (webhooks.go); spec is the Webhook as JSON.
 CREATE TABLE IF NOT EXISTS webhook_templates (topic TEXT NOT NULL, name TEXT NOT NULL, spec TEXT NOT NULL, PRIMARY KEY (topic, name));
+-- People (issue #143): each owns the tokens whose user_id is its id. grants
+-- is JSON like a token's, '' when the user limits nothing.
+CREATE TABLE IF NOT EXISTS people (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  grants TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
 -- ntfy passwords (issue #117): each user signs in as its own token, on ntfy routes only.
+-- Not the people above: an ntfy login is one token.
 CREATE TABLE IF NOT EXISTS users (
   name TEXT PRIMARY KEY,
   hash TEXT NOT NULL,
@@ -326,6 +335,12 @@ func openDB(path string) (*sql.DB, error) {
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
 		return nil, fmt.Errorf("add sessions phone column: %w", err)
+	}
+	// The person a typed-in token belongs to (#143); NULL for none.
+	if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN user_id TEXT REFERENCES people(id)`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add tokens user_id column: %w", err)
 	}
 	// Who may answer approval requests (#187). Only on the run that adds the
 	// column, browsers and phones the user linked (a sessions row) start
