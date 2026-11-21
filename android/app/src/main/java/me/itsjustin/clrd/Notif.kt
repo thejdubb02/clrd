@@ -28,6 +28,7 @@ data class Notif(
     @ColumnInfo(defaultValue = "") val icon: String = "", // http(s) image URL, "" if none
     @ColumnInfo(defaultValue = "") val attachment: String = "", // raw JSON object, "" if none
     @ColumnInfo(defaultValue = "markdown") val format: String = "markdown", // or "text": shown exactly as sent
+    @ColumnInfo(defaultValue = "0") val silenced: Boolean = false, // a server silence matched this event: show, never alert (#328)
 ) {
     val isFinal get() = state == DISMISSED || state == RESOLVED
 
@@ -68,6 +69,7 @@ data class Notif(
             icon = o.str("icon") ?: "", // events logged before the server had icons leave it out
             attachment = o.optJSONObject("attachment")?.toString() ?: "",
             format = o.str("format") ?: "markdown", // events logged before formats existed are Markdown
+            silenced = o.optBoolean("silenced"), // missing on events logged before silences: not silenced
         )
 
         private fun millis(s: String) = OffsetDateTime.parse(s).toInstant().toEpochMilli()

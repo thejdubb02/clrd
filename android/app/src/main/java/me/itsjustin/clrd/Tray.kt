@@ -27,7 +27,7 @@ sealed interface TrayStep {
          */
         fun plan(n: Notif, muted: Set<String>): TrayStep = when {
             n.topic in muted -> Cancel(n.id)
-            n.state == Notif.ACTIVE -> Show(n, silent = false)
+            n.state == Notif.ACTIVE -> Show(n, silent = false) // a silenced one still counts as an alert here, so a swiped one comes back; post() keeps it quiet
             n.state == Notif.ACKNOWLEDGED -> Show(n, silent = true)
             else -> Cancel(n.id)
         }
@@ -201,7 +201,7 @@ class Tray(private val ctx: Context) {
             .setShowWhen(true)
             .setPriority(n.priority - 3) // PRIORITY_MIN..MAX for API < 26 builders; channels rule on 26+
             .setOnlyAlertOnce(true) // updates to a showing notification stay quiet
-            .setSilent(silent)
+            .setSilent(silent || n.silenced) // a server silence matched it (#328): show, no sound or vibration
             .setAutoCancel(false)
             .setContentIntent(open(n))
             .setDeleteIntent(action(n, ACTION_DISMISS)) // a swipe only hides it on this phone (App.trayHidden)
