@@ -98,7 +98,7 @@ class SoundsTest {
         app.tray.reconcile(emptyList(), emptySet()) // the next sync
         assertNull("the notice goes once the pass is back", shadowOf(nm).getNotification(null, Tray.DND_ID))
 
-        shadowOf(nm).cancelAll()
+        nm.cancelAll()
         nm.getNotificationChannel("p5-ding").setBypassDnd(false) // the person turned it off themselves
         bg { app.saveSettings(org.json.JSONObject("""{"sound":"alert"}""")) }
         assertNull("no pass to lose, no notice", shadowOf(nm).getNotification(null, Tray.DND_ID))
