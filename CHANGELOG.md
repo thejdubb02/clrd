@@ -95,6 +95,12 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: Gotify senders work. `POST /message` takes Gotify's app token
+  (`?token=` or `X-Gotify-Key`), JSON, form or multipart body, priority
+  0 to 10 and the Markdown, click and image extras, and answers in Gotify's
+  shape. The app token is a clrd token limited to one topic. Apprise and the
+  gotify CLI are checked; shoutrrr is not yet. (#116)
+
 - Server: try a webhook template before pointing a service at it.
   `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
   `preview_template`) takes a sample payload and returns the notifications a

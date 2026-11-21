@@ -536,6 +536,12 @@ func (s *Server) api(pattern string, h func(http.ResponseWriter, *http.Request, 
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
+	status, code, msg := s.failStatus(w, err)
+	writeJSON(w, status, map[string]string{"error": msg, "code": code})
+}
+
+// failStatus logs a 500 and sets Retry-After, for any error body shape.
+func (s *Server) failStatus(w http.ResponseWriter, err error) (int, string, string) {
 	status, code, msg := errorStatus(err)
 	if ae := (*apiError)(nil); errors.As(err, &ae) && ae.retry > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(ae.retry.Seconds())))))
@@ -543,7 +549,7 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	if status == 500 {
 		s.log.Error("request failed", "err", err)
 	}
-	writeJSON(w, status, map[string]string{"error": msg, "code": code})
+	return status, code, msg
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
