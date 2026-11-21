@@ -573,7 +573,7 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Template name")}, "topic", "name")},
 	{"name": "preview_template", "description": "Dry run an incoming webhook template over a sample payload: returns the notifications a post would publish, stores and sends nothing. Give template to try an unsaved one; otherwise the saved or built-in template named name is used.",
 		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Template name"),
-			"payload":  map[string]any{"type": "object", "description": "The JSON a service would post"},
+			"payload":  map[string]any{"type": []string{"object", "array"}, "description": "The JSON a service would post"},
 			"headers":  map[string]any{"type": "object", "description": "Request headers the service would send, like X-GitHub-Event"},
 			"template": map[string]any{"type": "object", "description": "An unsaved template with the set_template fields"}}, "topic", "name", "payload")},
 	{"name": "hooks", "description": "List a topic's outgoing webhooks: URLs clrd calls when its notifications are dismissed, acknowledged, resolved, snoozed or an action is tapped. Needs an admin token.",

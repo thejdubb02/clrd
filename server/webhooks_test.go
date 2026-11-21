@@ -193,6 +193,13 @@ func TestWebhookPreview(t *testing.T) {
 	if a, b := ns[0].(map[string]any), ns[1].(map[string]any); a["title"] != "Disk full" || a["external_id"] != "a" || a["priority"].(float64) != 5 || b["status"] != "resolved" {
 		t.Fatalf("unsaved fields: %v", ns)
 	}
+	// the sample's headers act as the post's; Publish's defaults show
+	code, out = preview(pub, "my-app", "", map[string]any{"template": map[string]string{"title": `{{get . "name"}}`},
+		"payload": map[string]any{}, "headers": map[string]string{"X-Priority": "urgent"}})
+	ns, _ = out["notifications"].([]any)
+	if code != 200 || len(ns) != 1 || ns[0].(map[string]any)["priority"].(float64) != 5 || ns[0].(map[string]any)["message"] != "triggered" {
+		t.Fatalf("header priority, empty body: %d %v", code, out)
+	}
 	for _, c := range []struct {
 		name string
 		body map[string]any
@@ -200,6 +207,8 @@ func TestWebhookPreview(t *testing.T) {
 		{"my-app", map[string]any{"payload": items}},                                                                // not saved, no template given
 		{"my-app", map[string]any{"template": tpl}},                                                                 // no payload
 		{"my-app", map[string]any{"template": map[string]string{"title": `{{range .}}x{{end}}`}, "payload": items}}, // refused like a save
+		{"my-app", map[string]any{"template": map[string]string{}, "payload": items}},                               // no title or message, refused like a save
+		{"my-app", map[string]any{"template": map[string]string{"title": "x", "id": "."}, "payload": items}},        // refused like a post
 	} {
 		if code, out := preview(pub, c.name, "", c.body); code != 400 {
 			t.Errorf("bad preview %v: %d %v", c.body, code, out)

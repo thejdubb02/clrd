@@ -303,6 +303,17 @@ func (s *Server) webhook(ctx context.Context, topic, name string) (*Webhook, err
 }
 
 // overBuiltin fills the fields h leaves empty from the built-in named name, if any.
+// check refuses a template a save would refuse.
+func (h *Webhook) check(name string) error {
+	if _, err := h.parse(nil); err != nil {
+		return err
+	}
+	if _, builtin := builtinWebhooks[name]; !builtin && h.Title == "" && h.Message == "" {
+		return errf(400, "bad_request", "a template needs a title or a message")
+	}
+	return nil
+}
+
 func (h *Webhook) overBuiltin(name string) {
 	b, ok := builtinWebhooks[name]
 	if !ok {
@@ -331,7 +342,7 @@ func builtinNames() []string {
 // renderWebhook turns one posted body into what it would publish on topic:
 // every item rendered before any is published, so a bad item publishes nothing.
 // The preview route runs it too, so a dry run matches a real post.
-func renderWebhook(r *http.Request, topic string, h *Webhook, body []byte, hdr http.Header) ([]PublishInput, error) {
+func renderWebhook(r *http.Request, topic string, h *Webhook, body []byte) ([]PublishInput, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber() // ids past 2^53 stay exact
 	var data any
@@ -353,7 +364,7 @@ func renderWebhook(r *http.Request, topic string, h *Webhook, body []byte, hdr h
 			items = nil
 		}
 	}
-	t, err := h.parse(hdr)
+	t, err := h.parse(r.Header)
 	if err != nil {
 		return nil, err
 	}
@@ -376,9 +387,6 @@ func renderWebhook(r *http.Request, topic string, h *Webhook, body []byte, hdr h
 			if p.Priority, err = ntfyPriority(out["priority"]); err != nil {
 				return nil, err
 			}
-		}
-		if p.Priority == 0 {
-			p.Priority = 3 // as Publish sets it, so a preview shows it
 		}
 		if out["resolve"] == "true" {
 			if p.ExternalID == "" {
@@ -419,7 +427,7 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 			return errf(401, "unauthorized", "webhook signature or secret does not match")
 		}
 	}
-	ps, err := renderWebhook(r, topic, h, body, r.Header)
+	ps, err := renderWebhook(r, topic, h, body)
 	if err != nil {
 		return err
 	}
@@ -496,11 +504,8 @@ func (s *Server) webhookRoutes() {
 		if err := decodeJSON(r, &h); err != nil {
 			return err
 		}
-		if _, err := h.parse(nil); err != nil {
+		if err := h.check(name); err != nil {
 			return err
-		}
-		if _, builtin := builtinWebhooks[name]; !builtin && h.Title == "" && h.Message == "" {
-			return errf(400, "bad_request", "a template needs a title or a message")
 		}
 		spec, _ := json.Marshal(h)
 		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO webhook_templates (topic, name, spec) VALUES (?, ?, ?)
@@ -532,17 +537,28 @@ func (s *Server) webhookRoutes() {
 		}
 		h := in.Template
 		if h != nil {
+			if err := h.check(name); err != nil {
+				return err
+			}
 			h.overBuiltin(name)
 		} else if h, err = s.webhook(r.Context(), topic, name); err != nil {
 			return err
 		}
-		hdr := http.Header{}
+		post := r.Clone(r.Context()) // the service's post: our URL query, its headers
+		post.Header = http.Header{}
 		for k, v := range in.Headers {
-			hdr.Set(k, v)
+			post.Header.Set(k, v)
 		}
-		ps, err := renderWebhook(r, topic, h, in.Payload, hdr)
+		ps, err := renderWebhook(post, topic, h, in.Payload)
 		if err != nil {
 			return err
+		}
+		for i := range ps {
+			if ps[i].Status != "resolved" {
+				if err := ps[i].fill(); err != nil {
+					return err
+				}
+			}
 		}
 		writeJSON(w, 200, map[string]any{"notifications": ps})
 		return nil
