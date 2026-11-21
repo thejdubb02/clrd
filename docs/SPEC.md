@@ -620,6 +620,25 @@ By external id (what scripts and monitors use):
 
 Full ntfy parity checklist lives in issue #2; tick it off there.
 
+### Gotify compatibility (publish only, #116)
+
+- `POST /message` with the token in `?token=` or `X-Gotify-Key` is Gotify's
+  publish. The token must be able to name one topic (`topics` with one entry,
+  or exactly one literal grant with `publish`); anything else is a 400. The
+  native scope checks apply unchanged, through `Publish`. A wrong token is a
+  401 and never falls through to the ntfy or anonymous path.
+- Body: JSON, form or multipart with `message` (required), `title` (empty =
+  the token's name), `priority` and `extras`. Priority maps 0 to 1, 1-3 to 2,
+  4-7 to 3, 8 and up to 4; never 5. Missing = clrd's default. Format is plain
+  text unless `extras.client::display.contentType` is `text/markdown`;
+  `client::notification.click.url` sets `click`, `bigImageUrl` an external
+  attachment.
+- Reply: `{id, appid, message, title, priority, date, extras}` with `id` the
+  event seq. Errors: `{error, errorCode, errorDescription}`.
+- Without a Gotify token, `POST /message` stays ntfy's publish to topic
+  `message`. Only clrd tokens are accepted so far; tokens imported from Gotify
+  come with `clrd import gotify`.
+
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
 Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?)`, `list(topic?, state?)`,

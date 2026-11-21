@@ -71,6 +71,9 @@ offline catches up the moment it reconnects.
   ([docs/silences.md](docs/silences.md)).
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
+- **Gotify senders work.** `POST /message` with an app token, as Gotify
+  takes it, so Apprise, the gotify CLI and curl scripts keep sending. See
+  [Gotify senders](docs/integrations/gotify.md).
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
   tokens, per-topic access rules, message history and attachments, so you can
   swap the hostname and keep every credential. See
@@ -135,7 +138,7 @@ Tokens, backups and the binary install: [docs/self-host.md](docs/self-host.md).
 
 curl, the [SDKs](sdk/), GitHub Actions, MCP (Claude Code, Claude Desktop,
 Cursor, VS Code, Windsurf, Zed, Codex CLI, Gemini CLI), Home Assistant, Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise,
-ntfy clients and Watchtower. Built-in webhook templates for GitHub, Sentry,
+ntfy clients, Gotify senders and Watchtower. Built-in webhook templates for GitHub, Sentry,
 Stripe, Jira, Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the
 *arr apps, with signature checks, and your own template for any other
 service's JSON, which you can try on a sample payload before going live.

@@ -30,6 +30,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: on a phone, the Linked devices table in Settings fits the screen; the
+  "May approve" menu now sits under its label.
 - Android: a refused approval tap now says why (this phone may not answer,
   the request came from this phone's own token, or the question changed)
   and is not retried. An answer from an ask phone says it was sent for
@@ -98,6 +100,11 @@ Fixed, Removed, Security), as one line a user can understand.
   (server URL and token) give Claude the clrd MCP server, a ping when a task
   finishes or waits on you, and permission prompts you allow or deny from
   your phone. No answer in time leaves the prompt on screen. (#156)
+- Server: Gotify senders work. `POST /message` takes Gotify's app token
+  (`?token=` or `X-Gotify-Key`), JSON, form or multipart body, priority
+  0 to 10 and the Markdown, click and image extras, and answers in Gotify's
+  shape. The app token is a clrd token limited to one topic. Apprise and the
+  gotify CLI are checked; shoutrrr is not yet. (#116)
 
 - Server: try a webhook template before pointing a service at it.
   `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool

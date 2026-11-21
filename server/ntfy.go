@@ -141,6 +141,7 @@ func (s *Server) ntfyRoutes() {
 	}
 	route("DELETE /{topic}/{sid}", s.ntfyAct("resolve"))
 	route("POST /{$}", s.ntfyPublishJSON)
+	route("POST /message", s.gotifyMessage) // Gotify's publish, else ntfy's topic "message" (gotify.go)
 	for _, p := range []string{"publish", "send", "trigger"} {
 		route("GET /{topic}/"+p, s.ntfyPublish)
 	}
