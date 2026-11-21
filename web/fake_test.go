@@ -92,12 +92,12 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	}
 	sort.Slice(s.Topics, func(i, j int) bool { return s.Topics[i].Name < s.Topics[j].Name })
 	now := time.Now().UTC()
-	s.Devices = []Device{{"tok-pixel", "pixel-9", now.Add(-time.Minute)}, {"tok-tablet", "tablet", now.Add(-4 * time.Minute)}, {"tok-web", "web", now}}
+	day := now.Add(-24 * time.Hour)
+	s.Linked = []LinkedDevice{{ID: "tok-laptop", Name: "laptop", Kind: "token", LinkedAt: day},
+		{ID: "tok-web", Name: "web", Kind: "browser", Via: "laptop", LinkedAt: day, LastSeenAt: &now, This: true, CanUnlink: true},
+		{ID: "tok-pixel", Name: "pixel-9", Kind: "phone", Via: "web", LinkedAt: day, CanUnlink: true, Connected: true, CaughtUp: true},
+		{ID: "tok-tablet", Name: "tablet", Kind: "phone", Via: "web", LinkedAt: day, CanUnlink: true}}
 	if q.Devices {
-		day := now.Add(-24 * time.Hour)
-		s.Linked = []LinkedDevice{{ID: "tok-laptop", Name: "laptop", Kind: "token", LinkedAt: day},
-			{ID: "tok-web", Name: "web", Kind: "browser", Via: "laptop", LinkedAt: day, LastSeenAt: &now, This: true, CanUnlink: true},
-			{ID: "tok-pixel", Name: "pixel-9", Kind: "phone", Via: "web", LinkedAt: day, CanUnlink: true}}
 		s.Log = []DeviceEvent{{At: day, Action: "linked", Device: "pixel-9", By: "web"}}
 	}
 	return s, nil

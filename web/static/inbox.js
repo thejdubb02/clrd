@@ -659,6 +659,7 @@
   const offline = $('[data-offline]');
   const live = on => {
     sync.classList.toggle('is-live', on);
+    if (on) { sync.classList.remove('is-down'); refresh(); } // device changes between render (or the drop) and ready send no message (#295)
     conn.textContent = on ? '' : (tries ? 'Reconnecting' : 'Connecting');
     if (on) { clearTimeout(staleTimer); staleTimer = null; offline.hidden = true; }
     else staleTimer ??= setTimeout(() => { offline.hidden = false; }, 180000);
@@ -681,6 +682,7 @@
         tries = 0; if (m.seq > seq) seq = m.seq; live(true); ready = true;
       }
       else if (m.type === 'reset') reset();
+      else if (m.type === 'devices') refresh(); // a device connected, caught up or dropped: redraw the dots (#295)
       else if (m.type === 'settings') {
         // Snooze times or formatting changed on another device: the cards are stale.
         // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
@@ -702,6 +704,7 @@
       // A refused reconnect gives no reason, so ask: signed out means reload too.
       fetch('/api/v1/topics', { credentials: 'same-origin' }).then(r => r.status === 401 && location.reload(), () => {});
       live(false);
+      sync.classList.add('is-down');
       setTimeout(connect, Math.min(30000, 1000 * 2 ** tries++));
     };
   }

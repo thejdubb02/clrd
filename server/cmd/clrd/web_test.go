@@ -330,7 +330,7 @@ func act(t *testing.T, c *http.Client, base, id, action string) server.Notificat
 }
 
 // TestDeviceFamily: a browser signed in with a read,publish token sees itself
-// and that token in sync, never another person's devices (issue #245).
+// in sync and that token in Settings, never another person's devices (issue #245).
 func TestDeviceFamily(t *testing.T) {
 	s, ts, _ := realServer(t)
 	ctx := context.Background()
@@ -350,8 +350,8 @@ func TestDeviceFamily(t *testing.T) {
 		t.Fatalf("sign in: %d", code)
 	}
 	_, body, _ := fetch(t, c, ts.URL+"/app/settings")
-	if !strings.Contains(body, "In sync on 2 devices") || !strings.Contains(body, "<span>laptop</span>") || !strings.Contains(body, "<span>my phone</span>") {
-		t.Errorf("want this browser and its phone in sync, got header %q", regexp.MustCompile(`data-live="devices">[^<]*`).FindString(body))
+	if !strings.Contains(body, "In sync on 1 device<") || strings.Contains(body, `aria-label="my phone`) || !strings.Contains(body, "<span>laptop</span>") || !strings.Contains(body, "<span>my phone</span>") {
+		t.Errorf("want only this browser live (a token not streaming is no dot, #295), got header %q", regexp.MustCompile(`(?s)data-live="devices">.*?</a>`).FindString(body))
 	}
 	if strings.Contains(body, "their phone") {
 		t.Error("a non-admin browser sees another person's device")

@@ -35,11 +35,11 @@ func TestPages(t *testing.T) {
 		"/docs/spec":                 {"clrd spec", `aria-current="page">clrd spec`},
 		"/docs/integrations/":        {`href="/docs/integrations/curl"`, `href="/docs/integrations/mcp"`},
 		"/docs/integrations/grafana": {`href="/docs/integrations/alertmanager"`},
-		"/app":                       {`data-view="inbox"`, "Nightly backup failed", "Urgent", "Acknowledged on pixel-9", "In sync on 3 devices", `data-act="dismiss"`},
+		"/app":                       {`data-view="inbox"`, "Nightly backup failed", "Urgent", "Acknowledged on pixel-9", "In sync on 2 devices", `aria-label="pixel-9: connected"`, `aria-label="tablet: offline"`, `href="/app/settings#dev-h"`, `data-act="dismiss"`},
 		"/app/snoozed":               {"TLS certificate renews in 7 days", "Snoozed until"},
 		"/app/cleared":               {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
 		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css"`, `data-variant="clear"`, `class="command-dialog"`},
-		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications"},
+		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", `data-live="linked"`, ">Status</th>", "Offline", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications"},
 		"/app?q=disk":                {"Disk 91% full on web-1"},
 		"/app?topic=home":            {"Front door open", `data-topic>in home</span>`},
 		"/robots.txt":                {"User-agent: GPTBot", "User-agent: ClaudeBot", "User-agent: PerplexityBot", "User-agent: OAI-SearchBot", "Sitemap: https://clrd.example.com/sitemap.xml"},
@@ -413,5 +413,17 @@ func TestAttachmentImage(t *testing.T) {
 		if got := c.a.Image(); got != c.want {
 			t.Errorf("%+v: Image() = %v, want %v", c.a, got, c.want)
 		}
+	}
+}
+
+func TestSyncDots(t *testing.T) {
+	s := Snapshot{Linked: []LinkedDevice{{Name: "cli", Kind: "token"}}}
+	for i := range 7 {
+		s.Linked = append(s.Linked, LinkedDevice{Name: string(rune('a' + i)), Kind: "phone", Connected: i < 2, CaughtUp: i == 0})
+	}
+	s.Linked = append(s.Linked, LinkedDevice{Name: "me", Kind: "browser", This: true})
+	d := s.Sync()
+	if len(d.Dots) != 6 || d.More != 2 || d.Live != 2 || d.Dots[0].Name != "me" || d.Dots[1].Status() != "connected" || d.Dots[2].Status() != "catching up" || d.Dots[3].Status() != "offline" {
+		t.Errorf("got %+v", d)
 	}
 }

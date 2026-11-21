@@ -107,6 +107,7 @@ Fixed, Removed, Security), as one line a user can understand.
 - Server: `clrd help` lists the commands and settings.
 
 ### Changed
+- Web: the sync indicator shows one dot per device, green when it is connected and red when it is not, and updates live as devices come and go. "In sync on N devices" counts only the connected ones, the indicator links to Linked devices, and Settings shows each device as Connected, Catching up or Offline (#295).
 
 - Android: the release APK is shrunk with R8 and resource shrinking, from
   7.8 MB to 1.9 MB. CI now fails if the server binary or the APK grows past

@@ -142,12 +142,6 @@ type Topic struct {
 	Icon string `json:"icon"` // image URL new notifications in the topic get, "" for none
 }
 
-type Device struct {
-	ID       string    `json:"id"` // token id; matches Snapshot.MeID on the browser viewing the page
-	Name     string    `json:"name"`
-	LastSeen time.Time `json:"last_seen"`
-}
-
 // LinkedDevice is one row of the Settings device list (issue #246), as
 // GET /api/v1/devices?all=1 returns it.
 type LinkedDevice struct {
@@ -159,6 +153,52 @@ type LinkedDevice struct {
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	This       bool       `json:"this"`
 	CanUnlink  bool       `json:"can_unlink"`
+	Connected  bool       `json:"connected"` // has a stream open now (#300)
+	CaughtUp   bool       `json:"caught_up"` // one of its streams is past replay
+}
+
+// Live is a device connected and caught up. The browser viewing the page
+// counts as live; inbox.js shows when its own stream drops.
+func (d LinkedDevice) Live() bool { return d.This || d.Connected && d.CaughtUp }
+
+// Status is Live in words, for the dot labels and the Settings list.
+func (d LinkedDevice) Status() string {
+	switch {
+	case d.Live():
+		return "connected"
+	case d.Connected:
+		return "catching up"
+	}
+	return "offline"
+}
+
+// SyncDots is the sync indicator (#295): a dot for each device that syncs,
+// this browser first, at most 6 shown, and how many are live.
+type SyncDots struct {
+	Dots       []LinkedDevice
+	More, Live int
+}
+
+func (s Snapshot) Sync() (d SyncDots) {
+	var all []LinkedDevice
+	for _, l := range s.Linked {
+		// A token that is not streaming is a script that publishes, not a device that syncs.
+		if l.Kind != "token" || l.This || l.Connected {
+			all = append(all, l)
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].This && !all[j].This })
+	for i, l := range all {
+		if l.Live() {
+			d.Live++
+		}
+		if i < 6 {
+			d.Dots = append(d.Dots, l)
+		} else {
+			d.More++
+		}
+	}
+	return d
 }
 
 // DeviceEvent is one line of the device activity log, newest first.
@@ -174,23 +214,22 @@ type Query struct {
 	States  []string // e.g. active, acknowledged
 	Topic   string   // empty = all topics
 	Q       string   // free-text search, empty = none
-	Devices bool     // fill Linked and Log (the Settings page)
+	Devices bool     // fill Log (the Settings page)
 }
 
 // Snapshot is everything one inbox page needs. Seq must be read before (or in
 // the same transaction as) Items, so no event can fall between the page and
 // the WebSocket replay that starts from Seq.
 type Snapshot struct {
-	Seq     int64
-	Epoch   string // the database Seq belongs to; a different one means start over
-	Items   []Notification
-	Counts  map[string]int // open and recent rows by state
-	Topics  []Topic
-	Devices []Device // seen in the last 10 minutes
-	Linked  []LinkedDevice
-	Log     []DeviceEvent
-	Me      string // device name of the signed-in token, the state_by its own actions get
-	MeID    string // its token id, the state_by_id its own actions get (names can repeat)
+	Seq    int64
+	Epoch  string // the database Seq belongs to; a different one means start over
+	Items  []Notification
+	Counts map[string]int // open and recent rows by state
+	Topics []Topic
+	Linked []LinkedDevice // every device this token can see, for the sync indicator and Settings
+	Log    []DeviceEvent
+	Me     string // device name of the signed-in token, the state_by its own actions get
+	MeID   string // its token id, the state_by_id its own actions get (names can repeat)
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
