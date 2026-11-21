@@ -138,11 +138,10 @@ func (s *Server) lookupGotifyApp(ctx context.Context, key string) (*Token, gotif
 		hashToken(key)).Scan(&app.id, &app.priority, &id) != nil {
 		return nil, gotifyApp{}
 	}
-	t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE id = ?`, id))
-	if err != nil {
+	t := s.tokenWhere(ctx, `id = ?`, id)
+	if t == nil {
 		return nil, gotifyApp{}
 	}
-	s.touch(ctx, t)
 	return t, app
 }
 

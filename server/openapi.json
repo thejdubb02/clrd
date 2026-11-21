@@ -1883,6 +1883,10 @@
            "denied"
           ],
           "description": "A new token starts denied; leave this out. Any other value is 400."
+         },
+         "user": {
+          "type": "string",
+          "description": "Id of the user it belongs to (GET /api/v1/users). The user's grants, when set, replace its topics and grants at every request."
          }
         },
         "required": [
@@ -1927,6 +1931,78 @@
      "403": {
       "$ref": "#/components/responses/Error"
      }
+    }
+   }
+  },
+  "/api/v1/users": {
+   "get": {
+    "summary": "List users (people)",
+    "description": "Admin with no topic limit. A user owns many device tokens; see spec section 4.",
+    "tags": ["auth"],
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object", "properties": {"users": {"type": "array", "items": {"$ref": "#/components/schemas/User"}}}}}}},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "post": {
+    "summary": "Create a user",
+    "description": "Admin with no topic limit. Leave grants out (or null) for a user that limits nothing.",
+    "tags": ["auth"],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name"],
+     "properties": {"name": {"type": "string"}, "grants": {"$ref": "#/components/schemas/User/properties/grants"}}}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/User"}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "409": {"$ref": "#/components/responses/Error"}
+    }
+   }
+  },
+  "/api/v1/users/{id}": {
+   "put": {
+    "summary": "Set a user's grants",
+    "description": "Admin with no topic limit. grants is required: a list (read and publish only, [] for no topic) or null for no limit. Open streams of the user's devices close so they reconnect under the new rules.",
+    "tags": ["auth"],
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["grants"],
+     "properties": {"grants": {"$ref": "#/components/schemas/User/properties/grants"}}}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/User"}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "delete": {
+    "summary": "Delete a user",
+    "description": "Admin with no topic limit. 409 while tokens are attached.",
+    "tags": ["auth"],
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+    "responses": {
+     "204": {"description": "Deleted"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"},
+     "409": {"$ref": "#/components/responses/Error"}
+    }
+   }
+  },
+  "/api/v1/tokens/{id}/user": {
+   "put": {
+    "summary": "Attach a token to a user, or detach it",
+    "description": "Admin with no topic limit. Typed-in tokens only: a browser or phone follows the token it came from. user is a user id, or \"\" to detach. Open streams of the token's devices close so they reconnect under the new rules.",
+    "tags": ["auth"],
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["user"], "properties": {"user": {"type": "string"}}}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object", "properties": {"id": {"type": "string"}, "user": {"type": "string"}}}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"}
     }
    }
   },
@@ -5439,11 +5515,28 @@
      "type"
     ]
    },
+   "User": {
+    "type": "object",
+    "description": "A person who owns device tokens (spec section 4).",
+    "properties": {
+     "id": {"type": "string"},
+     "name": {"type": "string"},
+     "grants": {
+      "description": "null limits nothing (devices keep their own access); a list replaces each device's topics and grants, first match decides, read and publish only. A token holding admin keeps its own access.",
+      "oneOf": [{"type": "null"}, {"$ref": "#/components/schemas/Token/properties/grants"}]
+     },
+     "created_at": {"type": "string", "format": "date-time"}
+    }
+   },
    "Token": {
     "type": "object",
     "properties": {
      "id": {
       "type": "string"
+     },
+     "user": {
+      "type": "string",
+      "description": "Id of the user (person) it belongs to; left out for none. A browser or phone shows its top token's user only when loaded for a request."
      },
      "approve": {
       "type": "string",

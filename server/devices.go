@@ -13,7 +13,8 @@ import (
 
 // Linked devices (issue #246): every device, unlink from another device, and
 // a log of links, sign-ins and unlinks. A full admin sees every token. Anyone
-// else sees the devices under their own top token: the token typed in, every
+// else sees the devices under their own top tokens (every one of their user,
+// #143): the token typed in, every
 // browser signed in with it, every phone linked from one of those, and the
 // browsers those phones approved. Only linked devices (browsers and phones)
 // can be unlinked here; typed-in tokens are managed with /api/v1/tokens.
@@ -174,19 +175,15 @@ func (s *Server) device(ctx context.Context, q querier, tok *Token, id string) (
 // transaction (#299).
 func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDevice, error) {
 	all := tok.needFullAdmin() == nil
-	top, err := topIn(ctx, q, tok.ID)
-	if err != nil {
-		return nil, err
-	}
 	sounds, err := s.deviceSounds(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, `WITH RECURSIVE k(id) AS
-	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
+	rows, err := q.QueryContext(ctx, `WITH RECURSIVE `+topsSQL+`, k(id) AS
+	  (SELECT id FROM tops UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
 	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve
 	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id
-	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, top, all)
+	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, tok.ID, all)
 	if err != nil {
 		return nil, err
 	}
@@ -252,12 +249,8 @@ func (s *Server) Unlink(ctx context.Context, tok *Token, id string) error {
 // DeviceLog is the newest log lines tok may see, newest first.
 func (s *Server) DeviceLog(ctx context.Context, tok *Token) ([]DeviceEvent, error) {
 	all := tok.needFullAdmin() == nil
-	top, err := s.topOf(ctx, tok.ID)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT at, action, device, device_id, by_name FROM device_log
-	  WHERE ? OR owner = ? ORDER BY id DESC LIMIT ?`, all, top, maxDeviceLog)
+	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE `+topsSQL+` SELECT at, action, device, device_id, by_name FROM device_log
+	  WHERE ? OR owner IN tops ORDER BY id DESC LIMIT ?`, tok.ID, all, maxDeviceLog)
 	if err != nil {
 		return nil, err
 	}
