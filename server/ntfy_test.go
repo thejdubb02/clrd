@@ -387,15 +387,19 @@ func TestNtfyFilters(t *testing.T) {
 	}
 }
 
-// The ntfy routes answer any origin, errors included, and a preflight needs
-// no token. The native API does not.
+// A page on another site is refused on the ntfy routes (requests, preflight
+// and WebSocket) until an admin allows its origin; requests with no Origin
+// (phones, scripts) and clrd's own pages pass. The native API never answers
+// CORS (#374).
 func TestNtfyCORS(t *testing.T) {
-	s, ts, _ := newTest(t)
+	s, ts, admin := newTest(t)
 	s.Mount("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(405) }))
-	do := func(method, path string) *http.Response {
+	do := func(method, path, origin, body string) *http.Response {
 		t.Helper()
-		req, _ := http.NewRequest(method, ts.URL+path, nil)
-		req.Header.Set("Origin", "https://elsewhere.example")
+		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
 		req.Header.Set("Access-Control-Request-Method", "POST")
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -404,18 +408,88 @@ func TestNtfyCORS(t *testing.T) {
 		res.Body.Close()
 		return res
 	}
-	if res := do("GET", "/alerts/json?poll=1"); res.StatusCode != 401 || res.Header.Get("Access-Control-Allow-Origin") != "*" {
-		t.Errorf("subscribe without token: %d, allow-origin %q", res.StatusCode, res.Header.Get("Access-Control-Allow-Origin"))
+	acao := func(r *http.Response) string { return r.Header.Get("Access-Control-Allow-Origin") }
+	// Anonymous publish on, as a LAN server might have it.
+	if code, _ := call(t, ts, "PUT", "/api/v1/ntfy/anonymous", admin, map[string]any{"grants": []Grant{{Topic: "*", Scopes: []string{ScopeRead, ScopePublish}}}}); code != 200 {
+		t.Fatalf("anonymous on: %d", code)
 	}
-	res := do("OPTIONS", "/alerts")
-	if res.StatusCode != 204 || res.Header.Get("Access-Control-Allow-Origin") != "*" || !strings.Contains(res.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
-		t.Errorf("preflight: %d %v", res.StatusCode, res.Header)
+	evil := "https://elsewhere.example"
+	before := s.seq.Load()
+	if res := do("POST", "/alerts", evil, "from a page"); res.StatusCode != 403 || acao(res) != "" {
+		t.Errorf("default, foreign page publish: %d %q", res.StatusCode, acao(res))
 	}
-	if res := do("OPTIONS", "/api/v1/notifications"); res.StatusCode == 204 || res.Header.Get("Access-Control-Allow-Origin") != "" {
+	if res := do("POST", "/message", evil, `{"message":"m"}`); res.StatusCode != 403 {
+		t.Errorf("default, foreign page on Gotify's publish: %d", res.StatusCode)
+	}
+	if s.seq.Load() != before {
+		t.Fatal("a refused foreign page published")
+	}
+	if res := do("GET", "/alerts/json?poll=1", evil, ""); res.StatusCode != 403 {
+		t.Errorf("default, foreign page read: %d", res.StatusCode)
+	}
+	if res := do("OPTIONS", "/alerts", evil, ""); res.StatusCode != 403 || acao(res) != "" {
+		t.Errorf("default, foreign preflight: %d %q", res.StatusCode, acao(res))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/alerts/ws"
+	if c, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {evil}}}); err == nil {
+		c.CloseNow()
+		t.Error("default, foreign page opened a WebSocket")
+	}
+	// No Origin (a phone, curl) and clrd's own origin work.
+	if res := do("POST", "/alerts", "", "from a script"); res.StatusCode != 200 {
+		t.Errorf("no origin: %d", res.StatusCode)
+	}
+	if res := do("POST", "/alerts", ts.URL, "from clrd's page"); res.StatusCode != 200 {
+		t.Errorf("same origin: %d", res.StatusCode)
+	}
+
+	// Allowing one site lets that site in, echoed, and no other.
+	if code, m := call(t, ts, "PUT", "/api/v1/ntfy/origins", admin, map[string]any{"origins": []string{"https://Ntfy.sh/", "https://ntfy.sh"}}); code != 200 || len(m["origins"].([]any)) != 1 || m["origins"].([]any)[0] != "https://ntfy.sh" {
+		t.Fatalf("set origins: %d %v", code, m)
+	}
+	if res := do("GET", "/alerts/json?poll=1", "https://ntfy.sh", ""); res.StatusCode != 200 || acao(res) != "https://ntfy.sh" || res.Header.Get("Vary") != "Origin" {
+		t.Errorf("allowed read: %d %q %q", res.StatusCode, acao(res), res.Header.Get("Vary"))
+	}
+	res := do("OPTIONS", "/alerts", "https://ntfy.sh", "")
+	if res.StatusCode != 204 || acao(res) != "https://ntfy.sh" || !strings.Contains(res.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
+		t.Errorf("allowed preflight: %d %v", res.StatusCode, res.Header)
+	}
+	if c, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {"https://ntfy.sh"}}}); err != nil {
+		t.Errorf("allowed WebSocket: %v", err)
+	} else {
+		c.CloseNow()
+	}
+	if res := do("POST", "/alerts", evil, "x"); res.StatusCode != 403 {
+		t.Errorf("other site with a list: %d", res.StatusCode)
+	}
+	// "*" is ntfy's own behaviour, on request.
+	call(t, ts, "PUT", "/api/v1/ntfy/origins", admin, map[string]any{"origins": []string{"*"}})
+	if res := do("GET", "/alerts/json?poll=1", evil, ""); res.StatusCode != 200 || acao(res) != "*" {
+		t.Errorf("any origin: %d %q", res.StatusCode, acao(res))
+	}
+
+	// Only a full admin sets it, and only to origins.
+	for _, bad := range []map[string]any{{}, {"origins": []string{"ntfy.sh"}}, {"origins": []string{"https://ntfy.sh/app"}}, {"origins": []string{"ftp://x.example"}}} {
+		if code, _ := call(t, ts, "PUT", "/api/v1/ntfy/origins", admin, bad); code != 400 {
+			t.Errorf("%v: %d", bad, code)
+		}
+	}
+	pub := mkToken(t, s, "p", []string{ScopePublish}, nil)
+	if code, _ := call(t, ts, "PUT", "/api/v1/ntfy/origins", pub, map[string]any{"origins": []string{}}); code != 403 {
+		t.Errorf("non-admin set: %d", code)
+	}
+	if res := do("OPTIONS", "/api/v1/notifications", evil, ""); res.StatusCode == 204 || acao(res) != "" {
 		t.Errorf("native API preflight allowed: %d", res.StatusCode)
 	}
-	if res := do("OPTIONS", "/mcp"); res.StatusCode != 405 {
+	if res := do("OPTIONS", "/mcp", evil, ""); res.StatusCode != 405 {
 		t.Errorf("preflight took a mounted path: %d", res.StatusCode)
+	}
+	// The list survives a restart: read back from the database.
+	s.origins.Store(nil)
+	if code, m := call(t, ts, "GET", "/api/v1/ntfy/origins", admin, nil); code != 200 || m["origins"].([]any)[0] != "*" {
+		t.Errorf("stored list: %d %v", code, m)
 	}
 }
 
