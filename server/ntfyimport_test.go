@@ -17,7 +17,7 @@ import (
 // importFixture imports testdata/ntfy (written by the real ntfy v2.38.1, see
 // make-fixture.sh) into a fresh server. It returns the server, its URL and
 // ntfy's own tk_ tokens by label ("" for the unlabelled one).
-func importFixture(t *testing.T, in NtfyImport) (*Server, string, map[string]string, string) {
+func importFixture(t *testing.T, in NtfyImport, before ...func(*Server, string, string)) (*Server, string, map[string]string, string) {
 	t.Helper()
 	dir := t.TempDir() // a copy: opening a WAL database writes beside it
 	for _, f := range []string{"user.db", "cache.db", "attachments/WkNQimnAbetP"} {
@@ -46,7 +46,10 @@ func importFixture(t *testing.T, in NtfyImport) (*Server, string, map[string]str
 	}
 	rows.Close()
 	src.Close()
-	s, ts, _ := newTest(t)
+	s, ts, admin := newTest(t)
+	for _, f := range before {
+		f(s, ts.URL, admin)
+	}
 	in.AuthFile, in.CacheFile, in.AttachmentDir = filepath.Join(dir, "user.db"), filepath.Join(dir, "cache.db"), filepath.Join(dir, "attachments")
 	if in.DefaultAccess == "" {
 		in.DefaultAccess = "deny-all" // what make-fixture.sh ran ntfy with
@@ -297,6 +300,31 @@ func TestNtfyImportClearsOld(t *testing.T) {
 	s.db.QueryRow(`SELECT COUNT(*) FROM notifications WHERE state = 'active'`).Scan(&open)
 	if open != 0 {
 		t.Fatalf("%d still active", open)
+	}
+}
+
+// An import replaces anonymous access set before it, so revoking the one
+// the admin API shows leaves no other anonymous token live.
+func TestNtfyImportReplacesAnonymous(t *testing.T) {
+	var old string
+	s, u, _, _ := importFixture(t, NtfyImport{}, func(s *Server, u, admin string) {
+		req, _ := http.NewRequest("PUT", u+"/api/v1/ntfy/anonymous", strings.NewReader(`{"grants":[{"topic":"up*","scopes":["publish"]}]}`))
+		req.Header.Set("Authorization", "Bearer "+admin)
+		if c, b := send(t, req); c != 200 {
+			t.Fatalf("set: %d %s", c, b)
+		}
+		s.db.QueryRow(`SELECT id FROM tokens WHERE ` + anonymousWhere).Scan(&old)
+	})
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM tokens WHERE id = ?`, old).Scan(&n)
+	if old == "" || n != 0 {
+		t.Fatalf("anonymous token %q set before the import is still there", old)
+	}
+	if _, ok := s.revoked.Load(old); !ok {
+		t.Errorf("old anonymous token %q not revoked", old)
+	}
+	if c, _ := bearer(t, "POST", u+"/up1", "", "hi"); c == 200 {
+		t.Errorf("old anonymous grant still publishes")
 	}
 }
 
