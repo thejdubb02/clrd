@@ -356,7 +356,7 @@ func TestMountBesideNtfy(t *testing.T) {
 func TestStaticVersioned(t *testing.T) {
 	h := Handler(NewFake(), "")
 	ref := regexp.MustCompile(`(?:src|href)="/static/([^"?]+)([^"]*)"`)
-	seen := map[string]bool{}
+	named := map[string]bool{}
 	for _, p := range []string{"/", "/docs/spec", "/app", "/app/ui", "/app/settings"} {
 		_, body := get(t, h, p)
 		for _, m := range ref.FindAllStringSubmatch(body, -1) {
@@ -368,12 +368,13 @@ func TestStaticVersioned(t *testing.T) {
 			if want := "?v=" + hex.EncodeToString(sum[:6]); m[2] != want {
 				t.Errorf("%s: /static/%s%s, want %s", p, m[1], m[2], want)
 			}
-			seen[m[1]] = true
+			named[p+" "+m[1]] = true
 		}
 	}
-	for _, f := range []string{"app.css", "inbox.js", "pair.js", "vendor/basecoat.min.js", "vendor/command.min.js"} {
-		if !seen[f] {
-			t.Errorf("no page names %s", f)
+	for _, k := range []string{"/ app.css", "/app app.css", "/app inbox.js", "/app vendor/basecoat.min.js", "/app vendor/command.min.js",
+		"/app/ui app.css", "/app/ui vendor/basecoat.min.js", "/app/ui vendor/command.min.js", "/app/settings pair.js"} {
+		if !named[k] {
+			t.Errorf("%s: not named", k)
 		}
 	}
 
