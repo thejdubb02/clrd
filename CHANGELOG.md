@@ -187,6 +187,9 @@ Fixed, Removed, Security), as one line a user can understand.
 - Server: `clrd help` lists the commands and settings.
 
 ### Changed
+- Docs: plainer wording on the README and landing page. The badge row is
+  gone, and the landing page no longer promises a five-minute switch from
+  ntfy (#123).
 - Docs: README, the landing page and the docs now match what `main` does.
   The approve setting is documented (new CLI tokens are denied, and the
   headless admin command passes `--approve allowed`), formatting covers

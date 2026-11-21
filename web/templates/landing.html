@@ -53,7 +53,7 @@
 
 <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:py-18" aria-labelledby="states">
   <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="states">More than read and unread</h2>
-  <p class="mt-2 mb-8 max-w-[60ch] text-lg">Four states, all synced, all with the device that set them.</p>
+  <p class="mt-2 mb-8 max-w-[60ch] text-lg">Four states. Every device shows each one and which device set it.</p>
   <dl class="grid border-t sm:grid-cols-2 lg:grid-cols-4 [&>div]:grid [&>div]:content-start [&>div]:gap-3 [&>div]:border-b [&>div]:py-5 sm:[&>div]:pe-5 lg:[&>div]:border-b-0 lg:[&>div+div]:border-s lg:[&>div+div]:ps-5">
     <div><dt><span class="badge" data-state="dismissed">Cleared</span></dt><dd>You cleared it. Gone from every device.</dd></div>
     <div><dt><span class="badge" data-state="acknowledged">Acknowledged</span></dt><dd>Someone is on it. It stays in the inbox and stops buzzing.</dd></div>
@@ -108,7 +108,7 @@
   <div class="grid grid-cols-1 items-start gap-10 lg:grid-cols-2 lg:gap-14 [&_pre]:my-4">
     <div>
       <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="ntfy">Already on ntfy?</h2>
-      <p>Point your scripts at clrd and keep going. Same publish endpoint, same headers, same JSON body, same subscribe streams.</p>
+      <p>An ntfy script works against clrd once you change the hostname.</p>
 <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -H "Title: Disk full" -H "Priority: high" \
   -d "web-1 at 95%" https://clrd.example.com/infra</code></pre>
@@ -129,7 +129,7 @@
   </div>
   <div class="mt-12 grid grid-cols-1 items-start gap-10 border-t pt-12 lg:grid-cols-2 lg:gap-14 [&_pre]:my-0">
     <div>
-      <h3 class="text-foreground text-xl font-semibold tracking-[-0.02em]" id="switch">Switch from ntfy in five minutes</h3>
+      <h3 class="text-foreground text-xl font-semibold tracking-[-0.02em]" id="switch">Switch from ntfy</h3>
       <p>Stop ntfy, run one command, point its hostname at clrd. Users, passwords, <code>tk_</code> tokens, per-topic access rules, anonymous access, message history and attachments come across, so every script and phone keeps its credentials. Keep ntfy stopped, not deleted, and you can roll back by pointing the hostname back.</p>
       <p><a href="{{base}}/docs/migrate-from-ntfy">Migration guide</a></p>
     </div>
