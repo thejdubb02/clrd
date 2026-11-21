@@ -122,7 +122,7 @@ case $mode in
   # publish takes, so it goes to /mcp's send as is, still a JSON string.
   stop)
     msg='"Task finished."'
-    [[ $(cat) =~ \"last_assistant_message\":(\"([^\"\\]|\\.)+\") ]] && msg=${BASH_REMATCH[1]}
+    [[ $(cat) =~ \"last_assistant_message\":[[:space:]]*(\"([^\"\\]|\\.)+\") ]] && msg=${BASH_REMATCH[1]}
     printf '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send","arguments":{"topic":"%s","title":"Claude finished: %s","message":%s}}}' \
       "$topic" "${project//[\"\\]/}" "$msg" |
       post /mcp 15 -o /dev/null -H 'Content-Type: application/json' -H 'Accept: application/json' --data-binary @-

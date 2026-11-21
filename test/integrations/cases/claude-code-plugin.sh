@@ -30,7 +30,7 @@ echo '{"hook_event_name":"Stop","cwd":"/src/myproj"}' | "$H" stop || fail "stop 
 check "$(last)" '.title == "Claude finished: myproj" and .message == "Task finished."' "finished ping"
 # #365: Claude's last message, past the 4 KB a topic publish takes, with quotes and escapes.
 long=$(printf 'Done. Said \\"hi\\" \\\\ and\\nmore %.0s' $(seq 300)) # JSON-escaped
-printf '{"hook_event_name":"Stop","last_assistant_message":"%s","stop_hook_active":false}' "$long" | "$H" stop || fail "stop hook, long message"
+printf '{"hook_event_name": "Stop", "last_assistant_message": "%s","stop_hook_active":false}' "$long" | "$H" stop || fail "stop hook, long message"
 want=$(printf '"%s"' "$long" | jq -r .)
 [ ${#want} -gt 4096 ] || fail "test message is not past 4 KB"
 jq -e --arg m "$want" '.title == "Claude finished: myproj" and .message == $m' <<<"$(last)" >/dev/null || fail "finished ping without the last message: $(last | head -c 300)"
