@@ -22,14 +22,15 @@ import (
 type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
-	Kind       string     `json:"kind"`          // token, browser or phone
-	Via        string     `json:"via,omitempty"` // the token or device it hangs under: revoking that one signs this one out too
+	Kind       string     `json:"kind"`             // token, browser or phone
+	Via        string     `json:"via,omitempty"`    // the token or device it hangs under: revoking that one signs this one out too
+	ViaID      string     `json:"via_id,omitempty"` // its id, since names can repeat
 	LinkedAt   time.Time  `json:"linked_at"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	This       bool       `json:"this"` // the token asking
 	CanUnlink  bool       `json:"can_unlink"`
 	Sound      string     `json:"sound"`   // one of GET /api/v1/sounds
-	Approve    string     `json:"approve"` // allowed or denied: may it answer approval requests (#187)
+	Approve    string     `json:"approve"` // allowed, ask or denied: may it answer approval requests (#187)
 	// Live sync state (#300): connected has a stream open now, caught_up has
 	// one past its replay, synced_seq is the last event seq the server sent it.
 	Connected bool  `json:"connected"`
@@ -183,7 +184,7 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 	}
 	rows, err := q.QueryContext(ctx, `WITH RECURSIVE k(id) AS
 	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, t.approve
+	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve
 	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id
 	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, top, all)
 	if err != nil {
@@ -196,11 +197,11 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 		var created int64
 		var seen sql.NullInt64
 		var phone sql.NullBool
-		var via sql.NullString
-		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via, &d.Approve); err != nil {
+		var via, viaID sql.NullString
+		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via, &viaID, &d.Approve); err != nil {
 			return nil, err
 		}
-		d.LinkedAt, d.Via, d.This, d.CanUnlink = fromMS(created), via.String, d.ID == tok.ID, phone.Valid
+		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid
 		d.Sound = soundOf(sounds, d.ID)
 		d.Connected, d.CaughtUp, d.SyncedSeq = s.hub.status(d.ID)
 		if seen.Valid {

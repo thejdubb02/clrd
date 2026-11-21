@@ -320,7 +320,7 @@
     toastTimer = setTimeout(() => { toast.hidden = true; }, undoIds ? 30000 : 6000);
   }
 
-  async function post(url, body) {
+  async function post(url, body, refusals) {
     try {
       const r = await fetch(url, {
         method: 'POST',
@@ -329,6 +329,7 @@
         body: JSON.stringify({ via: 'web', ...body }), // via: so the server log says the web inbox did it (#267)
       });
       if (r.status === 401) { location.reload(); return null; } // signed out: show the sign-in page
+      if (!r.ok && refusals) return r; // the caller says why
       if (!r.ok) { say(`The server refused that (${r.status}). Nothing changed.`); return null; }
       return r;
     } catch {
@@ -600,11 +601,23 @@
     }
     if (act === 'reply') body = { reply: b.value, seq: Number(c.dataset.seq) }; // 409 if it changed since this card
     b.disabled = true;
-    const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, body);
+    const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, body, act === 'reply');
     b.disabled = false;
     if (!r) return;
     const n = await r.json().catch(() => ({}));
-    if (act === 'reply') { tell(`Answered ${b.textContent}.`); return refresh(); }
+    if (act === 'reply') {
+      // Who may approve (#329): a refused or pending tap says so on the card itself.
+      const why = r.status === 202 ? 'Sent for confirmation. An allowed device has to confirm it.'
+        : !r.ok && ({ approve_denied: 'This device may not answer approval requests. An allowed device can change that in Settings.',
+          own_request: 'This device cannot answer a request its own token sent.',
+          conflict: 'Not answered: it was answered, cleared or changed since. Reload to see it now.' }[n.code] || `The server refused that (${r.status}). Nothing changed.`);
+      if (!why) { tell(`Answered ${b.textContent}.`); return refresh(); }
+      let p = c.querySelector('[data-note]');
+      if (!p) { p = document.createElement('p'); p.className = 'meta w-full'; p.dataset.note = ''; p.setAttribute('role', 'status'); b.form.append(p); }
+      p.textContent = why;
+      say(why); // a live redraw can replace the card, so the toast says it too
+      return r.ok && refresh();
+    }
     done.snooze = n.snooze_until ? `Snoozed until ${fmt.format(new Date(n.snooze_until))}` : 'Snoozed';
     if (act === 'dismiss' && !(n.state === 'dismissed' && n.state_by_id === shell.dataset.meId)) {
       // Another device or the sender got there first: no Undo, it would reopen their change.
@@ -637,6 +650,25 @@
       status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not unlinked (${r.status}).` : 'Not unlinked: no connection.';
     });
   }
+
+  // Who may approve, per device, in Settings (#329). The page offers no
+  // raise for this browser or what it hangs under; lowering one of those
+  // cannot be undone from here, so it asks first.
+  document.addEventListener('change', async e => {
+    const s = e.target.closest('[data-approve]');
+    if (!s) return;
+    const was = [...s.options].find(o => o.defaultSelected)?.value, label = s.selectedOptions[0].textContent;
+    if ('own' in s.dataset && !confirm(`Lower ${s.dataset.name} to ${label}? Only another allowed device can raise it again.`)) { s.value = was; return; }
+    s.disabled = true;
+    const r = await fetch(`/api/v1/devices/${encodeURIComponent(s.dataset.approve)}/approve`, {
+      method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approve: s.value }),
+    }).catch(() => null);
+    s.disabled = false;
+    if (r && r.status === 401) return location.reload();
+    if (r && r.ok) { s.blur(); say(`${s.dataset.name} may approve: ${label}.`); return refresh(); } // blur, or the redraw skips the focused table
+    s.value = was;
+    say(r ? `Not changed: ${(await r.json().catch(() => ({}))).error || r.status}.` : 'Could not reach the server. Nothing changed.');
+  });
 
   // Send a notification from this browser, with its own token (#150).
   const sendBox = $('#send');

@@ -225,7 +225,9 @@ answers the agent. The tap clears the notification on every other device.
   request it sent, nor can a phone or browser linked from it.
 - Only a device allowed to approve can tap Allow or Deny. The setup token and
   the phones and browsers you link are allowed; a new token is denied, so an
-  agent's token cannot approve its own prompts. Change it per device with
+  agent's token cannot approve its own prompts. Change it per device in the
+  web inbox under Settings, Linked devices, May approve (an allowed browser
+  sees the menu; it can lower its own setting, never raise it), or with
   `PUT /api/v1/devices/{id}/approve`. Set a device to `ask` and its taps
   wait for an allowed device to confirm them: clrd posts a "Confirm" prompt
   on the same topic. An agent can ask for a higher setting itself with the

@@ -98,6 +98,12 @@ Fixed, Removed, Security), as one line a user can understand.
   `preview_template`) takes a sample payload and returns the notifications a
   real post would make, without publishing anything. (#332)
 
+- Web: Settings shows who may approve for each linked device (Allowed, Ask
+  or Denied), and an allowed browser changes it there. A browser can lower
+  its own setting, never raise it. A reply tap from an Ask browser says it
+  was sent for confirmation, and a refused tap says why on the card. The
+  device list in the API now carries `via_id`, so names that repeat cannot
+  be mixed up (#329).
 - Web: Settings lists outgoing webhooks with their recent delivery log, and
   an admin can add, edit and delete them there, with or without JavaScript
   (#238).

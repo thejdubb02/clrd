@@ -169,6 +169,8 @@ type LinkedDevice struct {
 	Name       string     `json:"name"`
 	Kind       string     `json:"kind"` // token, browser or phone
 	Via        string     `json:"via"`
+	ViaID      string     `json:"via_id"`
+	Approve    string     `json:"approve"` // allowed, ask or denied: may it tap a reply (#329)
 	LinkedAt   time.Time  `json:"linked_at"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	This       bool       `json:"this"`
@@ -190,6 +192,59 @@ func (d LinkedDevice) Status() string {
 		return "catching up"
 	}
 	return "offline"
+}
+
+// ApproveOption is one choice in a device's "May approve" menu (#329).
+type ApproveOption struct {
+	Value, Label string
+	Selected     bool
+}
+
+// Own is d this browser or a token or device it hangs under, walked by id
+// since names repeat. The server never lets a device raise those (#329).
+func (s Snapshot) Own(d LinkedDevice) bool {
+	id := s.MeID
+	for range s.Linked { // at most one hop per device, so a loop in bad data ends
+		if id == "" {
+			return false
+		}
+		if id == d.ID {
+			return true
+		}
+		i := slices.IndexFunc(s.Linked, func(x LinkedDevice) bool { return x.ID == id })
+		if i < 0 {
+			return false
+		}
+		id = s.Linked[i].ViaID
+	}
+	return false
+}
+
+// ApproveOptions is the menu for d, weakest first. For an Own device it
+// stops at the current setting: the server refuses a raise there, so the
+// page never offers one.
+func (s Snapshot) ApproveOptions(d LinkedDevice) []ApproveOption {
+	own := s.Own(d)
+	var out []ApproveOption
+	for _, o := range []ApproveOption{{"denied", "Denied", false}, {"ask", "Ask", false}, {"allowed", "Allowed", false}} {
+		o.Selected = o.Value == d.Approve
+		out = append(out, o)
+		if o.Selected && own {
+			break
+		}
+	}
+	return out
+}
+
+// ApproveLabel is d's setting in words.
+func (d LinkedDevice) ApproveLabel() string {
+	switch d.Approve {
+	case "allowed":
+		return "Allowed"
+	case "ask":
+		return "Ask"
+	}
+	return "Denied"
 }
 
 // SyncDots is the sync indicator (#295): a dot for each device that syncs,
@@ -264,6 +319,7 @@ type Snapshot struct {
 	CanSilence                                   bool            // the token may start a silence (it can publish)
 	Hooks                                        []Hook          // outgoing webhooks (#238), Settings and admin only
 	CanHooks                                     bool            // the token may manage webhooks (admin)
+	CanApprove                                   bool            // the token may change who may approve: allowed, all topics (#329)
 }
 
 // Hook is an outgoing webhook on one topic (docs/integrations/webhooks-out.md).
@@ -823,6 +879,10 @@ func Handler(api API, baseURL string) http.Handler {
 		}
 		if err != nil && !errors.Is(err, ErrUnauthorized) {
 			log.Printf("web: %s: %v", act, err)
+			if act == "reply" { // who may approve (#329): say why, the reader can do something about it
+				http.Error(w, "Not answered: "+err.Error()+". Go back and reload the page.", http.StatusBadRequest)
+				return
+			}
 			http.Error(w, "Could not change that notification. Go back and reload the page.", http.StatusBadRequest)
 			return
 		}
