@@ -73,7 +73,8 @@ type formatTopic struct {
 	Checked  int             `json:"checked"`
 	Problems int             `json:"problems"` // messages with at least one finding
 	Findings []formatFinding `json:"findings"`
-	Prompt   string          `json:"prompt"`
+	Prompt   string          `json:"prompt"` // "" for a sender tok may not see
+	hide     bool            // its sender is not tok's to name (#406)
 }
 
 type formatIgnore struct {
@@ -120,6 +121,13 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 	if err != nil {
 		return nil, err
 	}
+	// A sender's name, and the prompt that holds it, go only to a full admin
+	// or to the person it belongs to, as in Linked devices (#245, #406).
+	all := tok.needFullAdmin() == nil
+	own, err := topIn(r.Context(), s.db, tok.ID)
+	if err != nil {
+		return nil, err
+	}
 	names := map[string]string{}
 	groups := map[[2]string]*formatTopic{}
 	checked := len(ns)
@@ -131,7 +139,8 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		t := groups[key]
 		if t == nil {
 			t = &formatTopic{Topic: n.Topic, SenderID: key[1], Findings: make([]formatFinding, len(formatRules))}
-			if t.SenderID != "" {
+			t.hide = t.SenderID != "" && !all && t.SenderID != own
+			if t.SenderID != "" && !t.hide {
 				if _, ok := names[t.SenderID]; !ok {
 					var name string
 					if err := s.db.QueryRowContext(r.Context(), `SELECT name FROM tokens WHERE id = ?`, t.SenderID).Scan(&name); err != nil && err != sql.ErrNoRows {
@@ -171,7 +180,9 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 			}
 		}
 		if t.Findings = found; len(found) > 0 {
-			t.Prompt = fixPrompt(t, s.baseFor(r))
+			if !t.hide {
+				t.Prompt = fixPrompt(t, s.baseFor(r))
+			}
 			topics = append(topics, t)
 			problems += t.Problems
 		}

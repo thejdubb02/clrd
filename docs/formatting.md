@@ -86,7 +86,8 @@ curl -H "Authorization: Bearer $TOKEN" https://clrd.example.com/api/v1/format-ch
 Agents can run it with the MCP tool `format_check`.
 
 Add `?by=sender` to split each topic by the token that sent the messages,
-so two programs posting to one topic each get their own prompt. A finding you
+so two programs posting to one topic each get their own prompt. Only an
+admin, or the device that sent them, sees the sender's name and prompt. A finding you
 know about and accept can be dismissed, for one sender or the whole topic,
 and a topic can be left out of the check. Nothing is dismissed or left out
 until you set it:

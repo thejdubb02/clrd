@@ -140,7 +140,9 @@ Fixed, Removed, Security), as one line a user can understand.
   (`by=sender`), dismiss a finding you accept (for one sender or the whole
   topic), and leave a topic out entirely. All off until set, and settable
   through the API and the MCP tools `format_check`, `format_dismiss` and
-  `set_topic`. (#320)
+  `set_topic`. (#320) Only a full admin, or the token that sent the
+  messages, sees the sender's name and the prompt that names it, as in Linked
+  devices. (#406)
 
 - Integrations: a Claude Code plugin, installed from this repo with
   `/plugin marketplace add thejdubb02/clrd`. One install and two questions

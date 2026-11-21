@@ -1173,7 +1173,7 @@
         "sender"
        ]
       },
-      "description": "Group by topic (the default) or by topic and sending token."
+      "description": "Group by topic (the default) or by topic and sending token. The sender name and prompt are blank unless the token is a full admin or the sender is its own."
      }
     ],
     "responses": {
