@@ -919,6 +919,56 @@ try {
     await ctx.close();
     console.log('ok: webhooks are added, logged, edited and deleted in Settings; a non-admin sees none');
   }
+
+  // Who may approve (#329). An Ask browser's tap goes to an allowed device to
+  // confirm; the Ask browser gets no menu; the allowed browser sets others in
+  // Settings and can lower, never raise, itself.
+  {
+    const asker = execFileSync(bin, ['token', 'create', '--name', 'asker', '--scope', 'admin', '--approve', 'ask'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const actx = await browser.newContext();
+    assert.ok((await actx.request.post(base + '/api/v1/session', { data: { token: asker, name: 'asker-web' } })).ok(), 'asker sign-in');
+    const ap = await actx.newPage();
+    await ap.goto(base + '/app/settings');
+    await ap.locator('th', { hasText: 'May approve' }).waitFor();
+    assert.equal(await ap.locator('[data-approve]').count(), 0, 'an Ask device gets a menu to change settings');
+
+    const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Ship 329?', message: 'all green', actions: [{ label: 'Ship', reply: 'ship' }] });
+    await ap.goto(base + '/app');
+    const acard = ap.locator('article.card', { hasText: 'Ship 329?' });
+    await acard.getByRole('button', { name: 'Ship' }).click();
+    await acard.getByText('Sent for confirmation. An allowed device has to confirm it.').waitFor();
+    assert.equal((await get(laptop, q.id)).reply, undefined, 'an Ask tap answered without a confirm');
+
+    const bctx = await browser.newContext();
+    assert.ok((await bctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'boss-web' } })).ok(), 'boss sign-in');
+    const bp = await bctx.newPage();
+    await bp.goto(base + '/app');
+    await bp.locator('article.card', { hasText: "Confirm asker-web's answer: Ship" }).getByRole('button', { name: 'Confirm' }).click();
+    for (let i = 0; (await get(laptop, q.id)).reply !== 'ship'; i++) { assert.ok(i < 20, 'confirm did not answer the question'); await new Promise(r => setTimeout(r, 250)); }
+
+    // The allowed browser lowers the asker token to Denied from Settings.
+    await bp.goto(base + '/app/settings');
+    const sel = bp.locator('select[data-name="asker"]');
+    assert.deepEqual(await sel.locator('option').allTextContents(), ['Denied', 'Ask', 'Allowed'], 'menu for another tree');
+    await sel.selectOption('denied');
+    await bp.locator('[data-announce]').filter({ hasText: 'asker may approve: Denied.' }).waitFor({ state: 'attached' });
+    const list = await (await fetch(base + '/api/v1/devices', { headers: { Authorization: `Bearer ${laptop}` } })).json();
+    assert.equal(list.devices.find(d => d.name === 'asker').approve, 'denied', 'the menu did not save');
+
+    // Its own row lowers after a confirm, and then the menus are gone: nothing raises it back here.
+    const own = bp.locator('select[data-name="boss-web"]');
+    assert.ok(await own.evaluate(s => s.hasAttribute('data-own')), 'own row not marked');
+    bp.once('dialog', d => { assert.match(d.message(), /Lower boss-web to Ask\?/); d.accept(); });
+    await own.selectOption('ask');
+    await bp.locator('[data-announce]').filter({ hasText: 'boss-web may approve: Ask.' }).waitFor({ state: 'attached' });
+    await bp.reload();
+    assert.equal(await bp.locator('[data-approve]').count(), 0, 'a device that lowered itself to Ask can still change settings');
+    const up = await bctx.request.put(base + '/api/v1/devices/' + list.devices.find(d => d.name === 'boss-web').id + '/approve', { data: { approve: 'allowed' }, headers: { Origin: base } });
+    assert.equal(up.status(), 403, `an Ask browser raised itself: ${up.status()}`);
+    await actx.close();
+    await bctx.close();
+    console.log('ok: an Ask tap waits for a confirm; Settings lowers devices and never raises its own');
+  }
 } finally {
   await browser?.close();
   server.kill();

@@ -39,7 +39,7 @@ func TestPages(t *testing.T) {
 		"/app/snoozed":               {"TLS certificate renews in 7 days", "Snoozed until"},
 		"/app/cleared":               {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
 		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css"`, `data-variant="clear"`, `class="command-dialog"`},
-		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", `data-live="linked"`, ">Status</th>", "Offline", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications", `<option value="14" selected>14 days</option>`, `data-tkeep="home=14;"`},
+		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", `data-live="linked"`, ">Status</th>", "Offline", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications", `<option value="14" selected>14 days</option>`, `data-tkeep="home=14;"`, `data-approve="tok-laptop" data-name="laptop" data-own aria-label="May approve: laptop"><option value="denied" selected>Denied</option></select>`, `data-approve="tok-pixel" data-name="pixel-9" aria-label="May approve: pixel-9"><option value="denied">Denied</option><option value="ask" selected>Ask</option><option value="allowed">Allowed</option></select>`},
 		"/app?q=disk":                {"Disk 91% full on web-1"},
 		"/app?topic=home":            {"Front door open", `data-topic>in home</span>`},
 		"/robots.txt":                {"User-agent: GPTBot", "User-agent: ClaudeBot", "User-agent: PerplexityBot", "User-agent: OAI-SearchBot", "Sitemap: https://clrd.example.com/sitemap.xml"},
@@ -488,6 +488,35 @@ func TestSyncDots(t *testing.T) {
 	d := s.Sync()
 	if len(d.Dots) != 6 || d.More != 2 || d.Live != 2 || d.Dots[0].Name != "me" || d.Dots[1].Status() != "connected" || d.Dots[2].Status() != "catching up" || d.Dots[3].Status() != "offline" {
 		t.Errorf("got %+v", d)
+	}
+}
+
+// The May approve menu never offers a raise on this browser or anything it
+// hangs under, two hops up too, walked by id even when names repeat (#329).
+func TestApproveOptions(t *testing.T) {
+	s := Snapshot{MeID: "b", Linked: []LinkedDevice{
+		{ID: "t", Name: "laptop", Kind: "token", Approve: "denied"},
+		{ID: "p", Name: "pixel", Kind: "phone", ViaID: "t", Approve: "ask"},
+		{ID: "b", Name: "web", Kind: "browser", ViaID: "p", Approve: "allowed", This: true},
+		{ID: "o", Name: "laptop", Kind: "token", Approve: "denied"}, // same name as t, not in the tree
+	}}
+	vals := func(d LinkedDevice) (v string) {
+		for _, o := range s.ApproveOptions(d) {
+			v += o.Value
+			if o.Selected {
+				v += "*"
+			}
+			v += " "
+		}
+		return v
+	}
+	for i, want := range []string{"denied* ", "denied ask* ", "denied ask allowed* ", "denied* ask allowed "} {
+		if got := vals(s.Linked[i]); got != want {
+			t.Errorf("%s: options %q, want %q", s.Linked[i].ID, got, want)
+		}
+	}
+	if !s.Own(s.Linked[0]) || s.Own(s.Linked[3]) {
+		t.Error("Own: wrong tree")
 	}
 }
 
