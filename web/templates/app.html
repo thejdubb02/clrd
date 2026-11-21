@@ -428,7 +428,7 @@
     </div>
   </div>
 </dialog>{{end}}
-{{define "hook-fields"}}{{$h := .}}{{$id := print "hk-" .Topic "-" .Name}}
+{{define "hook-fields"}}{{$h := .}}{{$id := print "hk-" .Topic "/" .Name}}
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-url">URL</label>
   <input id="{{$id}}-url" class="input" type="url" name="url" value="{{.URL}}" required maxlength="2048" placeholder="https://" autocomplete="off" spellcheck="false"></div>
 <fieldset class="grid gap-2"><legend class="label mb-1">Send</legend>
