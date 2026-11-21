@@ -142,7 +142,7 @@ func (n Notification) Body() string {
 		return n.Message
 	}
 	_, rest, _ := strings.Cut(strings.TrimSpace(n.Message), "\n")
-	return strings.TrimSpace(rest)
+	return strings.TrimLeft(rest, "\r\n") // keeps an indented code block's indent
 }
 
 var tags = regexp.MustCompile(`<[^>]*>`)
@@ -294,6 +294,9 @@ func templates(base string) *template.Template {
 		"iso":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		"clock": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
 		"card": func(n Notification, view, here string, snap Snapshot) any {
+			if !snap.Formatting {
+				n.Format = "text" // the untitled headline shows as typed too
+			}
 			return struct {
 				N             Notification
 				View, Here    string
