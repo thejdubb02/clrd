@@ -47,7 +47,7 @@ Tools:
 | `delete_hook` | `topic, name` | Delete one. Admin. |
 | `hook_deliveries` | `topic, name` | Its recent calls, with status and error. Admin. |
 | `tokens` | none | API tokens, never their secrets. Admin. |
-| `create_token` | `name, scopes, topics? or grants?, approve?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. `approve` is `denied` (default), `ask` or `allowed`; only an allowed caller may give `ask` or `allowed`. Admin. |
+| `create_token` | `name, scopes, topics? or grants?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. It starts denied for approval requests, whoever makes it; raise it from an allowed device or with `request_approve`. Admin. |
 | `revoke_token` | `id` | Revoke a token; its streams close at once. Admin. |
 | `server_env` | none | Every `CLRD_*` setting in effect, defaults filled in. Read only: those change by setting the variable and restarting. Admin. |
 | `ntfy_ignored` | none | ntfy publish options senders used that clrd accepts but ignores, with counts. Admin. |
