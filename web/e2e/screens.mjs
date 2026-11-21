@@ -49,7 +49,8 @@ try {
 
   const main = await start();
   servers.push(main);
-  const token = name => execFileSync(bin, ['token', 'create', '--name', name, '--scope', 'admin'], { env: main.env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  // Allowed to approve, so Settings shows the May approve menus at phone width (#329).
+  const token = name => execFileSync(bin, ['token', 'create', '--name', name, '--scope', 'admin', '--approve', 'allowed'], { env: main.env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
   const laptop = token('laptop');
   const phone = token('pixel-9');
   const api = async (path, body) => {
