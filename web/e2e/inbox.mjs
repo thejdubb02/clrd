@@ -819,6 +819,42 @@ try {
     await ctx.close();
     console.log('ok: a topic keeps cleared messages for its own period, set in Settings');
   }
+
+  // Silences without JavaScript (#326): Start and End now are plain form posts.
+  // A read-only device sees the list but not the controls it cannot use.
+  {
+    const ctx = await browser.newContext({ javaScriptEnabled: false });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'silences-nojs' } })).ok(), 'no-js sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/settings');
+    const form = sp.locator('[data-silence-form]');
+    assert.equal(await form.locator('option[value="until"]').evaluate(o => getComputedStyle(o).display), 'none', 'script-only end time shown without script');
+    await form.getByLabel('Topic').fill('nojs');
+    await form.getByLabel('For').selectOption('8h');
+    await form.getByRole('button', { name: 'Start silence' }).click();
+    await sp.locator('tr[data-silence]', { hasText: 'nojs' }).waitFor();
+    assert.equal(new URL(sp.url()).pathname, '/app/settings', 'back on Settings');
+    assert.equal((await api(phone, '/api/v1/notifications', { topic: 'nojs', title: 'Muted' })).silenced, true, 'the no-script silence mutes');
+
+    const reader = execFileSync(bin, ['token', 'create', '--name', 'reader', '--scope', 'read'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const rctx = await browser.newContext();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: reader, name: 'reader' } })).ok(), 'reader sign-in');
+    const rp = await rctx.newPage();
+    await rp.goto(base + '/app/settings');
+    const rrow = rp.locator('tr[data-silence]', { hasText: 'nojs' });
+    await rrow.waitFor();
+    assert.equal(await rrow.getByRole('button', { name: 'End now' }).count(), 0, 'End now offered to a read-only token');
+    assert.equal(await rp.locator('[data-silence-form]').count(), 0, 'Start silence offered to a read-only token');
+    await rp.getByText('its token cannot publish').waitFor();
+    await rctx.close();
+
+    await sp.locator('tr[data-silence]', { hasText: 'nojs' }).getByRole('button', { name: 'End now' }).click();
+    await sp.locator('h2', { hasText: 'Silences' }).waitFor();
+    assert.equal(await sp.locator('tr[data-silence]', { hasText: 'nojs' }).count(), 0, 'End now without script ends it');
+    assert.equal((await api(phone, '/api/v1/notifications', { topic: 'nojs', title: 'Loud' })).silenced, false, 'and publishes alert again');
+    await ctx.close();
+    console.log('ok: silences work without JavaScript; a read-only device sees no controls');
+  }
 } finally {
   await browser?.close();
   server.kill();

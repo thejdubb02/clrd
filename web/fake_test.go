@@ -117,6 +117,9 @@ func (f *Fake) Act(r *http.Request, id, action string, until *time.Time) error {
 	return nil
 }
 
+func (f *Fake) StartSilence(r *http.Request, topic, tag, dur, comment string) error { return nil }
+func (f *Fake) EndSilence(r *http.Request, id string) error                         { return nil }
+
 func (f *Fake) Reply(r *http.Request, id, reply string, seq int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

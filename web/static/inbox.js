@@ -471,7 +471,7 @@
   });
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-silence-end]');
-    if (b) silSave([`/api/v1/silences/${encodeURIComponent(b.dataset.silenceEnd)}`, { method: 'DELETE', credentials: 'same-origin' }], $('[data-silence-status]'));
+    if (b) e.preventDefault(), silSave([`/api/v1/silences/${encodeURIComponent(b.dataset.silenceEnd)}`, { method: 'DELETE', credentials: 'same-origin' }], $('[data-silence-status]'));
   });
 
   // Settings: message display switches, each saved on its own.
