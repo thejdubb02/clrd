@@ -1775,7 +1775,11 @@
           ]
          },
          "approve": {
-          "$ref": "#/components/schemas/Token/properties/approve"
+          "type": "string",
+          "enum": [
+           "denied"
+          ],
+          "description": "A new token starts denied; leave this out. Any other value is 400."
          }
         },
         "required": [

@@ -516,6 +516,9 @@ func TestMintNeverAboveMaker(t *testing.T) {
 			}
 		}
 		_, tk := mint(maker, "")
+		if tk["approve"] != ApproveDenied {
+			t.Fatalf("%s maker's new token: %v", level, tk)
+		}
 		kids["api"], _ = tk["token"].(string)
 		if _, _, c := signIn(t, ts, `{"token":"`+maker+`"}`, firefoxLinux, nil); c != nil {
 			kids["sign-in"] = c.Value

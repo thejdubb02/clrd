@@ -447,8 +447,8 @@ the session cookie (same-origin only) as well as a Bearer token.
   `own_request`). The setup token is allowed; every token made with `POST
   /api/v1/tokens` starts denied, whoever makes it (`approve` other than
   `denied` is 400), and is raised like any device, with the PUT below or
-  an approve-request. Only `clrd token create --approve allowed` on the
-  server, the way back when locked out, makes one allowed or ask. A
+  an approve-request. Only `clrd token create --approve allowed` (or `ask`) on the
+  server, the way back when locked out, makes one that is not denied. A
   browser or phone signed in or linked with a token starts with that token's
   setting. `PUT /api/v1/devices/{id}/approve` with `{"approve":...}` changes
   it: the caller must be allowed, not limited to some topics, and see the
