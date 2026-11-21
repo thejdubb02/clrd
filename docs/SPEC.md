@@ -532,6 +532,7 @@ and via. Values clients send today:
 | `tray_button` | A button on an Android tray notification (Ack, Snooze, Clear, a reply) |
 | `web` | The web inbox, one notification |
 | `web_bulk` | The web inbox's Clear all or a stack's Clear |
+| `app_bulk` | The Android app's Clear on a stack |
 | `web_form` | The web inbox's buttons with scripts off |
 | `mcp` | An agent through the MCP endpoint |
 | `ntfy` | An ntfy-compatible clear or delete |

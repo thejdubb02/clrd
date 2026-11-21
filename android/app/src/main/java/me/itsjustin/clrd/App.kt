@@ -217,6 +217,9 @@ class App : Application() {
     fun act(id: String, action: String, body: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) =
         actAll(listOf(id), action, body, server, via, done)
 
+    /** One action on several rows from the inbox, such as a stack's Clear (#360): the dismisses go out as one clear call. */
+    fun act(ids: List<String>, action: String, via: String = VIA_APP) = actAll(ids, action, "{}", null, via) {}
+
     /**
      * Rows swiped out of the shade (#265). A swipe, a stack swipe or Clear all only hides them on this
      * phone; clearing happens in the app, the web or the API. A new alert for one shows it again.
@@ -280,6 +283,7 @@ class App : Application() {
         // How an action was made, sent as "via" (docs/SPEC.md).
         const val VIA_APP = "app"
         const val VIA_TRAY_BUTTON = "tray_button"
+        const val VIA_APP_BULK = "app_bulk"
         /** The most days of cleared history this phone keeps, whatever the server keeps. */
         const val KEEP_DAYS = 7
     }

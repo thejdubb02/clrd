@@ -223,6 +223,26 @@ class TrayRaceTest {
         }
     }
 
+    /** #360: a stack's Clear in the app goes out as one bulk clear, logged as such. */
+    @Test fun aStackClearIsOneBulkClear() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("{}"))
+        server.start()
+        try {
+            app.serverUrl = server.url("/").toString().trimEnd('/')
+            app.token = "t"
+            bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
+            app.act(listOf("a", "b"), "dismiss", App.VIA_APP_BULK)
+            val r = server.takeRequest(10, TimeUnit.SECONDS)!!
+            assertEquals("/api/v1/notifications/clear", r.path)
+            assertEquals("""{"ids":["a","b"],"via":"app_bulk"}""", r.body.readUtf8())
+            assertTrue(bg { dao.openNow().none { it.state == Notif.ACTIVE } })
+        } finally {
+            app.token = ""
+            server.shutdown()
+        }
+    }
+
     private fun clearTap(id: String) {
         tray(id)!!.actions.single { it.actionIntent.let { pi -> shadowOf(pi).savedIntent.action == Tray.ACTION_CLEAR } }.actionIntent.send()
         shadowOf(Looper.getMainLooper()).idle()
