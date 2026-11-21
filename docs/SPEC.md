@@ -599,7 +599,10 @@ By external id (what scripts and monitors use):
 - `GET /{topic}/json`, `/{topic}/sse`, `/{topic}/ws`, `/{topic}/raw` with `since=`
   (`all`, unix time, duration, message id) and `poll=1`, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
-  list). Output in ntfy's message format so the ntfy Android app and ntfy CLI
+  list). `scheduled=1` (or `sched=1`) also lists messages sent with a delay
+  that have not fired yet, as a `message` at their delivery time, as ntfy
+  does; a notification snoozed until later counts too, since a delay is a
+  snooze. Output in ntfy's message format so the ntfy Android app and ntfy CLI
   work unchanged. The ntfy routes answer any origin (CORS); no cookie is read
   there, so this grants nothing a token holder could not already do.
 - Webhook-friendly: `GET /{topic}/publish?message=...` and `/{topic}/trigger`.

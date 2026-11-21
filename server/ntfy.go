@@ -66,16 +66,24 @@ func ntfyID(seq int64) string { return fmt.Sprintf("s%011d", seq) }
 
 // ntfyMessage renders a notification as of event seq. The ntfy event comes
 // from the state: active shows, acknowledged/snoozed clear, dismissed/resolved delete.
-func (s *Server) ntfyMessage(n *Notification, seq int64) ntfyMsg {
+// With sched (ntfy's ?scheduled=1, and the reply to a delayed publish), a
+// notification snoozed until later shows as a message at that time, as ntfy
+// lists a delayed message.
+func (s *Server) ntfyMessage(n *Notification, seq int64, sched bool) ntfyMsg {
 	m := ntfyMsg{ID: ntfyID(seq), Time: n.UpdatedAt.Unix(), Event: "message", Topic: n.Topic, SequenceID: n.ExternalID}
 	if m.SequenceID == "" {
 		m.SequenceID = n.ID
 	}
-	switch n.State {
-	case Acknowledged, Snoozed:
+	later := sched && n.State == Snoozed && n.SnoozeUntil != nil && n.SnoozeUntil.After(now())
+	if later {
+		m.Time = n.SnoozeUntil.Unix()
+	}
+	switch {
+	case later:
+	case n.State == Acknowledged || n.State == Snoozed:
 		m.Event = "message_clear"
 		return m
-	case Dismissed, Resolved:
+	case n.State == Dismissed || n.State == Resolved:
 		m.Event = "message_delete"
 		return m
 	}
@@ -365,7 +373,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, s.ntfyMessage(n, n.Seq))
+		s.ntfyPublished(w, n, in)
 		return nil
 	}
 	return s.ntfyReply(w, r.Context(), tok, in)
@@ -402,8 +410,20 @@ func (s *Server) ntfyReply(w http.ResponseWriter, ctx context.Context, tok *Toke
 	if err != nil {
 		return err
 	}
-	writeJSON(w, 200, s.ntfyMessage(n, n.Seq))
+	s.ntfyPublished(w, n, in)
 	return nil
+}
+
+// ntfyPublished replies to a publish. A delayed one is the message at its
+// delivery time, as ntfy replies; the delay is the sender's own, so a
+// publish-only token (which never sees the state) gets it too.
+func (s *Server) ntfyPublished(w http.ResponseWriter, n *Notification, in PublishInput) {
+	if d := in.SnoozeUntil; d != nil && (n.State == Active || n.State == Snoozed) {
+		c := *n
+		c.State, c.SnoozeUntil = Snoozed, d
+		n = &c
+	}
+	writeJSON(w, 200, s.ntfyMessage(n, n.Seq, true))
 }
 
 // ntfyPublishJSON: POST / with ntfy's JSON body.
@@ -580,7 +600,7 @@ func (s *Server) ntfyAct(action string) func(http.ResponseWriter, *http.Request)
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, s.ntfyMessage(n, n.Seq))
+		writeJSON(w, 200, s.ntfyMessage(n, n.Seq, false))
 		return nil
 	}
 }
@@ -672,6 +692,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		for tries := 0; ; tries++ {
 			err := s.follow(ctx, tok, since, topics, func(raw []byte, seq int64) error {
 				if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
+					f.sched = false // only the replay lists delayed messages; live ones come when they fire
 					if poll {
 						return errStop
 					}
@@ -691,7 +712,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				if !f.pass(e.Notification, ntfyID(seq)) {
 					return nil
 				}
-				return write(s.ntfyMessage(e.Notification, seq))
+				return write(s.ntfyMessage(e.Notification, seq, f.sched))
 			}, func() error { return write(ntfyEvent("keepalive", joined)) })
 			if err != errPruned {
 				return nil
@@ -712,10 +733,14 @@ type ntfyFilter struct {
 	id, message, title string
 	prio               []int
 	tags               []string
+	sched              bool // ?scheduled=1: delayed messages show before they fire
 }
 
 func ntfyFilters(r *http.Request) (f ntfyFilter, err error) {
 	f.id, f.message, f.title = param(r, "Id"), param(r, "Message", "M"), param(r, "Title", "T")
+	if b := ntfyMarkdown(param(r, "Scheduled", "Sched")); b != nil {
+		f.sched = *b
+	}
 	f.tags = splitList(param(r, "Tags", "Tag", "Ta"))
 	for _, v := range splitList(param(r, "Priority", "Prio", "P")) {
 		p, err := ntfyPriority(v)

@@ -109,6 +109,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: ntfy's `?scheduled=1` lists delayed messages that have not fired
+  yet, and the reply to a delayed ntfy publish is now the message at its
+  delivery time instead of a clear (#27).
 - Server: `clrd import gotify` copies a Gotify server in: each app becomes a
   topic whose token (Gotify 3's `gtfya.` keys and older ones) keeps sending,
   with its default priority, plus the message history. See
