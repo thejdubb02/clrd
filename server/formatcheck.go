@@ -125,22 +125,22 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string) (map[str
 // anything that looks like a secret hidden (#315): the prompt is pasted into
 // an agent, so a key a sender put in a message must not ride along.
 func excerpt(n *Notification) string {
-	m := []rune(n.Message)
+	m := []rune(hideSecrets(n.Message)) // hide first, so a cut cannot split a secret from its marker
 	s := string(m[:min(len(m), 200)])
 	if len(m) > 200 {
 		s += "..."
 	}
 	if n.Title != "" {
-		s = n.Title + "\n" + s
+		s = hideSecrets(n.Title) + "\n" + s
 	}
-	return hideSecrets(s)
+	return s
 }
 
 // secretValue is a value after password=, token: and the like, or after
-// Bearer; secretURL is the password in user:pass@host; secretLike is a long
-// run mixing letters and digits, as keys and tokens are.
+// Bearer, quoted or bare; secretURL is the password in user:pass@host;
+// secretLike is a long run mixing letters and digits, as keys and tokens are.
 var (
-	secretValue = regexp.MustCompile(`(?i)(\b(?:passw(?:or)?d|pass|secret|token|api[_-]?key|key|auth)["']?\s*[:=]\s*["']?|\bbearer\s+)[^\s"',;&]+`)
+	secretValue = regexp.MustCompile(`(?i)(\b(?:passw(?:or)?d|pass|secret|token|api[_-]?key|key|auth)["']?\s*[:=]\s*|\bbearer\s+)("[^"]*"|'[^']*'|[^\s"',;&}\]]+)`)
 	secretURL   = regexp.MustCompile(`(://[^/\s:@]+:)[^/\s@]+@`)
 	secretLike  = regexp.MustCompile(`[A-Za-z0-9_+/=-]{20,}`)
 )
@@ -149,7 +149,13 @@ var (
 // before it still shows. Fine for an example the user reads before pasting.
 func hideSecrets(s string) string {
 	s = secretURL.ReplaceAllString(s, "${1}[hidden]@")
-	s = secretValue.ReplaceAllString(s, "${1}[hidden]")
+	s = secretValue.ReplaceAllStringFunc(s, func(v string) string {
+		k := secretValue.FindStringSubmatch(v)
+		if q := k[2][:1]; q == `"` || q == "'" {
+			return k[1] + q + "[hidden]" + q
+		}
+		return k[1] + "[hidden]"
+	})
 	return secretLike.ReplaceAllStringFunc(s, func(v string) string {
 		if strings.ContainsAny(v, "0123456789") && strings.IndexFunc(v, unicode.IsLetter) >= 0 {
 			return "[hidden]"
