@@ -445,9 +445,11 @@ the session cookie (same-origin only) as well as a Bearer token.
   `approve_denied` otherwise),
   and never on a notification sent by its own token tree: the token itself,
   a browser or phone made from it, or the token it hangs under (403
-  `own_request`). The setup token is allowed; every other new token is
-  denied unless made with `approve: "allowed"` on `POST /api/v1/tokens`
-  (only an allowed caller may) or `clrd token create --approve allowed`. A
+  `own_request`). The setup token is allowed; every token made with `POST
+  /api/v1/tokens` starts denied, whoever makes it (`approve` other than
+  `denied` is 400), and is raised like any device, with the PUT below or
+  an approve-request. Only `clrd token create --approve allowed` (or `ask`) on the
+  server, the way back when locked out, makes one that is not denied. A
   browser or phone signed in or linked with a token starts with that token's
   setting. `PUT /api/v1/devices/{id}/approve` with `{"approve":...}` changes
   it: the caller must be allowed, not limited to some topics, and see the
@@ -558,7 +560,7 @@ resolved`) and `ntfy_import`.
 | DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. |
 | POST | `/api/v1/devices/approve-request` | Body `{"approve":"allowed"}` or `ask`, `topic` optional (default `agents`, needs publish there): the calling device asks to raise its own setting (section 4). 202 with a confirm prompt on that topic; a repeat returns the same open prompt; 400 unless it is a raise. |
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
-| GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. |
+| GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. It starts denied for approval requests (section 4); `approve` other than `denied` is 400. |
 | GET | `/api/v1/server` | Admin. The section 7 settings in effect, defaults filled in: `{"env":{"CLRD_LISTEN":":8080",...}}`, each written the way its variable takes it (`CLRD_BASE_URL` empty when unset, a password in it shown as `xxxxx`; `0` for a rate limit that is off). Read only; no secrets. |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
 | POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |

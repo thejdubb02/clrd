@@ -11,6 +11,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Server: a new token made through the API or the MCP tool `create_token`
+  now always starts denied for approval requests, whoever makes it. Raise it
+  the same way as any device, from an allowed device or with an approve
+  request. Asking for `allowed` or `ask` at creation is refused. (#187)
+
 - Server: a third approve setting, ask. A tap from an ask device does not
   count until an allowed device confirms it: clrd posts a "Confirm" prompt on
   the same topic, and the answer lands only when another allowed device taps

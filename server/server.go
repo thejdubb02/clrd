@@ -809,12 +809,12 @@ func (s *Server) routesSetup() {
 		if in.Grants != nil && len(in.Grants) == 0 { // empty would mean every topic, not none
 			return errf(400, "bad_request", "grants is empty: leave it out for every topic, or list at least one grant")
 		}
-		if approveRank[in.Approve] > 0 { // only an allowed caller may make a token that is not denied (#187)
-			if v, err := approveOf(r.Context(), s.db, tok.ID); err != nil || v != ApproveAllowed {
-				return errf(403, "approve_denied", "only an allowed device can make a token that may answer approval requests")
-			}
+		// A new token starts denied whoever makes it (#187): raising it is the
+		// same change as for any device, PUT /api/v1/devices/{id}/approve.
+		if in.Approve != "" && in.Approve != ApproveDenied {
+			return errf(400, "bad_request", "a new token starts denied; raise it with PUT /api/v1/devices/{id}/approve")
 		}
-		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants, Approve: in.Approve})
+		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants, Approve: ApproveDenied})
 		if err != nil {
 			return err
 		}

@@ -47,7 +47,7 @@ Tools:
 | `delete_hook` | `topic, name` | Delete one. Admin. |
 | `hook_deliveries` | `topic, name` | Its recent calls, with status and error. Admin. |
 | `tokens` | none | API tokens, never their secrets. Admin. |
-| `create_token` | `name, scopes, topics? or grants?, approve?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. `approve` is `denied` (default), `ask` or `allowed`; only an allowed caller may give `ask` or `allowed`. Admin. |
+| `create_token` | `name, scopes, topics? or grants?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. It starts denied for approval requests, whoever makes it; raise it from an allowed device or with `request_approve`. Admin. |
 | `revoke_token` | `id` | Revoke a token; its streams close at once. Admin. |
 | `server_env` | none | Every `CLRD_*` setting in effect, defaults filled in. Read only: those change by setting the variable and restarting. Admin. |
 | `ntfy_ignored` | none | ntfy publish options senders used that clrd accepts but ignores, with counts. Admin. |
@@ -229,8 +229,8 @@ answers the agent. The tap clears the notification on every other device.
   request it sent, nor can a phone or browser linked from it.
 - Only a device allowed to approve can tap Allow or Deny. The setup token is
   allowed, and a phone or browser takes the setting of the token it was
-  linked or signed in with. Any other new token is denied unless made with
-  `approve` set (`clrd token create` too, without `--approve`), so an
+  linked or signed in with. Any other new token starts denied, whoever makes
+  it (`clrd token create` too, without `--approve`), so an
   agent's token cannot approve its own prompts. Change it per device in the
   web inbox under Settings, Linked devices, May approve (an allowed browser
   sees the menu; it can lower its own setting, never raise it), or with

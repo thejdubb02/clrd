@@ -1701,6 +1701,7 @@
    },
    "post": {
     "summary": "Create a token (secret shown once)",
+    "description": "Admin with no topic limit. The new token starts denied for approval requests whoever makes it; approve other than denied is 400. Raise it with PUT /api/v1/devices/{id}/approve.",
     "tags": [
      "auth"
     ],
@@ -1774,7 +1775,11 @@
           ]
          },
          "approve": {
-          "$ref": "#/components/schemas/Token/properties/approve"
+          "type": "string",
+          "enum": [
+           "denied"
+          ],
+          "description": "A new token starts denied; leave this out. Any other value is 400."
          }
         },
         "required": [
