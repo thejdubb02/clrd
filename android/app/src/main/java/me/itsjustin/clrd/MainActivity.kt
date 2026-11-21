@@ -555,7 +555,7 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
             // The sender's answers (Allow, Deny) show only once the whole text does: an answer approves all of it (#366).
             val answers = if (n.isFinal) emptyList() else TrayButton.replies(n)
             if (answers.isNotEmpty() && !open) Text(stringResource(R.string.tap_to_answer), color = b.slate, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-            if (answers.isNotEmpty() && open) Row {
+            if (answers.isNotEmpty() && open) Row(Modifier.horizontalScroll(rememberScrollState())) { // a long label never hides the next one
                 answers.forEach { a ->
                     TextButton(onClick = { App.of(ctx).act(n.id, "reply", org.json.JSONObject().put("reply", a.reply).put("seq", n.seq).toString()) }) { Text(a.label, color = b.ink) }
                 }

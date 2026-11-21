@@ -96,6 +96,8 @@ class TrayStepTest {
         assertEquals(listOf("L1", "Ack", "Clear"), TrayButton.pick(long).map { it.text() })
         assertEquals("many short lines, as a diff is", listOf("L1", "Ack", "Clear"), TrayButton.pick(tall).map { it.text() })
         assertEquals("the app card still offers them", listOf("yes", "no"), TrayButton.replies(long).map { it.reply })
+        val pic = short.copy(attachment = """{"name":"a.png","url":"https://x.example/a.png","type":"image/png","size":1}""")
+        assertEquals("a picture shows the text as a summary only", listOf("L1", "Ack", "Clear"), TrayButton.pick(pic).map { it.text() })
     }
 
     @Test fun anAnsweredOneShowsNoReplies() {

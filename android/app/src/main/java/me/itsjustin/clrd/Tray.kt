@@ -53,7 +53,8 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
         fun pick(n: Notif): List<TrayButton> {
             val objs = objs(n)
             // An answer approves the whole text (#366), so a text the tray may cut answers in the app, where it shows in full.
-            val replies = if (fitsTray(n.message)) replies(n) else emptyList()
+            // A picture's tray style shows the text as a short summary only.
+            val replies = if (fitsTray(n.message) && n.file?.isImage != true) replies(n) else emptyList()
             val links = objs.mapNotNull { o ->
                 val url = o.optString("url")
                 // Web links only, and short: a huge URL would not fit through Binder and would crash the post.
