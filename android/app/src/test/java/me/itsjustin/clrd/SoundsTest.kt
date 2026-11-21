@@ -100,10 +100,9 @@ class SoundsTest {
 
         app.tray.createChannels() // a start on the same sound replaces nothing
         assertFalse(app.tray.dndLost())
-        // The person let urgent ones through on the default sound. Faked after the start above, because
-        // Robolectric overwrites an existing channel on create where Android keeps the person's settings.
-        nm.deleteNotificationChannel("p5")
-        nm.createNotificationChannel(android.app.NotificationChannel("p5", "Urgent", NotificationManager.IMPORTANCE_HIGH).apply { setBypassDnd(true) })
+        // The person let urgent ones through on the default sound. Faked on Robolectric's stored channel,
+        // after the start above, because Robolectric keeps no bypass from a create.
+        nm.getNotificationChannel("p5").setBypassDnd(true)
         assertTrue(nm.getNotificationChannel("p5").canBypassDnd())
         assertFalse(app.tray.dndLost())
         bg { app.saveSound("chime") }
