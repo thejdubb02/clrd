@@ -129,9 +129,14 @@ func closeFence(s, fence string) int {
 }
 
 // emojify shows the known shortcodes in s as emoji, outside `code` and ```blocks```.
-func emojify(s string) string {
+func emojify(s string) string { out, _ := emojiScan(s); return out }
+
+// emojiScan is emojify plus the number of shortcode-shaped names it did not
+// know (with a letter, so :30: is not one), for the format check (#308).
+func emojiScan(s string) (string, int) {
+	unknown := 0
 	if !strings.Contains(s, ":") {
-		return s
+		return s, 0
 	}
 	var b strings.Builder
 	for i := 0; i < len(s); {
@@ -160,12 +165,15 @@ func emojify(s string) string {
 					i = j + 1
 					continue
 				}
+				if strings.ContainsAny(s[i+1:j], "abcdefghijklmnopqrstuvwxyz") {
+					unknown++
+				}
 			}
 		}
 		b.WriteByte(s[i])
 		i++
 	}
-	return b.String()
+	return b.String(), unknown
 }
 
 // tagEmoji is the emoji of every tag that names one, as ntfy apps put in

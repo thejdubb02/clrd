@@ -499,6 +499,7 @@ resolved`) and `ntfy_import`.
 |---|---|---|
 | GET | `/api/v1/counts` | Exact counts of what the token can read: `{"active":3,"acknowledged":1,"snoozed":2,"dismissed":640,"resolved":12,"inbox":4,"cleared":652}`. `inbox` is active plus acknowledged, `cleared` is dismissed plus resolved. |
 | GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
+| GET | `/api/v1/format-check?topic=` | Format check (#308), advice only, nothing stored. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). Returns `{"checked":N,"problems":N,"topics":[{"topic","checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}]}`, only topics with findings, in name order; `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
 | PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. A body with neither key is a 400. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
 | PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
@@ -582,7 +583,8 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
 Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?)`, `list(topic?, state?)`,
-`topics()`, `counts(keep_cleared_days?)`, `settings(...)` (no arguments reads
+`topics()`, `counts(keep_cleared_days?)`, `format_check(topic?)` (the format
+check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,

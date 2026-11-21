@@ -154,7 +154,7 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,counts,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,"+
+	if strings.Join(names, ",") != "send,list,topics,counts,format_check,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,"+
 		"hooks,set_hook,delete_hook,hook_deliveries,tokens,create_token,revoke_token,server_env,ntfy_ignored" {
 		t.Fatalf("tools: %v", names)
@@ -191,6 +191,7 @@ func TestTools(t *testing.T) {
 		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", map[string]any{"via": "mcp"}},
 		{"snooze", map[string]any{"id": "01J", "for": "1h"}, "POST /api/v1/notifications/01J/snooze", map[string]any{"for": "1h", "via": "mcp"}},
 		{"counts", map[string]any{"keep_cleared_days": 5}, "GET /api/v1/counts?keep_cleared_days=5", nil},
+		{"format_check", map[string]any{"topic": "infra"}, "GET /api/v1/format-check?topic=infra", nil},
 		{"settings", nil, "GET /api/v1/settings", nil},
 		{"settings", map[string]any{"keep_cleared_days": 5}, "PUT /api/v1/settings", map[string]any{"keep_cleared_days": float64(5)}},
 	}

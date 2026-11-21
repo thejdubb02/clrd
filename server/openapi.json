@@ -1135,6 +1135,59 @@
     }
    }
   },
+  "/api/v1/format-check": {
+   "get": {
+    "summary": "Formatting problems by topic",
+    "description": "Runs plain string rules over the newest 500 notifications this token can read and returns the topics with findings: markdown_as_text, unknown_shortcode, no_title, long_body (over 2000 characters) and json_dump. Each finding has a count, the newest example and the fix in plain words; each topic has a prompt to paste into an agent to fix its sender. Advice only: nothing is stored or changed.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Check only this topic."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        },
+        "example": {
+         "checked": 120,
+         "problems": 9,
+         "topics": [
+          {
+           "topic": "backups",
+           "checked": 40,
+           "problems": 9,
+           "findings": [
+            {
+             "rule": "no_title",
+             "count": 9,
+             "example_id": "01JD3Q7Z8X",
+             "example": "backup done in 4m",
+             "fix": "Messages have no title. Send a short title..."
+            }
+           ],
+           "prompt": "Fix the program that sends notifications to the clrd topic \"backups\"..."
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/counts": {
    "get": {
     "summary": "Exact counts by state",

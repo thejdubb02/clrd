@@ -40,6 +40,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: a format check finds topics whose messages are hard to read
+  (Markdown sent as plain text, unknown shortcodes, no title, very long
+  messages, raw JSON) and gives a ready prompt to fix the sender, through
+  `GET /api/v1/format-check` and the MCP tool `format_check` (#308).
 - Server: emoji shortcodes like `:warning:` show as the emoji on the web, in
   the Android app and tray, and in every API and stream, and a tag that names
   an emoji goes in front of the title, as in ntfy. Unknown names, code and
