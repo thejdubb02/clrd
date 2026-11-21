@@ -52,7 +52,8 @@ func mayApprove(ctx context.Context, q querier, tok *Token, n *Notification) (st
 	return v, err
 }
 
-// notOwn refuses tok when it is in the token tree whose top is sender.
+// notOwn refuses tok when it is in the token tree whose top is sender. It
+// stays the tree, not the user (#143): a person answers their own agent.
 func notOwn(ctx context.Context, q querier, tok *Token, sender string) error {
 	mine, err := topIn(ctx, q, tok.ID)
 	if err == nil && mine == sender {

@@ -363,6 +363,30 @@ the session cookie (same-origin only) as well as a Bearer token.
   own devices in the device list (itself and what was linked from it). A browser signed in with it gets the same grants.
   Grants come from `clrd import ntfy` (ntfy's access control list, rules in
   ntfy's own order) or from `grants` on `POST /api/v1/tokens`.
+- **Users (people):** a user is one person and owns many device tokens. Off
+  until a full admin makes one: a token with no user works exactly as above.
+  A user has a name and, optionally, grants (same rules as a token's). A
+  token belongs to a user when it is attached (`user` on `POST
+  /api/v1/tokens`, or `PUT /api/v1/tokens/{id}/user` with `{"user":"<id>"}`,
+  `""` to detach); every browser or phone signed in or linked from it belongs
+  to the same user. Access is worked out from the user on every request, so
+  a new or existing device follows a later change to the user's grants. When
+  the user has grants, they replace the device's own topics and grants (an
+  empty list is no topic), and the device's own scopes stay the ceiling. A
+  grant never gives admin, and a token holding `admin` keeps its own access
+  whatever its user's grants. A user with no grants (`null`) limits nothing:
+  devices keep their own access. Topics are shared between users by giving
+  the other user a grant (read, publish or both); there is no other sharing.
+  All of a user's devices are "mine" for the device list, the device log and
+  sender names in the format check; the #187 `own_request` rule stays with
+  the token tree, so a person can still answer a request their own agent
+  sent. Only a full admin uses `GET`/`POST /api/v1/users`, `PUT
+  /api/v1/users/{id}` (`{"grants":[...]}` or `{"grants":null}`), `DELETE
+  /api/v1/users/{id}` (409 while tokens are attached) and the attach route.
+  A change to a user's grants, or attaching or detaching a token, closes the
+  open streams of that user's devices so they reconnect under the new rules.
+  A device whose user cannot be read is refused (401), never let through.
+  These are separate from the ntfy password users below.
 - Bootstrap: first start with no users prints a one-time admin setup URL to the log.
   `clrd token create --name pixel-9 --scope read,publish` on the CLI.
 - Basic auth (`user:token`) and `?auth=` query param accepted for ntfy-client compatibility.

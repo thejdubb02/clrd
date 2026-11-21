@@ -485,6 +485,9 @@ func schema(props map[string]any, required ...string) map[string]any {
 
 func p(typ, desc string) map[string]any { return map[string]any{"type": typ, "description": desc} }
 
+var userGrants = map[string]any{"type": []string{"array", "null"}, "description": "Per-topic rules, like [{\"topic\":\"family\",\"scopes\":[\"read\"]}]; read and publish only. null limits nothing, [] is no topic",
+	"items": schema(map[string]any{"topic": p("string", "Topic or pattern with *"), "scopes": strs("read and/or publish")}, "topic", "scopes")}
+
 var tools = []map[string]any{
 	{"name": "send", "description": "Send a notification to a topic. Reusing an id while the previous one is still open updates it instead of making a new one.",
 		"inputSchema": schema(map[string]any{
@@ -603,6 +606,16 @@ var tools = []map[string]any{
 				"items": schema(map[string]any{"topic": p("string", "Topic or prefix ending in *"), "scopes": strs("Scopes on that topic")}, "topic", "scopes")}}, "name", "scopes")},
 	{"name": "revoke_token", "description": "Revoke an API token by its id from tokens. Its open streams close at once. Needs an admin token.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Token id")}, "id")},
+	{"name": "users", "description": "List users: people who own device tokens, each with its grants (null limits nothing). Needs an admin token.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "create_user", "description": "Create a user (a person). Attach tokens with set_token_user; every device of the user then follows its grants. Leave grants out for a user that limits nothing. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"name": p("string", "The person's name"), "grants": userGrants}, "name")},
+	{"name": "set_user_grants", "description": "Set which topics a user's devices may read or publish, first match wins. To share a topic with someone, give their user a grant on it. null limits nothing, [] is no topic. Their open streams reconnect under the new rules. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"id": p("string", "User id"), "grants": userGrants}, "id", "grants")},
+	{"name": "delete_user", "description": "Delete a user with no tokens attached. Needs an admin token.",
+		"inputSchema": schema(map[string]any{"id": p("string", "User id")}, "id")},
+	{"name": "set_token_user", "description": "Attach a typed-in token (and every browser and phone made from it) to a user, or detach it with user \"\". Needs an admin token.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Token id"), "user": p("string", "User id, or empty to detach")}, "id", "user")},
 	{"name": "create_gotify_app", "description": "Create a Gotify app key for one topic, for senders built for Gotify (shoutrrr, Watchtower, the gotify CLI). The key is in the result once; it only publishes, only to that topic, only on POST /message. Revoke it with revoke_token and the result's token_id. Needs an admin token.",
 		"inputSchema": schema(map[string]any{"name": p("string", "App name, the title when a message has none"), "topic": p("string", "Topic it posts to"),
 			"priority": p("integer", "Gotify priority 0 to 10 for messages that send none; leave out for clrd's default")}, "name", "topic")},
@@ -648,6 +661,11 @@ var restTools = map[string]struct {
 	"tokens":              {"GET", "/api/v1/tokens", false},
 	"create_token":        {"POST", "/api/v1/tokens", false},
 	"revoke_token":        {"DELETE", "/api/v1/tokens/{id}", false},
+	"users":               {"GET", "/api/v1/users", false},
+	"create_user":         {"POST", "/api/v1/users", false},
+	"set_user_grants":     {"PUT", "/api/v1/users/{id}", false},
+	"delete_user":         {"DELETE", "/api/v1/users/{id}", false},
+	"set_token_user":      {"PUT", "/api/v1/tokens/{id}/user", false},
 	"create_gotify_app":   {"POST", "/api/v1/gotify/apps", false},
 	"create_pushover_app": {"POST", "/api/v1/pushover/apps", false},
 	"ntfy_anonymous":      {"GET", "/api/v1/ntfy/anonymous", false},

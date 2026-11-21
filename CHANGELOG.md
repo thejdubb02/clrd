@@ -152,6 +152,12 @@ Fixed, Removed, Security), as one line a user can understand.
   notification in it at once, with Undo, as one bulk clear like the web's
   stack Clear (#360).
 
+- Server: users, for one person with many devices. An admin makes a user,
+  attaches tokens to it and sets its topics once; every phone and browser of
+  that person follows, including ones already signed in, and a topic is
+  shared by giving another user a grant on it. Off until you make one:
+  tokens with no user work as before. API `/api/v1/users`, MCP
+  `create_user`. (#143)
 - Web: the empty-inbox tips have a Pause button, so they stop rotating for anyone, including screen reader users who never hover or focus them; Play starts them again (#352).
 - Web: a card's snooze menu offers "Silence <topic> for 1 hour", which mutes
   the whole topic in one tap, with or without JavaScript. It shows only where
