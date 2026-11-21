@@ -41,4 +41,11 @@ object Sounds {
      */
     fun overridden(expected: Uri?, actual: Map<Int, Pair<Uri?, Int>?>): Boolean =
         (3..5).any { p -> actual[p]?.let { (sound, importance) -> sound != expected || importance < android.app.NotificationManager.IMPORTANCE_DEFAULT } ?: false }
+
+    /**
+     * Whether Settings says the Urgent channel lost its Do Not Disturb pass (#346). Only the person can set
+     * that pass, so a new sound (a new channel) drops it. [replacedHadIt]: an Urgent channel this change
+     * deleted let urgent ones through. It stays until the current Urgent channel has the pass. Pure, so it is tested on the JVM.
+     */
+    fun dndLost(was: Boolean, replacedHadIt: Boolean, nowHasIt: Boolean) = !nowHasIt && (was || replacedHadIt)
 }

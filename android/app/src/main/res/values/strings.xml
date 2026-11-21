@@ -104,6 +104,7 @@
     <string name="approve_ask">This phone\'s answers to approval requests need an allowed device to confirm them.</string>
     <string name="approve_denied">This phone may not answer approval requests. An allowed device can change that.</string>
     <string name="dnd_explain">Urgent notifications (priority 5) are quiet in Do Not Disturb unless you let them through. Only you can turn that on, in Android\'s settings.</string>
+    <string name="dnd_lost">Changing the sound turned off the Do Not Disturb pass for urgent ones. Android lets only you turn it back on, with the button below.</string>
     <string name="dnd_open">Let urgent ones through Do Not Disturb</string>
     <string name="signed_out">The server no longer accepts this phone. It was unlinked from another device, its token was revoked, or the token is wrong. Scan a new code or enter a token to sign in again.</string>
     <!-- Linked devices in Settings, the same list as the web Settings page. -->
