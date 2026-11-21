@@ -155,6 +155,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- A file edit sent for approval shows on the phone with the change itself,
+  not only the file path: removed and added lines for Edit and MultiEdit, the
+  text for Write and NotebookEdit (#366).
 - Users and tokens can be set in a config file (`CLRD_CONFIG`), applied at
   every start, so a server can be rebuilt from config (#155).
 - Android: a stack card in the app has a Clear button that clears every

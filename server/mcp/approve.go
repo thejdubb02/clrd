@@ -112,11 +112,15 @@ func hookAnswer(w http.ResponseWriter, behavior, message string) {
 // cut, since Allow would approve the hidden part too.
 const maxShown = 4000
 
-// summary is what the phone shows: the command, else a description, else the
-// raw input.
+// summary is what the phone shows: a file edit's path and change, else the
+// command, else a url or description, else the raw input. Allow approves
+// what it shows, so an edit shows the text it writes (#366).
 func summary(raw json.RawMessage) string {
 	var in map[string]any
 	_ = json.Unmarshal(raw, &in)
+	if s := edit(in); s != "" {
+		return s
+	}
 	s := ""
 	for _, k := range []string{"command", "file_path", "url", "description"} {
 		if v, ok := in[k].(string); ok && v != "" {
@@ -131,4 +135,46 @@ func summary(raw json.RawMessage) string {
 		s = "(no details)"
 	}
 	return s
+}
+
+// edit renders Claude Code's Edit, MultiEdit, Write and NotebookEdit inputs
+// as the path and a diff-like body, "" for any other input.
+func edit(in map[string]any) string {
+	p, _ := in["file_path"].(string)
+	if nb, ok := in["notebook_path"].(string); ok {
+		p = nb
+	}
+	text := func(k string) (string, bool) { v, ok := in[k].(string); return v, ok }
+	lines := func(mark, s string) string { return mark + strings.ReplaceAll(s, "\n", "\n"+mark) + "\n" }
+	change := func(e map[string]any) string {
+		o, _ := e["old_string"].(string)
+		n, _ := e["new_string"].(string)
+		s := lines("- ", o) + lines("+ ", n)
+		if all, _ := e["replace_all"].(bool); all {
+			s = "(every match)\n" + s
+		}
+		return s
+	}
+	var b string
+	if _, ok := in["new_string"]; ok {
+		b = change(in)
+	} else if es, ok := in["edits"].([]any); ok {
+		for _, e := range es {
+			m, _ := e.(map[string]any)
+			b += change(m)
+		}
+	} else if c, ok := text("content"); ok {
+		b = c
+	} else if c, ok := text("new_source"); ok {
+		b = c
+	} else {
+		return ""
+	}
+	if strings.TrimSpace(b) == "" {
+		b = "(empty)"
+	}
+	if p == "" {
+		return ""
+	}
+	return p + "\n" + strings.TrimRight(b, "\n")
 }

@@ -381,6 +381,24 @@ func TestReplyButtons(t *testing.T) {
 
 // /mcp/approve answers a permission hook from a tap: Allow allows, anything
 // else denies, and a timeout denies and clears the phones.
+func TestApproveSummary(t *testing.T) {
+	for in, want := range map[string]string{
+		`{"command":"rm -rf build","description":"clean"}`:                                                          "rm -rf build",
+		`{"file_path":"/a/x.go","old_string":"a := 1\nb := 2","new_string":"a := 3"}`:                               "/a/x.go\n- a := 1\n- b := 2\n+ a := 3",
+		`{"file_path":"/a/x.go","old_string":"a","new_string":"","replace_all":true}`:                               "/a/x.go\n(every match)\n- a\n+ ",
+		`{"file_path":"/a/x.go","edits":[{"old_string":"a","new_string":"b"},{"old_string":"c","new_string":"d"}]}`: "/a/x.go\n- a\n+ b\n- c\n+ d",
+		`{"file_path":"/a/new.sh","content":"#!/bin/sh\nrm -rf ~\n"}`:                                               "/a/new.sh\n#!/bin/sh\nrm -rf ~",
+		`{"notebook_path":"/a/n.ipynb","new_source":"print(1)"}`:                                                    "/a/n.ipynb\nprint(1)",
+		`{"file_path":"/a/empty","content":""}`:                                                                     "/a/empty\n(empty)",
+		`{"file_path":"/a/x.go"}`:                                                                                   "/a/x.go",
+		`{"query":"clrd"}`:                                                                                          `{"query":"clrd"}`,
+	} {
+		if got := summary(json.RawMessage(in)); got != want {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestApproveHook(t *testing.T) {
 	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
