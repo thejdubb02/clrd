@@ -608,8 +608,11 @@ By external id (what scripts and monitors use):
   that have not fired yet, as a `message` at their delivery time, as ntfy
   does; a notification snoozed until later counts too, since a delay is a
   snooze. Output in ntfy's message format so the ntfy Android app and ntfy CLI
-  work unchanged. The ntfy routes answer any origin (CORS); no cookie is read
-  there, so this grants nothing a token holder could not already do.
+  work unchanged. Pages on other web sites are refused on the ntfy and Gotify
+  routes (requests, preflight and WebSocket) unless an admin allows their
+  origin with `PUT /api/v1/ntfy/origins` (or `*`, ntfy's own behaviour);
+  requests with no Origin (phones, scripts) and clrd's own pages always pass
+  (#374).
 - Webhook-friendly: `GET /{topic}/publish?message=...` and `/{topic}/trigger`.
 - Alertmanager/Grafana/Gatus: a payload with `status: resolved` and a stable
   key (alert fingerprint / `X-Id`) resolves instead of creating. Mapping in `docs/integrations/`.

@@ -2120,6 +2120,101 @@
     }
    }
   },
+  "/api/v1/ntfy/origins": {
+  "get": {
+   "summary": "Web sites allowed on ntfy routes",
+   "description": "Full admin only. The other web sites whose pages may use the ntfy and Gotify routes from a browser (CORS and WebSocket). Empty by default: a request with a foreign Origin is refused with 403; requests with no Origin (phones, scripts) and clrd's own pages are never affected.",
+   "tags": [
+    "admin"
+   ],
+   "responses": {
+    "200": {
+     "description": "The allow list.",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "origins": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "description": "Origins as scheme://host[:port], or \"*\" for any site."
+         }
+        }
+       }
+      }
+     }
+    },
+    "401": {
+     "$ref": "#/components/responses/Error"
+    },
+    "403": {
+     "$ref": "#/components/responses/Error"
+    }
+   }
+  },
+  "put": {
+   "summary": "Set web sites allowed on ntfy routes",
+   "description": "Full admin only. Replaces the allow list. Each entry is an origin (scheme://host[:port], lowercased) or \"*\" for any site, as ntfy answers. An empty list allows only clrd's own pages.",
+   "tags": [
+    "admin"
+   ],
+   "requestBody": {
+    "required": true,
+    "content": {
+     "application/json": {
+      "schema": {
+       "type": "object",
+       "properties": {
+        "origins": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "description": "Origins as scheme://host[:port], or \"*\" for any site."
+        }
+       },
+       "required": [
+        "origins"
+       ]
+      }
+     }
+    }
+   },
+   "responses": {
+    "200": {
+     "description": "The allow list now in effect.",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "origins": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "description": "Origins as scheme://host[:port], or \"*\" for any site."
+         }
+        }
+       }
+      }
+     }
+    },
+    "400": {
+     "$ref": "#/components/responses/Error"
+    },
+    "401": {
+     "$ref": "#/components/responses/Error"
+    },
+    "403": {
+     "$ref": "#/components/responses/Error"
+    }
+   }
+  }
+ },
   "/api/v1/ntfy/ignored": {
    "get": {
     "summary": "ntfy options received but ignored",
