@@ -122,6 +122,7 @@ Fixed, Removed, Security), as one line a user can understand.
 - Server: `clrd help` lists the commands and settings.
 
 ### Changed
+- Web: the sound picked in Settings is saved on the server for this browser, so an agent can set it over the API or MCP and an open Settings page follows. A sound picked before this moves to the server on the next visit; if the server refuses it, it stays in the browser (#297).
 - Web: the sync indicator shows one dot per device, green when it is connected and red when it is not, and updates live as devices come and go. "In sync on N devices" counts only the connected ones, the indicator links to Linked devices, and Settings shows each device as Connected, Catching up or Offline (#295).
 
 - Android: the release APK is shrunk with R8 and resource shrinking, from
