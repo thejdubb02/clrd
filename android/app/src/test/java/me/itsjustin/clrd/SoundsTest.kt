@@ -90,4 +90,39 @@ class SoundsTest {
         bg { app.saveSound("ding") }
         assertFalse(app.tray.soundOverridden())
     }
+
+    /** #346: Android lets only the person set the Do Not Disturb pass, so a new sound drops it and Settings says so. */
+    @Test fun aSoundChangeThatDropsTheDndPassSaysSo() {
+        assertTrue(Sounds.dndLost(was = false, replacedHadIt = true, nowHasIt = false))
+        assertFalse("never had the pass", Sounds.dndLost(was = false, replacedHadIt = false, nowHasIt = false))
+        assertTrue("a later start on the same sound keeps the notice", Sounds.dndLost(was = true, replacedHadIt = false, nowHasIt = false))
+        assertFalse("set again, so the notice goes", Sounds.dndLost(was = true, replacedHadIt = false, nowHasIt = true))
+
+        // The person let urgent ones through on the default sound (faked the way Android stores it).
+        nm.deleteNotificationChannel("p5")
+        nm.createNotificationChannel(android.app.NotificationChannel("p5", "Urgent", NotificationManager.IMPORTANCE_HIGH).apply { setBypassDnd(true) })
+        assertFalse(app.tray.dndLost())
+        app.tray.createChannels() // a start on the same sound replaces nothing
+        assertFalse(app.tray.dndLost())
+        bg { app.saveSound("chime") }
+        assertTrue(app.tray.dndLost())
+        app.tray.createChannels()
+        assertTrue("still lost after a restart", app.tray.dndLost())
+        app.prefs.edit().remove("dnd_lost").commit()
+    }
+
+    /** The once-only move of a sound picked before the server kept it (#282, tested for #346). */
+    @Test fun anOldSoundGoesToTheServerOnce() {
+        app.prefs.edit().remove("sound_moved").remove("sound_pending").putString("sound", "bell").commit()
+        app.moveSound()
+        assertEquals("bell", app.soundPending)
+        assertTrue(app.prefs.getBoolean("sound_moved", false))
+        app.prefs.edit().remove("sound_pending").putString("sound", "ding").commit()
+        app.moveSound()
+        assertNull("only once", app.soundPending)
+        app.prefs.edit().remove("sound_moved").putString("sound", Sounds.DEFAULT).commit()
+        app.moveSound()
+        assertNull("the default has nothing to send", app.soundPending)
+        assertTrue(app.prefs.getBoolean("sound_moved", false))
+    }
 }

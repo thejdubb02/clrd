@@ -872,6 +872,7 @@ private fun SoundSettings(app: App, resumes: Int) {
     var saves by remember { mutableStateOf(0) } // bumped once a save has made the channels, so the check reads them
     var why by remember { mutableStateOf<String?>(null) } // why the choice stays on this phone only
     val overridden = remember(sound, resumes, saves) { app.tray.soundOverridden(sound) }
+    val dndLost = remember(sound, resumes, saves) { app.tray.dndLost(sound) }
     var playing by remember { mutableStateOf<android.media.Ringtone?>(null) }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { playing?.stop() } }
 
@@ -901,6 +902,7 @@ private fun SoundSettings(app: App, resumes: Int) {
         }) { Text(stringResource(R.string.sound_open_settings), color = b.ink) }
     }
     // Only the person can let a channel through Do Not Disturb; an app cannot switch it on by itself (#259).
+    if (dndLost) Text(stringResource(R.string.dnd_lost), color = b.signal, fontSize = 13.sp)
     Text(stringResource(R.string.dnd_explain), color = b.slate, fontSize = 13.sp)
     TextButton(onClick = {
         runCatching {

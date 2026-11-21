@@ -191,7 +191,11 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         tray.createChannels()
-        // A sound picked before the server kept it (#282) goes to the server once, on the next connect.
+        moveSound()
+    }
+
+    /** A sound picked before the server kept it (#282) goes to the server once, on the next connect. */
+    internal fun moveSound() {
         if (!prefs.getBoolean("sound_moved", false)) {
             prefs.edit().apply { if (sound != Sounds.DEFAULT) putString("sound_pending", sound) }.putBoolean("sound_moved", true).apply()
         }

@@ -32,6 +32,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 - Web: on a phone, the Linked devices table in Settings fits the screen; the
   "May approve" menu now sits under its label.
+- Android: changing the sound replaces the notification channels, which
+  drops a Do Not Disturb pass you set for urgent ones (Android lets only you
+  set it). Settings now tells you and offers one tap to turn it back on. (#346)
+
 - Android: a refused approval tap now says why (this phone may not answer,
   the request came from this phone's own token, or the question changed)
   and is not retried. An answer from an ask phone says it was sent for
