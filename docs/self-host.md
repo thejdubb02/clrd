@@ -81,6 +81,29 @@ at once.
 `topics` it takes per-topic `grants`, first match wins, for example
 `{"name":"cam","scopes":["read","publish"],"grants":[{"topic":"home-*","scopes":["publish"]},{"topic":"alerts","scopes":["read"]}]}`.
 
+### Users: one person, many devices
+
+Optional. A user is one person who owns several tokens, so you set their
+topics once and every phone, browser and computer they use follows. With an
+admin token:
+
+```sh
+# make a user who may read and publish on family and home-*
+curl -H "Authorization: Bearer $ADMIN" -d '{"name":"Ann","grants":[{"topic":"family","scopes":["read","publish"]},{"topic":"home-*","scopes":["read"]}]}' https://clrd.example.com/api/v1/users
+# give her a new phone token, or attach one she already has
+curl -H "Authorization: Bearer $ADMIN" -d '{"name":"ann-phone","scopes":["read","publish"],"user":"<user id>"}' https://clrd.example.com/api/v1/tokens
+curl -X PUT -H "Authorization: Bearer $ADMIN" -d '{"user":"<user id>"}' https://clrd.example.com/api/v1/tokens/<token id>/user
+```
+
+Change her topics later with `PUT /api/v1/users/{id}` and `{"grants":[...]}`:
+every device she has, including browsers already signed in, follows at once.
+To share a topic with someone else, give their user a grant on it (read,
+publish or both). A token's own scopes stay its limit, a user grant never
+gives admin, and an admin token keeps full admin. `{"grants":null}` means
+the user limits nothing and each device keeps its own access. Tokens with no
+user work exactly as before. The same tools are in MCP: `users`,
+`create_user`, `set_user_grants`, `set_token_user`, `delete_user`.
+
 ## Settings
 
 | Variable | Default | Meaning |

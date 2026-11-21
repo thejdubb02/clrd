@@ -57,6 +57,7 @@ type Token struct {
 	Topics     []string   `json:"topics"`           // empty = every topic
 	Grants     []Grant    `json:"grants,omitempty"` // set = only these, in order
 	Approve    string     `json:"approve"`          // may it answer approval requests: allowed or denied (#187)
+	User       string     `json:"user,omitempty"`   // the person it belongs to (#143), "" for none
 	CreatedAt  time.Time  `json:"created_at"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 }
@@ -148,12 +149,18 @@ func checkToken(t *Token) error {
 	if len(t.Topics) > 0 || slices.Contains(t.Scopes, ScopeAdmin) {
 		return errf(400, "bad_request", "grants cannot go with topics or the admin scope")
 	}
-	for _, g := range t.Grants {
+	return checkGrants(t.Grants, t.Scopes)
+}
+
+// checkGrants: each grant names a topic pattern and only read or publish
+// scopes from held.
+func checkGrants(gs []Grant, held []string) error {
+	for _, g := range gs {
 		if !grantPattern.MatchString(g.Topic) {
 			return errf(400, "bad_request", "bad grant topic %q", g.Topic)
 		}
 		for _, sc := range g.Scopes {
-			if (sc != ScopePublish && sc != ScopeRead) || !slices.Contains(t.Scopes, sc) {
+			if (sc != ScopePublish && sc != ScopeRead) || !slices.Contains(held, sc) {
 				return errf(400, "bad_request", "grant scope %q must be read or publish and held by the token", sc)
 			}
 		}
@@ -177,8 +184,11 @@ func insertToken(ctx context.Context, db execer, t *Token, hash string) error {
 		b, _ := json.Marshal(t.Grants)
 		grants = string(b)
 	}
-	_, err := db.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, grants, created_at, approve) VALUES (?,?,?,?,?,?,?,?)`,
-		t.ID, t.Name, hash, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), grants, ms(t.CreatedAt), t.Approve)
+	_, err := db.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, grants, created_at, approve, user_id) VALUES (?,?,?,?,?,?,?,?,NULLIF(?, ''))`,
+		t.ID, t.Name, hash, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), grants, ms(t.CreatedAt), t.Approve, t.User)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") { // user_id is the only foreign key
+		return errf(400, "bad_request", "no user %q", t.User)
+	}
 	return err
 }
 
@@ -229,14 +239,14 @@ func (s *Server) createToken(ctx context.Context, t *Token) (*Token, string, err
 	return t, raw, nil
 }
 
-const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve`
+const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve, COALESCE(user_id, '')`
 
 func scanToken(r scanner) (*Token, error) {
 	var t Token
 	var scopes, topics, grants string
 	var created int64
 	var seen sql.NullInt64
-	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve); err != nil {
+	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve, &t.User); err != nil {
 		return nil, err
 	}
 	if grants != "" {
@@ -323,7 +333,17 @@ func (s *Server) lookupToken(ctx context.Context, raw string) *Token {
 	if !isToken(raw) {
 		return nil
 	}
-	t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE hash = ?`, hashToken(raw)))
+	return s.tokenWhere(ctx, `hash = ?`, hashToken(raw))
+}
+
+// tokenWhere loads the token matching where with its user's access, marks
+// it seen, and is nil when there is none or its user cannot be read. Every
+// credential lookup goes through here, so access always follows the user.
+func (s *Server) tokenWhere(ctx context.Context, where string, args ...any) *Token {
+	t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE `+where, args...))
+	if err == nil {
+		err = s.withUser(ctx, t)
+	}
 	if err != nil {
 		return nil
 	}
@@ -497,7 +517,16 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *To
 // phone marks a phone linked from a browser, capped apart from browsers.
 // Pass a context that is not cancelled mid-way: never leave a half-made token.
 func (s *Server) childToken(ctx context.Context, access *Token, parentID, name string, phone bool) (*Token, string, error) {
-	st, raw, err := s.createToken(ctx, &Token{Name: name, Scopes: access.Scopes, Topics: access.Topics, Grants: access.Grants})
+	// Its own access as stored, not as its user widens or narrows it: the
+	// child follows the user at every request anyway (#143).
+	own, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE id = ?`, access.ID))
+	if errors.Is(err, sql.ErrNoRows) {
+		err = errf(401, "unauthorized", "token revoked")
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	st, raw, err := s.createToken(ctx, &Token{Name: name, Scopes: own.Scopes, Topics: own.Topics, Grants: own.Grants})
 	if err != nil {
 		return nil, "", err
 	}

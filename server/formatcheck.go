@@ -124,7 +124,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 	// A sender's name, and the prompt that holds it, go only to a full admin
 	// or to the person it belongs to, as in Linked devices (#245, #406).
 	all := tok.needFullAdmin() == nil
-	own, err := topIn(r.Context(), s.db, tok.ID)
+	own, err := topsIn(r.Context(), s.db, tok.ID) // every top token of tok's user (#143)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		t := groups[key]
 		if t == nil {
 			t = &formatTopic{Topic: n.Topic, SenderID: key[1], Findings: make([]formatFinding, len(formatRules))}
-			t.hide = t.SenderID != "" && !all && t.SenderID != own
+			t.hide = t.SenderID != "" && !all && !own[t.SenderID]
 			if t.SenderID != "" && !t.hide {
 				if _, ok := names[t.SenderID]; !ok {
 					var name string
