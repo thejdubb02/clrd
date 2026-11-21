@@ -437,7 +437,8 @@
   const silSave = async (req, status) => {
     lock(true);
     const r = await fetch(...req).catch(() => null);
-    if (r && r.ok) return location.reload();
+    // A 404 on End now means the silence already ran out: the list is just stale.
+    if (r && (r.ok || (r.status === 404 && req[1].method === 'DELETE'))) return location.reload();
     lock(false);
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   };
