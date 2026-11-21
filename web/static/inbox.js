@@ -124,7 +124,11 @@
     cards().forEach(c => { c.hidden = false; });
     if (!stackOn()) return;
     for (const [t, g] of groups) {
-      if (g.length < 2) continue;
+      if (g.length < 2) {
+        // A selected stack down to one card hands the selection to that card.
+        if (selId === 'stack:' + t) { select(g[0], focus && focus.t === t); }
+        continue;
+      }
       const s = stackTpl.content.firstElementChild.cloneNode(true), open = unfolded.has(t);
       s.dataset.stack = t;
       s.querySelector('[data-stack-topic]').textContent = t;
@@ -153,6 +157,7 @@
     const s = e.target.closest('[data-stack]');
     if (!s || e.target.closest('[data-act]') || s.classList.contains('is-leaving')) return;
     const t = s.dataset.stack;
+    selId = key(s); // the rebuilt stack keeps the selection
     if (!unfolded.delete(t)) unfolded.add(t);
     restack({ t, sel: '[data-stack-toggle]' });
   });
@@ -751,7 +756,7 @@
     const cmd = e.target.closest('[data-cmd]');
     if (cmd && run[cmd.dataset.cmd]) setTimeout(run[cmd.dataset.cmd]); // after the dialog closes and gives focus back
     const c = e.target.closest('.card[data-id], [data-stack]');
-    if (c && !c.classList.contains('is-leaving')) select(c, false);
+    if (c && c.isConnected && !c.classList.contains('is-leaving')) select(c, false); // a toggled stack was rebuilt
   });
   const keys = { c: 'dismiss', r: 'restore', a: 'ack', s: 'snooze', j: 'next', k: 'prev', '/': 'search' };
   const go = { i: B + '/app', s: B + '/app/snoozed', c: B + '/app/cleared', ',': B + '/app/settings' };
