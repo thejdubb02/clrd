@@ -50,6 +50,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: Settings lists the running silences with the time left, starts one
+  (topic, tag or both, for a set time or until a time, with a comment) and
+  ends one early (#257).
 - Web: Settings shows the format check under Message format: each topic with
   hard to read messages, the count per problem, and a button to copy the fix
   prompt. Nothing shows when there is nothing to fix (#308).

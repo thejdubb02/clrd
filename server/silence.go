@@ -68,20 +68,29 @@ func activeSilences(ctx context.Context, q interface {
 	return out, rows.Err()
 }
 
+// Silences lists the running silences tok may read, soonest end first.
+func (s *Server) Silences(ctx context.Context, tok *Token) ([]Silence, error) {
+	if err := tok.need(ScopeRead, ""); err != nil {
+		return nil, err
+	}
+	all, err := activeSilences(ctx, s.db, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	out := []Silence{}
+	for _, sl := range all {
+		if tok.may(ScopeRead, sl.Topic) {
+			out = append(out, sl)
+		}
+	}
+	return out, nil
+}
+
 func (s *Server) silenceRoutes() {
 	s.api("GET /api/v1/silences", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		if err := tok.need(ScopeRead, ""); err != nil {
-			return err
-		}
-		all, err := activeSilences(r.Context(), s.db, time.Now())
+		out, err := s.Silences(r.Context(), tok)
 		if err != nil {
 			return err
-		}
-		out := []Silence{}
-		for _, sl := range all {
-			if tok.may(ScopeRead, sl.Topic) {
-				out = append(out, sl)
-			}
 		}
 		writeJSON(w, 200, map[string]any{"silences": out})
 		return nil

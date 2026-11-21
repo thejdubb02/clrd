@@ -399,7 +399,8 @@
   // older save cannot land after a newer one.
   const disp = $('[data-display-settings]');
   const keep = $('[data-keep-settings]');
-  const lock = on => [snz, disp, keep].forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
+  const sil = $('[data-silence-form]');
+  const lock = on => [snz, disp, keep, sil].forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
   snz && snz.addEventListener('submit', async e => {
     e.preventDefault();
     const times = snzTyped().map(snzValue);
@@ -430,6 +431,30 @@
     if (r && r.ok) return location.reload();
     lock(false);
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  });
+
+  // Settings: silences (docs/silences.md). Start one, or end one early.
+  const silSave = async (req, status) => {
+    lock(true);
+    const r = await fetch(...req).catch(() => null);
+    // A 404 on End now means the silence already ran out: the list is just stale.
+    if (r && (r.ok || (r.status === 404 && req[1].method === 'DELETE'))) return location.reload();
+    lock(false);
+    status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  };
+  sil && sil.for.addEventListener('change', () => { $('[data-silence-until]').hidden = sil.for.value !== 'until'; });
+  sil && sil.addEventListener('submit', e => {
+    e.preventDefault();
+    const status = $('[data-silence-status]'), body = { topic: sil.topic.value.trim(), tag: sil.tag.value.trim(), comment: sil.comment.value.trim() };
+    if (!body.topic && !body.tag) { status.textContent = 'Give a topic, a tag, or both.'; return; }
+    if (sil.for.value !== 'until') body.for = sil.for.value;
+    else if (isNaN(new Date(sil.until.value))) { status.textContent = 'Pick the time it ends.'; return; }
+    else body.until = new Date(sil.until.value).toISOString(); // datetime-local is this browser's time
+    silSave(['/api/v1/silences', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }], status);
+  });
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-silence-end]');
+    if (b) silSave([`/api/v1/silences/${encodeURIComponent(b.dataset.silenceEnd)}`, { method: 'DELETE', credentials: 'same-origin' }], $('[data-silence-status]'));
   });
 
   // Settings: message display switches, each saved on its own.

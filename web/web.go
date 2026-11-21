@@ -250,6 +250,31 @@ type Snapshot struct {
 	KeepClearedDays                              int             // days cleared messages are kept, 0 = forever
 	Sound                                        string          // this device's own sound (SPEC 2.2), "default" when unset
 	Format                                       []FormatTopic   // format check (#308), Settings only: topics with problems
+	Silences                                     []Silence       // running silences (docs/silences.md), Settings only
+}
+
+// timeLeft says how long until t, to the minute: "3d 4h", "2h 5m", "12m".
+func timeLeft(t time.Time) string {
+	m := int(time.Until(t).Round(time.Minute).Minutes())
+	switch {
+	case m < 1:
+		return "under a minute"
+	case m >= 24*60:
+		return fmt.Sprintf("%dd %dh", m/(24*60), m%(24*60)/60)
+	case m >= 60:
+		return fmt.Sprintf("%dh %dm", m/60, m%60)
+	}
+	return fmt.Sprintf("%dm", m)
+}
+
+// Silence mutes a topic, a tag or both until a time (docs/silences.md).
+type Silence struct {
+	ID      string    `json:"id"`
+	Topic   string    `json:"topic"`
+	Tag     string    `json:"tag"`
+	Until   time.Time `json:"until"`
+	Comment string    `json:"comment"`
+	By      string    `json:"created_by"`
 }
 
 // FormatTopic is one topic's format check result (docs/SPEC.md, format-check).
@@ -337,6 +362,7 @@ func templates(base string) *template.Template {
 			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic)}
 		},
 		"snoozeLabel": snoozeLabel,
+		"left":        timeLeft,
 		"add":         func(a, b int) int { return a + b },
 		"plural": func(n int, one, many string) string {
 			if n == 1 {

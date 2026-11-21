@@ -463,3 +463,16 @@ func TestSyncDots(t *testing.T) {
 		t.Errorf("got %+v", d)
 	}
 }
+
+func TestTimeLeft(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		20 * time.Second:                "under a minute",
+		12*time.Minute + 10*time.Second: "12m",
+		2*time.Hour + 5*time.Minute:     "2h 5m",
+		76*time.Hour + 20*time.Second:   "3d 4h",
+	} {
+		if got := timeLeft(time.Now().Add(d)); got != want {
+			t.Errorf("timeLeft(+%v) = %q, want %q", d, got, want)
+		}
+	}
+}

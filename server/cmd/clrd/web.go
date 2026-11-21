@@ -179,6 +179,10 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		if fc, err := a.s.FormatCheck(r, tok, ""); err == nil {
 			_ = convert(fc["topics"], &snap.Format)
 		}
+		// A token without the read scope sees no silences, but still gets Settings.
+		if sils, err := a.s.Silences(ctx, tok); err == nil {
+			_ = convert(sils, &snap.Silences)
+		}
 	}
 	return snap, nil
 }

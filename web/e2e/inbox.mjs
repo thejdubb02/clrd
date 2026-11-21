@@ -742,6 +742,37 @@ try {
     await ctx.close();
     console.log('ok: sound for new notifications, picker with preview, blocked hint');
   }
+
+  // Silences in Settings (#257): start one, it mutes the next publish on that
+  // topic in the inbox and shows in the list; End now ends it.
+  {
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'silences' } })).ok(), 'silences sign-in');
+    await ctx.addInitScript(() => { window.played = []; HTMLMediaElement.prototype.play = function () { window.played.push(this.src); return Promise.resolve(); }; });
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/settings');
+    const form = sp.locator('[data-silence-form]');
+    await form.getByRole('button', { name: 'Start silence' }).click();
+    await sp.locator('[data-silence-status]', { hasText: 'Give a topic, a tag, or both.' }).waitFor();
+    await form.getByLabel('Topic').fill('quiet');
+    await form.getByLabel('For').selectOption('8h');
+    await form.getByLabel('Comment').fill('deploy window');
+    await Promise.all([sp.waitForEvent('load'), form.getByRole('button', { name: 'Start silence' }).click()]);
+    const row = sp.locator('tr[data-silence]', { hasText: 'quiet' });
+    await row.getByText('deploy window').waitFor();
+    assert.match(await row.textContent(), /7h 59m left|8h 0m left/, 'time left shows');
+    await sp.goto(base + '/app'); await sp.locator('.is-live').waitFor({ timeout: 5000 });
+    assert.equal((await api(phone, '/api/v1/notifications', { topic: 'quiet', title: 'Muted one' })).silenced, true, 'the next publish is silenced');
+    await sp.locator('article.card', { hasText: 'Muted one' }).waitFor();
+    await sp.waitForTimeout(300);
+    assert.deepEqual(await sp.evaluate(() => window.played), [], 'and makes no sound in the inbox');
+    await sp.goto(base + '/app/settings');
+    await Promise.all([sp.waitForEvent('load'), sp.locator('tr[data-silence]', { hasText: 'quiet' }).getByRole('button', { name: 'End now' }).click()]);
+    assert.equal(await sp.locator('tr[data-silence]', { hasText: 'quiet' }).count(), 0, 'End now removes it from the list');
+    assert.equal((await api(phone, '/api/v1/notifications', { topic: 'quiet', title: 'Loud one' })).silenced, false, 'and publishes alert again');
+    await ctx.close();
+    console.log('ok: start and end a silence in Settings, the inbox stays quiet');
+  }
 } finally {
   await browser?.close();
   server.kill();
