@@ -174,6 +174,10 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		if err := convert(evs, &snap.Log); err != nil {
 			return snap, err
 		}
+		// The format check is advice: if it fails, Settings still loads without it.
+		if fc, err := a.s.FormatCheck(r, tok, ""); err == nil {
+			_ = convert(fc["topics"], &snap.Format)
+		}
 	}
 	return snap, nil
 }

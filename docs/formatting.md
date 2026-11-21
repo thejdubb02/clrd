@@ -53,6 +53,10 @@ shows anything that looks like a password or key as `[hidden]`. Read it
 before you paste: a short secret with no label can still slip through. The check only gives
 advice: it never changes or blocks a message.
 
+In the web inbox, Settings shows the results under Message format, with a
+Copy button for each topic's prompt. The section only appears when there is
+something to fix.
+
 ```sh
 curl -H "Authorization: Bearer $TOKEN" https://clrd.example.com/api/v1/format-check
 ```

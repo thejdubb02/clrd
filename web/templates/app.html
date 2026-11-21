@@ -256,6 +256,19 @@
       <span class="meta" role="status" data-display-status></span>
     </form>
   </section>
+  {{with .Snap.Format}}<section class="grid gap-3" aria-labelledby="fmt-h" data-format-check>
+    <h2 id="fmt-h" class="text-base font-semibold">Message format</h2>
+    <p class="text-body text-sm/relaxed">Some senders send messages that are hard to read. Copy the prompt into the agent or script that sends them, and it fixes the sender.</p>
+    {{range .}}<div class="grid gap-2" data-format-topic>
+      <h3 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Topic}} <span class="meta font-normal">{{.Problems}} of the last {{.Checked}} messages</span></h3>
+      <ul class="text-body grid list-disc gap-1 ps-5 text-sm">{{range .Findings}}<li>{{.Label}}: {{.Count}}</li>{{end}}</ul>
+      <details class="text-sm">
+        <summary class="cursor-pointer font-medium">Fix prompt</summary>
+        <pre tabindex="0" class="bg-muted/50 mt-2 w-full border-transparent whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-format-prompt>{{.Prompt}}</code></pre>
+      </details>
+      <div class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="outline" data-size="sm" data-format-copy>{{template "i-copy"}}Copy fix prompt</button></div>
+    </div>{{end}}
+  </section>{{end}}
   {{if .Snap.Topics}}<section class="js-only grid gap-3" aria-labelledby="ticon-h">
     <h2 id="ticon-h" class="text-base font-semibold">Topic icons</h2>
     <p class="text-body text-sm/relaxed">An image link shown on new notifications in the topic when the sender gives none. Leave it empty for no icon. Saved when you leave the box.</p>
