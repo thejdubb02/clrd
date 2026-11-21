@@ -99,10 +99,11 @@ class SyncClientTest {
     }
 
     private val settings = CopyOnWriteArrayList<String>()
+    @Volatile private var devices = 0
 
     private fun start(replayQuietMs: Long = 5_000) {
         val api = Api(http, server.url("/").toString().trimEnd('/'), "tok")
-        client = SyncClient(http, api, store, onStatus = { statuses += it }, onSettings = { settings += it.toString() }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
+        client = SyncClient(http, api, store, onStatus = { statuses += it }, onSettings = { settings += it.toString() }, onDevices = { devices++ }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
             .also { it.start() }
     }
 
@@ -247,6 +248,28 @@ class SyncClientTest {
         assertEquals(listOf("approve_denied"), store.outcomes)
         assertEquals("active", store.rows["denied"]!!.state)
         assertEquals(listOf(true), store.quiet)
+    }
+
+    @Test fun aRefusedTapRetriedAfterAFailedRefetchSaysWhyOnce() { // #345
+        store.rows["denied"] = notif("denied", "acknowledged", 4)
+        store.queue += Pending(1, "denied", "reply", """{"reply":"yes","seq":4}""")
+        current = { notifJson(it, "active", 4) }
+        getFails = 1 // the refetch after the refusal fails once, so the tap stays queued and is sent again
+        val api = Api(http, server.url("/").toString().trimEnd('/'), "tok")
+        assertTrue(runCatching { flushPending(store, api) }.isFailure)
+        assertEquals(1, store.queue.size)
+        flushPending(store, api)
+        assertEquals(emptyList<Pending>(), store.queue)
+        assertEquals(listOf("approve_denied"), store.outcomes)
+    }
+
+    @Test fun aDevicesMessageTellsTheApp() { // #345: Settings reloads the device list when one connects or drops
+        onConnect = { _, ws ->
+            ws.send("""{"type":"devices","devices":[]}""")
+            ws.send("""{"type":"ready","seq":0}""")
+        }
+        start()
+        await { devices == 1 }
     }
 
     @Test fun anAskAnswerShowsThePromptAndKeepsTheQuestionOpen() { // #330: 202 with the confirm prompt

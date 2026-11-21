@@ -161,6 +161,9 @@ class App : Application() {
     /** Bumped on every [saveServer], so Settings shows a server and token saved from elsewhere (a scanned link). */
     val saved = MutableStateFlow(0)
 
+    /** Bumped when the stream sends the device list again, so Settings reads it fresh (#345). */
+    val devicesChanged = MutableStateFlow(0)
+
     /** Saves the server and token from Settings or a scanned link. Call on [io]. */
     fun saveServer(newUrl: String, newToken: String) {
         if (newUrl != serverUrl || newToken != token) {
