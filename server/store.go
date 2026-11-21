@@ -220,8 +220,9 @@ type Notification struct {
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Seq         int64       `json:"seq"`
-	Silenced    bool        `json:"silenced"` // a silence matched when this was written: show, do not alert
-	Repeat      *Repeat     `json:"repeat"`   // re-alert until answered, or null
+	Silenced    bool        `json:"silenced"`       // a silence matched when this was written: show, do not alert
+	Live        bool        `json:"live,omitempty"` // sent to open streams only, never stored (#400): ID is a live id, Seq the log seq at send
+	Repeat      *Repeat     `json:"repeat"`         // re-alert until answered, or null
 }
 
 // Attachment is a file on a notification: uploaded (URL is /api/v1/files/<id>)
@@ -574,6 +575,9 @@ type PublishInput struct {
 	// Reopen puts an acknowledged notification under this external_id back
 	// to active in the same write, so a new question cannot inherit the old answer.
 	Reopen bool `json:"reopen,omitempty"`
+	// Live sends it to the streams open now and stores nothing: no inbox,
+	// no replay, nothing to act on (ntfy's Cache: no, #400).
+	Live bool `json:"live,omitempty"`
 }
 
 // Publish creates a notification, or updates the open one with the same
@@ -610,6 +614,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	format, err := publishFormat(in.Format, in.Markdown)
 	if err != nil {
 		return nil, err
+	}
+	if in.Live {
+		return s.publishLive(ctx, tok, in, format)
 	}
 	if in.Status == "resolved" {
 		if in.ExternalID == "" {
@@ -716,7 +723,7 @@ func senderView(tok *Token, n *Notification, own bool) *Notification {
 	if n == nil || tok.may(ScopeRead, n.Topic) {
 		return n
 	}
-	v := &Notification{ID: n.ID, Topic: n.Topic, ExternalID: n.ExternalID, State: n.State, CreatedAt: n.UpdatedAt, UpdatedAt: n.UpdatedAt, Seq: n.Seq}
+	v := &Notification{ID: n.ID, Topic: n.Topic, ExternalID: n.ExternalID, State: n.State, CreatedAt: n.UpdatedAt, UpdatedAt: n.UpdatedAt, Seq: n.Seq, Live: n.Live}
 	if own { // a publish: the content is the sender's own; the state is not
 		v.Title, v.Message, v.Priority, v.Tags, v.Click, v.Icon, v.Actions, v.Attachment, v.ExpiresAt =
 			n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Attachment, n.ExpiresAt
@@ -740,6 +747,9 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 	}
 	if in.Status == "resolved" {
 		return nil, errf(400, "bad_request", "status resolved cannot carry a file")
+	}
+	if in.Live {
+		return nil, errLiveFile
 	}
 	if err := s.publishLimit(tok, in.Topic); err != nil {
 		return nil, err

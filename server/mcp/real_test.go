@@ -120,6 +120,7 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 	ok("reopen", map[string]any{"id": a["id"]}, `"state":"active"`)
 	ok("send", map[string]any{"topic": "agents", "message": "b"})
 	ok("clear", map[string]any{"topic": "agents"}, `"cleared":2`)
+	ok("send", map[string]any{"topic": "agents", "message": "c", "live": true}, `"live":true`) // stores nothing (#400)
 
 	sl := ok("silence", map[string]any{"topic": "agents", "for": "2h", "comment": "deploy"}, `"comment":"deploy"`)
 	ok("silences", nil, sl["id"].(string))

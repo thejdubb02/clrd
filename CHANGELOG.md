@@ -155,6 +155,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: live-only messages. ntfy's `Cache: no`, or `"live": true` on the API and MCP `send`, goes to the ntfy streams open now and is stored nowhere (#400).
+
 - Android: a stack card in the app has a Clear button that clears every
   notification in it at once, with Undo, as one bulk clear like the web's
   stack Clear (#360).
