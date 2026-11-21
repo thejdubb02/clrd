@@ -30,6 +30,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: on a phone, the Linked devices table in Settings fits the screen; the
+  "May approve" menu now sits under its label.
 - Android: a refused approval tap now says why (this phone may not answer,
   the request came from this phone's own token, or the question changed)
   and is not retried. An answer from an ask phone says it was sent for
