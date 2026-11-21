@@ -59,6 +59,14 @@ A **notification**:
 }
 ```
 
+**Emoji (#306):** `title` and `message` are sent with common GitHub and
+Slack shortcodes shown as the emoji (`:warning:` becomes ⚠️), and a tag that
+names an emoji (`rotating_light`, `warning`) goes in front of the title, or of
+the message when there is no title, as ntfy apps show it. Unknown names, text
+inside backticks and strings like `10:30:15` or `a:b:c` stay as typed. The
+stored row keeps the text as sent in. The ntfy endpoints send the shortcodes
+as emoji but leave the tag emoji out, since ntfy apps add those themselves.
+
 **States:** `active`, `acknowledged`, `snoozed`, `dismissed`, `resolved`.
 
 - `dismissed` (a user cleared it) and `resolved` (the sender cleared it) are

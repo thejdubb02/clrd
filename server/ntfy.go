@@ -79,7 +79,8 @@ func (s *Server) ntfyMessage(n *Notification, seq int64) ntfyMsg {
 		m.Event = "message_delete"
 		return m
 	}
-	m.Title, m.Message, m.Priority, m.Tags, m.Click, m.Icon = n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon
+	m.Title, m.Message = ntfyText(n)
+	m.Priority, m.Tags, m.Click, m.Icon = n.Priority, n.Tags, n.Click, n.Icon
 	if n.Silenced { // ntfy apps have no "silenced": min priority shows it without a sound
 		m.Priority = 1
 	}
@@ -725,8 +726,28 @@ func ntfyFilters(r *http.Request) (f ntfyFilter, err error) {
 	return f, nil
 }
 
+// ntfyText is the shown title and message without the tags' emoji in front:
+// ntfy apps put those there themselves.
+func ntfyText(n *Notification) (title, message string) {
+	title, message = n.shown()
+	if p := tagEmoji(n.Tags); p != "" {
+		if title != "" {
+			title = strings.TrimPrefix(title, p)
+		} else {
+			message = strings.TrimPrefix(message, p)
+		}
+	}
+	return
+}
+
 func (f ntfyFilter) pass(n *Notification, id string) bool {
-	if f.id != "" && f.id != id || f.message != "" && f.message != n.Message || f.title != "" && f.title != n.Title {
+	// n comes from the sent JSON: match the filter's text shown the same way,
+	// with or without the tags' emoji in front (the sender may have typed them).
+	title, message := ntfyText(n)
+	fullTitle, fullMessage := n.shown()
+	is := func(want, a, b string) bool { w := emojify(want); return w == a || w == b }
+	if f.id != "" && f.id != id || f.message != "" && !is(f.message, message, fullMessage) ||
+		f.title != "" && !is(f.title, title, fullTitle) {
 		return false
 	}
 	if len(f.prio) > 0 && !slices.Contains(f.prio, n.Priority) {
