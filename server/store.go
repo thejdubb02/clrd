@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 -- Display settings every device follows, as one JSON document (spec, Message formatting).
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '',
-	checkin_ms INTEGER, checkin_at INTEGER, checkin_late INTEGER NOT NULL DEFAULT 0);
+	checkin_ms INTEGER, checkin_at INTEGER, checkin_late INTEGER NOT NULL DEFAULT 0, device_actions INTEGER NOT NULL DEFAULT 0);
 -- Format check findings a user dismissed, by topic, rule and sending token ("" for every one); rule "" turns the check off for the topic (#320).
 CREATE TABLE IF NOT EXISTS format_ignore (topic TEXT NOT NULL, rule TEXT NOT NULL, sender TEXT NOT NULL, PRIMARY KEY (topic, rule, sender));
 -- Webhook templates a topic owner saved (webhooks.go); spec is the Webhook as JSON.
@@ -186,12 +186,16 @@ CREATE TABLE IF NOT EXISTS silences (
 );
 `
 
-// Action is a button on a notification: a link (URL) or an answer (Reply)
-// that POST /api/v1/notifications/{id}/reply records.
+// Action is a button on a notification: a link (URL), an answer (Reply)
+// that POST /api/v1/notifications/{id}/reply records, or a request the
+// reader's device makes (HTTP, Broadcast; deviceactions.go).
 type Action struct {
-	Label string `json:"label"`
-	URL   string `json:"url"`
-	Reply string `json:"reply,omitempty"`
+	Label     string           `json:"label"`
+	URL       string           `json:"url"`
+	Reply     string           `json:"reply,omitempty"`
+	HTTP      *HTTPAction      `json:"http,omitempty"`
+	Broadcast *BroadcastAction `json:"broadcast,omitempty"`
+	Clear     bool             `json:"clear,omitempty"`
 }
 
 // Notification is the server-owned record every client mirrors.
@@ -315,7 +319,7 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("expires index: %w", err)
 	}
-	for _, col := range []string{"checkin_ms INTEGER", "checkin_at INTEGER", "checkin_late INTEGER NOT NULL DEFAULT 0"} {
+	for _, col := range []string{"checkin_ms INTEGER", "checkin_at INTEGER", "checkin_late INTEGER NOT NULL DEFAULT 0", "device_actions INTEGER NOT NULL DEFAULT 0"} {
 		if _, err := db.Exec(`ALTER TABLE topics ADD COLUMN ` + col); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -572,6 +576,7 @@ type PublishInput struct {
 	Actions     []Action    `json:"actions"`
 	Attachment  *Attachment `json:"attachment"` // external only: {"url","name"}; uploads go through PublishFile
 	file        string
+	dropDevice  bool       // compat: drop http and broadcast actions a topic does not allow, instead of refusing
 	checkin     bool       // clrd's own missed check-in alert: does not reset the timer
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
 	Expires     string     `json:"expires"`      // optional: a duration ("30m") or RFC3339 time; then the server resolves it
@@ -595,6 +600,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		return nil, err
 	}
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
+		return nil, err
+	}
+	if err := s.gateDeviceActions(ctx, &in); err != nil {
 		return nil, err
 	}
 	if in.file == "" { // PublishFile already spent it, before the upload
@@ -759,6 +767,9 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 	if in.Live {
 		return nil, errLiveFile
 	}
+	if err := s.gateDeviceActions(ctx, &in); err != nil { // before the upload, not after
+		return nil, err
+	}
 	if err := s.publishLimit(tok, in.Topic); err != nil {
 		return nil, err
 	}
@@ -906,13 +917,17 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 	return senderView(tok, out, false), nil
 }
 
-// checkActions: each action is a link or a reply, never both; reply values
-// are short, unique, and at most 3 (what an Android tray entry shows).
+// checkActions: each action is one of a link, a reply, an http request or a
+// broadcast; reply values are short, unique, and at most 3 (what an Android
+// tray entry shows).
 func checkActions(as []Action) error {
 	seen := map[string]bool{}
 	for _, a := range as {
-		if (a.URL == "") == (a.Reply == "") {
-			return errf(400, "bad_request", "action %q needs a url or a reply, not both", a.Label)
+		if n := btoi(a.URL != "") + btoi(a.Reply != "") + btoi(a.HTTP != nil) + btoi(a.Broadcast != nil); n != 1 {
+			return errf(400, "bad_request", "action %q needs exactly one of url, reply, http or broadcast", a.Label)
+		}
+		if err := checkDeviceAction(a); err != nil {
+			return err
 		}
 		if a.Reply == "" {
 			continue
@@ -1359,6 +1374,8 @@ type TopicCount struct {
 	Topic string `json:"topic"`
 	Open  int    `json:"open"`
 	Icon  string `json:"icon"`
+	// DeviceActions: http and broadcast actions may be published here (#401).
+	DeviceActions bool `json:"device_actions,omitempty"`
 }
 
 // Topics lists topics tok may read, with open counts.
@@ -1366,9 +1383,9 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon) FROM (
-		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon FROM notifications
-		UNION ALL SELECT topic, 0, icon FROM topics) GROUP BY topic ORDER BY topic`)
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon), MAX(da) FROM (
+		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon, 0 AS da FROM notifications
+		UNION ALL SELECT topic, 0, icon, device_actions FROM topics) GROUP BY topic ORDER BY topic`)
 	if err != nil {
 		return nil, err
 	}
@@ -1376,7 +1393,7 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	out := []TopicCount{}
 	for rows.Next() {
 		var t TopicCount
-		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon); err != nil {
+		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon, &t.DeviceActions); err != nil {
 			return nil, err
 		}
 		if tok.may(ScopeRead, t.Topic) {
@@ -1425,8 +1442,8 @@ func (s *Server) SetTopicIcon(ctx context.Context, tok *Token, topic, icon strin
 	if err := checkImageURL("icon", icon); err != nil {
 		return err
 	}
-	if icon == "" { // keep the row while it holds a check-in
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ? AND checkin_ms IS NULL`, topic); err != nil {
+	if icon == "" { // keep the row while it holds a check-in or the device actions switch
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ? AND checkin_ms IS NULL AND device_actions = 0`, topic); err != nil {
 			return err
 		}
 		_, err := s.db.ExecContext(ctx, `UPDATE topics SET icon = '' WHERE topic = ?`, topic)

@@ -26,14 +26,6 @@ import (
 
 const ntfyMaxBody = 4096
 
-type ntfyAction struct {
-	ID     string `json:"id"`
-	Action string `json:"action"`
-	Label  string `json:"label"`
-	URL    string `json:"url"`
-	Clear  bool   `json:"clear"`
-}
-
 type ntfyMsg struct {
 	ID         string       `json:"id"`
 	Time       int64        `json:"time"`
@@ -110,8 +102,9 @@ func (s *Server) ntfyMessage(n *Notification, seq int64, sched bool) ntfyMsg {
 		}
 	}
 	for i, a := range n.Actions {
-		if a.URL != "" { // ntfy has no reply button; an http action would need our token
-			m.Actions = append(m.Actions, ntfyAction{ID: strconv.Itoa(i), Action: "view", Label: a.Label, URL: a.URL})
+		if na, ok := ntfyActionOut(a); ok { // ntfy has no reply button
+			na.ID = strconv.Itoa(i)
+			m.Actions = append(m.Actions, na)
 		}
 	}
 	return m
@@ -242,38 +235,6 @@ func ntfyPriority(v string) (int, error) {
 	return 0, errf(400, "bad_request", "invalid priority %q", v)
 }
 
-// ntfyActions keeps view actions from ntfy's short form
-// ("view, Open, https://x; http, ...") or its JSON array form.
-// http and broadcast actions are dropped (not supported yet).
-func ntfyActions(v string) ([]Action, error) {
-	var out []Action
-	if v = strings.TrimSpace(v); v == "" {
-		return nil, nil
-	}
-	if strings.HasPrefix(v, "[") {
-		var as []ntfyAction
-		if err := json.Unmarshal([]byte(v), &as); err != nil {
-			return nil, errf(400, "bad_request", "invalid actions: %v", err)
-		}
-		for _, a := range as {
-			if a.Action == "view" {
-				out = append(out, Action{Label: a.Label, URL: a.URL})
-			}
-		}
-		return out, nil
-	}
-	for _, part := range strings.Split(v, ";") {
-		f := strings.Split(part, ",")
-		for i := range f {
-			f[i] = strings.TrimSpace(f[i])
-		}
-		if len(f) >= 3 && f[0] == "view" {
-			out = append(out, Action{Label: f[1], URL: f[2]})
-		}
-	}
-	return out, nil
-}
-
 // ntfyDelay reads a unix time or a duration (30m, 2h, 1d), at most 3 days
 // ahead like ntfy's default limit.
 func ntfyDelay(v string) (*time.Time, error) {
@@ -330,7 +291,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		}
 		return s.webhookIn(w, r, tok, t) // webhooks.go
 	}
-	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid"), Live: live}
+	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid"), Live: live, dropDevice: true}
 	if in.ExternalID == "" {
 		in.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
 	}
@@ -476,7 +437,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	s.noteIgnored(r, unknown...)
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown,
-		Live: strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no")}
+		Live: strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no"), dropDevice: true}
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
 	p.Icon = ntfyIcon(icon)
@@ -491,8 +452,8 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	for _, a := range in.Actions {
-		if a.Action == "view" {
-			p.Actions = append(p.Actions, Action{Label: a.Label, URL: a.URL})
+		if pa, ok := a.action(); ok {
+			p.Actions = append(p.Actions, pa)
 		}
 	}
 	if p.SnoozeUntil, err = ntfyDelay(in.Delay); err != nil {
