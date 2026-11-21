@@ -141,9 +141,7 @@ func summary(raw json.RawMessage) string {
 // as the path and a diff-like body, "" for any other input.
 func edit(in map[string]any) string {
 	p, _ := in["file_path"].(string)
-	if nb, ok := in["notebook_path"].(string); ok {
-		p = nb
-	}
+	nb, _ := in["notebook_path"].(string)
 	text := func(k string) (string, bool) { v, ok := in[k].(string); return v, ok }
 	lines := func(mark, s string) string { return mark + strings.ReplaceAll(s, "\n", "\n"+mark) + "\n" }
 	change := func(e map[string]any) string {
@@ -157,24 +155,38 @@ func edit(in map[string]any) string {
 	}
 	var b string
 	if _, ok := in["new_string"]; ok {
-		b = change(in)
+		b = strings.TrimSuffix(change(in), "\n")
 	} else if es, ok := in["edits"].([]any); ok {
 		for _, e := range es {
 			m, _ := e.(map[string]any)
 			b += change(m)
 		}
+		b = strings.TrimSuffix(b, "\n")
 	} else if c, ok := text("content"); ok {
 		b = c
-	} else if c, ok := text("new_source"); ok {
-		b = c
+	} else if nb != "" { // which cell and what is done to it, then the new source
+		p = nb
+		mode, _ := text("edit_mode")
+		if mode == "" {
+			mode = "replace"
+		}
+		cell, _ := text("cell_id")
+		kind, _ := text("cell_type")
+		b = "(" + strings.Join(strings.Fields(mode+" cell "+cell+" "+kind), " ") + ")"
+		if src, ok := text("new_source"); ok && mode != "delete" {
+			b += "\n" + src
+		}
 	} else {
 		return ""
 	}
-	if strings.TrimSpace(b) == "" {
+	if b == "" {
 		b = "(empty)"
 	}
 	if p == "" {
 		return ""
 	}
-	return p + "\n" + strings.TrimRight(b, "\n")
+	if strings.ContainsAny(p, "\r\n") { // a newline in the path must not pass for the change
+		p = strconv.Quote(p)
+	}
+	return p + "\n" + b
 }
