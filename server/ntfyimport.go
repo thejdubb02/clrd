@@ -122,8 +122,9 @@ func (s *Server) ImportNtfy(ctx context.Context, in NtfyImport, out io.Writer) (
 	}
 	// Imported events carry ntfy's old times, and a prune drops every event
 	// up to the newest old one, so they must not sit after live ones (#388).
+	// Notifications too: a prune can empty events and leave them.
 	var has int
-	if tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM events)`).Scan(&has); has == 1 {
+	if tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM events) OR EXISTS (SELECT 1 FROM notifications)`).Scan(&has); has == 1 {
 		return fmt.Errorf("this database already has notifications; import into a fresh one (a new CLRD_DB)")
 	}
 	var copied []string // files to remove if the import does not commit
