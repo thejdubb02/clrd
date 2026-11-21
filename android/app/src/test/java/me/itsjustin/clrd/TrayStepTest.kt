@@ -26,12 +26,10 @@ class TrayStepTest {
 
     @Test fun snoozedCancels() = assertEquals(TrayStep.Cancel("n1"), TrayStep.plan(event("snoozed"), emptySet()))
 
-    /** #328: a server silence shows the message but makes no sound; a missing flag (older event) still alerts. */
-    @Test fun silencedShowsQuietly() {
-        val n = Notif.fromJson(JSONObject("""{"id":"n1","topic":"backups","state":"active","priority":5,"silenced":true}"""))
-        assertEquals(TrayStep.Show(n, silent = true), TrayStep.plan(n, emptySet()))
-        val old = Notif.fromJson(JSONObject("""{"id":"n1","topic":"backups","state":"active"}"""))
-        assertEquals(TrayStep.Show(old, silent = false), TrayStep.plan(old, emptySet()))
+    /** #328: the server's silenced flag is read; a missing one (older event) means not silenced. */
+    @Test fun readsSilenced() {
+        assertTrue(Notif.fromJson(JSONObject("""{"id":"n1","state":"active","silenced":true}""")).silenced)
+        assertEquals(false, Notif.fromJson(JSONObject("""{"id":"n1","state":"active"}""")).silenced)
     }
 
     @Test fun mutedTopicNeverShows() = assertEquals(TrayStep.Cancel("n1"), TrayStep.plan(event("active", "noisy"), setOf("noisy")))

@@ -67,6 +67,15 @@ class TrayRaceTest {
         assertEquals(Notification.GROUP_ALERT_ALL, tray("b")!!.groupAlertBehavior)
     }
 
+    /** #328: a silenced message shows without a sound, and still brings back one swiped away on this phone (it is a new alert). */
+    @Test fun aSilencedMessageShowsQuietly() {
+        val store = RoomStore(app)
+        app.trayHidden = setOf("a")
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1).copy(silenced = true), row("b", Notif.ACTIVE, 1)), 1) }
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("a")!!.groupAlertBehavior)
+        assertEquals(Notification.GROUP_ALERT_ALL, tray("b")!!.groupAlertBehavior)
+    }
+
     @Test fun reconcileWaitsForSyncWrites() {
         bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
         val store = RoomStore(app)
