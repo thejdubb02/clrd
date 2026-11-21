@@ -367,8 +367,8 @@ func TestFormatCheckSettings(t *testing.T) {
 	if code, _ := submit(t, c, ts.URL, page, raw, "laptop"); code != 200 {
 		t.Fatalf("sign in: %d", code)
 	}
-	if _, body, _ := fetch(t, c, ts.URL+"/app/settings"); strings.Contains(body, "data-format-check") {
-		t.Error("format section shown with no messages")
+	if code, body, _ := fetch(t, c, ts.URL+"/app/settings"); code != 200 || !strings.Contains(body, "Linked devices") || strings.Contains(body, "data-format-check") {
+		t.Errorf("settings with no messages: %d, want the page without the format section", code)
 	}
 	publish(t, ts, raw, "ci", "build failed")
 	publish(t, ts, raw, "ci", "build passed")
