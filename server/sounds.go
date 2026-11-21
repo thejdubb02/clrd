@@ -40,33 +40,39 @@ func soundOf(m map[string]string, id string) string {
 	return defaultSound
 }
 
-// SetSound sets device id's sound. tok must see the device (as in Devices)
-// and, like the other global settings, not be limited to some topics.
-func (s *Server) SetSound(ctx context.Context, tok *Token, id, sound string) error {
+// SetSound sets device id's sound and returns the device as written. tok
+// must see the device (as in Devices) and, like the other global settings,
+// not be limited to some topics. The check runs inside the write's
+// transaction, so a device or caller unlinked meanwhile is refused (#299).
+func (s *Server) SetSound(ctx context.Context, tok *Token, id, sound string) (LinkedDevice, error) {
+	var d LinkedDevice
 	if err := tok.need(ScopeRead, ""); err != nil {
-		return err
+		return d, err
 	}
 	if tok.limited() {
-		return errf(403, "forbidden", "a token limited to some topics cannot change sounds")
+		return d, errf(403, "forbidden", "a token limited to some topics cannot change sounds")
 	}
 	if !slices.Contains(soundNames, sound) {
-		return errf(400, "bad_request", "unknown sound %q, use one of: %s", sound, strings.Join(soundNames, ", "))
-	}
-	ds, err := s.Devices(ctx, tok)
-	if err != nil {
-		return err
-	}
-	if !slices.ContainsFunc(ds, func(d LinkedDevice) bool { return d.ID == id }) {
-		return errf(404, "not_found", "device not found")
+		return d, errf(400, "bad_request", "unknown sound %q, use one of: %s", sound, strings.Join(soundNames, ", "))
 	}
 	s.mu.Lock()
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, nil) // immediate: unlinks wait for the commit
 	if err != nil {
 		s.mu.Unlock()
-		return err
+		return d, err
 	}
 	defer tx.Rollback()
-	m, err := s.deviceSounds(ctx, tx)
+	ds, err := s.devices(ctx, tx, tok)
+	i := slices.IndexFunc(ds, func(d LinkedDevice) bool { return d.ID == id })
+	if err == nil && (i < 0 || !slices.ContainsFunc(ds, func(d LinkedDevice) bool { return d.ID == tok.ID })) {
+		err = errf(404, "not_found", "device not found")
+	}
+	m := map[string]string{}
+	if err == nil {
+		d = ds[i]
+		d.Sound = sound
+		m, err = s.deviceSounds(ctx, tx)
+	}
 	if err == nil {
 		if sound == defaultSound {
 			delete(m, id)
@@ -83,7 +89,7 @@ func (s *Server) SetSound(ctx context.Context, tok *Token, id, sound string) err
 	if err == nil {
 		s.settingsChanged.fire() // the device hears its new sound on its stream
 	}
-	return err
+	return d, err
 }
 
 func (s *Server) soundRoutes() {
@@ -104,20 +110,11 @@ func (s *Server) soundRoutes() {
 		if p.Sound == nil {
 			return errf(400, "bad_request", "sound is required")
 		}
-		id := r.PathValue("id")
-		if err := s.SetSound(r.Context(), tok, id, *p.Sound); err != nil {
-			return err
-		}
-		ds, err := s.Devices(r.Context(), tok)
+		d, err := s.SetSound(r.Context(), tok, r.PathValue("id"), *p.Sound)
 		if err != nil {
 			return err
 		}
-		for _, d := range ds {
-			if d.ID == id {
-				writeJSON(w, 200, d)
-				return nil
-			}
-		}
-		return errf(404, "not_found", "device not found")
+		writeJSON(w, 200, d) // as written, not a fresh read a racing PUT may have changed (#299)
+		return nil
 	})
 }

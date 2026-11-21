@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -76,5 +77,40 @@ func TestDeviceSound(t *testing.T) {
 	}
 	if st, _ := soundIn(phone); st != "default" {
 		t.Fatalf("a refused settings save changed the sound: %v", st)
+	}
+}
+
+// Issue #299: a PUT answers with the sound it wrote, even when another PUT
+// lands right after it.
+func TestDeviceSoundRacingPuts(t *testing.T) {
+	s, ts, admin := newTest(t)
+	id := s.lookupToken(context.Background(), admin).ID
+	var wg sync.WaitGroup
+	for _, v := range []string{"chime", "none", "pop", "bell"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 25 {
+				if code, out := call(t, ts, "PUT", "/api/v1/devices/"+id, admin, map[string]any{"sound": v}); code != 200 || out["sound"] != v {
+					t.Errorf("sent %s, got %d %v", v, code, out["sound"])
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// Issue #299: a caller unlinked after its request was let in cannot change
+// a sound. The check runs inside the write.
+func TestDeviceSoundCallerUnlinked(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	phone := s.lookupToken(ctx, linkPhone(t, ts, admin))
+	if err := s.DeleteToken(ctx, phone.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetSound(ctx, phone, s.lookupToken(ctx, admin).ID, "pop"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("unlinked caller: %v", err)
 	}
 }
