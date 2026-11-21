@@ -29,6 +29,9 @@ Fixed, Removed, Security), as one line a user can understand.
   agent can read and change it over the API or MCP and the phone follows at
   once. A sound picked before this moves to the server on the next connect,
   and one the server refuses stays on the phone and wins (#289).
+- Android: dark notification icons (GitHub's and others) no longer vanish in
+  the dark theme. They sit on a small light tile there, as on the web inbox
+  (#313).
 
 - Server: the format check's example message, which goes into the prompt you
   paste into your agent, now shows passwords, keys and tokens in it as

@@ -27,6 +27,8 @@ data class Brand(
     val clear: Color,
     val signal: Color = Color(0xFFC2410C),
     val snooze: Color = Color(0xFFB7791F),
+    /** Behind a notification's icon. Icons are drawn for light backgrounds, so dark ones (GitHub's) need a light tile in dark mode (#313). */
+    val iconTile: Color = Color.Transparent,
 )
 
 val LightBrand = Brand(
@@ -38,6 +40,7 @@ val LightBrand = Brand(
 val DarkBrand = Brand(
     ink = Color(0xFFF5F3EE), paper = Color(0xFF0F1114), surface = Color(0xFF181B20), line = Color(0xFF2C3036),
     slate = Color(0xFF9AA3AE), body = Color(0xFFC9CDD3), clear = Color(0xFF3DDC97),
+    iconTile = Color(0xFFF5F3EE), // paper, as on the web inbox
 )
 
 /** State chip colours (bg, text). */
