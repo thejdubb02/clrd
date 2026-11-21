@@ -551,8 +551,16 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
                 if (open) SelectionContainer { body() } else body()
             }
             n.file?.let { f -> Attached(f) }
-            Spacer(Modifier.height(8.dp))
             val ctx = LocalContext.current
+            // The sender's answers (Allow, Deny) show only once the whole text does: an answer approves all of it (#366).
+            val answers = if (n.isFinal) emptyList() else TrayButton.replies(n)
+            if (answers.isNotEmpty() && !open) Text(stringResource(R.string.tap_to_answer), color = b.slate, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            if (answers.isNotEmpty() && open) Row(Modifier.horizontalScroll(rememberScrollState())) { // a long label never hides the next one
+                answers.forEach { a ->
+                    TextButton(onClick = { App.of(ctx).act(n.id, "reply", org.json.JSONObject().put("reply", a.reply).put("seq", n.seq).toString()) }) { Text(a.label, color = b.ink) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Text(meta(ctx, n), style = Mono, color = b.slate, maxLines = 2, overflow = TextOverflow.Ellipsis) // 2: a full date is long
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 IconButton(onClick = { share(ctx, n) }) { Icon(Icons.Filled.Share, stringResource(R.string.share), tint = b.slate) }
