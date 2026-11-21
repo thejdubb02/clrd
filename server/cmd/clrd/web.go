@@ -188,7 +188,12 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 				snap.Silences[i].CanEnd = tok.MaySilence(sils[i].Topic)
 			}
 		}
-		snap.CanSilence = tok.Has(server.ScopePublish)
+		// Offer the form only if some silence would be accepted: a topic list
+		// with only read grants publishes nowhere.
+		snap.CanSilence = tok.MaySilence("")
+		for _, t := range snap.Topics {
+			snap.CanSilence = snap.CanSilence || tok.MaySilence(t.Name)
+		}
 	}
 	return snap, nil
 }
