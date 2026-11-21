@@ -248,6 +248,7 @@ type Snapshot struct {
 	Formatting, Autolink, Favicons, LinkPreviews bool
 	TopicPreviews                                map[string]bool // overrides LinkPreviews for one topic
 	KeepClearedDays                              int             // days cleared messages are kept, 0 = forever
+	Sound                                        string          // this device's own sound (SPEC 2.2), "default" when unset
 	Format                                       []FormatTopic   // format check (#308), Settings only: topics with problems
 }
 

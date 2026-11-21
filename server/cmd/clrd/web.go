@@ -127,6 +127,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	snap.KeepClearedDays = *ds.KeepClearedDays // Settings fills it from CLRD_RETENTION when unset
 	snap.Formatting, snap.Autolink, snap.Favicons = ds.RenderFormatting, ds.Autolink, ds.Favicons
 	snap.LinkPreviews, snap.TopicPreviews = ds.LinkPreviews, ds.TopicPreviews
+	snap.Sound = ds.Sound
 	want := map[string]bool{}
 	for _, st := range q.States {
 		want[st] = true

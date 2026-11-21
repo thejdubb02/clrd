@@ -705,6 +705,23 @@ try {
     await arrive();
     assert.deepEqual(await played(), ['/assets/sounds/pop.wav'], 'the chosen sound plays');
 
+    // The choice lives on the server, per device (#297): saved there, set by an
+    // agent while Settings is open, and a browser-only choice moves there.
+    const mine = async () => (await (await ctx.request.get(base + '/api/v1/settings')).json()).sound;
+    const local = () => sp.evaluate(() => localStorage.getItem('clrd.sound'));
+    const settle = async (want, msg) => { for (let i = 0; i < 20 && (await mine()) !== want; i++) await sp.waitForTimeout(250); assert.equal(await mine(), want, msg); };
+    await settle('pop', 'the choice is saved on the server');
+    assert.equal(await local(), null, 'and not kept in the browser');
+    await sp.goto(base + '/app/settings'); await sp.locator('.is-live').waitFor({ timeout: 5000 });
+    const me = (await (await ctx.request.get(base + '/api/v1/devices?all=1')).json()).devices.find(d => d.this);
+    const put = await fetch(`${base}/api/v1/devices/${me.id}`, { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sound: 'bell' }) });
+    assert.ok(put.ok, `agent sets the sound: ${put.status}`);
+    await sp.waitForFunction(() => document.querySelector('[data-sound-setting]').value === 'bell');
+    await sp.evaluate(() => localStorage.setItem('clrd.sound', 'soft'));
+    await inbox();
+    await settle('soft', 'a browser-only choice moves to the server');
+    assert.equal(await local(), null, 'and leaves the browser');
+
     await pick('none');
     await inbox();
     await arrive();

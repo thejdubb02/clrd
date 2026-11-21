@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := printf "%s/app" base}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "%s/app/%s" base .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-sound="{{.Snap.Sound}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -235,7 +235,7 @@
   </section>
   <section class="js-only grid gap-3" aria-labelledby="sound-h">
     <h2 id="sound-h" class="text-base font-semibold">Sound</h2>
-    <p class="text-body text-sm/relaxed">Plays when a new notification arrives while clrd is open in this browser. Silenced notifications make no sound. This setting is for this browser only.</p>
+    <p class="text-body text-sm/relaxed">Plays when a new notification arrives while clrd is open in this browser. Silenced notifications make no sound. Each browser and phone has its own sound.</p>
     <div class="flex flex-wrap items-center gap-2"><label for="sound" class="label">Sound</label>
       <select id="sound" class="input w-auto" data-sound-setting><option value="default">Default (Chime)</option><option value="none">None</option><option value="chime">Chime</option><option value="ding">Ding</option><option value="pop">Pop</option><option value="bell">Bell</option><option value="alert">Alert</option><option value="soft">Soft</option></select>
       <button type="button" class="btn" data-variant="outline" data-sound-play>Play</button></div>

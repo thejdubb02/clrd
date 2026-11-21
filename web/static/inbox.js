@@ -161,10 +161,24 @@
   addEventListener('storage', e => { if (e.key === 'clrd.stack') { stacking = e.newValue === '1'; restack(); tidy(); } });
 
   // Sound for a new notification while the page is open (#282, SPEC 2.2).
-  // Kept in this browser for now. Unset, default or a name this page does not
+  // The server keeps each device's choice, so an agent can set it too (#297).
+  // A choice the server refused (a token limited to some topics, no
+  // connection) stays in this browser and wins; one from before #297 moves to
+  // the server on the next load. Unset, default or a name this page does not
   // know plays chime: a browser has no sound of its own.
   const sounds = ['chime', 'ding', 'pop', 'bell', 'alert', 'soft'];
-  const soundPick = () => { try { return localStorage.getItem('clrd.sound') || 'default'; } catch { return 'default'; } };
+  let serverSound = shell.dataset.sound || 'default';
+  const localSound = () => { try { return localStorage.getItem('clrd.sound'); } catch { return null; } };
+  const keepLocal = s => { try { s ? localStorage.setItem('clrd.sound', s) : localStorage.removeItem('clrd.sound'); } catch {} };
+  const soundPick = () => localSound() || serverSound;
+  // Saves s for this device; returns '' or why it is kept in this browser only.
+  const saveSound = async s => {
+    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sound: s }) }).catch(() => null);
+    if (r && r.ok) { serverSound = s; keepLocal(null); return ''; }
+    keepLocal(s);
+    return 'Saved in this browser only: ' + (r ? ((await r.json().catch(() => ({}))).error || `the server said ${r.status}.`) : 'no connection.');
+  };
+  if (localSound()) saveSound(localSound());
   const soundFile = s => s === 'none' ? '' : sounds.includes(s) ? s : 'chime';
   // A browser blocks sound until the page has had a click or key press: say so, never an error.
   const blocked = 'Sound is blocked until you click or press a key on this page.';
@@ -183,7 +197,7 @@
     if (!soundSel.value) soundSel.value = 'default';
     const hint = $('[data-sound-hint]');
     const preview = () => { hint.textContent = ''; playSound(soundSel.value, () => { hint.textContent = blocked; }); };
-    soundSel.addEventListener('change', () => { try { localStorage.setItem('clrd.sound', soundSel.value); } catch {} preview(); });
+    soundSel.addEventListener('change', async () => { preview(); const why = await saveSound(soundSel.value); if (why) hint.textContent = why; });
     $('[data-sound-play]').addEventListener('click', preview);
   }
 
@@ -694,6 +708,7 @@
         // Snooze times or formatting changed on another device: the cards are stale.
         // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
         const st = m.settings || {};
+        if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
         const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
         else if ('keep_cleared_days' in st && `${st.keep_cleared_days}` !== shell.dataset.keep) reset(); // a stale form would save the old period back
