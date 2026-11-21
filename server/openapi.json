@@ -1148,7 +1148,7 @@
   "/api/v1/format-check": {
    "get": {
     "summary": "Formatting problems by topic",
-    "description": "Runs plain string rules over the newest 500 notifications this token can read and returns the topics with findings: markdown_as_text, unknown_shortcode, no_title, long_body (over 2000 characters) and json_dump. Each finding has a count, the newest example and the fix in plain words; each topic has a prompt to paste into an agent to fix its sender. Advice only: nothing is stored or changed.",
+    "description": "Runs plain string rules over the newest 500 notifications this token can read and returns the topics with findings: markdown_as_text, unknown_shortcode, no_title, long_body (over 2000 characters) and json_dump. Each finding has a count, the newest example and the fix in plain words; each topic has a prompt to paste into an agent to fix its sender. With by=sender, one group per topic and sending token, with sender_id and sender (the token's name). Topics turned off (PUT /api/v1/topics/{topic} format_check false) and dismissed findings are left out, and listed in off and dismissed. Advice only: nothing is changed.",
     "tags": [
      "notifications"
     ],
@@ -1161,6 +1161,19 @@
        "type": "string"
       },
       "description": "Check only this topic."
+     },
+     {
+      "name": "by",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "topic",
+        "sender"
+       ]
+      },
+      "description": "Group by topic (the default) or by topic and sending token."
      }
     ],
     "responses": {
@@ -1190,10 +1203,96 @@
            ],
            "prompt": "Fix the program that sends notifications to the clrd topic \"backups\"..."
           }
+         ],
+         "off": [
+          "chatty"
+         ],
+         "dismissed": [
+          {
+           "topic": "backups",
+           "rule": "long_body",
+           "sender_id": ""
+          }
          ]
         }
        }
       }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/format-check/dismiss": {
+   "post": {
+    "summary": "Dismiss a format check finding",
+    "description": "Scope publish on the topic. Stops one rule counting in the topic, for one sending token (sender_id from by=sender) or for every sender when sender_id is left out. dismissed false shows it again. Nothing is dismissed until set.",
+    "tags": [
+     "notifications"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "topic",
+         "rule"
+        ],
+        "properties": {
+         "topic": {
+          "type": "string"
+         },
+         "rule": {
+          "type": "string",
+          "enum": [
+           "markdown_as_text",
+           "unknown_shortcode",
+           "no_title",
+           "long_body",
+           "json_dump"
+          ]
+         },
+         "sender_id": {
+          "type": "string",
+          "description": "The sending token's id; leave out for every sender."
+         },
+         "dismissed": {
+          "type": "boolean",
+          "description": "false shows the finding again. Default true."
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        },
+        "example": {
+         "topic": "backups",
+         "rule": "no_title",
+         "sender_id": "",
+         "dismissed": true
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
      }
     }
    }
@@ -1294,7 +1393,7 @@
   },
   "/api/v1/topics/{topic}": {
    "put": {
-    "summary": "Set a topic's icon or its expected check-in interval",
+    "summary": "Set a topic's icon, its expected check-in interval, or whether the format check looks at it",
     "description": "Scope publish on the topic. An empty icon removes it; notifications already published keep their icon. A checkin interval makes the topic a dead man's switch: when no message arrives in time the server publishes an urgent notification with external_id clrd-checkin, and the next message resolves it.",
     "tags": [
      "notifications"
@@ -1313,6 +1412,10 @@
          "checkin": {
           "type": "string",
           "description": "Expected interval between messages, a Go duration from 1m to 8784h such as \"25h\", or \"\" to turn it off. The timer starts when set."
+         },
+         "format_check": {
+          "type": "boolean",
+          "description": "false leaves the topic out of the format check; true (the default) puts it back."
          }
         }
        }
