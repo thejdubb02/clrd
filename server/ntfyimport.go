@@ -359,29 +359,14 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 		cutoff = now().Add(-in.ClearOlderThan)
 	}
 	emit := func(typ string, n *Notification, at time.Time, mid string) error {
-		res, err := tx.ExecContext(ctx, `INSERT INTO events (type, topic, data, created_at) VALUES (?, ?, '', ?)`, typ, n.Topic, ms(at))
-		if err != nil {
+		if err := importEvent(ctx, tx, typ, n, at, "ntfy_import"); err != nil {
 			return err
 		}
-		seq, _ := res.LastInsertId()
-		n.Seq, n.UpdatedAt, maxSeq = seq, at, seq
-		if err := saveNotification(tx, n); err != nil {
-			return err
+		maxSeq = n.Seq
+		if mid == "" {
+			return nil
 		}
-		ev := Event{Seq: seq, Type: typ, Notification: n}
-		if typ == EventState {
-			ev.Via = "ntfy_import"
-		}
-		raw, err := json.Marshal(ev)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE events SET data = ? WHERE seq = ?`, string(raw), seq); err != nil {
-			return err
-		}
-		if mid != "" {
-			_, err = tx.ExecContext(ctx, `INSERT OR REPLACE INTO ntfy_mids (mid, seq) VALUES (?, ?)`, mid, seq)
-		}
+		_, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO ntfy_mids (mid, seq) VALUES (?, ?)`, mid, n.Seq)
 		return err
 	}
 	for rows.Next() {
@@ -505,6 +490,30 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 	rep.skip(badActions, "action lists clrd cannot read")
 	rep.skip(skipped, "other events (clears of unknown messages, keepalives)")
 	return maxSeq, copied, nil
+}
+
+// importEvent writes one imported event at the source's own time and saves
+// n as it stands after it. A state change records via as its cause.
+func importEvent(ctx context.Context, tx *sql.Tx, typ string, n *Notification, at time.Time, via string) error {
+	res, err := tx.ExecContext(ctx, `INSERT INTO events (type, topic, data, created_at) VALUES (?, ?, '', ?)`, typ, n.Topic, ms(at))
+	if err != nil {
+		return err
+	}
+	n.Seq, _ = res.LastInsertId()
+	n.UpdatedAt = at
+	if err := saveNotification(tx, n); err != nil {
+		return err
+	}
+	ev := Event{Seq: n.Seq, Type: typ, Notification: n}
+	if typ == EventState {
+		ev.Via = via
+	}
+	raw, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE events SET data = ? WHERE seq = ?`, string(raw), n.Seq)
+	return err
 }
 
 func randomHex() string {

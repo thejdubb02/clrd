@@ -69,6 +69,7 @@ const usage = `clrd: self-hosted notifications. Dismiss once, gone everywhere.
   clrd token create [--name me] [--scope read,publish|admin] [--topics a,b] [--approve allowed|ask]
   clrd token list
   clrd import ntfy --auth-file user.db --cache-file cache.db --default-access deny-all [--dry-run]
+  clrd import gotify --db gotify.db [--clear-older-than 720h] [--dry-run]
   clrd health                  exit 0 if the local server answers /healthz
 
 Settings are optional environment variables: CLRD_LISTEN (:8080), CLRD_DB
@@ -123,10 +124,13 @@ func tokenCmd(opt server.Options, args []string) error {
 	return nil
 }
 
-// importCmd copies another server's data in. Only ntfy for now (issue #117).
+// importCmd copies another server's data in: ntfy (issue #117) or Gotify (#116).
 func importCmd(opt server.Options, args []string) error {
+	if len(args) > 0 && args[0] == "gotify" {
+		return importGotify(opt, args[1:])
+	}
 	if len(args) == 0 || args[0] != "ntfy" {
-		return fmt.Errorf("want import ntfy")
+		return fmt.Errorf("want import ntfy or import gotify")
 	}
 	fs := flag.NewFlagSet("import ntfy", flag.ContinueOnError)
 	var in server.NtfyImport
@@ -148,6 +152,26 @@ func importCmd(opt server.Options, args []string) error {
 	}
 	defer s.Close()
 	return s.ImportNtfy(context.Background(), in, os.Stdout)
+}
+
+func importGotify(opt server.Options, args []string) error {
+	fs := flag.NewFlagSet("import gotify", flag.ContinueOnError)
+	var in server.GotifyImport
+	fs.StringVar(&in.DB, "db", "", "Gotify's database (data/gotify.db)")
+	fs.DurationVar(&in.ClearOlderThan, "clear-older-than", 0, "messages older than this arrive dismissed (0 keeps all open)")
+	fs.BoolVar(&in.DryRun, "dry-run", false, "print what maps and what does not, change nothing")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if in.DB == "" {
+		return fmt.Errorf("want --db gotify.db")
+	}
+	s, err := server.New(opt)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	return s.ImportGotify(context.Background(), in, os.Stdout)
 }
 
 // health is for container health checks (distroless has no curl).

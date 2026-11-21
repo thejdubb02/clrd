@@ -108,6 +108,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: `clrd import gotify` copies a Gotify server in: each app becomes a
+  topic whose token (Gotify 3's `gtfya.` keys and older ones) keeps sending,
+  with its default priority, plus the message history. See
+  docs/migrate-from-gotify.md. (#116)
+
 - Integrations: a Claude Code plugin, installed from this repo with
   `/plugin marketplace add thejdubb02/clrd`. One install and two questions
   (server URL and token) give Claude the clrd MCP server, a ping when a task

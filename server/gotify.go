@@ -2,6 +2,10 @@ package server
 
 import (
 	"context"
+	"crypto"
+	"crypto/ed25519"
+	"crypto/sha512"
+	"encoding/base64"
 	"net/http"
 	"slices"
 	"strconv"
@@ -102,16 +106,7 @@ func (s *Server) gotifyPublish(w http.ResponseWriter, r *http.Request, key strin
 	if in.Priority != nil {
 		pub.Priority = gotifyPriority(*in.Priority)
 	}
-	if extra(in.Extras, "client::display", "contentType") == "text/markdown" {
-		*pub.Markdown = true // Gotify's default is plain text
-	}
-	note, _ := in.Extras["client::notification"].(map[string]any)
-	if click, _ := note["click"].(map[string]any); click != nil {
-		pub.Click, _ = click["url"].(string)
-	}
-	if img := ntfyIcon(extra(in.Extras, "client::notification", "bigImageUrl")); img != "" {
-		pub.Attachment = &Attachment{URL: img}
-	}
+	*pub.Markdown, pub.Click, pub.Attachment = gotifyExtras(in.Extras)
 	n, err := s.Publish(r.Context(), tok, pub)
 	if err != nil {
 		return err
@@ -137,6 +132,7 @@ type gotifyApp struct {
 func (s *Server) lookupGotifyApp(ctx context.Context, key string) (*Token, gotifyApp) {
 	var app gotifyApp
 	var id string
+	key = gotifyStored(key)
 	if key == "" || s.db.QueryRowContext(ctx, `SELECT g.id, g.priority, g.token_id FROM gotify_apps g JOIN tokens t ON t.id = g.token_id WHERE t.hash = ?`,
 		hashToken(key)).Scan(&app.id, &app.priority, &id) != nil {
 		return nil, gotifyApp{}
@@ -147,6 +143,45 @@ func (s *Server) lookupGotifyApp(ctx context.Context, key string) (*Token, gotif
 	}
 	s.touch(ctx, t)
 	return t, app
+}
+
+// gotifyStored is a key in the form Gotify stores it, the form an imported
+// key was hashed in. Gotify 3 keeps a "gtfy" key by its ed25519 public key
+// (its auth.EnhancedToken.PublicForm), so the stored form alone cannot send;
+// older keys are stored as sent. A "gtfy" key is either ident.seed or the
+// signed ident.pubkey.unixtime.signature, good for 15 minutes either side of
+// its time, as Gotify takes it. "" for a "gtfy" key that does not pass.
+func gotifyStored(key string) string {
+	rest, ok := strings.CutPrefix(key, "gtfy")
+	if !ok {
+		return key
+	}
+	f := strings.Split(rest, ".")
+	if len(f) < 2 {
+		return ""
+	}
+	k, err := base64.RawURLEncoding.DecodeString(f[1])
+	switch {
+	case err != nil:
+		return ""
+	case len(f) == 2 && len(k) == ed25519.SeedSize:
+		k = ed25519.NewKeyFromSeed(k).Public().(ed25519.PublicKey)
+	case len(f) == 4 && len(k) == ed25519.PublicKeySize && gotifySigned(k, f[2], f[3]):
+	default:
+		return ""
+	}
+	return "gtfy" + f[0] + "." + base64.RawURLEncoding.EncodeToString(k)
+}
+
+// gotifySigned checks a signed Gotify key: Ed25519ph over "iat=<time>".
+func gotifySigned(pub []byte, ts, sig string) bool {
+	t, err := strconv.ParseInt(ts, 10, 64)
+	s, err2 := base64.RawURLEncoding.DecodeString(sig)
+	if d := now().Unix() - t; err != nil || err2 != nil || d > 15*60 || d < -15*60 {
+		return false
+	}
+	h := sha512.Sum512([]byte("iat=" + strconv.FormatInt(t, 10)))
+	return ed25519.VerifyWithOptions(pub, h[:], s, &ed25519.Options{Hash: crypto.SHA512}) == nil
 }
 
 // gotifyAppRoutes: an admin makes a Gotify app, a publish-only token for one
@@ -189,6 +224,19 @@ func (s *Server) gotifyAppRoutes() {
 		writeJSON(w, 200, map[string]any{"id": appid, "token": key, "name": t.Name, "topic": in.Topic, "token_id": t.ID, "defaultPriority": in.Priority})
 		return nil
 	})
+}
+
+// gotifyExtras reads the extras clrd keeps: Markdown (Gotify's default is
+// plain text), the click URL and the big image.
+func gotifyExtras(extras map[string]any) (markdown bool, click string, att *Attachment) {
+	note, _ := extras["client::notification"].(map[string]any)
+	if c, _ := note["click"].(map[string]any); c != nil {
+		click, _ = c["url"].(string)
+	}
+	if img := ntfyIcon(extra(extras, "client::notification", "bigImageUrl")); img != "" {
+		att = &Attachment{URL: img}
+	}
+	return extra(extras, "client::display", "contentType") == "text/markdown", click, att
 }
 
 func extra(extras map[string]any, ns, key string) string {

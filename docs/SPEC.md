@@ -647,8 +647,17 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
   priority), deleted with the token. These secrets are looked up only on
   `POST /message`, never by the native or ntfy auth. A message without
   `priority` takes the app's default; the reply's `appid` is the app id, 0
-  for a plain clrd token (#372). Tokens imported from Gotify come with
-  `clrd import gotify`.
+  for a plain clrd token (#372).
+- Gotify import (#116): `clrd import gotify --db gotify.db
+  [--clear-older-than D] [--dry-run]` makes each app a topic (slug of its
+  name) and a `gotify_apps` key hashed in the form Gotify stores it. Gotify 3
+  stores a `gtfy<ident>.<seed>` key by its ed25519 public key, so on lookup a
+  `gtfy` key is turned into that form first; the stored form alone cannot
+  send. The signed form `gtfy<ident>.<pubkey>.<unixtime>.<sig>` (Ed25519ph
+  over `iat=<unixtime>`) is taken within 15 minutes of its time, as Gotify
+  does. Messages keep their time, title, priority, Markdown, click and big
+  image. Users, client tokens and plugins are counted, not copied. Only into
+  a database with no events yet, once (meta `gotify_imported`).
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
