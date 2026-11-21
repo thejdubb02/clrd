@@ -403,3 +403,17 @@ func TestNtfyMIDRejectsPaths(t *testing.T) {
 		t.Error("real id refused")
 	}
 }
+
+// Imported events carry old times; after live ones a prune would drop the
+// live ones too (#388), so a used database is refused.
+func TestNtfyImportNeedsFreshDB(t *testing.T) {
+	s, _, _ := newTest(t)
+	if _, err := s.db.Exec(`INSERT INTO events (type, topic, data, created_at) VALUES ('created', 'live', '', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	err := s.ImportNtfy(context.Background(), NtfyImport{AuthFile: dir + "/user.db", CacheFile: dir + "/cache.db", DefaultAccess: "deny-all"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "fresh") {
+		t.Fatalf("import into a used database: %v", err)
+	}
+}

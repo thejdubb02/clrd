@@ -35,6 +35,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- `clrd import ntfy` refuses a database that already has notifications, as the
+  Gotify import does. Before, importing into a server in use could let the
+  next cleanup delete recent live events, so phones offline at the time
+  missed them (#388).
 - Server: an ntfy import replaces anonymous access set before it through the
   admin API, so no older anonymous token stays live beside the imported one
   (#375).

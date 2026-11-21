@@ -49,7 +49,8 @@ Take the three paths from ntfy's `server.yml` (`auth-file`, `cache-file`,
 
 Run the same command without `--dry-run`, on a fresh clrd database, while
 clrd is not running (`CLRD_DB` says which database). An import runs once per
-database; a second one is refused.
+database; a second one, or one into a database that already has
+notifications, is refused.
 
 Add `--clear-older-than 72h` to bring older messages in as dismissed, so
 phones do not start with a pile of old alerts. Without it every message
