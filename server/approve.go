@@ -2,17 +2,33 @@ package server
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"slices"
 )
 
 // Who may answer approval requests (#187). Every token and device has a
-// setting: allowed ones may tap a reply action, denied ones may not. Phones
+// setting: allowed ones may tap a reply action, ask ones may tap but it
+// counts only once an allowed device confirms it, denied ones may not. Phones
 // and browsers the user links inherit it from the token they hang under;
 // the setup token is allowed and every other new token denied.
 const (
 	ApproveAllowed = "allowed"
+	ApproveAsk     = "ask"
 	ApproveDenied  = "denied"
 )
+
+// approveRank orders the settings: a change to a higher one is a raise.
+var approveRank = map[string]int{ApproveDenied: 0, ApproveAsk: 1, ApproveAllowed: 2}
+
+func checkApprove(v string) error {
+	if _, ok := approveRank[v]; !ok {
+		return errf(400, "bad_request", "approve must be %s, %s or %s", ApproveAllowed, ApproveAsk, ApproveDenied)
+	}
+	return nil
+}
 
 // approveOf reads id's setting through q, never a copy that may be stale.
 func approveOf(ctx context.Context, q querier, id string) (string, error) {
@@ -21,25 +37,89 @@ func approveOf(ctx context.Context, q querier, id string) (string, error) {
 	return v, err
 }
 
-// mayApprove refuses a reply action from tok when its setting is denied, or
-// when the notification came from the same token tree: a token never
-// answers its own request, through a browser or phone made from it either.
-func mayApprove(ctx context.Context, q querier, tok *Token, sender string) error {
+// mayApprove returns tok's setting, or refuses a reply action from tok when
+// it is denied, or when the notification came from the same token tree: a
+// token never answers its own request, through a browser or phone made from
+// it either. Only an allowed device may answer a confirm prompt.
+func mayApprove(ctx context.Context, q querier, tok *Token, n *Notification) (string, error) {
 	v, err := approveOf(ctx, q, tok.ID)
-	if err != nil {
-		return err
+	if err == nil && (v == ApproveDenied || (v == ApproveAsk && n.confirm != "")) {
+		err = errf(403, "approve_denied", "this device may not answer approval requests; an allowed device can change that in Settings")
 	}
-	if v != ApproveAllowed {
-		return errf(403, "approve_denied", "this device may not answer approval requests; an allowed device can change that in Settings")
+	if err == nil && n.sender != "" {
+		err = notOwn(ctx, q, tok, n.sender)
 	}
-	if sender == "" {
-		return nil
-	}
-	mine, err := topIn(ctx, q, tok.ID) // sender is already its tree's top
+	return v, err
+}
+
+// notOwn refuses tok when it is in the token tree whose top is sender.
+func notOwn(ctx context.Context, q querier, tok *Token, sender string) error {
+	mine, err := topIn(ctx, q, tok.ID)
 	if err == nil && mine == sender {
 		err = errf(403, "own_request", "a token cannot answer a request it sent")
 	}
 	return err
+}
+
+// confirmLink is what a confirm prompt holds, server side only: which
+// answer an ask device gave, to which question as it stood then.
+type confirmLink struct {
+	Target, Reply, Asker, AskerName string
+	Seq                             int64
+}
+
+// askConfirm is an ask device's tap on n: n stays unanswered, and a prompt
+// on the same topic asks an allowed device to confirm it. A repeat tap
+// returns the prompt already open, with no new event.
+func (s *Server) askConfirm(ctx context.Context, tx *sql.Tx, tok *Token, n *Notification, reply string) (*Notification, []Event, error) {
+	p, err := getNotification(ctx, tx, `state NOT IN ('dismissed', 'resolved') AND json_extract(NULLIF(confirm, ''), '$.Target') = ?
+	  AND json_extract(confirm, '$.Asker') = ? AND json_extract(confirm, '$.Reply') = ? AND json_extract(confirm, '$.Seq') = ?`, n.ID, tok.ID, reply, n.Seq)
+	if !isNotFound(err) {
+		return p, nil, err
+	}
+	sender, err := topIn(ctx, tx, tok.ID) // the asker's tree may not confirm it
+	if err != nil {
+		return nil, nil, err
+	}
+	link, _ := json.Marshal(confirmLink{n.ID, reply, tok.ID, tok.Name, n.Seq})
+	label := n.Actions[slices.IndexFunc(n.Actions, func(a Action) bool { return a.Reply == reply })].Label
+	t := now()
+	p = &Notification{ID: s.newID(t), Topic: n.Topic, Title: fmt.Sprintf("Confirm %s's answer: %s", tok.Name, label),
+		Message: n.Title + "\n\n" + n.Message, Format: n.Format, Priority: n.Priority, Tags: []string{}, Icon: n.Icon,
+		Actions: []Action{{Label: "Confirm", Reply: "confirm"}, {Label: "Reject", Reply: "reject"}},
+		State:   Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, sender: sender, confirm: string(link)}
+	return p, []Event{{Type: EventCreated, Notification: p}}, nil
+}
+
+// confirmed answers prompt p for tok (allowed, outside the asker's tree and
+// the question's). On confirm it applies the ask device's tap to the
+// question, which must be unanswered and unchanged since that tap. On reject
+// p drops its link, so reopening p cannot revive the tap.
+func (s *Server) confirmed(ctx context.Context, tx *sql.Tx, tok *Token, p *Notification, reply, via string) ([]Event, error) {
+	var l confirmLink
+	if err := json.Unmarshal([]byte(p.confirm), &l); err != nil {
+		return nil, err
+	}
+	n, err := getNotification(ctx, tx, `id = ?`, l.Target)
+	if isNotFound(err) {
+		err = errf(409, "conflict", "the question is gone")
+	}
+	if err == nil {
+		err = notOwn(ctx, tx, tok, n.sender)
+	}
+	if err != nil || reply != "confirm" {
+		p.confirm = ""
+		return nil, err
+	}
+	if err := s.changedSince(ctx, tx, n, l.Seq); err != nil {
+		return nil, err
+	}
+	if n.Reply != "" || n.Final() {
+		return nil, errf(409, "conflict", "already answered or cleared")
+	}
+	n.Reply, n.State, n.SnoozeUntil, n.StateBy, n.StateByID = l.Reply, Acknowledged, nil, l.AskerName, l.Asker
+	n.stopRepeat()
+	return []Event{{Type: EventState, Notification: n, Via: via, replied: true}}, nil
 }
 
 // SetApprove changes device id's setting. tok must itself be allowed, not
@@ -56,8 +136,8 @@ func (s *Server) SetApprove(ctx context.Context, tok *Token, id, approve string)
 	if tok.limited() {
 		return d, errf(403, "forbidden", "a token limited to some topics cannot change who may approve")
 	}
-	if approve != ApproveAllowed && approve != ApproveDenied {
-		return d, errf(400, "bad_request", "approve must be %s or %s", ApproveAllowed, ApproveDenied)
+	if err := checkApprove(approve); err != nil {
+		return d, err
 	}
 	tx, d, err := s.deviceTx(ctx, tok, id)
 	if tx != nil {
@@ -70,7 +150,7 @@ func (s *Server) SetApprove(ctx context.Context, tok *Token, id, approve string)
 	if err == nil && mine != ApproveAllowed {
 		err = errf(403, "approve_denied", "only an allowed device can change who may approve")
 	}
-	if err == nil && approve == ApproveAllowed && d.Approve != ApproveAllowed {
+	if err == nil && approveRank[approve] > approveRank[d.Approve] {
 		var up int // id is tok or a token tok hangs under
 		err = tx.QueryRowContext(ctx, `WITH RECURSIVE up(id) AS
 		  (SELECT ? UNION SELECT parent_id FROM sessions JOIN up ON token_id = up.id)

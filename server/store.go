@@ -192,6 +192,7 @@ type Notification struct {
 	Attachment  *Attachment `json:"attachment"`
 	file        string      // uploaded file id, "" for none or external
 	sender      string      // top token of the last sender's tree: it may not answer it (#187)
+	confirm     string      // a confirm prompt: its confirmLink as JSON, "" for any other (#187)
 	Reply       string      `json:"reply"` // the reply action tapped, "" until one is
 	State       string      `json:"state"`
 	StateBy     string      `json:"state_by"`
@@ -273,7 +274,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -355,7 +356,7 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm`
 
 type scanner interface{ Scan(...any) error }
 
@@ -366,7 +367,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
-		&n.Silenced, &rep, &n.sender)
+		&n.Silenced, &rep, &n.sender, &n.confirm)
 	if err != nil {
 		return nil, err
 	}
@@ -408,15 +409,15 @@ func saveNotification(tx *sql.Tx, n *Notification) error {
 		b, _ := json.Marshal(n.Repeat)
 		rep = string(b)
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(25)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(26)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep, n.sender)
+		n.Silenced, rep, n.sender, n.confirm)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -915,12 +916,15 @@ func checkActions(as []Action) error {
 // Reply records a tap on one of the notification's reply actions and
 // acknowledges it. The first answer wins: a second one gets 409. A non-zero
 // seq is the version the device showed; if the row changed since (say the
-// sender put a new question under the same key), the tap gets 409.
+// sender put a new question under the same key), the tap gets 409. A tap
+// from an ask device leaves it unanswered and returns the confirm prompt
+// instead, a notification with another id (#187).
 func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, seq int64) (*Notification, error) {
 	if tok == nil {
 		return nil, errf(401, "unauthorized", noToken)
 	}
-	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+	var out *Notification
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		n, err := getNotification(ctx, tx, `id = ?`, id)
 		if err != nil {
 			return nil, err
@@ -928,25 +932,14 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 		if err := tok.need(ScopeRead, n.Topic); err != nil {
 			return nil, err
 		}
-		if seq != 0 && seq != n.Seq {
-			// A seq the row never had, or one whose later events were pruned,
-			// cannot be checked against the log: refuse it (#280).
-			if seq > n.Seq || seq < s.pruned.Load() {
-				return nil, errf(409, "conflict", "notification changed since seq %d; show the current one", seq)
-			}
-			var changed int // a re-alert changes the seq, not the question
-			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE seq > ? AND type != ? AND json_extract(data, '$.notification.id') = ?`,
-				seq, EventRepeat, n.ID).Scan(&changed); err != nil {
-				return nil, err
-			}
-			if changed > 0 {
-				return nil, errf(409, "conflict", "notification changed since seq %d; show the current one", seq)
-			}
+		if err := s.changedSince(ctx, tx, n, seq); err != nil {
+			return nil, err
 		}
 		if reply == "" || !slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply == reply }) {
 			return nil, errf(400, "bad_request", "%q is not one of this notification's replies", reply)
 		}
-		if err := mayApprove(ctx, tx, tok, n.sender); err != nil {
+		v, err := mayApprove(ctx, tx, tok, n)
+		if err != nil {
 			return nil, err
 		}
 		if n.Reply != "" {
@@ -955,15 +948,48 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 		if n.Final() {
 			return nil, errf(409, "conflict", "notification is %s", n.State)
 		}
-		n.Reply, n.State, n.SnoozeUntil = reply, Acknowledged, nil
+		var evs []Event
+		if v == ApproveAsk {
+			out, evs, err = s.askConfirm(ctx, tx, tok, n, reply)
+			return evs, err
+		}
+		prompt := n.confirm != ""
+		if prompt {
+			if evs, err = s.confirmed(ctx, tx, tok, n, reply, via); err != nil {
+				return nil, err
+			}
+		}
+		out, n.Reply, n.State, n.SnoozeUntil = n, reply, Acknowledged, nil
 		n.setBy(tok)
 		n.stopRepeat()
-		return []Event{{Type: EventState, Notification: n, Via: via, replied: true}}, nil
+		// A tap on a confirm prompt is not an answer to the topic's hooks.
+		return append([]Event{{Type: EventState, Notification: n, Via: via, replied: !prompt}}, evs...), nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return evs[0].Notification, nil
+	return out, nil
+}
+
+// changedSince refuses a tap on n from a device that showed it at seq, when
+// the question changed since; a re-alert changes the seq, not the question.
+// A seq the row never had, or one whose later events were pruned, cannot be
+// checked against the log: refuse it (#280).
+func (s *Server) changedSince(ctx context.Context, tx *sql.Tx, n *Notification, seq int64) error {
+	if seq == 0 || seq == n.Seq {
+		return nil
+	}
+	changed := 1
+	if seq < n.Seq && seq >= s.pruned.Load() {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE seq > ? AND type != ? AND json_extract(data, '$.notification.id') = ?`,
+			seq, EventRepeat, n.ID).Scan(&changed); err != nil {
+			return err
+		}
+	}
+	if changed > 0 {
+		return errf(409, "conflict", "notification changed since seq %d; show the current one", seq)
+	}
+	return nil
 }
 
 // scopeFor: the sender's actions need publish; the user's own need read.

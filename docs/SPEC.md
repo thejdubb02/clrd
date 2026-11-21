@@ -440,8 +440,9 @@ the session cookie (same-origin only) as well as a Bearer token.
 - Setup: with no admin token in the database the server logs
   `<CLRD_BASE_URL>/setup?code=<one-time code>`. Opening it shows a form; posting
   it creates an admin token, shows it once and signs the browser in.
-- **Who may approve:** every token has `approve`, `allowed` or `denied`. Only
-  an allowed token may tap a reply action (403 `approve_denied` otherwise),
+- **Who may approve:** every token has `approve`: `allowed`, `ask` or
+  `denied`. Only an allowed or ask token may tap a reply action (403
+  `approve_denied` otherwise),
   and never on a notification sent by its own token tree: the token itself,
   a browser or phone made from it, or the token it hangs under (403
   `own_request`). The setup token is allowed; every other new token is
@@ -451,7 +452,16 @@ the session cookie (same-origin only) as well as a Bearer token.
   setting. `PUT /api/v1/devices/{id}/approve` with `{"approve":...}` changes
   it: the caller must be allowed, not limited to some topics, and see the
   device in its device list; it may lower any of them, itself included, but
-  never raise itself or a token it hangs under. On upgrade from a version
+  never raise itself or a token it hangs under (denied, ask, allowed is the
+  order). An ask device's tap does not count yet: the reply route answers
+  202 with a confirm prompt, a new notification on the same topic titled
+  "Confirm <device>'s answer: <label>" with reply actions `confirm` and
+  `reject`. A repeat tap returns the same prompt. Only an allowed device
+  outside the asker's token tree and the question's may answer it; `confirm`
+  applies the tap to the question (state by the ask device), 409 if the
+  question was answered, cleared or changed since. `reject` only clears the
+  prompt. Taps on a prompt are not sent to the topic's action hooks. On
+  upgrade from a version
   without this setting, browsers and phones already linked are allowed and
   plain tokens are denied.
 
@@ -484,7 +494,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/notifications/{id}` | One. |
 | PATCH | `/api/v1/notifications/{id}` | Body `{"message":"..."}`: replace the message of an open notification in place (same id and state, an `updated` event). Scope publish on its topic; 409 once dismissed or resolved, or if it has reply buttons (a tap answers the text shown; link buttons are fine). |
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
-| POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`: answer with one of its reply actions (section 2). 400 if not one of them, 409 if already answered or final, 403 `approve_denied` from a device not allowed to approve, 403 `own_request` from the token tree that sent it (section 4). |
+| POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`: answer with one of its reply actions (section 2). 400 if not one of them, 409 if already answered or final, 403 `approve_denied` from a device not allowed to approve, 403 `own_request` from the token tree that sent it, 202 with a confirm prompt from an ask device (section 4). |
 | POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. |
 | POST | `/api/v1/notifications/{id}/dismiss` | User clears it. |
 | POST | `/api/v1/notifications/{id}/resolve` | Sender clears it. |
@@ -539,7 +549,7 @@ resolved`) and `ntfy_import`.
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
 | PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
 | DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. |
-| PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
+| PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. |
 | GET | `/api/v1/server` | Admin. The section 7 settings in effect, defaults filled in: `{"env":{"CLRD_LISTEN":":8080",...}}`, each written the way its variable takes it (`CLRD_BASE_URL` empty when unset, a password in it shown as `xxxxx`; `0` for a rate limit that is off). Read only; no secrets. |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |

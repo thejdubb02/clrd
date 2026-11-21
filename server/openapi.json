@@ -585,6 +585,16 @@
        }
       }
      },
+     "202": {
+      "description": "From an ask device: the confirm prompt, waiting for an allowed device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
      "404": {
       "$ref": "#/components/responses/Error"
      },
@@ -612,7 +622,7 @@
       "description": "Notification id (ULID)"
      }
     ],
-    "description": "Records which reply action was tapped and acknowledges the notification. Needs read scope. 400 if the value is not one of its reply actions; 409 if it is already answered, dismissed or resolved (the first answer wins).",
+    "description": "Records which reply action was tapped and acknowledges the notification. Needs read scope. 400 if the value is not one of its reply actions; 409 if it is already answered, dismissed or resolved (the first answer wins). 403 approve_denied from a denied device, 403 own_request from the token tree that sent it. From an ask device the answer does not count yet: 202 returns a confirm prompt (actions confirm and reject) on the same topic, and the answer lands when an allowed device outside both token trees replies confirm on it (409 if the question changed since).",
     "requestBody": {
      "required": true,
      "content": {
@@ -1412,7 +1422,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this, can_unlink, sound, approve (allowed or denied: may it answer approval requests), and the live sync state: connected (has a stream open now), caught_up (one of its streams has finished replay) and synced_seq (the last event seq the server sent it). A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
+      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this, can_unlink, sound, approve (allowed, ask or denied: may it answer approval requests), and the live sync state: connected (has a stream open now), caught_up (one of its streams has finished replay) and synced_seq (the last event seq the server sent it). A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
      }
     ]
    }
@@ -1545,7 +1555,7 @@
   "/api/v1/devices/{id}/approve": {
    "put": {
     "summary": "Set whether a device may answer approval requests",
-    "description": "Body {\"approve\":\"allowed\"} or {\"approve\":\"denied\"}. Scope read, from a token not limited to some topics, whose own setting is allowed (else 403 approve_denied). The caller must see the device in GET /api/v1/devices?all=1 (else 404). It may lower its own setting but never raise its own or that of a token it hangs under (403). Returns the device.",
+    "description": "Body {\"approve\":\"allowed\"}, {\"approve\":\"ask\"} or {\"approve\":\"denied\"}. Scope read, from a token not limited to some topics, whose own setting is allowed (else 403 approve_denied). The caller must see the device in GET /api/v1/devices?all=1 (else 404). It may lower its own setting but never raise its own or that of a token it hangs under (403; denied, ask, allowed is the order). Returns the device.",
     "tags": [
      "auth"
     ],
@@ -1563,6 +1573,7 @@
           "type": "string",
           "enum": [
            "allowed",
+           "ask",
            "denied"
           ]
          }
@@ -4908,9 +4919,10 @@
       "type": "string",
       "enum": [
        "allowed",
+       "ask",
        "denied"
       ],
-      "description": "May it answer approval requests (tap a reply action). New tokens are denied; allowed needs a caller that is allowed itself (else 403 approve_denied). Browsers and phones made from a token start with its setting."
+      "description": "May it answer approval requests (tap a reply action). New tokens are denied; ask answers count only once an allowed device confirms them; allowed or ask needs a caller that is allowed itself (else 403 approve_denied). Browsers and phones made from a token start with its setting."
      },
      "name": {
       "type": "string"

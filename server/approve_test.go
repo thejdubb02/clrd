@@ -4,7 +4,9 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/netip"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -77,6 +79,120 @@ func TestApproveReply(t *testing.T) {
 	}
 }
 
+// TestApproveAsk: an ask device's tap counts only once an allowed device
+// outside both the asker's and the sender's trees confirms it (#187).
+func TestApproveAsk(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	agent := mkToken(t, s, "agent", []string{ScopeRead, ScopePublish}, nil)
+	ask := func(body map[string]any) map[string]any {
+		t.Helper()
+		body["topic"], body["actions"] = "agents", []map[string]any{{"label": "Allow", "reply": "allow"}, {"label": "Deny", "reply": "deny"}}
+		code, n := call(t, ts, "POST", "/api/v1/notifications", agent, body)
+		if code != 200 {
+			t.Fatalf("send: %d %v", code, n)
+		}
+		return n
+	}
+	reply := func(tok, id, r string) (int, map[string]any) {
+		t.Helper()
+		return call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", tok, map[string]any{"reply": r})
+	}
+	get := func(id string) map[string]any {
+		t.Helper()
+		_, n := call(t, ts, "GET", "/api/v1/notifications/"+id, agent, nil)
+		return n
+	}
+	// The ask device: a browser under an allowed laptop, lowered to ask.
+	laptop := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	lp := s.lookupToken(ctx, laptop)
+	b, braw, err := s.childToken(ctx, lp, lp.ID, "browser", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/devices/"+b.ID+"/approve", laptop, map[string]any{"approve": ApproveAsk}); code != 200 {
+		t.Fatalf("lower to ask: %d", code)
+	}
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	var status atomic.Int64
+	status.Store(200)
+	url, hits := receiver(t, &status)
+	if code, _ := call(t, ts, "PUT", "/api/v1/topics/agents/hooks/h", admin, map[string]any{"url": url, "events": []string{"action"}}); code != 200 {
+		t.Fatalf("hook: %d", code)
+	}
+
+	q := ask(map[string]any{"message": "merge?"})["id"].(string)
+	code, p := reply(braw, q, "allow")
+	if code != 202 || p["id"] == q || p["topic"] != "agents" {
+		t.Fatalf("ask tap: %d %v", code, p)
+	}
+	if n := get(q); n["reply"] != "" || n["state"] != Active {
+		t.Fatalf("ask tap answered: %v", n)
+	}
+	pid := p["id"].(string)
+	if _, again := reply(braw, q, "allow"); again["id"] != pid {
+		t.Fatalf("repeat tap made another prompt: %v", again)
+	}
+	// Nobody in the asker's tree, nor the sender's, nor an ask device confirms.
+	if code, out := reply(laptop, pid, "confirm"); code != 403 || out["code"] != "own_request" {
+		t.Fatalf("asker's laptop confirmed: %d %v", code, out)
+	}
+	if code, out := reply(agent, pid, "confirm"); code != 403 || out["code"] != "own_request" {
+		t.Fatalf("sender confirmed its own request: %d %v", code, out)
+	}
+	_, ask2, err := s.CreateToken(ctx, "tablet", ApproveAsk, []string{ScopeRead}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, out := reply(ask2, pid, "confirm"); code != 403 || out["code"] != "approve_denied" {
+		t.Fatalf("ask device confirmed: %d %v", code, out)
+	}
+	// An allowed phone confirms: the browser's answer counts.
+	phone := mkToken(t, s, "phone", []string{ScopeRead}, nil)
+	if code, out := reply(phone, pid, "confirm"); code != 200 || out["state"] != Acknowledged {
+		t.Fatalf("confirm: %d %v", code, out)
+	}
+	if n := get(q); n["reply"] != "allow" || n["state"] != Acknowledged || n["state_by"] != "browser" {
+		t.Fatalf("confirmed answer: %v", n)
+	}
+	// The topic's action hook hears the answer once, never the tap on the prompt.
+	if err := s.deliverHooks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := hits(); len(got) != 1 || got[0].body["notification"].(map[string]any)["id"] != q {
+		t.Fatalf("action hooks: %v", got)
+	}
+
+	// A question changed after the tap cannot be confirmed.
+	q2 := ask(map[string]any{"message": "deploy?", "external_id": "d"})["id"].(string)
+	_, p2 := reply(braw, q2, "allow")
+	ask(map[string]any{"message": "deploy to prod?", "external_id": "d"})
+	if code, _ := reply(phone, p2["id"].(string), "confirm"); code != 409 || get(q2)["reply"] != "" {
+		t.Fatalf("confirmed a changed question: %d", code)
+	}
+	// A tap on the changed question gets a fresh prompt, not the stale one.
+	_, p3 := reply(braw, q2, "allow")
+	if p3["id"] == p2["id"] {
+		t.Fatal("tap on a changed question returned the stale prompt")
+	}
+	// The sender cannot reject it either, and a rejected tap stays rejected.
+	p3id := p3["id"].(string)
+	if code, out := reply(agent, p3id, "reject"); code != 403 || out["code"] != "own_request" {
+		t.Fatalf("sender rejected: %d %v", code, out)
+	}
+	if code, _ := reply(phone, p3id, "reject"); code != 200 {
+		t.Fatalf("reject: %d", code)
+	}
+	call(t, ts, "POST", "/api/v1/notifications/"+p3id+"/reopen", phone, nil)
+	reply(phone, p3id, "confirm")
+	if n := get(q2); n["reply"] != "" {
+		t.Fatalf("reopened rejected prompt applied the tap: %v", n)
+	}
+	if _, p4 := reply(braw, q2, "allow"); p4["id"] == p3id {
+		t.Fatal("repeat tap returned the rejected prompt")
+	}
+}
+
 // TestSetApprove: only an allowed device changes the setting, and no device
 // can raise its own or the token it hangs under, by any route (#187).
 func TestSetApprove(t *testing.T) {
@@ -108,7 +224,10 @@ func TestSetApprove(t *testing.T) {
 	if code, tk := call(t, ts, "POST", "/api/v1/tokens", dadmin, map[string]any{"name": "x", "scopes": []string{"read"}}); code != 200 || tk["approve"] != ApproveDenied {
 		t.Fatalf("new token default: %d %v", code, tk)
 	}
-	if code, _ := call(t, ts, "POST", "/api/v1/tokens", admin, map[string]any{"name": "y", "scopes": []string{"read"}, "approve": "ask"}); code != 400 {
+	if code, _ := call(t, ts, "POST", "/api/v1/tokens", dadmin, map[string]any{"name": "x", "scopes": []string{"read"}, "approve": ApproveAsk}); code != 403 {
+		t.Fatalf("denied admin made an ask token: %d", code)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/tokens", admin, map[string]any{"name": "y", "scopes": []string{"read"}, "approve": "maybe"}); code != 400 {
 		t.Fatalf("unknown setting: %d", code)
 	}
 
@@ -123,8 +242,10 @@ func TestSetApprove(t *testing.T) {
 	if code := set(braw, p.ID, ApproveDenied); code != 200 || setting(top) != ApproveDenied {
 		t.Fatalf("lower the parent: %d", code)
 	}
-	if code := set(braw, p.ID, ApproveAllowed); code != 403 || setting(top) != ApproveDenied {
-		t.Fatalf("browser raised its parent: %d", code)
+	for _, v := range []string{ApproveAllowed, ApproveAsk} {
+		if code := set(braw, p.ID, v); code != 403 || setting(top) != ApproveDenied {
+			t.Fatalf("browser raised its parent to %s: %d", v, code)
+		}
 	}
 	if code := set(top, p.ID, ApproveAllowed); code != 403 {
 		t.Fatalf("denied token raised itself: %d", code)

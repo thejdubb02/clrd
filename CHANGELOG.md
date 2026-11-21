@@ -11,6 +11,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Server: a third approve setting, ask. A tap from an ask device does not
+  count until an allowed device confirms it: clrd posts a "Confirm" prompt on
+  the same topic, and the answer lands only when another allowed device taps
+  Confirm, never one from the asker's or the sender's token tree. (#187)
+
 - Server: each token, phone and browser now has an "approve" setting,
   allowed or denied. Only an allowed device can tap a reply button, and no
   token can answer a request it sent, so an agent cannot approve its own

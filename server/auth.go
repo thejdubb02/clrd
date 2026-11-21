@@ -139,8 +139,8 @@ func checkToken(t *Token) error {
 			return err
 		}
 	}
-	if t.Approve != ApproveAllowed && t.Approve != ApproveDenied {
-		return errf(400, "bad_request", "approve must be %s or %s", ApproveAllowed, ApproveDenied)
+	if err := checkApprove(t.Approve); err != nil {
+		return err
 	}
 	if len(t.Grants) == 0 {
 		return nil
