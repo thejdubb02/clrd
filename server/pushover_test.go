@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"math/rand/v2"
 	"mime/multipart"
 	"net/url"
 	"testing"
@@ -95,8 +96,12 @@ func TestPushoverPublish(t *testing.T) {
 	if att, _ := latest(t, ts.URL, admin, "up")["attachment"].(map[string]any); att["name"] != "cam.png" {
 		t.Fatalf("multipart attachment: %v", att)
 	}
-	// Bigger than the 1 MB a plain body may be, as Pushover takes up to 5 MB.
-	big := append(append([]byte{}, pngBytes...), make([]byte, 1<<20)...)
+	// Bigger than the 1 MB a plain body may be, as Pushover takes up to 5 MB,
+	// and right at the file cap: base64 makes the body a third bigger than that.
+	s.opt.AttachmentMax = 4 << 20
+	big := make([]byte, 4<<20) // random like a real image, so its base64 has the usual + and / to escape
+	rand.NewChaCha8([32]byte{}).Read(big)
+	copy(big, pngBytes)
 	if code, m = pushoverPost(t, ts.URL, url.Values{"token": {key}, "user": {"u"}, "message": {"b64"}, "attachment_base64": {base64.StdEncoding.EncodeToString(big)}, "attachment_type": {"image/png"}}); code != 200 {
 		t.Fatalf("base64: %d %v", code, m)
 	}
