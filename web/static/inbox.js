@@ -400,7 +400,8 @@
   const disp = $('[data-display-settings]');
   const keep = $('[data-keep-settings]');
   const sil = $('[data-silence-form]');
-  const lock = on => [snz, disp, keep, sil].forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
+  const tkeep = $('[data-topic-keep]');
+  const lock = on => [snz, disp, keep, sil, tkeep].forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
   snz && snz.addEventListener('submit', async e => {
     e.preventDefault();
     const times = snzTyped().map(snzValue);
@@ -431,6 +432,22 @@
     if (r && r.ok) return location.reload();
     lock(false);
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  });
+
+  // Settings: a topic's own keep (#323), saved on change. Default drops it, so
+  // the topic follows the period above; that can delete too, so it is checked the same way.
+  tkeep && tkeep.addEventListener('change', async e => {
+    const sel = e.target, t = sel.dataset.topic, status = $('[data-topic-keep-status]');
+    const days = sel.value === '' ? null : Number(sel.value);
+    const undo = msg => { sel.value = [...sel.options].find(o => o.defaultSelected).value; lock(false); status.textContent = msg; };
+    lock(true);
+    const c = await fetch(`/api/v1/counts?keep_cleared_days=${days ?? shell.dataset.keep}&topic=${encodeURIComponent(t)}`, { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!c) return undo('Not saved: could not check how many messages this deletes.'); // never delete without the count
+    const n = c.would_remove || 0;
+    if (n && !confirm(`This deletes ${n} cleared message${n === 1 ? '' : 's'} in ${t} within the hour. Save?`)) return undo('');
+    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic_keep_cleared_days: { [t]: days } }) }).catch(() => null);
+    if (r && r.ok) return location.reload();
+    undo(r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.');
   });
 
   // Settings: silences (docs/silences.md). Start one, or end one early.
@@ -741,7 +758,7 @@
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
         const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
-        else if ('keep_cleared_days' in st && `${st.keep_cleared_days}` !== shell.dataset.keep) reset(); // a stale form would save the old period back
+        else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) reset(); // a stale form would save the old period back
         else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
       }
       else if (m.notification) {

@@ -59,6 +59,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: Settings gives each topic its own "keep cleared messages" period, and
+  asks first when a change deletes messages, like the global setting (#323).
 - Web: Settings lists the running silences with the time left, starts one
   (topic, tag or both, for a set time or until a time, with a comment) and
   ends one early (#257).

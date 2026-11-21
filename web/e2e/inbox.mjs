@@ -787,6 +787,38 @@ try {
     await ctx.close();
     console.log('ok: start and end a silence in Settings, the inbox stays quiet');
   }
+
+  // A topic's own keep for cleared messages (#323): the preview counts that
+  // topic only, a save that deletes asks first, No leaves it as it was, and
+  // Default drops the topic's own value.
+  {
+    await api(phone, '/api/v1/notifications', { topic: 'keepy', title: 'Keep me' });
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'keep' } })).ok(), 'keep sign-in');
+    const kp = await ctx.newPage();
+    const asked = [];
+    await kp.route('**/api/v1/counts?*', async r => { asked.push(new URL(r.request().url()).search); await r.fulfill({ json: { would_remove: 3 } }); });
+    const topicKeep = async () => (await (await fetch(base + '/api/v1/settings', { headers: { Authorization: `Bearer ${phone}` } })).json()).topic_keep_cleared_days || {};
+    await kp.goto(base + '/app/settings');
+    const sel = kp.locator('#tk-keepy');
+    kp.once('dialog', d => d.dismiss());
+    await sel.selectOption('1');
+    await kp.waitForFunction(() => !document.querySelector('[data-topic-keep] select').disabled);
+    assert.equal(await sel.inputValue(), '', 'No puts the select back');
+    assert.deepEqual(await topicKeep(), {}, 'and saves nothing');
+    let msg = '';
+    kp.once('dialog', d => { msg = d.message(); d.accept(); });
+    await Promise.all([kp.waitForEvent('load'), sel.selectOption('7')]);
+    assert.match(msg, /deletes 3 cleared messages in keepy/, 'asks with the count');
+    assert.deepEqual(asked, ['?keep_cleared_days=1&topic=keepy', '?keep_cleared_days=7&topic=keepy'], 'the preview is for that topic only');
+    assert.deepEqual(await topicKeep(), { keepy: 7 }, 'Yes saves it');
+    assert.equal(await sel.inputValue(), '7', 'and the page shows it');
+    kp.once('dialog', d => d.accept());
+    await Promise.all([kp.waitForEvent('load'), sel.selectOption('')]);
+    assert.deepEqual(await topicKeep(), {}, 'Default drops it');
+    await ctx.close();
+    console.log('ok: a topic keeps cleared messages for its own period, set in Settings');
+  }
 } finally {
   await browser?.close();
   server.kill();
