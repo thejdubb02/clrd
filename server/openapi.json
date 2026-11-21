@@ -1552,6 +1552,57 @@
     ]
    }
   },
+  "/api/v1/devices/approve-request": {
+   "post": {
+    "summary": "Ask to raise this device's own approve setting",
+    "description": "Body {\"approve\":\"allowed\" or \"ask\",\"topic\":\"agents\"} (topic defaults to agents). Scope publish on the topic. Posts a confirm prompt there with reply actions confirm and reject, and returns it (202); a repeat request returns the same open prompt. 400 unless it is a raise. The change lands when an allowed device that could make it with PUT /api/v1/devices/{id}/approve taps confirm; 409 if the device's setting changed since it asked or the confirming device cannot see it.",
+    "tags": [
+     "auth"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "approve"
+        ],
+        "properties": {
+         "approve": {
+          "type": "string",
+          "enum": [
+           "allowed",
+           "ask"
+          ]
+         },
+         "topic": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "The confirm prompt"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/devices/{id}/approve": {
    "put": {
     "summary": "Set whether a device may answer approval requests",

@@ -154,7 +154,7 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,counts,format_check,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,"+
+	if strings.Join(names, ",") != "send,list,topics,counts,format_check,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,"+
 		"hooks,set_hook,delete_hook,hook_deliveries,tokens,create_token,revoke_token,server_env,ntfy_ignored" {
 		t.Fatalf("tools: %v", names)
@@ -196,6 +196,7 @@ func TestTools(t *testing.T) {
 		{"format_check", map[string]any{"topic": "infra"}, "GET /api/v1/format-check?topic=infra", nil},
 		{"sound", nil, "GET /api/v1/sounds", nil},
 		{"sound", map[string]any{"id": "d1", "sound": ""}, "PUT /api/v1/devices/d1", map[string]any{"sound": ""}}, // the server refuses it (#299)
+		{"request_approve", map[string]any{"approve": "allowed"}, "POST /api/v1/devices/approve-request", map[string]any{"approve": "allowed", "topic": ""}},
 		{"settings", nil, "GET /api/v1/settings", nil},
 		{"settings", map[string]any{"keep_cleared_days": 5}, "PUT /api/v1/settings", map[string]any{"keep_cleared_days": float64(5)}},
 	}
