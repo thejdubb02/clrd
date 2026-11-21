@@ -17,6 +17,7 @@ own server. There is no public instance and no default server.
 | `android/` | android | Kotlin app, Gradle, F-Droid ready. |
 | `sdk/python`, `sdk/js`, `sdk/go` | integrations | Thin clients over the REST API. |
 | `server/mcp/` | integrations | MCP server mounted at `/mcp`. |
+| `plugins/`, `.claude-plugin/` | integrations | Agent plugins: `plugins/claude-code`, listed by the repo's Claude Code marketplace. |
 | `docs/` | everyone | This spec, `api.md`, `self-host.md`, `integrations/*.md`. |
 | `assets/` | web | `logo.svg`, `mark.svg`, icons, notification sounds (`sounds/`). One source for every surface. |
 

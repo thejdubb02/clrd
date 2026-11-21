@@ -1,0 +1,36 @@
+{
+  "name": "clrd",
+  "version": "0.1.0",
+  "description": "The clrd MCP server, a ping when a task finishes or waits on you, and permission prompts you approve from your phone.",
+  "author": { "name": "clrd" },
+  "homepage": "https://github.com/thejdubb02/clrd/blob/main/docs/integrations/claude-code.md",
+  "license": "Apache-2.0",
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "clrd server URL",
+      "description": "Your clrd server, for example https://clrd.example.com. Must be https unless it is localhost.",
+      "required": true
+    },
+    "token": {
+      "type": "string",
+      "title": "clrd token",
+      "description": "A token with read and publish scope, made for this agent. Kept in Claude Code's secure storage.",
+      "sensitive": true,
+      "required": true
+    },
+    "topic": {
+      "type": "string",
+      "title": "Topic",
+      "description": "Topic for pings and approvals.",
+      "default": "agents"
+    }
+  },
+  "mcpServers": {
+    "clrd": {
+      "type": "http",
+      "url": "${user_config.server_url}/mcp",
+      "headers": { "Authorization": "Bearer ${user_config.token}" }
+    }
+  }
+}

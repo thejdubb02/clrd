@@ -96,7 +96,9 @@ offline catches up the moment it reconnects.
   and an MCP server so an AI agent can notify you and wait for your answer.
   Claude Code and Codex can ask your phone before running a command, and
   each device has its own approve setting (allowed, ask or denied), so an
-  agent's token cannot approve its own prompts.
+  agent's token cannot approve its own prompts. A
+  [Claude Code plugin](docs/integrations/claude-code.md) sets that up with
+  pings when a task finishes, in one install.
   A format check finds senders whose messages are hard to read and hands an
   agent a ready prompt to fix them.
 

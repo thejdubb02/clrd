@@ -95,6 +95,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Integrations: a Claude Code plugin, installed from this repo with
+  `/plugin marketplace add thejdubb02/clrd`. One install and two questions
+  (server URL and token) give Claude the clrd MCP server, a ping when a task
+  finishes or waits on you, and permission prompts you allow or deny from
+  your phone. No answer in time leaves the prompt on screen. (#156)
 - Server: Gotify senders work. `POST /message` takes Gotify's app token
   (`?token=` or `X-Gotify-Key`), JSON, form or multipart body, priority
   0 to 10 and the Markdown, click and image extras, and answers in Gotify's

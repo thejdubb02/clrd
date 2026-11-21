@@ -11,6 +11,8 @@ on:
       - "docs/integrations/**"
       - "sdk/**"
       - "test/integrations/**"
+      - "plugins/**"
+      - ".claude-plugin/**"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/integrations.yml"

@@ -89,6 +89,9 @@ docs.
 
 ### Claude Code
 
+The [clrd plugin](claude-code.md) adds this, pings and phone approval in one
+install. By hand:
+
 ```sh
 claude mcp add --transport http clrd https://clrd.example.com/mcp \
   --header "Authorization: Bearer clrd_..."
@@ -248,8 +251,9 @@ curl -X PUT -H "Authorization: Bearer $CLRD_TOKEN" \
 
 There is no MCP tool for this yet.
 
-Claude Code, in `~/.claude/settings.json` (with `CLRD_TOKEN` set in your
-environment):
+For Claude Code, the [clrd plugin](claude-code.md) sets this up in one
+install, with pings when a task finishes. By hand, in
+`~/.claude/settings.json` (with `CLRD_TOKEN` set in your environment):
 
 ```json
 {
