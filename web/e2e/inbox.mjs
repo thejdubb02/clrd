@@ -845,7 +845,7 @@ try {
     await rrow.waitFor();
     assert.equal(await rrow.getByRole('button', { name: 'End now' }).count(), 0, 'End now offered to a read-only token');
     assert.equal(await rp.locator('[data-silence-form]').count(), 0, 'Start silence offered to a read-only token');
-    await rp.getByText('its token cannot publish').waitFor();
+    await rp.getByText('This device can see silences but not start or end them').waitFor();
     await rctx.close();
 
     await sp.locator('tr[data-silence]', { hasText: 'nojs' }).getByRole('button', { name: 'End now' }).click();
