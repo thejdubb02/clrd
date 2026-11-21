@@ -916,6 +916,38 @@ try {
     console.log('ok: silences work without JavaScript; a read-only device sees no controls');
   }
 
+  // Quick silence on a card (#326): one tap in the snooze menu mutes the
+  // topic for an hour and comes back to the same inbox page. A device that
+  // cannot silence the topic is not offered it.
+  {
+    await api(phone, '/api/v1/notifications', { topic: 'qsil', title: 'Noisy one' });
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'qsil' } })).ok(), 'quick silence sign-in');
+    const p = await ctx.newPage();
+    await p.goto(base + '/app?topic=qsil');
+    const card = p.locator('article', { hasText: 'Noisy one' });
+    await card.locator('summary[aria-label="More snooze times"]').click();
+    await Promise.all([p.waitForEvent('load'), card.getByRole('button', { name: 'Silence qsil for 1 hour' }).click()]);
+    assert.equal(new URL(p.url()).pathname + new URL(p.url()).search, '/app?topic=qsil', 'back on the same inbox page');
+    const sils = (await (await fetch(base + '/api/v1/silences', { headers: { Authorization: `Bearer ${laptop}` } })).json()).silences.filter(s => s.topic === 'qsil');
+    assert.equal(sils.length, 1, 'one silence on the topic');
+    const left = new Date(sils[0].until) - Date.now();
+    assert.ok(left > 55 * 60e3 && left <= 60 * 60e3, `the silence runs ${left} ms, not an hour`);
+    assert.ok(!sils[0].tag, 'the quick silence is for the whole topic');
+    assert.equal((await api(phone, '/api/v1/notifications', { topic: 'qsil', title: 'Muted one' })).silenced, true, 'the next publish is silenced');
+
+    const reader = execFileSync(bin, ['token', 'create', '--name', 'qsil-reader', '--scope', 'read'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const rctx = await browser.newContext();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: reader, name: 'qsil-reader' } })).ok(), 'reader sign-in');
+    const rp = await rctx.newPage();
+    await rp.goto(base + '/app?topic=qsil');
+    await rp.locator('article', { hasText: 'Noisy one' }).waitFor();
+    assert.equal(await rp.locator('[data-silence-quick]').count(), 0, 'quick silence offered to a read-only token');
+    await rctx.close();
+    await ctx.close();
+    console.log('ok: a card silences its topic for an hour in one tap; a read-only device is not offered it');
+  }
+
   // Webhooks in Settings (#238), without script so the plain form posts are tested.
   // The secret never reaches the page, a blank secret on Edit keeps it, and a
   // device that is not admin sees no hooks and cannot save one.

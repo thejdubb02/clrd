@@ -16,6 +16,13 @@ running silence with the time left, and End now ends it early. Both work
 without JavaScript, except "Until a time", which needs the browser's clock.
 A device whose token cannot publish sees the list but not the controls.
 
+On a card, the snooze menu also has "Silence <topic> for 1 hour" when your
+device may silence that topic. It starts the same silence in one tap.
+
+"Until a time" is read in the browser's time zone. On a daylight saving
+change, a time inside the skipped hour moves forward by an hour, and a time
+in the repeated hour means its first pass.
+
 Over the API:
 
 ```sh

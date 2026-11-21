@@ -157,9 +157,10 @@ func (n Notification) Body() string {
 var tags = regexp.MustCompile(`<[^>]*>`)
 
 type Topic struct {
-	Name string `json:"name"`
-	Open int    `json:"open"`
-	Icon string `json:"icon"` // image URL new notifications in the topic get, "" for none
+	Name    string `json:"name"`
+	Open    int    `json:"open"`
+	Icon    string `json:"icon"` // image URL new notifications in the topic get, "" for none
+	Silence bool   `json:"-"`    // this token may silence the topic (#326)
 }
 
 // LinkedDevice is one row of the Settings device list (issue #246), as
@@ -526,7 +527,9 @@ func templates(base string) *template.Template {
 				SnoozeDefault string
 				Text          template.HTML
 				Preview       bool
-			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic)}
+				Silence       bool // offer Silence topic for 1 hour (#326)
+			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic),
+				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence })}
 		},
 		"snoozeLabel": snoozeLabel,
 		"left":        timeLeft,
@@ -919,12 +922,7 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		f := r.PostForm
-		// Back to an inbox page only. Redirect cleans dot segments, so a path
-		// with ".." or a backslash could turn into "/\host": refuse those.
-		next := f.Get("next")
-		if p, _, _ := strings.Cut(next, "?"); (p != "/app" && !strings.HasPrefix(p, "/app/")) || strings.Contains(p, "..") || strings.Contains(p, "\\") {
-			next = "/app"
-		}
+		next := inboxNext(f.Get("next"), "/app")
 		act, until := f.Get("act"), (*time.Time)(nil)
 		if s := f.Get("snooze"); s != "" {
 			d, err := time.ParseDuration(s)
@@ -984,7 +982,7 @@ func Handler(api API, baseURL string) http.Handler {
 			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
 			return
 		}
-		http.Redirect(w, r, "/app/settings", http.StatusSeeOther)
+		http.Redirect(w, r, inboxNext(f.Get("next"), "/app/settings"), http.StatusSeeOther)
 	})
 
 	// Settings format check (#320): dismiss a finding, leave a topic out, or
@@ -1074,4 +1072,14 @@ func (w prefixed) WriteHeader(code int) {
 		w.Header().Set("Location", w.prefix+l)
 	}
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// inboxNext is where a form post goes back to: next if it is an inbox page,
+// else def. Redirect cleans dot segments, so a path with ".." or a backslash
+// could turn into "/\host": refuse those.
+func inboxNext(next, def string) string {
+	if p, _, _ := strings.Cut(next, "?"); (p != "/app" && !strings.HasPrefix(p, "/app/")) || strings.Contains(p, "..") || strings.Contains(p, "\\") {
+		return def
+	}
+	return next
 }

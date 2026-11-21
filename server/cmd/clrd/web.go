@@ -158,7 +158,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return snap, err
 	}
 	for _, t := range tc {
-		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon})
+		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon, Silence: tok.MaySilence(t.Topic)})
 	}
 	// Every page's sync indicator (#295). An admin sees every device; anyone
 	// else only their own (#245), so a reader never learns other people's devices.
@@ -218,7 +218,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		// with only read grants publishes nowhere.
 		snap.CanSilence = tok.MaySilence("")
 		for _, t := range snap.Topics {
-			snap.CanSilence = snap.CanSilence || tok.MaySilence(t.Name)
+			snap.CanSilence = snap.CanSilence || t.Silence
 		}
 		// Webhook templates (#129): publish on the topic, listed only where allowed.
 		if tok.Has(server.ScopePublish) {

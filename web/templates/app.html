@@ -156,6 +156,7 @@
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">
     <input type="hidden" name="seq" value="{{$n.Seq}}">
+    <input type="hidden" name="topic" value="{{$n.Topic}}">
     <input type="hidden" data-share value="{{$n.Title}}" data-message="{{$n.Message}}" data-click="{{$n.Click}}">
     {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button class="btn" data-variant="outline" name="act" value="reopen" data-act="reopen">{{template "i-rotate-ccw"}}Restore</button>{{end}}
     {{else}}
@@ -170,6 +171,7 @@
           {{end}}          <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tonight">Tonight <span class="meta ms-auto">20:00</span></button>
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tomorrow">Tomorrow <span class="meta ms-auto">09:00</span></button>
           <span class="snooze-custom js-only flex min-w-0 flex-wrap gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 w-auto min-w-0 flex-auto text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
+          {{if .Silence}}<button class="btn justify-start border-t" data-variant="ghost" data-size="sm" formaction="{{base}}/app/silence" name="for" value="1h" data-silence-quick title="Every new message in {{$n.Topic}} arrives quietly for an hour">Silence {{$n.Topic}} for 1 hour</button>{{end}}
         </div>
       </details></span>{{end}}
       <button class="btn" data-variant="clear" name="act" value="dismiss" data-act="dismiss">{{template "i-check"}}Clear</button>
