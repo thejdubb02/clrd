@@ -659,6 +659,20 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
   `POST /message`, never by the native or ntfy auth. A message without
   `priority` takes the app's default; the reply's `appid` is the app id, 0
   for a plain clrd token (#372).
+- Pushover (#116): `POST /1/messages.json` (form, multipart or JSON) with
+  `token` (a Pushover app key or a one-topic clrd token), a non-empty `user`
+  (never checked) and `message`. Priority -2..2 is 1..5; 2 needs `retry` >=
+  30 and `expire` <= 10800 and repeats every max(retry, 60) s, at most 50
+  times, with a `receipt` in the reply (no receipt endpoint). `ttl` sets
+  expires, `url` the click, `html=1` turns b, i, a, br into Markdown,
+  `attachment` or `attachment_base64` an image (the body may be
+  attachment-sized). Reply `{status:1, request}`; errors `{<param>:
+  "invalid", errors, status:0, request}`. `POST /1/users/validate.json`
+  answers status 1 for a valid token and user. Pushover apps: `POST
+  /api/v1/pushover/apps` `{name, topic}` (full admin; MCP
+  `create_pushover_app`) makes a publish-only token with id `pushover-...`
+  and a 30-character [A-Za-z0-9] key, plus a random `user`. A raw key is
+  looked up only among `pushover-` tokens and only on these two routes.
 - Gotify import (#116): `clrd import gotify --db gotify.db
   [--clear-older-than D] [--dry-run]` makes each app a topic (slug of its
   name) and a `gotify_apps` key hashed in the form Gotify stores it. Gotify 3

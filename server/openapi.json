@@ -2481,6 +2481,68 @@
     }
    }
   },
+  "/1/messages.json": {
+   "post": {
+    "summary": "Pushover publish. The token (a Pushover app key, or a clrd token limited to one topic) picks the topic",
+    "tags": ["pushover"],
+    "requestBody": {
+     "content": {
+      "application/x-www-form-urlencoded": {
+       "schema": {
+        "type": "object",
+        "required": ["token", "user", "message"],
+        "properties": {
+         "token": {"type": "string"},
+         "user": {"type": "string", "description": "Required by Pushover; any value, clrd does not check it"},
+         "message": {"type": "string"},
+         "title": {"type": "string"},
+         "url": {"type": "string", "description": "The click URL"},
+         "priority": {"type": "integer", "description": "-2 to 2, clrd 1 to 5; 2 needs retry (30 and up) and expire (up to 10800) and repeats the alert"},
+         "ttl": {"type": "integer", "description": "Seconds until the message expires"},
+         "html": {"type": "integer", "description": "1: b, i, a and br become Markdown, other tags are dropped"},
+         "monospace": {"type": "integer"},
+         "attachment": {"type": "string", "format": "binary", "description": "Multipart only"},
+         "attachment_base64": {"type": "string"},
+         "attachment_type": {"type": "string"}
+        }
+       }
+      },
+      "multipart/form-data": {"schema": {"type": "object"}},
+      "application/json": {"schema": {"type": "object"}}
+     }
+    },
+    "responses": {
+     "200": {"description": "{\"status\":1,\"request\":\"...\"}, plus receipt for priority 2", "content": {"application/json": {"schema": {"type": "object"}}}},
+     "400": {"description": "Pushover error shape: the bad parameter set to invalid, errors, status 0, request", "content": {"application/json": {"schema": {"type": "object"}}}},
+     "403": {"description": "Pushover error shape", "content": {"application/json": {"schema": {"type": "object"}}}}
+    }
+   }
+  },
+  "/1/users/validate.json": {
+   "post": {
+    "summary": "Pushover user check: status 1 for a valid token and any non-empty user",
+    "tags": ["pushover"],
+    "requestBody": {"content": {"application/x-www-form-urlencoded": {"schema": {"type": "object", "required": ["token", "user"]}}, "application/json": {"schema": {"type": "object"}}}},
+    "responses": {
+     "200": {"description": "status 1, group 0, devices [], licenses []", "content": {"application/json": {"schema": {"type": "object"}}}},
+     "400": {"description": "Pushover error shape", "content": {"application/json": {"schema": {"type": "object"}}}}
+    }
+   }
+  },
+  "/api/v1/pushover/apps": {
+   "post": {
+    "summary": "Create a Pushover app key (shown once)",
+    "description": "Admin with no topic limit. Makes a publish-only token for one topic whose key is shaped like a Pushover app token (30 letters and digits), for senders such as Apprise that check the shape. The key works only on POST /1/messages.json and /1/users/validate.json. user is a random value for senders that require one; clrd never checks it. Revoke with DELETE /api/v1/tokens/{token_id}.",
+    "tags": ["auth"],
+    "requestBody": {
+     "required": true,
+     "content": {"application/json": {"schema": {"type": "object", "required": ["name", "topic"], "properties": {"name": {"type": "string", "description": "App name, used as the title when a message has none"}, "topic": {"type": "string"}}}}}
+    },
+    "responses": {
+     "200": {"description": "token is the key, shown once; user, name, topic, token_id", "content": {"application/json": {"schema": {"type": "object"}}}}
+    }
+   }
+  },
   "/{topic}": {
    "put": {
     "summary": "ntfy publish (body is the message, or the file with Filename)",

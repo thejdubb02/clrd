@@ -78,6 +78,21 @@ func TestGotifyPublish(t *testing.T) {
 	}
 }
 
+// appTokenChecks: an app-style compat route refuses a read-only token (403)
+// and a token that does not name exactly one topic (400).
+func appTokenChecks(t *testing.T, s *Server, admin string, post func(string) (int, map[string]any)) {
+	t.Helper()
+	if code, _ := post(mkToken(t, s, "reader", []string{ScopeRead}, []string{"tv"})); code != 403 {
+		t.Fatalf("read-only token: %d", code)
+	}
+	if code, _ := post(admin); code != 400 {
+		t.Fatalf("token for every topic: %d", code)
+	}
+	if code, _ := post(mkToken(t, s, "two", []string{ScopePublish}, []string{"a", "b"})); code != 400 {
+		t.Fatalf("token for two topics: %d", code)
+	}
+}
+
 // The token picks the topic, and every check the native API makes still holds.
 func TestGotifyAuth(t *testing.T) {
 	s, ts, admin := newTest(t)
@@ -88,15 +103,7 @@ func TestGotifyAuth(t *testing.T) {
 	if code, m := post("Abadtoken"); code != 401 || m["error"] != "Unauthorized" || m["errorCode"] != 401.0 {
 		t.Fatalf("bad key: %d %v", code, m)
 	}
-	if code, _ := post(mkToken(t, s, "reader", []string{ScopeRead}, []string{"tv"})); code != 403 {
-		t.Fatalf("read-only token: %d", code)
-	}
-	if code, _ := post(admin); code != 400 {
-		t.Fatalf("token for every topic: %d", code)
-	}
-	if code, _ := post(mkToken(t, s, "two", []string{ScopePublish}, []string{"a", "b"})); code != 400 {
-		t.Fatalf("token for two topics: %d", code)
-	}
+	appTokenChecks(t, s, admin, post)
 	_, wild, err := s.createToken(context.Background(), &Token{Name: "g", Scopes: []string{ScopeRead, ScopePublish}, Grants: []Grant{{Topic: "*", Scopes: []string{ScopeRead, ScopePublish}}}})
 	if err != nil {
 		t.Fatal(err)
