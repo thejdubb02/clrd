@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -12,15 +15,18 @@ import (
 )
 
 // Format check (#308): plain string rules over the newest messages, grouped
-// by topic, with a fix prompt a user can paste into their agent. Advice only:
-// nothing is stored, blocked or changed, and it runs only when asked.
+// by topic (or sender), with a fix prompt a user can paste into their agent. Advice only:
+// nothing is blocked or changed, and it runs only when asked. Only what a
+// user dismissed or turned off is stored.
 
 // formatRules is every rule, in the order findings are listed, with the fix
 // in plain words for the prompt.
-var formatRules = []struct {
+type formatRule struct {
 	id, fix string
 	hit     func(n *Notification) bool
-}{
+}
+
+var formatRules = []formatRule{
 	{"markdown_as_text", `Messages are sent as plain text but contain Markdown, so it shows as raw symbols. Send them as Markdown: "format": "markdown" in JSON (the default), or the header "Markdown: yes" in the ntfy style.`,
 		func(n *Notification) bool { return n.Format == FormatText && looksMarkdown(n.Message) }},
 	{"unknown_shortcode", `Messages contain :name: shortcodes clrd does not know, which show as typed. Use the emoji character itself, or a common name such as :warning: or :white_check_mark:.`,
@@ -62,17 +68,51 @@ type formatFinding struct {
 
 type formatTopic struct {
 	Topic    string          `json:"topic"`
+	SenderID string          `json:"sender_id,omitempty"` // with by=sender: the sending token, "" when unknown
+	Sender   string          `json:"sender,omitempty"`    // its name
 	Checked  int             `json:"checked"`
 	Problems int             `json:"problems"` // messages with at least one finding
 	Findings []formatFinding `json:"findings"`
 	Prompt   string          `json:"prompt"`
 }
 
+type formatIgnore struct {
+	Topic    string `json:"topic"`
+	Rule     string `json:"rule"`
+	SenderID string `json:"sender_id"` // "" for every sender
+}
+
 // FormatCheck runs the rules over the newest 500 messages tok can read
-// (in topic, when given) and returns the topics with findings.
+// (in topic, when given) and returns the groups with findings: one per
+// topic, or with bySender one per topic and sending token (#320). Topics
+// turned off and dismissed findings (#320) are left out and listed.
 // ponytail: one page of 500, page through older ones if anyone needs more.
-func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string) (map[string]any, error) {
-	lq := ListQuery{State: "all", Limit: 500}
+func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender bool) (map[string]any, error) {
+	rows, err := s.db.QueryContext(r.Context(), `SELECT topic, rule, sender FROM format_ignore ORDER BY topic, rule, sender`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ignored, off, dismissed := map[formatIgnore]bool{}, []string{}, []formatIgnore{}
+	for rows.Next() {
+		var g formatIgnore
+		if err := rows.Scan(&g.Topic, &g.Rule, &g.SenderID); err != nil {
+			return nil, err
+		}
+		if tok.need(ScopeRead, g.Topic) != nil || topic != "" && g.Topic != topic {
+			continue
+		}
+		if ignored[g] = true; g.Rule == "" {
+			off = append(off, g.Topic)
+		} else {
+			dismissed = append(dismissed, g)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Off topics are left out in the query, so they never use up the 500.
+	lq := ListQuery{State: "all", Limit: 500, Skip: off}
 	if topic != "" {
 		lq.Topics = []string{topic}
 	}
@@ -80,16 +120,35 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string) (map[str
 	if err != nil {
 		return nil, err
 	}
-	byTopic := map[string]*formatTopic{}
+	names := map[string]string{}
+	groups := map[[2]string]*formatTopic{}
+	checked := len(ns)
 	for _, n := range ns {
-		t := byTopic[n.Topic]
+		key := [2]string{n.Topic}
+		if bySender {
+			key[1] = n.sender
+		}
+		t := groups[key]
 		if t == nil {
-			t = &formatTopic{Topic: n.Topic, Findings: make([]formatFinding, len(formatRules))}
-			byTopic[n.Topic] = t
+			t = &formatTopic{Topic: n.Topic, SenderID: key[1], Findings: make([]formatFinding, len(formatRules))}
+			if t.SenderID != "" {
+				if _, ok := names[t.SenderID]; !ok {
+					var name string
+					if err := s.db.QueryRowContext(r.Context(), `SELECT name FROM tokens WHERE id = ?`, t.SenderID).Scan(&name); err != nil && err != sql.ErrNoRows {
+						return nil, err
+					}
+					names[t.SenderID] = name
+				}
+				t.Sender = names[t.SenderID]
+			}
+			groups[key] = t
 		}
 		t.Checked++
 		bad := false
 		for i, rule := range formatRules {
+			if ignored[formatIgnore{n.Topic, rule.id, ""}] || ignored[formatIgnore{n.Topic, rule.id, n.sender}] {
+				continue
+			}
 			if f := &t.Findings[i]; rule.hit(n) {
 				if f.Count == 0 { // newest first, so the first hit is the example
 					*f = formatFinding{Rule: rule.id, ExampleID: n.ID, Example: excerpt(n), Fix: rule.fix}
@@ -104,7 +163,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string) (map[str
 	}
 	topics := []*formatTopic{}
 	problems := 0
-	for _, t := range byTopic {
+	for _, t := range groups {
 		found := t.Findings[:0]
 		for _, f := range t.Findings {
 			if f.Count > 0 {
@@ -117,8 +176,35 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string) (map[str
 			problems += t.Problems
 		}
 	}
-	sort.Slice(topics, func(i, j int) bool { return topics[i].Topic < topics[j].Topic })
-	return map[string]any{"checked": len(ns), "problems": problems, "topics": topics}, nil
+	sort.Slice(topics, func(i, j int) bool {
+		a, b := topics[i], topics[j]
+		return a.Topic < b.Topic || a.Topic == b.Topic && a.SenderID < b.SenderID
+	})
+	return map[string]any{"checked": checked, "problems": problems, "topics": topics, "off": off, "dismissed": dismissed}, nil
+}
+
+// SetFormatIgnore dismisses a rule's findings in topic (for one sending
+// token, or every one when senderID is ""), or with rule "" turns the
+// check off for the topic; on false undoes it. Off by default (#320).
+func (s *Server) SetFormatIgnore(ctx context.Context, tok *Token, topic, rule, senderID string, on bool) error {
+	if err := validTopic(topic); err != nil {
+		return err
+	}
+	if err := tok.need(ScopePublish, topic); err != nil {
+		return err
+	}
+	if rule != "" && !slices.ContainsFunc(formatRules, func(r formatRule) bool { return r.id == rule }) {
+		return errf(400, "bad_request", "unknown rule %q", rule)
+	}
+	if rule == "" && senderID != "" {
+		return errf(400, "bad_request", "a topic turns off for every sender: leave sender_id out")
+	}
+	q := `INSERT OR IGNORE INTO format_ignore (topic, rule, sender) VALUES (?, ?, ?)`
+	if !on {
+		q = `DELETE FROM format_ignore WHERE topic = ? AND rule = ? AND sender = ?`
+	}
+	_, err := s.db.ExecContext(ctx, q, topic, rule, senderID)
+	return err
 }
 
 // excerpt is the title and the first 200 characters of the message, with
@@ -168,7 +254,11 @@ func hideSecrets(s string) string {
 // format clrd expects and a test. It holds no token: $CLRD_TOKEN stands in.
 func fixPrompt(t *formatTopic, base string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Fix the program that sends notifications to the clrd topic %q. Of its last %d messages, %d have formatting problems:\n\n", t.Topic, t.Checked, t.Problems)
+	by := ""
+	if t.Sender != "" {
+		by = fmt.Sprintf(" with the token named %q", t.Sender)
+	}
+	fmt.Fprintf(&b, "Fix the program that sends notifications to the clrd topic %q%s. Of its last %d messages, %d have formatting problems:\n\n", t.Topic, by, t.Checked, t.Problems)
 	for _, f := range t.Findings {
 		fmt.Fprintf(&b, "- %d: %s\n", f.Count, f.Fix)
 	}

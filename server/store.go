@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '',
 	checkin_ms INTEGER, checkin_at INTEGER, checkin_late INTEGER NOT NULL DEFAULT 0);
+-- Format check findings a user dismissed, by topic, rule and sending token ("" for every one); rule "" turns the check off for the topic (#320).
+CREATE TABLE IF NOT EXISTS format_ignore (topic TEXT NOT NULL, rule TEXT NOT NULL, sender TEXT NOT NULL, PRIMARY KEY (topic, rule, sender));
 -- Webhook templates a topic owner saved (webhooks.go); spec is the Webhook as JSON.
 CREATE TABLE IF NOT EXISTS webhook_templates (topic TEXT NOT NULL, name TEXT NOT NULL, spec TEXT NOT NULL, PRIMARY KEY (topic, name));
 -- ntfy passwords (issue #117): each user signs in as its own token, on ntfy routes only.
@@ -1233,6 +1235,7 @@ func queryNotifications(q interface {
 // ListQuery filters List. State is open (default), all, or one state.
 type ListQuery struct {
 	Topics []string
+	Skip   []string // topics to leave out (#320)
 	State  string
 	Q      string
 	Before string
@@ -1272,6 +1275,9 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 	}
 	if len(topics) > 0 {
 		in("topic", topics)
+	}
+	if len(lq.Skip) > 0 {
+		in("topic NOT", lq.Skip)
 	}
 	switch lq.State {
 	case "", "open":

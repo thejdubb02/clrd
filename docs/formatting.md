@@ -82,6 +82,23 @@ curl -H "Authorization: Bearer $TOKEN" https://clrd.example.com/api/v1/format-ch
 
 Agents can run it with the MCP tool `format_check`.
 
+Add `?by=sender` to split each topic by the token that sent the messages,
+so two programs posting to one topic each get their own prompt. A finding you
+know about and accept can be dismissed, for one sender or the whole topic,
+and a topic can be left out of the check. Nothing is dismissed or left out
+until you set it:
+
+```sh
+# stop counting missing titles in "backups", for every sender
+curl -H "Authorization: Bearer $TOKEN" -d '{"topic":"backups","rule":"no_title"}' https://clrd.example.com/api/v1/format-check/dismiss
+# leave the topic "chatty" out of the check
+curl -X PUT -H "Authorization: Bearer $TOKEN" -d '{"format_check":false}' https://clrd.example.com/api/v1/topics/chatty
+```
+
+Send `"dismissed":false` or `"format_check":true` to undo. The check lists
+what is dismissed and off, so nothing stays hidden by surprise. Agents use the
+MCP tools `format_dismiss` and `set_topic`.
+
 ## Privacy
 
 Your devices never contact the linked sites. When a client asks for an icon

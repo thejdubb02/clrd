@@ -17,7 +17,8 @@ Tools:
 | `send` | `topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?` | Publish. `format` is `markdown` (default) or `text`. `icon` is an http(s) image URL. `attachment` links a file, `{"url":"https://...","name":"report.pdf"}`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. `repeat` (`"5m"`, 1m to 24h) alerts again on that schedule until someone acts on it, at most `repeat_times` more times (default 10); see [Repeat until acknowledged](../repeat.md). |
 | `list` | `topic?, state?` | List, default `open`. |
 | `topics` | none | Topics the token can read, with how many are open in each. |
-| `format_check` | `topic?` | Topics whose newest messages are hard to read (Markdown sent as plain text, unknown `:shortcodes:`, no title, very long, raw JSON), each with a prompt that says how to fix the sender. Advice only. See [Message formatting](../formatting.md#format-check). |
+| `format_check` | `topic?, by?` | Topics whose newest messages are hard to read (Markdown sent as plain text, unknown `:shortcodes:`, no title, very long, raw JSON), each with a prompt that says how to fix the sender. `by: "sender"` splits each topic by sending token. Advice only. See [Message formatting](../formatting.md#format-check). |
+| `format_dismiss` | `topic, rule, sender_id?, dismissed?` | Stop a format check rule counting in a topic, for one sending token or every one. `dismissed: false` shows it again. |
 | `counts` | `keep_cleared_days?`, `topic?` | Exact number of notifications in each state, plus `inbox` and `cleared` totals, over the topics the token can read. With `keep_cleared_days`, also `would_remove`: how many cleared ones that setting would delete. With `topic`, `would_remove` counts only that topic, to preview its own value. |
 | `settings` | any settings field, e.g. `keep_cleared_days?` | No arguments reads the server settings. With arguments, changes only those fields. `keep_cleared_days` (0 is forever) needs an admin token. `topic_keep_cleared_days`, like `{"alerts": 7}`, sets it for one topic (`null` drops it) and needs admin on that topic. |
 | `get` | `id` | One notification by server id, with its current state. |
@@ -37,7 +38,7 @@ Tools:
 | `silences` | none | Silences that have not ended. |
 | `silence` | `topic?, tag?, for? or until?, comment?` | Mute a topic, a tag, or a tag in one topic until a set time (`for: "2h"`, or `until` in RFC 3339). Notifications still arrive and sync, without a sound. |
 | `end_silence` | `id` | End a silence now. |
-| `set_topic` | `topic, icon?, checkin?` | Set the topic icon (an image URL), or a check-in timer (`"25h"`): the topic alerts when nothing arrives for that long. `""` turns either off. |
+| `set_topic` | `topic, icon?, checkin?, format_check?` | Set the topic icon (an image URL), or a check-in timer (`"25h"`): the topic alerts when nothing arrives for that long. `""` turns either off. `format_check: false` leaves the topic out of the format check. |
 | `templates` | `topic` | Incoming webhook templates, saved and built in. A service posts to `/{topic}?template={name}`. |
 | `set_template` | `topic, name, title?, message?, priority?, tags?, click?, id?, resolve?, each?, secret?` | Save how a service's JSON becomes a notification. Fields are Go templates over the posted JSON, e.g. `{{.alert.name}}`; `each` is a plain dotted path and `secret` a plain value. |
 | `delete_template` | `topic, name` | Delete a saved template. |

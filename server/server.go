@@ -717,11 +717,35 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("GET /api/v1/format-check", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		out, err := s.FormatCheck(r, tok, r.URL.Query().Get("topic"))
+		by := r.URL.Query().Get("by")
+		if by != "" && by != "topic" && by != "sender" {
+			return errf(400, "bad_request", `by must be "topic" (the default) or "sender"`)
+		}
+		out, err := s.FormatCheck(r, tok, r.URL.Query().Get("topic"), by == "sender")
 		if err != nil {
 			return err
 		}
 		writeJSON(w, 200, out)
+		return nil
+	})
+	s.api("POST /api/v1/format-check/dismiss", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		in := struct {
+			Topic     string `json:"topic"`
+			Rule      string `json:"rule"`
+			SenderID  string `json:"sender_id"`
+			Dismissed *bool  `json:"dismissed"`
+		}{}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if in.Rule == "" {
+			return errf(400, "bad_request", `body needs "rule"; to turn the check off for a topic, set "format_check": false on the topic`)
+		}
+		on := in.Dismissed == nil || *in.Dismissed
+		if err := s.SetFormatIgnore(r.Context(), tok, in.Topic, in.Rule, in.SenderID, on); err != nil {
+			return err
+		}
+		writeJSON(w, 200, map[string]any{"topic": in.Topic, "rule": in.Rule, "sender_id": in.SenderID, "dismissed": on})
 		return nil
 	})
 	s.api("GET /api/v1/counts", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -748,16 +772,17 @@ func (s *Server) routesSetup() {
 	})
 	s.api("PUT /api/v1/topics/{topic}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
-			Icon    *string `json:"icon"`
-			Checkin *string `json:"checkin"`
+			Icon        *string `json:"icon"`
+			Checkin     *string `json:"checkin"`
+			FormatCheck *bool   `json:"format_check"` // false turns the format check off for the topic (#320)
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		if in.Icon == nil && in.Checkin == nil { // a missing key must not wipe anything
-			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it) or "checkin" (like "25h", or "" for off)`)
+		if in.Icon == nil && in.Checkin == nil && in.FormatCheck == nil { // a missing key must not wipe anything
+			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it), "checkin" (like "25h", or "" for off) or "format_check" (true or false)`)
 		}
-		topic, out := r.PathValue("topic"), map[string]string{"topic": r.PathValue("topic")}
+		topic, out := r.PathValue("topic"), map[string]any{"topic": r.PathValue("topic")}
 		if in.Icon != nil { // checked before the timer changes, so a bad icon changes nothing
 			if err := checkImageURL("icon", *in.Icon); err != nil {
 				return err
@@ -782,6 +807,12 @@ func (s *Server) routesSetup() {
 				return err
 			}
 			out["icon"] = *in.Icon
+		}
+		if in.FormatCheck != nil {
+			if err := s.SetFormatIgnore(r.Context(), tok, topic, "", "", !*in.FormatCheck); err != nil {
+				return err
+			}
+			out["format_check"] = *in.FormatCheck
 		}
 		writeJSON(w, 200, out)
 		return nil

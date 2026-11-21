@@ -218,6 +218,17 @@ func (h *Handler) tokenOK(r *http.Request) bool {
 	return rec.Code != http.StatusUnauthorized
 }
 
+// query is the arguments named in keys that are set, as a URL query.
+func query(a map[string]any, keys ...string) string {
+	q := url.Values{}
+	for _, k := range keys {
+		if v := str(a, k); v != "" {
+			q.Set(k, v)
+		}
+	}
+	return q.Encode()
+}
+
 func str(a map[string]any, k string) string {
 	if v, ok := a[k]; ok && v != nil {
 		return fmt.Sprint(v)
@@ -311,15 +322,9 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 	case "topics":
 		return h.api(r, "GET", "/api/v1/topics", nil)
 	case "counts":
-		q := url.Values{}
-		for _, k := range []string{"keep_cleared_days", "topic"} {
-			if v := str(a, k); v != "" {
-				q.Set(k, v)
-			}
-		}
-		return h.api(r, "GET", "/api/v1/counts?"+q.Encode(), nil)
+		return h.api(r, "GET", "/api/v1/counts?"+query(a, "keep_cleared_days", "topic"), nil)
 	case "format_check":
-		return h.api(r, "GET", "/api/v1/format-check?topic="+url.QueryEscape(str(a, "topic")), nil)
+		return h.api(r, "GET", "/api/v1/format-check?"+query(a, "topic", "by"), nil)
 	case "devices":
 		return h.api(r, "GET", "/api/v1/devices?all=1", nil)
 	case "device_log":
@@ -507,8 +512,11 @@ var tools = []map[string]any{
 	{"name": "counts", "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved). With keep_cleared_days, also would_remove: how many cleared messages that setting would delete.",
 		"inputSchema": schema(map[string]any{"keep_cleared_days": map[string]any{"type": []string{"integer", "string"}, "description": "Preview a keep_cleared_days value before setting it, or \"default\" with topic to preview dropping that topic's own value"},
 			"topic": p("string", "With keep_cleared_days, would_remove counts only this topic, to preview a topic_keep_cleared_days value")})},
-	{"name": "format_check", "description": "Find formatting problems in the newest 500 messages, by topic: Markdown sent as plain text, unknown :shortcodes:, no title, very long messages, raw JSON. Each topic has a count and an example per problem, and a prompt that says how to fix the sender. Fix the sending code with it, then send a test message.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Check only this topic")})},
+	{"name": "format_check", "description": "Find formatting problems in the newest 500 messages, by topic: Markdown sent as plain text, unknown :shortcodes:, no title, very long messages, raw JSON. Each topic has a count and an example per problem, and a prompt that says how to fix the sender. Fix the sending code with it, then send a test message. With by=sender, one group per topic and sending token. Dismissed findings and topics turned off are left out and listed in dismissed and off.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Check only this topic"), "by": p("string", "topic (the default) or sender")})},
+	{"name": "format_dismiss", "description": "Stop a format_check rule showing for a topic, for one sending token (sender_id from format_check by=sender) or every sender. dismissed=false shows it again. To turn the whole check off for a topic, use set_topic with format_check=false.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "rule": p("string", "Rule id, like no_title"),
+			"sender_id": p("string", "Sending token id; leave out for every sender"), "dismissed": p("boolean", "false to show it again; default true")}, "topic", "rule")},
 	{"name": "settings", "description": "Read the server settings, or change them: pass only the fields to change. keep_cleared_days (0 = forever) deletes cleared messages older than that on the next hourly cleanup and needs an admin token; preview it with counts first.",
 		"inputSchema": schema(map[string]any{
 			"keep_cleared_days":       p("integer", "Days to keep dismissed and resolved messages, counted from when they were cleared; 0 = forever"),
@@ -559,8 +567,9 @@ var tools = []map[string]any{
 			"for": p("string", "How long, like 2h or 30m"), "until": p("string", "End time, RFC 3339"), "comment": p("string", "Why, shown in the list")})},
 	{"name": "end_silence", "description": "End a silence now, by its id from silences.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Silence id")}, "id")},
-	{"name": "set_topic", "description": "Set a topic's icon or its check-in timer. With checkin, the topic alerts if nothing arrives for that long (a dead man's switch). \"\" removes either one.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "icon": p("string", "Image URL, or \"\" to remove"), "checkin": p("string", "Duration like 25h, or \"\" for off")}, "topic")},
+	{"name": "set_topic", "description": "Set a topic's icon, its check-in timer, or whether format_check looks at it. With checkin, the topic alerts if nothing arrives for that long (a dead man's switch). \"\" removes the icon or the timer.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "icon": p("string", "Image URL, or \"\" to remove"), "checkin": p("string", "Duration like 25h, or \"\" for off"),
+			"format_check": p("boolean", "false turns the format check off for this topic, true back on")}, "topic")},
 	{"name": "templates", "description": "List a topic's incoming webhook templates, saved and built in. A service posts to /{topic}?template={name}.",
 		"inputSchema": schema(map[string]any{"topic": p("string", "Topic")}, "topic")},
 	{"name": "set_template", "description": "Save an incoming webhook template: how a service's JSON becomes a notification. Fields other than each and secret are Go templates over the posted JSON, like {{.alert.name}}. Needs title or message unless name is a built-in template.",
@@ -616,6 +625,7 @@ var restTools = map[string]struct {
 	"silence":           {"POST", "/api/v1/silences", false},
 	"end_silence":       {"DELETE", "/api/v1/silences/{id}", false},
 	"set_topic":         {"PUT", "/api/v1/topics/{topic}", false},
+	"format_dismiss":    {"POST", "/api/v1/format-check/dismiss", false},
 	"templates":         {"GET", "/api/v1/topics/{topic}/templates", false},
 	"set_template":      {"PUT", "/api/v1/topics/{topic}/templates/{name}", false},
 	"delete_template":   {"DELETE", "/api/v1/topics/{topic}/templates/{name}", false},

@@ -113,6 +113,11 @@ Fixed, Removed, Security), as one line a user can understand.
   topic whose token (Gotify 3's `gtfya.` keys and older ones) keeps sending,
   with its default priority, plus the message history. See
   docs/migrate-from-gotify.md. (#116)
+- Server: the format check can group findings by the token that sent them
+  (`by=sender`), dismiss a finding you accept (for one sender or the whole
+  topic), and leave a topic out entirely. All off until set, and settable
+  through the API and the MCP tools `format_check`, `format_dismiss` and
+  `set_topic`. (#320)
 
 - Integrations: a Claude Code plugin, installed from this repo with
   `/plugin marketplace add thejdubb02/clrd`. One install and two questions

@@ -182,7 +182,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			return snap, err
 		}
 		// The format check is advice: if it fails, Settings still loads without it.
-		if fc, err := a.s.FormatCheck(r, tok, ""); err == nil {
+		if fc, err := a.s.FormatCheck(r, tok, "", false); err == nil {
 			_ = convert(fc["topics"], &snap.Format)
 		}
 		// A token without the read scope sees no silences, but still gets Settings.
