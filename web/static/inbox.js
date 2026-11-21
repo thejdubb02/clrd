@@ -621,10 +621,22 @@
       $('[data-tip-count]').textContent = `${at + 1} of ${ts.length}`;
       if (said) announce.textContent = ts[at].getAttribute('aria-label');
     };
+    // Pause and Play (WCAG 2.2.2), for readers who never hover or focus the
+    // card. No button under reduced motion: nothing rotates there.
+    const pause = $('[data-tip-pause]');
+    const sync = () => {
+      pause.hidden = still.matches;
+      pause.setAttribute('aria-label', stopped ? 'Play tips' : 'Pause tips');
+      pause.querySelector('[data-tip-playing]').hidden = stopped;
+      pause.querySelector('[data-tip-paused]').hidden = !stopped;
+    };
+    sync();
+    still.addEventListener('change', sync);
     tipBox.addEventListener('click', async e => {
+      if (e.target.closest('[data-tip-pause]')) { stopped = !stopped; return sync(); }
       const step = e.target.closest('[data-tip-step]');
-      // Stepping by hand stops the rotation for good (WCAG 2.2.2).
-      if (step) { stopped = true; return show(at + +step.dataset.tipStep, true); }
+      // Stepping by hand stops the rotation until Play (WCAG 2.2.2).
+      if (step) { stopped = true; sync(); return show(at + +step.dataset.tipStep, true); }
       if (!e.target.closest('[data-tip-copy-btn]')) return;
       try { await copyText(ts[at].querySelector('[data-tip-copy]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
     });
