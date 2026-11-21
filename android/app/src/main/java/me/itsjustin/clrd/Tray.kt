@@ -102,6 +102,7 @@ class Tray(private val ctx: Context) {
     }
 
     /** True when a sound change dropped the Urgent channel's Do Not Disturb pass and the person has not set it again (#346). */
+    @Synchronized // Settings and a sound change both read then write the flag; a stale false must not undo a fresh true
     fun dndLost(sound: String = App.of(ctx).sound, replacedHadIt: Boolean = false): Boolean {
         val prefs = App.of(ctx).prefs
         val lost = Sounds.dndLost(prefs.getBoolean("dnd_lost", false), replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
