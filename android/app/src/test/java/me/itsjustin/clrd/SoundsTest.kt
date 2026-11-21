@@ -98,11 +98,13 @@ class SoundsTest {
         assertTrue("a later start on the same sound keeps the notice", Sounds.dndLost(was = true, replacedHadIt = false, nowHasIt = false))
         assertFalse("set again, so the notice goes", Sounds.dndLost(was = true, replacedHadIt = false, nowHasIt = true))
 
-        // The person let urgent ones through on the default sound (faked the way Android stores it).
+        app.tray.createChannels() // a start on the same sound replaces nothing
+        assertFalse(app.tray.dndLost())
+        // The person let urgent ones through on the default sound. Faked after the start above, because
+        // Robolectric overwrites an existing channel on create where Android keeps the person's settings.
         nm.deleteNotificationChannel("p5")
         nm.createNotificationChannel(android.app.NotificationChannel("p5", "Urgent", NotificationManager.IMPORTANCE_HIGH).apply { setBypassDnd(true) })
-        assertFalse(app.tray.dndLost())
-        app.tray.createChannels() // a start on the same sound replaces nothing
+        assertTrue(nm.getNotificationChannel("p5").canBypassDnd())
         assertFalse(app.tray.dndLost())
         bg { app.saveSound("chime") }
         assertTrue(app.tray.dndLost())
