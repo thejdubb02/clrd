@@ -52,7 +52,7 @@ func TestSilences(t *testing.T) {
 		t.Fatalf("read after silenced publish: %v", got)
 	}
 	row, err := getNotification(ctx, s.db, "id = ?", id)
-	if err != nil || s.ntfyMessage(row, 1).Priority != 1 {
+	if err != nil || s.ntfyMessage(row, 1, false).Priority != 1 {
 		t.Fatalf("ntfy priority while silenced: %v", err)
 	}
 

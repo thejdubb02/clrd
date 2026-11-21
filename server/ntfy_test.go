@@ -166,6 +166,61 @@ func TestNtfyPublish(t *testing.T) {
 	}
 }
 
+// A delayed message: the publish reply and ?scheduled=1 show it as a
+// message at its delivery time; a plain poll does not.
+func TestNtfyScheduled(t *testing.T) {
+	s, ts, admin := newTest(t)
+	at := time.Now().Add(time.Hour).Unix()
+	pub := mkToken(t, s, "pub", []string{ScopePublish}, nil)
+	for topic, tok := range map[string]string{"later": admin, "other": pub} { // a publish-only token never sees state, but its own delay
+		_, out := raw(t, "POST", ts.URL+"/"+topic, tok, "soon", map[string]string{"X-Delay": "1h"})
+		if m := ntfyDecode(t, out); m.Event != "message" || m.Message != "soon" || m.Time < at-5 {
+			t.Fatalf("delayed reply: %s", out)
+		}
+	}
+
+	// Live with scheduled=1: a new delayed message does not show until it fires.
+	req, _ := http.NewRequest("GET", ts.URL+"/live/json?scheduled=1", nil)
+	req.SetBasicAuth("", admin)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	sc := bufio.NewScanner(res.Body)
+	if sc.Scan(); ntfyDecode(t, sc.Text()).Event != "open" {
+		t.Fatalf("want open: %s", sc.Text())
+	}
+	raw(t, "POST", ts.URL+"/live", admin, "later still", map[string]string{"X-Delay": "2h"})
+	raw(t, "POST", ts.URL+"/live", admin, "now", nil)
+	for sc.Scan() {
+		if m := ntfyDecode(t, sc.Text()); m.Event == "message" {
+			if m.Message != "now" {
+				t.Fatalf("live got %+v", m)
+			}
+			break
+		}
+	}
+	raw(t, "POST", ts.URL+"/later", admin, "now", nil)
+	msgs := func(q string) (got []string) {
+		_, out := raw(t, "GET", ts.URL+"/later/json?poll=1"+q, admin, "", nil)
+		for _, l := range lines(out) {
+			if m := ntfyDecode(t, l); m.Event == "message" {
+				got = append(got, m.Message)
+			}
+		}
+		return got
+	}
+	if got := msgs(""); strings.Join(got, ",") != "now" {
+		t.Fatalf("plain poll: %v", got)
+	}
+	for _, q := range []string{"&scheduled=1", "&sched=yes"} {
+		if got := msgs(q); strings.Join(got, ",") != "soon,now" {
+			t.Fatalf("%s: %v", q, got)
+		}
+	}
+}
+
 func TestNtfySubscribe(t *testing.T) {
 	_, ts, admin := newTest(t)
 	var ids []string
