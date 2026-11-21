@@ -10,6 +10,12 @@ away from a work topic.
 
 ## Start one
 
+In the web inbox, open Settings, then Silences: give a topic, a tag or both,
+pick how long, and press Start silence. The list above the form shows each
+running silence with the time left, and End now ends it early.
+
+Over the API:
+
 ```sh
 # Mute the infra topic for 8 hours
 curl -H "Authorization: Bearer $CLRD_TOKEN" \

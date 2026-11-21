@@ -79,7 +79,8 @@ offline catches up the moment it reconnects.
   work without JavaScript, Markdown formatting and links, link previews,
   Share and Copy on each card, optional stacking by topic, a Ctrl+K command
   palette, a Send box for a quick note to your phone, a sound for new
-  notifications (pick one in Settings, silenced ones stay quiet), dark mode,
+  notifications (pick one in Settings, silenced ones stay quiet), silences
+  started and ended from Settings, dark mode,
   phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, notifications stacked by
