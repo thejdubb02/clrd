@@ -224,7 +224,9 @@ answers the agent. The tap clears the notification on every other device.
 - Only a device allowed to approve can tap Allow or Deny. The setup token and
   the phones and browsers you link are allowed; a new token is denied, so an
   agent's token cannot approve its own prompts. Change it per device with
-  `PUT /api/v1/devices/{id}/approve`. Locked out? `clrd token create
+  `PUT /api/v1/devices/{id}/approve`. Set a device to `ask` and its taps
+  wait for an allowed device to confirm them: clrd posts a "Confirm" prompt
+  on the same topic. Locked out? `clrd token create
   --approve allowed` on the server makes an allowed token.
 
 Claude Code, in `~/.claude/settings.json` (with `CLRD_TOKEN` set in your
