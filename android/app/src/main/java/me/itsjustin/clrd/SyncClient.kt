@@ -194,6 +194,7 @@ class SyncClient(
                 // falls behind retention and resets on every reconnect.
                 bufferSeq = maxOf(bufferSeq, o.optLong("seq"))
                 endReplay()
+                onDevices() // changes while offline send no devices message; the server expects a reload on ready
             }
             "reset" -> reset()
             "settings" -> o.optJSONObject("settings")?.let(onSettings) // sent on every connect and on every change

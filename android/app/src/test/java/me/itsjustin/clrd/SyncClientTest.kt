@@ -269,7 +269,7 @@ class SyncClientTest {
             ws.send("""{"type":"ready","seq":0}""")
         }
         start()
-        await { devices == 1 }
+        await { devices == 2 } // once for the message, once on ready (changes made while offline)
     }
 
     @Test fun anAskAnswerShowsThePromptAndKeepsTheQuestionOpen() { // #330: 202 with the confirm prompt
