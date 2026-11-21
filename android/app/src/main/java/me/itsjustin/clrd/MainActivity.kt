@@ -504,7 +504,7 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
                 // Orange only when something needs you.
                 val dot = when { n.isFinal -> b.clear; n.priority >= 4 -> b.signal; n.priority == 3 -> b.slate; else -> b.line }
                 val icon = rememberPicture(n.icon, Images.ICON_PX)
-                if (icon != null) Image(icon, null, Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)))
+                if (icon != null) Image(icon, null, Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(b.iconTile).padding(1.dp))
                 else Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
                 Spacer(Modifier.width(10.dp))
                 Text(
