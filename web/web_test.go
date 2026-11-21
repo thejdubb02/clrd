@@ -260,6 +260,42 @@ func TestHostileNotification(t *testing.T) {
 	}
 }
 
+type formatted struct{ one }
+
+func (f formatted) Snapshot(r *http.Request, q Query) (Snapshot, error) {
+	s, err := f.one.Snapshot(r, q)
+	s.Formatting = true
+	return s, err
+}
+
+// An untitled multi-line message heads its card with its first line as plain
+// text and renders the rest as the body (#303).
+func TestUntitledMessage(t *testing.T) {
+	n := Notification{ID: "u1", Topic: "ci", Message: "\n**Build** `main` failed\nStep *test* exited 1.\n- lint ok", State: "active", CreatedAt: time.Now()}
+	_, body := get(t, Handler(one{n: n}, ""), "/app")
+	if !strings.Contains(body, `id="t-u1">**Build** `+"`main`"+` failed</h2>`) {
+		t.Error("with formatting off, the heading is not the first line as typed")
+	}
+	_, body = get(t, Handler(formatted{one{n: n}}, ""), "/app")
+	if !strings.Contains(body, `id="t-u1">Build main failed</h2>`) {
+		t.Error("heading is not the first line as plain text")
+	}
+	if !strings.Contains(body, "Step <em>test</em> exited 1.") || !strings.Contains(body, "<li>lint ok</li>") {
+		t.Error("body is not the rest of the message, rendered")
+	}
+	for _, c := range []struct{ msg, format, head, rest string }{
+		{"one line", "", "one line", ""},
+		{"*a* <b>\nnext", "text", "*a* <b>", "next"},
+		{"---\nx", "", "---", "x"},
+		{"Build failed\n    go test ./...", "", "Build failed", "    go test ./..."},
+	} {
+		m := Notification{Message: c.msg, Format: c.format}
+		if m.Heading() != c.head || m.Body() != c.rest {
+			t.Errorf("%q: got %q / %q", c.msg, m.Heading(), m.Body())
+		}
+	}
+}
+
 // Handler sits beside the ntfy routes (docs/SPEC.md section 5): each side
 // keeps its paths, and ours answer 200.
 func TestMountBesideNtfy(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"html"
 	"html/template"
 	"io/fs"
 	"log"
@@ -119,22 +120,32 @@ func (n Notification) Answer() string {
 	return n.Reply
 }
 
-// Heading is the title, or the message when a sender gave no title (common
-// with ntfy-style publishes).
+// Heading is the title or, when a sender gave none (common with ntfy-style
+// publishes), the message's first line as plain text (#303).
 func (n Notification) Heading() string {
 	if n.Title != "" {
 		return n.Title
 	}
-	return n.Message
+	line, _, _ := strings.Cut(strings.TrimSpace(n.Message), "\n")
+	if n.Format == "text" {
+		return line
+	}
+	if s := strings.TrimSpace(html.UnescapeString(tags.ReplaceAllString(body(line, n.Format, true, false), ""))); s != "" {
+		return s
+	}
+	return line
 }
 
-// Body is the message unless it was already used as the heading.
+// Body is the message, less the first line when that became the heading.
 func (n Notification) Body() string {
-	if n.Title == "" {
-		return ""
+	if n.Title != "" {
+		return n.Message
 	}
-	return n.Message
+	_, rest, _ := strings.Cut(strings.TrimSpace(n.Message), "\n")
+	return strings.TrimLeft(rest, "\r\n") // keeps an indented code block's indent
 }
+
+var tags = regexp.MustCompile(`<[^>]*>`)
 
 type Topic struct {
 	Name string `json:"name"`
@@ -283,6 +294,9 @@ func templates(base string) *template.Template {
 		"iso":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		"clock": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
 		"card": func(n Notification, view, here string, snap Snapshot) any {
+			if !snap.Formatting {
+				n.Format = "text" // the untitled headline shows as typed too
+			}
 			return struct {
 				N             Notification
 				View, Here    string

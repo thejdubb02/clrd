@@ -15,6 +15,9 @@ Fixed, Removed, Security), as one line a user can understand.
   when two changes land at once, and a browser unlinked mid-request can no
   longer change one. The MCP `sound` tool now refuses an empty name like the
   API does, instead of listing the names. (#299)
+- Web: a message sent without a title now shows its first line as the
+  headline, as plain text, and the rest as the formatted body, instead of the
+  whole message squeezed into the headline (#303).
 - Web: dark site icons (GitHub's and others) no longer vanish in dark mode.
   Link, topic and notification icons sit on a small light tile there, and a
   link icon that fails to load is hidden instead of leaving a gap (#309).
