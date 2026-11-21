@@ -119,8 +119,8 @@ and tokens in it match the file, so a server can be rebuilt from config:
 }
 ```
 
-A token is its secret: the value a device sends, at least 20 characters
-(`openssl rand -base64 30` makes one). `"$NAME"` reads it from the
+A token is its secret: the value a device sends, `clrd_` and at least 15
+more characters (`echo clrd_$(openssl rand -hex 20)` makes one). `"$NAME"` reads it from the
 environment variable `NAME`, so the file itself holds no secret. Each token
 takes the same fields as `POST /api/v1/tokens`, plus `approve` and `user`
 (a user name from the file). A token already made on the API is taken over

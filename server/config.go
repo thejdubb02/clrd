@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -18,8 +19,8 @@ type Config struct {
 }
 
 type ConfigUser struct {
-	Name   string          `json:"name"`
-	Grants json.RawMessage `json:"grants"` // as on the API: a list, [] for no topic, null or left out for no limit
+	Name   string   `json:"name"`
+	Grants *[]Grant `json:"grants"` // as on the API: a list, [] for no topic, null or left out for no limit
 }
 
 type ConfigToken struct {
@@ -45,12 +46,17 @@ func (s *Server) applyConfig(ctx context.Context) error {
 		return fmt.Errorf("CLRD_CONFIG: %w", err)
 	}
 	defer f.Close()
-	var c Config
 	dec := json.NewDecoder(f)
 	dec.DisallowUnknownFields() // a typo must not quietly drop a limit
-	if err := dec.Decode(&c); err != nil {
+	var p *Config
+	if err := dec.Decode(&p); err != nil {
 		return fmt.Errorf("CLRD_CONFIG %s: %w", s.opt.Config, err)
 	}
+	var rest json.RawMessage
+	if p == nil || dec.Decode(&rest) != io.EOF {
+		return fmt.Errorf("CLRD_CONFIG %s: one JSON object expected", s.opt.Config)
+	}
+	c := *p
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -78,10 +84,8 @@ func applyConfigTx(ctx context.Context, tx *sql.Tx, c *Config) (gone []string, e
 		if _, dup := users[name]; dup {
 			return nil, fmt.Errorf("user %q listed twice", name)
 		}
-		if len(u.Grants) == 0 {
-			u.Grants = json.RawMessage("null")
-		}
-		stored, _, err := userGrants(u.Grants)
+		raw, _ := json.Marshal(u.Grants) // decoded strictly above, so a typo in a grant stops the start
+		stored, _, err := userGrants(raw)
 		if err != nil {
 			return nil, fmt.Errorf("user %q: %w", name, err)
 		}
@@ -98,8 +102,8 @@ func applyConfigTx(ctx context.Context, tx *sql.Tx, c *Config) (gone []string, e
 		if v, ok := strings.CutPrefix(secret, "$"); ok {
 			secret = os.Getenv(v)
 		}
-		if len(secret) < 20 {
-			return nil, fmt.Errorf("token %q: secret must be at least 20 characters (or a $VARIABLE that holds one)", t.Name)
+		if len(secret) < 20 || !isToken(secret) {
+			return nil, fmt.Errorf("token %q: secret must start with %s and be at least 20 characters (or a $VARIABLE that holds one)", t.Name, tokenPrefix)
 		}
 		tok := Token{Name: t.Name, Scopes: t.Scopes, Topics: t.Topics, Grants: t.Grants, Approve: t.Approve, User: users[t.User]}
 		if t.User != "" && tok.User == "" {
@@ -121,33 +125,35 @@ func applyConfigTx(ctx context.Context, tx *sql.Tx, c *Config) (gone []string, e
 			g, _ := json.Marshal(tok.Grants)
 			grants = string(g)
 		}
+		// Browsers signed in with a token copy its access, so a change here signs them out.
+		var id, was string
+		const access = `scopes || '|' || topics || '|' || grants || '|' || approve || '|' || IFNULL(user_id, '')`
+		if err := tx.QueryRowContext(ctx, `SELECT id, `+access+` FROM tokens WHERE hash = ?`, hash).Scan(&id, &was); err != nil && err != sql.ErrNoRows {
+			return nil, err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, grants, created_at, approve, user_id, config)
 		  VALUES (?,?,?,?,?,?,?,?,NULLIF(?, ''),1) ON CONFLICT (hash) DO UPDATE SET name = excluded.name, scopes = excluded.scopes,
 		  topics = excluded.topics, grants = excluded.grants, approve = excluded.approve, user_id = excluded.user_id, config = 1`,
 			randomString(12), tok.Name, hash, strings.Join(tok.Scopes, ","), strings.Join(tok.Topics, ","), grants, ms(now()), tok.Approve, tok.User); err != nil {
 			return nil, err
 		}
+		var is string
+		tx.QueryRowContext(ctx, `SELECT `+access+` FROM tokens WHERE hash = ?`, hash).Scan(&is)
+		if id != "" && is != was {
+			ids, err := dropTokens(ctx, tx, `SELECT token_id FROM sessions WHERE parent_id = ?`, id)
+			if err != nil {
+				return nil, err
+			}
+			gone = append(gone, ids...)
+		}
 	}
 	// Tokens the file made and no longer lists go, with the browsers signed in with them.
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(hashes)), ",")
-	rows, err := tx.QueryContext(ctx, `WITH RECURSIVE k(id) AS
-	  (SELECT id FROM tokens WHERE config = 1 AND hash NOT IN (`+marks+`) UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  DELETE FROM tokens WHERE id IN k RETURNING id`, hashes...)
+	ids, err := dropTokens(ctx, tx, `SELECT id FROM tokens WHERE config = 1 AND hash NOT IN (`+marks+`)`, hashes...)
 	if err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		gone = append(gone, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
+	gone = append(gone, ids...)
 	names := []any{}
 	for n := range users {
 		names = append(names, n)
@@ -160,4 +166,24 @@ func applyConfigTx(ctx context.Context, tx *sql.Tx, c *Config) (gone []string, e
 		return nil, err
 	}
 	return gone, nil
+}
+
+// dropTokens deletes the tokens seed selects and every browser signed in
+// with them, at any depth, and returns their ids.
+func dropTokens(ctx context.Context, tx *sql.Tx, seed string, args ...any) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `WITH RECURSIVE k(id) AS (`+seed+` UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
+	  DELETE FROM tokens WHERE id IN k RETURNING id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

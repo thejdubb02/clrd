@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,7 +67,29 @@ func TestConfigFile(t *testing.T) {
 		t.Fatalf("a user dropped from the file stays: %d", n)
 	}
 
+	// A browser signed in with the laptop keeps its access while the file
+	// leaves the laptop alone, and is signed out when the file changes it.
+	laptop := `{"tokens": [{"name": "laptop", "secret": "$CLRD_TEST_LAPTOP", "scopes": [%s]}]}`
+	browser := mkToken(t, s, "browser", []string{ScopeRead}, nil)
+	s.db.Exec(`INSERT INTO sessions (token_id, parent_id) SELECT b.id, l.id FROM tokens b, tokens l WHERE b.hash = ? AND l.hash = ?`,
+		hashToken(browser), hashToken("clrd_laptoplaptoplaptop"))
+	for _, step := range []struct {
+		scopes string
+		want   int
+	}{{`"read"`, 200}, {`"read", "publish"`, 401}} {
+		if err := apply(fmt.Sprintf(laptop, step.scopes)); err != nil {
+			t.Fatal(err)
+		}
+		if c, _ := call(t, ts, "GET", "/api/v1/notifications", browser, nil); c != step.want {
+			t.Fatalf("browser after the laptop got %s: %d, want %d", step.scopes, c, step.want)
+		}
+	}
+
 	for body, want := range map[string]string{
+		`null`:  "one JSON object",
+		`{} {}`: "one JSON object",
+		`{"users": [{"name": "a", "grants": [{"topik": "x"}]}]}`:                                "unknown field",
+		`{"tokens": [{"name": "x", "secret": "xxxxxxxxxxxxxxxxxxxxxxxx", "scopes": ["read"]}]}`: "start with clrd_",
 		`{"tokens": [{"name": "x", "secret": "short", "scopes": ["read"]}]}`:                    "at least 20",
 		`{"tokens": [{"name": "x", "secret": "$CLRD_TEST_UNSET", "scopes": ["read"]}]}`:         "at least 20",
 		`{"tokens": [{"name": "x", "secret": "clrd_xxxxxxxxxxxxxxxxxxxx", "scope": ["read"]}]}`: "unknown field",

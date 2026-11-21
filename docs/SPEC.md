@@ -775,11 +775,12 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   private-network peer is trusted.
   `CLRD_CONFIG` (unset): a JSON file `{"users": [...], "tokens": [...]}`
   applied at every start (#155). A user is `name` and `grants` as on the
-  API. A token is `name`, `secret` (20 or more characters; `"$NAME"` reads
+  API. A token is `name`, `secret` (`clrd_` and 20 or more characters in all; `"$NAME"` reads
   the environment variable), `scopes`, `topics`, `grants`, `approve` and
   `user` (a user name in the file), and is matched by the hash of its
   secret, so one made on the API is taken over. Rows the file made and no
-  longer lists are removed, with their sessions; rows made on the API are
+  longer lists are removed, with their sessions, and a changed token drops
+  its sessions; rows made on the API are
   not. Unknown fields or a bad entry stop the start and change nothing.
   An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
