@@ -434,6 +434,7 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 			n.Actions = nil
 			badActions++
 		}
+		n.Actions = slices.DeleteFunc(n.Actions, isDeviceAction) // an import skips the publish checks, so links only, as before
 		if n.Actions == nil {
 			n.Actions = []Action{}
 		}

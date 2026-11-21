@@ -262,8 +262,13 @@ Anonymous topics are off until an admin sets them, with
 right now and is stored nowhere, so it never shows in the inbox or a replay.
 It cannot be delayed, repeated, carry a file or an `Id`.
 
-Not supported yet: email and phone call forwarding, and `http`/`broadcast`
-action buttons (view actions work).
+`view` action buttons work everywhere. `http` and `broadcast` buttons are
+stored and passed to ntfy apps once an admin turns them on for the topic
+(`{"device_actions":true}` on `PUT /api/v1/topics/{topic}`, or the MCP tool
+`set_topic`); until then they are dropped. clrd's own app and web inbox do not
+run them yet.
+
+Not supported yet: email and phone call forwarding.
 
 ## Upgrading
 

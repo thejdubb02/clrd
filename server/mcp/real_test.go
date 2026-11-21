@@ -130,6 +130,9 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 	}
 
 	ok("set_topic", map[string]any{"topic": "backups", "checkin": "25h"}, `"checkin":"25h"`)
+	ok("set_topic", map[string]any{"topic": "home", "device_actions": true}, `"device_actions":true`) // #401
+	ok("send", map[string]any{"topic": "home", "message": "lights", "actions": []any{map[string]any{"label": "Off",
+		"http": map[string]any{"url": "https://example.com/off"}}}}, `"method":"POST"`)
 
 	ok("set_template", map[string]any{"topic": "ci", "name": "build", "title": "{{.repo}}", "id": "{{.run}}"}, `"id":"{{.run}}"`)
 	ok("templates", map[string]any{"topic": "ci"}, `"title":"{{.repo}}"`, `"builtin"`)

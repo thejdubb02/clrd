@@ -795,14 +795,21 @@ func (s *Server) routesSetup() {
 			Icon        *string `json:"icon"`
 			Checkin     *string `json:"checkin"`
 			FormatCheck *bool   `json:"format_check"` // false turns the format check off for the topic (#320)
+			// DeviceActions lets publishers add http and broadcast actions (#401). Admin only.
+			DeviceActions *bool `json:"device_actions"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		if in.Icon == nil && in.Checkin == nil && in.FormatCheck == nil { // a missing key must not wipe anything
-			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it), "checkin" (like "25h", or "" for off) or "format_check" (true or false)`)
+		if in.Icon == nil && in.Checkin == nil && in.FormatCheck == nil && in.DeviceActions == nil { // a missing key must not wipe anything
+			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it), "checkin" (like "25h", or "" for off), "format_check" or "device_actions" (true or false)`)
 		}
 		topic, out := r.PathValue("topic"), map[string]any{"topic": r.PathValue("topic")}
+		if in.DeviceActions != nil { // checked first, so a publisher's mixed body changes nothing
+			if err := tok.need(ScopeAdmin, topic); err != nil {
+				return err
+			}
+		}
 		if in.Icon != nil { // checked before the timer changes, so a bad icon changes nothing
 			if err := checkImageURL("icon", *in.Icon); err != nil {
 				return err
@@ -833,6 +840,12 @@ func (s *Server) routesSetup() {
 				return err
 			}
 			out["format_check"] = *in.FormatCheck
+		}
+		if in.DeviceActions != nil {
+			if err := s.SetTopicDeviceActions(r.Context(), tok, topic, *in.DeviceActions); err != nil {
+				return err
+			}
+			out["device_actions"] = *in.DeviceActions
 		}
 		writeJSON(w, 200, out)
 		return nil

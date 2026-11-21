@@ -128,6 +128,23 @@ and `state_by` is who tapped. The first answer wins: a second one gets 409.
 Any later state change except dismiss and resolve (reopen, snooze, a plain
 ack) clears `reply`. Reply actions are not sent to ntfy subscribers.
 
+**Device actions** (#401, ntfy's `http` and `broadcast` buttons) are a third
+and fourth kind: `{"label":"Off","http":{"method":"PUT","url":"https://...",
+"headers":{...},"body":"..."},"clear":true}` is a request the reader's device
+sends when tapped (method one of GET, POST, PUT, PATCH, DELETE, HEAD, POST if
+empty; an http(s) URL of at most 2048 characters; at most 10 headers of at most
+1024 characters each, no line breaks; a body of at most 4096 bytes), and
+`{"label":"Ping","broadcast":{"intent":"...","extras":{...}}}` is an Android
+broadcast (at most 10 extras). `clear` asks the device to clear the
+notification after the button runs. Because any publisher could make every
+reader's device call any address, a topic takes them only after an admin turns
+`device_actions` on (`PUT /api/v1/topics/{topic}`); off by default. With it off
+the native API answers 403 and a ntfy publish drops them silently. Turning it
+off keeps what was already published. Readers, ntfy subscribers and outgoing
+webhooks get the whole action, headers and body included, so do not put a
+secret there that a reader of the topic must not see. clrd's own Android app
+and web inbox do not run device actions yet; ntfy apps do.
+
 **Icons:** `icon` is an absolute `http` or `https` URL with a host (at most
 2048 characters); anything else is a 400. Clients load it straight from that
 URL, so the image host sees the viewer's IP address. Each topic can have its
@@ -580,7 +597,7 @@ resolved`) and `ntfy_import`.
 | GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
 | GET | `/api/v1/format-check?topic=&by=` | Format check (#308), advice only. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). `by=sender` (#320) groups by topic and sending token (the top of its token tree, as kept for #187), adding `sender_id` and `sender` (the token name) to each group and naming the token in the prompt; only a full admin, or the token the sender belongs to (as in Linked devices, #245), gets `sender` and the prompt, anyone else gets both blank (#406); the default `by=topic` leaves both out. Returns `{"checked":N,"problems":N,"topics":[{"topic","sender_id"?,"sender"?,"checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}],"off":["topic"],"dismissed":[{"topic","rule","sender_id"}]}`, only groups with findings, in topic then sender_id order; topics in `off` are not checked or counted, and a dismissed rule does not count for that topic and sender (`sender_id` "" means every sender); `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters, with anything that looks like a secret (a value after `password=`, `token:`, `Bearer` and the like, the password in `user:pass@host`, a run of 20+ letters and digits) shown as `[hidden]`; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
 | POST | `/api/v1/format-check/dismiss` | Body `{"topic","rule","sender_id"?,"dismissed"?}` (#320): stop `rule` counting in `topic` for that sending token, or every sender without `sender_id`. `"dismissed":false` undoes it. Unknown rule is a 400. Scope publish on the topic. Nothing is dismissed until set. |
-| PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. `{"format_check":false}` leaves the topic out of the format check, `true` (the default) puts it back (#320). A body with none of these keys is a 400. Scope publish on the topic. |
+| PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. `{"format_check":false}` leaves the topic out of the format check, `true` (the default) puts it back (#320). `{"device_actions":true}` lets senders add `http` and `broadcast` actions (section 2, #401), `false` (the default) refuses them; this key needs scope admin on the topic, and a body with it and a token without admin changes nothing. A body with none of these keys is a 400. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
 | PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
 | DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
@@ -618,7 +635,9 @@ By external id (what scripts and monitors use):
 
 - `PUT|POST /{topic}` with the body as the message. Headers `X-Title`/`Title`/`t`,
   `X-Priority`/`Priority`/`p` (1-5 or min/low/default/high/urgent),
-  `X-Tags`/`Tags`, `X-Click`, `X-Actions`, `X-Delay`, `X-Icon` (sets `icon`; a
+  `X-Tags`/`Tags`, `X-Click`, `X-Actions` (JSON or the short form;
+  `view`, `http` and `broadcast`, the last two only on a topic with
+  `device_actions` on, else dropped; `copy` is dropped), `X-Delay`, `X-Icon` (sets `icon`; a
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
   is dropped), `X-Filename`/`Filename`/`File`/`f` (with it, the body is the
   file and the message comes from `X-Message`/`Message`/`m`, default "You
@@ -738,7 +757,7 @@ and `request_approve(approve, topic?)` is `POST /api/v1/devices/approve-request`
 from section 5. Setup tools, each one REST call: path arguments go in the URL,
 the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dismiss(id)`, `reopen(id)`, `clear(topic | ids)`, `silences()`,
 `silence(topic?, tag?, for | until, comment?)`, `end_silence(id)`,
-`set_topic(topic, icon?, checkin?, format_check?)`, `templates(topic)`,
+`set_topic(topic, icon?, checkin?, format_check?, device_actions?)`, `templates(topic)`,
 `set_template(topic, name, ...)`, `delete_template(topic, name)`,
 `preview_template(topic, name, payload, headers?, template?)`, and, admin
 only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?)`,

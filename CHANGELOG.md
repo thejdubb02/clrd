@@ -155,6 +155,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: ntfy's `http` and `broadcast` action buttons. An admin turns them on per topic with `device_actions` (API and MCP `set_topic`, off by default); the server stores them and passes them to ntfy apps. clrd's own app and web inbox do not run them yet (#401).
+
 - Server: live-only messages. ntfy's `Cache: no`, or `"live": true` on the API and MCP `send`, goes to the ntfy streams open now and is stored nowhere (#400).
 
 - A file edit sent for approval shows on the phone with the change itself,
