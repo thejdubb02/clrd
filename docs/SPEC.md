@@ -457,7 +457,8 @@ the session cookie (same-origin only) as well as a Bearer token.
   202 with a confirm prompt, a new notification on the same topic titled
   "Confirm <device>'s answer: <label>" with reply actions `confirm` and
   `reject`. A repeat tap returns the same prompt. Only an allowed device
-  outside the asker's token tree and the question's may answer it; `confirm`
+  outside the question's token tree may answer it (the asker cannot, being
+  ask, but a phone linked from the same token can); `confirm`
   applies the tap to the question (state by the ask device), 409 if the
   question was answered, cleared or changed since. `reject` only clears the
   prompt. Taps on a prompt are not sent to the topic's action hooks. On
