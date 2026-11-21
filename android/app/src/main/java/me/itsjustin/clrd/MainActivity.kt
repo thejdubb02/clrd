@@ -737,15 +737,15 @@ private fun DeviceSettings(app: App, resumes: Int) {
                 Text(if (d.optBoolean("this")) stringResource(R.string.device_this, name) else name, color = b.ink)
                 Text(deviceLine(ctx, d), color = b.slate, fontSize = 13.sp)
             }
-            // This phone signs itself out in its own Settings by changing the token; a typed-in token is revoked on the web.
-            if (d.optBoolean("can_unlink") && !d.optBoolean("this")) TextButton(onClick = { unlink = d }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
+            // A typed-in token cannot be unlinked (revoke it on the web); unlinking this phone signs it out here too.
+            if (d.optBoolean("can_unlink")) TextButton(onClick = { unlink = d }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
         }
     }
     error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
     if (log.isNotEmpty()) TextButton(onClick = { showLog = !showLog }) {
         Text(stringResource(if (showLog) R.string.device_log_hide else R.string.device_log_show), color = b.ink)
     }
-    if (showLog) log.take(50).forEach { e ->
+    if (showLog) log.forEach { e ->
         val at = millisOf(e.optString("at"))?.let { ago(ctx, it) }.orEmpty()
         val by = e.optString("by").takeIf { it.isNotEmpty() }?.let { " " + ctx.getString(R.string.device_log_by, it) }.orEmpty()
         Text("$at  ${e.optString("device")} ${e.optString("action")}$by", style = Mono, color = b.slate, fontSize = 12.sp)
@@ -893,7 +893,10 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
     val topics by app.db.dao().topics().collectAsState(emptyList())
     val status by app.status.collectAsState()
 
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val scroll = rememberScrollState()
+    // Scroll up so the signed-out line is seen even if Settings was scrolled down.
+    LaunchedEffect(status) { if (status == SyncClient.Status.AUTH_FAILED) scroll.animateScrollTo(0) }
+    Column(Modifier.verticalScroll(scroll).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Unlinked from another device, revoked, or mistyped: this is where the phone signs in again (#264).
         if (app.configured && status == SyncClient.Status.AUTH_FAILED) Text(stringResource(R.string.signed_out), color = b.signal, fontSize = 14.sp)
         Text(stringResource(R.string.server), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
