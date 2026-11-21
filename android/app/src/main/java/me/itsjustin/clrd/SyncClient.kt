@@ -147,7 +147,10 @@ class SyncClient(
                 try { handle(text) } catch (e: Exception) { fail(e as? IOException ?: IOException("bad frame", e)) }
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, null) }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = onThread(myGen) { fail(IOException("closed $code")) }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = onThread(myGen) {
+                // Unlinked or revoked: the server says so in the close reason, so report it now instead of after a retry.
+                fail(if (reason == "token revoked") HttpError(401, reason) else IOException("closed $code"))
+            }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = onThread(myGen) {
                 fail(response?.let { HttpError(it.code, "ws upgrade", retryAfterMs(it)) } ?: IOException(t))
             }

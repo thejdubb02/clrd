@@ -355,6 +355,8 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val scope = rememberCoroutineScope()
     val dao = app.db.dao()
     val ctx = LocalContext.current
+    val status by app.status.collectAsState()
+    LaunchedEffect(status) { if (status == SyncClient.Status.AUTH_FAILED) tab = Tab.Settings } // signed out: show the sign-in screen
 
     // Clear with an Undo toast, as on the web inbox.
     val clear: (Notif) -> Unit = { n ->
@@ -676,30 +678,97 @@ private fun SnoozeButton(app: App, id: String) {
 }
 
 /** The shared snooze times and default, saved on the server for every device (#193). */
-/** This phone's own approve setting (docs/SPEC.md, who may approve). Hidden until the server answers. */
+private fun objects(o: org.json.JSONObject, key: String): List<org.json.JSONObject> =
+    o.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
+
+private fun millisOf(s: String) = runCatching { java.time.OffsetDateTime.parse(s).toInstant().toEpochMilli() }.getOrNull()
+
+/** One device's second line: what it is, what it hangs under, when it was last seen. */
+private fun deviceLine(ctx: Context, d: org.json.JSONObject): String = listOfNotNull(
+    when (d.optString("kind")) {
+        "phone" -> ctx.getString(R.string.kind_phone)
+        "browser" -> ctx.getString(R.string.kind_browser)
+        else -> ctx.getString(R.string.kind_token)
+    },
+    d.optString("via").takeIf { it.isNotEmpty() }?.let { ctx.getString(R.string.device_via, it) },
+    millisOf(d.optString("last_seen_at"))?.let { ctx.getString(R.string.device_seen, ago(ctx, it)) } ?: ctx.getString(R.string.device_never_seen),
+).joinToString(", ")
+
+/**
+ * Linked devices with Unlink, their activity log, and this phone's own approve setting
+ * (docs/SPEC.md section 5, the same list the web Settings page shows). Hidden until the server answers.
+ */
 @Composable
-private fun ApproveSettings(app: App, resumes: Int) {
+private fun DeviceSettings(app: App, resumes: Int) {
     val b = LocalBrand.current
+    val ctx = LocalContext.current
     val server by app.saved.collectAsState()
-    var approve by remember(server) { mutableStateOf<String?>(null) }
-    LaunchedEffect(server, resumes) {
+    var devices by remember(server) { mutableStateOf<List<org.json.JSONObject>?>(null) }
+    var log by remember(server) { mutableStateOf<List<org.json.JSONObject>>(emptyList()) }
+    var reload by remember { mutableStateOf(0) }
+    var unlink by remember { mutableStateOf<org.json.JSONObject?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var showLog by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(server, resumes, reload) {
         val api = app.api()
         app.io.execute {
-            runCatching {
-                val a = org.json.JSONObject(api.get("/api/v1/devices?all=1")).getJSONArray("devices")
-                (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.optBoolean("this") }?.optString("approve")
-            }.getOrNull()?.let { approve = it }
+            runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices?all=1")), "devices") }.getOrNull()?.let { devices = it }
+            runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices/log")), "events") }.getOrNull()?.let { log = it }
         }
     }
-    val text = when (approve) {
+    val list = devices ?: return
+    val approve = when (list.firstOrNull { it.optBoolean("this") }?.optString("approve")) {
         "allowed" -> R.string.approve_allowed
         "ask" -> R.string.approve_ask
         "denied" -> R.string.approve_denied
-        else -> return
+        else -> null
+    }
+    if (approve != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.approve_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(approve), color = b.slate, fontSize = 13.sp)
     }
     Spacer(Modifier.height(8.dp))
-    Text(stringResource(R.string.approve_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-    Text(stringResource(text), color = b.slate, fontSize = 13.sp)
+    Text(stringResource(R.string.devices_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    list.forEach { d ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                val name = d.optString("name")
+                Text(if (d.optBoolean("this")) stringResource(R.string.device_this, name) else name, color = b.ink)
+                Text(deviceLine(ctx, d), color = b.slate, fontSize = 13.sp)
+            }
+            // This phone signs itself out in its own Settings by changing the token; a typed-in token is revoked on the web.
+            if (d.optBoolean("can_unlink") && !d.optBoolean("this")) TextButton(onClick = { unlink = d }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
+        }
+    }
+    error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+    if (log.isNotEmpty()) TextButton(onClick = { showLog = !showLog }) {
+        Text(stringResource(if (showLog) R.string.device_log_hide else R.string.device_log_show), color = b.ink)
+    }
+    if (showLog) log.take(50).forEach { e ->
+        val at = millisOf(e.optString("at"))?.let { ago(ctx, it) }.orEmpty()
+        val by = e.optString("by").takeIf { it.isNotEmpty() }?.let { " " + ctx.getString(R.string.device_log_by, it) }.orEmpty()
+        Text("$at  ${e.optString("device")} ${e.optString("action")}$by", style = Mono, color = b.slate, fontSize = 12.sp)
+    }
+    unlink?.let { d ->
+        AlertDialog(
+            onDismissRequest = { unlink = null },
+            title = { Text(stringResource(R.string.device_unlink_title, d.optString("name"))) },
+            text = { Text(stringResource(R.string.device_unlink_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    unlink = null
+                    val api = app.api()
+                    app.io.execute {
+                        error = runCatching { api.delete("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}") }
+                            .exceptionOrNull()?.let { ctx.getString(R.string.device_unlink_failed, it.message) }
+                        reload++
+                    }
+                }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
+            },
+            dismissButton = { TextButton(onClick = { unlink = null }) { Text(stringResource(R.string.link_cancel)) } },
+        )
+    }
 }
 
 @Composable
@@ -822,8 +891,11 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
     var muted by remember { mutableStateOf(app.muted) }
     var stack by remember { mutableStateOf(app.stack) }
     val topics by app.db.dao().topics().collectAsState(emptyList())
+    val status by app.status.collectAsState()
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Unlinked from another device, revoked, or mistyped: this is where the phone signs in again (#264).
+        if (app.configured && status == SyncClient.Status.AUTH_FAILED) Text(stringResource(R.string.signed_out), color = b.signal, fontSize = 14.sp)
         Text(stringResource(R.string.server), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
             url, { url = pastedUrl(it) }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -895,7 +967,7 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
         }
         SoundSettings(app, resumes)
         if (app.configured) SnoozeSettings(app)
-        if (app.configured) ApproveSettings(app, resumes)
+        if (app.configured) DeviceSettings(app, resumes)
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.about, BuildConfig.VERSION_NAME), style = Mono, color = b.slate)
     }

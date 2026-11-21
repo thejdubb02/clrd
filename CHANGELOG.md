@@ -97,6 +97,7 @@ Fixed, Removed, Security), as one line a user can understand.
   `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
   `preview_template`) takes a sample payload and returns the notifications a
   real post would make, without publishing anything. (#332)
+- Android: Settings lists the linked devices (name, kind, what each is linked from, last seen) with an Unlink button that asks first, and an activity log of links, sign-ins and unlinks. When this phone itself is unlinked or its token revoked, the app says so and opens the sign-in screen at once (#264).
 
 - Web: Settings lists outgoing webhooks with their recent delivery log, and
   an admin can add, edit and delete them there, with or without JavaScript
