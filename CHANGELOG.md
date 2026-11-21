@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: changing a device's sound answers with the sound it saved, even
+  when two changes land at once, and a browser unlinked mid-request can no
+  longer change one. The MCP `sound` tool now refuses an empty name like the
+  API does, instead of listing the names. (#299)
 - Web: dark site icons (GitHub's and others) no longer vanish in dark mode.
   Link, topic and notification icons sit on a small light tile there, and a
   link icon that fails to load is hidden instead of leaving a gap (#309).

@@ -119,26 +119,39 @@ func (s *Server) deviceRoutes() {
 }
 
 // topOf walks up every parent, phones included, to the token typed in.
-func (s *Server) topOf(ctx context.Context, id string) (string, error) {
+func (s *Server) topOf(ctx context.Context, id string) (string, error) { return topIn(ctx, s.db, id) }
+
+func topIn(ctx context.Context, q querier, id string) (string, error) {
 	var top string
-	err := s.db.QueryRowContext(ctx, `WITH RECURSIVE up(id, n) AS
+	err := q.QueryRowContext(ctx, `WITH RECURSIVE up(id, n) AS
 	  (SELECT ?, 0 UNION SELECT parent_id, n + 1 FROM sessions JOIN up ON token_id = up.id)
 	  SELECT id FROM up ORDER BY n DESC LIMIT 1`, id).Scan(&top)
 	return top, err
 }
 
+type querier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 // Devices lists the devices tok may see, oldest first.
 func (s *Server) Devices(ctx context.Context, tok *Token) ([]LinkedDevice, error) {
+	return s.devices(ctx, s.db, tok)
+}
+
+// devices is Devices read through q, so a write can check inside its own
+// transaction (#299).
+func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDevice, error) {
 	all := tok.needFullAdmin() == nil
-	top, err := s.topOf(ctx, tok.ID)
+	top, err := topIn(ctx, q, tok.ID)
 	if err != nil {
 		return nil, err
 	}
-	sounds, err := s.deviceSounds(ctx, s.db)
+	sounds, err := s.deviceSounds(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE k(id) AS
+	rows, err := q.QueryContext(ctx, `WITH RECURSIVE k(id) AS
 	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
 	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name
 	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id

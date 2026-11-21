@@ -286,7 +286,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	}
 	s.mu.Unlock()
 	if err == nil && p.Sound != nil {
-		err = s.SetSound(ctx, tok, tok.ID, *p.Sound)
+		_, err = s.SetSound(ctx, tok, tok.ID, *p.Sound)
 	}
 	if err != nil {
 		return Settings{}, err
