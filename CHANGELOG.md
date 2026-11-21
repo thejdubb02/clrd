@@ -157,6 +157,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 - Server: live-only messages. ntfy's `Cache: no`, or `"live": true` on the API and MCP `send`, goes to the ntfy streams open now and is stored nowhere (#400).
 
+- A file edit sent for approval shows on the phone with the change itself,
+  not only the file path: removed and added lines for Edit and MultiEdit, the
+  text for Write and NotebookEdit (#366).
+- Users and tokens can be set in a config file (`CLRD_CONFIG`), applied at
+  every start, so a server can be rebuilt from config (#155).
 - Android: a stack card in the app has a Clear button that clears every
   notification in it at once, with Undo, as one bulk clear like the web's
   stack Clear (#360).
@@ -167,6 +172,11 @@ Fixed, Removed, Security), as one line a user can understand.
   shared by giving another user a grant on it. Off until you make one:
   tokens with no user work as before. API `/api/v1/users`, MCP
   `create_user`. (#143)
+- Android: Settings, Linked devices lets an allowed phone set who may answer
+  approval requests (Allowed, Ask or Denied) for each device, as the web
+  Settings page does. It never offers to raise this phone or the token it
+  hangs under, and asks before lowering those (#382).
+
 - Web: the empty-inbox tips have a Pause button, so they stop rotating for anyone, including screen reader users who never hover or focus them; Play starts them again (#352).
 - Web: a card's snooze menu offers "Silence <topic> for 1 hour", which mutes
   the whole topic in one tap, with or without JavaScript. It shows only where

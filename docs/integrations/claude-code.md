@@ -53,6 +53,9 @@ Answer either one.
 
 - **Allow** on the phone runs the tool. **Deny** stops it and tells Claude it
   was denied from clrd.
+- A file edit shows the path and the change itself (removed lines with `-`,
+  added lines with `+`), and a new file shows its text, so you see what Allow
+  writes. Too long to show on a phone, it stays on screen only.
 - No answer in about 9.5 minutes: Claude Code stops waiting for the phone and
   the prompt stays on screen. Nothing is ever allowed without a tap.
 - clrd down, bad token or URL: the hook gives up and you get the normal

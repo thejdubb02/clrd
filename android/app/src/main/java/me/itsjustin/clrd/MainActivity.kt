@@ -744,6 +744,37 @@ private fun objects(o: org.json.JSONObject, key: String): List<org.json.JSONObje
 
 private fun millisOf(s: String) = runCatching { java.time.OffsetDateTime.parse(s).toInstant().toEpochMilli() }.getOrNull()
 
+private val approveOrder = listOf("denied", "ask", "allowed")
+
+private fun approveName(v: String) = when (v) {
+    "allowed" -> R.string.approve_name_allowed
+    "ask" -> R.string.approve_name_ask
+    "denied" -> R.string.approve_name_denied
+    else -> null
+}
+
+/** Is d this phone or a device or token it hangs under, walked by id as the web does (#382). */
+internal fun isOwn(list: List<org.json.JSONObject>, d: org.json.JSONObject): Boolean {
+    var id = list.firstOrNull { it.optBoolean("this") }?.optString("id").orEmpty()
+    repeat(list.size) { // at most one hop per device, so a loop in bad data ends
+        if (id.isEmpty()) return false
+        if (id == d.optString("id")) return true
+        id = list.firstOrNull { it.optString("id") == id }?.optString("via_id") ?: return false
+    }
+    return false
+}
+
+/**
+ * The "May approve" menu for d, weakest first, as the web Settings page (#382). Empty unless this phone
+ * is allowed; for this phone or what it hangs under it stops at the current setting, since the server
+ * never lets a device raise those. The server checks it all again.
+ */
+internal fun approveChoices(list: List<org.json.JSONObject>, d: org.json.JSONObject): List<String> {
+    if (list.firstOrNull { it.optBoolean("this") }?.optString("approve") != "allowed") return emptyList()
+    val i = approveOrder.indexOf(d.optString("approve"))
+    return if (i >= 0 && isOwn(list, d)) approveOrder.take(i + 1) else approveOrder
+}
+
 /** One device's second line: what it is, what it hangs under, when it was last seen. */
 private fun deviceLine(ctx: Context, d: org.json.JSONObject): String = listOfNotNull(
     when (d.optString("kind")) {
@@ -770,11 +801,25 @@ private fun DeviceSettings(app: App, resumes: Int) {
     var unlink by remember { mutableStateOf<org.json.JSONObject?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var showLog by rememberSaveable { mutableStateOf(false) }
+    var menu by remember { mutableStateOf<String?>(null) }
+    var lower by remember { mutableStateOf<Pair<org.json.JSONObject, String>?>(null) }
+    // The server decides (docs/SPEC.md "Who may approve"): a refusal shows as the error line.
+    var busy by remember { mutableStateOf(false) } // a change is on its way; the menu waits for the fresh list
+    val setApprove: (org.json.JSONObject, String) -> Unit = { d, v ->
+        busy = true
+        val api = app.api()
+        app.io.execute {
+            error = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/approve", org.json.JSONObject().put("approve", v).toString()) }
+                .exceptionOrNull()?.let { ctx.getString(R.string.device_approve_failed, it.message) }
+            reload++
+        }
+    }
     val changed by app.devicesChanged.collectAsState() // another device changed this phone's approve setting, or one came or went
     LaunchedEffect(server, resumes, reload, changed) {
         val api = app.api()
         app.io.execute {
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices?all=1")), "devices") }.getOrNull()?.let { devices = it }
+            busy = false
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices/log")), "events") }.getOrNull()?.let { log = it }
         }
     }
@@ -798,6 +843,22 @@ private fun DeviceSettings(app: App, resumes: Int) {
                 val name = d.optString("name")
                 Text(if (d.optBoolean("this")) stringResource(R.string.device_this, name) else name, color = b.ink)
                 Text(deviceLine(ctx, d), color = b.slate, fontSize = 13.sp)
+                val now = approveName(d.optString("approve"))?.let { ctx.getString(R.string.device_approve, ctx.getString(it)) }
+                val choices = approveChoices(list, d)
+                if (choices.size > 1) Box {
+                    Text(now.orEmpty(), color = b.ink, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !busy, role = Role.Button) { menu = d.optString("id") }.padding(vertical = 6.dp))
+                    DropdownMenu(menu == d.optString("id"), { menu = null }) {
+                        choices.forEach { v ->
+                            DropdownMenuItem(text = { Text(stringResource(approveName(v)!!)) }, onClick = {
+                                menu = null
+                                if (v != d.optString("approve")) {
+                                    // Lowering this phone or what it hangs under cannot be undone here, so it asks first, as the web does.
+                                    if (isOwn(list, d)) lower = d to v else setApprove(d, v)
+                                }
+                            })
+                        }
+                    }
+                } else if (now != null) Text(now, color = b.slate, fontSize = 13.sp)
             }
             // A typed-in token cannot be unlinked (revoke it on the web); unlinking this phone signs it out here too.
             if (d.optBoolean("can_unlink")) TextButton(onClick = { unlink = d }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
@@ -813,6 +874,15 @@ private fun DeviceSettings(app: App, resumes: Int) {
         val device = e.optString("device")
         val action = e.optString("action")
         Text(ctx.getString(R.string.device_log_line, at, device, action) + by, style = Mono, color = b.slate, fontSize = 12.sp)
+    }
+    lower?.let { (d, v) ->
+        AlertDialog(
+            onDismissRequest = { lower = null },
+            title = { Text(stringResource(R.string.device_lower_title, d.optString("name"), stringResource(approveName(v)!!))) },
+            text = { Text(stringResource(R.string.device_lower_text)) },
+            confirmButton = { TextButton(onClick = { lower = null; setApprove(d, v) }) { Text(stringResource(R.string.device_lower), color = b.signal) } },
+            dismissButton = { TextButton(onClick = { lower = null }) { Text(stringResource(R.string.link_cancel)) } },
+        )
     }
     unlink?.let { d ->
         AlertDialog(
