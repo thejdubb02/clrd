@@ -182,8 +182,32 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			return snap, err
 		}
 		// The format check is advice: if it fails, Settings still loads without it.
-		if fc, err := a.s.FormatCheck(r, tok, "", false); err == nil {
+		if fc, err := a.s.FormatCheck(r, tok, "", true); err == nil {
 			_ = convert(fc["topics"], &snap.Format)
+			_ = convert(fc["dismissed"], &snap.FormatDismissed)
+			// Name only senders this token may see in Linked devices (#245):
+			// anyone else's shows as another device, and its prompt, which
+			// names the token, is left out.
+			seen := map[string]bool{}
+			for _, d := range snap.Linked {
+				seen[d.ID] = true
+			}
+			for i, g := range snap.Format {
+				snap.Format[i].CanFix = tok.MaySilence(g.Topic) // the same publish check
+				if g.SenderID != "" && !seen[g.SenderID] {
+					snap.Format[i].Sender, snap.Format[i].Prompt = "", ""
+				}
+			}
+			for i, d := range snap.FormatDismissed {
+				snap.FormatDismissed[i].CanFix = tok.MaySilence(d.Topic)
+				if !seen[d.SenderID] {
+					snap.FormatDismissed[i].Sender = ""
+				}
+			}
+			off, _ := fc["off"].([]string)
+			for _, t := range off {
+				snap.FormatOff = append(snap.FormatOff, web.FormatOff{Topic: t, CanFix: tok.MaySilence(t)})
+			}
 		}
 		// A token without the read scope sees no silences, but still gets Settings.
 		if sils, err := a.s.Silences(ctx, tok); err == nil {
@@ -264,6 +288,14 @@ func (a webAPI) StartSilence(r *http.Request, topic, tag, dur, comment string) e
 	}
 	_, err := a.s.StartSilence(r.Context(), tok, server.SilenceStart{Topic: topic, Tag: tag, For: dur, Comment: comment})
 	return webError(err)
+}
+
+func (a webAPI) FormatIgnore(r *http.Request, topic, rule, senderID string, on bool) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	return webError(a.s.SetFormatIgnore(r.Context(), tok, topic, rule, senderID, on))
 }
 
 func (a webAPI) EndSilence(r *http.Request, id string) error {

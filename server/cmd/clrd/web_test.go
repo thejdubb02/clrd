@@ -377,7 +377,7 @@ func TestFormatCheckSettings(t *testing.T) {
 	publish(t, ts, raw, "ci", "build failed")
 	publish(t, ts, raw, "ci", "build passed")
 	_, body, _ := fetch(t, c, ts.URL+"/app/settings")
-	for _, want := range []string{"data-format-check", "ci <span", "2 of the last 2 messages", "<li>No title: 2</li>", `topic &#34;ci&#34;`} {
+	for _, want := range []string{"data-format-check", "ci <span", "2 of the last 2 messages", "No title: 2</span>", `topic &#34;ci&#34;`, "Dismiss for this sender", "Stop checking ci"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings page lacks %q", want)
 		}

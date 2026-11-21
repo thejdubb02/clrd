@@ -53,6 +53,9 @@ try {
   assert.equal(new URL(page.url()).search, '', 'token still in the URL');
   // The browser gets its own token, named from its User-Agent (HeadlessChrome on Linux).
   assert.equal(await page.locator('[data-me]').getAttribute('data-me'), 'Chrome on Linux');
+  // A fresh install has nothing for the format check to show (#320).
+  const fresh = await (await page.request.get(base + '/app/settings')).text();
+  assert.ok(fresh.includes('id="snz-h"') && !fresh.includes('data-format-check'), 'a fresh install shows the format check');
 
   // Empty first run: one tip card, send-a-test first; Next moves on, and Copy
   // holds this instance's own address.
@@ -1111,6 +1114,50 @@ try {
     await sp.getByText('No saved templates yet.').waitFor();
     await ctx.close();
     console.log('ok: webhook templates are added, edited, previewed and deleted in Settings; a read-only device gets no forms');
+  }
+
+  // Format check in Settings (#320): one group per sender, dismiss for one
+  // sender, leave the topic out and check it again, undo. A read-only device
+  // sees the findings but no buttons.
+  {
+    const bot = execFileSync(bin, ['token', 'create', '--name', 'fmt-bot', '--scope', 'publish', '--topics', 'fmtchk'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    await api(laptop, '/api/v1/notifications', { topic: 'fmtchk', message: 'untitled from laptop' });
+    await api(bot, '/api/v1/notifications', { topic: 'fmtchk', message: 'untitled from the bot' });
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'fmt' } })).ok(), 'format sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/settings');
+    const botG = sp.locator('[data-format-topic="fmtchk/fmt-bot"]'), lapG = sp.locator('[data-format-topic="fmtchk/laptop"]');
+    await botG.getByText('fmtchk from fmt-bot').waitFor();
+    await lapG.waitFor();
+    const click = b => Promise.all([sp.waitForEvent('load'), b.click()]);
+    await click(botG.locator('li', { hasText: 'No title' }).getByRole('button', { name: 'Dismiss for this sender' }));
+    assert.equal(await botG.count(), 0, 'dismissed for the bot, its group still shows');
+    assert.equal(await lapG.count(), 1, 'dismissing for the bot hid the laptop too');
+    const dis = sp.locator('[data-format-dismissed-item="fmtchk/no_title/fmt-bot"]');
+    await dis.getByText('fmtchk: No title, from fmt-bot').waitFor();
+    await click(lapG.getByRole('button', { name: 'Stop checking fmtchk' }));
+    assert.equal(await lapG.count(), 0, 'a topic left out still shows');
+    const off = (await (await fetch(base + '/api/v1/format-check', { headers: { Authorization: `Bearer ${laptop}` } })).json()).off;
+    assert.deepEqual(off, ['fmtchk'], 'Stop checking did not reach the server');
+    await click(sp.locator('[data-format-off-item="fmtchk"]').getByRole('button', { name: 'Check again' }));
+    await lapG.waitFor();
+    await click(dis.getByRole('button', { name: 'Undo' }));
+    await botG.waitFor();
+    assert.equal(await sp.locator('[data-format-dismissed-item^="fmtchk/"]').count(), 0, 'Undo left the dismissal listed');
+
+    const ro = execFileSync(bin, ['token', 'create', '--name', 'fmt-ro', '--scope', 'read', '--topics', 'fmtchk'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const rctx = await browser.newContext();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: ro, name: 'fmt-ro' } })).ok(), 'read-only sign-in');
+    const rp = await rctx.newPage();
+    await rp.goto(base + '/app/settings');
+    // Not an admin, so other people's devices are not named (#245).
+    await rp.locator('[data-format-topic="fmtchk/"]', { hasText: 'fmtchk from another device' }).first().waitFor();
+    assert.equal(await rp.locator('[data-format-check]', { hasText: 'fmt-bot' }).count(), 0, 'a read-only device sees the bot\'s name');
+    assert.equal(await rp.locator('[data-format-dismiss], [data-format-off]').count(), 0, 'a read-only device got dismiss buttons');
+    await rctx.close();
+    await ctx.close();
+    console.log('ok: the format check groups by sender, dismisses, leaves a topic out and undoes in Settings');
   }
 } finally {
   await browser?.close();
