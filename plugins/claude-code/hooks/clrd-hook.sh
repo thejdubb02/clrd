@@ -7,6 +7,7 @@
 #   stop      Stop: ping that the task finished.
 #   wait      Notification: ping that Claude is waiting on you.
 #   no-raise  PreToolUse on request_approve: an agent never asks to approve.
+#   sweep     PostToolUse: a prompt answered on screen leaves the phone.
 #   mcp       The MCP server: JSON-RPC lines on stdin, each posted to /mcp.
 #
 # A hook's failure prints nothing on stdout, so Claude Code shows its own
@@ -30,6 +31,29 @@ die() {
 
 if [ "$mode" = no-raise ]; then
   echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Agents never ask to approve their own prompts. A person changes that in clrd."}}'
+  exit 0
+fi
+
+# Pending phone prompts, one file per approve hook: <session>.<tool>.<pid>.
+# Answering on screen does not stop the hook (#364), so when the tool then
+# runs, sweep stops it and clrd clears the phone when the request hangs up.
+pending=${CLAUDE_PLUGIN_DATA:-${XDG_RUNTIME_DIR:-$HOME/.cache}/clrd}/pending
+key() {
+  [[ $1 =~ \"session_id\":\"([A-Za-z0-9-]+)\" ]] && sid=${BASH_REMATCH[1]} &&
+    [[ $1 =~ \"tool_name\":\"([A-Za-z0-9_-]+)\" ]] && key=$sid.${BASH_REMATCH[1]}
+}
+if [ "$mode" = sweep ]; then
+  key "$(cat)" || exit 0
+  for f in "$pending/$key".*; do
+    [ -e "$f" ] || continue
+    pid=${f##*.}
+    # Still bash, not yet curl: keep the file for the tool's own sweep.
+    if [[ $(ps -o args= -p "$pid" 2>/dev/null) == *curl*/mcp/approve* ]]; then
+      kill "$pid" && rm -f "$f"
+    elif ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$f"
+    fi
+  done
   exit 0
 fi
 
@@ -87,7 +111,13 @@ case $mode in
     done
     wait
     ;;
-  approve) post "/mcp/approve?topic=$topic" 600 -H 'Content-Type: application/json' --data-binary @- ;;
+  # exec keeps this pid for curl, so sweep can stop it.
+  approve)
+    body=$(cat)
+    # shellcheck disable=SC2174 # only the pending dir itself needs 700
+    key "$body" && mkdir -p -m 700 "$pending" && : >"$pending/$key.$$"
+    post "/mcp/approve?topic=$topic" 600 -H 'Content-Type: application/json' --data-binary @- <<<"$body"
+    ;;
   # Stop's JSON carries Claude's whole last message, often past the 4 KB a
   # publish takes, so the finished ping says only which project finished.
   stop) post "/$topic" 15 -o /dev/null -H "X-Title: Claude finished: $project" --data-binary 'Task finished.' ;;

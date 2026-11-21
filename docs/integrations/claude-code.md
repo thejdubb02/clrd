@@ -65,9 +65,9 @@ Answer either one.
 
 ## Limits
 
-- Answering on screen does not clear the phone's prompt right away: it goes
-  away when the hook stops waiting, about 9.5 minutes later. Tapping it late
-  does nothing.
+- Answering on screen clears the phone's prompt: on Allow once the tool runs,
+  on Deny at once. If the same session runs the same tool while a prompt is
+  waiting, the phone's prompt can clear early; the prompt on screen stays.
 - The finished ping does not carry Claude's last message, only the project.
 - The hooks and the MCP connection need `bash` and `curl`. On Windows that means Git Bash or WSL;
   only Linux has been tested.

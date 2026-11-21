@@ -7,6 +7,20 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/clrd-hook.sh\" sweep", "timeout": 5 }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/clrd-hook.sh\" sweep", "timeout": 5 }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
