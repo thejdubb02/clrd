@@ -120,6 +120,19 @@
     const el = document.activeElement, s = el && el.closest && el.closest('[data-stack]:not(.is-leaving)');
     return s && { t: s.dataset.stack, sel: el === s ? null : el.matches('[data-act]') ? '[data-act]' : '[data-stack-toggle]' };
   };
+  // A stack's count, newest title and priority dot, from its topic's cards g.
+  const fill = (s, g) => {
+    s.querySelector('[data-stack-count]').textContent = `${g.length} notifications`;
+    s.querySelector('[data-stack-latest]').textContent = g[0].querySelector('.card-title').textContent.trim();
+    const top = Math.max(...g.map(c => Number(c.dataset.priority)));
+    const dot = s.querySelector('[data-stack-dot]');
+    dot.classList.remove('bg-destructive', 'bg-foreground', 'bg-border');
+    dot.classList.add(top >= 5 ? 'bg-destructive' : top === 4 ? 'bg-foreground' : 'bg-border');
+    const side = [...document.querySelectorAll('[data-topic-icon]')].find(a => a.dataset.name === s.dataset.stack);
+    const icon = (side && side.dataset.topicIcon) || g[0].querySelector('img[data-icon]')?.getAttribute('src');
+    const img = s.querySelector('img[data-icon]');
+    if (icon) Object.assign(img, { src: icon, hidden: false }); else img.hidden = true;
+  };
   function restack(focus = stackFocus()) {
     if (!list || !stackTpl) return;
     list.querySelectorAll('[data-stack]:not(.is-leaving)').forEach(s => s.remove());
@@ -135,13 +148,7 @@
       const s = stackTpl.content.firstElementChild.cloneNode(true), open = unfolded.has(t);
       s.dataset.stack = t;
       s.querySelector('[data-stack-topic]').textContent = t;
-      s.querySelector('[data-stack-count]').textContent = `${g.length} notifications`;
-      s.querySelector('[data-stack-latest]').textContent = g[0].querySelector('.card-title').textContent.trim();
-      const top = Math.max(...g.map(c => Number(c.dataset.priority)));
-      s.querySelector('[data-stack-dot]').classList.replace('bg-border', top >= 5 ? 'bg-destructive' : top === 4 ? 'bg-foreground' : 'bg-border');
-      const side = [...document.querySelectorAll('[data-topic-icon]')].find(a => a.dataset.name === t);
-      const icon = (side && side.dataset.topicIcon) || g[0].querySelector('img[data-icon]')?.getAttribute('src');
-      if (icon) Object.assign(s.querySelector('img'), { src: icon, hidden: false });
+      fill(s, g);
       const tg = s.querySelector('[data-stack-toggle]');
       tg.setAttribute('aria-expanded', open);
       tg.textContent = open ? 'Hide' : 'Show all';
@@ -228,11 +235,25 @@
     if (c.hidden) {
       // Folded into a closed stack: nothing to watch leave, so the stack's
       // count and newest title change now, not after the exit timer (#227).
-      // Not while a Clear all removes its cards: the half-removed stack would
-      // come back. Once they are gone, a stack still fading changes nothing.
+      // While a Clear all waits for its reply, a full restack would bring back
+      // the stacks it is clearing, so only this card's own stack changes, and
+      // only when that clear holds none of its cards (#397).
       announce.textContent = `${c.querySelector('.card-title').textContent.trim()}: ${why}`;
       c.remove();
       if (!clearing.size) restack();
+      else {
+        const t = c.dataset.topic, g = cards().filter(x => x.dataset.topic === t);
+        const s = list.querySelector(`[data-stack="${CSS.escape(t)}"]:not(.is-leaving)`);
+        if (s && !g.some(x => clearing.has(x.dataset.id))) {
+          if (g.length > 1) fill(s, g);
+          else { // down to one card: it stands on its own, as restack would leave it
+            const sel = selId === key(s), focused = s.contains(document.activeElement);
+            g.forEach(x => { x.hidden = false; }); // shown first, so it can take the focus
+            s.remove();
+            if (sel) select(g[0] || null, focused);
+          }
+        }
+      }
       return tidy();
     }
     if (key(c) === selId) { const all = nav(), i = all.indexOf(c); select(all[i + 1] || all[i - 1] || null, c.contains(document.activeElement)); }
@@ -276,6 +297,9 @@
       const html = await r.text();
       if (mine !== gen) return;
       doc = new DOMParser().parseFromString(html, 'text/html');
+      // A Clear all that started while this page was loading: its reply comes
+      // first, then a fresh load (#397).
+      if (clearing.size || (list && list.querySelector('.is-leaving'))) return refresh();
     } catch {
       if (mine !== gen) return; // a newer refresh is already on its way
       // seq has already moved past this change, so the WebSocket will not
