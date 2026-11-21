@@ -39,6 +39,7 @@ Fixed, Removed, Security), as one line a user can understand.
   another device clears inside a closed stack updates its count and newest
   title at once, and Clear all takes every stack with it. (#227)
 
+- Settings: choosing Default for a topic's keep now counts what it would delete against the exact server keep, not whole days, and By topic lists a topic with its own keep even after its last notification is gone. `GET /api/v1/counts?keep_cleared_days=default&topic=T` (and the MCP `counts` tool) previews that. (#336)
 - Web: on a phone, the Linked devices table in Settings fits the screen; the
   "May approve" menu now sits under its label.
 - Android: changing the sound replaces the notification channels, which

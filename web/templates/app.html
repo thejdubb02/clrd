@@ -415,9 +415,9 @@
         <input id="keep-custom" class="input" type="number" min="1" max="36500" name="custom" value="{{if not $preset}}{{$k}}{{end}}"></div>
       <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-keep-status></span></div>
     </form>
-    {{if .Snap.Topics}}<form class="grid max-w-md gap-2" data-topic-keep><fieldset class="grid gap-2"><legend class="label mb-2">By topic</legend>
-      {{range .Snap.Topics}}{{$v := $.Snap.TopicKeep .Name}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="tk-{{.Name}}">{{.Name}}</label>
-        <select id="tk-{{.Name}}" class="input w-auto" data-topic="{{.Name}}"><option value=""{{if eq $v -1}} selected{{end}}>Default</option><option value="1"{{if eq $v 1}} selected{{end}}>1 day</option><option value="5"{{if eq $v 5}} selected{{end}}>5 days</option><option value="7"{{if eq $v 7}} selected{{end}}>7 days</option><option value="30"{{if eq $v 30}} selected{{end}}>30 days</option><option value="90"{{if eq $v 90}} selected{{end}}>90 days</option><option value="0"{{if eq $v 0}} selected{{end}}>Forever</option>{{if not (eq $v -1 0 1 5 7 30 90)}}<option value="{{$v}}" selected>{{$v}} days</option>{{end}}</select></div>
+    {{if .Snap.KeepTopics}}<form class="grid max-w-md gap-2" data-topic-keep><fieldset class="grid gap-2"><legend class="label mb-2">By topic</legend>
+      {{range .Snap.KeepTopics}}{{$v := $.Snap.TopicKeep .}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="tk-{{.}}">{{.}}</label>
+        <select id="tk-{{.}}" class="input w-auto" data-topic="{{.}}"><option value=""{{if eq $v -1}} selected{{end}}>Default</option><option value="1"{{if eq $v 1}} selected{{end}}>1 day</option><option value="5"{{if eq $v 5}} selected{{end}}>5 days</option><option value="7"{{if eq $v 7}} selected{{end}}>7 days</option><option value="30"{{if eq $v 30}} selected{{end}}>30 days</option><option value="90"{{if eq $v 90}} selected{{end}}>90 days</option><option value="0"{{if eq $v 0}} selected{{end}}>Forever</option>{{if not (eq $v -1 0 1 5 7 30 90)}}<option value="{{$v}}" selected>{{$v}} days</option>{{end}}</select></div>
       {{end}}</fieldset><span class="meta" role="status" data-topic-keep-status></span></form>{{end}}
   </section>
   <section class="grid gap-3" aria-labelledby="look-h">

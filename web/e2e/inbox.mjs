@@ -833,6 +833,7 @@ try {
     kp.once('dialog', d => d.accept());
     await Promise.all([kp.waitForEvent('load'), sel.selectOption('')]);
     assert.deepEqual(await topicKeep(), {}, 'Default drops it');
+    assert.equal(asked.at(-1), '?keep_cleared_days=default&topic=keepy', 'Default previews the exact global keep, not whole days (#336)');
     await ctx.close();
     console.log('ok: a topic keeps cleared messages for its own period, set in Settings');
   }

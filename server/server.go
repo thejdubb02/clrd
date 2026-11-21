@@ -731,8 +731,13 @@ func (s *Server) routesSetup() {
 		}
 		if v := r.URL.Query().Get("keep_cleared_days"); v != "" { // preview before shortening the setting
 			days, err := strconv.Atoi(v)
+			if v == "default" { // what dropping a topic's own value would delete (#336)
+				days, err = -1, nil
+			} else if err == nil && days < 0 {
+				err = strconv.ErrRange
+			}
 			if err != nil {
-				return errf(400, "bad_request", "keep_cleared_days must be a whole number of days")
+				return errf(400, "bad_request", "keep_cleared_days must be a whole number of days or default")
 			}
 			if c["would_remove"], err = s.WouldRemove(r.Context(), tok, days, r.URL.Query().Get("topic")); err != nil {
 				return err

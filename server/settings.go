@@ -89,24 +89,29 @@ func days(n int) time.Duration { return time.Duration(n) * 24 * time.Hour }
 const prunable = `state IN ('dismissed', 'resolved') AND updated_at < ?`
 
 // WouldRemove counts the cleared notifications tok can read that a keep of
-// n days would delete on the next prune run (0 days = forever, so none):
-// in topic when given, else in the topics with no override of their own.
+// n days would delete on the next prune run (0 days = forever, so none; -1 =
+// the global keep, exactly, for a topic dropping its own value): in topic
+// when given, else in the topics with no override of their own.
 func (s *Server) WouldRemove(ctx context.Context, tok *Token, n int, topic string) (int, error) {
 	if err := tok.need(ScopeRead, topic); err != nil {
 		return 0, err
 	}
-	if n < 0 || n > maxKeepDays {
+	if n < -1 || n > maxKeepDays {
 		return 0, errf(400, "bad_request", "keep_cleared_days must be 0 (forever) to %d", maxKeepDays)
-	}
-	if n == 0 {
-		return 0, nil
 	}
 	st, err := s.loadSettings(ctx, s.db)
 	if err != nil {
 		return 0, err
 	}
+	keep := days(n)
+	if n == -1 {
+		keep = s.keepCleared(st)
+	}
+	if keep == 0 {
+		return 0, nil
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT topic, COUNT(*) FROM notifications WHERE `+prunable+` GROUP BY topic`,
-		ms(time.Now().Add(-days(n))))
+		ms(time.Now().Add(-keep)))
 	if err != nil {
 		return 0, err
 	}

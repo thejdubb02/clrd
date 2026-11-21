@@ -183,3 +183,25 @@ func TestTopicKeepCleared(t *testing.T) {
 		t.Fatal("dropped override still kept forever")
 	}
 }
+
+// TestKeepDefaultPreview: keep_cleared_days=default previews dropping a
+// topic's own value against the exact global keep, not whole days (#336).
+func TestKeepDefaultPreview(t *testing.T) {
+	s, ts, admin := newTest(t)
+	s.opt.Retention = 36 * time.Hour
+	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ci", "message": "m"})
+	id := n["id"].(string)
+	call(t, ts, "POST", "/api/v1/notifications/"+id+"/dismiss", admin, nil)
+	if _, err := s.db.Exec(`UPDATE notifications SET updated_at = ? WHERE id = ?`, ms(time.Now().Add(-40*time.Hour)), id); err != nil {
+		t.Fatal(err)
+	}
+	call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"topic_keep_cleared_days": map[string]any{"ci": 0}})
+	for q, want := range map[string]any{"keep_cleared_days=default&topic=ci": 1.0, "keep_cleared_days=2&topic=ci": 0.0} {
+		if _, c := call(t, ts, "GET", "/api/v1/counts?"+q, admin, nil); c["would_remove"] != want {
+			t.Fatalf("preview %s: %v", q, c["would_remove"])
+		}
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/counts?keep_cleared_days=-1", admin, nil); code != 400 {
+		t.Fatalf("keep_cleared_days=-1: want 400, got %d", code)
+	}
+}
