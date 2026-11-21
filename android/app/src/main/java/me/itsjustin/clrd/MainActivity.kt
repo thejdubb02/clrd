@@ -351,7 +351,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val b = LocalBrand.current
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
-    var unfolded by remember { mutableStateOf(setOf<String>()) } // stacks opened in the list
+    var unfolded by rememberSaveable { mutableStateOf(setOf<String>()) } // stacks opened in the list
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val dao = app.db.dao()
@@ -656,7 +656,7 @@ internal sealed interface Entry { val key: String }
 internal data class One(val n: Notif) : Entry { override val key get() = n.id }
 internal data class Stack(val topic: String, val rows: List<Notif>) : Entry { override val key get() = "stack\u0000$topic" }
 
-/** Two or more of one topic fold into a stack at its newest one's place; an open stack shows them under it. */
+/** Two or more of one topic fold into a stack at its top one's place, in the tab's own order; an open stack shows them under it. */
 internal fun stacked(rows: List<Notif>, open: Set<String>): List<Entry> = rows.groupBy { it.topic }.values.flatMap { g ->
     if (g.size < 2) listOf(One(g[0]))
     else listOf(Stack(g[0].topic, g)) + if (g[0].topic in open) g.map(::One) else emptyList()

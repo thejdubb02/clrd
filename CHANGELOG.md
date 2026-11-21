@@ -103,7 +103,7 @@ Fixed, Removed, Security), as one line a user can understand.
 
 - Android: Stack by topic now also folds the app's list, as on the web.
   Two or more notifications of one topic show as one card with the count and
-  the newest title; tap it to show or hide them. Not when one topic is picked.
+  the top one's title; tap it to show or hide them. Not when one topic is picked.
   (#231)
 - Server: try a webhook template before pointing a service at it.
   `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
