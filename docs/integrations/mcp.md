@@ -40,6 +40,7 @@ Tools:
 | `templates` | `topic` | Incoming webhook templates, saved and built in. A service posts to `/{topic}?template={name}`. |
 | `set_template` | `topic, name, title?, message?, priority?, tags?, click?, id?, resolve?, each?, secret?` | Save how a service's JSON becomes a notification. Fields are Go templates over the posted JSON, e.g. `{{.alert.name}}`; `each` is a plain dotted path and `secret` a plain value. |
 | `delete_template` | `topic, name` | Delete a saved template. |
+| `preview_template` | `topic, name, payload, headers?, template?` | Dry run a template over a sample payload: returns the notifications a post would make, publishes nothing. `template` tries an unsaved one. |
 | `hooks` | `topic` | Outgoing webhooks: URLs clrd calls when a notification is dismissed, acknowledged, resolved, snoozed or a button tapped. Admin. |
 | `set_hook` | `topic, name, url, events?, secret?` | Add or replace one. `events` defaults to all; `secret` signs each call. Saving again turns a failing hook back on. Admin. |
 | `delete_hook` | `topic, name` | Delete one. Admin. |

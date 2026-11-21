@@ -540,6 +540,7 @@ resolved`) and `ntfy_import`.
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
 | PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
 | DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
+| POST | `/api/v1/topics/{topic}/templates/{name}/preview` | Dry run: `{payload, headers?, template?}` returns `{notifications}`, what a post of payload would publish, through the same render path, without storing or sending anything and without the secret check. `template` previews an unsaved one. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/hooks` | The topic's outgoing webhooks (secret hidden, `has_secret` shown). Admin. |
 | PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret"}`, replaces and turns it back on) or remove an outgoing webhook. Admin. |
 | GET | `/api/v1/topics/{topic}/hooks/{name}/deliveries` | The last 100 deliveries, newest first. Admin. |
@@ -636,7 +637,8 @@ from section 5. Setup tools, each one REST call: path arguments go in the URL,
 the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dismiss(id)`, `reopen(id)`, `clear(topic | ids)`, `silences()`,
 `silence(topic?, tag?, for | until, comment?)`, `end_silence(id)`,
 `set_topic(topic, icon?, checkin?)`, `templates(topic)`,
-`set_template(topic, name, ...)`, `delete_template(topic, name)`, and, admin
+`set_template(topic, name, ...)`, `delete_template(topic, name)`,
+`preview_template(topic, name, payload, headers?, template?)`, and, admin
 only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?)`,
 `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
