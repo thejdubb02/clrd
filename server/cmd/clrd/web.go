@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -183,7 +184,11 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		// A token without the read scope sees no silences, but still gets Settings.
 		if sils, err := a.s.Silences(ctx, tok); err == nil {
 			_ = convert(sils, &snap.Silences)
+			for i := range snap.Silences {
+				snap.Silences[i].CanEnd = tok.MaySilence(sils[i].Topic)
+			}
 		}
+		snap.CanSilence = tok.Has(server.ScopePublish)
 	}
 	return snap, nil
 }
@@ -204,6 +209,37 @@ func (a webAPI) Act(r *http.Request, id, action string, until *time.Time) error 
 	}
 	_, err := a.s.Act(r.Context(), tok, id, action, "web_form", until) // the inbox's no-script form buttons
 	return err
+}
+
+// webError keeps only what an API client would see, so the page never shows
+// an internal error's text.
+func webError(err error) error {
+	if err == nil {
+		return nil
+	}
+	_, msg := server.PublicError(err)
+	return errors.New(msg)
+}
+
+func (a webAPI) StartSilence(r *http.Request, topic, tag, dur, comment string) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.StartSilence(r.Context(), tok, server.SilenceStart{Topic: topic, Tag: tag, For: dur, Comment: comment})
+	return webError(err)
+}
+
+func (a webAPI) EndSilence(r *http.Request, id string) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	err := a.s.EndSilence(r.Context(), tok, id)
+	if status, _ := server.PublicError(err); status == 404 {
+		return nil // it already ran out: the list was just stale
+	}
+	return webError(err)
 }
 
 func (a webAPI) Reply(r *http.Request, id, reply string, seq int64) error {

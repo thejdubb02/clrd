@@ -61,6 +61,7 @@ Fixed, Removed, Security), as one line a user can understand.
 
 - Web: Settings gives each topic its own "keep cleared messages" period, and
   asks first when a change deletes messages, like the global setting (#323).
+- Web: starting and ending a silence in Settings works without JavaScript, and a device that cannot change silences no longer sees Start silence or End now (#326).
 - Web: Settings lists the running silences with the time left, starts one
   (topic, tag or both, for a set time or until a time, with a comment) and
   ends one early (#257).

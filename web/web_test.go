@@ -120,6 +120,12 @@ type readOnly struct{}
 func (readOnly) Act(*http.Request, string, string, *time.Time) error { return ErrUnauthorized }
 func (readOnly) Reply(*http.Request, string, string, int64) error    { return ErrUnauthorized }
 
+func (readOnly) StartSilence(*http.Request, string, string, string, string) error {
+	return ErrUnauthorized
+}
+
+func (readOnly) EndSilence(*http.Request, string) error { return ErrUnauthorized }
+
 type deny struct{ readOnly }
 
 func (deny) Snapshot(*http.Request, Query) (Snapshot, error) { return Snapshot{}, ErrUnauthorized }

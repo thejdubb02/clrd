@@ -96,71 +96,101 @@ func (s *Server) silenceRoutes() {
 		return nil
 	})
 	s.api("POST /api/v1/silences", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		var in struct {
-			Topic, Tag, For, Comment string
-			Until                    *time.Time
-		}
+		var in SilenceStart
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		if in.Topic == "" && in.Tag == "" {
-			return errf(400, "bad_request", `a silence needs a "topic", a "tag" or both`)
-		}
-		if in.Topic != "" {
-			if err := validTopic(in.Topic); err != nil {
-				return err
-			}
-		}
-		if utf8.RuneCountInString(in.Tag) > 64 || utf8.RuneCountInString(in.Comment) > 256 {
-			return errf(400, "bad_request", "tag is at most 64 characters, comment at most 256")
-		}
-		if err := tok.needSilence(in.Topic); err != nil {
-			return err
-		}
-		t := now()
-		var until time.Time
-		switch {
-		case in.For != "" && in.Until == nil:
-			d, err := parseDuration(in.For)
-			if err != nil {
-				return errf(400, "bad_request", `for must be a duration like "2h" or "30m"`)
-			}
-			until = t.Add(d)
-		case in.For == "" && in.Until != nil:
-			until = *in.Until
-		default:
-			return errf(400, "bad_request", `give exactly one of "for" (like "2h") or "until" (RFC3339)`)
-		}
-		until = until.UTC().Truncate(time.Millisecond) // as stored, so "1ns" is not a silence that never matches
-		if !until.After(t) || until.Sub(t) > maxSilence {
-			return errf(400, "bad_request", "a silence must end in the future and within 8784h")
-		}
-		sl := Silence{ID: randomString(12), Topic: in.Topic, Tag: in.Tag, Until: until, Comment: in.Comment,
-			CreatedBy: tok.Name, CreatedAt: t}
-		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO silences (id, topic, tag, until_ms, comment, created_by, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`, sl.ID, sl.Topic, sl.Tag, ms(sl.Until), sl.Comment, sl.CreatedBy, ms(sl.CreatedAt)); err != nil {
+		sl, err := s.StartSilence(r.Context(), tok, in)
+		if err != nil {
 			return err
 		}
 		writeJSON(w, 201, sl)
 		return nil
 	})
 	s.api("DELETE /api/v1/silences/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		var topic string
-		err := s.db.QueryRowContext(r.Context(), `SELECT topic FROM silences WHERE id = ? AND until_ms > ?`,
-			r.PathValue("id"), ms(time.Now())).Scan(&topic)
-		if err == sql.ErrNoRows || (err == nil && topic != "" && !tok.Allows(topic)) {
-			return errf(404, "not_found", "silence not found")
-		}
-		if err != nil {
-			return err
-		}
-		if err := tok.needSilence(topic); err != nil {
-			return err
-		}
-		if _, err := s.db.ExecContext(r.Context(), `DELETE FROM silences WHERE id = ?`, r.PathValue("id")); err != nil {
+		if err := s.EndSilence(r.Context(), tok, r.PathValue("id")); err != nil {
 			return err
 		}
 		w.WriteHeader(204)
 		return nil
 	})
+}
+
+// MaySilence reports whether tok may start or end a silence on topic ("" =
+// every topic), so the web page shows only the controls that work.
+func (tok *Token) MaySilence(topic string) bool { return tok.needSilence(topic) == nil }
+
+// PublicError is err as an API client sees it: the status and the message,
+// "internal error" for anything that is not a client mistake.
+func PublicError(err error) (int, string) {
+	status, _, msg := errorStatus(err)
+	return status, msg
+}
+
+// SilenceStart is the body of POST /api/v1/silences: exactly one of For or Until.
+type SilenceStart struct {
+	Topic, Tag, For, Comment string
+	Until                    *time.Time
+}
+
+// StartSilence checks and stores a new silence for tok (the API and the web
+// page's no-script form both come here).
+func (s *Server) StartSilence(ctx context.Context, tok *Token, in SilenceStart) (Silence, error) {
+	if in.Topic == "" && in.Tag == "" {
+		return Silence{}, errf(400, "bad_request", `a silence needs a "topic", a "tag" or both`)
+	}
+	if in.Topic != "" {
+		if err := validTopic(in.Topic); err != nil {
+			return Silence{}, err
+		}
+	}
+	if utf8.RuneCountInString(in.Tag) > 64 || utf8.RuneCountInString(in.Comment) > 256 {
+		return Silence{}, errf(400, "bad_request", "tag is at most 64 characters, comment at most 256")
+	}
+	if err := tok.needSilence(in.Topic); err != nil {
+		return Silence{}, err
+	}
+	t := now()
+	var until time.Time
+	switch {
+	case in.For != "" && in.Until == nil:
+		d, err := parseDuration(in.For)
+		if err != nil {
+			return Silence{}, errf(400, "bad_request", `for must be a duration like "2h" or "30m"`)
+		}
+		until = t.Add(d)
+	case in.For == "" && in.Until != nil:
+		until = *in.Until
+	default:
+		return Silence{}, errf(400, "bad_request", `give exactly one of "for" (like "2h") or "until" (RFC3339)`)
+	}
+	until = until.UTC().Truncate(time.Millisecond) // as stored, so "1ns" is not a silence that never matches
+	if !until.After(t) || until.Sub(t) > maxSilence {
+		return Silence{}, errf(400, "bad_request", "a silence must end in the future and within 8784h")
+	}
+	sl := Silence{ID: randomString(12), Topic: in.Topic, Tag: in.Tag, Until: until, Comment: in.Comment,
+		CreatedBy: tok.Name, CreatedAt: t}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO silences (id, topic, tag, until_ms, comment, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, sl.ID, sl.Topic, sl.Tag, ms(sl.Until), sl.Comment, sl.CreatedBy, ms(sl.CreatedAt)); err != nil {
+		return Silence{}, err
+	}
+	return sl, nil
+}
+
+// EndSilence ends a running silence early; 404 when it already ran out.
+func (s *Server) EndSilence(ctx context.Context, tok *Token, id string) error {
+	var topic string
+	err := s.db.QueryRowContext(ctx, `SELECT topic FROM silences WHERE id = ? AND until_ms > ?`,
+		id, ms(time.Now())).Scan(&topic)
+	if err == sql.ErrNoRows || (err == nil && topic != "" && !tok.Allows(topic)) {
+		return errf(404, "not_found", "silence not found")
+	}
+	if err != nil {
+		return err
+	}
+	if err := tok.needSilence(topic); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM silences WHERE id = ?`, id)
+	return err
 }

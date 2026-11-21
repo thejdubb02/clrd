@@ -260,6 +260,7 @@ type Snapshot struct {
 	Sound                                        string          // this device's own sound (SPEC 2.2), "default" when unset
 	Format                                       []FormatTopic   // format check (#308), Settings only: topics with problems
 	Silences                                     []Silence       // running silences (docs/silences.md), Settings only
+	CanSilence                                   bool            // the token may start a silence (it can publish)
 }
 
 // timeLeft says how long until t, to the minute: "3d 4h", "2h 5m", "12m".
@@ -284,6 +285,7 @@ type Silence struct {
 	Until   time.Time `json:"until"`
 	Comment string    `json:"comment"`
 	By      string    `json:"created_by"`
+	CanEnd  bool      `json:"-"` // this token may end it
 }
 
 // FormatTopic is one topic's format check result (docs/SPEC.md, format-check).
@@ -324,6 +326,10 @@ type API interface {
 	Act(r *http.Request, id, action string, until *time.Time) error
 	// Reply answers with one of the notification's reply actions, as shown at seq.
 	Reply(r *http.Request, id, reply string, seq int64) error
+	// StartSilence (dur is a Go duration) and EndSilence back the Settings
+	// silence form without script. Their error text is shown on the page.
+	StartSilence(r *http.Request, topic, tag, dur, comment string) error
+	EndSilence(r *http.Request, id string) error
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
@@ -758,6 +764,31 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		http.Redirect(w, r, next, http.StatusSeeOther) // signed out: next shows the sign-in page
+	})
+
+	// The Settings silence form and End now as a plain form post (#326). A set
+	// end time needs the browser's time zone, so that one stays script-only.
+	mux.HandleFunc("POST /app/silence", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		var err error
+		if id := f.Get("end"); id != "" {
+			err = api.EndSilence(r, id)
+		} else if d := f.Get("for"); d == "" || d == "until" {
+			http.Error(w, "Pick how long. A set end time needs JavaScript. Go back and try again.", http.StatusBadRequest)
+			return
+		} else {
+			err = api.StartSilence(r, strings.TrimSpace(f.Get("topic")), strings.TrimSpace(f.Get("tag")), d, strings.TrimSpace(f.Get("comment")))
+		}
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
+			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "/app/settings", http.StatusSeeOther)
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

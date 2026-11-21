@@ -12,7 +12,9 @@ away from a work topic.
 
 In the web inbox, open Settings, then Silences: give a topic, a tag or both,
 pick how long, and press Start silence. The list above the form shows each
-running silence with the time left, and End now ends it early.
+running silence with the time left, and End now ends it early. Both work
+without JavaScript, except "Until a time", which needs the browser's clock.
+A device whose token cannot publish sees the list but not the controls.
 
 Over the API:
 
