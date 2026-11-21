@@ -53,7 +53,13 @@
   /* Pairing QR codes (sign-in page, Settings): crisp pixels on white so phone cameras read them in dark mode. */
   .pair-qr { @apply block rounded-xl bg-white; image-rendering: pixelated; }
   .count { @apply text-muted-foreground ms-auto ps-2 font-mono text-xs; font-variant-numeric: tabular-nums; }
-  #sync.is-live .sync-dot { @apply bg-clear; }
+  /* One dot per device (#295): green connected, red offline. This browser's
+     dot follows its own socket: grey while connecting, red when it drops,
+     and then the others are unknown, so grey. */
+  .sync-dot { @apply bg-destructive size-2 rounded-full; }
+  .sync-dot.is-on { @apply bg-clear; }
+  #sync:not(.is-live) .sync-dot[data-this], #sync.is-down .sync-dot { @apply bg-border; }
+  #sync.is-down .sync-dot[data-this] { @apply bg-destructive; }
 
   /* A notification. Basecoat's card ring and clipping are off: the snooze menu
      hangs outside it. The card under the keyboard (J and K) gets an ink edge. */

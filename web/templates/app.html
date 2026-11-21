@@ -21,11 +21,11 @@
       {{range .Snap.Topics}}<a class="side-link" href="{{$base}}?topic={{.Name}}" data-name="{{.Name}}" data-topic-icon="{{.Icon}}"{{if eq .Name $.Topic}} aria-current="true"{{end}}>{{template "i-hash"}}{{.Name}} <span class="count">{{.Open}}</span></a>
       {{end}}
     </nav>
-    <div class="ms-auto flex items-center gap-2 text-xs md:bg-card md:ms-0 md:mt-auto md:flex-wrap md:rounded-lg md:border md:p-3 md:text-sm" id="sync">
-      <span class="sync-dot bg-border size-2 shrink-0 rounded-full" aria-hidden="true"></span>
-      <span class="tabular-nums" data-live="devices">{{with len .Snap.Devices}}In sync on {{.}} {{plural . "device" "devices"}}{{else}}In sync{{end}}</span>
+    <a href="{{base}}/app/settings#dev-h" class="ms-auto flex items-center gap-2 text-xs md:bg-card md:ms-0 md:mt-auto md:flex-wrap md:rounded-lg md:border md:p-3 md:text-sm" id="sync">
+      {{with .Snap.Sync}}<span class="flex items-center gap-2" data-live="devices"><span class="flex shrink-0 gap-1">{{range .Dots}}<span class="sync-dot{{if .Live}} is-on{{end}}" role="img" aria-label="{{.Name}}: {{.Status}}" title="{{.Name}}: {{.Status}}"{{if .This}} data-this{{end}}></span>{{end}}{{with .More}}<span class="meta">+{{.}}</span>{{end}}</span>
+      <span class="tabular-nums">{{with .Live}}In sync on {{.}} {{plural . "device" "devices"}}{{else}}In sync{{end}}</span></span>{{end}}
       <span class="meta empty:hidden md:basis-full md:ps-4" data-conn></span>
-    </div>
+    </a>
   </aside>
 
   <main id="main" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
@@ -187,20 +187,20 @@
   <section class="grid gap-3" aria-labelledby="dev-h">
     <h2 id="dev-h" class="text-base font-semibold">Linked devices</h2>
     <p class="text-body text-sm/relaxed">Every token, browser and phone that can read this inbox. Unlink a browser or phone and it is signed out at once. Unlinking a phone also signs out the browsers it approved.</p>
-    {{if .Snap.Linked}}<div class="bg-card rounded-xl border">
+    <div data-live="linked">{{if .Snap.Linked}}<div class="bg-card rounded-xl border">
       <table class="table">
-        <thead><tr><th scope="col">Device</th><th scope="col" class="max-sm:hidden">Linked</th><th scope="col">Last seen</th><th scope="col"><span class="sr-only">Unlink</span></th></tr></thead>
+        <thead><tr><th scope="col">Device</th><th scope="col" class="max-sm:hidden">Linked</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Unlink</span></th></tr></thead>
         <tbody>
           {{range .Snap.Linked}}<tr data-device="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><span>{{.Name}}</span>{{if .This}} <span class="text-muted-foreground">(this browser)</span>{{end}}
             <div class="meta">{{if eq .Kind "phone"}}Phone, linked to{{else if eq .Kind "browser"}}Browser, signed in with{{else}}Token{{end}}{{with .Via}} {{.}}{{end}}</div></td>
             <td class="meta whitespace-nowrap max-sm:hidden"><time datetime="{{iso .LinkedAt}}" title="{{clock .LinkedAt}}">{{clock .LinkedAt}}</time></td>
-            <td class="meta whitespace-nowrap">{{with .LastSeenAt}}<time datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time>{{else}}Never{{end}}</td>
+            <td class="meta whitespace-nowrap">{{if .Live}}Connected{{else if .Connected}}Catching up{{else}}Offline{{with .LastSeenAt}}, seen <time datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time>{{end}}{{end}}</td>
             <td class="text-right">{{if and .CanUnlink (not .This)}}<button type="button" class="btn js-only" data-variant="outline" data-unlink="{{.ID}}" data-name="{{.Name}}">Unlink</button>{{end}}</td></tr>
           {{end}}
         </tbody>
       </table>
     </div>
-    {{else}}<p class="text-body text-sm">No devices yet. Open the inbox or the Android app on a device and it shows up here.</p>{{end}}
+    {{else}}<p class="text-body text-sm">No devices yet. Open the inbox or the Android app on a device and it shows up here.</p>{{end}}</div>
     <details class="text-sm">
       <summary class="cursor-pointer font-medium">Device activity</summary>
       {{if .Snap.Log}}<ol class="mt-2 grid gap-1" data-device-log>{{range .Snap.Log}}

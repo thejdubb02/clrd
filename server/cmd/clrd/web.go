@@ -157,33 +157,18 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	for _, t := range tc {
 		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon})
 	}
-	// An admin sees every device; anyone else only their own (issue #245), so
-	// a reader never learns other people's device names.
-	since := time.Now().Add(-10 * time.Minute)
-	var toks []*server.Token
-	if tok.Has("admin") {
-		toks, err = a.s.Tokens(ctx, since)
-	} else {
-		toks, err = a.s.Family(ctx, tok.ID, since)
-	}
+	// Every page's sync indicator (#295). An admin sees every device; anyone
+	// else only their own (#245), so a reader never learns other people's devices.
+	devs, err := a.s.Devices(ctx, tok)
 	if err != nil {
 		return snap, err
 	}
-	for _, t := range toks {
-		if t.LastSeenAt != nil {
-			snap.Devices = append(snap.Devices, web.Device{ID: t.ID, Name: t.Name, LastSeen: *t.LastSeenAt})
-		}
+	if err := convert(devs, &snap.Linked); err != nil {
+		return snap, err
 	}
 	if q.Devices {
-		ds, err := a.s.Devices(ctx, tok)
-		if err != nil {
-			return snap, err
-		}
 		evs, err := a.s.DeviceLog(ctx, tok)
 		if err != nil {
-			return snap, err
-		}
-		if err := convert(ds, &snap.Linked); err != nil {
 			return snap, err
 		}
 		if err := convert(evs, &snap.Log); err != nil {

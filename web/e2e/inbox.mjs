@@ -110,6 +110,25 @@ try {
   assert.equal((await get(laptop, b.id)).state, 'resolved');
   console.log('ok: no Undo when another device got there first');
 
+  // One dot per device (#295): another browser connects and its dot turns
+  // green here, with no reload; it closes and the dot turns red.
+  const watch = await (await browser.newContext()).newPage();
+  await watch.goto(`${base}/app?auth=${link}`);
+  await watch.locator('#sync.is-live').waitFor();
+  const others = watch.locator('#sync .sync-dot.is-on:not([data-this])');
+  const dots0 = await others.count();
+  const peer = await (await browser.newContext()).newPage();
+  await peer.goto(`${base}/app?auth=${link}`);
+  await peer.locator('#sync.is-live').waitFor();
+  await others.nth(dots0).waitFor({ state: 'attached' });
+  assert.match(await watch.locator('#sync').textContent(), new RegExp(`In sync on ${dots0 + 2} devices`));
+  await peer.context().close();
+  await others.nth(dots0).waitFor({ state: 'detached' });
+  assert.ok(await watch.locator('#sync .sync-dot:not(.is-on)[aria-label$=": offline"]').count() > 0, 'no red dot for the closed browser');
+  assert.equal(await watch.locator('#sync').getAttribute('href'), '/app/settings#dev-h');
+  await watch.context().close();
+  console.log('ok: a device dot turns green on connect and red on close, live');
+
   // A second browser gets the same device name. It is still another device: no Undo here.
   const twin = await (await browser.newContext()).newPage();
   await twin.goto(`${base}/app?auth=${link}`);
