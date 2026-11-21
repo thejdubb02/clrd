@@ -47,8 +47,12 @@ if [ "$mode" = sweep ]; then
   for f in "$pending/$key".*; do
     [ -e "$f" ] || continue
     pid=${f##*.}
-    [[ $(ps -o args= -p "$pid" 2>/dev/null) == *curl*/mcp/approve* ]] && kill "$pid"
-    rm -f "$f"
+    # Still bash, not yet curl: keep the file for the tool's own sweep.
+    if [[ $(ps -o args= -p "$pid" 2>/dev/null) == *curl*/mcp/approve* ]]; then
+      kill "$pid" && rm -f "$f"
+    elif ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$f"
+    fi
   done
   exit 0
 fi
