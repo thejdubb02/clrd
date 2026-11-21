@@ -38,7 +38,7 @@ with `/plugin configure clrd@clrd`.
 
 | When | What you get |
 |---|---|
-| Claude finishes a task | "Claude finished: *project*" |
+| Claude finishes a task | "Claude finished: *project*" with Claude's last message |
 | Claude waits for your input | "Claude is waiting: *project*", priority 4 |
 | Claude asks permission to run a tool | "Allow Bash? (*project*)" with Allow and Deny buttons |
 | Always | The clrd MCP server, so Claude can send, list, clear and `wait_for_reply` |
@@ -68,7 +68,6 @@ Answer either one.
 - Answering on screen clears the phone's prompt: on Allow once the tool runs,
   on Deny at once. If the same session runs the same tool while a prompt is
   waiting, the phone's prompt can clear early; the prompt on screen stays.
-- The finished ping does not carry Claude's last message, only the project.
 - The hooks and the MCP connection need `bash` and `curl`. On Windows that means Git Bash or WSL;
   only Linux has been tested.
 

@@ -53,6 +53,7 @@ Fixed, Removed, Security), as one line a user can understand.
   Gotify import does. Before, importing into a server in use could let the
   next cleanup delete recent live events, so phones offline at the time
   missed them (#388).
+- Claude Code plugin: the finished ping now carries Claude's last message, even past 4 KB. Before, it said only "Task finished." (#365)
 - Claude Code plugin: a permission prompt answered on screen now leaves the phone too. Before, Allow on screen left the phone's prompt ringing for about 9.5 minutes. (#364)
 - Web: scripts and stylesheets are served at URLs named by their content and
   cached for a year, and pages are revalidated, so after an upgrade a page never
