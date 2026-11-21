@@ -17,12 +17,13 @@ ok "plain http off localhost and user:password URLs are refused"
 out=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | CLAUDE_PLUGIN_OPTION_SERVER_URL=http://example.com "$H" mcp 2>/dev/null) && fail "mcp ran against http"
 [ "$out" = '{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"clrd: server URL must be https (or http on localhost)"}}' ] || fail "mcp did not refuse http: $out"
 out=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-  '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"send","arguments":{"topic":"agents","title":"via the plugin MCP","message":"hi"}},"id":"s"}' | "$H" mcp)
+  '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"send","arguments":{"topic":"agents","title":"via the plugin MCP","message":"hi"}},"id":"s"}' |
+  http_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 "$H" mcp) # a proxy never sees localhost traffic
 [ "$(wc -l <<<"$out")" = 2 ] || fail "mcp answers: $out"
-jq -se '(map(.id | tostring) | sort) == ["1", "s"] and all(.[]; has("result"))' <<<"$out" >/dev/null || fail "mcp answers: $out"
+jq -se '(sort_by(.id | tostring) | map(.id)) == [1, "s"] and all(.[]; has("result"))' <<<"$out" >/dev/null || fail "mcp answers: $out"
 check "$(last)" '.title == "via the plugin MCP"' "mcp send: $out"
 # plugin.json must use this bridge, never an http server that sends the token anywhere.
-jq -e '.mcpServers.clrd | (has("url") or has("headers") | not) and .args == ["mcp"]' "$P/.claude-plugin/plugin.json" >/dev/null || fail "plugin.json MCP server is not the bridge"
+jq -e '.mcpServers.clrd | (has("url") or has("headers") | not) and .args == ["mcp"] and .command == "${CLAUDE_PLUGIN_ROOT}/hooks/clrd-hook.sh"' "$P/.claude-plugin/plugin.json" >/dev/null || fail "plugin.json MCP server is not the bridge"
 ok "the MCP server refuses http off localhost and carries tool calls to clrd"
 
 echo '{"hook_event_name":"Stop","cwd":"/src/myproj"}' | "$H" stop || fail "stop hook"

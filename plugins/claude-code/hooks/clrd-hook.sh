@@ -51,8 +51,10 @@ esac
 
 # post PATH MAX-SECONDS [curl args]: one request to clrd, token on a file
 # descriptor. -q (first) skips ~/.curlrc, so it cannot turn off TLS checks.
+# --noproxy: plain http to localhost never goes through a proxy, which would
+# see the token.
 post() {
-  exec curl -q -sSf --proto =https,http --max-time "$2" \
+  exec curl -q -sSf --proto =https,http --noproxy localhost,127.0.0.1,::1 --max-time "$2" \
     -K <(printf 'header = "Authorization: Bearer %s"\n' "$token") "${@:3}" "$url$1"
 }
 
