@@ -190,11 +190,12 @@ type Server struct {
 	mu       sync.Mutex // serialises writes: seq order = delivery order
 	lastMS   int64      // newID state, guarded by mu
 	lastRand [10]byte
-	seq      atomic.Int64 // last committed event seq
-	pruned   atomic.Int64 // events with seq <= pruned are gone
-	epoch    string       // this database's id, sent with every cursor
-	revoked  sync.Map     // token ids deleted while the server runs
-	failing  sync.Map     // background job name -> true while it keeps failing; /healthz reports it
+	seq      atomic.Int64             // last committed event seq
+	pruned   atomic.Int64             // events with seq <= pruned are gone
+	origins  atomic.Pointer[[]string] // ntfy_origins allow list once read (ntfyorigins.go)
+	epoch    string                   // this database's id, sent with every cursor
+	revoked  sync.Map                 // token ids deleted while the server runs
+	failing  sync.Map                 // background job name -> true while it keeps failing; /healthz reports it
 
 	seen       sync.Map // token id -> time last written to last_seen_at
 	pwLimit    *limiter // ntfy password attempts per address
@@ -447,10 +448,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodOptions && !strings.HasPrefix(p, "/api/") {
-		// CORS preflight for the ntfy routes, answered on any path a mount does not own, like ntfy.
-		// "*" does not cover Authorization, so it is named.
+		// CORS preflight for the ntfy routes, answered on any path a mount does not own, like ntfy,
+		// for the sites an admin allowed (ntfyorigins.go). "*" does not cover Authorization, so it is named.
+		if err := s.ntfyCORS(w, r); err != nil {
+			s.fail(w, err)
+			return
+		}
 		h := w.Header()
-		h.Set("Access-Control-Allow-Origin", "*")
 		h.Set("Access-Control-Allow-Methods", "GET, PUT, POST, PATCH, DELETE")
 		h.Set("Access-Control-Allow-Headers", "*, Authorization")
 		w.WriteHeader(http.StatusNoContent)
@@ -907,6 +911,7 @@ func (s *Server) routesSetup() {
 	s.gotifyAppRoutes()
 	s.pushoverRoutes()
 	s.ntfyAnonymousRoutes()
+	s.ntfyOriginRoutes()
 }
 
 // snoozeUntil reads {"for":"1h"} or {"until":"RFC3339"}.

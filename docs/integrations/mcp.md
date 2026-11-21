@@ -55,6 +55,8 @@ Tools:
 | `server_env` | none | Every `CLRD_*` setting in effect, defaults filled in. Read only: those change by setting the variable and restarting. Admin. |
 | `ntfy_anonymous` | none | Whether ntfy routes take requests with no credentials, and on which topics. Admin. |
 | `set_ntfy_anonymous` | `grants` | Topics anyone may read or publish on ntfy routes with no credentials, like ntfy's everyone rules; an empty list turns it off. Admin. |
+| `ntfy_origins` | none | Which other web sites may use the ntfy and Gotify routes from a browser. Empty by default. Admin. |
+| `set_ntfy_origins` | `origins` | Web sites (like `https://ntfy.sh`, or `*` for any) whose pages may publish and subscribe on the ntfy and Gotify routes; an empty list allows only clrd's own pages. Admin. |
 | `ntfy_ignored` | none | ntfy publish options senders used that clrd accepts but ignores, with counts. Admin. |
 
 With an admin token an agent can set up every feature from this list; only

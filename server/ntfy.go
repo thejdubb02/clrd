@@ -115,12 +115,14 @@ func ntfyEvent(event, topic string) ntfyMsg {
 }
 
 func (s *Server) ntfyRoutes() {
-	// ntfy answers any origin, so web pages elsewhere can publish and
-	// subscribe with a token. No cookies are read on these routes, so this
-	// grants nothing a token holder could not already do.
+	// ntfy answers any origin; clrd answers only the sites an admin allowed
+	// (ntfyorigins.go), so a page elsewhere cannot use anonymous access or
+	// a server reachable only from its visitor's network.
 	route := func(pattern string, h func(http.ResponseWriter, *http.Request) error) {
 		s.route(pattern, func(w http.ResponseWriter, r *http.Request) error {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			if err := s.ntfyCORS(w, r); err != nil {
+				return err
+			}
 			if _, _, ok := ntfyPassword(r); ok { // taken before bcrypt, kept only if the password was wrong
 				ip := clientIP(r, s.opt.TrustedProxies)
 				if wait := s.pwLimit.take(ip, time.Now()); wait > 0 {
@@ -644,7 +646,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		var write func(m ntfyMsg) error
 		ctx := r.Context()
 		if format == "ws" {
-			// Any origin, like the other ntfy routes: auth here is a token, never a cookie.
+			// The origin was checked by ntfyCORS, as on every ntfy route.
 			c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 			if err != nil {
 				return nil

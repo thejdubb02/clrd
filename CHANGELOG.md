@@ -11,6 +11,13 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Server: the ntfy and Gotify routes no longer answer every web site. A page
+  on another site gets 403 (requests, preflight and WebSocket) unless an admin
+  adds its origin with `PUT /api/v1/ntfy/origins` or the `set_ntfy_origins`
+  MCP tool (`*` restores ntfy's open behaviour). Phones, scripts and the ntfy
+  CLI send no Origin and work as before, as do clrd's own pages. If you use a
+  hosted web app such as `https://ntfy.sh/app` against this server, add its
+  origin (#374).
 - Claude Code plugin: the MCP connection now refuses a server URL that is not
   https (except localhost) with a clear message, so the token never goes out
   over plain http. Before, only the hooks checked (#363).

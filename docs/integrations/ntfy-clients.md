@@ -22,6 +22,22 @@ any username, password = your `clrd_...` token (clrd accepts Basic `user:token`)
 The ntfy app only receives. Swiping there does not clear the notification on
 other devices; for that, use the clrd app.
 
+## ntfy web app and other web pages
+
+Out of the box, the ntfy and Gotify routes refuse a page on another web site
+(403), so a site you visit cannot post to or read your topics with your
+browser. Phones, scripts and the ntfy CLI send no Origin header and are not
+affected. To let a web app on another site in, such as ntfy's hosted app, an
+admin adds its origin:
+
+```sh
+curl -X PUT -H "Authorization: Bearer clrd_..." \
+  -d '{"origins":["https://ntfy.sh"]}' https://clrd.example.com/api/v1/ntfy/origins
+```
+
+`["*"]` lets every site in, as ntfy does. `GET` the same path shows the list.
+The MCP tools are `ntfy_origins` and `set_ntfy_origins`.
+
 ## Auto-resolve
 
 ntfy has no resolved state. Send with clrd's `X-Id` header, then resolve by key:
