@@ -58,11 +58,13 @@ type Options struct {
 	// addresses) are the only peers whose X-Forwarded-For is read. Unset,
 	// any loopback or private-network peer is trusted.
 	TrustedProxies []netip.Prefix
+
+	Config string // CLRD_CONFIG, a JSON file of users and tokens applied at every start (#155); unset, none
 }
 
 // ConfigFromEnv reads the spec section 7 environment variables.
 func ConfigFromEnv() (Options, error) {
-	o := Options{Listen: os.Getenv("CLRD_LISTEN"), DB: os.Getenv("CLRD_DB"), BaseURL: os.Getenv("CLRD_BASE_URL")}
+	o := Options{Listen: os.Getenv("CLRD_LISTEN"), DB: os.Getenv("CLRD_DB"), BaseURL: os.Getenv("CLRD_BASE_URL"), Config: os.Getenv("CLRD_CONFIG")}
 	if v := os.Getenv("CLRD_RETENTION"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil || d <= 0 {
@@ -349,6 +351,7 @@ func (s *Server) effectiveEnv() map[string]string {
 		"CLRD_ATTACHMENTS": o.Attachments, "CLRD_ATTACHMENT_MAX_MB": strconv.FormatInt(o.AttachmentMax>>20, 10),
 		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
 		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
+		"CLRD_CONFIG": o.Config,
 	}
 }
 
@@ -465,6 +468,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Run listens on Options.Listen and runs the background tickers until ctx ends.
 func (s *Server) Run(ctx context.Context) error {
+	if err := s.applyConfig(ctx); err != nil { // first, so an admin token in it skips the setup link
+		return err
+	}
 	if err := s.bootstrap(ctx); err != nil {
 		return err
 	}

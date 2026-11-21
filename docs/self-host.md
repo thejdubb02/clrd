@@ -104,6 +104,33 @@ the user limits nothing and each device keeps its own access. Tokens with no
 user work exactly as before. The same tools are in MCP: `users`,
 `create_user`, `set_user_grants`, `set_token_user`, `delete_user`.
 
+### Users and tokens in a config file
+
+Optional. Set `CLRD_CONFIG` to a JSON file and every start makes the users
+and tokens in it match the file, so a server can be rebuilt from config:
+
+```json
+{
+  "users": [{"name": "Ann", "grants": [{"topic": "family", "scopes": ["read", "publish"]}]}],
+  "tokens": [
+    {"name": "admin", "secret": "$CLRD_ADMIN_SECRET", "scopes": ["admin"], "approve": "allowed"},
+    {"name": "ann-phone", "secret": "$ANN_PHONE_SECRET", "scopes": ["read", "publish"], "user": "Ann"}
+  ]
+}
+```
+
+A token is its secret: the value a device sends, at least 20 characters
+(`openssl rand -base64 30` makes one). `"$NAME"` reads it from the
+environment variable `NAME`, so the file itself holds no secret. Each token
+takes the same fields as `POST /api/v1/tokens`, plus `approve` and `user`
+(a user name from the file). A token already made on the API is taken over
+when the file names its secret. Tokens and users the file made and no
+longer lists are removed at the next start, with every browser signed in
+with them; ones made on the API are left alone. The file wins over API edits
+to its rows at every start. A file with a mistake (an unknown field, a short
+secret, a user it does not list) stops the server with the reason, and
+changes nothing. With an admin token in the file, no setup link is printed.
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -119,6 +146,7 @@ user work exactly as before. The same tools are in MCP: `users`,
 | `CLRD_RATE_TOKEN` | `60` | Publishes a minute one token may send, with a burst of the same size. Past it gets 429 with `Retry-After`. `0` turns it off. |
 | `CLRD_RATE_TOPIC` | `60` | Publishes a minute one topic may take from all tokens together. `0` turns it off. |
 | `CLRD_TRUSTED_PROXIES` | unset | Comma-separated CIDRs or addresses of your reverse proxies, for example `127.0.0.1,172.16.0.0/12`. Only these may set the client address with `X-Forwarded-For`, and the link scheme with `X-Forwarded-Proto`. Unset, any loopback or private-network peer may. |
+| `CLRD_CONFIG` | unset | A JSON file of users and tokens applied at every start. See [Users and tokens in a config file](#users-and-tokens-in-a-config-file). |
 
 `GET /api/v1/server` with an admin token returns every one of these as in
 effect, defaults filled in, so an agent can check a setup. They change only by

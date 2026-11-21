@@ -342,6 +342,14 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add tokens user_id column: %w", err)
 	}
+	// Rows the CLRD_CONFIG file made (#155): only these does a start remove.
+	for _, t := range []string{"tokens", "people"} {
+		if _, err := db.Exec(`ALTER TABLE ` + t + ` ADD COLUMN config INTEGER NOT NULL DEFAULT 0`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("add %s config column: %w", t, err)
+		}
+	}
 	// Who may answer approval requests (#187). Only on the run that adds the
 	// column, browsers and phones the user linked (a sessions row) start
 	// allowed so they keep working; plain tokens start denied. Never again,
