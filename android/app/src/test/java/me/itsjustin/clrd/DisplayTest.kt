@@ -31,4 +31,12 @@ class DisplayTest {
         fun n(id: String, topic: String) = Notif(id, topic, "", "", 3, "", null, "[]", Notif.ACTIVE, null, null, 0, 0, 0)
         assertEquals(mapOf("backups" to 2, "ci" to 1), topicCounts(listOf(n("a", "backups"), n("b", "ci"), n("c", "backups"))))
     }
+
+    @Test fun stacksFoldAtTheNewestPlace() {
+        fun n(id: String, topic: String) = Notif(id, topic, "", "", 3, "", null, "[]", Notif.ACTIVE, null, null, 0, 0, 0)
+        val rows = listOf(n("a", "ci"), n("b", "backups"), n("c", "ci"), n("d", "ci"))
+        val keys = { open: Set<String> -> stacked(rows, open).map { if (it is Stack) "[${it.topic} ${it.rows.size}]" else it.key } }
+        assertEquals(listOf("[ci 3]", "b"), keys(emptySet()))
+        assertEquals(listOf("[ci 3]", "a", "c", "d", "b"), keys(setOf("ci")))
+    }
 }
