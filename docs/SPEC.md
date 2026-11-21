@@ -370,11 +370,16 @@ the session cookie (same-origin only) as well as a Bearer token.
   password hash, so `Basic user:password` (header or `?auth=`) works on the
   ntfy-compatible routes (section 5) with that user's grants. The native API
   (`/api/v1/*`, `/mcp`, the web session) never accepts a password: tokens only.
-- **Anonymous:** off unless imported. `clrd import ntfy` turns ntfy's
-  `everyone` rules and `auth-default-access` into a token named `anonymous`
-  with grants. It applies only on the ntfy-compatible routes, only to a request
-  that sends no credentials at all (a wrong credential is still a 401), and it
-  can never sign a browser in. Revoke that token to turn anonymous access off.
+- **Anonymous:** off unless set. A full admin sets it with
+  `PUT /api/v1/ntfy/anonymous {"grants":[{"topic":"up*","scopes":["publish"]}]}`
+  (MCP `set_ntfy_anonymous`; `GET` or `ntfy_anonymous` shows it), and
+  `clrd import ntfy` sets it from ntfy's `everyone` rules and
+  `auth-default-access`. It is a token named `anonymous` with grants, read and
+  publish only, never admin. It applies only on the ntfy-compatible routes,
+  only to a request that sends no credentials at all (a wrong credential is
+  still a 401), and it can never sign a browser in. An empty grants list (or
+  revoking the token) turns it off; any change closes open anonymous streams
+  so they reconnect under the new rules.
 - Web UI uses a session cookie (HttpOnly, SameSite=Lax) after login.
 - Every token has a **device name**; it is what shows as `state_by`. Names need not be
   unique, so a client that asks "did I make this change?" compares `state_by_id` with its own token id.

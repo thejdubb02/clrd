@@ -113,6 +113,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: an admin can turn anonymous ntfy access on, set its topics or turn it off through the API (`PUT /api/v1/ntfy/anonymous`) or the MCP tools `ntfy_anonymous` and `set_ntfy_anonymous`. It stays off until set (#375, #27).
+
 - Server: ntfy's `?scheduled=1` lists delayed messages that have not fired
   yet, and the reply to a delayed ntfy publish is now the message at its
   delivery time instead of a clear (#27).

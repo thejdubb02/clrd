@@ -902,6 +902,7 @@ func (s *Server) routesSetup() {
 	s.silenceRoutes()
 	s.ntfyRoutes()
 	s.gotifyAppRoutes()
+	s.ntfyAnonymousRoutes()
 }
 
 // snoozeUntil reads {"for":"1h"} or {"until":"RFC3339"}.

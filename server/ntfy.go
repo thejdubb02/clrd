@@ -177,7 +177,7 @@ func (s *Server) ntfyRoutes() {
 			return tok.need(ScopeRead, "")
 		}
 		acct := map[string]string{"username": "*", "role": "anonymous"}
-		if tok != nil && tok.ID != anonymousID {
+		if tok != nil && !isAnonymous(tok) {
 			acct = map[string]string{"username": tok.Name, "role": "user"}
 			if tok.Has(ScopeAdmin) {
 				acct["role"] = "admin"
