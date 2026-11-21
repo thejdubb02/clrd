@@ -23,7 +23,7 @@ topic=${CLAUDE_PLUGIN_OPTION_TOPIC:-agents}
 topic=${topic:-agents}
 
 case $url in
-  *@*) url= ;; # no user:password@ in the URL
+  *@* | *[?#]*) url= ;; # no user:password@, query or fragment in the URL
   https://?*) ;;
   http://localhost | http://localhost[:/]* | http://127.0.0.1 | http://127.0.0.1[:/]* | "http://[::1]" | "http://[::1]"[:/]*) ;;
   *) url= ;;
@@ -32,9 +32,10 @@ esac
 [[ $token =~ ^[A-Za-z0-9_]+$ ]] || { echo "clrd: set the token in the plugin's settings" >&2; exit 1; }
 [[ $topic =~ ^[A-Za-z0-9_-]+$ ]] || { echo "clrd: topic may use letters, digits, _ and -" >&2; exit 1; }
 
-# post PATH MAX-SECONDS [curl args]: one request to clrd, token on a file descriptor.
+# post PATH MAX-SECONDS [curl args]: one request to clrd, token on a file
+# descriptor. -q (first) skips ~/.curlrc, so it cannot turn off TLS checks.
 post() {
-  exec curl -sSf --proto =https,http --max-time "$2" \
+  exec curl -q -sSf --proto =https,http --max-time "$2" \
     -K <(printf 'header = "Authorization: Bearer %s"\n' "$token") "${@:3}" "$url$1"
 }
 

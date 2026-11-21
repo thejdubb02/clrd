@@ -5,7 +5,7 @@ H=$P/hooks/clrd-hook.sh
 export CLAUDE_PLUGIN_OPTION_SERVER_URL=$CLRD/ CLAUDE_PLUGIN_OPTION_TOKEN=$CLRD_TOKEN CLAUDE_PROJECT_DIR=/src/myproj
 last() { api "/api/v1/notifications?topic=agents" | jq -c '.notifications[0]'; }
 
-for u in http://example.com http://localhost.example.com https://user:pw@example.com; do
+for u in http://example.com http://localhost.example.com https://user:pw@example.com 'https://example.com/?x=1'; do
   out=$(CLAUDE_PLUGIN_OPTION_SERVER_URL=$u "$H" approve </dev/null 2>&1) && fail "ran against $u"
   [ "$out" = "clrd: server URL must be https (or http on localhost)" ] || fail "not refused before sending, $u: $out"
 done
@@ -20,6 +20,8 @@ check "$(last)" '.title == "Claude is waiting: myproj" and .message == "Claude i
 ok "Notification sends a waiting ping with Claude's message"
 
 "$H" no-raise | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null || fail "no-raise did not deny"
+# The matcher must name the MCP tool as Claude Code does: mcp__plugin_<plugin>_<server>__<tool>.
+jq -e '.hooks.PreToolUse[] | select(.matcher == "mcp__plugin_clrd_clrd__request_approve") | .hooks[].command | endswith("no-raise")' "$P/hooks/hooks.json" >/dev/null || fail "no-raise is not on request_approve"
 ok "request_approve is denied before it runs"
 
 # A permission prompt: the agent's token cannot answer it, the phone can.
@@ -36,7 +38,7 @@ reply() { curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bear
 [ "$(reply "$CLRD_TOKEN")" = 403 ] || fail "the agent's own token answered its prompt"
 [ "$(reply "$CLRD_PHONE")" = 200 ] || fail "the phone could not answer"
 wait $hook || fail "approve hook failed"
-check "$(cat "$WORK/decision")" '.hookSpecificOutput.decision.behavior == "allow"' "decision"
+check "$(cat "$WORK/decision")" '.hookSpecificOutput.hookEventName == "PermissionRequest" and .hookSpecificOutput.decision.behavior == "allow"' "decision"
 ok "a permission prompt is allowed from the phone, never from the agent's token"
 
 cmd="npm i -g --silent --no-fund --no-audit @anthropic-ai/claude-code@2.1.329 >/dev/null && claude plugin validate /repo && claude plugin validate /repo/plugins/claude-code"
