@@ -653,9 +653,11 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
   name) and a `gotify_apps` key hashed in the form Gotify stores it. Gotify 3
   stores a `gtfy<ident>.<seed>` key by its ed25519 public key, so on lookup a
   `gtfy` key is turned into that form first; the stored form alone cannot
-  send. Messages keep their time, title, priority and extras. Users, client
-  tokens and plugins are counted, not copied. Once per database (meta
-  `gotify_imported`).
+  send. The signed form `gtfy<ident>.<pubkey>.<unixtime>.<sig>` (Ed25519ph
+  over `iat=<unixtime>`) is taken within 15 minutes of its time, as Gotify
+  does. Messages keep their time, title, priority, Markdown, click and big
+  image. Users, client tokens and plugins are counted, not copied. Only into
+  a database with no events yet, once (meta `gotify_imported`).
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 

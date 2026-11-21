@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto"
 	"crypto/ed25519"
+	"crypto/sha512"
 	"encoding/base64"
 	"net/http"
 	"slices"
@@ -146,19 +148,40 @@ func (s *Server) lookupGotifyApp(ctx context.Context, key string) (*Token, gotif
 // gotifyStored is a key in the form Gotify stores it, the form an imported
 // key was hashed in. Gotify 3 keeps a "gtfy" key by its ed25519 public key
 // (its auth.EnhancedToken.PublicForm), so the stored form alone cannot send;
-// older keys are stored as sent. "" for a "gtfy" key that does not parse.
+// older keys are stored as sent. A "gtfy" key is either ident.seed or the
+// signed ident.pubkey.unixtime.signature, good for 15 minutes either side of
+// its time, as Gotify takes it. "" for a "gtfy" key that does not pass.
 func gotifyStored(key string) string {
 	rest, ok := strings.CutPrefix(key, "gtfy")
 	if !ok {
 		return key
 	}
-	ident, seed, _ := strings.Cut(rest, ".")
-	b, err := base64.RawURLEncoding.DecodeString(seed)
-	if err != nil || len(b) != ed25519.SeedSize {
+	f := strings.Split(rest, ".")
+	if len(f) < 2 {
 		return ""
 	}
-	pub := ed25519.NewKeyFromSeed(b).Public().(ed25519.PublicKey)
-	return "gtfy" + ident + "." + base64.RawURLEncoding.EncodeToString(pub)
+	k, err := base64.RawURLEncoding.DecodeString(f[1])
+	switch {
+	case err != nil:
+		return ""
+	case len(f) == 2 && len(k) == ed25519.SeedSize:
+		k = ed25519.NewKeyFromSeed(k).Public().(ed25519.PublicKey)
+	case len(f) == 4 && len(k) == ed25519.PublicKeySize && gotifySigned(k, f[2], f[3]):
+	default:
+		return ""
+	}
+	return "gtfy" + f[0] + "." + base64.RawURLEncoding.EncodeToString(k)
+}
+
+// gotifySigned checks a signed Gotify key: Ed25519ph over "iat=<time>".
+func gotifySigned(pub []byte, ts, sig string) bool {
+	t, err := strconv.ParseInt(ts, 10, 64)
+	s, err2 := base64.RawURLEncoding.DecodeString(sig)
+	if d := now().Unix() - t; err != nil || err2 != nil || d > 15*60 || d < -15*60 {
+		return false
+	}
+	h := sha512.Sum512([]byte("iat=" + strconv.FormatInt(t, 10)))
+	return ed25519.VerifyWithOptions(pub, h[:], s, &ed25519.Options{Hash: crypto.SHA512}) == nil
 }
 
 // gotifyAppRoutes: an admin makes a Gotify app, a publish-only token for one

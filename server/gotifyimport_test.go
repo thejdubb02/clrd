@@ -2,8 +2,12 @@ package server
 
 import (
 	"context"
+	"crypto"
+	"crypto/ed25519"
+	"crypto/sha512"
 	"database/sql"
 	"encoding/base64"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -99,8 +103,20 @@ func TestGotifyImport(t *testing.T) {
 	if code, _ := post(gotifyLegacy); code != 200 || latest(t, ts.URL, admin, "sonarr-tv-2")["message"] != "after" {
 		t.Fatalf("legacy key: %d", code)
 	}
-	// The stored form is not a key, nor is a mangled one.
-	for _, k := range []string{gotifyStored3, gotifyKey3 + "x", "gtfya." + strings.Repeat("A", 43) + ".x", "gtfy"} {
+	// Gotify 3's signed form works within 15 minutes of its time.
+	seed, _ := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(gotifyKey3, "gtfya."))
+	sign := func(at int64) string {
+		h := sha512.Sum512([]byte(fmt.Sprintf("iat=%d", at)))
+		sig, _ := ed25519.NewKeyFromSeed(seed).Sign(nil, h[:], crypto.SHA512)
+		return fmt.Sprintf("%s.%d.%s", gotifyStored3, at, base64.RawURLEncoding.EncodeToString(sig))
+	}
+	if code, _ := post(sign(time.Now().Unix() - 60)); code != 200 {
+		t.Fatalf("signed key: %d", code)
+	}
+	fresh := sign(time.Now().Unix())
+	// The stored form is not a key, nor is a mangled, stale or forged one.
+	for _, k := range []string{gotifyStored3, gotifyKey3 + "x", "gtfya." + strings.Repeat("A", 43) + ".x", "gtfy",
+		sign(time.Now().Unix() - 20*60), fresh[:len(fresh)-2] + "AA", strings.Replace(fresh, ".", ".1", 2)} {
 		if code, _ := post(k); code != 401 {
 			t.Fatalf("key %q: %d", k, code)
 		}
@@ -134,6 +150,17 @@ func TestGotifyImportOldAndDry(t *testing.T) {
 	// No default priority before Gotify 2.2: clrd's.
 	if code, m := gotifyPost(t, ts.URL+"/message", "application/json", `{"message":"m"}`, map[string]string{"X-Gotify-Key": gotifyKey3}); code != 200 || latest(t, ts.URL, admin, "sonarr-tv")["priority"] != 3.0 {
 		t.Fatalf("old schema key: %d %v", code, m)
+	}
+}
+
+func TestGotifyImportNeedsFreshDB(t *testing.T) {
+	s, _, _ := newTest(t)
+	if _, err := s.db.Exec(`INSERT INTO events (type, topic, data, created_at) VALUES ('created', 'live', '', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	var rep strings.Builder
+	if err := s.ImportGotify(context.Background(), GotifyImport{DB: gotifyFixture(t, gotifySchema)}, &rep); err == nil || !strings.Contains(err.Error(), "fresh") {
+		t.Fatalf("import into a used database: %v", err)
 	}
 }
 

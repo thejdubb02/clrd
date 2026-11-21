@@ -14,9 +14,9 @@ priority) import too.
 | Gotify | clrd |
 |---|---|
 | Apps | One topic per app, named from the app name in lower case (`Sonarr TV` becomes `sonarr-tv`; two apps that would share a name get `-2`, `-3`). |
-| App tokens | Keep working on `POST /message`, both Gotify 3's `gtfya.` keys and the older `A...` ones. Each one publishes only to its app's topic. |
+| App tokens | Keep working on `POST /message`: Gotify 3's `gtfya.` keys, their signed form, and the older `A...` ones. Each one publishes only to its app's topic. |
 | Default priority | Kept. A message sent without `priority` takes it, as in Gotify. |
-| Messages | Notifications on the app's topic, with their original times, title, priority, Markdown, click link and big image. An untitled message takes the app name. |
+| Messages | Notifications on the app's topic, with their original times, title, priority, Markdown, click link and big image. An untitled message takes the app name. Other extras are not kept. |
 
 What does not carry over, and the dry run lists each one with a count:
 users (make clrd tokens for the people who read), client tokens (sign each
@@ -25,7 +25,7 @@ phone and browser in to clrd), and plugins.
 ## 1. Look first
 
 Stop Gotify so its database is not changing, then run a dry run. It reads
-Gotify's database, prints what maps and what does not, and writes nothing.
+Gotify's database, prints what maps and what does not, and imports nothing.
 
 ```sh
 clrd import gotify --dry-run --db /var/gotify/data/gotify.db
@@ -37,9 +37,10 @@ only; for a Gotify on MySQL or Postgres, there is no import yet.
 
 ## 2. Import
 
-Run the same command without `--dry-run`, on a clrd database, while clrd is
-not running (`CLRD_DB` says which database). An import runs once per
-database; a second one is refused.
+Run the same command without `--dry-run`, on a fresh clrd database with no
+notifications yet, while clrd is not running (`CLRD_DB` says which
+database). An import runs once per database; a second one, or one into a
+database already in use, is refused.
 
 Add `--clear-older-than 720h` to bring older messages in as dismissed, so
 phones do not start with a pile of old alerts. Without it every message

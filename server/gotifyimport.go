@@ -40,6 +40,13 @@ func (s *Server) ImportGotify(ctx context.Context, in GotifyImport, out io.Write
 	if tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = 'gotify_imported'`).Scan(&done) == nil {
 		return fmt.Errorf("this database already has a Gotify import (%s); start from a fresh one", fromMS(done).Format(time.RFC3339))
 	}
+	// Imported events carry Gotify's old times, and a prune drops every event
+	// up to the newest old one, so they must not sit after live ones. A fresh
+	// database also keeps app topics from landing in existing feeds.
+	var has int
+	if tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM events)`).Scan(&has); has == 1 {
+		return fmt.Errorf("this database already has notifications; import into a fresh one (a new CLRD_DB)")
+	}
 	rep := &report{w: out}
 	if in.DryRun {
 		rep.line("Dry run: nothing is written.")
@@ -107,7 +114,7 @@ func importGotifyApps(ctx context.Context, tx *sql.Tx, src *sql.DB, rep *report)
 			return nil, fmt.Errorf("app %d: %w", id, err)
 		}
 		var p *int
-		if def.Valid && def.Int64 >= 0 && def.Int64 <= 10 {
+		if def.Valid { // Gotify takes -1 too; gotifyPriority maps any number
 			v := int(def.Int64)
 			p = &v
 		}
