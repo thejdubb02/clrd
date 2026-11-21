@@ -28,6 +28,13 @@ const api = async (tok, path, body) => {
   return r.json();
 };
 const get = async (tok, id) => (await fetch(`${base}/api/v1/notifications/${id}`, { headers: { Authorization: `Bearer ${tok}` } })).json();
+// until polls fn in the page until it returns true. Never page.waitForFunction:
+// Playwright runs its predicate through eval on every recheck after the first,
+// and the page CSP refuses eval, so it fails only when the first check is false.
+const until = async (p, fn, arg) => {
+  for (let i = 0; i < 100; i++) { if (await p.evaluate(fn, arg)) return; await p.waitForTimeout(100); }
+  throw new Error(`timed out waiting for ${fn}`);
+};
 
 let browser;
 try {
@@ -111,7 +118,7 @@ try {
   await toast.getByRole('button', { name: 'Undo' }).waitFor();
   assert.equal((await get(laptop, a.id)).state, 'dismissed');
   await toast.getByRole('button', { name: 'Undo' }).click();
-  await page.waitForFunction(async id => (await (await fetch(`/api/v1/notifications/${id}`)).json()).state === 'active', a.id);
+  await until(page, async id => (await (await fetch(`/api/v1/notifications/${id}`)).json()).state === 'active', a.id);
   console.log('ok: Clear offers Undo, Undo reopens');
 
   // Another device resolved it before this page heard: Clear is a no-op on the
@@ -593,7 +600,7 @@ try {
     await sp.locator('[data-toast]').filter({ hasText: 'Cleared 4 notifications.' }).waitFor();
     for (const id of ids) assert.equal((await get(laptop, id)).state, 'dismissed');
     await sp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
-    for (const id of ids) await sp.waitForFunction(async i => (await (await fetch(`/api/v1/notifications/${i}`)).json()).state === 'active', id);
+    for (const id of ids) await until(sp, async i => (await (await fetch(`/api/v1/notifications/${i}`)).json()).state === 'active', id);
     await stack.locator('[data-stack-count]', { hasText: '4 notifications' }).waitFor();
     // J lands on the closed stack and Enter opens it (#227).
     await sp.reload(); // nothing selected, so J starts from the top
@@ -601,7 +608,7 @@ try {
     for (let i = 0; i < 200 && !(await stack.evaluate(s => s.classList.contains('is-selected'))); i++) await sp.keyboard.press('j');
     assert.equal(await stack.evaluate(s => s === document.activeElement && s.classList.contains('is-selected')), true, 'J skipped the closed stack');
     await sp.keyboard.press('c');
-    await sp.waitForFunction(() => document.querySelector('[data-announce]').textContent === 'Open the stack to act on one notification.');
+    await until(sp, () => document.querySelector('[data-announce]').textContent === 'Open the stack to act on one notification.');
     for (const id of ids) assert.equal((await get(laptop, id)).state, 'active', 'C on a stack cleared a card');
     await sp.keyboard.press('Enter');
     await item('Build 1 failed').waitFor({ state: 'visible' });
@@ -863,7 +870,7 @@ try {
     const me = (await (await ctx.request.get(base + '/api/v1/devices?all=1')).json()).devices.find(d => d.this);
     const put = await fetch(`${base}/api/v1/devices/${me.id}`, { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sound: 'bell' }) });
     assert.ok(put.ok, `agent sets the sound: ${put.status}`);
-    await sp.waitForFunction(() => document.querySelector('[data-sound-setting]').value === 'bell');
+    await until(sp, () => document.querySelector('[data-sound-setting]').value === 'bell');
     await sp.evaluate(() => localStorage.setItem('clrd.sound', 'soft'));
     await inbox();
     await settle('soft', 'a browser-only choice moves to the server');
@@ -936,7 +943,7 @@ try {
     const sel = kp.locator('#tk-keepy');
     kp.once('dialog', d => d.dismiss());
     await sel.selectOption('1');
-    await kp.waitForFunction(() => !document.querySelector('[data-topic-keep] select').disabled);
+    await until(kp, () => !document.querySelector('[data-topic-keep] select').disabled);
     assert.equal(await sel.inputValue(), '', 'No puts the select back');
     assert.deepEqual(await topicKeep(), {}, 'and saves nothing');
     let msg = '';
