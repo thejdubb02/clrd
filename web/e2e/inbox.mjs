@@ -673,8 +673,48 @@ try {
     await sp.locator('[data-stack="tanks"].is-leaving').waitFor();
     assert.equal(await sp.locator('[data-stack].is-leaving').count(), 1, 'a stack that came in while clearing was marked Cleared');
     await stackOf('late').locator('[data-stack-count]', { hasText: '2 notifications' }).waitFor();
+    // While one stack's Clear all waits for its reply, another device clears a
+    // card inside a different closed stack: that stack's count changes at
+    // once, and the waiting stack stays as it is (#397).
+    await sp.unroute('**/api/v1/notifications/clear');
+    const holdClear = () => {
+      let go; const held = new Promise(r => { go = r; });
+      return sp.route('**/api/v1/notifications/clear', async route => { const res = await route.fetch(); await held; await route.fulfill({ response: res }); }).then(() => go);
+    };
+    const late3 = await send('late', 'Late 3');
+    for (const t of ['Pump 5 down', 'Pump 6 down']) await send('pumps', t);
+    await stackOf('late').locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor();
+    await stackOf('pumps').waitFor();
+    let go = await holdClear();
+    await stackOf('pumps').getByRole('button', { name: 'Clear all' }).click();
+    await api(phone, `/api/v1/notifications/${late3}/dismiss`);
+    await stackOf('late').locator('[data-stack-count]', { hasText: '2 notifications' }).waitFor({ timeout: 1000 });
+    assert.equal(await stackOf('pumps').locator('[data-stack-count]').textContent(), '2 notifications', 'the waiting stack changed before its reply');
+    go();
+    await stackOf('pumps').waitFor({ state: 'detached' });
+    // A page load already on its way when Clear all starts: its answer, from
+    // before the clear, changes nothing until the clear's reply (#397).
+    await sp.unroute('**/api/v1/notifications/clear');
+    let loadGo, loaded; const loadHeld = new Promise(r => { loadGo = r; }), asked = new Promise(r => { loaded = r; });
+    const isLoad = u => new URL(u).pathname === '/app';
+    await sp.route(isLoad, async route => {
+      if (route.request().resourceType() !== 'fetch') return route.continue();
+      const res = await route.fetch(); loaded(); await loadHeld; await route.fulfill({ response: res });
+    });
+    go = await holdClear();
+    await send('late', 'Late 4');
+    await asked;
+    await stackOf('late').getByRole('button', { name: 'Clear all' }).click();
+    loadGo();
+    await sp.waitForTimeout(1000); // nothing to wait on: the late answer must change nothing
+    assert.equal(await stackOf('late').locator('[data-stack-count]').textContent(), '2 notifications', 'a page load from before the clear changed the stack');
+    go();
+    await sp.locator('[data-stack="late"].is-leaving').waitFor();
+    await sp.locator('.card-title', { hasText: 'Late 4' }).waitFor();
+    await sp.unroute(isLoad);
+    await sp.unroute('**/api/v1/notifications/clear');
     await sp.context().close();
-    console.log('ok: stacks stay right while Clear all waits and while one fades');
+    console.log('ok: stacks stay right while Clear all waits, while one fades, and with a load in flight');
   }
 
   // QR sign-in (#74): a signed-out browser shows a code, a signed-in phone
