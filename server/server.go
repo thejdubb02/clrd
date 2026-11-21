@@ -723,7 +723,7 @@ func (s *Server) routesSetup() {
 			if err != nil {
 				return errf(400, "bad_request", "keep_cleared_days must be a whole number of days")
 			}
-			if c["would_remove"], err = s.WouldRemove(r.Context(), tok, days); err != nil {
+			if c["would_remove"], err = s.WouldRemove(r.Context(), tok, days, r.URL.Query().Get("topic")); err != nil {
 				return err
 			}
 		}

@@ -178,7 +178,8 @@ shows messages the same way:
 
 ```json
 {"render_formatting": true, "autolink": true, "favicons": true, "link_previews": false,
- "topic_previews": {"news": true}, "snooze_intervals": ["1h", "4h"], "snooze_default": "1h"}
+ "topic_previews": {"news": true}, "snooze_intervals": ["1h", "4h"], "snooze_default": "1h",
+ "keep_cleared_days": 30, "topic_keep_cleared_days": {"ci": 2}}
 ```
 
 `render_formatting` off shows Markdown as plain text. `autolink` turns bare
@@ -201,7 +202,13 @@ it, so a shorter value deletes older cleared rows within the hour, and the
 event log is cut to the shorter of the two periods: a client whose last
 `seq` is older gets 410 and resyncs. `GET /api/v1/counts?keep_cleared_days=N`
 previews it: `would_remove` is how many cleared notifications N would delete
-now. Every change goes to every open
+now (in the topics without their own value). `topic_keep_cleared_days` sets
+it for one topic, like `{"alerts": 7}`, and overrides the global value there;
+`null` drops a topic's value. It needs scope admin on that topic, reads show
+only the topics the token can read, and the event log is cut to the shortest
+keep in use. With `&topic=T`, `would_remove` counts only topic T, to preview
+its own value (the state counts stay over every readable topic).
+Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
 
 **Fetchers.** Clients never contact a linked site; the server does, so the
@@ -583,7 +590,7 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
 Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?)`, `list(topic?, state?)`,
-`topics()`, `counts(keep_cleared_days?)`, `format_check(topic?)` (the format
+`topics()`, `counts(keep_cleared_days?, topic?)`, `format_check(topic?)` (the format
 check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,

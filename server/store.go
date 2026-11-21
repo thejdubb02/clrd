@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -1083,9 +1084,20 @@ func (s *Server) prune(ctx context.Context) error {
 		return err
 	}
 	keep := s.keepCleared(st)
+	// Events go once the shortest keep in use has passed, so a replay never
+	// brings back a notification a prune removed.
+	shortest := s.opt.Retention
+	if keep > 0 && keep < shortest {
+		shortest = keep
+	}
+	for _, k := range st.TopicKeepClearedDays {
+		if d := days(k); d > 0 && d < shortest {
+			shortest = d
+		}
+	}
 	evCutoff := cutoff
-	if keep > 0 && keep < s.opt.Retention {
-		evCutoff = ms(now.Add(-keep))
+	if shortest < s.opt.Retention {
+		evCutoff = ms(now.Add(-shortest))
 	}
 	var upTo sql.NullInt64
 	if err := tx.QueryRow(`SELECT MAX(seq) FROM events WHERE created_at < ?`, evCutoff).Scan(&upTo); err != nil {
@@ -1100,9 +1112,19 @@ func (s *Server) prune(ctx context.Context) error {
 			return err
 		}
 	}
+	// [] not null, since NOT IN (NULL) matches nothing.
+	own, _ := json.Marshal(append([]string{}, slices.Collect(maps.Keys(st.TopicKeepClearedDays))...))
 	if keep != 0 { // 0 = forever
-		if _, err := tx.Exec(`DELETE FROM notifications WHERE `+prunable, ms(now.Add(-keep))); err != nil {
+		if _, err := tx.Exec(`DELETE FROM notifications WHERE `+prunable+` AND topic NOT IN (SELECT value FROM json_each(?))`,
+			ms(now.Add(-keep)), string(own)); err != nil {
 			return err
+		}
+	}
+	for t, k := range st.TopicKeepClearedDays { // topics with their own keep (#262)
+		if k != 0 {
+			if _, err := tx.Exec(`DELETE FROM notifications WHERE `+prunable+` AND topic = ?`, ms(now.Add(-days(k))), t); err != nil {
+				return err
+			}
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {

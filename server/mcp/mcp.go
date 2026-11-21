@@ -311,10 +311,13 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 	case "topics":
 		return h.api(r, "GET", "/api/v1/topics", nil)
 	case "counts":
-		if d := str(a, "keep_cleared_days"); d != "" {
-			return h.api(r, "GET", "/api/v1/counts?keep_cleared_days="+url.QueryEscape(d), nil)
+		q := url.Values{}
+		for _, k := range []string{"keep_cleared_days", "topic"} {
+			if v := str(a, k); v != "" {
+				q.Set(k, v)
+			}
 		}
-		return h.api(r, "GET", "/api/v1/counts", nil)
+		return h.api(r, "GET", "/api/v1/counts?"+q.Encode(), nil)
 	case "format_check":
 		return h.api(r, "GET", "/api/v1/format-check?topic="+url.QueryEscape(str(a, "topic")), nil)
 	case "devices":
@@ -497,18 +500,20 @@ var tools = []map[string]any{
 	{"name": "topics", "description": "List the topics this token can read, with how many notifications are open in each.",
 		"inputSchema": schema(map[string]any{})},
 	{"name": "counts", "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved). With keep_cleared_days, also would_remove: how many cleared messages that setting would delete.",
-		"inputSchema": schema(map[string]any{"keep_cleared_days": p("integer", "Preview a keep_cleared_days value before setting it")})},
+		"inputSchema": schema(map[string]any{"keep_cleared_days": p("integer", "Preview a keep_cleared_days value before setting it"),
+			"topic": p("string", "With keep_cleared_days, would_remove counts only this topic, to preview a topic_keep_cleared_days value")})},
 	{"name": "format_check", "description": "Find formatting problems in the newest 500 messages, by topic: Markdown sent as plain text, unknown :shortcodes:, no title, very long messages, raw JSON. Each topic has a count and an example per problem, and a prompt that says how to fix the sender. Fix the sending code with it, then send a test message.",
 		"inputSchema": schema(map[string]any{"topic": p("string", "Check only this topic")})},
 	{"name": "settings", "description": "Read the server settings, or change them: pass only the fields to change. keep_cleared_days (0 = forever) deletes cleared messages older than that on the next hourly cleanup and needs an admin token; preview it with counts first.",
 		"inputSchema": schema(map[string]any{
-			"keep_cleared_days": p("integer", "Days to keep dismissed and resolved messages, counted from when they were cleared; 0 = forever"),
-			"render_formatting": p("boolean", "Show Markdown formatting"),
-			"autolink":          p("boolean", "Turn web addresses into links"),
-			"favicons":          p("boolean", "Show site icons next to links"),
-			"link_previews":     p("boolean", "Show link previews"),
-			"snooze_intervals":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Snooze menu times as durations like 30m or 4h, 1 to 8"},
-			"snooze_default":    p("string", "The snooze time a plain tap uses, one of snooze_intervals"),
+			"keep_cleared_days":       p("integer", "Days to keep dismissed and resolved messages, counted from when they were cleared; 0 = forever"),
+			"topic_keep_cleared_days": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": []string{"integer", "null"}}, "description": "Per-topic keep_cleared_days, like {\"alerts\": 7}; null drops a topic's own value so it follows keep_cleared_days again"},
+			"render_formatting":       p("boolean", "Show Markdown formatting"),
+			"autolink":                p("boolean", "Turn web addresses into links"),
+			"favicons":                p("boolean", "Show site icons next to links"),
+			"link_previews":           p("boolean", "Show link previews"),
+			"snooze_intervals":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Snooze menu times as durations like 30m or 4h, 1 to 8"},
+			"snooze_default":          p("string", "The snooze time a plain tap uses, one of snooze_intervals"),
 		})},
 	{"name": "get", "description": "Get one notification by its server id, with its current state.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},

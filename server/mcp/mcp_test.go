@@ -191,6 +191,8 @@ func TestTools(t *testing.T) {
 		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", map[string]any{"via": "mcp"}},
 		{"snooze", map[string]any{"id": "01J", "for": "1h"}, "POST /api/v1/notifications/01J/snooze", map[string]any{"for": "1h", "via": "mcp"}},
 		{"counts", map[string]any{"keep_cleared_days": 5}, "GET /api/v1/counts?keep_cleared_days=5", nil},
+		{"counts", map[string]any{"keep_cleared_days": 5, "topic": "infra"}, "GET /api/v1/counts?keep_cleared_days=5&topic=infra", nil},
+		{"settings", map[string]any{"topic_keep_cleared_days": map[string]any{"infra": 3, "ci": nil}}, "PUT /api/v1/settings", map[string]any{"topic_keep_cleared_days": map[string]any{"infra": float64(3), "ci": nil}}},
 		{"format_check", map[string]any{"topic": "infra"}, "GET /api/v1/format-check?topic=infra", nil},
 		{"sound", nil, "GET /api/v1/sounds", nil},
 		{"sound", map[string]any{"id": "d1", "sound": ""}, "PUT /api/v1/devices/d1", map[string]any{"sound": ""}}, // the server refuses it (#299)

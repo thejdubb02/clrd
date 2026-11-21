@@ -64,6 +64,8 @@ type Settings struct {
 	// only once set; until then CLRD_RETENTION decides, and reads show
 	// that in whole days (rounded up).
 	KeepClearedDays *int `json:"keep_cleared_days"`
+	// TopicKeepClearedDays overrides KeepClearedDays for one topic (#262).
+	TopicKeepClearedDays map[string]int `json:"topic_keep_cleared_days"`
 	// Sound is the asking device's own sound (#282), filled on reads and
 	// set with PUT /api/v1/devices/{id}.
 	Sound string `json:"sound,omitempty"`
@@ -77,43 +79,51 @@ func (s *Server) keepCleared(st Settings) time.Duration {
 	if st.KeepClearedDays == nil {
 		return s.opt.Retention
 	}
-	return time.Duration(*st.KeepClearedDays) * 24 * time.Hour
+	return days(*st.KeepClearedDays)
 }
+
+func days(n int) time.Duration { return time.Duration(n) * 24 * time.Hour }
 
 // prunable picks the cleared notifications prune deletes: final, and last
 // changed before the cutoff. The Settings preview counts the same rows.
 const prunable = `state IN ('dismissed', 'resolved') AND updated_at < ?`
 
 // WouldRemove counts the cleared notifications tok can read that a keep of
-// days would delete on the next prune run (0 days = forever, so none).
-func (s *Server) WouldRemove(ctx context.Context, tok *Token, days int) (int, error) {
-	if err := tok.need(ScopeRead, ""); err != nil {
+// n days would delete on the next prune run (0 days = forever, so none):
+// in topic when given, else in the topics with no override of their own.
+func (s *Server) WouldRemove(ctx context.Context, tok *Token, n int, topic string) (int, error) {
+	if err := tok.need(ScopeRead, topic); err != nil {
 		return 0, err
 	}
-	if days < 0 || days > maxKeepDays {
+	if n < 0 || n > maxKeepDays {
 		return 0, errf(400, "bad_request", "keep_cleared_days must be 0 (forever) to %d", maxKeepDays)
 	}
-	if days == 0 {
+	if n == 0 {
 		return 0, nil
 	}
+	st, err := s.loadSettings(ctx, s.db)
+	if err != nil {
+		return 0, err
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT topic, COUNT(*) FROM notifications WHERE `+prunable+` GROUP BY topic`,
-		ms(time.Now().Add(-time.Duration(days)*24*time.Hour)))
+		ms(time.Now().Add(-days(n))))
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
-	n := 0
+	sum := 0
 	for rows.Next() {
-		var topic string
+		var t string
 		var k int
-		if err := rows.Scan(&topic, &k); err != nil {
+		if err := rows.Scan(&t, &k); err != nil {
 			return 0, err
 		}
-		if tok.may(ScopeRead, topic) {
-			n += k
+		_, own := st.TopicKeepClearedDays[t]
+		if tok.may(ScopeRead, t) && (t == topic || topic == "" && !own) {
+			sum += k
 		}
 	}
-	return n, rows.Err()
+	return sum, rows.Err()
 }
 
 // maxSnooze matches the web form's limit on a snooze duration.
@@ -144,7 +154,7 @@ func checkSnooze(list []string, def string) error {
 
 func defaultSettings() Settings {
 	return Settings{RenderFormatting: true, Autolink: true, Favicons: true, TopicPreviews: map[string]bool{},
-		SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}
+		TopicKeepClearedDays: map[string]int{}, SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}
 }
 
 // SettingsPatch is a PUT body: only the fields given change. A topic
@@ -158,6 +168,7 @@ type SettingsPatch struct {
 	SnoozeIntervals  []string         `json:"snooze_intervals"`
 	SnoozeDefault    *string          `json:"snooze_default"`
 	KeepClearedDays  *int             `json:"keep_cleared_days"`
+	TopicKeep        map[string]*int  `json:"topic_keep_cleared_days"`
 	Sound            *string          `json:"sound"` // this device's own sound
 }
 
@@ -174,6 +185,11 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 	for t := range st.TopicPreviews {
 		if !tok.Allows(t) {
 			delete(st.TopicPreviews, t)
+		}
+	}
+	for t := range st.TopicKeepClearedDays {
+		if !tok.may(ScopeRead, t) {
+			delete(st.TopicKeepClearedDays, t)
 		}
 	}
 	if st.KeepClearedDays == nil { // filled on reads only, so a save never pins CLRD_RETENTION
@@ -203,6 +219,9 @@ func (s *Server) loadSettings(ctx context.Context, q interface {
 	if st.TopicPreviews == nil {
 		st.TopicPreviews = map[string]bool{}
 	}
+	if st.TopicKeepClearedDays == nil {
+		st.TopicKeepClearedDays = map[string]int{}
+	}
 	return st, nil
 }
 
@@ -216,14 +235,29 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
 		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil
 	if global && tok.limited() {
-		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews")
+		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews and topic_keep_cleared_days")
 	}
-	if p.KeepClearedDays != nil { // it deletes data, so admin only
-		if err := tok.need(ScopeAdmin, ""); err != nil {
+	// A keep deletes data, so it needs admin (on the topic, for an override).
+	checkKeep := func(topic string, v *int) error {
+		if err := tok.need(ScopeAdmin, topic); err != nil {
+			return err
+		}
+		if v != nil && (*v < 0 || *v > maxKeepDays) {
+			return errf(400, "bad_request", "keep_cleared_days must be 0 (forever) to %d", maxKeepDays)
+		}
+		return nil
+	}
+	if p.KeepClearedDays != nil {
+		if err := checkKeep("", p.KeepClearedDays); err != nil {
 			return Settings{}, err
 		}
-		if *p.KeepClearedDays < 0 || *p.KeepClearedDays > maxKeepDays {
-			return Settings{}, errf(400, "bad_request", "keep_cleared_days must be 0 (forever) to %d", maxKeepDays)
+	}
+	for t, v := range p.TopicKeep { // null drops the override
+		if err := validTopic(t); err != nil {
+			return Settings{}, err
+		}
+		if err := checkKeep(t, v); err != nil {
+			return Settings{}, err
 		}
 	}
 	for t := range p.TopicPreviews {
@@ -275,6 +309,13 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 		if p.KeepClearedDays != nil {
 			st.KeepClearedDays = p.KeepClearedDays
+		}
+		for t, v := range p.TopicKeep {
+			if v == nil {
+				delete(st.TopicKeepClearedDays, t)
+			} else {
+				st.TopicKeepClearedDays[t] = *v
+			}
 		}
 	}
 	if err == nil {
