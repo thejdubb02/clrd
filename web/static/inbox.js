@@ -261,7 +261,9 @@
 
   // Re-fetch this page and patch it in: cards keyed by id and seq, plus the sidebar.
   let pending, gen = 0;
-  const refresh = () => { clearTimeout(pending); pending = setTimeout(patch, 250); };
+  // A change makes any page already on its way stale: drop it, or it puts back
+  // what the change just took off the screen (#402).
+  const refresh = () => { gen++; clearTimeout(pending); pending = setTimeout(patch, 250); };
   async function patch() {
     if (clearing.size || (list && list.querySelector('.is-leaving'))) return refresh();
     let doc;
