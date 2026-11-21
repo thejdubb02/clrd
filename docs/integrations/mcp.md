@@ -29,6 +29,7 @@ Tools:
 | `device_log` | none | The last 200 links, sign-ins and unlinks, newest first. |
 | `unlink` | `id` | Sign out a browser or phone from `devices` at once. Unlinking a phone also signs out the browsers it approved. |
 | `sound` | `id?, sound?` | Notification sounds, one choice per device. No arguments lists the valid names and the default (`default`, the device's own sound). With `id` from `devices` and `sound`, sets that device's sound; an unknown name is refused with the list. `devices` shows each device's current sound. |
+| `request_approve` | `approve, topic?` | Ask the user to let this token answer approval requests (`allowed`, or `ask`). Posts a Confirm prompt on `topic` (default `agents`); the setting changes only when an allowed device taps Confirm. `wait_for_reply` on the returned id gives `confirm` or `reject`. |
 | `dismiss` | `id` | Clear it on every device. `reopen` undoes it. |
 | `reopen` | `id` | Make it active again. |
 | `clear` | `topic` or `ids` | Dismiss every open notification in a topic, or the listed ones. Returns `cleared`. |
@@ -226,7 +227,8 @@ answers the agent. The tap clears the notification on every other device.
   agent's token cannot approve its own prompts. Change it per device with
   `PUT /api/v1/devices/{id}/approve`. Set a device to `ask` and its taps
   wait for an allowed device to confirm them: clrd posts a "Confirm" prompt
-  on the same topic. Locked out? `clrd token create
+  on the same topic. An agent can ask for a higher setting itself with the
+  `request_approve` tool; it lands when you tap Confirm. Locked out? `clrd token create
   --approve allowed` on the server makes an allowed token.
 
 Claude Code, in `~/.claude/settings.json` (with `CLRD_TOKEN` set in your

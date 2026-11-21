@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http/httptest"
 	"net/netip"
 	"path/filepath"
 	"sync/atomic"
@@ -104,15 +105,7 @@ func TestApproveAsk(t *testing.T) {
 		return n
 	}
 	// The ask device: a browser under an allowed laptop, lowered to ask.
-	laptop := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
-	lp := s.lookupToken(ctx, laptop)
-	b, braw, err := s.childToken(ctx, lp, lp.ID, "browser", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code, _ := call(t, ts, "PUT", "/api/v1/devices/"+b.ID+"/approve", laptop, map[string]any{"approve": ApproveAsk}); code != 200 {
-		t.Fatalf("lower to ask: %d", code)
-	}
+	_, lp, braw := askBrowser(t, s, ts)
 	s.fetch.allow = func(netip.Addr, string) bool { return true }
 	var status atomic.Int64
 	status.Store(200)
@@ -322,4 +315,151 @@ func TestApproveMigration(t *testing.T) {
 	if get(s, b.ID) != ApproveDenied {
 		t.Fatal("a restart allowed a browser the user denied")
 	}
+}
+
+// TestApproveRequest: a device asks to raise its own setting, and it changes
+// only when an allowed device that could make the change itself confirms
+// the prompt (#187).
+func TestApproveRequest(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	mk := func(name string) (*Token, string) {
+		t.Helper()
+		tok, raw, err := s.CreateToken(ctx, name, ApproveDenied, []string{ScopeRead, ScopePublish}, []string{"agents"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok, raw
+	}
+	ask := func(raw, topic, v string) (int, map[string]any) {
+		t.Helper()
+		return call(t, ts, "POST", "/api/v1/devices/approve-request", raw, map[string]any{"topic": topic, "approve": v})
+	}
+	reply := func(raw, id, r string) (int, map[string]any) {
+		t.Helper()
+		return call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", raw, map[string]any{"reply": r})
+	}
+	setting := func(id string) string {
+		t.Helper()
+		v, err := approveOf(ctx, s.db, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+
+	agent, araw := mk("agent")
+	code, p := ask(araw, "", ApproveAllowed)
+	if code != 202 || p["topic"] != "agents" || p["title"] != "Confirm agent may approve: allowed" {
+		t.Fatalf("request: %d %v", code, p)
+	}
+	pid := p["id"].(string)
+	if code, again := ask(araw, "agents", ApproveAllowed); code != 202 || again["id"] != pid {
+		t.Fatalf("repeat request made a new prompt: %d %v", code, again)
+	}
+	if code, _ := ask(araw, "agents", ApproveDenied); code != 400 {
+		t.Fatalf("a request that is not a raise: %d", code)
+	}
+	if code, _ := ask(araw, "other", ApproveAllowed); code != 403 {
+		t.Fatalf("request on a topic it cannot publish to: %d", code)
+	}
+
+	// Who cannot confirm: the requester, an ask device, a token limited to
+	// some topics, a device that cannot see the requester.
+	if code, out := reply(araw, pid, "confirm"); code != 403 || out["code"] != "approve_denied" {
+		t.Fatalf("requester confirmed itself: %d %v", code, out)
+	}
+	laptop, _, braw := askBrowser(t, s, ts)
+	if code, out := reply(braw, pid, "confirm"); code != 403 || out["code"] != "approve_denied" {
+		t.Fatalf("ask device confirmed: %d %v", code, out)
+	}
+	limited := mkToken(t, s, "limited", []string{ScopeRead, ScopeAdmin}, []string{"agents"})
+	if code, out := reply(limited, pid, "confirm"); code != 403 || out["code"] != "forbidden" {
+		t.Fatalf("limited token confirmed: %d %v", code, out)
+	}
+	if code, out := reply(laptop, pid, "confirm"); code != 409 {
+		t.Fatalf("device that cannot see the requester confirmed: %d %v", code, out)
+	}
+	if setting(agent.ID) != ApproveDenied {
+		t.Fatalf("setting changed by a refused confirm: %s", setting(agent.ID))
+	}
+	if code, out := reply(admin, pid, "confirm"); code != 200 || setting(agent.ID) != ApproveAllowed {
+		t.Fatalf("admin confirm: %d %v %s", code, out, setting(agent.ID))
+	}
+	// A confirmed request is spent: lowered again, reopen and confirm do not re-raise.
+	call(t, ts, "PUT", "/api/v1/devices/"+agent.ID+"/approve", admin, map[string]any{"approve": ApproveDenied})
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+pid+"/reopen", admin, nil); code != 200 {
+		t.Fatalf("reopen: %d", code)
+	}
+	if reply(admin, pid, "confirm"); setting(agent.ID) != ApproveDenied {
+		t.Fatalf("confirmed request applied twice: %s", setting(agent.ID))
+	}
+
+	// A stale request: the setting changed since it asked.
+	stale, sraw := mk("stale")
+	_, p = ask(sraw, "agents", ApproveAllowed)
+	if code, _ := call(t, ts, "PUT", "/api/v1/devices/"+stale.ID+"/approve", admin, map[string]any{"approve": ApproveAsk}); code != 200 {
+		t.Fatalf("set ask: %d", code)
+	}
+	if code, again := ask(sraw, "agents", ApproveAllowed); code != 202 || again["id"] == p["id"] {
+		t.Fatalf("request from a new setting reused the stale prompt: %d %v", code, again)
+	}
+	if code, _ := reply(admin, p["id"].(string), "confirm"); code != 409 || setting(stale.ID) != ApproveAsk {
+		t.Fatalf("stale request applied: %d %s", code, setting(stale.ID))
+	}
+
+	// A device made from the requester and raised by the user still cannot
+	// raise the token it hangs under.
+	par, praw, err := s.CreateToken(ctx, "parent", ApproveDenied, []string{ScopeRead, ScopePublish}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, p = ask(praw, "agents", ApproveAllowed)
+	kid, kraw, err := s.childToken(ctx, par, par.ID, "kid", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/devices/"+kid.ID+"/approve", admin, map[string]any{"approve": ApproveAllowed}); code != 200 {
+		t.Fatalf("raise kid: %d", code)
+	}
+	if code, out := reply(kraw, p["id"].(string), "confirm"); code != 403 || setting(par.ID) != ApproveDenied {
+		t.Fatalf("kid raised its parent: %d %v", code, out)
+	}
+	if code, other := ask(praw, "ops", ApproveAllowed); code != 202 || other["id"] == p["id"] || other["topic"] != "ops" {
+		t.Fatalf("request on another topic reused the prompt: %d %v", code, other)
+	}
+
+	// Reject, reopen, confirm: the reject sticks.
+	rej, rraw := mk("rejected")
+	_, p = ask(rraw, "agents", ApproveAllowed)
+	rid := p["id"].(string)
+	if code, _ := reply(admin, rid, "reject"); code != 200 {
+		t.Fatalf("reject: %d", code)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+rid+"/reopen", admin, nil); code != 200 {
+		t.Fatalf("reopen: %d", code)
+	}
+	if reply(admin, rid, "confirm"); setting(rej.ID) != ApproveDenied {
+		t.Fatalf("confirm after reject applied: %s", setting(rej.ID))
+	}
+	if code, again := ask(rraw, "agents", ApproveAllowed); code != 202 || again["id"] == rid {
+		t.Fatalf("request after reject reused the prompt: %d %v", code, again)
+	}
+}
+
+// askBrowser makes a laptop (allowed) and a browser under it lowered to ask.
+// It returns the laptop's raw token and token, and the browser's raw token.
+func askBrowser(t *testing.T, s *Server, ts *httptest.Server) (string, *Token, string) {
+	t.Helper()
+	ctx := context.Background()
+	laptop := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	lp := s.lookupToken(ctx, laptop)
+	b, braw, err := s.childToken(ctx, lp, lp.ID, "browser", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/devices/"+b.ID+"/approve", laptop, map[string]any{"approve": ApproveAsk}); code != 200 {
+		t.Fatalf("lower to ask: %d", code)
+	}
+	return laptop, lp, braw
 }

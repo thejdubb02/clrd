@@ -924,6 +924,7 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 		return nil, errf(401, "unauthorized", noToken)
 	}
 	var out *Notification
+	var raised bool // a setting request was confirmed
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		n, err := getNotification(ctx, tx, `id = ?`, id)
 		if err != nil {
@@ -955,7 +956,7 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 		}
 		prompt := n.confirm != ""
 		if prompt {
-			if evs, err = s.confirmed(ctx, tx, tok, n, reply, via); err != nil {
+			if evs, err = s.confirmed(ctx, tx, tok, n, reply, via, &raised); err != nil {
 				return nil, err
 			}
 		}
@@ -967,6 +968,9 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 	})
 	if err != nil {
 		return nil, err
+	}
+	if raised {
+		s.devicesChanged.fire()
 	}
 	return out, nil
 }

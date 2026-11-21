@@ -460,7 +460,12 @@ the session cookie (same-origin only) as well as a Bearer token.
   ask, but a phone linked from the same token can); `confirm`
   applies the tap to the question (state by the ask device), 409 if the
   question was answered, cleared or changed since. `reject` only clears the
-  prompt. Taps on a prompt are not sent to the topic's action hooks. On
+  prompt. Taps on a prompt are not sent to the topic's action hooks. A
+  device, an agent's token say, asks to raise its own setting with `POST
+  /api/v1/devices/approve-request`: a prompt "Confirm <device> may approve:
+  <setting>" on the topic it names. `confirm` applies it only for a device
+  that could make that change itself with the PUT above, 409 if the
+  device's setting changed since it asked or the confirmer cannot see it. On
   upgrade from a version
   without this setting, browsers and phones already linked are allowed and
   plain tokens are denied.
@@ -549,6 +554,7 @@ resolved`) and `ntfy_import`.
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
 | PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
 | DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. |
+| POST | `/api/v1/devices/approve-request` | Body `{"approve":"allowed"}` or `ask`, `topic` optional (default `agents`, needs publish there): the calling device asks to raise its own setting (section 4). 202 with a confirm prompt on that topic; a repeat returns the same open prompt; 400 unless it is a raise. |
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. |
 | GET | `/api/v1/server` | Admin. The section 7 settings in effect, defaults filled in: `{"env":{"CLRD_LISTEN":":8080",...}}`, each written the way its variable takes it (`CLRD_BASE_URL` empty when unset, a password in it shown as `xxxxx`; `0` for a rate limit that is off). Read only; no secrets. |
@@ -624,7 +630,8 @@ dismissed or an action is tapped; returns which, so an agent can ask a human
 "yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
 `reply` (the state). `wait_for_reply` waits at most 600 s. `devices()`,
-`device_log()` and `unlink(id)` are the device list, its log and unlink
+`device_log()` and `unlink(id)` are the device list, its log and unlink,
+and `request_approve(approve, topic?)` is `POST /api/v1/devices/approve-request`,
 from section 5. Setup tools, each one REST call: path arguments go in the URL,
 the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dismiss(id)`, `reopen(id)`, `clear(topic | ids)`, `silences()`,
 `silence(topic?, tag?, for | until, comment?)`, `end_silence(id)`,

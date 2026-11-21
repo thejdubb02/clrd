@@ -151,15 +151,22 @@ func (s *Server) deviceTx(ctx context.Context, tok *Token, id string) (*sql.Tx, 
 	if err != nil {
 		return nil, d, err
 	}
-	ds, err := s.devices(ctx, tx, tok)
+	d, err = s.device(ctx, tx, tok, id)
+	return tx, d, err
+}
+
+// device finds id in tok's device list read through q, which must hold tok
+// itself too, else 404.
+func (s *Server) device(ctx context.Context, q querier, tok *Token, id string) (LinkedDevice, error) {
+	ds, err := s.devices(ctx, q, tok)
 	i := slices.IndexFunc(ds, func(d LinkedDevice) bool { return d.ID == id })
 	if err == nil && (i < 0 || !slices.ContainsFunc(ds, func(d LinkedDevice) bool { return d.ID == tok.ID })) {
 		err = errf(404, "not_found", "device not found")
 	}
-	if err == nil {
-		d = ds[i]
+	if err != nil {
+		return LinkedDevice{}, err
 	}
-	return tx, d, err
+	return ds[i], nil
 }
 
 // devices is Devices read through q, so a write can check inside its own

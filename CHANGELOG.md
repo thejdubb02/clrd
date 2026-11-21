@@ -17,6 +17,10 @@ Fixed, Removed, Security), as one line a user can understand.
   Confirm, never one from the sender's token tree. A phone linked from the same
   token as the asking browser can confirm it. (#187)
 
+- Server: a device or agent can ask to be allowed to approve, through the
+  API or the new MCP tool `request_approve`. The change lands only when an
+  allowed device taps Confirm on the prompt clrd posts. (#187)
+
 - Server: each token, phone and browser now has an "approve" setting,
   allowed or denied. Only an allowed device can tap a reply button, and no
   token can answer a request it sent, so an agent cannot approve its own

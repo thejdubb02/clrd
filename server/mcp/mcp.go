@@ -337,6 +337,11 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		return h.api(r, "PUT", "/api/v1/devices/"+id, map[string]any{"sound": str(a, "sound")})
+	case "request_approve":
+		if err := need("approve"); err != nil {
+			return nil, err
+		}
+		return h.api(r, "POST", "/api/v1/devices/approve-request", map[string]any{"approve": str(a, "approve"), "topic": str(a, "topic")})
 	case "settings":
 		if len(a) == 0 {
 			return h.api(r, "GET", "/api/v1/settings", nil)
@@ -531,7 +536,7 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id"), "for": p("string", "Duration, e.g. 30m or 1h")}, "id", "for")},
 	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout, and answer = the reply value when one of send's actions was tapped.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "timeout_s": map[string]any{"type": "number", "description": "Seconds to wait, default 60, max 600"}}, "id")},
-	{"name": "devices", "description": "List every linked device this token can see: id, name, kind (token, browser or phone), linked and last seen times, and whether it can be unlinked.",
+	{"name": "devices", "description": "List every linked device this token can see: id, name, kind (token, browser or phone), linked and last seen times, who may approve (allowed, ask or denied), and whether it can be unlinked.",
 		"inputSchema": schema(map[string]any{})},
 	{"name": "device_log", "description": "Recent links, sign-ins and unlinks of those devices, newest first, with the device that did each.",
 		"inputSchema": schema(map[string]any{})},
@@ -539,6 +544,8 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices")}, "id")},
 	{"name": "sound", "description": "Notification sounds, chosen per device. No arguments lists the valid sound names and the default; devices shows each device's current sound. With id and sound, sets that device's sound.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices"), "sound": p("string", "A name from the list, e.g. chime or none")})},
+	{"name": "request_approve", "description": "Ask the user to let this token answer approval requests. devices shows its current approve setting. Posts a Confirm prompt on topic; the setting changes only when an allowed device taps Confirm. Returns the prompt: wait_for_reply on its id gives confirm or reject.",
+		"inputSchema": schema(map[string]any{"approve": p("string", "allowed, or ask (its taps then wait for an allowed device to confirm)"), "topic": p("string", "Topic for the prompt, default agents; needs publish there")}, "approve")},
 	{"name": "dismiss", "description": "Dismiss (clear) a notification by its server id. It goes away on every device; reopen undoes it.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
 	{"name": "reopen", "description": "Make a dismissed, acknowledged, snoozed or resolved notification active again, by its server id.",
