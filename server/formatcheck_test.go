@@ -152,7 +152,7 @@ func TestFormatCheckSenderDismissOff(t *testing.T) {
 	}
 	dismiss(admin, map[string]any{"topic": "secret", "rule": "no_title"}) // ro may not read it, so must not see it
 	_, out := call(t, ts, "GET", "/api/v1/format-check", ro, nil)
-	if fmt.Sprint(out["dismissed"]) != fmt.Sprintf("[map[rule:no_title sender_id: topic:jobs] map[rule:no_title sender:backup-bot sender_id:%s topic:jobs]]", botID) {
+	if fmt.Sprint(out["dismissed"]) != fmt.Sprintf("[map[rule:no_title sender_id: topic:jobs] map[rule:no_title sender_id:%s topic:jobs]]", botID) {
 		t.Fatalf("dismissed list: %v", out["dismissed"])
 	}
 	dismiss(admin, map[string]any{"topic": "jobs", "rule": "no_title", "dismissed": false})

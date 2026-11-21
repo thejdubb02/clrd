@@ -82,13 +82,6 @@ type formatIgnore struct {
 	SenderID string `json:"sender_id"` // "" for every sender
 }
 
-// formatDismissed is a dismissed finding as listed, with the sender's token
-// name so the web page can say whose it is.
-type formatDismissed struct {
-	formatIgnore
-	Sender string `json:"sender,omitempty"`
-}
-
 // FormatCheck runs the rules over the newest 500 messages tok can read
 // (in topic, when given) and returns the groups with findings: one per
 // topic, or with bySender one per topic and sending token (#320). Topics
@@ -100,7 +93,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		return nil, err
 	}
 	defer rows.Close()
-	ignored, off, dismissed := map[formatIgnore]bool{}, []string{}, []formatDismissed{}
+	ignored, off, dismissed := map[formatIgnore]bool{}, []string{}, []formatIgnore{}
 	for rows.Next() {
 		var g formatIgnore
 		if err := rows.Scan(&g.Topic, &g.Rule, &g.SenderID); err != nil {
@@ -112,30 +105,11 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		if ignored[g] = true; g.Rule == "" {
 			off = append(off, g.Topic)
 		} else {
-			dismissed = append(dismissed, formatDismissed{formatIgnore: g})
+			dismissed = append(dismissed, g)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
-	}
-	rows.Close()
-	names := map[string]string{}
-	name := func(id string) (string, error) {
-		if _, ok := names[id]; !ok {
-			var n string
-			if err := s.db.QueryRowContext(r.Context(), `SELECT name FROM tokens WHERE id = ?`, id).Scan(&n); err != nil && err != sql.ErrNoRows {
-				return "", err
-			}
-			names[id] = n
-		}
-		return names[id], nil
-	}
-	for i, d := range dismissed {
-		if d.SenderID != "" {
-			if dismissed[i].Sender, err = name(d.SenderID); err != nil {
-				return nil, err
-			}
-		}
 	}
 	// Off topics are left out in the query, so they never use up the 500.
 	lq := ListQuery{State: "all", Limit: 500, Skip: off}
@@ -146,6 +120,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 	if err != nil {
 		return nil, err
 	}
+	names := map[string]string{}
 	groups := map[[2]string]*formatTopic{}
 	checked := len(ns)
 	for _, n := range ns {
@@ -157,9 +132,14 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		if t == nil {
 			t = &formatTopic{Topic: n.Topic, SenderID: key[1], Findings: make([]formatFinding, len(formatRules))}
 			if t.SenderID != "" {
-				if t.Sender, err = name(t.SenderID); err != nil {
-					return nil, err
+				if _, ok := names[t.SenderID]; !ok {
+					var name string
+					if err := s.db.QueryRowContext(r.Context(), `SELECT name FROM tokens WHERE id = ?`, t.SenderID).Scan(&name); err != nil && err != sql.ErrNoRows {
+						return nil, err
+					}
+					names[t.SenderID] = name
 				}
+				t.Sender = names[t.SenderID]
 			}
 			groups[key] = t
 		}

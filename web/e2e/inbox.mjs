@@ -1145,6 +1145,9 @@ try {
     await click(dis.getByRole('button', { name: 'Undo' }));
     await botG.waitFor();
     assert.equal(await sp.locator('[data-format-dismissed-item^="fmtchk/"]').count(), 0, 'Undo left the dismissal listed');
+    // Dismissed again so the read-only page below also lists a dismissal by the bot.
+    await click(botG.locator('li', { hasText: 'No title' }).getByRole('button', { name: 'Dismiss for this sender' }));
+    await dis.waitFor();
 
     const ro = execFileSync(bin, ['token', 'create', '--name', 'fmt-ro', '--scope', 'read', '--topics', 'fmtchk'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     const rctx = await browser.newContext();
@@ -1153,7 +1156,8 @@ try {
     await rp.goto(base + '/app/settings');
     // Not an admin, so other people's devices are not named (#245).
     await rp.locator('[data-format-topic="fmtchk/"]', { hasText: 'fmtchk from another device' }).first().waitFor();
-    assert.equal(await rp.locator('[data-format-check]', { hasText: 'fmt-bot' }).count(), 0, 'a read-only device sees the bot\'s name');
+    await rp.locator('[data-format-dismissed-item="fmtchk/no_title/"]', { hasText: 'from another device' }).waitFor();
+    assert.ok(!(await rp.locator('[data-format-check]').innerHTML()).includes('fmt-bot'), 'a read-only device sees the bot\'s name, in text or markup');
     assert.equal(await rp.locator('[data-format-dismiss], [data-format-off]').count(), 0, 'a read-only device got dismiss buttons');
     await rctx.close();
     await ctx.close();

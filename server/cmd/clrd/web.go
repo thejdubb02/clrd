@@ -188,21 +188,19 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			// Name only senders this token may see in Linked devices (#245):
 			// anyone else's shows as another device, and its prompt, which
 			// names the token, is left out.
-			seen := map[string]bool{}
+			seen := map[string]string{} // ID to name
 			for _, d := range snap.Linked {
-				seen[d.ID] = true
+				seen[d.ID] = d.Name
 			}
 			for i, g := range snap.Format {
 				snap.Format[i].CanFix = tok.MaySilence(g.Topic) // the same publish check
-				if g.SenderID != "" && !seen[g.SenderID] {
+				if g.SenderID != "" && seen[g.SenderID] == "" {
 					snap.Format[i].Sender, snap.Format[i].Prompt = "", ""
 				}
 			}
 			for i, d := range snap.FormatDismissed {
 				snap.FormatDismissed[i].CanFix = tok.MaySilence(d.Topic)
-				if !seen[d.SenderID] {
-					snap.FormatDismissed[i].Sender = ""
-				}
+				snap.FormatDismissed[i].Sender = seen[d.SenderID] // the server sends no names here
 			}
 			off, _ := fc["off"].([]string)
 			for _, t := range off {
