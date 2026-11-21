@@ -48,7 +48,9 @@ The format check looks at the newest 500 messages you can read and lists, per
 topic, what could be better: Markdown sent as plain text, `:name:` shortcodes
 clrd does not know, no title, messages over 2000 characters, and raw JSON. Each
 topic comes with a prompt to paste into your agent or LLM so it can fix the
-program that sends them. The prompt holds no token. The check only gives
+program that sends them. The prompt holds no token, and its example message
+shows anything that looks like a password or key as `[hidden]`. Read it
+before you paste: a short secret with no label can still slip through. The check only gives
 advice: it never changes or blocks a message.
 
 ```sh

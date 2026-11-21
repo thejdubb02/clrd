@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -119,7 +121,9 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string) (map[str
 	return map[string]any{"checked": len(ns), "problems": problems, "topics": topics}, nil
 }
 
-// excerpt is the title and the first 200 characters of the message.
+// excerpt is the title and the first 200 characters of the message, with
+// anything that looks like a secret hidden (#315): the prompt is pasted into
+// an agent, so a key a sender put in a message must not ride along.
 func excerpt(n *Notification) string {
 	m := []rune(n.Message)
 	s := string(m[:min(len(m), 200)])
@@ -129,7 +133,29 @@ func excerpt(n *Notification) string {
 	if n.Title != "" {
 		s = n.Title + "\n" + s
 	}
-	return s
+	return hideSecrets(s)
+}
+
+// secretValue is a value after password=, token: and the like, or after
+// Bearer; secretURL is the password in user:pass@host; secretLike is a long
+// run mixing letters and digits, as keys and tokens are.
+var (
+	secretValue = regexp.MustCompile(`(?i)(\b(?:passw(?:or)?d|pass|secret|token|api[_-]?key|key|auth)["']?\s*[:=]\s*["']?|\bbearer\s+)[^\s"',;&]+`)
+	secretURL   = regexp.MustCompile(`(://[^/\s:@]+:)[^/\s@]+@`)
+	secretLike  = regexp.MustCompile(`[A-Za-z0-9_+/=-]{20,}`)
+)
+
+// ponytail: pattern guesses, not a scanner; a short secret with no keyword
+// before it still shows. Fine for an example the user reads before pasting.
+func hideSecrets(s string) string {
+	s = secretURL.ReplaceAllString(s, "${1}[hidden]@")
+	s = secretValue.ReplaceAllString(s, "${1}[hidden]")
+	return secretLike.ReplaceAllStringFunc(s, func(v string) string {
+		if strings.ContainsAny(v, "0123456789") && strings.IndexFunc(v, unicode.IsLetter) >= 0 {
+			return "[hidden]"
+		}
+		return v
+	})
 }
 
 // fixPrompt is a prompt for the user's agent: what is wrong, an example, the
