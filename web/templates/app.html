@@ -1,7 +1,7 @@
 {{define "app"}}{{template "head" .}}<meta name="robots" content="noindex">
-<script src="{{base}}/static/vendor/basecoat.min.js" defer></script>
-<script src="{{base}}/static/vendor/command.min.js" defer></script>
-<script src="{{base}}/static/inbox.js" defer></script>
+<script src="{{static "vendor/basecoat.min.js"}}" defer></script>
+<script src="{{static "vendor/command.min.js"}}" defer></script>
+<script src="{{static "inbox.js"}}" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
@@ -225,7 +225,7 @@
       <div class="flex gap-2"><button class="btn" data-variant="primary" type="button" data-link-approve>Approve</button><button class="btn" data-variant="outline" type="button" data-link-deny>Deny</button></div>
     </div>
   </section>
-  <script src="{{base}}/static/pair.js" defer></script>
+  <script src="{{static "pair.js"}}" defer></script>
   <section class="grid gap-3" aria-labelledby="send-h">
     <h2 id="send-h" class="text-base font-semibold">Send a test notification</h2>
     <p class="text-body text-sm/relaxed">Run this with a token that has the publish scope. It should appear on every device within a second.</p>
