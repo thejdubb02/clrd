@@ -615,6 +615,7 @@
       let p = c.querySelector('[data-note]');
       if (!p) { p = document.createElement('p'); p.className = 'meta w-full'; p.dataset.note = ''; p.setAttribute('role', 'status'); b.form.append(p); }
       p.textContent = why;
+      say(why); // a live redraw can replace the card, so the toast says it too
       return r.ok && refresh();
     }
     done.snooze = n.snooze_until ? `Snoozed until ${fmt.format(new Date(n.snooze_until))}` : 'Snoozed';
