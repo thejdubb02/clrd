@@ -52,9 +52,17 @@ type Notification struct {
 	StateByID   string      `json:"state_by_id"`
 	Reply       string      `json:"reply"` // the reply action tapped, "" until someone answers
 	SnoozeUntil *time.Time  `json:"snooze_until"`
-	CreatedAt   time.Time   `json:"created_at"`
+	Repeat      *Repeat     `json:"repeat"` // re-alert until answered (docs/repeat.md), or nil
+	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Seq         int64       `json:"seq"`
+}
+
+// Repeat is how often a notification has alerted again, and when it will
+// next; Next is nil once the repeats stopped.
+type Repeat struct {
+	Count int        `json:"count"`
+	Next  *time.Time `json:"next"`
 }
 
 // Action is a link (URL) or an answer button (Reply), never both.
