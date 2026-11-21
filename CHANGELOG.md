@@ -20,6 +20,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: the sound you pick is saved on the server for this phone, so an
+  agent can read and change it over the API or MCP and the phone follows at
+  once. A sound picked before this moves to the server on the next connect,
+  and one the server refuses stays on the phone and wins (#289).
+
 - Server: the format check's example message, which goes into the prompt you
   paste into your agent, now shows passwords, keys and tokens in it as
   `[hidden]` (#315).

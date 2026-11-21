@@ -710,8 +710,9 @@ private fun SnoozeSettings(app: App) {
 private fun SoundSettings(app: App, resumes: Int) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
-    var sound by remember { mutableStateOf(app.sound) }
+    val sound by app.soundNow.collectAsState() // follows a change from the server or an agent (#289)
     var saves by remember { mutableStateOf(0) } // bumped once a save has made the channels, so the check reads them
+    var why by remember { mutableStateOf<String?>(null) } // why the choice stays on this phone only
     val overridden = remember(sound, resumes, saves) { app.tray.soundOverridden(sound) }
     var playing by remember { mutableStateOf<android.media.Ringtone?>(null) }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { playing?.stop() } }
@@ -722,8 +723,8 @@ private fun SoundSettings(app: App, resumes: Int) {
     Sounds.NAMES.forEach { name ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             RadioButton(selected = name == sound, onClick = {
-                sound = name
-                app.io.execute { app.saveSound(name); saves++ }
+                app.soundNow.value = name
+                app.io.execute { why = app.pickSound(name); saves++ }
             })
             Text(stringResource(soundLabel(name)), color = b.ink, modifier = Modifier.weight(1f))
             Sounds.uri(ctx, name)?.let { uri ->
@@ -734,6 +735,7 @@ private fun SoundSettings(app: App, resumes: Int) {
             }
         }
     }
+    why?.let { Text(it, color = b.slate, fontSize = 13.sp) }
     if (overridden) {
         Text(stringResource(R.string.sound_overridden), color = b.signal, fontSize = 13.sp)
         TextButton(onClick = {

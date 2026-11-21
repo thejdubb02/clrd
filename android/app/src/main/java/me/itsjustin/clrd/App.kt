@@ -69,7 +69,50 @@ class App : Application() {
         val s = Sounds.known(name)
         tray.createChannels(s)
         prefs.edit().putString("sound", s).commit()
+        soundNow.value = s
         RoomStore(this).reconcile()
+    }
+
+    /** [sound] for Settings to follow, so a change from the server or an agent shows while it is open. */
+    val soundNow by lazy { MutableStateFlow(sound) }
+
+    /**
+     * A choice made on this phone that the server does not have yet (refused, offline, or made before #289).
+     * It wins over the server's until the server takes it, the same as the web inbox.
+     */
+    val soundPending: String? get() = prefs.getString("sound_pending", null)
+
+    /** The person picked [name] in Settings: play it here at once, then tell the server. Call on [io]. Returns [pushSound]'s answer. */
+    fun pickSound(name: String): String? {
+        prefs.edit().putString("sound_pending", Sounds.known(name)).commit() // first, so a crash after it cannot let the server's old choice win
+        saveSound(name)
+        return pushSound()
+    }
+
+    /**
+     * Sends [soundPending] to the server (docs/SPEC.md section 2.2), one at a time on [io].
+     * Null when the server has it (or nothing waits), else why it stays on this phone only.
+     */
+    fun pushSound(): String? {
+        val s = soundPending ?: return null
+        if (!configured) return getString(R.string.sound_phone_only, getString(R.string.sound_no_server))
+        return try {
+            api().put("/api/v1/settings", JSONObject().put("sound", s).toString())
+            if (soundPending == s) prefs.edit().remove("sound_pending").commit()
+            null
+        } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
+            getString(R.string.sound_phone_only, (e as? HttpError)?.message ?: getString(R.string.sound_no_connection))
+        }
+    }
+
+    /**
+     * The server's sound for this phone, from a settings message. Applied on the sync thread before the
+     * next event, so a notification sent right after the change plays the new sound. A pending choice is
+     * sent instead of being overwritten.
+     */
+    private fun serverSound(name: String) {
+        if (soundPending != null) io.execute { pushSound() }
+        else if (Sounds.known(name) != sound) saveSound(name)
     }
 
     /**
@@ -85,6 +128,7 @@ class App : Application() {
 
     /** Keeps the snooze part of a server `settings` message. */
     fun saveSettings(o: org.json.JSONObject) {
+        if (o.has("sound")) serverSound(o.optString("sound"))
         val s = Snooze.from(o) ?: return
         prefs.edit().putString("snooze", s.json()).apply()
         snooze.value = s
@@ -111,7 +155,7 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").apply()
+                prefs.edit().remove("snooze").remove("sound_pending").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
                 tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
@@ -127,6 +171,10 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         tray.createChannels()
+        // A sound picked before the server kept it (#282) goes to the server once, on the next connect.
+        if (!prefs.getBoolean("sound_moved", false)) {
+            prefs.edit().apply { if (sound != Sounds.DEFAULT) putString("sound_pending", sound) }.putBoolean("sound_moved", true).apply()
+        }
     }
 
     /**

@@ -88,6 +88,9 @@
     <string name="sound_soft">Soft</string>
     <string name="sound_overridden">This phone\'s own notification settings changed the sound or turned it down for clrd, so they win over the choice above.</string>
     <string name="sound_open_settings">Open notification settings</string>
+    <string name="sound_phone_only">Saved on this phone only: %1$s It is sent again on the next connect.</string>
+    <string name="sound_no_connection">no connection.</string>
+    <string name="sound_no_server">no server set up.</string>
     <!-- Group summary in the tray: how many notifications a topic's stack holds. -->
     <plurals name="tray_stack">
         <item quantity="one">%1$d notification</item>
