@@ -56,6 +56,7 @@ type Token struct {
 	Scopes     []string   `json:"scopes"`
 	Topics     []string   `json:"topics"`           // empty = every topic
 	Grants     []Grant    `json:"grants,omitempty"` // set = only these, in order
+	Approve    string     `json:"approve"`          // may it answer approval requests: allowed or denied (#187)
 	CreatedAt  time.Time  `json:"created_at"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
 }
@@ -138,6 +139,9 @@ func checkToken(t *Token) error {
 			return err
 		}
 	}
+	if t.Approve != ApproveAllowed && t.Approve != ApproveDenied {
+		return errf(400, "bad_request", "approve must be %s or %s", ApproveAllowed, ApproveDenied)
+	}
 	if len(t.Grants) == 0 {
 		return nil
 	}
@@ -159,6 +163,9 @@ func checkToken(t *Token) error {
 
 // insertToken stores t with the hash of its secret.
 func insertToken(ctx context.Context, db execer, t *Token, hash string) error {
+	if t.Approve == "" {
+		t.Approve = ApproveDenied // a script or agent token, unless the user says otherwise (#187)
+	}
 	if err := checkToken(t); err != nil {
 		return err
 	}
@@ -170,8 +177,8 @@ func insertToken(ctx context.Context, db execer, t *Token, hash string) error {
 		b, _ := json.Marshal(t.Grants)
 		grants = string(b)
 	}
-	_, err := db.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, grants, created_at) VALUES (?,?,?,?,?,?,?)`,
-		t.ID, t.Name, hash, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), grants, ms(t.CreatedAt))
+	_, err := db.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, grants, created_at, approve) VALUES (?,?,?,?,?,?,?,?)`,
+		t.ID, t.Name, hash, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), grants, ms(t.CreatedAt), t.Approve)
 	return err
 }
 
@@ -209,8 +216,8 @@ func splitList(s string) []string {
 
 // CreateToken stores a new token and returns it with its secret value,
 // which is shown once and never stored.
-func (s *Server) CreateToken(ctx context.Context, name string, scopes, topics []string) (*Token, string, error) {
-	return s.createToken(ctx, &Token{Name: name, Scopes: scopes, Topics: topics})
+func (s *Server) CreateToken(ctx context.Context, name, approve string, scopes, topics []string) (*Token, string, error) {
+	return s.createToken(ctx, &Token{Name: name, Scopes: scopes, Topics: topics, Approve: approve})
 }
 
 func (s *Server) createToken(ctx context.Context, t *Token) (*Token, string, error) {
@@ -222,14 +229,14 @@ func (s *Server) createToken(ctx context.Context, t *Token) (*Token, string, err
 	return t, raw, nil
 }
 
-const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at`
+const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve`
 
 func scanToken(r scanner) (*Token, error) {
 	var t Token
 	var scopes, topics, grants string
 	var created int64
 	var seen sql.NullInt64
-	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen); err != nil {
+	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve); err != nil {
 		return nil, err
 	}
 	if grants != "" {
@@ -494,8 +501,15 @@ func (s *Server) childToken(ctx context.Context, access *Token, parentID, name s
 	if err != nil {
 		return nil, "", err
 	}
-	// Only while the parent exists, so a racing revoke cannot miss this one.
-	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id, phone) SELECT ?, id, ? FROM tokens WHERE id = ?`, st.ID, phone, parentID)
+	// The approve setting comes from access as stored now, not as it was when
+	// a pairing captured it: a session can never answer more than its token (#187).
+	err = s.db.QueryRowContext(ctx, `UPDATE tokens SET approve = (SELECT approve FROM tokens WHERE id = ?) WHERE id = ? RETURNING approve`,
+		access.ID, st.ID).Scan(&st.Approve)
+	var res sql.Result
+	if err == nil {
+		// Only while the parent exists, so a racing revoke cannot miss this one.
+		res, err = s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id, phone) SELECT ?, id, ? FROM tokens WHERE id = ?`, st.ID, phone, parentID)
+	}
 	if err == nil {
 		if n, _ := res.RowsAffected(); n == 0 {
 			err = errf(401, "unauthorized", "token revoked")
@@ -670,7 +684,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 	if name == "" {
 		name = "admin"
 	}
-	t, raw, err := s.CreateToken(r.Context(), name, []string{ScopeAdmin}, nil)
+	t, raw, err := s.CreateToken(r.Context(), name, ApproveAllowed, []string{ScopeAdmin}, nil) // the person at the setup page
 	if err != nil {
 		return err
 	}

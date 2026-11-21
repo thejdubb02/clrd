@@ -168,7 +168,7 @@ func realServer(t *testing.T) (*server.Server, *httptest.Server, string) {
 	mountWeb(s, "", false)
 	ts := httptest.NewServer(s)
 	t.Cleanup(ts.Close)
-	_, raw, err := s.CreateToken(context.Background(), "phone", []string{"admin"}, nil)
+	_, raw, err := s.CreateToken(context.Background(), "phone", "allowed", []string{"admin"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,8 +270,12 @@ func TestActForm(t *testing.T) {
 // for whoever waits on it, by this browser, and a stale card cannot answer.
 func TestReplyForm(t *testing.T) {
 	s, ts, raw := realServer(t)
+	_, agent, err := s.CreateToken(context.Background(), "agent", "", []string{"publish"}, nil) // not the browser's own token (#187)
+	if err != nil {
+		t.Fatal(err)
+	}
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/notifications", strings.NewReader(`{"topic":"agents","message":"merge?","actions":[{"label":"Yes","reply":"yes"},{"label":"No","reply":"no"}]}`))
-	req.Header.Set("Authorization", "Bearer "+raw)
+	req.Header.Set("Authorization", "Bearer "+agent)
 	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 200 {
 		t.Fatalf("publish: %v %v", err, res)
 	}
@@ -334,11 +338,11 @@ func act(t *testing.T, c *http.Client, base, id, action string) server.Notificat
 func TestDeviceFamily(t *testing.T) {
 	s, ts, _ := realServer(t)
 	ctx := context.Background()
-	_, mine, err := s.CreateToken(ctx, "my phone", []string{"read", "publish"}, nil)
+	_, mine, err := s.CreateToken(ctx, "my phone", "allowed", []string{"read", "publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, theirs, err := s.CreateToken(ctx, "their phone", []string{"read", "publish"}, nil)
+	_, theirs, err := s.CreateToken(ctx, "their phone", "allowed", []string{"read", "publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

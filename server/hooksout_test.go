@@ -69,8 +69,8 @@ func TestHooksOut(t *testing.T) {
 	a := send("a")
 	b := send("b", map[string]any{"label": "Yes", "reply": "yes"})
 	c := send("c")
-	call(t, ts, "POST", "/api/v1/notifications/"+a+"/dismiss", admin, nil) // not subscribed
-	call(t, ts, "POST", "/api/v1/notifications/"+b+"/reply", admin, map[string]any{"reply": "yes"})
+	call(t, ts, "POST", "/api/v1/notifications/"+a+"/dismiss", admin, nil)                                                                     // not subscribed
+	call(t, ts, "POST", "/api/v1/notifications/"+b+"/reply", mkToken(t, s, "phone", []string{ScopeRead}, nil), map[string]any{"reply": "yes"}) // not the sender (#187)
 	call(t, ts, "POST", "/api/v1/notifications/"+c+"/resolve", admin, nil)
 	if err := s.deliverHooks(ctx); err != nil {
 		t.Fatal(err)

@@ -29,7 +29,7 @@ func newTest(t *testing.T) (*Server, *httptest.Server, string) {
 
 func mkToken(t *testing.T, s *Server, name string, scopes, topics []string) string {
 	t.Helper()
-	_, raw, err := s.CreateToken(context.Background(), name, scopes, topics)
+	_, raw, err := s.CreateToken(context.Background(), name, "allowed", scopes, topics)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,6 +255,12 @@ func TestSessionCookieAndSetup(t *testing.T) {
 	if res.StatusCode != 200 || !strings.Contains(string(b), "clrd_") || len(res.Cookies()) == 0 {
 		t.Fatalf("setup POST: %d %s", res.StatusCode, b)
 	}
+	// A fresh install has an approver: the setup token and its browser (#187).
+	var all, allowed int
+	s2.db.QueryRow(`SELECT COUNT(*), COUNT(*) FILTER (WHERE approve = 'allowed') FROM tokens`).Scan(&all, &allowed)
+	if all == 0 || allowed != all {
+		t.Fatalf("setup tokens: %d of %d allowed", allowed, all)
+	}
 	if res, _ := noRedirect.PostForm(ts2.URL+"/setup", url.Values{"code": {code}}); res.StatusCode != 404 {
 		t.Fatalf("setup code reused: %d", res.StatusCode)
 	}
@@ -434,7 +440,7 @@ func TestDotKeysRejected(t *testing.T) {
 func TestGetHonoursContext(t *testing.T) {
 	s, ts, admin := newTest(t)
 	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "title": "x"})
-	tok, _, err := s.CreateToken(context.Background(), "reader", []string{ScopeRead}, nil)
+	tok, _, err := s.CreateToken(context.Background(), "reader", "allowed", []string{ScopeRead}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +457,7 @@ func TestGetHonoursContext(t *testing.T) {
 // The last-seen write is part of the request: it stops when the request does (#32).
 func TestTouchHonoursContext(t *testing.T) {
 	s, _, _ := newTest(t)
-	tok, _, err := s.CreateToken(context.Background(), "phone", []string{ScopeRead}, nil)
+	tok, _, err := s.CreateToken(context.Background(), "phone", "allowed", []string{ScopeRead}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +633,7 @@ func TestReplyColumnAdded(t *testing.T) {
 		if err != nil {
 			t.Fatalf("start %d: %v", i, err)
 		}
-		tok, _, _ := s.CreateToken(context.Background(), "a", []string{ScopeAdmin}, nil)
+		tok, _, _ := s.CreateToken(context.Background(), "a", "allowed", []string{ScopeAdmin}, nil)
 		if n, err := s.Publish(context.Background(), tok, PublishInput{Topic: "infra", Message: "m",
 			Icon: "https://example.com/i.png"}); err != nil || n.Icon != "https://example.com/i.png" {
 			t.Fatalf("publish on start %d: %v", i, err)

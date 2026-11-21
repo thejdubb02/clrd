@@ -120,7 +120,7 @@ func TestRepeat(t *testing.T) {
 	id = pub(map[string]any{"repeat": "5m", "actions": []map[string]any{{"label": "Yes", "reply": "yes"}}})
 	shown := get(id).Seq
 	due(id)
-	if code, out := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", admin, map[string]any{"reply": "yes", "seq": shown}); code != 200 {
+	if code, out := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", mkToken(t, s, "phone", []string{ScopeRead}, nil), map[string]any{"reply": "yes", "seq": shown}); code != 200 {
 		t.Fatalf("reply after a re-alert: %d %v", code, out)
 	}
 

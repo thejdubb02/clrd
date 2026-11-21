@@ -9,6 +9,15 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ## Unreleased
 
+### Security
+
+- Server: each token, phone and browser now has an "approve" setting,
+  allowed or denied. Only an allowed device can tap a reply button, and no
+  token can answer a request it sent, so an agent cannot approve its own
+  permission prompts. Linked phones and browsers stay allowed on upgrade;
+  plain tokens start denied (`clrd token create --approve allowed` to make an
+  allowed one). A device can lower its own setting but never raise it. (#187)
+
 ### Fixed
 
 - Server: the format check's example message, which goes into the prompt you

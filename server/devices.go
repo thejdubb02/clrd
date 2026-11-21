@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -27,7 +28,8 @@ type LinkedDevice struct {
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	This       bool       `json:"this"` // the token asking
 	CanUnlink  bool       `json:"can_unlink"`
-	Sound      string     `json:"sound"` // one of GET /api/v1/sounds
+	Sound      string     `json:"sound"`   // one of GET /api/v1/sounds
+	Approve    string     `json:"approve"` // allowed or denied: may it answer approval requests (#187)
 	// Live sync state (#300): connected has a stream open now, caught_up has
 	// one past its replay, synced_seq is the last event seq the server sent it.
 	Connected bool  `json:"connected"`
@@ -45,7 +47,7 @@ func (s *Server) devicesMsg(ctx context.Context, tok *Token) ([]byte, string, er
 	}
 	var key strings.Builder
 	for _, d := range ds {
-		fmt.Fprintf(&key, "%s %t %t,", d.ID, d.Connected, d.CaughtUp)
+		fmt.Fprintf(&key, "%s %t %t %s,", d.ID, d.Connected, d.CaughtUp, d.Approve)
 	}
 	msg, err := json.Marshal(struct {
 		Type    string         `json:"type"`
@@ -139,6 +141,27 @@ func (s *Server) Devices(ctx context.Context, tok *Token) ([]LinkedDevice, error
 	return s.devices(ctx, s.db, tok)
 }
 
+// deviceTx locks s.mu, opens a transaction (unlinks wait for its commit) and
+// finds device id in tok's device list, which must hold tok itself too, else
+// 404. The caller rolls back and unlocks s.mu, also on error (#299).
+func (s *Server) deviceTx(ctx context.Context, tok *Token, id string) (*sql.Tx, LinkedDevice, error) {
+	var d LinkedDevice
+	s.mu.Lock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, d, err
+	}
+	ds, err := s.devices(ctx, tx, tok)
+	i := slices.IndexFunc(ds, func(d LinkedDevice) bool { return d.ID == id })
+	if err == nil && (i < 0 || !slices.ContainsFunc(ds, func(d LinkedDevice) bool { return d.ID == tok.ID })) {
+		err = errf(404, "not_found", "device not found")
+	}
+	if err == nil {
+		d = ds[i]
+	}
+	return tx, d, err
+}
+
 // devices is Devices read through q, so a write can check inside its own
 // transaction (#299).
 func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDevice, error) {
@@ -153,7 +176,7 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 	}
 	rows, err := q.QueryContext(ctx, `WITH RECURSIVE k(id) AS
 	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name
+	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, t.approve
 	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id
 	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, top, all)
 	if err != nil {
@@ -167,7 +190,7 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 		var seen sql.NullInt64
 		var phone sql.NullBool
 		var via sql.NullString
-		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via, &d.Approve); err != nil {
 			return nil, err
 		}
 		d.LinkedAt, d.Via, d.This, d.CanUnlink = fromMS(created), via.String, d.ID == tok.ID, phone.Valid

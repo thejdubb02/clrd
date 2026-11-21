@@ -219,6 +219,13 @@ answers the agent. The tap clears the notification on every other device.
   with an error and the agent shows its normal prompt on screen.
 - The token needs `read` and `publish`. Behind a reverse proxy, allow requests
   to run 10 minutes (nginx: `proxy_read_timeout 600s;`).
+- Give the hook its own token, never your phone's. A token cannot answer a
+  request it sent, nor can a phone or browser linked from it.
+- Only a device allowed to approve can tap Allow or Deny. The setup token and
+  the phones and browsers you link are allowed; a new token is denied, so an
+  agent's token cannot approve its own prompts. Change it per device with
+  `PUT /api/v1/devices/{id}/approve`. Locked out? `clrd token create
+  --approve allowed` on the server makes an allowed token.
 
 Claude Code, in `~/.claude/settings.json` (with `CLRD_TOKEN` set in your
 environment):

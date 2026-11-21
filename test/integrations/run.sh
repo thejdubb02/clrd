@@ -35,7 +35,9 @@ for name in "${names[@]}"; do
   export WORK CLRD CLRD_PORT
   export CLRD_DB=$WORK/clrd.db CLRD_LISTEN=127.0.0.1:$CLRD_PORT CLRD_BASE_URL=$CLRD
   CLRD_TOKEN=$("$BIN" token create --name "$name" --scope admin 2>/dev/null)
-  export CLRD_TOKEN
+  # The human's phone: allowed to approve, apart from the agent's token.
+  CLRD_PHONE=$("$BIN" token create --name phone --scope read --approve allowed 2>/dev/null)
+  export CLRD_TOKEN CLRD_PHONE
   "$BIN" >"$WORK/server.log" 2>&1 &
   server=$!
   echo "== $name"

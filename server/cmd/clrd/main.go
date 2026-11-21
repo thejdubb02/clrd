@@ -66,7 +66,7 @@ func run(args []string) error {
 const usage = `clrd: self-hosted notifications. Dismiss once, gone everywhere.
 
   clrd [serve]                 run the server (no settings needed)
-  clrd token create [--name me] [--scope read,publish|admin] [--topics a,b]
+  clrd token create [--name me] [--scope read,publish|admin] [--topics a,b] [--approve allowed]
   clrd token list
   clrd import ntfy --auth-file user.db --cache-file cache.db --default-access deny-all [--dry-run]
   clrd health                  exit 0 if the local server answers /healthz
@@ -91,10 +91,11 @@ func tokenCmd(opt server.Options, args []string) error {
 		name := fs.String("name", "cli", "device name, shown as state_by")
 		scope := fs.String("scope", "read,publish", "comma list of read, publish, admin")
 		topics := fs.String("topics", "", "optional comma list of allowed topics")
+		approve := fs.String("approve", "denied", "allowed lets it answer approval requests (Allow on an agent prompt)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		t, raw, err := s.CreateToken(context.Background(), *name, split(*scope), split(*topics))
+		t, raw, err := s.CreateToken(context.Background(), *name, *approve, split(*scope), split(*topics))
 		if err != nil {
 			return err
 		}

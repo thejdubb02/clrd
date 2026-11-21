@@ -27,7 +27,7 @@ func TestAgainstRealServer(t *testing.T) {
 	}
 	defer s.Close()
 	s.Mount("/mcp", New(s))
-	_, raw, err := s.CreateToken(context.Background(), "agent", []string{"read", "publish"}, nil)
+	_, raw, err := s.CreateToken(context.Background(), "agent", "allowed", []string{"read", "publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,11 +81,11 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 	}
 	defer s.Close()
 	s.Mount("/mcp", New(s))
-	_, admin, err := s.CreateToken(context.Background(), "agent", []string{"read", "publish", "admin"}, nil)
+	_, admin, err := s.CreateToken(context.Background(), "agent", "allowed", []string{"read", "publish", "admin"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, pub, err := s.CreateToken(context.Background(), "sender", []string{"read", "publish"}, nil)
+	_, pub, err := s.CreateToken(context.Background(), "sender", "allowed", []string{"read", "publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,6 +142,15 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 	cam := ok("create_token", map[string]any{"name": "cam", "scopes": []string{"read", "publish"},
 		"grants": []any{map[string]any{"topic": "home-*", "scopes": []string{"publish"}}}}, `"topic":"home-*"`, `"token":"clrd_`)
 	ok("tokens", nil, `"name":"cam"`)
+	// A denied admin agent cannot make itself an approver through MCP (#187).
+	_, dadmin, err := s.CreateToken(context.Background(), "denied agent", "denied", []string{"read", "admin"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, isErr := tool(dadmin, "create_token", map[string]any{"name": "me too", "scopes": []string{"read"}, "approve": "allowed"}); !isErr || !strings.Contains(text, "403") {
+		t.Fatalf("denied admin made an allowed token: %v %s", isErr, text)
+	}
+	ok("devices", nil, `"approve":"allowed"`)
 	ok("revoke_token", map[string]any{"id": cam["id"]})
 	if text, isErr := tool(cam["token"].(string), "topics", nil); !isErr || !strings.Contains(text, "401") {
 		t.Fatalf("revoked token still works: %v %s", isErr, text)
@@ -177,11 +186,11 @@ func TestClientSession(t *testing.T) {
 	s.Mount("/mcp", New(s))
 	ts := httptest.NewServer(s)
 	defer ts.Close()
-	_, agent, err := s.CreateToken(context.Background(), "agent", []string{"read", "publish"}, nil)
+	_, agent, err := s.CreateToken(context.Background(), "agent", "allowed", []string{"read", "publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, reader, err := s.CreateToken(context.Background(), "pixel-9", []string{"read"}, nil)
+	_, reader, err := s.CreateToken(context.Background(), "pixel-9", "allowed", []string{"read"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +301,7 @@ func TestTokenCheckedUpFront(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	_, pub, err := s.CreateToken(context.Background(), "sender", []string{"publish"}, nil)
+	_, pub, err := s.CreateToken(context.Background(), "sender", "allowed", []string{"publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,11 +331,11 @@ func TestReplyButtons(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	_, raw, err := s.CreateToken(context.Background(), "agent", []string{"read", "publish"}, nil)
+	_, raw, err := s.CreateToken(context.Background(), "agent", "allowed", []string{"read", "publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	phone, _, err := s.CreateToken(context.Background(), "pixel-9", []string{"read"}, nil)
+	phone, _, err := s.CreateToken(context.Background(), "pixel-9", "allowed", []string{"read"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,11 +387,11 @@ func TestApproveHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	_, raw, err := s.CreateToken(context.Background(), "laptop", []string{"read", "publish"}, nil)
+	_, raw, err := s.CreateToken(context.Background(), "laptop", "allowed", []string{"read", "publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	phone, _, err := s.CreateToken(context.Background(), "pixel-9", []string{"read"}, nil)
+	phone, _, err := s.CreateToken(context.Background(), "pixel-9", "allowed", []string{"read"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

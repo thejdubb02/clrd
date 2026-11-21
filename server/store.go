@@ -191,6 +191,7 @@ type Notification struct {
 	Actions     []Action    `json:"actions"`
 	Attachment  *Attachment `json:"attachment"`
 	file        string      // uploaded file id, "" for none or external
+	sender      string      // top token of the last sender's tree: it may not answer it (#187)
 	Reply       string      `json:"reply"` // the reply action tapped, "" until one is
 	State       string      `json:"state"`
 	StateBy     string      `json:"state_by"`
@@ -272,7 +273,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -316,6 +317,24 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add sessions phone column: %w", err)
 	}
+	// Who may answer approval requests (#187). Only on the run that adds the
+	// column, browsers and phones the user linked (a sessions row) start
+	// allowed so they keep working; plain tokens start denied. Never again,
+	// or a restart would undo a device the user set to denied. One
+	// transaction, so a crash between the two never leaves them denied.
+	mig, err := db.Begin()
+	if err == nil {
+		if _, err = mig.Exec(`ALTER TABLE tokens ADD COLUMN approve TEXT NOT NULL DEFAULT 'denied'`); err == nil {
+			if _, err = mig.Exec(`UPDATE tokens SET approve = 'allowed' WHERE id IN (SELECT token_id FROM sessions)`); err == nil {
+				err = mig.Commit()
+			}
+		}
+		mig.Rollback()
+	}
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add approve column: %w", err)
+	}
 	// After the loop: an old database only has the column once it ran.
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS notifications_file ON notifications(file) WHERE file != ''`); err != nil {
 		db.Close()
@@ -336,7 +355,7 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender`
 
 type scanner interface{ Scan(...any) error }
 
@@ -347,7 +366,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
-		&n.Silenced, &rep)
+		&n.Silenced, &rep, &n.sender)
 	if err != nil {
 		return nil, err
 	}
@@ -389,15 +408,15 @@ func saveNotification(tx *sql.Tx, n *Notification) error {
 		b, _ := json.Marshal(n.Repeat)
 		rep = string(b)
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(24)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(25)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep)
+		n.Silenced, rep, n.sender)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -615,6 +634,12 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	var replaced string // file id an upsert drops, removed after commit
 	var extra []Event   // a check-in resolving the topic's missed check-in alert
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		// The sender's token tree, kept now so signing the sending browser
+		// out later cannot free its parent to answer (#187).
+		sender, err := topIn(ctx, tx, tok.ID)
+		if err != nil {
+			return nil, err
+		}
 		if in.file != "" {
 			var used int64
 			// The row this upsert replaces does not count: its file goes.
@@ -644,7 +669,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			if err == nil {
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
-				replaced, n.Attachment, n.file, n.ExpiresAt, n.Repeat = n.file, in.Attachment, in.file, expires, repeat
+				replaced, n.Attachment, n.file, n.ExpiresAt, n.Repeat, n.sender = n.file, in.Attachment, in.file, expires, repeat, sender
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -667,7 +692,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
 			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions,
 			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires,
-			Repeat: repeat}
+			Repeat: repeat, sender: sender}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
@@ -920,6 +945,9 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 		}
 		if reply == "" || !slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply == reply }) {
 			return nil, errf(400, "bad_request", "%q is not one of this notification's replies", reply)
+		}
+		if err := mayApprove(ctx, tx, tok, n.sender); err != nil {
+			return nil, err
 		}
 		if n.Reply != "" {
 			return nil, errf(409, "conflict", "already answered %q by %s", n.Reply, n.StateBy)
