@@ -120,6 +120,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: a card's snooze menu offers "Silence <topic> for 1 hour", which mutes
+  the whole topic in one tap, with or without JavaScript. It shows only where
+  your device may silence that topic (#326).
 - Server: Pushover senders work. `POST /1/messages.json` takes Pushover's
   form, multipart or JSON body with a clrd app key (made by an admin, or an
   agent over MCP, shaped like a Pushover token), priority -2 to 2 with
