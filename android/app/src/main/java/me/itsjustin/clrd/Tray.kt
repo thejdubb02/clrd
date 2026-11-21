@@ -97,13 +97,15 @@ class Tray(private val ctx: Context) {
         )
         val keep = mine.map { it.id }.toSet()
         val gone = ours.map { it.id }.filter { it !in keep }.toSet()
+        val noticeUp = nm.activeNotifications.any { it.id == DND_ID && it.tag == null }
         // Cancelled by us first: Android's own cancel on channel delete can fire the delete intent, which reads as a swipe.
         nm.activeNotifications.filter { it.notification.channelId in gone }.forEach { nm.cancel(it.tag, it.id) }
         gone.forEach(nm::deleteNotificationChannel)
         // Android never lets an app change a channel's badge setting after creation, so the old channel is replaced.
         nm.deleteNotificationChannel("service")
         val had = ours.any { it.id in gone && it.id[1] == '5' && it.canBypassDnd() }
-        return dndLost(sound, had) && had
+        // A notice still up went with its old channel above; it comes back on the new one while the pass is still off.
+        return dndLost(sound, had) && (had || noticeUp)
     }
 
     /**
@@ -116,14 +118,13 @@ class Tray(private val ctx: Context) {
             .putExtra(Settings.EXTRA_CHANNEL_ID, Sounds.channel(5, sound))
         nm.notify(
             DND_ID,
-            NotificationCompat.Builder(ctx, Sounds.channel(3, sound))
+            NotificationCompat.Builder(ctx, Sounds.channel(5, sound)) // the channel it is about: muted only if urgent ones are
                 .setSmallIcon(R.drawable.ic_stat_clrd)
                 .setContentTitle(ctx.getString(R.string.dnd_notice_title))
                 .setContentText(ctx.getString(R.string.dnd_notice))
                 .setStyle(NotificationCompat.BigTextStyle().bigText(ctx.getString(R.string.dnd_notice)))
                 .setContentIntent(PendingIntent.getActivity(ctx, DND_ID, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
-                .setAutoCancel(true)
-                .build(),
+                .build(), // no auto cancel: it stays until the pass is back (see [dndLost])
         )
     }
 
@@ -160,6 +161,7 @@ class Tray(private val ctx: Context) {
     fun reconcile(rows: List<Notif>, muted: Set<String>) {
         val open = rows.map { it.id }.toSet()
         App.of(ctx).run { trayHidden = trayHidden.filterTo(HashSet()) { it in open } } // closed rows need no hiding
+        dndLost() // a pass turned back on in Android's settings takes the #380 notice with it on the next sync or launch
         val want = rows.map { TrayStep.plan(it, muted) }.filterIsInstance<TrayStep.Show>()
             .sortedByDescending { it.n.createdAt }.take(if (App.of(ctx).stack) 32 else 40)
         val wantIds = want.map { it.n.id }.toSet()

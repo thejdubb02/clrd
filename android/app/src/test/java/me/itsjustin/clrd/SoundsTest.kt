@@ -89,14 +89,17 @@ class SoundsTest {
         val open = shadowOf(n.contentIntent).savedIntent
         assertEquals(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS, open.action)
         assertEquals("p5-chime", open.getStringExtra(Settings.EXTRA_CHANNEL_ID))
+        assertEquals("on the channel it is about", "p5-chime", n.channelId)
 
-        nm.getNotificationChannel("p5-chime").setBypassDnd(true) // turned back on
-        assertFalse(app.tray.dndLost())
+        bg { app.saveSettings(org.json.JSONObject("""{"sound":"ding"}""")) } // another change while the pass is still off
+        assertEquals("the notice moves to the new channel", "p5-ding", shadowOf(nm).getNotification(null, Tray.DND_ID)?.channelId)
+
+        nm.getNotificationChannel("p5-ding").setBypassDnd(true) // turned back on in Android's settings
+        app.tray.reconcile(emptyList(), emptySet()) // the next sync
         assertNull("the notice goes once the pass is back", shadowOf(nm).getNotification(null, Tray.DND_ID))
 
-        bg { app.saveSettings(org.json.JSONObject("""{"sound":"ding"}""")) }
-        assertTrue(app.tray.dndLost()) // dropped again, so a new notice
         shadowOf(nm).cancelAll()
+        nm.getNotificationChannel("p5-ding").setBypassDnd(false) // the person turned it off themselves
         bg { app.saveSettings(org.json.JSONObject("""{"sound":"alert"}""")) }
         assertNull("no pass to lose, no notice", shadowOf(nm).getNotification(null, Tray.DND_ID))
         app.prefs.edit().remove("dnd_lost").commit()
