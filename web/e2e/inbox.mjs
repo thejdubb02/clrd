@@ -705,6 +705,19 @@ try {
     await arrive();
     assert.deepEqual(await played(), ['/assets/sounds/pop.wav'], 'the chosen sound plays');
 
+    // Repeat (#260): the card says how often it alerted and when next, each
+    // re-alert rings, and Ack stops it (the server checks every 15 s, so up to 75 s).
+    await api(phone, '/api/v1/notifications', { topic: 'sound', title: 'Pager', repeat: '1m', repeat_times: 2 });
+    const pager = sp.locator('article.card', { hasText: 'Pager' });
+    await pager.locator('[data-repeat]', { hasText: 'Alerted 1 time, next at' }).waitFor();
+    const rang = (await played()).length;
+    await pager.locator('[data-repeat]', { hasText: 'Alerted 2 times, next at' }).waitFor({ timeout: 90000 });
+    assert.equal((await played()).length, rang + 1, 'a re-alert rings');
+    await pager.getByRole('button', { name: 'Ack', exact: true }).click();
+    await pager.locator('.badge[data-state="acknowledged"]').waitFor(); // the card stays, so the line below is the repeat stopping
+    await pager.locator('[data-repeat]').waitFor({ state: 'detached' });
+    console.log('ok: a repeating alert rings again and shows its count until acked');
+
     // The choice lives on the server, per device (#297): saved there, set by an
     // agent while Settings is open, and a browser-only choice moves there.
     const mine = async () => (await (await ctx.request.get(base + '/api/v1/settings')).json()).sound;
