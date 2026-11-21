@@ -438,8 +438,9 @@ func TestNtfyCORS(t *testing.T) {
 		t.Error("default, foreign page opened a WebSocket")
 	}
 	// No Origin (a phone, curl) and clrd's own origin work.
-	if res := do("POST", "/alerts", "", "from a script"); res.StatusCode != 200 {
-		t.Errorf("no origin: %d", res.StatusCode)
+	// Vary even with no Origin, so a cache never hands this reply to a page.
+	if res := do("POST", "/alerts", "", "from a script"); res.StatusCode != 200 || res.Header.Get("Vary") != "Origin" {
+		t.Errorf("no origin: %d %q", res.StatusCode, res.Header.Get("Vary"))
 	}
 	if res := do("POST", "/alerts", ts.URL, "from clrd's page"); res.StatusCode != 200 {
 		t.Errorf("same origin: %d", res.StatusCode)

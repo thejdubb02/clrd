@@ -33,7 +33,10 @@ func (s *Server) ntfyOriginList(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.origins.Store(&list)
+	// A first read racing an admin's save must not overwrite the new list.
+	if !s.origins.CompareAndSwap(nil, &list) {
+		return *s.origins.Load(), nil
+	}
 	return list, nil
 }
 
@@ -42,6 +45,8 @@ func (s *Server) ntfyOriginList(ctx context.Context) ([]string, error) {
 // Origin, or from clrd's own pages, passes untouched.
 func (s *Server) ntfyCORS(w http.ResponseWriter, r *http.Request) error {
 	o := r.Header.Get("Origin")
+	// Every reply depends on Origin, so a cache must not share them.
+	w.Header().Add("Vary", "Origin")
 	if o == "" || s.sameOrigin(r) {
 		return nil
 	}
@@ -55,7 +60,6 @@ func (s *Server) ntfyCORS(w http.ResponseWriter, r *http.Request) error {
 		h.Set("Access-Control-Allow-Origin", "*")
 	case slices.Contains(list, strings.ToLower(o)):
 		h.Set("Access-Control-Allow-Origin", o)
-		h.Add("Vary", "Origin")
 	default:
 		return errf(403, "forbidden", "requests from %s are not allowed: an admin can add it with PUT /api/v1/ntfy/origins", o)
 	}
