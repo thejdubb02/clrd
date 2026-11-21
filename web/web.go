@@ -256,6 +256,7 @@ type Snapshot struct {
 	Formatting, Autolink, Favicons, LinkPreviews bool
 	TopicPreviews                                map[string]bool // overrides LinkPreviews for one topic
 	KeepClearedDays                              int             // days cleared messages are kept, 0 = forever
+	TopicKeepClearedDays                         map[string]int  // overrides KeepClearedDays for one topic
 	Sound                                        string          // this device's own sound (SPEC 2.2), "default" when unset
 	Format                                       []FormatTopic   // format check (#308), Settings only: topics with problems
 	Silences                                     []Silence       // running silences (docs/silences.md), Settings only
@@ -389,6 +390,15 @@ func (s Snapshot) PreviewsOn(topic string) bool {
 		return v
 	}
 	return s.LinkPreviews
+}
+
+// TopicKeep is a topic's own keep in days for the Settings select, or -1 when
+// it follows KeepClearedDays.
+func (s Snapshot) TopicKeep(topic string) int {
+	if v, ok := s.TopicKeepClearedDays[topic]; ok {
+		return v
+	}
+	return -1
 }
 
 // TopicPreview is a topic's override for the Settings select: "", "on" or "off".
