@@ -129,6 +129,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: a stack card in the app has a Clear button that clears every
+  notification in it at once, with Undo, as one bulk clear like the web's
+  stack Clear (#360).
+
 - Web: the empty-inbox tips have a Pause button, so they stop rotating for anyone, including screen reader users who never hover or focus them; Play starts them again (#352).
 - Web: a card's snooze menu offers "Silence <topic> for 1 hour", which mutes
   the whole topic in one tap, with or without JavaScript. It shows only where
