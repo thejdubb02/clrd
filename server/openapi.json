@@ -1862,6 +1862,85 @@
     ]
    }
   },
+  "/api/v1/gotify/apps": {
+   "post": {
+    "summary": "Create a Gotify app key (shown once)",
+    "description": "Admin with no topic limit. Makes a publish-only token for one topic whose secret is shaped like a Gotify app token (A and 14 characters), for senders such as shoutrrr and Watchtower that check the shape. The key works only on POST /message. Revoke it with DELETE /api/v1/tokens/{token_id}.",
+    "tags": [
+     "auth"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "description": "App name, used as the title when a message has none"
+         },
+         "topic": {
+          "type": "string"
+         },
+         "priority": {
+          "type": "integer",
+          "description": "Gotify priority (0 to 10) for messages that send none; left out, clrd's default"
+         }
+        },
+        "required": [
+         "name",
+         "topic"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The app; token is the key, shown once.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer",
+           "description": "The appid Gotify senders see"
+          },
+          "token": {
+           "type": "string"
+          },
+          "name": {
+           "type": "string"
+          },
+          "topic": {
+           "type": "string"
+          },
+          "token_id": {
+           "type": "string"
+          },
+          "defaultPriority": {
+           "type": "integer",
+           "nullable": true
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/ntfy/ignored": {
    "get": {
     "summary": "ntfy options received but ignored",

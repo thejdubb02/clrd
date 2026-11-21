@@ -149,6 +149,73 @@ func TestGotifyAuth(t *testing.T) {
 	}
 }
 
+// A Gotify app key: Gotify's shape, one topic, only on POST /message.
+func TestGotifyApps(t *testing.T) {
+	s, ts, admin := newTest(t)
+	code, app := call(t, ts, "POST", "/api/v1/gotify/apps", admin, map[string]any{"name": "Watchtower", "topic": "tv", "priority": 8})
+	key, _ := app["token"].(string)
+	if code != 200 || len(key) != 15 || key[0] != 'A' || app["id"] == nil || app["token_id"] == nil {
+		t.Fatalf("create: %d %v", code, app)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/gotify/apps", mkToken(t, s, "p", []string{ScopePublish}, nil), map[string]any{"name": "x", "topic": "tv"}); code != 403 {
+		t.Fatalf("create without admin: %d", code)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/gotify/apps", admin, map[string]any{"name": "x", "topic": "a*"}); code != 400 {
+		t.Fatalf("wildcard topic: %d", code)
+	}
+
+	// No priority in the message: the app's default. The appid is the app's.
+	code, m := gotifyPost(t, ts.URL+"/message", "application/json", `{"message":"updated"}`, map[string]string{"X-Gotify-Key": key})
+	if code != 200 || m["appid"] != app["id"] || m["priority"] != 8.0 || m["title"] != "Watchtower" {
+		t.Fatalf("publish: %d %v", code, m)
+	}
+	if n := latest(t, ts.URL, admin, "tv"); n["priority"] != 4.0 {
+		t.Fatalf("stored: %v", n)
+	}
+	// Bearer, as some Gotify senders send it.
+	if code, m = gotifyPost(t, ts.URL+"/message", "application/json", `{"message":"b","priority":2}`, map[string]string{"Authorization": "Bearer " + key}); code != 200 || m["priority"] != 2.0 {
+		t.Fatalf("bearer: %d %v", code, m)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/gotify/apps", admin, map[string]any{"name": "x", "topic": "tv", "priority": 11}); code != 400 {
+		t.Fatalf("priority 11: %d", code)
+	}
+	if code, _ = gotifyPost(t, ts.URL+"/message", "application/json", `{"message":"b"}`, map[string]string{"Authorization": "bearer  " + key}); code != 200 {
+		t.Fatalf("lower-case bearer: %d", code)
+	}
+	if code, m = gotifyPost(t, ts.URL+"/message", "application/json", `{"message":"b"}`, map[string]string{"Authorization": "Bearer Awrongwrongwron"}); code != 401 || m["errorCode"] != 401.0 {
+		t.Fatalf("wrong bearer: %d %v", code, m)
+	}
+	// An app with no default leaves clrd's.
+	_, two := call(t, ts, "POST", "/api/v1/gotify/apps", admin, map[string]any{"name": "Two", "topic": "two"})
+	if two["id"] == app["id"] {
+		t.Fatalf("same appid: %v %v", app, two)
+	}
+	gotifyPost(t, ts.URL+"/message?token="+two["token"].(string), "application/json", `{"message":"x"}`, nil)
+	if n := latest(t, ts.URL, admin, "two"); n["priority"] != 3.0 {
+		t.Fatalf("no default: %v", n)
+	}
+
+	// A clrd token as Bearer, spaced oddly, is still the ntfy path.
+	if code, m = gotifyPost(t, ts.URL+"/message", "text/plain", "plain", map[string]string{"Authorization": "Bearer  " + admin}); code != 200 || m["topic"] != "message" {
+		t.Fatalf("clrd bearer: %d %v", code, m)
+	}
+
+	// The key works nowhere else.
+	if code, _ := call(t, ts, "GET", "/api/v1/notifications?topic=tv", key, nil); code != 401 {
+		t.Fatalf("native API: %d", code)
+	}
+	if code, _ := raw(t, "PUT", ts.URL+"/tv", key, "x", nil); code != 401 {
+		t.Fatalf("ntfy publish: %d", code)
+	}
+	// Revoking the token kills the key.
+	if code, _ := call(t, ts, "DELETE", "/api/v1/tokens/"+app["token_id"].(string), admin, nil); code != 204 {
+		t.Fatalf("revoke: %d", code)
+	}
+	if code, _ := gotifyPost(t, ts.URL+"/message", "application/json", `{"message":"m"}`, map[string]string{"X-Gotify-Key": key}); code != 401 {
+		t.Fatalf("revoked key: %d", code)
+	}
+}
+
 func TestGotifyPriority(t *testing.T) {
 	for in, want := range map[int]int{-1: 1, 0: 1, 1: 2, 3: 2, 4: 3, 5: 3, 7: 3, 8: 4, 10: 4, 99: 4} {
 		if got := gotifyPriority(in); got != want {

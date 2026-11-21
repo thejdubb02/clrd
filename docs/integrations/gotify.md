@@ -33,8 +33,8 @@ Swap your Gotify URL for your clrd server and the app token for the clrd one:
 curl -fsS "https://clrd.example.com/message?token=clrd_..." -F "title=Backup done" -F "message=nightly backup finished" -F "priority=5"
 ```
 
-Every form Gotify takes works: the token in `?token=` or the `X-Gotify-Key`
-header, and the body as JSON, a form or multipart.
+Every form Gotify takes works: the token in `?token=`, the `X-Gotify-Key`
+header or `Authorization: Bearer`, and the body as JSON, a form or multipart.
 
 - `title` is optional. Left out, it is the token's name, as Gotify uses the
   app name.
@@ -58,13 +58,34 @@ header, and the body as JSON, a form or multipart.
 apprise -t "Backup done" -b "nightly backup finished" "gotifys://clrd.example.com/clrd_..."
 ```
 
-Not yet: shoutrrr (and so Watchtower's `gotify://` URLs) checks that the token
-looks like a Gotify token and refuses a clrd one before sending. Use
-Watchtower's ntfy URL meanwhile ([Watchtower](watchtower.md)).
+## Gotify-shaped keys (shoutrrr, Watchtower)
+
+shoutrrr, and so Watchtower's `gotify://` URLs, refuses any token that does
+not look like Gotify's (`A` and 14 characters). For those, make a Gotify app
+key with an admin token:
+
+```sh
+curl -fsS https://clrd.example.com/api/v1/gotify/apps \
+  -H "Authorization: Bearer clrd_..." \
+  -d '{"name":"Watchtower","topic":"docker"}'
+```
+
+The reply's `token` is the key, shown once; `id` is the `appid` messages
+report. Add `"priority": 5` for a default when a message sends none. The key
+publishes only to that topic and only on `POST /message`; revoke it like any
+token, with the reply's `token_id`. The MCP tool `create_gotify_app` does the
+same for an agent.
+
+```sh
+WATCHTOWER_NOTIFICATION_URL=gotify://clrd.example.com/A...
+```
+
+Add `?disabletls=yes` for a server on plain HTTP.
 
 ## Without a Gotify token
 
-A `POST /message` with no `?token=` or `X-Gotify-Key` is still ntfy's publish
+A `POST /message` with no `?token=`, `X-Gotify-Key` or Gotify key as Bearer
+is still ntfy's publish
 to the topic named `message`, so nothing that used that topic breaks.
 
 ## Auto-resolve
