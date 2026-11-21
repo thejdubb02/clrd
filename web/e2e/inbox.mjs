@@ -580,6 +580,23 @@ try {
     await sp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
     for (const id of ids) await sp.waitForFunction(async i => (await (await fetch(`/api/v1/notifications/${i}`)).json()).state === 'active', id);
     await stack.locator('[data-stack-count]', { hasText: '4 notifications' }).waitFor();
+    // J lands on the closed stack and Enter opens it (#227).
+    await sp.reload(); // nothing selected, so J starts from the top
+    await stack.waitFor();
+    for (let i = 0; i < 200 && !(await stack.evaluate(s => s.classList.contains('is-selected'))); i++) await sp.keyboard.press('j');
+    assert.equal(await stack.evaluate(s => s === document.activeElement && s.classList.contains('is-selected')), true, 'J skipped the closed stack');
+    await sp.keyboard.press('c');
+    await sp.waitForFunction(() => document.querySelector('[data-announce]').textContent === 'Open the stack to act on one notification.');
+    for (const id of ids) assert.equal((await get(laptop, id)).state, 'active', 'C on a stack cleared a card');
+    await sp.keyboard.press('Enter');
+    await item('Build 1 failed').waitFor({ state: 'visible' });
+    await stack.getByRole('button', { name: 'Hide' }).click();
+    await item('Build 1 failed').waitFor({ state: 'hidden' });
+    // Another device clears one inside the closed stack: the count and newest
+    // title change at once, not after the hidden card's exit timer (about 1.7 s).
+    await api(phone, `/api/v1/notifications/${ids[3]}/dismiss`);
+    await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor({ timeout: 1000 });
+    assert.equal(await stack.locator('[data-stack-latest]').textContent(), 'Build 3 failed');
     // A single topic's page never stacks.
     await sp.goto(`${base}/app?topic=ci-stack`);
     assert.equal(await stack.count(), 0, 'stacked on the topic page');

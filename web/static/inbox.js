@@ -77,18 +77,21 @@
   const cards = () => list ? [...list.querySelectorAll('.card[data-id]:not(.is-leaving)')] : [];
   const shown = () => cards().filter(c => !c.hidden); // not folded into a stack
 
-  // The card the keyboard works on (J and K). Kept by id: a refresh swaps the nodes.
+  // The card or closed stack the keyboard works on (J and K). Kept by id, or
+  // by topic for a stack: a refresh swaps the nodes.
+  const nav = () => list ? [...list.querySelectorAll('.card[data-id]:not(.is-leaving):not([hidden]), [data-stack]:not(.is-leaving)')] : [];
+  const key = c => c.dataset.id || 'stack:' + c.dataset.stack;
   let selId = null;
-  const selected = () => { const c = selId && card(selId); return c && !c.hidden ? c : null; };
+  const selected = () => (selId && nav().find(c => key(c) === selId)) || null;
   function select(c, focus = true) {
     list && list.querySelectorAll('.is-selected').forEach(x => x.classList.remove('is-selected'));
-    selId = c ? c.dataset.id : null;
+    selId = c ? key(c) : null;
     if (!c) return;
     c.classList.add('is-selected');
     if (focus) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest' }); }
   }
   const move = by => {
-    const all = shown(), i = all.indexOf(selected());
+    const all = nav(), i = all.indexOf(selected());
     const next = all[i < 0 ? (by > 0 ? 0 : all.length - 1) : Math.max(0, Math.min(all.length - 1, i + by))];
     if (next) select(next);
   };
@@ -112,7 +115,7 @@
   // Focus inside a stack, as the topic and which button, so a rebuild can put it back.
   const stackFocus = () => {
     const el = document.activeElement, s = el && el.closest && el.closest('[data-stack]:not(.is-leaving)');
-    return s && { t: s.dataset.stack, sel: el.matches('[data-act]') ? '[data-act]' : '[data-stack-toggle]' };
+    return s && { t: s.dataset.stack, sel: el === s ? null : el.matches('[data-act]') ? '[data-act]' : '[data-stack-toggle]' };
   };
   function restack(focus = stackFocus()) {
     if (!list || !stackTpl) return;
@@ -121,7 +124,11 @@
     cards().forEach(c => { c.hidden = false; });
     if (!stackOn()) return;
     for (const [t, g] of groups) {
-      if (g.length < 2) continue;
+      if (g.length < 2) {
+        // A selected stack down to one card hands the selection to that card.
+        if (selId === 'stack:' + t) { select(g[0], focus && focus.t === t); }
+        continue;
+      }
       const s = stackTpl.content.firstElementChild.cloneNode(true), open = unfolded.has(t);
       s.dataset.stack = t;
       s.querySelector('[data-stack-topic]').textContent = t;
@@ -140,7 +147,8 @@
       // moving a node drops the focus inside it.
       g.reduce((prev, c) => { if (prev.nextElementSibling !== c) prev.after(c); return c; }, s);
       g.forEach(c => { c.hidden = !open; });
-      if (focus && focus.t === t) s.querySelector(focus.sel).focus();
+      if (selId === key(s)) s.classList.add('is-selected');
+      if (focus && focus.t === t) (focus.sel ? s.querySelector(focus.sel) : s).focus();
     }
   }
   restack();
@@ -149,6 +157,7 @@
     const s = e.target.closest('[data-stack]');
     if (!s || e.target.closest('[data-act]') || s.classList.contains('is-leaving')) return;
     const t = s.dataset.stack;
+    selId = key(s); // the rebuilt stack keeps the selection
     if (!unfolded.delete(t)) unfolded.add(t);
     restack({ t, sel: '[data-stack-toggle]' });
   });
@@ -213,7 +222,16 @@
   const check = '<svg class="size-4 shrink-0" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
   function leave(c, why) {
     if (!c || c.classList.contains('is-leaving')) return;
-    if (c.dataset.id === selId) { const all = shown(), i = all.indexOf(c); select(all[i + 1] || all[i - 1] || null, c.contains(document.activeElement)); }
+    if (c.hidden) {
+      // Folded into a closed stack: nothing to watch leave, so the stack's
+      // count and newest title change now, not after the exit timer (#227).
+      // Not while a whole stack is clearing: that one is on its way out.
+      announce.textContent = `${c.querySelector('.card-title').textContent.trim()}: ${why}`;
+      c.remove();
+      if (!list.querySelector('[data-stack].is-leaving')) restack();
+      return tidy();
+    }
+    if (key(c) === selId) { const all = nav(), i = all.indexOf(c); select(all[i + 1] || all[i - 1] || null, c.contains(document.activeElement)); }
     const p = document.createElement('p');
     p.className = 'gone';
     p.innerHTML = check;
@@ -629,7 +647,8 @@
       b.disabled = false;
       if (!r) return;
       const n = (await r.json().catch(() => ({}))).cleared;
-      if (s) { unfolded.delete(s.dataset.stack); leave(s, 'Cleared'); }
+      // Clear all takes every stack with it, so none shrinks card by card.
+      for (const st of s ? [s] : list.querySelectorAll('[data-stack]')) { unfolded.delete(st.dataset.stack); leave(st, 'Cleared'); }
       ids.forEach(id => leave(card(id), 'Cleared'));
       // Undo only when we know every id was ours to clear; otherwise it could
       // reopen something another device cleared first.
@@ -761,7 +780,7 @@
   const search = $('[data-search]');
   // Each command presses the selected card's own button, so Undo and errors work the same.
   const press = (sel, c = selected() || shown()[0]) => {
-    if (stackFocus()) return tell('Open the stack to act on one notification.'); // not the card next to it
+    if (stackFocus() || c && c.matches('[data-stack]')) return tell('Open the stack to act on one notification.'); // not the card next to it
     const b = c && c.querySelector(sel);
     if (!b) return tell(c ? 'Not available on this notification.' : 'No notification to act on.');
     select(c);
@@ -781,8 +800,8 @@
     if (e.target.closest('[data-palette]')) return openPalette();
     const cmd = e.target.closest('[data-cmd]');
     if (cmd && run[cmd.dataset.cmd]) setTimeout(run[cmd.dataset.cmd]); // after the dialog closes and gives focus back
-    const c = e.target.closest('.card[data-id]');
-    if (c && !c.classList.contains('is-leaving')) select(c, false);
+    const c = e.target.closest('.card[data-id], [data-stack]');
+    if (c && c.isConnected && !c.classList.contains('is-leaving')) select(c, false); // a toggled stack was rebuilt
   });
   const keys = { c: 'dismiss', r: 'restore', a: 'ack', s: 'snooze', j: 'next', k: 'prev', '/': 'search' };
   const go = { i: B + '/app', s: B + '/app/snoozed', c: B + '/app/cleared', ',': B + '/app/settings' };
@@ -800,6 +819,7 @@
     g = k === 'g' ? Date.now() : 0;
     if (k === 'g' || e.shiftKey && k !== '?') return;
     if (k === '?') { e.preventDefault(); return openPalette(); }
+    if (k === 'enter' && t.matches && t.matches('[data-stack]')) { e.preventDefault(); return t.querySelector('[data-stack-toggle]').click(); }
     if (keys[k] && list) { e.preventDefault(); run[keys[k]](); }
   });
 

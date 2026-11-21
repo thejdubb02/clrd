@@ -35,6 +35,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: J and K now stop on a closed stack and Enter opens it. A notification
+  another device clears inside a closed stack updates its count and newest
+  title at once, and Clear all takes every stack with it. (#227)
+
 - Web: on a phone, the Linked devices table in Settings fits the screen; the
   "May approve" menu now sits under its label.
 - Android: changing the sound replaces the notification channels, which
