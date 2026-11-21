@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/sha512"
+	"database/sql"
 	"encoding/base64"
 	"net/http"
 	"slices"
@@ -71,7 +72,7 @@ func (s *Server) gotifyPublish(w http.ResponseWriter, r *http.Request, key strin
 	if tok == nil {
 		return errf(401, "unauthorized", "you need to provide a valid access token or user credentials to access this api")
 	}
-	topic, err := gotifyTopic(tok)
+	topic, err := appTopic(tok, "Gotify")
 	if err != nil {
 		return err
 	}
@@ -204,26 +205,40 @@ func (s *Server) gotifyAppRoutes() {
 			return errf(400, "bad_request", "priority is Gotify's 0 to 10")
 		}
 		key := "A" + randomString(14)
-		t := &Token{ID: randomString(12), Name: in.Name, Scopes: []string{ScopePublish}, Topics: []string{in.Topic}, CreatedAt: now()}
-		tx, err := s.db.BeginTx(r.Context(), nil)
+		var appid int64
+		t, err := s.insertAppToken(r.Context(), randomString(12), in.Name, in.Topic, key, func(tx *sql.Tx, t *Token) error {
+			res, err := tx.ExecContext(r.Context(), `INSERT INTO gotify_apps (token_id, priority) VALUES (?, ?)`, t.ID, in.Priority)
+			if err == nil {
+				appid, _ = res.LastInsertId()
+			}
+			return err
+		})
 		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
-		if err := insertToken(r.Context(), tx, t, hashToken(key)); err != nil {
-			return err
-		}
-		res, err := tx.ExecContext(r.Context(), `INSERT INTO gotify_apps (token_id, priority) VALUES (?, ?)`, t.ID, in.Priority)
-		if err != nil {
-			return err
-		}
-		appid, _ := res.LastInsertId()
-		if err := tx.Commit(); err != nil {
 			return err
 		}
 		writeJSON(w, 200, map[string]any{"id": appid, "token": key, "name": t.Name, "topic": in.Topic, "token_id": t.ID, "defaultPriority": in.Priority})
 		return nil
 	})
+}
+
+// insertAppToken stores an app key for a compat sender: a publish-only
+// token for one topic, with whatever row its API keeps beside it.
+func (s *Server) insertAppToken(ctx context.Context, id, name, topic, key string, more func(*sql.Tx, *Token) error) (*Token, error) {
+	t := &Token{ID: id, Name: name, Scopes: []string{ScopePublish}, Topics: []string{topic}, CreatedAt: now()}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := insertToken(ctx, tx, t, hashToken(key)); err != nil {
+		return nil, err
+	}
+	if more != nil {
+		if err := more(tx, t); err != nil {
+			return nil, err
+		}
+	}
+	return t, tx.Commit()
 }
 
 // gotifyExtras reads the extras clrd keeps: Markdown (Gotify's default is
@@ -245,9 +260,9 @@ func extra(extras map[string]any, ns, key string) string {
 	return v
 }
 
-// gotifyTopic is the one topic the token may publish to. Gotify has no
-// topics, so a token for every topic (or several) cannot say which.
-func gotifyTopic(t *Token) (string, error) {
+// appTopic is the one topic the token may publish to. Gotify and Pushover
+// have no topics, so a token for every topic (or several) cannot say which.
+func appTopic(t *Token, kind string) (string, error) {
 	var topics []string
 	if len(t.Grants) > 0 {
 		for _, g := range t.Grants {
@@ -259,7 +274,7 @@ func gotifyTopic(t *Token) (string, error) {
 		topics = t.Topics
 	}
 	if len(topics) != 1 || strings.Contains(topics[0], "*") {
-		return "", errf(400, "bad_request", "a Gotify app token must be a clrd token limited to one topic, so clrd knows where to post (clrd token create --name myapp --scope publish --topics mytopic)")
+		return "", errf(400, "bad_request", "a %s app token must be a clrd token limited to one topic, so clrd knows where to post (clrd token create --name myapp --scope publish --topics mytopic)", kind)
 	}
 	return topics[0], nil
 }

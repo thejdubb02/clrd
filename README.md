@@ -70,6 +70,9 @@ offline catches up the moment it reconnects.
   [Gotify senders](docs/integrations/gotify.md).
   `clrd import gotify` brings over a Gotify server's apps, their tokens and
   message history ([Switch from Gotify](docs/migrate-from-gotify.md)).
+- **Pushover scripts work.** `POST /1/messages.json` with a clrd app key, as
+  Pushover takes it, for curl scripts and senders whose Pushover URL can be
+  changed. See [Pushover senders](docs/integrations/pushover.md).
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
   tokens, per-topic access rules, message history and attachments, so you can
   swap the hostname and keep every credential. See

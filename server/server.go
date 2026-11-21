@@ -379,10 +379,13 @@ const maxBody = 1 << 20 // no route takes more, except a file upload
 var uploadTimeout = 10 * time.Minute
 
 // isUpload reports a request whose body is a file: a multipart native publish
-// or an ntfy publish with a file name. Those stream to disk.
+// an ntfy publish with a file name, or a Pushover publish. Those stream to disk.
 func isUpload(r *http.Request) bool {
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
 		return false
+	}
+	if r.URL.Path == "/1/messages.json" { // Pushover: a file, or one in base64
+		return r.Method == http.MethodPost
 	}
 	if r.URL.Path == "/api/v1/notifications" {
 		mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -902,6 +905,7 @@ func (s *Server) routesSetup() {
 	s.silenceRoutes()
 	s.ntfyRoutes()
 	s.gotifyAppRoutes()
+	s.pushoverRoutes()
 	s.ntfyAnonymousRoutes()
 }
 
