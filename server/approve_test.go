@@ -536,8 +536,16 @@ func TestMintNeverAboveMaker(t *testing.T) {
 			}
 		}
 		kids["phone link"] = linkPhone(t, ts, maker)
+		// The maker asks to be raised: nothing it made may confirm that either.
+		code, mp := call(t, ts, "POST", "/api/v1/devices/approve-request", maker, map[string]any{"topic": "agents", "approve": ApproveAllowed})
+		if code != 202 {
+			t.Fatalf("%s maker's approve request: %d %v", level, code, mp)
+		}
 
 		for how, raw := range kids {
+			if code, out := call(t, ts, "POST", "/api/v1/notifications/"+mp["id"].(string)+"/reply", raw, map[string]any{"reply": "confirm"}); code != 403 {
+				t.Fatalf("%s maker, %s: confirmed its maker's prompt: %d %v", level, how, code, out)
+			}
 			got := s.lookupToken(ctx, raw)
 			if got == nil {
 				t.Fatalf("%s maker, %s: no token", level, how)
