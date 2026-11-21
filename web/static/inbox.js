@@ -659,7 +659,7 @@
   const offline = $('[data-offline]');
   const live = on => {
     sync.classList.toggle('is-live', on);
-    if (on && sync.classList.contains('is-down')) { sync.classList.remove('is-down'); refresh(); } // device states missed while down (#295)
+    if (on) { sync.classList.remove('is-down'); refresh(); } // device changes between render (or the drop) and ready send no message (#295)
     conn.textContent = on ? '' : (tries ? 'Reconnecting' : 'Connecting');
     if (on) { clearTimeout(staleTimer); staleTimer = null; offline.hidden = true; }
     else staleTimer ??= setTimeout(() => { offline.hidden = false; }, 180000);

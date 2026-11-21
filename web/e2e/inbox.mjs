@@ -122,9 +122,11 @@ try {
   await peer.locator('#sync.is-live').waitFor();
   await others.nth(dots0).waitFor({ state: 'attached' });
   assert.match(await watch.locator('#sync').textContent(), new RegExp(`In sync on ${dots0 + 2} devices`));
+  const all = watch.locator('#sync .sync-dot:not([data-this])');
+  const dotsUp = await all.count();
   await peer.context().close();
   await others.nth(dots0).waitFor({ state: 'detached' });
-  assert.ok(await watch.locator('#sync .sync-dot:not(.is-on)[aria-label$=": offline"]').count() > 0, 'no red dot for the closed browser');
+  assert.equal(await all.count(), dotsUp, 'the closed browser lost its dot instead of turning red');
   assert.equal(await watch.locator('#sync').getAttribute('href'), '/app/settings#dev-h');
   await watch.context().close();
   console.log('ok: a device dot turns green on connect and red on close, live');
