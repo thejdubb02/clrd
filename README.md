@@ -6,13 +6,6 @@
 
 <p align="center"><strong>Self-hosted push notifications. Dismiss once, gone everywhere.</strong></p>
 
-<p align="center">
-  <a href="https://github.com/thejdubb02/clrd/actions/workflows/go.yml"><img src="https://github.com/thejdubb02/clrd/actions/workflows/go.yml/badge.svg?branch=main" alt="Server and web tests"></a>
-  <a href="https://github.com/thejdubb02/clrd/actions/workflows/android.yml"><img src="https://github.com/thejdubb02/clrd/actions/workflows/android.yml/badge.svg?branch=main" alt="Android tests"></a>
-  <a href="https://github.com/thejdubb02/clrd/actions/workflows/sdk.yml"><img src="https://github.com/thejdubb02/clrd/actions/workflows/sdk.yml/badge.svg?branch=main" alt="SDK tests"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
-</p>
-
 Send an alert with one HTTP call. It shows up on your Android phone, your tablet
 and the web inbox. Clear it on any one of them (in the phone app, or Clear on
 the web) and it clears on all the others. Swiping a phone notification away
@@ -46,8 +39,8 @@ Small on purpose. Measured 2026-11-20: the server is one 15.6 MB binary
 
 ## Why clrd
 
-[ntfy](https://github.com/binwiederhier/ntfy) is great, and clrd speaks its
-protocol. The gap it fills: in ntfy, when you clear a notification on one
+clrd publishes and subscribes the [ntfy](https://github.com/binwiederhier/ntfy)
+way. The difference: in ntfy, when you clear a notification on one
 device, your other devices keep it. clrd keeps every notification's state on
 the server, so a clear anywhere clears it everywhere, and a phone that was
 offline catches up the moment it reconnects.
