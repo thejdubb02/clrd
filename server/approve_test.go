@@ -386,6 +386,14 @@ func TestApproveRequest(t *testing.T) {
 	if code, out := reply(admin, pid, "confirm"); code != 200 || setting(agent.ID) != ApproveAllowed {
 		t.Fatalf("admin confirm: %d %v %s", code, out, setting(agent.ID))
 	}
+	// A confirmed request is spent: lowered again, reopen and confirm do not re-raise.
+	call(t, ts, "PUT", "/api/v1/devices/"+agent.ID+"/approve", admin, map[string]any{"approve": ApproveDenied})
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+pid+"/reopen", admin, nil); code != 200 {
+		t.Fatalf("reopen: %d", code)
+	}
+	if reply(admin, pid, "confirm"); setting(agent.ID) != ApproveDenied {
+		t.Fatalf("confirmed request applied twice: %s", setting(agent.ID))
+	}
 
 	// A stale request: the setting changed since it asked.
 	stale, sraw := mk("stale")
@@ -416,6 +424,9 @@ func TestApproveRequest(t *testing.T) {
 	}
 	if code, out := reply(kraw, p["id"].(string), "confirm"); code != 403 || setting(par.ID) != ApproveDenied {
 		t.Fatalf("kid raised its parent: %d %v", code, out)
+	}
+	if code, other := ask(praw, "ops", ApproveAllowed); code != 202 || other["id"] == p["id"] || other["topic"] != "ops" {
+		t.Fatalf("request on another topic reused the prompt: %d %v", code, other)
 	}
 
 	// Reject, reopen, confirm: the reject sticks.

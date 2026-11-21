@@ -100,8 +100,8 @@ func (s *Server) AskApprove(ctx context.Context, tok *Token, topic, approve stri
 		if approveRank[approve] <= approveRank[cur] {
 			return nil, errf(400, "bad_request", "this device is already %s; a request can only raise it", cur)
 		}
-		out, err = getNotification(ctx, tx, `state NOT IN ('dismissed', 'resolved') AND json_extract(NULLIF(confirm, ''), '$.Kind') = 'approve'
-		  AND json_extract(confirm, '$.Asker') = ? AND json_extract(confirm, '$.Reply') = ? AND json_extract(confirm, '$.From') = ?`, tok.ID, approve, cur)
+		out, err = getNotification(ctx, tx, `topic = ? AND state NOT IN ('dismissed', 'resolved') AND json_extract(NULLIF(confirm, ''), '$.Kind') = 'approve'
+		  AND json_extract(confirm, '$.Asker') = ? AND json_extract(confirm, '$.Reply') = ? AND json_extract(confirm, '$.From') = ?`, topic, tok.ID, approve, cur)
 		if !isNotFound(err) {
 			return nil, err
 		}
@@ -153,7 +153,7 @@ func (s *Server) confirmed(ctx context.Context, tx *sql.Tx, tok *Token, p *Notif
 	if err := json.Unmarshal([]byte(p.confirm), &l); err != nil {
 		return nil, err
 	}
-	if reply != "confirm" {
+	if reply != "confirm" || l.Kind == "approve" { // a setting request is spent once answered
 		p.confirm = ""
 	}
 	if l.Kind == "approve" {
