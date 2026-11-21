@@ -208,6 +208,8 @@ it for one topic, like `{"alerts": 7}`, and overrides the global value there;
 only the topics the token can read, and the event log is cut to the shortest
 keep in use. With `&topic=T`, `would_remove` counts only topic T, to preview
 its own value (the state counts stay over every readable topic).
+`keep_cleared_days=default` previews dropping a topic's value: it counts
+against the global keep exactly, `CLRD_RETENTION` to the hour when unset.
 Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
 

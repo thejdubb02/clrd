@@ -460,7 +460,7 @@
     const days = sel.value === '' ? null : Number(sel.value);
     const undo = msg => { sel.value = [...sel.options].find(o => o.defaultSelected).value; lock(false); status.textContent = msg; };
     lock(true);
-    const c = await fetch(`/api/v1/counts?keep_cleared_days=${days ?? shell.dataset.keep}&topic=${encodeURIComponent(t)}`, { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null);
+    const c = await fetch(`/api/v1/counts?keep_cleared_days=${days ?? 'default'}&topic=${encodeURIComponent(t)}`, { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null);
     if (!c) return undo('Not saved: could not check how many messages this deletes.'); // never delete without the count
     const n = c.would_remove || 0;
     if (n && !confirm(`This deletes ${n} cleared message${n === 1 ? '' : 's'} in ${t} within the hour. Save?`)) return undo('');

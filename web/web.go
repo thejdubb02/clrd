@@ -530,6 +530,22 @@ func (s Snapshot) PreviewsOn(topic string) bool {
 	return s.LinkPreviews
 }
 
+// KeepTopics lists, sorted, the topics for Settings' keep by topic: every
+// topic with notifications plus any with its own keep but none left (#336).
+func (s Snapshot) KeepTopics() []string {
+	var out []string
+	for _, t := range s.Topics {
+		out = append(out, t.Name)
+	}
+	for t := range s.TopicKeepClearedDays {
+		if !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // TopicKeep is a topic's own keep in days for the Settings select, or -1 when
 // it follows KeepClearedDays.
 func (s Snapshot) TopicKeep(topic string) int {

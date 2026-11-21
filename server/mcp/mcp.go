@@ -505,7 +505,7 @@ var tools = []map[string]any{
 	{"name": "topics", "description": "List the topics this token can read, with how many notifications are open in each.",
 		"inputSchema": schema(map[string]any{})},
 	{"name": "counts", "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved). With keep_cleared_days, also would_remove: how many cleared messages that setting would delete.",
-		"inputSchema": schema(map[string]any{"keep_cleared_days": p("integer", "Preview a keep_cleared_days value before setting it"),
+		"inputSchema": schema(map[string]any{"keep_cleared_days": map[string]any{"type": []string{"integer", "string"}, "description": "Preview a keep_cleared_days value before setting it, or \"default\" with topic to preview dropping that topic's own value"},
 			"topic": p("string", "With keep_cleared_days, would_remove counts only this topic, to preview a topic_keep_cleared_days value")})},
 	{"name": "format_check", "description": "Find formatting problems in the newest 500 messages, by topic: Markdown sent as plain text, unknown :shortcodes:, no title, very long messages, raw JSON. Each topic has a count and an example per problem, and a prompt that says how to fix the sender. Fix the sending code with it, then send a test message.",
 		"inputSchema": schema(map[string]any{"topic": p("string", "Check only this topic")})},
