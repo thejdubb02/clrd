@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Claude Code plugin: the MCP connection now refuses a server URL that is not
+  https (except localhost) with a clear message, so the token never goes out
+  over plain http. Before, only the hooks checked (#363).
 - Server: a new token made through the API or the MCP tool `create_token`
   now always starts denied for approval requests, whoever makes it. Raise it
   the same way as any device, from an allowed device or with an approve

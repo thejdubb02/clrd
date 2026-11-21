@@ -17,7 +17,8 @@ Claude Code asks two questions: your server URL and a token. That is all.
 
 - **Server URL**: for example `https://clrd.example.com`. It must be https,
   unless the server is on the same machine (`http://localhost`,
-  `http://127.0.0.1` or `http://[::1]`).
+  `http://127.0.0.1` or `http://[::1]`). With any other http URL the plugin
+  sends nothing: `/mcp` shows "server URL must be https".
 - **Token**: make one for this agent, never reuse your phone's. It needs
   `read` and `publish`:
 
@@ -68,9 +69,7 @@ Answer either one.
   away when the hook stops waiting, about 9.5 minutes later. Tapping it late
   does nothing.
 - The finished ping does not carry Claude's last message, only the project.
-- The https rule is checked by the plugin's hooks. The MCP connection uses the
-  URL as you typed it, so type an https one.
-- The hooks need `bash` and `curl`. On Windows that means Git Bash or WSL;
+- The hooks and the MCP connection need `bash` and `curl`. On Windows that means Git Bash or WSL;
   only Linux has been tested.
 
 ## Without the plugin
