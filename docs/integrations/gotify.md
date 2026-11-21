@@ -3,6 +3,9 @@
 clrd answers Gotify's publish call, `POST /message`, so a script or tool
 that sends to Gotify keeps working when you point it at clrd.
 
+Moving a whole Gotify server? `clrd import gotify` brings over every app,
+its token and the message history: [Switch from Gotify](../migrate-from-gotify.md).
+
 ## Make an app token
 
 A Gotify app is a clrd token that may publish to exactly one topic. The token

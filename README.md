@@ -68,6 +68,8 @@ offline catches up the moment it reconnects.
   takes it, so Apprise, the gotify CLI, Watchtower and curl scripts keep
   sending. See
   [Gotify senders](docs/integrations/gotify.md).
+  `clrd import gotify` brings over a Gotify server's apps, their tokens and
+  message history ([Switch from Gotify](docs/migrate-from-gotify.md)).
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
   tokens, per-topic access rules, message history and attachments, so you can
   swap the hostname and keep every credential. See
