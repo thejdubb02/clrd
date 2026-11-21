@@ -39,8 +39,8 @@ Small on purpose. Measured 2026-11-20: the server is one 15.6 MB binary
 
 ## Why clrd
 
-clrd speaks the [ntfy](https://github.com/binwiederhier/ntfy) protocol. The
-difference: in ntfy, when you clear a notification on one
+clrd publishes and subscribes the [ntfy](https://github.com/binwiederhier/ntfy)
+way. The difference: in ntfy, when you clear a notification on one
 device, your other devices keep it. clrd keeps every notification's state on
 the server, so a clear anywhere clears it everywhere, and a phone that was
 offline catches up the moment it reconnects.
