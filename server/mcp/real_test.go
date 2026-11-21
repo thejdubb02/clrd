@@ -255,6 +255,11 @@ func TestClientSession(t *testing.T) {
 	if got, _ := tool(agent, "topics", nil); fmt.Sprint(got["topics"]) != "[map[icon: open:1 topic:build]]" {
 		t.Fatalf("topics: %v", got)
 	}
+	// The format check's fix prompt points at this server, not example.com (#308).
+	tool(agent, "send", map[string]any{"topic": "untitled", "message": "x"})
+	if got, _ := tool(agent, "format_check", map[string]any{"topic": "untitled"}); !strings.Contains(fmt.Sprint(got["topics"]), ts.URL+"/api/v1/notifications") {
+		t.Fatalf("format_check prompt: %v", got)
+	}
 	if _, msg := tool(reader, "update", map[string]any{"id": id, "message": "hijacked"}); !strings.Contains(msg, "403") {
 		t.Fatalf("a read-only token edited a message: %q", msg)
 	}

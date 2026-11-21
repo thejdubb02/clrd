@@ -92,6 +92,8 @@ offline catches up the moment it reconnects.
 - **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
   and an MCP server so an AI agent can notify you and wait for your answer.
   Claude Code and Codex can ask your phone before running a command.
+  A format check finds senders whose messages are hard to read and hands an
+  agent a ready prompt to fix them.
 
 ## Quick start
 

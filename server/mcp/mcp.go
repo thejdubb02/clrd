@@ -179,6 +179,10 @@ func (h *Handler) api(r *http.Request, method, path string, body any) (map[strin
 	req.Header.Set("Authorization", r.Header.Get("Authorization"))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = r.RemoteAddr
+	req.Host, req.TLS = r.Host, r.TLS // links the server builds point at the caller's address, not example.com
+	for _, k := range []string{"Origin", "X-Forwarded-Proto"} {
+		req.Header[k] = r.Header[k]
+	}
 	rec := httptest.NewRecorder()
 	h.rest.ServeHTTP(rec, req)
 	var out map[string]any
@@ -311,6 +315,8 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return h.api(r, "GET", "/api/v1/counts?keep_cleared_days="+url.QueryEscape(d), nil)
 		}
 		return h.api(r, "GET", "/api/v1/counts", nil)
+	case "format_check":
+		return h.api(r, "GET", "/api/v1/format-check?topic="+url.QueryEscape(str(a, "topic")), nil)
 	case "devices":
 		return h.api(r, "GET", "/api/v1/devices?all=1", nil)
 	case "device_log":
@@ -492,6 +498,8 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{})},
 	{"name": "counts", "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved). With keep_cleared_days, also would_remove: how many cleared messages that setting would delete.",
 		"inputSchema": schema(map[string]any{"keep_cleared_days": p("integer", "Preview a keep_cleared_days value before setting it")})},
+	{"name": "format_check", "description": "Find formatting problems in the newest 500 messages, by topic: Markdown sent as plain text, unknown :shortcodes:, no title, very long messages, raw JSON. Each topic has a count and an example per problem, and a prompt that says how to fix the sender. Fix the sending code with it, then send a test message.",
+		"inputSchema": schema(map[string]any{"topic": p("string", "Check only this topic")})},
 	{"name": "settings", "description": "Read the server settings, or change them: pass only the fields to change. keep_cleared_days (0 = forever) deletes cleared messages older than that on the next hourly cleanup and needs an admin token; preview it with counts first.",
 		"inputSchema": schema(map[string]any{
 			"keep_cleared_days": p("integer", "Days to keep dismissed and resolved messages, counted from when they were cleared; 0 = forever"),

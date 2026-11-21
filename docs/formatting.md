@@ -41,6 +41,22 @@ and default can also be changed in the Android app's Settings.
 curl -X PUT -H "Authorization: Bearer $TOKEN" -d '{"link_previews":true,"topic_previews":{"alerts":false}}' https://clrd.example.com/api/v1/settings
 ```
 
+## Format check
+
+Senders written for another tool often send messages that read badly here.
+The format check looks at the newest 500 messages you can read and lists, per
+topic, what could be better: Markdown sent as plain text, `:name:` shortcodes
+clrd does not know, no title, messages over 2000 characters, and raw JSON. Each
+topic comes with a prompt to paste into your agent or LLM so it can fix the
+program that sends them. The prompt holds no token. The check only gives
+advice: it never changes or blocks a message.
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" https://clrd.example.com/api/v1/format-check
+```
+
+Agents can run it with the MCP tool `format_check`.
+
 ## Privacy
 
 Your devices never contact the linked sites. When a client asks for an icon

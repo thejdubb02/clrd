@@ -705,6 +705,14 @@ func (s *Server) routesSetup() {
 		writeJSON(w, 200, map[string]any{"topics": ts})
 		return nil
 	})
+	s.api("GET /api/v1/format-check", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		out, err := s.FormatCheck(r, tok, r.URL.Query().Get("topic"))
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, out)
+		return nil
+	})
 	s.api("GET /api/v1/counts", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		c, err := s.Counts(r.Context(), tok)
 		if err != nil {
