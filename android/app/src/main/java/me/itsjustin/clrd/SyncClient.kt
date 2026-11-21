@@ -290,10 +290,10 @@ fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synch
                 // An ask device gets back the confirm prompt (202), not the question: the question stays unanswered.
                 val prompt = p.action == "reply" && runCatching { JSONObject(body).optString("id") }.getOrNull().orEmpty().let { it.isNotEmpty() && it != p.notifId }
                 if (!prompt) body else {
-                    val question = try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
+                    // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
                     store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
                     store.replyOutcome(p, "confirm")
-                    question
+                    try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
                 }
             }
         } catch (e: HttpError) {
