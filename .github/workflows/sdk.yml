@@ -14,10 +14,12 @@ on:
 # The runner cannot install packages, so each SDK runs in its own image.
 # The checkout is mounted read-only, so nothing root-owned is left behind.
 # cezar1 is shared, so each container gets at most 3 CPUs.
-# A new push cancels the older run on the same branch or pull request, so
-# main runs only its newest commit (#379). Publishing lives in fdroid.yml.
+# A new push cancels the older run on the same branch or pull request. On
+# main each commit is its own group, so no run there is ever cancelled: a
+# rerun of an older commit cannot cancel the newest (#379, #402).
+# Publishing lives in fdroid.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
