@@ -42,6 +42,7 @@ Fixed, Removed, Security), as one line a user can understand.
   Gotify import does. Before, importing into a server in use could let the
   next cleanup delete recent live events, so phones offline at the time
   missed them (#388).
+- Claude Code plugin: the finished ping now carries Claude's last message, even past 4 KB. Before, it said only "Task finished." (#365)
 - Claude Code plugin: a permission prompt answered on screen now leaves the phone too. Before, Allow on screen left the phone's prompt ringing for about 9.5 minutes. (#364)
 - Web: a page refresh already on its way when another change lands is dropped, so a card cleared on another device no longer flashes back for a moment (and a closed stack no longer shows the old count and newest title). This was the flaky inbox browser test on main. (#402)
 - Web: while a stack's Clear all waits for its reply, a page refresh already on its way no longer reshapes the stacks first, and a card another device clears inside a different closed stack updates that stack's count at once (#397).

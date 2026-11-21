@@ -28,7 +28,13 @@ ok "the MCP server refuses http off localhost and carries tool calls to clrd"
 
 echo '{"hook_event_name":"Stop","cwd":"/src/myproj"}' | "$H" stop || fail "stop hook"
 check "$(last)" '.title == "Claude finished: myproj" and .message == "Task finished."' "finished ping"
-ok "Stop sends a finished ping titled with the project"
+# #365: Claude's last message, past the 4 KB a topic publish takes, with quotes and escapes.
+long=$(printf 'Done. Said \\"hi\\" \\\\ and\\nmore %.0s' $(seq 300)) # JSON-escaped
+printf '{"hook_event_name":"Stop","last_assistant_message":"%s","stop_hook_active":false}' "$long" | "$H" stop || fail "stop hook, long message"
+want=$(printf '"%s"' "$long" | jq -r .)
+[ ${#want} -gt 4096 ] || fail "test message is not past 4 KB"
+jq -e --arg m "$want" '.title == "Claude finished: myproj" and .message == $m' <<<"$(last)" >/dev/null || fail "finished ping without the last message: $(last | head -c 300)"
+ok "Stop sends a finished ping titled with the project, carrying Claude's last message"
 
 echo '{"hook_event_name":"Notification","notification_type":"idle_prompt","message":"Claude is waiting for your input"}' | "$H" wait || fail "wait hook"
 check "$(last)" '.title == "Claude is waiting: myproj" and .message == "Claude is waiting for your input" and .priority == 4' "waiting ping"

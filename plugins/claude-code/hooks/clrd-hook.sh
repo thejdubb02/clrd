@@ -118,9 +118,15 @@ case $mode in
     key "$body" && mkdir -p -m 700 "$pending" && : >"$pending/$key.$$"
     post "/mcp/approve?topic=$topic" 600 -H 'Content-Type: application/json' --data-binary @- <<<"$body"
     ;;
-  # Stop's JSON carries Claude's whole last message, often past the 4 KB a
-  # publish takes, so the finished ping says only which project finished.
-  stop) post "/$topic" 15 -o /dev/null -H "X-Title: Claude finished: $project" --data-binary 'Task finished.' ;;
+  # Stop's JSON carries Claude's last message, often past the 4 KB a topic
+  # publish takes, so it goes to /mcp's send as is, still a JSON string.
+  stop)
+    msg='"Task finished."'
+    [[ $(cat) =~ \"last_assistant_message\":(\"([^\"\\]|\\.)+\") ]] && msg=${BASH_REMATCH[1]}
+    printf '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send","arguments":{"topic":"%s","title":"Claude finished: %s","message":%s}}}' \
+      "$topic" "${project//[\"\\]/}" "$msg" |
+      post /mcp 15 -o /dev/null -H 'Content-Type: application/json' -H 'Accept: application/json' --data-binary @-
+    ;;
   # Notification's JSON is small: clrd fills the message in from it.
   wait) post "/$topic" 15 -o /dev/null -H 'X-Template: yes' -H 'X-Priority: 4' -H "X-Title: Claude is waiting: $project" \
     -H 'X-Message: {{or .message "Claude needs you."}}' -H 'Content-Type: application/json' --data-binary @- ;;
