@@ -123,6 +123,14 @@
     <string name="device_unlink_title">Unlink %1$s?</string>
     <string name="device_unlink_text">It is signed out at once and stops syncing. Unlinking a phone also signs out the browsers it approved. It can be linked again with a new code.</string>
     <string name="device_unlink_failed">Not unlinked: %1$s</string>
+    <string name="device_approve">May approve: %1$s</string>
+    <string name="approve_name_allowed">Allowed</string>
+    <string name="approve_name_ask">Ask</string>
+    <string name="approve_name_denied">Denied</string>
+    <string name="device_approve_failed">Not changed: %1$s</string>
+    <string name="device_lower_title">Lower %1$s to %2$s?</string>
+    <string name="device_lower_text">Only another allowed device can raise it again.</string>
+    <string name="device_lower">Lower</string>
     <string name="device_log_show">Show activity</string>
     <string name="device_log_hide">Hide activity</string>
     <!-- A log line: how long ago, which device, what happened (linked, signed in, unlinked). -->

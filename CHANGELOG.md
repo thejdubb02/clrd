@@ -167,6 +167,11 @@ Fixed, Removed, Security), as one line a user can understand.
   shared by giving another user a grant on it. Off until you make one:
   tokens with no user work as before. API `/api/v1/users`, MCP
   `create_user`. (#143)
+- Android: Settings, Linked devices lets an allowed phone set who may answer
+  approval requests (Allowed, Ask or Denied) for each device, as the web
+  Settings page does. It never offers to raise this phone or the token it
+  hangs under, and asks before lowering those (#382).
+
 - Web: the empty-inbox tips have a Pause button, so they stop rotating for anyone, including screen reader users who never hover or focus them; Play starts them again (#352).
 - Web: a card's snooze menu offers "Silence <topic> for 1 hour", which mutes
   the whole topic in one tap, with or without JavaScript. It shows only where
