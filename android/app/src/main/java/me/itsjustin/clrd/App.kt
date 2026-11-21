@@ -175,7 +175,7 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
                 tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
