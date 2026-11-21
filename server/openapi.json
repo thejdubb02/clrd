@@ -2044,6 +2044,82 @@
     }
    }
   },
+  "/api/v1/ntfy/anonymous": {
+   "get": {
+    "summary": "Anonymous ntfy access",
+    "description": "Full admin only. Whether ntfy-compatible routes take requests that send no credentials, and the per-topic rules they get. Off unless set.",
+    "tags": [
+     "admin"
+    ],
+    "responses": {
+     "200": {
+      "description": "The anonymous rules.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NtfyAnonymous"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "summary": "Set anonymous ntfy access",
+    "description": "Full admin only. Replaces the rules for requests with no credentials, on ntfy-compatible routes only (the native API always needs a token). Scopes are read and/or publish, never admin; first match wins. An empty list turns it off. Open anonymous streams close and reconnect under the new rules.",
+    "tags": [
+     "admin"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "grants"
+        ],
+        "properties": {
+         "grants": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/NtfyAnonymousGrant"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The anonymous rules now in effect.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NtfyAnonymous"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/ntfy/ignored": {
    "get": {
     "summary": "ntfy options received but ignored",
@@ -4900,6 +4976,48 @@
    }
   },
   "schemas": {
+   "NtfyAnonymousGrant": {
+    "type": "object",
+    "required": [
+     "topic",
+     "scopes"
+    ],
+    "properties": {
+     "topic": {
+      "type": "string",
+      "description": "Topic or pattern with *, matched ignoring case."
+     },
+     "scopes": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "enum": [
+        "read",
+        "publish"
+       ]
+      },
+      "description": "Empty to deny."
+     }
+    }
+   },
+   "NtfyAnonymous": {
+    "type": "object",
+    "properties": {
+     "enabled": {
+      "type": "boolean"
+     },
+     "grants": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/NtfyAnonymousGrant"
+      }
+     },
+     "token_id": {
+      "type": "string",
+      "description": "The anonymous token's id while on; revoking it also turns access off."
+     }
+    }
+   },
    "Silence": {
     "type": "object",
     "properties": {
