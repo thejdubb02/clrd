@@ -53,7 +53,7 @@ type Notification struct {
 	Reply       string      `json:"reply"` // the reply action tapped, "" until someone answers
 	SnoozeUntil *time.Time  `json:"snooze_until"`
 	Repeat      *Repeat     `json:"repeat"` // re-alert until answered (docs/repeat.md), or nil
-	CreatedAt   time.Time  `json:"created_at"`
+	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Seq         int64       `json:"seq"`
 }
