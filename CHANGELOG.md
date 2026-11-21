@@ -14,6 +14,10 @@ Fixed, Removed, Security), as one line a user can understand.
 - Claude Code plugin: the MCP connection now refuses a server URL that is not
   https (except localhost) with a clear message, so the token never goes out
   over plain http. Before, only the hooks checked (#363).
+- Android: an approval (Allow, Deny) whose text is too long for the tray to
+  show in full no longer has its answer buttons in the tray. A tap opens the
+  app, and the opened card shows the whole text with the answer buttons.
+  Before, the app had no answer buttons at all. (#366)
 - Server: a new token made through the API or the MCP tool `create_token`
   now always starts denied for approval requests, whoever makes it. Raise it
   the same way as any device, from an allowed device or with an approve
