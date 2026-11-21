@@ -208,7 +208,7 @@ func (s *Server) userRoutes() {
 			return err
 		}
 		u.Grants, u.CreatedAt = gs, fromMS(created)
-		s.dropStreams(r.Context(), `user_id = ?`, id)
+		s.dropStreams(context.WithoutCancel(r.Context()), `user_id = ?`, id)
 		writeJSON(w, 200, u)
 		return nil
 	}))
@@ -239,7 +239,8 @@ func (s *Server) userRoutes() {
 		id := r.PathValue("id")
 		// Only a typed-in token: a browser or phone follows the token it came from.
 		res, err := s.db.ExecContext(r.Context(), `UPDATE tokens SET user_id = NULLIF(?, '') WHERE id = ?
-		  AND id NOT IN (SELECT token_id FROM sessions) AND NOT `+anonymousWhere, *in.User, id)
+		  AND id NOT IN (SELECT token_id FROM sessions) AND id NOT LIKE 'pushover-%' AND id NOT IN (SELECT token_id FROM gotify_apps)
+		  AND NOT `+anonymousWhere, *in.User, id)
 		if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
 			return errf(400, "bad_request", "no user %q", *in.User)
 		}
@@ -247,9 +248,9 @@ func (s *Server) userRoutes() {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
-			return errf(404, "not_found", "no such typed-in token (a browser or phone follows the token it came from)")
+			return errf(404, "not_found", "no such typed-in token (a browser or phone follows the token it came from, and a Gotify or Pushover app keeps its one topic)")
 		}
-		s.dropStreams(r.Context(), `id = ?`, id)
+		s.dropStreams(context.WithoutCancel(r.Context()), `id = ?`, id)
 		writeJSON(w, 200, map[string]string{"id": id, "user": *in.User})
 		return nil
 	}))

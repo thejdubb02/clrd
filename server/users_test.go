@@ -221,6 +221,16 @@ func TestUsersNeedFullAdmin(t *testing.T) {
 	}
 }
 
+// A Gotify app keeps its one topic: a user's grants must never replace it.
+func TestUsersSkipAppTokens(t *testing.T) {
+	_, srv, admin := newTest(t)
+	_, u := call(t, srv, "POST", "/api/v1/users", admin, map[string]any{"name": "Justin"})
+	_, app := call(t, srv, "POST", "/api/v1/gotify/apps", admin, map[string]any{"name": "Watchtower", "topic": "tv"})
+	if c, _ := call(t, srv, "PUT", "/api/v1/tokens/"+app["token_id"].(string)+"/user", admin, map[string]any{"user": u["id"]}); c != 404 {
+		t.Fatalf("attach a Gotify app to a user: %d, want 404", c)
+	}
+}
+
 // #406 with users: two typed-in tokens of one person both count as "mine",
 // so each sees the other's sender name; another person does not.
 func TestUsersFormatCheckOwner(t *testing.T) {
