@@ -118,3 +118,7 @@ Leave out `template` to try the saved or built-in template of that name.
 `headers` stands in for the service's request headers, for templates that
 use `header`, such as GitHub's `X-GitHub-Event`. `?priority=` and `?tags=`
 work as on a real post.
+
+Agents do the same with the MCP tools `templates`, `set_template`,
+`delete_template` and `preview_template`, which take the same fields
+(`preview_template` has no `?priority=` or `?tags=` override).

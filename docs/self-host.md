@@ -53,8 +53,13 @@ On a headless box you can skip the link and make the token from the CLI
 instead (same database, so run it where the server runs):
 
 ```sh
-docker compose exec clrd clrd token create --name me --scope admin
+docker compose exec clrd clrd token create --name me --scope admin --approve allowed
 ```
+
+`--approve allowed` lets this token, and the phones and browsers you link
+with it, answer approval requests such as an agent's Allow or Deny prompt.
+Without it the token is denied, like every new token except the one the
+setup link makes.
 
 ## Tokens
 
