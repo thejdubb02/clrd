@@ -684,6 +684,11 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			}
 		}
 		joined := strings.Join(topics, ",")
+		// Only the replay lists delayed messages; live ones come when they
+		// fire. The replay ends here, before "open": an event after this was
+		// published once the client could see the stream was open, so it is live.
+		// A poll has no live part: it lists all it returns.
+		replayEnd := s.CurrentSeq()
 		if !poll {
 			if err := write(ntfyEvent("open", joined)); err != nil {
 				return nil
@@ -694,7 +699,6 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		for tries := 0; ; tries++ {
 			err := s.follow(ctx, tok, since, topics, func(raw []byte, seq int64) error {
 				if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
-					f.sched = false // only the replay lists delayed messages; live ones come when they fire
 					if poll {
 						return errStop
 					}
@@ -714,7 +718,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				if !f.pass(e.Notification, ntfyID(seq)) {
 					return nil
 				}
-				return write(s.ntfyMessage(e.Notification, seq, f.sched))
+				return write(s.ntfyMessage(e.Notification, seq, f.sched && (poll || seq <= replayEnd)))
 			}, func() error { return write(ntfyEvent("keepalive", joined)) })
 			if err != errPruned {
 				return nil
