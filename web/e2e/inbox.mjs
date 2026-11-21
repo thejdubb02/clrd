@@ -95,10 +95,11 @@ try {
     await away();
     await tp.clock.runFor(30000);
     assert.equal(await title(), second, 'the tip stays put once paused');
-    await tp.getByRole('button', { name: 'Play tips' }).click();
-    await away();
+    // Play from the keyboard: focus stays on the button, and it still rotates.
+    await tp.getByRole('button', { name: 'Play tips' }).focus();
+    await tp.keyboard.press('Enter');
     await tp.clock.runFor(10000);
-    assert.notEqual(await title(), second, 'Play starts the rotation again');
+    assert.notEqual(await title(), second, 'Play starts the rotation again, focus or not');
     await tp.close();
   }
   console.log('ok: tips advance on their own, pause on hover, and have Pause and Play');

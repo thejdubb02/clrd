@@ -615,7 +615,7 @@
   const tipBox = $('[data-tips]');
   if (tipBox) {
     const ts = [...tipBox.querySelectorAll('[data-tip]')];
-    let at = ts.findIndex(t => !t.hidden), stopped = false;
+    let at = ts.findIndex(t => !t.hidden), stopped = false, played = false; // played: Play pressed, so hover and focus no longer hold it
     const show = (i, said) => {
       ts[at].hidden = true; at = (i + ts.length) % ts.length; ts[at].hidden = false;
       $('[data-tip-count]').textContent = `${at + 1} of ${ts.length}`;
@@ -633,15 +633,15 @@
     sync();
     still.addEventListener('change', sync);
     tipBox.addEventListener('click', async e => {
-      if (e.target.closest('[data-tip-pause]')) { stopped = !stopped; return sync(); }
+      if (e.target.closest('[data-tip-pause]')) { stopped = !stopped; played = !stopped; return sync(); }
       const step = e.target.closest('[data-tip-step]');
       // Stepping by hand stops the rotation until Play (WCAG 2.2.2).
-      if (step) { stopped = true; sync(); return show(at + +step.dataset.tipStep, true); }
+      if (step) { stopped = true; played = false; sync(); return show(at + +step.dataset.tipStep, true); }
       if (!e.target.closest('[data-tip-copy-btn]')) return;
       try { await copyText(ts[at].querySelector('[data-tip-copy]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
     });
     setInterval(() => {
-      if (stopped || still.matches || document.hidden || !tipBox.offsetParent || tipBox.matches(':hover') || tipBox.contains(document.activeElement)) return;
+      if (stopped || still.matches || document.hidden || !tipBox.offsetParent || (!played && (tipBox.matches(':hover') || tipBox.contains(document.activeElement)))) return;
       show(at + 1, false);
     }, 9000); // long enough to read one tip (#292)
   }
