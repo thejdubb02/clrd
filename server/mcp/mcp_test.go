@@ -156,7 +156,7 @@ func TestInitializeAndList(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,preview_template,"+
-		"hooks,set_hook,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_gotify_app,server_env,ntfy_ignored" {
+		"hooks,set_hook,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_gotify_app,ntfy_anonymous,set_ntfy_anonymous,server_env,ntfy_ignored" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
