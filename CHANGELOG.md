@@ -97,6 +97,7 @@ Fixed, Removed, Security), as one line a user can understand.
   `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
   `preview_template`) takes a sample payload and returns the notifications a
   real post would make, without publishing anything. (#332)
+- Android: Settings lists the linked devices (name, kind, what each is linked from, last seen) with an Unlink button that asks first, and an activity log of links, sign-ins and unlinks. When this phone itself is unlinked or its token revoked, the app says so and opens the sign-in screen at once (#264).
 
 - Web: Settings shows who may approve for each linked device (Allowed, Ask
   or Denied), and an allowed browser changes it there. A browser can lower

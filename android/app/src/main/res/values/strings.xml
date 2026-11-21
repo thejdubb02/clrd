@@ -103,6 +103,26 @@
     <string name="approve_denied">This phone may not answer approval requests. An allowed device can change that.</string>
     <string name="dnd_explain">Urgent notifications (priority 5) are quiet in Do Not Disturb unless you let them through. Only you can turn that on, in Android\'s settings.</string>
     <string name="dnd_open">Let urgent ones through Do Not Disturb</string>
+    <string name="signed_out">The server no longer accepts this phone. It was unlinked from another device, its token was revoked, or the token is wrong. Scan a new code or enter a token to sign in again.</string>
+    <!-- Linked devices in Settings, the same list as the web Settings page. -->
+    <string name="devices_title">Linked devices</string>
+    <string name="device_this">%1$s (this phone)</string>
+    <string name="kind_phone">phone</string>
+    <string name="kind_browser">browser</string>
+    <string name="kind_token">token</string>
+    <string name="device_via">linked from %1$s</string>
+    <string name="device_seen">seen %1$s</string>
+    <string name="device_never_seen">never seen</string>
+    <string name="device_unlink">Unlink</string>
+    <string name="device_unlink_title">Unlink %1$s?</string>
+    <string name="device_unlink_text">It is signed out at once and stops syncing. Unlinking a phone also signs out the browsers it approved. It can be linked again with a new code.</string>
+    <string name="device_unlink_failed">Not unlinked: %1$s</string>
+    <string name="device_log_show">Show activity</string>
+    <string name="device_log_hide">Hide activity</string>
+    <!-- A log line: how long ago, which device, what happened (linked, signed in, unlinked). -->
+    <string name="device_log_line">%1$s  %2$s %3$s</string>
+    <!-- After a log line: who did it. %1$s is a device name. -->
+    <string name="device_log_by">by %1$s</string>
     <string name="sound_phone_only">Saved on this phone only: %1$s It is sent again on the next connect.</string>
     <string name="sound_no_connection">no connection.</string>
     <string name="sound_no_server">no server set up.</string>

@@ -319,6 +319,19 @@ class SyncClientTest {
         assertEquals(1, wsSince.size)
     }
 
+    @Test fun unlinkedFromAnotherDeviceSignsOutAtOnce() {
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send("""{"type":"ready","seq":0}""")
+                ws.close(1013, "token revoked") // what the server sends when this phone is unlinked or its token revoked
+            }
+        }
+        start()
+        await { SyncClient.Status.AUTH_FAILED in statuses }
+        Thread.sleep(300) // 15 backoff periods at 20 ms
+        assertEquals(1, wsSince.size) // no retry with a token the server already refused
+    }
+
     @Test fun serverDownRetriesWithBackoff() {
         wsResponse = { MockResponse().setResponseCode(503) }
         start()
