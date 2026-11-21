@@ -88,9 +88,21 @@ try {
     await tp.locator('[data-tips]').hover();
     await tp.clock.runFor(30000);
     assert.equal(await title(), second, 'the tip stays put while hovered');
+    // Pause stops the rotation with the pointer and focus gone (a screen
+    // reader's virtual cursor triggers neither); Play starts it again (#352).
+    const away = async () => { await tp.mouse.move(0, 0); await tp.evaluate(() => document.activeElement.blur()); };
+    await tp.getByRole('button', { name: 'Pause tips' }).click();
+    await away();
+    await tp.clock.runFor(30000);
+    assert.equal(await title(), second, 'the tip stays put once paused');
+    // Play from the keyboard: focus stays on the button, and it still rotates.
+    await tp.getByRole('button', { name: 'Play tips' }).focus();
+    await tp.keyboard.press('Enter');
+    await tp.clock.runFor(10000);
+    assert.notEqual(await title(), second, 'Play starts the rotation again, focus or not');
     await tp.close();
   }
-  console.log('ok: tips advance on their own and pause on hover');
+  console.log('ok: tips advance on their own, pause on hover, and have Pause and Play');
 
   // Clearing it here offers Undo, and Undo brings it back.
   const a = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Disk full on web-1', message: '/var at 99%' });
@@ -573,7 +585,7 @@ try {
     // A live refresh keeps keyboard focus on the stack, and a topic named like
     // an Object property does not break the page.
     await stack.getByRole('button', { name: 'Hide' }).focus();
-    await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' });
+    const odd = (await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' })).id;
     await item('Odd topic name').waitFor();
     assert.equal(await stack.getByRole('button', { name: 'Hide' }).evaluate(b => b === document.activeElement), true, 'focus lost from the stack on refresh');
     // Clear all on the stack clears all four on the server, and Undo reopens them.
@@ -595,10 +607,29 @@ try {
     await item('Build 1 failed').waitFor({ state: 'visible' });
     await stack.getByRole('button', { name: 'Hide' }).click();
     await item('Build 1 failed').waitFor({ state: 'hidden' });
+    // A page fetch already on its way when another change lands must not put
+    // the cleared card back (#402). Hold one fetch, made before the clear, and
+    // hand it over after the clear.
+    let release;
+    const onApp = u => u.pathname === '/app';
+    await sp.route(onApp, async route => {
+      if (route.request().resourceType() !== 'fetch' || release) return route.continue();
+      const stale = await route.fetch();
+      await new Promise(ok => { release = ok; });
+      await route.fulfill({ response: stale });
+    });
+    await api(phone, `/api/v1/notifications/${odd}/dismiss`);
+    for (let i = 0; i < 200 && !release; i++) await new Promise(ok => setTimeout(ok, 25));
+    assert.ok(release, 'no page fetch after a change');
     // Another device clears one inside the closed stack: the count and newest
     // title change at once, not after the hidden card's exit timer (about 1.7 s).
     await api(phone, `/api/v1/notifications/${ids[3]}/dismiss`);
     await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor({ timeout: 1000 });
+    await sp.evaluate(() => { window.backAgain = false; new MutationObserver(() => { if (document.querySelector('[data-stack="ci-stack"] [data-stack-count]')?.textContent === '4 notifications') window.backAgain = true; }).observe(document.querySelector('[data-list]'), { childList: true, subtree: true, characterData: true }); });
+    release();
+    await sp.waitForTimeout(1000);
+    await sp.unroute(onApp);
+    assert.equal(await sp.evaluate(() => window.backAgain), false, 'a stale page put the cleared card back');
     assert.equal(await stack.locator('[data-stack-latest]').textContent(), 'Build 3 failed');
     // A single topic's page never stacks.
     await sp.goto(`${base}/app?topic=ci-stack`);
@@ -642,8 +673,51 @@ try {
     await sp.locator('[data-stack="tanks"].is-leaving').waitFor();
     assert.equal(await sp.locator('[data-stack].is-leaving').count(), 1, 'a stack that came in while clearing was marked Cleared');
     await stackOf('late').locator('[data-stack-count]', { hasText: '2 notifications' }).waitFor();
+    // While one stack's Clear all waits for its reply, another device clears a
+    // card inside a different closed stack: that stack's count changes at
+    // once, and the waiting stack stays as it is (#397).
+    await sp.unroute('**/api/v1/notifications/clear');
+    const holdClear = () => {
+      let go; const held = new Promise(r => { go = r; });
+      return sp.route('**/api/v1/notifications/clear', async route => { const res = await route.fetch(); await held; await route.fulfill({ response: res }); }).then(() => go);
+    };
+    const late3 = await send('late', 'Late 3');
+    for (const t of ['Pump 5 down', 'Pump 6 down']) await send('pumps', t);
+    await stackOf('late').locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor();
+    await stackOf('pumps').waitFor();
+    let go = await holdClear();
+    await stackOf('pumps').getByRole('button', { name: 'Clear all' }).click();
+    await api(phone, `/api/v1/notifications/${late3}/dismiss`);
+    await stackOf('late').locator('[data-stack-count]', { hasText: '2 notifications' }).waitFor({ timeout: 1000 });
+    assert.equal(await stackOf('pumps').locator('[data-stack-count]').textContent(), '2 notifications', 'the waiting stack changed before its reply');
+    go();
+    await stackOf('pumps').waitFor({ state: 'detached' });
+    // A page load already on its way when Clear all starts: its answer, from
+    // before the clear, changes nothing until the clear's reply (#397).
+    await sp.unroute('**/api/v1/notifications/clear');
+    let loadGo, loaded; const loadHeld = new Promise(r => { loadGo = r; }), asked = new Promise(r => { loaded = r; });
+    const isLoad = u => new URL(u).pathname === '/app';
+    await sp.route(isLoad, async route => {
+      if (route.request().resourceType() !== 'fetch') return route.continue();
+      // Hold only the load that has Late 4, so an older refresh cannot stand in for it.
+      const res = await route.fetch();
+      if ((await res.text()).includes('Late 4')) { loaded(); await loadHeld; }
+      await route.fulfill({ response: res });
+    });
+    go = await holdClear();
+    await send('late', 'Late 4');
+    await asked;
+    await stackOf('late').getByRole('button', { name: 'Clear all' }).click();
+    loadGo();
+    await sp.waitForTimeout(1000); // nothing to wait on: the late answer must change nothing
+    assert.equal(await stackOf('late').locator('[data-stack-count]').textContent(), '2 notifications', 'a page load from before the clear changed the stack');
+    go();
+    await sp.locator('[data-stack="late"].is-leaving').waitFor();
+    await sp.locator('.card-title', { hasText: 'Late 4' }).waitFor();
+    await sp.unroute(isLoad);
+    await sp.unroute('**/api/v1/notifications/clear');
     await sp.context().close();
-    console.log('ok: stacks stay right while Clear all waits and while one fades');
+    console.log('ok: stacks stay right while Clear all waits, while one fades, and with a load in flight');
   }
 
   // QR sign-in (#74): a signed-out browser shows a code, a signed-in phone

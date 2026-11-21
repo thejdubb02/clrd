@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Claude Code plugin: the MCP connection now refuses a server URL that is not
+  https (except localhost) with a clear message, so the token never goes out
+  over plain http. Before, only the hooks checked (#363).
 - Server: a new token made through the API or the MCP tool `create_token`
   now always starts denied for approval requests, whoever makes it. Raise it
   the same way as any device, from an allowed device or with an approve
@@ -39,6 +42,9 @@ Fixed, Removed, Security), as one line a user can understand.
   Gotify import does. Before, importing into a server in use could let the
   next cleanup delete recent live events, so phones offline at the time
   missed them (#388).
+- Web: a page refresh already on its way when another change lands is dropped, so a card cleared on another device no longer flashes back for a moment (and a closed stack no longer shows the old count and newest title). This was the flaky inbox browser test on main. (#402)
+- Web: while a stack's Clear all waits for its reply, a page refresh already on its way no longer reshapes the stacks first, and a card another device clears inside a different closed stack updates that stack's count at once (#397).
+
 - Server: an ntfy import replaces anonymous access set before it through the
   admin API, so no older anonymous token stays live beside the imported one
   (#375).
@@ -60,6 +66,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: changing the sound replaces the notification channels, which
   drops a Do Not Disturb pass you set for urgent ones (Android lets only you
   set it). Settings now tells you and offers one tap to turn it back on. (#346)
+  When the sound is changed from the web inbox, the API or an agent, a
+  notification on the phone says so too, and a tap on it opens the switch. (#380)
 
 - Android: a refused approval tap now says why (this phone may not answer,
   the request came from this phone's own token, or the question changed)
@@ -124,6 +132,7 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: the empty-inbox tips have a Pause button, so they stop rotating for anyone, including screen reader users who never hover or focus them; Play starts them again (#352).
 - Web: a card's snooze menu offers "Silence <topic> for 1 hour", which mutes
   the whole topic in one tap, with or without JavaScript. It shows only where
   your device may silence that topic (#326).

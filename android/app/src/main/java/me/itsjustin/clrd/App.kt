@@ -64,13 +64,15 @@ class App : Application() {
     /**
      * Switches the sound: new channels first, then the choice, then the old channels go and the tray is
      * reposted quietly onto the new ones (a post to a missing channel is dropped). Call on [io].
+     * True when the change took the Urgent channel's Do Not Disturb pass with it.
      */
-    fun saveSound(name: String) = synchronized(configLock) {
+    fun saveSound(name: String): Boolean = synchronized(configLock) {
         val s = Sounds.known(name)
-        tray.createChannels(s)
+        val dropped = tray.createChannels(s)
         prefs.edit().putString("sound", s).commit()
         soundNow.value = s
         RoomStore(this).reconcile()
+        dropped
     }
 
     /** [sound] for Settings to follow, so a change from the server or an agent shows while it is open. */
@@ -112,7 +114,7 @@ class App : Application() {
      */
     private fun serverSound(name: String) {
         if (soundPending != null) io.execute { pushSound() }
-        else if (Sounds.known(name) != sound) saveSound(name)
+        else if (Sounds.known(name) != sound && saveSound(name)) tray.dndNotice() // not picked here, so Settings' note may go unseen (#380)
     }
 
     /**

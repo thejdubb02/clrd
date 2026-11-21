@@ -4,10 +4,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
-# A new push cancels the older run on the same branch or pull request, so
-# main runs only its newest commit (#379). Publishing lives in fdroid.yml.
+# A new push cancels the older run on the same branch or pull request. On
+# main each commit is its own group, so no run there is ever cancelled: a
+# rerun of an older commit cannot cancel the newest (#379, #402).
+# Publishing lives in fdroid.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
