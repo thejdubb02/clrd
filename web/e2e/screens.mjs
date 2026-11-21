@@ -73,6 +73,9 @@ try {
   await api(`/api/v1/notifications/${dis.id}/dismiss`);
   const res = await send({ topic: 'infra', title: 'API 5xx rate above 2%', message: 'Recovered after deploy.', external_id: 'api-5xx' });
   await api(`/api/v1/notifications/${res.id}/resolve`);
+  // A sender with format problems, for the format check on Settings (#308).
+  const ci = await send({ topic: 'ci', format: 'text', message: '**Build** failed on main\nSee [the log](https://ci.example.com/42)' });
+  await api(`/api/v1/notifications/${ci.id}/dismiss`);
 
   browser = await chromium.launch();
   const link = Buffer.from(`Bearer ${laptop}`).toString('base64url');

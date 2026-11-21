@@ -469,6 +469,13 @@
     }
   }
 
+  // Settings, format check (#308): copy a topic's fix prompt.
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-format-copy]');
+    if (!b) return;
+    try { await copyText(b.closest('[data-format-topic]').querySelector('[data-format-prompt]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
+  });
+
   // Empty-inbox tip card (#244): previous and next, a slow rotation that pauses
   // on hover or focus, and none at all under reduced motion.
   const tipBox = $('[data-tips]');

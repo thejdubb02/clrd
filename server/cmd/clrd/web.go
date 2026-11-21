@@ -174,6 +174,13 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		if err := convert(evs, &snap.Log); err != nil {
 			return snap, err
 		}
+		fc, err := a.s.FormatCheck(r, tok, "")
+		if err != nil {
+			return snap, err
+		}
+		if err := convert(fc["topics"], &snap.Format); err != nil {
+			return snap, err
+		}
 	}
 	return snap, nil
 }

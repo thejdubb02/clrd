@@ -248,6 +248,35 @@ type Snapshot struct {
 	Formatting, Autolink, Favicons, LinkPreviews bool
 	TopicPreviews                                map[string]bool // overrides LinkPreviews for one topic
 	KeepClearedDays                              int             // days cleared messages are kept, 0 = forever
+	Format                                       []FormatTopic   // format check (#308), Settings only: topics with problems
+}
+
+// FormatTopic is one topic's format check result (docs/SPEC.md, format-check).
+type FormatTopic struct {
+	Topic    string          `json:"topic"`
+	Checked  int             `json:"checked"`
+	Problems int             `json:"problems"`
+	Findings []FormatFinding `json:"findings"`
+	Prompt   string          `json:"prompt"`
+}
+
+type FormatFinding struct {
+	Rule  string `json:"rule"`
+	Count int    `json:"count"`
+}
+
+// Label is the rule in plain words.
+func (f FormatFinding) Label() string {
+	if s, ok := map[string]string{
+		"markdown_as_text":  "Markdown sent as plain text, so the symbols show",
+		"unknown_shortcode": "Emoji names clrd does not know, shown as typed",
+		"no_title":          "No title",
+		"long_body":         "Too long to read on a phone",
+		"json_dump":         "Raw JSON instead of a sentence",
+	}[f.Rule]; ok {
+		return s
+	}
+	return f.Rule
 }
 
 // API is what the server provides. The request is passed so the server can

@@ -358,6 +358,28 @@ func TestDeviceFamily(t *testing.T) {
 	}
 }
 
+// TestFormatCheckSettings: Settings lists a topic with format problems, the
+// count per rule and its fix prompt, and shows nothing while there are none (#308).
+func TestFormatCheckSettings(t *testing.T) {
+	_, ts, raw := realServer(t)
+	c := browser()
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	if code, _ := submit(t, c, ts.URL, page, raw, "laptop"); code != 200 {
+		t.Fatalf("sign in: %d", code)
+	}
+	if _, body, _ := fetch(t, c, ts.URL+"/app/settings"); strings.Contains(body, "data-format-check") {
+		t.Error("format section shown with no messages")
+	}
+	publish(t, ts, raw, "ci", "build failed")
+	publish(t, ts, raw, "ci", "build passed")
+	_, body, _ := fetch(t, c, ts.URL+"/app/settings")
+	for _, want := range []string{"data-format-check", "ci <span", "2 of the last 2 messages", "<li>No title: 2</li>", `topic &#34;ci&#34;`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings page lacks %q", want)
+		}
+	}
+}
+
 // TestHidePublicPages: CLRD_PUBLIC_PAGES=off keeps a private server's
 // address from showing the landing page or docs, or being indexed.
 func TestHidePublicPages(t *testing.T) {
