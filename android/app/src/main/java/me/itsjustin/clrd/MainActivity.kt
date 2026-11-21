@@ -748,7 +748,9 @@ private fun DeviceSettings(app: App, resumes: Int) {
     if (showLog) log.forEach { e ->
         val at = millisOf(e.optString("at"))?.let { ago(ctx, it) }.orEmpty()
         val by = e.optString("by").takeIf { it.isNotEmpty() }?.let { " " + ctx.getString(R.string.device_log_by, it) }.orEmpty()
-        Text("$at  ${e.optString("device")} ${e.optString("action")}$by", style = Mono, color = b.slate, fontSize = 12.sp)
+        val device = e.optString("device")
+        val action = e.optString("action")
+        Text("$at  $device $action$by", style = Mono, color = b.slate, fontSize = 12.sp)
     }
     unlink?.let { d ->
         AlertDialog(
