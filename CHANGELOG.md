@@ -101,6 +101,10 @@ Fixed, Removed, Security), as one line a user can understand.
   shape. The app token is a clrd token limited to one topic. Apprise and the
   gotify CLI are checked; shoutrrr is not yet. (#116)
 
+- Android: Stack by topic now also folds the app's list, as on the web.
+  Two or more notifications of one topic show as one card with the count and
+  the newest title; tap it to show or hide them. Not when one topic is picked.
+  (#231)
 - Server: try a webhook template before pointing a service at it.
   `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
   `preview_template`) takes a sample payload and returns the notifications a

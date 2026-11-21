@@ -351,6 +351,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val b = LocalBrand.current
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
+    var unfolded by remember { mutableStateOf(setOf<String>()) } // stacks opened in the list
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val dao = app.db.dao()
@@ -399,11 +400,19 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                     if (topics.size > 1) Pills(topics, counts, rows.size, picked) { topic = it }
                     if (tab == Tab.Cleared) ServerCleared(app, rows.size, rows.firstOrNull()?.id)
                     val shown = rows.filter { picked == null || it.topic == picked }
+                    // Stack by topic also folds the list here, as on the web; not when one topic is picked (#231).
+                    val entries = if (app.stack && picked == null) stacked(shown, unfolded) else shown.map(::One)
                     if (shown.isEmpty()) Empty(tab) else LazyColumn(
                         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(shown, key = { it.id }) { n ->
+                        items(entries, key = { it.key }) { e ->
+                            if (e is Stack) {
+                                val open = e.topic in unfolded
+                                StackCard(e, open) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
+                                return@items
+                            }
+                            val n = (e as One).n
                             if (tab == Tab.Cleared) Card(n) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text(stringResource(R.string.restore), color = b.ink) } }
                             else Swipeable(n, onClear = { clear(n) }) {
                                 Card(n) {
@@ -641,6 +650,39 @@ internal fun ago(ctx: Context, t: Long, now: Long = System.currentTimeMillis()):
 
 /** How many rows each topic has, for the topic chips. */
 internal fun topicCounts(rows: List<Notif>): Map<String, Int> = rows.groupingBy { it.topic }.eachCount()
+
+/** One row of the list: a notification, or a stack of one topic's (#231). */
+internal sealed interface Entry { val key: String }
+internal data class One(val n: Notif) : Entry { override val key get() = n.id }
+internal data class Stack(val topic: String, val rows: List<Notif>) : Entry { override val key get() = "stack\u0000$topic" }
+
+/** Two or more of one topic fold into a stack at its newest one's place; an open stack shows them under it. */
+internal fun stacked(rows: List<Notif>, open: Set<String>): List<Entry> = rows.groupBy { it.topic }.values.flatMap { g ->
+    if (g.size < 2) listOf(One(g[0]))
+    else listOf(Stack(g[0].topic, g)) + if (g[0].topic in open) g.map(::One) else emptyList()
+}
+
+@Composable
+private fun StackCard(s: Stack, open: Boolean, onToggle: () -> Unit) {
+    val b = LocalBrand.current
+    val top = s.rows.maxOf { it.priority }
+    Surface(
+        onClick = onToggle,
+        color = b.surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, b.line),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(when { top >= 4 -> b.signal; top == 3 -> b.slate; else -> b.line }))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(s.topic, color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(s.rows[0].title.ifEmpty { s.rows[0].message }, color = b.body, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(pluralStringResource(R.plurals.tray_stack, s.rows.size, s.rows.size), style = Mono, color = b.slate)
+            }
+            TextButton(onClick = onToggle) { Text(stringResource(if (open) R.string.stack_hide else R.string.stack_show), color = b.ink) }
+        }
+    }
+}
 
 @Composable
 private fun Empty(tab: Tab) {
