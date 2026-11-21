@@ -469,6 +469,9 @@ func templates(base string) *template.Template {
 	var t *template.Template
 	t = template.Must(template.New("").Funcs(template.FuncMap{
 		"base": func() string { return base },
+		// multiline: a template field saved with a newline edits in a textarea,
+		// since a one-line input would drop it (#376).
+		"multiline": func(s string) bool { return strings.Contains(s, "\n") },
 		// icon renders the i-<name> icon chosen by data, like a tip's.
 		"icon": func(name string) (template.HTML, error) {
 			var b strings.Builder
