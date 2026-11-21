@@ -128,6 +128,10 @@
     const dot = s.querySelector('[data-stack-dot]');
     dot.classList.remove('bg-destructive', 'bg-foreground', 'bg-border');
     dot.classList.add(top >= 5 ? 'bg-destructive' : top === 4 ? 'bg-foreground' : 'bg-border');
+    const side = [...document.querySelectorAll('[data-topic-icon]')].find(a => a.dataset.name === s.dataset.stack);
+    const icon = (side && side.dataset.topicIcon) || g[0].querySelector('img[data-icon]')?.getAttribute('src');
+    const img = s.querySelector('img[data-icon]');
+    if (icon) Object.assign(img, { src: icon, hidden: false }); else img.hidden = true;
   };
   function restack(focus = stackFocus()) {
     if (!list || !stackTpl) return;
@@ -145,9 +149,6 @@
       s.dataset.stack = t;
       s.querySelector('[data-stack-topic]').textContent = t;
       fill(s, g);
-      const side = [...document.querySelectorAll('[data-topic-icon]')].find(a => a.dataset.name === t);
-      const icon = (side && side.dataset.topicIcon) || g[0].querySelector('img[data-icon]')?.getAttribute('src');
-      if (icon) Object.assign(s.querySelector('img'), { src: icon, hidden: false });
       const tg = s.querySelector('[data-stack-toggle]');
       tg.setAttribute('aria-expanded', open);
       tg.textContent = open ? 'Hide' : 'Show all';
@@ -246,9 +247,10 @@
         if (s && !g.some(x => clearing.has(x.dataset.id))) {
           if (g.length > 1) fill(s, g);
           else { // down to one card: it stands on its own, as restack would leave it
-            if (selId === key(s)) select(g[0] || null, s.contains(document.activeElement));
+            const sel = selId === key(s), focused = s.contains(document.activeElement);
+            g.forEach(x => { x.hidden = false; }); // shown first, so it can take the focus
             s.remove();
-            g.forEach(x => { x.hidden = false; });
+            if (sel) select(g[0] || null, focused);
           }
         }
       }

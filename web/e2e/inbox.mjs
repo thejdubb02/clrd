@@ -699,7 +699,10 @@ try {
     const isLoad = u => new URL(u).pathname === '/app';
     await sp.route(isLoad, async route => {
       if (route.request().resourceType() !== 'fetch') return route.continue();
-      const res = await route.fetch(); loaded(); await loadHeld; await route.fulfill({ response: res });
+      // Hold only the load that has Late 4, so an older refresh cannot stand in for it.
+      const res = await route.fetch();
+      if ((await res.text()).includes('Late 4')) { loaded(); await loadHeld; }
+      await route.fulfill({ response: res });
     });
     go = await holdClear();
     await send('late', 'Late 4');
