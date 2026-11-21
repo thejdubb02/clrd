@@ -119,6 +119,8 @@
     <string name="device_unlink_failed">Not unlinked: %1$s</string>
     <string name="device_log_show">Show activity</string>
     <string name="device_log_hide">Hide activity</string>
+    <!-- A log line: how long ago, which device, what happened (linked, signed in, unlinked). -->
+    <string name="device_log_line">%1$s  %2$s %3$s</string>
     <!-- After a log line: who did it. %1$s is a device name. -->
     <string name="device_log_by">by %1$s</string>
     <string name="sound_phone_only">Saved on this phone only: %1$s It is sent again on the next connect.</string>

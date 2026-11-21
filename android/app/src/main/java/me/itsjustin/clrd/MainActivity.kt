@@ -750,7 +750,7 @@ private fun DeviceSettings(app: App, resumes: Int) {
         val by = e.optString("by").takeIf { it.isNotEmpty() }?.let { " " + ctx.getString(R.string.device_log_by, it) }.orEmpty()
         val device = e.optString("device")
         val action = e.optString("action")
-        Text("$at  $device $action$by", style = Mono, color = b.slate, fontSize = 12.sp)
+        Text(ctx.getString(R.string.device_log_line, at, device, action) + by, style = Mono, color = b.slate, fontSize = 12.sp)
     }
     unlink?.let { d ->
         AlertDialog(
