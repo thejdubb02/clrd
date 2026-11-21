@@ -67,7 +67,7 @@ try {
   await next.click();
   assert.deepEqual(await next.boundingBox(), at, 'Next stays put when the tip height changes (#302)');
   assert.notEqual(await tip.locator('h4').textContent(), 'Send your first notification', 'Next changes the tip');
-  assert.equal(await page.locator('[data-tip-count]').textContent(), '2 of 10');
+  assert.equal(await page.locator('[data-tip-count]').textContent(), '2 of 9', 'no topic icon tip before there is a topic (#258)');
   assert.equal(await announce.textContent(), await tip.locator('h4').textContent(), 'Next announces the new tip');
   console.log('ok: tip card shows, Next changes it, Copy has the base URL');
 
