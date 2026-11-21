@@ -126,6 +126,7 @@ Fixed, Removed, Security), as one line a user can understand.
   emergency repeats, HTML, a click URL, expiry and an image attachment, and
   answers in Pushover's shape. See docs/integrations/pushover.md. (#116)
 
+- Web: Settings shows the format check by topic and sender. Dismiss a finding for one sender or the whole topic, stop checking a topic, and undo either from the same page. Nothing is dismissed until you choose (#320).
 - Server: an admin can turn anonymous ntfy access on, set its topics or turn it off through the API (`PUT /api/v1/ntfy/anonymous`) or the MCP tools `ntfy_anonymous` and `set_ntfy_anonymous`. It stays off until set (#375, #27).
 
 - Server: ntfy's `?scheduled=1` lists delayed messages that have not fired

@@ -121,6 +121,10 @@ func (f *Fake) Act(r *http.Request, id, action string, until *time.Time) error {
 func (f *Fake) StartSilence(r *http.Request, topic, tag, dur, comment string) error { return nil }
 func (f *Fake) EndSilence(r *http.Request, id string) error                         { return nil }
 
+func (f *Fake) FormatIgnore(r *http.Request, topic, rule, senderID string, on bool) error {
+	return nil
+}
+
 func (f *Fake) SaveHook(*http.Request, string, string, string, []string, string, bool) error {
 	return nil
 }

@@ -314,7 +314,9 @@ type Snapshot struct {
 	KeepClearedDays                              int             // days cleared messages are kept, 0 = forever
 	TopicKeepClearedDays                         map[string]int  // overrides KeepClearedDays for one topic
 	Sound                                        string          // this device's own sound (SPEC 2.2), "default" when unset
-	Format                                       []FormatTopic   // format check (#308), Settings only: topics with problems
+	Format                                       []FormatTopic   // format check (#308), Settings only: topic and sender groups with problems
+	FormatOff                                    []FormatOff     // topics left out of the check (#320)
+	FormatDismissed                              []FormatDismiss // findings dismissed (#320)
 	Silences                                     []Silence       // running silences (docs/silences.md), Settings only
 	CanSilence                                   bool            // the token may start a silence (it can publish)
 	Hooks                                        []Hook          // outgoing webhooks (#238), Settings and admin only
@@ -404,11 +406,33 @@ type Silence struct {
 // FormatTopic is one topic's format check result (docs/SPEC.md, format-check).
 type FormatTopic struct {
 	Topic    string          `json:"topic"`
+	SenderID string          `json:"sender_id"` // "" when the sender is not known
+	Sender   string          `json:"sender"`    // the sending token's name
+	CanFix   bool            `json:"-"`         // this token may dismiss or leave the topic out
 	Checked  int             `json:"checked"`
 	Problems int             `json:"problems"`
 	Findings []FormatFinding `json:"findings"`
 	Prompt   string          `json:"prompt"`
 }
+
+// FormatOff is a topic left out of the format check (#320).
+type FormatOff struct {
+	Topic  string
+	CanFix bool // this token may check it again
+}
+
+// FormatDismiss is a format check rule dismissed for a topic, for one
+// sender or every sender when SenderID is "" (#320).
+type FormatDismiss struct {
+	Topic    string `json:"topic"`
+	Rule     string `json:"rule"`
+	SenderID string `json:"sender_id"`
+	Sender   string `json:"sender"`
+	CanFix   bool   `json:"-"` // this token may undo it
+}
+
+// Label is the rule in plain words.
+func (d FormatDismiss) Label() string { return FormatFinding{Rule: d.Rule}.Label() }
 
 type FormatFinding struct {
 	Rule  string `json:"rule"`
@@ -443,6 +467,10 @@ type API interface {
 	// silence form without script. Their error text is shown on the page.
 	StartSilence(r *http.Request, topic, tag, dur, comment string) error
 	EndSilence(r *http.Request, id string) error
+	// FormatIgnore dismisses a format check rule in a topic (for one sender
+	// when senderID is set), or with rule "" leaves the topic out; on false
+	// undoes it.
+	FormatIgnore(r *http.Request, topic, rule, senderID string, on bool) error
 	// SaveHook adds or replaces a webhook; an empty secret keeps the saved
 	// one unless clearSecret. DeleteHook removes it and its log.
 	SaveHook(r *http.Request, topic, name, url string, events []string, secret string, clearSecret bool) error
@@ -957,6 +985,23 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		http.Redirect(w, r, "/app/settings", http.StatusSeeOther)
+	})
+
+	// Settings format check (#320): dismiss a finding, leave a topic out, or
+	// undo either, as a plain form post.
+	mux.HandleFunc("POST /app/format", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		err := api.FormatIgnore(r, f.Get("topic"), f.Get("rule"), f.Get("sender_id"), f.Get("undo") == "")
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
+			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "/app/settings#format", http.StatusSeeOther)
 	})
 
 	// Settings webhooks (#238): save or delete one as a plain form post.

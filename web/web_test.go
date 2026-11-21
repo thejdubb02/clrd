@@ -126,6 +126,10 @@ func (readOnly) StartSilence(*http.Request, string, string, string, string) erro
 
 func (readOnly) EndSilence(*http.Request, string) error { return ErrUnauthorized }
 
+func (readOnly) FormatIgnore(*http.Request, string, string, string, bool) error {
+	return ErrUnauthorized
+}
+
 func (readOnly) SaveHook(*http.Request, string, string, string, []string, string, bool) error {
 	return ErrUnauthorized
 }
