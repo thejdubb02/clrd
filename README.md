@@ -64,6 +64,11 @@ offline catches up the moment it reconnects.
   clears itself then.
 - **Missed check-in alerts.** Give a topic an interval, say 25 hours, and clrd
   raises an urgent alert when a backup or cron job stops reporting in.
+- **Repeat and silence.** Send with `"repeat": "5m"` and the alert rings
+  again on the phone and in the web inbox until someone acts on it, 10 more
+  times by default ([docs/repeat.md](docs/repeat.md)).
+  A silence mutes a topic or tag until a set time
+  ([docs/silences.md](docs/silences.md)).
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
@@ -80,8 +85,8 @@ offline catches up the moment it reconnects.
   Share and Copy on each card, optional stacking by topic, a Ctrl+K command
   palette, a Send box for a quick note to your phone, a sound for new
   notifications (pick one in Settings, silenced ones stay quiet), silences
-  started and ended from Settings, dark mode,
-  phone width.
+  started and ended from Settings, a dot for each linked device (up to six)
+  showing which are connected, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, notifications stacked by
   topic, Share and Copy, Markdown formatting and tappable links. A choice of
@@ -93,7 +98,9 @@ offline catches up the moment it reconnects.
   show the same 4-digit number, so no token is typed or copied.
 - **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
   and an MCP server so an AI agent can notify you and wait for your answer.
-  Claude Code and Codex can ask your phone before running a command.
+  Claude Code and Codex can ask your phone before running a command, and
+  each device has its own approve setting (allowed, ask or denied), so an
+  agent's token cannot approve its own prompts.
   A format check finds senders whose messages are hard to read and hands an
   agent a ready prompt to fix them.
 
@@ -129,13 +136,16 @@ Cursor, VS Code, Windsurf, Zed, Codex CLI, Gemini CLI), Home Assistant, Gatus, U
 ntfy clients and Watchtower. Built-in webhook templates for GitHub, Sentry,
 Stripe, Jira, Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the
 *arr apps, with signature checks, and your own template for any other
-service's JSON. Outgoing webhooks tell your own service when someone
+service's JSON, which you can try on a sample payload before going live.
+Outgoing webhooks tell your own service when someone
 dismisses, acks, resolves, snoozes or replies. Setup for each, and which ones resolve themselves:
 [docs/integrations](docs/integrations/README.md).
 
 ## Docs
 
 - [docs/self-host.md](docs/self-host.md): run it, put HTTPS in front, tokens, backups
+- [docs/integrations/mcp.md](docs/integrations/mcp.md): MCP tools for agents, and phone approval of agent prompts
+- [docs/formatting.md](docs/formatting.md): Markdown, emoji, display settings and the format check
 - [docs/SPEC.md](docs/SPEC.md): the API, sync model, states and auth
 - [android/README.md](android/README.md): build the Android app
 - [web/README.md](web/README.md): how the web pages are served

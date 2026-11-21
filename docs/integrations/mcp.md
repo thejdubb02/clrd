@@ -14,9 +14,10 @@ Tools:
 
 | Tool | Arguments | Does |
 |---|---|---|
-| `send` | `topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?` | Publish. `format` is `markdown` (default) or `text`. `icon` is an http(s) image URL. `attachment` links a file, `{"url":"https://...","name":"report.pdf"}`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. |
+| `send` | `topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?` | Publish. `format` is `markdown` (default) or `text`. `icon` is an http(s) image URL. `attachment` links a file, `{"url":"https://...","name":"report.pdf"}`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. `repeat` (`"5m"`, 1m to 24h) alerts again on that schedule until someone acts on it, at most `repeat_times` more times (default 10); see [Repeat until acknowledged](../repeat.md). |
 | `list` | `topic?, state?` | List, default `open`. |
 | `topics` | none | Topics the token can read, with how many are open in each. |
+| `format_check` | `topic?` | Topics whose newest messages are hard to read (Markdown sent as plain text, unknown `:shortcodes:`, no title, very long, raw JSON), each with a prompt that says how to fix the sender. Advice only. See [Message formatting](../formatting.md#format-check). |
 | `counts` | `keep_cleared_days?`, `topic?` | Exact number of notifications in each state, plus `inbox` and `cleared` totals, over the topics the token can read. With `keep_cleared_days`, also `would_remove`: how many cleared ones that setting would delete. With `topic`, `would_remove` counts only that topic, to preview its own value. |
 | `settings` | any settings field, e.g. `keep_cleared_days?` | No arguments reads the server settings. With arguments, changes only those fields. `keep_cleared_days` (0 is forever) needs an admin token. `topic_keep_cleared_days`, like `{"alerts": 7}`, sets it for one topic (`null` drops it) and needs admin on that topic. |
 | `get` | `id` | One notification by server id, with its current state. |
@@ -46,7 +47,7 @@ Tools:
 | `delete_hook` | `topic, name` | Delete one. Admin. |
 | `hook_deliveries` | `topic, name` | Its recent calls, with status and error. Admin. |
 | `tokens` | none | API tokens, never their secrets. Admin. |
-| `create_token` | `name, scopes, topics? or grants?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. Admin. |
+| `create_token` | `name, scopes, topics? or grants?, approve?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. `approve` is `denied` (default), `ask` or `allowed`; only an allowed caller may give `ask` or `allowed`. Admin. |
 | `revoke_token` | `id` | Revoke a token; its streams close at once. Admin. |
 | `server_env` | none | Every `CLRD_*` setting in effect, defaults filled in. Read only: those change by setting the variable and restarting. Admin. |
 | `ntfy_ignored` | none | ntfy publish options senders used that clrd accepts but ignores, with counts. Admin. |
@@ -223,8 +224,10 @@ answers the agent. The tap clears the notification on every other device.
   to run 10 minutes (nginx: `proxy_read_timeout 600s;`).
 - Give the hook its own token, never your phone's. A token cannot answer a
   request it sent, nor can a phone or browser linked from it.
-- Only a device allowed to approve can tap Allow or Deny. The setup token and
-  the phones and browsers you link are allowed; a new token is denied, so an
+- Only a device allowed to approve can tap Allow or Deny. The setup token is
+  allowed, and a phone or browser takes the setting of the token it was
+  linked or signed in with. Any other new token is denied unless made with
+  `approve` set (`clrd token create` too, without `--approve`), so an
   agent's token cannot approve its own prompts. Change it per device in the
   web inbox under Settings, Linked devices, May approve (an allowed browser
   sees the menu; it can lower its own setting, never raise it), or with
@@ -233,6 +236,17 @@ answers the agent. The tap clears the notification on every other device.
   on the same topic. An agent can ask for a higher setting itself with the
   `request_approve` tool; it lands when you tap Confirm. Locked out? `clrd token create
   --approve allowed` on the server makes an allowed token.
+
+Change a device's setting over the API with an allowed token. Take the id
+from `GET /api/v1/devices?all=1` (or the MCP `devices` tool). A device may
+lower any setting it can see, its own included, but never raise its own:
+
+```sh
+curl -X PUT -H "Authorization: Bearer $CLRD_TOKEN" \
+  -d '{"approve":"ask"}' "https://clrd.example.com/api/v1/devices/$DEVICE_ID/approve"
+```
+
+There is no MCP tool for this yet.
 
 Claude Code, in `~/.claude/settings.json` (with `CLRD_TOKEN` set in your
 environment):

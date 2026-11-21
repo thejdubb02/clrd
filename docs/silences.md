@@ -37,6 +37,9 @@ curl -H "Authorization: Bearer $CLRD_TOKEN" \
 
 The answer is the silence, with its `id`.
 
+Agents use the MCP tools `silence` (same fields), `silences` and
+`end_silence`.
+
 ## See and end them
 
 ```sh

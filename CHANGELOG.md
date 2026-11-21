@@ -145,8 +145,7 @@ Fixed, Removed, Security), as one line a user can understand.
   options (#252).
 - Server: each device can have its own notification sound (default, none,
   chime, ding, pop, bell, alert or soft), read and set through the API and the
-  MCP `sound` tool; `GET /api/v1/sounds` lists the names. The Android app and
-  web inbox start playing the choice in their own follow-up releases (#282).
+  MCP `sound` tool; `GET /api/v1/sounds` lists the names (#282).
 - Android: pick the notification sound in Settings, with a Play button to
   hear each one: the phone's default (still the default), none, or one of
   the six built-in clrd sounds. Only that phone changes. If the phone's own
@@ -156,7 +155,7 @@ Fixed, Removed, Security), as one line a user can understand.
   Alert, Soft or None in Settings and hear it first. Chime plays with no
   setup. Silenced notifications make no sound, and if the browser blocks
   sound until you click the page, the inbox says so instead of failing
-  quietly. The choice is kept in this browser for now (#282).
+  quietly (#282).
 - Server: an admin can read every server setting in effect with
   `GET /api/v1/server`, and create a token with per-topic grants over the API
   (`grants` on `POST /api/v1/tokens`), so an agent can check and set up access
@@ -187,6 +186,12 @@ Fixed, Removed, Security), as one line a user can understand.
 - Server: `clrd help` lists the commands and settings.
 
 ### Changed
+- Docs: README, the landing page and the docs now match what `main` does.
+  The approve setting is documented (new CLI tokens are denied, and the
+  headless admin command passes `--approve allowed`), formatting covers
+  emoji shortcodes,
+  and the MCP tools for repeat, format check, silences, templates, template
+  preview and outgoing webhooks are listed where each feature is described.
 - Web: the sound picked in Settings is saved on the server for this browser, so an agent can set it over the API or MCP and an open Settings page follows. A sound picked before this moves to the server on the next visit; if the server refuses it, it stays in the browser (#297).
 - Web: the sync indicator shows one dot per device, green when it is connected and red when it is not, and updates live as devices come and go. "In sync on N devices" counts only the connected ones, the indicator links to Linked devices, and Settings shows each device as Connected, Catching up or Offline (#295).
 

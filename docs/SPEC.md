@@ -262,8 +262,8 @@ name it does not know plays `default`.
 **Per device.** Each device keeps its own choice (a phone on `alert`, a desktop
 on `pop`); unset means `default`, so sound works with no setup. The choice is
 stored on the server per device, so an agent can read the valid names and read
-and set any device's choice through the API and MCP (the endpoints, MCP tools
-and WebSocket message go into sections 3, 5 and 6 with the server work, #282),
+and set any device's choice through the API and MCP (`GET /api/v1/sounds` and
+`PUT /api/v1/devices/{id}` in section 5, the `sound` tool in section 6),
 and the device learns of a change over its WebSocket without a restart. A
 per-topic override is a later issue.
 
@@ -621,7 +621,7 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?)`, `list(topic?, state?)`,
 `topics()`, `counts(keep_cleared_days?, topic?)`, `format_check(topic?)` (the format
 check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
@@ -632,6 +632,7 @@ dismissed or an action is tapped; returns which, so an agent can ask a human
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
 `reply` (the state). `wait_for_reply` waits at most 600 s. `devices()`,
 `device_log()` and `unlink(id)` are the device list, its log and unlink,
+`sound(id?, sound?)` lists the sound names or sets one device's sound,
 and `request_approve(approve, topic?)` is `POST /api/v1/devices/approve-request`,
 from section 5. Setup tools, each one REST call: path arguments go in the URL,
 the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dismiss(id)`, `reopen(id)`, `clear(topic | ids)`, `silences()`,

@@ -12,7 +12,8 @@ answers to any URL you give it. In the web inbox, signed in with an admin
 token, Settings > Webhooks adds, edits and deletes them and shows each one's
 last 10 deliveries. There, leaving Secret empty on Edit keeps the saved one.
 
-With the API:
+An agent with an admin token uses the MCP tools `hooks`, `set_hook`,
+`delete_hook` and `hook_deliveries`. With the API:
 
 ```sh
 curl -X PUT https://clrd.example.com/api/v1/topics/alerts/hooks/github \
