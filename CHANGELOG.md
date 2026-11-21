@@ -40,6 +40,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: emoji shortcodes like `:warning:` show as the emoji on the web, in
+  the Android app and tray, and in every API and stream, and a tag that names
+  an emoji goes in front of the title, as in ntfy. Unknown names, code and
+  times like `10:30:15` stay as typed (#306).
 - Server: the device list says which devices are connected right now and
   caught up, and the last event each was sent (`connected`, `caught_up`,
   `synced_seq`). Every open WebSocket gets the new list when another device
