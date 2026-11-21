@@ -589,6 +589,7 @@ func (s *Server) routesSetup() {
 	s.linkRoutes()
 	s.deviceRoutes()
 	s.soundRoutes()
+	s.approveRoutes()
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in PublishInput
@@ -786,10 +787,11 @@ func (s *Server) routesSetup() {
 			return err
 		}
 		var in struct {
-			Name   string   `json:"name"`
-			Scopes []string `json:"scopes"`
-			Topics []string `json:"topics"`
-			Grants []Grant  `json:"grants"`
+			Name    string   `json:"name"`
+			Scopes  []string `json:"scopes"`
+			Topics  []string `json:"topics"`
+			Grants  []Grant  `json:"grants"`
+			Approve string   `json:"approve"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
@@ -797,7 +799,12 @@ func (s *Server) routesSetup() {
 		if in.Grants != nil && len(in.Grants) == 0 { // empty would mean every topic, not none
 			return errf(400, "bad_request", "grants is empty: leave it out for every topic, or list at least one grant")
 		}
-		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants})
+		if in.Approve == ApproveAllowed { // only an allowed caller may make an allowed token (#187)
+			if v, err := approveOf(r.Context(), s.db, tok.ID); err != nil || v != ApproveAllowed {
+				return errf(403, "approve_denied", "only an allowed device can make a token that may answer approval requests")
+			}
+		}
+		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants, Approve: in.Approve})
 		if err != nil {
 			return err
 		}

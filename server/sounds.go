@@ -55,21 +55,12 @@ func (s *Server) SetSound(ctx context.Context, tok *Token, id, sound string) (Li
 	if !slices.Contains(soundNames, sound) {
 		return d, errf(400, "bad_request", "unknown sound %q, use one of: %s", sound, strings.Join(soundNames, ", "))
 	}
-	s.mu.Lock()
-	tx, err := s.db.BeginTx(ctx, nil) // immediate: unlinks wait for the commit
-	if err != nil {
-		s.mu.Unlock()
-		return d, err
-	}
-	defer tx.Rollback()
-	ds, err := s.devices(ctx, tx, tok)
-	i := slices.IndexFunc(ds, func(d LinkedDevice) bool { return d.ID == id })
-	if err == nil && (i < 0 || !slices.ContainsFunc(ds, func(d LinkedDevice) bool { return d.ID == tok.ID })) {
-		err = errf(404, "not_found", "device not found")
+	tx, d, err := s.deviceTx(ctx, tok, id)
+	if tx != nil {
+		defer tx.Rollback()
 	}
 	m := map[string]string{}
 	if err == nil {
-		d = ds[i]
 		d.Sound = sound
 		m, err = s.deviceSounds(ctx, tx)
 	}

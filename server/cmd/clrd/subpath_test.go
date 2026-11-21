@@ -32,7 +32,7 @@ func TestSubPath(t *testing.T) {
 	mountWeb(s, base, false)
 	ts := httptest.NewServer(s)
 	t.Cleanup(ts.Close)
-	_, raw, err := s.CreateToken(context.Background(), "phone", []string{"admin"}, nil)
+	_, raw, err := s.CreateToken(context.Background(), "phone", "allowed", []string{"admin"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

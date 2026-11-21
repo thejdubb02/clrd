@@ -1412,7 +1412,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this, can_unlink, sound, and the live sync state: connected (has a stream open now), caught_up (one of its streams has finished replay) and synced_seq (the last event seq the server sent it). A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
+      "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this, can_unlink, sound, approve (allowed or denied: may it answer approval requests), and the live sync state: connected (has a stream open now), caught_up (one of its streams has finished replay) and synced_seq (the last event seq the server sent it). A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
      }
     ]
    }
@@ -1519,6 +1519,64 @@
     "responses": {
      "204": {
       "description": "Unlinked"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/api/v1/devices/{id}/approve": {
+   "put": {
+    "summary": "Set whether a device may answer approval requests",
+    "description": "Body {\"approve\":\"allowed\"} or {\"approve\":\"denied\"}. Scope read, from a token not limited to some topics, whose own setting is allowed (else 403 approve_denied). The caller must see the device in GET /api/v1/devices?all=1 (else 404). It may lower its own setting but never raise its own or that of a token it hangs under (403). Returns the device.",
+    "tags": [
+     "auth"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "approve"
+        ],
+        "properties": {
+         "approve": {
+          "type": "string",
+          "enum": [
+           "allowed",
+           "denied"
+          ]
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The device, with its new setting"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
      },
      "401": {
       "$ref": "#/components/responses/Error"
@@ -1652,6 +1710,9 @@
             "$ref": "#/components/schemas/Token/properties/grants"
            }
           ]
+         },
+         "approve": {
+          "$ref": "#/components/schemas/Token/properties/approve"
          }
         },
         "required": [
@@ -4842,6 +4903,14 @@
     "properties": {
      "id": {
       "type": "string"
+     },
+     "approve": {
+      "type": "string",
+      "enum": [
+       "allowed",
+       "denied"
+      ],
+      "description": "May it answer approval requests (tap a reply action). New tokens are denied; allowed needs a caller that is allowed itself (else 403 approve_denied). Browsers and phones made from a token start with its setting."
      },
      "name": {
       "type": "string"

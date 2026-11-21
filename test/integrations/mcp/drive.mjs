@@ -25,8 +25,9 @@ const call = async (name, args) => {
   console.log(JSON.stringify({ tool: name, out }));
   return out;
 };
+// The human taps from their phone: a separate token allowed to approve.
 const api = (path, body) => fetch(process.env.CLRD + path, { method: "POST", body: JSON.stringify(body),
-  headers: { authorization: "Bearer " + process.env.CLRD_TOKEN, "content-type": "application/json" } });
+  headers: { authorization: "Bearer " + process.env.CLRD_PHONE, "content-type": "application/json" } });
 
 await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "clrd-it", version: "1" } });
 child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");

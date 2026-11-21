@@ -5,7 +5,7 @@ snippet mcp.md '"mcpServers"' | sed 's/"mcp-remote"/"mcp-remote@0.16.7"/' >"$WOR
 grep -q '"command": "npx"' "$WORK/desktop.json" || fail "the Desktop block did not match"
 # The guide's send call, argument for argument.
 send=$(snippet mcp.md 'wait_for_reply {' | sed -n '/^send /,/^wait_for_reply/p' | sed '$d' | sed 's/^send //' | jq -c .)
-out=$(dock -e CLRD -e CLRD_TOKEN -e SEND="$send" -e HOME=/tmp -e npm_config_update_notifier=false \
+out=$(dock -e CLRD -e CLRD_TOKEN -e CLRD_PHONE -e SEND="$send" -e HOME=/tmp -e npm_config_update_notifier=false \
   -v "$HERE/mcp:/d:ro" -v "$WORK/desktop.json:/w/desktop.json:ro" node:22-slim node /d/drive.mjs /w/desktop.json)
 res() { jq -c --arg t "$1" 'select(.tool == $t) | .out' <<<"$out" | head -1; }
 check "$(res tools/list)" '. == ["ack","clear","counts","create_token","delete_hook","delete_template","device_log","devices","dismiss","end_silence","format_check","get","hook_deliveries","hooks","list","ntfy_ignored","reopen","resolve","revoke_token","send","server_env","set_hook","set_template","set_topic","settings","silence","silences","snooze","sound","templates","tokens","topics","unlink","update","wait_for_reply"]' "tools/list"
