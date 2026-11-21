@@ -221,15 +221,15 @@ type Query struct {
 // the same transaction as) Items, so no event can fall between the page and
 // the WebSocket replay that starts from Seq.
 type Snapshot struct {
-	Seq     int64
-	Epoch   string // the database Seq belongs to; a different one means start over
-	Items   []Notification
-	Counts  map[string]int // open and recent rows by state
-	Topics  []Topic
-	Linked  []LinkedDevice // every device this token can see, for the sync indicator and Settings
-	Log     []DeviceEvent
-	Me      string // device name of the signed-in token, the state_by its own actions get
-	MeID    string // its token id, the state_by_id its own actions get (names can repeat)
+	Seq    int64
+	Epoch  string // the database Seq belongs to; a different one means start over
+	Items  []Notification
+	Counts map[string]int // open and recent rows by state
+	Topics []Topic
+	Linked []LinkedDevice // every device this token can see, for the sync indicator and Settings
+	Log    []DeviceEvent
+	Me     string // device name of the signed-in token, the state_by its own actions get
+	MeID   string // its token id, the state_by_id its own actions get (names can repeat)
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
