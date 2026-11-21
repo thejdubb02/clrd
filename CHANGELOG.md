@@ -36,6 +36,9 @@ Fixed, Removed, Security), as one line a user can understand.
   confirmation and the Confirm prompt shows. Settings shows whether this
   phone can answer approval requests. (#330)
 
+- Web: in a topic's empty inbox, the first tip's test command sends to that
+  topic, so the test shows up where you are looking. The topic icon tip only
+  shows once there is a topic to set an icon on (#258).
 - Android: the sound you pick is saved on the server for this phone, so an
   agent can read and change it over the API or MCP and the phone follows at
   once. A sound picked before this moves to the server on the next connect,

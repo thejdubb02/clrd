@@ -182,11 +182,26 @@ func TestFirstRunTip(t *testing.T) {
 	if !strings.Contains(body, `aria-label="Send your first notification" data-tip>`) {
 		t.Error("first run must lead with the send-a-test tip")
 	}
-	if strings.Count(body, " data-tip hidden") != len(tips("x"))-1 || !strings.Contains(body, "http://example.com/api/v1/notifications") {
+	all := len(tips("x", "", nil))
+	if strings.Count(body, " data-tip hidden") != all-1 || !strings.Contains(body, "http://example.com/api/v1/notifications") {
 		t.Error("one tip shows, and it copies this instance's address")
 	}
-	if n := strings.Count(body, `text-muted-foreground shrink-0 [&_svg]:size-[18px]"><svg`); n != len(tips("x")) {
-		t.Errorf("every tip has its icon: %d of %d", n, len(tips("x")))
+	if n := strings.Count(body, `text-muted-foreground shrink-0 [&_svg]:size-[18px]"><svg`); n != all {
+		t.Errorf("every tip has its icon: %d of %d", n, all)
+	}
+	if strings.Contains(body, "Give each topic an icon") || !strings.Contains(body, `{&#34;topic&#34;:&#34;test&#34;`) {
+		t.Error("no topics: no topic icon tip, and the test goes to the test topic")
+	}
+	_, body = get(t, Handler(none{}, ""), "/app?topic=builds")
+	if !strings.Contains(body, `{&#34;topic&#34;:&#34;builds&#34;`) {
+		t.Error("a topic view sends its test to that topic")
+	}
+	_, body = get(t, Handler(none{}, ""), "/app?topic=x%27%3Brm")
+	if !strings.Contains(body, `{&#34;topic&#34;:&#34;test&#34;`) {
+		t.Error("an invalid topic must not reach the shell command")
+	}
+	if len(tips("x", "", []Topic{{Name: "a"}})) != all+1 {
+		t.Error("with topics, the topic icon tip is back")
 	}
 }
 

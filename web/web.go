@@ -509,12 +509,21 @@ func (m meta) URL() string { return m.Base + m.Path }
 // Icon names an i-<name> icon in icons.html (#292).
 type Tip struct{ Icon, Title, Text, Copy, Link, LinkText string }
 
+// topicName matches a topic the server accepts (server validTopic).
+var topicName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
 // tips lists only what works on main today, the first-run tip first. Add a
-// tip with one line here.
-func tips(b string) []Tip {
-	return []Tip{
+// tip with one line here. The test command posts to the open topic, so it
+// lands in this view; only a valid topic name, which is safe in a shell. The
+// topic icon tip needs a topic to set an icon on.
+func tips(b, topic string, topics []Topic) []Tip {
+	to := "test"
+	if topicName.MatchString(topic) {
+		to = topic
+	}
+	ts := []Tip{
 		{Icon: "terminal", Title: "Send your first notification", Text: "Run this with a token in CLRD_TOKEN. It lands here at once.",
-			Copy: "curl -H \"Authorization: Bearer $CLRD_TOKEN\" \\\n  -d '{\"topic\":\"test\",\"message\":\"Hello from clrd\"}' \\\n  " + b + "/api/v1/notifications"},
+			Copy: "curl -H \"Authorization: Bearer $CLRD_TOKEN\" \\\n  -d '{\"topic\":\"" + to + "\",\"message\":\"Hello from clrd\"}' \\\n  " + b + "/api/v1/notifications"},
 		{Icon: "bot", Title: "Ask your AI agent to set it up", Text: "Paste this into Claude Code or another agent that runs commands.",
 			Copy: "Add the clrd MCP server: run claude mcp add --transport http clrd " + b + "/mcp --header \"Authorization: Bearer $CLRD_TOKEN\". Then use its send tool to send me a test notification."},
 		{Icon: "timer", Title: "Get pinged when a job finishes", Text: "Paste this into your agent before a long task.",
@@ -528,6 +537,10 @@ func tips(b string) []Tip {
 		{Icon: "hash", Title: "Give each topic an icon", Text: "Set an icon per topic so you can tell them apart at a glance.", Link: "/app/settings#ticon-h", LinkText: "Topic icons"},
 		{Icon: "bell-ring", Title: "Pick a sound", Text: "Choose the sound this browser plays when a notification arrives, or turn it off.", Link: "/app/settings#sound-h", LinkText: "Sound settings"},
 	}
+	if len(topics) == 0 {
+		ts = slices.DeleteFunc(ts, func(t Tip) bool { return t.Icon == "hash" })
+	}
+	return ts
 }
 
 type doc struct {
@@ -737,7 +750,7 @@ func Handler(api API, baseURL string) http.Handler {
 			c := snap.Counts
 			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings"}
 			// A new tip on each visit; the send-a-test tip while nothing has ever arrived.
-			ts, tip := tips(base(r)), 0
+			ts, tip := tips(base(r), q.Topic, snap.Topics), 0
 			if c["active"]+c["acknowledged"]+c["snoozed"]+c["dismissed"]+c["resolved"] > 0 {
 				tip = rand.IntN(len(ts))
 			}
