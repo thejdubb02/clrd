@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -58,21 +59,8 @@ func (s *Server) ntfyAnonymousRoutes() {
 			return err
 		}
 		defer tx.Rollback()
-		rows, err := tx.QueryContext(r.Context(), `DELETE FROM tokens WHERE `+anonymousWhere+` RETURNING id`)
+		gone, err := dropAnonymous(r.Context(), tx)
 		if err != nil {
-			return err
-		}
-		var gone []string
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			gone = append(gone, id)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		if len(scopes) > 0 { // no grant with a scope is no access: off
@@ -86,10 +74,33 @@ func (s *Server) ntfyAnonymousRoutes() {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
-		for _, id := range gone { // as DeleteToken does
-			s.revoked.Store(id, true)
-			s.hub.drop(id)
-		}
+		s.revokeAll(gone)
 		return get(w, r)
 	})
+}
+
+// dropAnonymous deletes every anonymous token row, old ids included, and
+// returns their ids for revokeAll once the transaction commits.
+func dropAnonymous(ctx context.Context, tx *sql.Tx) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `DELETE FROM tokens WHERE `+anonymousWhere+` RETURNING id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var gone []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		gone = append(gone, id)
+	}
+	return gone, rows.Err()
+}
+
+func (s *Server) revokeAll(ids []string) {
+	for _, id := range ids { // as DeleteToken does
+		s.revoked.Store(id, true)
+		s.hub.drop(id)
+	}
 }

@@ -132,7 +132,13 @@ func (s *Server) ImportNtfy(ctx context.Context, in NtfyImport, out io.Writer) (
 	if in.DryRun {
 		rep.line("Dry run: nothing is written.")
 	}
+	var gone []string
 	if in.AuthFile != "" {
+		// ntfy's anonymous access replaces any set here before (#375), so
+		// no older anonymous token stays live beside the imported one.
+		if gone, err = dropAnonymous(ctx, tx); err != nil {
+			return err
+		}
 		if err := s.importNtfyUsers(ctx, tx, in, def, rep); err != nil {
 			return err
 		}
@@ -152,6 +158,7 @@ func (s *Server) ImportNtfy(ctx context.Context, in NtfyImport, out io.Writer) (
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	s.revokeAll(gone)
 	if maxSeq > 0 {
 		s.seq.Store(maxSeq)
 	}

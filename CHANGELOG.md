@@ -35,6 +35,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: an ntfy import replaces anonymous access set before it through the
+  admin API, so no older anonymous token stays live beside the imported one
+  (#375).
 - Web: Clear all on stacks stays right when the server is slow to answer: a
   stack fades as one instead of shrinking card by card, a topic that arrives
   meanwhile is no longer shown as Cleared, and another stack's count updates
