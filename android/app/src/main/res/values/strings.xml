@@ -27,6 +27,11 @@
     <string name="empty_inbox">Nothing needs you.</string>
     <string name="empty_snoozed">Nothing snoozed.</string>
     <string name="empty_cleared">Nothing cleared yet.</string>
+    <!-- Cleared tab, when the server holds more cleared items than the phone. %1$d is the server's count, %2$d days. -->
+    <plurals name="cleared_on_server">
+        <item quantity="one">%1$d cleared on the server. This phone shows the last %2$d days.</item>
+        <item quantity="other">%1$d cleared on the server. This phone shows the last %2$d days.</item>
+    </plurals>
 
     <!-- Notification states, on the chip and in the line under each one. %1$s is a device name. -->
     <string name="state_acknowledged">acknowledged</string>

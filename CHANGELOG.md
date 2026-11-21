@@ -35,6 +35,7 @@ Fixed, Removed, Security), as one line a user can understand.
   and is not retried. An answer from an ask phone says it was sent for
   confirmation and the Confirm prompt shows. Settings shows whether this
   phone can answer approval requests. (#330)
+- Android: the Cleared tab follows the server keep setting, so a cleared item the server deleted (globally or for its topic) leaves the phone too, and the tab says when the server holds more cleared items than the phone shows (#261).
 
 - Android: the sound you pick is saved on the server for this phone, so an
   agent can read and change it over the API or MCP and the phone follows at
