@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"slices"
 	"strconv"
@@ -15,19 +16,31 @@ import (
 // the topic, and the same scope checks as the native API apply.
 
 // gotifyKey is the token a Gotify sender puts on the request: the
-// X-Gotify-Key header or ?token=, which ntfy never uses.
+// X-Gotify-Key header, ?token= (which ntfy never uses), or a Bearer that is
+// not a clrd or ntfy token.
 func gotifyKey(r *http.Request) string {
 	if k := r.Header.Get("X-Gotify-Key"); k != "" {
 		return k
 	}
-	return r.URL.Query().Get("token")
+	if k := r.URL.Query().Get("token"); k != "" {
+		return k
+	}
+	return gotifyBearer(r)
+}
+
+func gotifyBearer(r *http.Request) string {
+	scheme, k, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	if k = strings.TrimSpace(k); !strings.EqualFold(scheme, "Bearer") || isToken(k) {
+		return "" // parsed as rawToken does, so a clrd token stays on the ntfy path
+	}
+	return k
 }
 
 // gotifyMessage: POST /message. Without a Gotify key this is ntfy's publish
 // to the topic "message", as before.
 func (s *Server) gotifyMessage(w http.ResponseWriter, r *http.Request) error {
 	// A key that is sent but empty is a wrong key, never the ntfy path.
-	if _, hdr := r.Header["X-Gotify-Key"]; !hdr && !r.URL.Query().Has("token") {
+	if _, hdr := r.Header["X-Gotify-Key"]; !hdr && !r.URL.Query().Has("token") && gotifyBearer(r) == "" {
 		r.SetPathValue("topic", "message")
 		return s.ntfyPublish(w, r)
 	}
@@ -47,7 +60,10 @@ type gotifyIn struct {
 }
 
 func (s *Server) gotifyPublish(w http.ResponseWriter, r *http.Request, key string) error {
-	tok := s.lookupToken(r.Context(), key)
+	tok, app := s.lookupToken(r.Context(), key), gotifyApp{}
+	if tok == nil && !isToken(key) {
+		tok, app = s.lookupGotifyApp(r.Context(), key)
+	}
 	if tok == nil {
 		return errf(401, "unauthorized", "you need to provide a valid access token or user credentials to access this api")
 	}
@@ -80,6 +96,9 @@ func (s *Server) gotifyPublish(w http.ResponseWriter, r *http.Request, key strin
 	if strings.TrimSpace(pub.Title) == "" {
 		pub.Title = tok.Name // Gotify uses the app name
 	}
+	if in.Priority == nil {
+		in.Priority = app.priority // the app's default, as Gotify does
+	}
 	if in.Priority != nil {
 		pub.Priority = gotifyPriority(*in.Priority)
 	}
@@ -97,7 +116,7 @@ func (s *Server) gotifyPublish(w http.ResponseWriter, r *http.Request, key strin
 	if err != nil {
 		return err
 	}
-	out := map[string]any{"id": n.Seq, "appid": 0, "message": in.Message, "title": pub.Title, "date": n.UpdatedAt.Format(time.RFC3339Nano), "priority": 0}
+	out := map[string]any{"id": n.Seq, "appid": app.id, "message": in.Message, "title": pub.Title, "date": n.UpdatedAt.Format(time.RFC3339Nano), "priority": 0}
 	if in.Priority != nil {
 		out["priority"] = *in.Priority
 	}
@@ -106,6 +125,70 @@ func (s *Server) gotifyPublish(w http.ResponseWriter, r *http.Request, key strin
 	}
 	writeJSON(w, 200, out)
 	return nil
+}
+
+type gotifyApp struct {
+	id       int64
+	priority *int
+}
+
+// lookupGotifyApp finds the token behind a Gotify-shaped key. Only POST
+// /message calls it, so these keys work nowhere else.
+func (s *Server) lookupGotifyApp(ctx context.Context, key string) (*Token, gotifyApp) {
+	var app gotifyApp
+	var id string
+	if key == "" || s.db.QueryRowContext(ctx, `SELECT g.id, g.priority, g.token_id FROM gotify_apps g JOIN tokens t ON t.id = g.token_id WHERE t.hash = ?`,
+		hashToken(key)).Scan(&app.id, &app.priority, &id) != nil {
+		return nil, gotifyApp{}
+	}
+	t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE id = ?`, id))
+	if err != nil {
+		return nil, gotifyApp{}
+	}
+	s.touch(ctx, t)
+	return t, app
+}
+
+// gotifyAppRoutes: an admin makes a Gotify app, a publish-only token for one
+// topic whose secret is shaped like Gotify's ("A" and 14 characters), the
+// only shape shoutrrr and Watchtower accept.
+func (s *Server) gotifyAppRoutes() {
+	s.api("POST /api/v1/gotify/apps", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		if err := tok.needFullAdmin(); err != nil {
+			return err
+		}
+		var in struct {
+			Name     string `json:"name"`
+			Topic    string `json:"topic"`
+			Priority *int   `json:"priority"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if in.Priority != nil && (*in.Priority < 0 || *in.Priority > 10) {
+			return errf(400, "bad_request", "priority is Gotify's 0 to 10")
+		}
+		key := "A" + randomString(14)
+		t := &Token{ID: randomString(12), Name: in.Name, Scopes: []string{ScopePublish}, Topics: []string{in.Topic}, CreatedAt: now()}
+		tx, err := s.db.BeginTx(r.Context(), nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if err := insertToken(r.Context(), tx, t, hashToken(key)); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(r.Context(), `INSERT INTO gotify_apps (token_id, priority) VALUES (?, ?)`, t.ID, in.Priority)
+		if err != nil {
+			return err
+		}
+		appid, _ := res.LastInsertId()
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		writeJSON(w, 200, map[string]any{"id": appid, "token": key, "name": t.Name, "topic": in.Topic, "token_id": t.ID, "defaultPriority": in.Priority})
+		return nil
+	})
 }
 
 func extra(extras map[string]any, ns, key string) string {

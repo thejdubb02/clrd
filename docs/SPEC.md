@@ -638,8 +638,17 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 - Reply: `{id, appid, message, title, priority, date, extras}` with `id` the
   event seq. Errors: `{error, errorCode, errorDescription}`.
 - Without a Gotify token, `POST /message` stays ntfy's publish to topic
-  `message`. Only clrd tokens are accepted so far; tokens imported from Gotify
-  come with `clrd import gotify`.
+  `message`. A Bearer counts as a Gotify token when it is not a clrd or ntfy
+  token (#371).
+- Gotify apps (#370): `POST /api/v1/gotify/apps` `{name, topic, priority?}`
+  (full admin; MCP `create_gotify_app`) makes a publish-only token for that
+  topic whose secret is `A` plus 14 characters, Gotify's shape, which
+  shoutrrr requires. Row in `gotify_apps` (id = appid, nullable default
+  priority), deleted with the token. These secrets are looked up only on
+  `POST /message`, never by the native or ntfy auth. A message without
+  `priority` takes the app's default; the reply's `appid` is the app id, 0
+  for a plain clrd token (#372). Tokens imported from Gotify come with
+  `clrd import gotify`.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 

@@ -19,6 +19,16 @@ dock -v "$WORK/gotify:/w" -w /w alpine:3.20 sh -ec "wget -qO /g https://github.c
 check "$(rows tv "")" 'map(select(.title == "From the CLI")) | .[0] | .message == "gotify cli push" and .priority == 4' "gotify cli push"
 ok "gotify cli push (priority 9 is 4)"
 
+# A Gotify-shaped key from the guide's call, then real Watchtower 1.7 (its
+# shoutrrr refuses any other shape) with the guide's URL.
+gkey=$(sh -e -c "$(snippet gotify.md '/api/v1/gotify/apps')" | jq -r .token)
+case $gkey in A??????????????) ;; *) fail "the guide's app call returned no Gotify-shaped key: $gkey" ;; esac
+url=$(snippet gotify.md 'WATCHTOWER_NOTIFICATION_URL=gotify' | sed -e 's/^WATCHTOWER_NOTIFICATION_URL=//' -e "s|A\.\.\.|$gkey|")
+dock -v /var/run/docker.sock:/var/run/docker.sock -e DOCKER_API_VERSION=1.44 \
+  -e "WATCHTOWER_NOTIFICATION_URL=$url?disabletls=yes" containrrr/watchtower:1.7.1 --run-once clrd-it-nothing >/dev/null 2>&1
+check "$(rows docker "")" 'map(select(.message | contains("Watchtower 1.7"))) | length == 1' "watchtower gotify://"
+ok "Watchtower 1.7 gotify:// with a Gotify app key"
+
 # A wrong key is Gotify's 401, and the topic "message" still takes ntfy posts.
 code=$(curl -s -o /dev/null -w '%{http_code}' "$CLRD/message" -H "X-Gotify-Key: nope" -F message=x)
 [ "$code" = 401 ] || fail "wrong key: $code"

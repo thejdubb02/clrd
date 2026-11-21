@@ -65,7 +65,8 @@ offline catches up the moment it reconnects.
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
 - **Gotify senders work.** `POST /message` with an app token, as Gotify
-  takes it, so Apprise, the gotify CLI and curl scripts keep sending. See
+  takes it, so Apprise, the gotify CLI, Watchtower and curl scripts keep
+  sending. See
   [Gotify senders](docs/integrations/gotify.md).
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
   tokens, per-topic access rules, message history and attachments, so you can

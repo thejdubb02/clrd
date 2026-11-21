@@ -109,11 +109,16 @@ Fixed, Removed, Security), as one line a user can understand.
   (server URL and token) give Claude the clrd MCP server, a ping when a task
   finishes or waits on you, and permission prompts you allow or deny from
   your phone. No answer in time leaves the prompt on screen. (#156)
+- Server: Gotify app keys. An admin (or an agent over MCP) makes a key
+  shaped like Gotify's for one topic, so shoutrrr and Watchtower's
+  `gotify://` URLs send to clrd. `POST /message` also takes the key as
+  `Authorization: Bearer`, uses the app's default priority, and returns its
+  `appid`. (#370, #371, #372)
 - Server: Gotify senders work. `POST /message` takes Gotify's app token
   (`?token=` or `X-Gotify-Key`), JSON, form or multipart body, priority
   0 to 10 and the Markdown, click and image extras, and answers in Gotify's
   shape. The app token is a clrd token limited to one topic. Apprise and the
-  gotify CLI are checked; shoutrrr is not yet. (#116)
+  gotify CLI are checked. (#116)
 
 - Android: Stack by topic now also folds the app's list, as on the web.
   Two or more notifications of one topic show as one card with the count and

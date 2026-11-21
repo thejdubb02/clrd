@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS users (
   hash TEXT NOT NULL,
   token_id TEXT NOT NULL REFERENCES tokens(id) ON DELETE CASCADE
 );
+-- Gotify apps (issue #370): a token whose secret is a Gotify-shaped key,
+-- taken only on POST /message. id is the appid Gotify senders see.
+CREATE TABLE IF NOT EXISTS gotify_apps (
+  id INTEGER PRIMARY KEY,
+  token_id TEXT NOT NULL UNIQUE REFERENCES tokens(id) ON DELETE CASCADE,
+  priority INTEGER -- Gotify's default_priority; NULL is clrd's default
+);
 -- ntfy message ids from an import, so since=<id> carries on where a phone left off.
 CREATE TABLE IF NOT EXISTS ntfy_mids (mid TEXT PRIMARY KEY, seq INTEGER NOT NULL);
 -- ntfy headers, params and JSON fields received but ignored, for the admin page.
