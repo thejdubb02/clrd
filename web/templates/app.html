@@ -187,6 +187,7 @@
   <section class="grid gap-3" aria-labelledby="dev-h">
     <h2 id="dev-h" class="text-base font-semibold">Linked devices</h2>
     <p class="text-body text-sm/relaxed">Every token, browser and phone that can read this inbox. Unlink a browser or phone and it is signed out at once. Unlinking a phone also signs out the browsers it approved.</p>
+    <p class="text-body text-sm/relaxed">May approve says who can tap a reply button such as Approve. Ask sends the tap to an allowed device to confirm first. New tokens start at Denied. A device can lower its own setting, never raise it.</p>
     <div data-live="linked">{{if .Snap.Linked}}<div class="bg-card rounded-xl border">
       <table class="table">
         <thead><tr><th scope="col">Device</th><th scope="col" class="max-sm:hidden">Linked</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Unlink</span></th></tr></thead>
@@ -194,7 +195,8 @@
           {{range .Snap.Linked}}<tr data-device="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><span>{{.Name}}</span>{{if .This}} <span class="text-muted-foreground">(this browser)</span>{{end}}
             <div class="meta">{{if eq .Kind "phone"}}Phone, linked to{{else if eq .Kind "browser"}}Browser, signed in with{{else}}Token{{end}}{{with .Via}} {{.}}{{end}}</div></td>
             <td class="meta whitespace-nowrap max-sm:hidden"><time datetime="{{iso .LinkedAt}}" title="{{clock .LinkedAt}}">{{clock .LinkedAt}}</time></td>
-            <td class="meta">{{if .Live}}Connected{{else if .Connected}}Catching up{{else}}Offline{{with .LastSeenAt}}<div>seen <time class="whitespace-nowrap" datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time></div>{{end}}{{end}}</td>
+            <td class="meta">{{if .Live}}Connected{{else if .Connected}}Catching up{{else}}Offline{{with .LastSeenAt}}<div>seen <time class="whitespace-nowrap" datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time></div>{{end}}{{end}}
+              <div class="mt-1">May approve: {{if $.Snap.CanApprove}}<select class="input w-auto js-only" data-approve="{{.ID}}" data-name="{{.Name}}"{{if $.Snap.Own .}} data-own{{end}} aria-label="May approve: {{.Name}}">{{range $.Snap.ApproveOptions .}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><noscript>{{.ApproveLabel}}</noscript>{{else}}{{.ApproveLabel}}{{end}}</div></td>
             <td class="text-right">{{if and .CanUnlink (not .This)}}<button type="button" class="btn js-only" data-variant="outline" data-unlink="{{.ID}}" data-name="{{.Name}}">Unlink</button>{{end}}</td></tr>
           {{end}}
         </tbody>

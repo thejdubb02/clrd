@@ -106,7 +106,7 @@ every device; a reopen or snooze wake does not restart it. A scheduled send
 (`snooze_until`) counts from its delivery. A publish that updates the row
 replaces `repeat` with its own (none if it gave none). ntfy subscribers get
 each re-alert as a new message. The web inbox plays its sound again on a
-`repeat` event; the Android app does not alert on `repeat` events yet.
+`repeat` event, and the Android app alerts again even while it is showing.
 
 **Actions:** each action is a link (`url`) or an answer button (`reply`),
 exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
@@ -263,8 +263,8 @@ name it does not know plays `default`.
 **Per device.** Each device keeps its own choice (a phone on `alert`, a desktop
 on `pop`); unset means `default`, so sound works with no setup. The choice is
 stored on the server per device, so an agent can read the valid names and read
-and set any device's choice through the API and MCP (the endpoints, MCP tools
-and WebSocket message go into sections 3, 5 and 6 with the server work, #282),
+and set any device's choice through the API and MCP (`GET /api/v1/sounds` and
+`PUT /api/v1/devices/{id}` in section 5, the `sound` tool in section 6),
 and the device learns of a change over its WebSocket without a restart. A
 per-topic override is a later issue.
 
@@ -551,7 +551,7 @@ resolved`) and `ntfy_import`.
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
-| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,linked_at,last_seen_at,this,can_unlink,sound,connected,caught_up,synced_seq}]}`; `kind` is `token`, `browser` or `phone`. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
+| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,via_id,linked_at,last_seen_at,this,can_unlink,sound,approve,connected,caught_up,synced_seq}]}`; `kind` is `token`, `browser` or `phone`. `via` and `via_id` are the name and id of the token or device it hangs under (absent for a token), `approve` is its setting from "Who may approve" in section 4. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
 | GET | `/api/v1/devices/log` | The last 200 links, sign-ins and unlinks for the same devices, newest first: `{events:[{at,action,device,device_id,by}]}`. |
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
 | PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
@@ -622,7 +622,7 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?)`, `list(topic?, state?)`,
 `topics()`, `counts(keep_cleared_days?, topic?)`, `format_check(topic?)` (the format
 check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
@@ -633,6 +633,7 @@ dismissed or an action is tapped; returns which, so an agent can ask a human
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
 `reply` (the state). `wait_for_reply` waits at most 600 s. `devices()`,
 `device_log()` and `unlink(id)` are the device list, its log and unlink,
+`sound(id?, sound?)` lists the sound names or sets one device's sound,
 and `request_approve(approve, topic?)` is `POST /api/v1/devices/approve-request`,
 from section 5. Setup tools, each one REST call: path arguments go in the URL,
 the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dismiss(id)`, `reopen(id)`, `clear(topic | ids)`, `silences()`,

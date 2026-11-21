@@ -45,6 +45,11 @@ notification. Its `repeat` field shows `count` (alerts sent so far), `left`,
 and `next` (when the next one is due, or null once it stopped). Apps that
 speak the ntfy protocol get each re-alert as a new message. The web inbox
 plays its sound on each one (unless silenced) and shows on the card how many
-times it alerted and when the next one is due. The clrd Android app is
-learning to alert on `repeat` events; until it does, it updates the card
-without a sound.
+times it alerted and when the next one is due. The clrd Android app rings
+again on each one (unless silenced), even while the notification is still
+in the tray. A repeat the phone missed while offline does not ring when it
+catches up.
+
+To let urgent (priority 5) repeats through Do Not Disturb, open Settings in
+the Android app and tap "Let urgent ones through Do Not Disturb". Android
+only lets you turn that on yourself; the app cannot.

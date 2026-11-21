@@ -150,6 +150,17 @@ class SyncClientTest {
         assertEquals(9L, store.lastSeq())
     }
 
+    @Test fun aRepeatEventAlertsAgain() {
+        onConnect = { _, ws ->
+            ws.send("""{"type":"ready","seq":0}""")
+            ws.send(ev(4, "r", "active"))
+            ws.send(ev(5, "r", "active").replace("\"created\"", "\"repeat\""))
+        }
+        start()
+        await { store.rows["r"]?.seq == 5L }
+        assertEquals(listOf(false, true), store.again.toList()) // only the repeat rings while it is showing
+    }
+
     @Test fun reconnectAsksForEventsSinceLastSeq() {
         onConnect = { n, ws ->
             if (n == 1) {
@@ -306,6 +317,19 @@ class SyncClientTest {
         await { SyncClient.Status.AUTH_FAILED in statuses }
         Thread.sleep(300) // 15 backoff periods at 20 ms
         assertEquals(1, wsSince.size)
+    }
+
+    @Test fun unlinkedFromAnotherDeviceSignsOutAtOnce() {
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send("""{"type":"ready","seq":0}""")
+                ws.close(1013, "token revoked") // what the server sends when this phone is unlinked or its token revoked
+            }
+        }
+        start()
+        await { SyncClient.Status.AUTH_FAILED in statuses }
+        Thread.sleep(300) // 15 backoff periods at 20 ms
+        assertEquals(1, wsSince.size) // no retry with a token the server already refused
     }
 
     @Test fun serverDownRetriesWithBackoff() {
@@ -475,10 +499,12 @@ class SyncClientTest {
         @Volatile private var seq = 0L
 
         override fun lastSeq() = seq
-        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean) {
+        val again = CopyOnWriteArrayList<Boolean>()
+        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean) {
             if (failOnce) { failOnce = false; throw IllegalStateException("disk full") }
             applies += notifs
             this.quiet += quiet
+            this.again += again
             for (n in notifs) if (n.seq >= (rows[n.id]?.seq ?: 0)) rows[n.id] = n
             this.seq = maxOf(this.seq, seq)
         }

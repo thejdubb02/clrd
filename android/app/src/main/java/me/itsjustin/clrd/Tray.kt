@@ -16,7 +16,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** What the phone tray should do for one notification. Pure, so it is unit tested on the JVM. */
 sealed interface TrayStep {
-    data class Show(val n: Notif, val silent: Boolean) : TrayStep
+    /** [again]: a `repeat` event, so it alerts even while it is still showing. */
+    data class Show(val n: Notif, val silent: Boolean, val again: Boolean = false) : TrayStep
     data class Cancel(val id: String) : TrayStep
 
     companion object {
@@ -109,7 +110,7 @@ class Tray(private val ctx: Context) {
     fun apply(step: TrayStep) {
         when (step) {
             is TrayStep.Cancel -> nm.cancel(step.id, 0)
-            is TrayStep.Show -> post(step.n, step.silent)
+            is TrayStep.Show -> post(step.n, step.silent, step.again)
         }
         summaries()
     }
@@ -175,7 +176,7 @@ class Tray(private val ctx: Context) {
         }
     }
 
-    private fun post(n: Notif, silent: Boolean) {
+    private fun post(n: Notif, silent: Boolean, again: Boolean = false) {
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
@@ -200,7 +201,7 @@ class Tray(private val ctx: Context) {
             .setWhen(n.createdAt)
             .setShowWhen(true)
             .setPriority(n.priority - 3) // PRIORITY_MIN..MAX for API < 26 builders; channels rule on 26+
-            .setOnlyAlertOnce(true) // updates to a showing notification stay quiet
+            .setOnlyAlertOnce(!again) // updates to a showing notification stay quiet; a repeat rings again (#259)
             .setSilent(silent || n.silenced) // a server silence matched it (#328): show, no sound or vibration
             .setAutoCancel(false)
             .setContentIntent(open(n))

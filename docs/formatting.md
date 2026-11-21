@@ -19,6 +19,25 @@ curl -u ":$TOKEN" -H "X-Markdown: no" -d "*.tmp files: 3" https://clrd.example.c
 Messages read back over the ntfy API carry `content_type: "text/markdown"`
 unless they are plain text, so ntfy apps render them the same way.
 
+## Emoji
+
+Common GitHub and Slack shortcodes in a title or message show as the emoji,
+in the web inbox, the Android app and the notifications the API and streams
+return (a template preview shows the text as typed):
+`:warning: Disk full` reads as ⚠️ Disk full. A tag that names an emoji goes
+in front of the title (or of the message when there is no title), as in ntfy:
+
+```sh
+curl -u ":$TOKEN" -H "Tags: rotating_light" -H "Title: :fire: web-1 down" \
+  -d "Check the load balancer" https://clrd.example.com/infra
+```
+
+That arrives titled 🚨 🔥 web-1 down. Unknown names, text inside backticks
+and times like `10:30:15` stay as typed, and the server stores the text as
+it was sent. On the ntfy endpoints the tag emoji is left out, because ntfy
+apps add it themselves. The [format check](#format-check) counts the
+messages with shortcodes clrd does not know and shows one of them.
+
 ## Display settings
 
 Settings live on the server, so a change on one device shows on all of them.

@@ -76,6 +76,18 @@ class TrayRaceTest {
         assertEquals(Notification.GROUP_ALERT_ALL, tray("b")!!.groupAlertBehavior)
     }
 
+    @Test fun aRepeatRingsWhileShowing() {
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 2)), 2) } // an edit stays quiet
+        assertTrue(once("a"))
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 3)), 3, again = true) }
+        assertTrue(!once("a"))
+        bg { store.apply(listOf(row("b", Notif.ACKNOWLEDGED, 4)), 4, again = true) } // acked: never rings
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("b")!!.groupAlertBehavior)
+    }
+
     @Test fun reconcileWaitsForSyncWrites() {
         bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
         val store = RoomStore(app)

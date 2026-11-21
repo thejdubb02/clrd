@@ -169,6 +169,10 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	if err := convert(devs, &snap.Linked); err != nil {
 		return snap, err
 	}
+	// Who may approve (#329): only an allowed token on every topic may change it, as SetApprove checks.
+	for _, d := range devs {
+		snap.CanApprove = snap.CanApprove || d.This && d.Approve == server.ApproveAllowed && len(tok.Topics) == 0 && len(tok.Grants) == 0
+	}
 	if q.Devices {
 		evs, err := a.s.DeviceLog(ctx, tok)
 		if err != nil {
@@ -289,5 +293,5 @@ func (a webAPI) Reply(r *http.Request, id, reply string, seq int64) error {
 		return web.ErrUnauthorized
 	}
 	_, err := a.s.Reply(r.Context(), tok, id, reply, "web_form", seq)
-	return err
+	return webError(err) // the page shows why: not allowed, its own request, or answered already
 }

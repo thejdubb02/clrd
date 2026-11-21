@@ -21,8 +21,9 @@ interface Store {
      * Save these rows and the new last seq in one go, then update the tray for the rows that were kept.
      * A row older than the one already saved is dropped. `seq = 0` leaves the cursor where it is.
      * [quiet] posts to the tray without a sound (part of a replay that is not finished).
+     * [again] is a live `repeat` event: an active row alerts again even while it is showing.
      */
-    fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false)
+    fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false, again: Boolean = false)
 
     /**
      * After a `reset`: the open list from the server replaces everything known, and [epoch] is saved.
@@ -146,7 +147,10 @@ class SyncClient(
                 try { handle(text) } catch (e: Exception) { fail(e as? IOException ?: IOException("bad frame", e)) }
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, null) }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = onThread(myGen) { fail(IOException("closed $code")) }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = onThread(myGen) {
+                // Unlinked or revoked: the server says so in the close reason, so report it now instead of after a retry.
+                fail(if (reason == "token revoked") HttpError(401, reason) else IOException("closed $code"))
+            }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = onThread(myGen) {
                 fail(response?.let { HttpError(it.code, "ws upgrade", retryAfterMs(it)) } ?: IOException(t))
             }
@@ -166,7 +170,7 @@ class SyncClient(
     private fun handle(text: String) {
         val o = JSONObject(text)
         when (o.optString("type")) {
-            "created", "updated", "state" -> {
+            "created", "updated", "state", "repeat" -> {
                 val n = Notif.fromJson(o.getJSONObject("notification"))
                 val seq = o.optLong("seq", n.seq)
                 if (replaying) {
@@ -175,7 +179,7 @@ class SyncClient(
                     bufferSeq = maxOf(bufferSeq, seq)
                     if (buffer.size >= 500) applyBuffer(quiet = true) // a later event in the replay may still clear these
                 } else {
-                    store.apply(listOf(n), seq)
+                    store.apply(listOf(n), seq, again = o.optString("type") == "repeat") // a missed repeat in a replay does not ring
                 }
             }
             "ready" -> {
