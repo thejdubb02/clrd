@@ -45,7 +45,14 @@ func TestNtfyAnonymous(t *testing.T) {
 
 	// A revoke, then on again: the new rules work on a stream, and a change
 	// closes it so it reconnects under them.
-	if c, _ := call(t, ts, "DELETE", "/api/v1/tokens/"+anonymousID, admin, nil); c != 204 {
+	if c, _ := call(t, ts, "PUT", "/api/v1/ntfy/anonymous", admin, map[string]any{"grant": []Grant{}}); c != 400 {
+		t.Fatalf("typo in grants: %d", c)
+	}
+	_, m := call(t, ts, "GET", "/api/v1/ntfy/anonymous", admin, nil)
+	if m["enabled"] != true {
+		t.Fatalf("typo turned it off: %v", m)
+	}
+	if c, _ := call(t, ts, "DELETE", "/api/v1/tokens/"+m["token_id"].(string), admin, nil); c != 204 {
 		t.Fatalf("revoke: %d", c)
 	}
 	if c, _ := set(admin, []Grant{{Topic: "pub", Scopes: []string{ScopeRead}}}); c != 200 {
