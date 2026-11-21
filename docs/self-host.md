@@ -197,8 +197,10 @@ firing alerts appear, resolved alerts clear.
 Files work: send one with `X-Filename` (or `PUT` it as the body), or link one
 with `X-Attach`. Icons work with `X-Icon`.
 
-Not supported yet: email and phone call forwarding,
-anonymous topics, `Cache: no` (refused, since clrd stores every notification
+Anonymous topics work after `clrd import ntfy` brings over ntfy's
+`everyone` rules ([Switch from ntfy](migrate-from-ntfy.md)).
+
+Not supported yet: email and phone call forwarding, `Cache: no` (refused, since clrd stores every notification
 to sync it), and `http`/`broadcast` action buttons (view actions work).
 
 ## Upgrading

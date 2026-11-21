@@ -1,0 +1,152 @@
+package server
+
+import (
+	"net/http"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Gotify compatibility (spec section 5, issue #116): Gotify's publish call,
+// POST /message with an app token, so senders built for Gotify (scripts,
+// Sonarr, Apprise, shoutrrr, the gotify CLI) work by changing only the URL.
+// A Gotify app is one clrd token limited to one topic; the token decides
+// the topic, and the same scope checks as the native API apply.
+
+// gotifyKey is the token a Gotify sender puts on the request: the
+// X-Gotify-Key header or ?token=, which ntfy never uses.
+func gotifyKey(r *http.Request) string {
+	if k := r.Header.Get("X-Gotify-Key"); k != "" {
+		return k
+	}
+	return r.URL.Query().Get("token")
+}
+
+// gotifyMessage: POST /message. Without a Gotify key this is ntfy's publish
+// to the topic "message", as before.
+func (s *Server) gotifyMessage(w http.ResponseWriter, r *http.Request) error {
+	key := gotifyKey(r)
+	if key == "" {
+		r.SetPathValue("topic", "message")
+		return s.ntfyPublish(w, r)
+	}
+	if err := s.gotifyPublish(w, r, key); err != nil {
+		status, _, msg := errorStatus(err)
+		if status == 500 {
+			s.log.Error("request failed", "err", err)
+		}
+		// Gotify's error shape, so its clients show the reason.
+		writeJSON(w, status, map[string]any{"error": http.StatusText(status), "errorCode": status, "errorDescription": msg})
+	}
+	return nil
+}
+
+type gotifyIn struct {
+	Title    string         `json:"title"`
+	Message  string         `json:"message"`
+	Priority *int           `json:"priority"`
+	Extras   map[string]any `json:"extras"`
+}
+
+func (s *Server) gotifyPublish(w http.ResponseWriter, r *http.Request, key string) error {
+	tok := s.lookupToken(r.Context(), key)
+	if tok == nil {
+		return errf(401, "unauthorized", "you need to provide a valid access token or user credentials to access this api")
+	}
+	topic, err := gotifyTopic(tok)
+	if err != nil {
+		return err
+	}
+	var in gotifyIn
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+	} else { // form or multipart, like Gotify's gin binding
+		if err := r.ParseMultipartForm(maxBody); err != nil && err != http.ErrNotMultipart {
+			return errf(400, "bad_request", "bad form body: %v", err)
+		}
+		in.Title, in.Message = r.FormValue("title"), r.FormValue("message")
+		if p := r.FormValue("priority"); p != "" {
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return errf(400, "bad_request", "priority must be a number")
+			}
+			in.Priority = &n
+		}
+	}
+	if in.Message == "" {
+		return errf(400, "bad_request", "Field 'message' is required")
+	}
+	pub := PublishInput{Topic: topic, Title: in.Title, Message: in.Message, Markdown: new(bool)}
+	if pub.Title == "" {
+		pub.Title = tok.Name // Gotify uses the app name
+	}
+	if in.Priority != nil {
+		pub.Priority = gotifyPriority(*in.Priority)
+	}
+	if extra(in.Extras, "client::display", "contentType") == "text/markdown" {
+		*pub.Markdown = true // Gotify's default is plain text
+	}
+	note, _ := in.Extras["client::notification"].(map[string]any)
+	if click, _ := note["click"].(map[string]any); click != nil {
+		pub.Click, _ = click["url"].(string)
+	}
+	if img := ntfyIcon(extra(in.Extras, "client::notification", "bigImageUrl")); img != "" {
+		pub.Attachment = &Attachment{URL: img}
+	}
+	n, err := s.Publish(r.Context(), tok, pub)
+	if err != nil {
+		return err
+	}
+	out := map[string]any{"id": n.Seq, "appid": 0, "message": in.Message, "title": pub.Title, "date": n.UpdatedAt.Format(time.RFC3339Nano), "priority": 0}
+	if in.Priority != nil {
+		out["priority"] = *in.Priority
+	}
+	if in.Extras != nil {
+		out["extras"] = in.Extras
+	}
+	writeJSON(w, 200, out)
+	return nil
+}
+
+func extra(extras map[string]any, ns, key string) string {
+	m, _ := extras[ns].(map[string]any)
+	v, _ := m[key].(string)
+	return v
+}
+
+// gotifyTopic is the one topic the token may publish to. Gotify has no
+// topics, so a token for every topic (or several) cannot say which.
+func gotifyTopic(t *Token) (string, error) {
+	var topics []string
+	if len(t.Grants) > 0 {
+		for _, g := range t.Grants {
+			if slices.Contains(g.Scopes, ScopePublish) {
+				topics = append(topics, g.Topic)
+			}
+		}
+	} else {
+		topics = t.Topics
+	}
+	if len(topics) != 1 || strings.Contains(topics[0], "*") {
+		return "", errf(400, "bad_request", "a Gotify app token must be a clrd token limited to one topic, so clrd knows where to post (clrd token create --name myapp --scope publish --topics mytopic)")
+	}
+	return topics[0], nil
+}
+
+// gotifyPriority maps Gotify's 0..10 to clrd's 1..5 the way the Gotify app
+// treats them: 0 silent, 1-3 low, 4-7 normal, 8 and up high. Never 5
+// (urgent), which Gotify has no word for.
+func gotifyPriority(p int) int {
+	switch {
+	case p <= 0:
+		return 1
+	case p <= 3:
+		return 2
+	case p <= 7:
+		return 3
+	}
+	return 4
+}

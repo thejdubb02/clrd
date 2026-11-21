@@ -2181,6 +2181,43 @@
     ]
    }
   },
+  "/message": {
+   "post": {
+    "summary": "Gotify publish. With an X-Gotify-Key header or ?token=, the token (limited to one topic) picks the topic; without one, ntfy publish to the topic message",
+    "tags": ["gotify"],
+    "parameters": [
+     {"name": "X-Gotify-Key", "in": "header", "schema": {"type": "string"}},
+     {"name": "token", "in": "query", "schema": {"type": "string"}}
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+         "message": {"type": "string"},
+         "title": {"type": "string"},
+         "priority": {"type": "integer", "description": "Gotify 0..10: 0 is 1, 1-3 is 2, 4-7 is 3, 8 and up is 4"},
+         "extras": {"type": "object", "description": "client::display.contentType text/markdown, client::notification.click.url and bigImageUrl are read"}
+        }
+       }
+      },
+      "application/x-www-form-urlencoded": {"schema": {"type": "object"}},
+      "multipart/form-data": {"schema": {"type": "object"}}
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Gotify's message shape (id, appid, message, title, priority, date, extras), or a ntfy message without a Gotify key",
+      "content": {"application/json": {"schema": {"type": "object"}}}
+     },
+     "400": {"description": "Gotify error shape: error, errorCode, errorDescription", "content": {"application/json": {"schema": {"type": "object"}}}},
+     "401": {"description": "Gotify error shape", "content": {"application/json": {"schema": {"type": "object"}}}},
+     "403": {"description": "Gotify error shape", "content": {"application/json": {"schema": {"type": "object"}}}}
+    }
+   }
+  },
   "/{topic}": {
    "put": {
     "summary": "ntfy publish (body is the message, or the file with Filename)",

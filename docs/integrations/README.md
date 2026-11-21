@@ -28,6 +28,7 @@ notification on every device without anyone touching it.
 | [Any other service](custom-webhooks.md) | today | if you map it | a saved template | the guide's template saved and fed events (send, resolve, secret), both token forms, a saved GitHub secret rejecting unsigned requests |
 | [Apprise](apprise.md) | today | no | ntfy JSON publish to `POST /` | Apprise 1.9: both URL forms, `?priority=` included |
 | [ntfy clients](ntfy-clients.md) | today | by key, via `X-Id` | ntfy publish/subscribe, Basic auth | ntfy CLI 2.14: publish, subscribe, Basic auth; then resolve by key |
+| [Gotify senders](gotify.md) | today | no | Gotify publish, `POST /message` with a one-topic token | the guide's token call, curl `-F` and Apprise 1.9 lines; gotify CLI 2.4 push |
 | Home Assistant ntfy integration | today | no | ntfy publish | not run |
 | [Outgoing webhooks](webhooks-out.md): clrd tells your service when someone dismisses, acks, resolves, snoozes or replies | today | not applicable | a saved outgoing webhook (admin) | server tests: delivery, signature, retry, turn-off; the guide's receiver not run |
 
