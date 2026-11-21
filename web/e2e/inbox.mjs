@@ -16,7 +16,8 @@ const bin = process.env.CLRD_BIN || 'clrd';
 const port = await new Promise(ok => { const s = createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
 const base = `http://127.0.0.1:${port}`;
 const env = { ...process.env, CLRD_DB: join(mkdtempSync(join(tmpdir(), 'clrd-e2e-')), 'clrd.db'), CLRD_LISTEN: `127.0.0.1:${port}` };
-const token = name => execFileSync(bin, ['token', 'create', '--name', name, '--scope', 'admin'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+// The user's own devices: allowed to answer approval requests (#187).
+const token = name => execFileSync(bin, ['token', 'create', '--name', name, '--scope', 'admin', '--approve', 'allowed'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
 const laptop = token('laptop');
 const phone = token('pixel-9');
 
