@@ -35,6 +35,7 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: a page refresh already on its way when another change lands is dropped, so a card cleared on another device no longer flashes back for a moment (and a closed stack no longer shows the old count and newest title). This was the flaky inbox browser test on main. (#402)
 - Server: an ntfy import replaces anonymous access set before it through the
   admin API, so no older anonymous token stays live beside the imported one
   (#375).

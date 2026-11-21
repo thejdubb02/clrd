@@ -585,7 +585,7 @@ try {
     // A live refresh keeps keyboard focus on the stack, and a topic named like
     // an Object property does not break the page.
     await stack.getByRole('button', { name: 'Hide' }).focus();
-    await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' });
+    const odd = (await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' })).id;
     await item('Odd topic name').waitFor();
     assert.equal(await stack.getByRole('button', { name: 'Hide' }).evaluate(b => b === document.activeElement), true, 'focus lost from the stack on refresh');
     // Clear all on the stack clears all four on the server, and Undo reopens them.
@@ -607,10 +607,29 @@ try {
     await item('Build 1 failed').waitFor({ state: 'visible' });
     await stack.getByRole('button', { name: 'Hide' }).click();
     await item('Build 1 failed').waitFor({ state: 'hidden' });
+    // A page fetch already on its way when another change lands must not put
+    // the cleared card back (#402). Hold one fetch, made before the clear, and
+    // hand it over after the clear.
+    let release;
+    const onApp = u => u.pathname === '/app';
+    await sp.route(onApp, async route => {
+      if (route.request().resourceType() !== 'fetch' || release) return route.continue();
+      const stale = await route.fetch();
+      await new Promise(ok => { release = ok; });
+      await route.fulfill({ response: stale });
+    });
+    await api(phone, `/api/v1/notifications/${odd}/dismiss`);
+    for (let i = 0; i < 200 && !release; i++) await new Promise(ok => setTimeout(ok, 25));
+    assert.ok(release, 'no page fetch after a change');
     // Another device clears one inside the closed stack: the count and newest
     // title change at once, not after the hidden card's exit timer (about 1.7 s).
     await api(phone, `/api/v1/notifications/${ids[3]}/dismiss`);
     await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor({ timeout: 1000 });
+    await sp.evaluate(() => { window.backAgain = false; new MutationObserver(() => { if (document.querySelector('[data-stack="ci-stack"] [data-stack-count]')?.textContent === '4 notifications') window.backAgain = true; }).observe(document.querySelector('[data-list]'), { childList: true, subtree: true, characterData: true }); });
+    release();
+    await sp.waitForTimeout(1000);
+    await sp.unroute(onApp);
+    assert.equal(await sp.evaluate(() => window.backAgain), false, 'a stale page put the cleared card back');
     assert.equal(await stack.locator('[data-stack-latest]').textContent(), 'Build 3 failed');
     // A single topic's page never stacks.
     await sp.goto(`${base}/app?topic=ci-stack`);

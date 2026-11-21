@@ -261,7 +261,9 @@
 
   // Re-fetch this page and patch it in: cards keyed by id and seq, plus the sidebar.
   let pending, gen = 0;
-  const refresh = () => { clearTimeout(pending); pending = setTimeout(patch, 250); };
+  // A change makes any page already on its way stale: drop it, or it puts back
+  // what the change just took off the screen (#402).
+  const refresh = () => { gen++; clearTimeout(pending); pending = setTimeout(patch, 250); };
   async function patch() {
     if (clearing.size || (list && list.querySelector('.is-leaving'))) return refresh();
     let doc;
@@ -275,6 +277,7 @@
       if (mine !== gen) return;
       doc = new DOMParser().parseFromString(html, 'text/html');
     } catch {
+      if (mine !== gen) return; // a newer refresh is already on its way
       // seq has already moved past this change, so the WebSocket will not
       // replay it: keep trying until the page loads.
       clearTimeout(pending);
