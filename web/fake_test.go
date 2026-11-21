@@ -127,6 +127,9 @@ func (f *Fake) SaveHook(*http.Request, string, string, string, []string, string,
 
 func (f *Fake) DeleteHook(*http.Request, string, string) error { return nil }
 
+func (f *Fake) SaveTemplate(*http.Request, Template, string, bool) error { return nil }
+func (f *Fake) DeleteTemplate(*http.Request, string, string) error       { return nil }
+
 func (f *Fake) Reply(r *http.Request, id, reply string, seq int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

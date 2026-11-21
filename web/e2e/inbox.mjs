@@ -969,6 +969,79 @@ try {
     await bctx.close();
     console.log('ok: an Ask tap waits for a confirm; Settings lowers devices and never raises its own');
   }
+
+  // Webhook templates in Settings (#129): a saved template turns a real post into
+  // a notification, a blank secret on Edit keeps the secret, Preview runs the
+  // unsaved fields and publishes nothing, and a read-only device gets no forms.
+  {
+    const post = (body, secret) => fetch(`${base}/tpl?template=my-app`, { method: 'POST', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json', ...(secret && { 'X-Clrd-Secret': secret }) }, body: JSON.stringify(body) });
+    const titles = async () => (await (await fetch(`${base}/api/v1/notifications?topic=tpl`, { headers: { Authorization: `Bearer ${phone}` } })).json()).notifications.map(n => n.title);
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'templates' } })).ok(), 'templates sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/settings');
+    await sp.getByText('No saved templates yet.').waitFor();
+    const add = sp.locator('[data-template-add]');
+    await add.getByLabel('Topic').fill('tpl');
+    await add.getByLabel('Name').fill('my-app');
+    await add.getByLabel('Title').fill('{{get . "name"}}');
+    await add.getByLabel('ID', { exact: true }).fill('{{get . "id"}}');
+    await add.getByLabel('Secret').fill('s3cret-129');
+    await add.getByRole('button', { name: 'Add template' }).click();
+    const card = sp.locator('[data-template="tpl/my-app"]');
+    await card.waitFor();
+    assert.match(await card.innerText(), /Checked with a secret\./, 'saved secret');
+    assert.ok(!(await sp.content()).includes('s3cret-129'), 'the secret is in the Settings page');
+    assert.equal((await post({ name: 'Disk full', id: 'd1' }, 's3cret-129')).status, 200, 'post with the secret');
+    assert.ok((await titles()).includes('Disk full'), 'the saved template made no notification');
+
+    // Edit with the secret left empty keeps it.
+    await card.locator('summary', { hasText: 'Edit' }).click();
+    const edit = card.locator('form[data-template-form]');
+    assert.equal(await edit.getByLabel('Title').inputValue(), '{{get . "name"}}', 'Edit shows the saved title');
+    await edit.getByLabel('Title').fill('Edited: {{get . "name"}}');
+    await edit.getByRole('button', { name: 'Save template' }).click();
+    await card.waitFor();
+    assert.match(await card.innerText(), /Checked with a secret\./, 'a blank secret on Edit removed it');
+    assert.equal((await post({ name: 'No secret', id: 'n1' })).status, 401, 'a post without the secret');
+    assert.equal((await post({ name: 'Kept', id: 'k1' }, 's3cret-129')).status, 200, 'post after Edit');
+    assert.ok((await titles()).includes('Edited: Kept'), 'the edit did not take');
+
+    // Preview runs the unsaved fields over the sample and publishes nothing.
+    const before = (await titles()).length;
+    await card.locator('summary', { hasText: 'Edit' }).click();
+    await edit.getByLabel('Title').fill('Try {{get . "name"}}');
+    await edit.locator('summary', { hasText: 'Try it on a sample' }).click();
+    await edit.getByLabel('Sample JSON').fill('{"name": "Preview only", "id": "p1"}');
+    await edit.getByRole('button', { name: 'Preview' }).click();
+    await edit.locator('[data-template-out]').getByText('Try Preview only').waitFor();
+    assert.match(await edit.locator('[data-template-status]').innerText(), /makes 1 notification\./, 'preview count');
+    assert.match(await edit.locator('[data-template-out]').innerText(), /ID p1/, 'preview shows the id');
+    await edit.getByLabel('Sample JSON').fill('{oops');
+    await edit.getByRole('button', { name: 'Preview' }).click();
+    await edit.getByText('The sample is not valid JSON.').waitFor();
+    assert.equal((await titles()).length, before, 'Preview published a notification');
+
+    // Read only: no forms, and the form post saves nothing.
+    const ro = execFileSync(bin, ['token', 'create', '--name', 'tpl-ro', '--scope', 'read'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const rctx = await browser.newContext();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: ro, name: 'tpl-ro' } })).ok(), 'read-only sign-in');
+    const rp = await rctx.newPage();
+    await rp.goto(base + '/app/settings');
+    await rp.getByText('This device cannot save templates: its token cannot publish.').waitFor();
+    assert.equal(await rp.locator('[data-template-form], [data-template]').count(), 0, 'template forms shown to a read-only device');
+    await rctx.request.post(base + '/app/templates', { form: { topic: 'tpl', name: 'evil', title: 'x' }, headers: { Origin: base }, maxRedirects: 0 });
+    await rctx.close();
+    const listed = await (await fetch(base + '/api/v1/topics/tpl/templates', { headers: { Authorization: `Bearer ${laptop}` } })).json();
+    assert.deepEqual(listed.webhooks.map(t => t.name), ['my-app'], 'a read-only device saved a template');
+
+    // Delete removes it, after a confirm.
+    sp.once('dialog', d => d.accept());
+    await card.getByRole('button', { name: 'Delete' }).click();
+    await sp.getByText('No saved templates yet.').waitFor();
+    await ctx.close();
+    console.log('ok: webhook templates are added, edited, previewed and deleted in Settings; a read-only device gets no forms');
+  }
 } finally {
   await browser?.close();
   server.kill();

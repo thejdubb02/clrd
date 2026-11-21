@@ -320,6 +320,26 @@ type Snapshot struct {
 	Hooks                                        []Hook          // outgoing webhooks (#238), Settings and admin only
 	CanHooks                                     bool            // the token may manage webhooks (admin)
 	CanApprove                                   bool            // the token may change who may approve: allowed, all topics (#329)
+	Templates                                    []Template      // saved webhook templates (#129), Settings only
+	CanTemplates                                 bool            // the token may publish, so it may save templates
+	BuiltinTemplates                             []string        // names of the built-in webhook templates
+}
+
+// Template is a saved webhook template on one topic
+// (docs/integrations/custom-webhooks.md). Every field but Each is a Go
+// template; the secret is write only.
+type Template struct {
+	Topic     string `json:"topic"`
+	Name      string `json:"name"`
+	Each      string `json:"each"`
+	Title     string `json:"title"`
+	Message   string `json:"message"`
+	Priority  string `json:"priority"`
+	Tags      string `json:"tags"`
+	Click     string `json:"click"`
+	ID        string `json:"id"`
+	Resolve   string `json:"resolve"`
+	HasSecret bool   `json:"has_secret"`
 }
 
 // Hook is an outgoing webhook on one topic (docs/integrations/webhooks-out.md).
@@ -427,6 +447,10 @@ type API interface {
 	// one unless clearSecret. DeleteHook removes it and its log.
 	SaveHook(r *http.Request, topic, name, url string, events []string, secret string, clearSecret bool) error
 	DeleteHook(r *http.Request, topic, name string) error
+	// SaveTemplate saves a webhook template (t.Topic, t.Name); an empty
+	// secret keeps the saved one unless clearSecret. DeleteTemplate removes it.
+	SaveTemplate(r *http.Request, t Template, secret string, clearSecret bool) error
+	DeleteTemplate(r *http.Request, topic, name string) error
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
@@ -484,7 +508,9 @@ func templates(base string) *template.Template {
 			}
 			return h
 		},
-		"add": func(a, b int) int { return a + b },
+		"newTemplate": func() Template { return Template{} },
+		"has":         func(list []string, s string) bool { return slices.Contains(list, s) },
+		"add":         func(a, b int) int { return a + b },
 		"plural": func(n int, one, many string) string {
 			if n == 1 {
 				return one
@@ -934,6 +960,30 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		http.Redirect(w, r, "/app/settings#hooks-h", http.StatusSeeOther)
+	})
+
+	// Settings webhook templates (#129): save or delete one as a plain form post.
+	mux.HandleFunc("POST /app/templates", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		t := Template{Topic: strings.TrimSpace(f.Get("topic")), Name: strings.TrimSpace(f.Get("name")), Each: strings.TrimSpace(f.Get("each")),
+			Title: f.Get("title"), Message: f.Get("message"), Priority: f.Get("priority"), Tags: f.Get("tags"),
+			Click: f.Get("click"), ID: f.Get("id"), Resolve: f.Get("resolve")}
+		var err error
+		if f.Get("delete") != "" {
+			err = api.DeleteTemplate(r, t.Topic, t.Name)
+		} else {
+			err = api.SaveTemplate(r, t, f.Get("secret"), f.Get("clear_secret") != "")
+		}
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
+			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "/app/settings#tpl-h", http.StatusSeeOther)
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

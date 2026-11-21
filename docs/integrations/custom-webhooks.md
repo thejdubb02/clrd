@@ -49,6 +49,15 @@ checks the signature. Every other service sends the secret back as is, in an
 `X-Clrd-Secret` header or `?secret=` on the URL. A request that fails the check
 gets 401 and publishes nothing. The API never returns a saved secret.
 
+## In Settings
+
+The web app's Settings page has a Webhook templates section for any device
+whose token can publish. It lists the saved templates on each topic you can
+publish to, and adds, edits or deletes them. Leave the secret empty on Edit to
+keep the saved one. Try it on a sample runs the form's fields, saved or not,
+over a pasted JSON post and shows the notifications it would make, without
+publishing anything.
+
 ## Your own template
 
 Save a template under any name (letters, digits, `_` and `-`), then send to

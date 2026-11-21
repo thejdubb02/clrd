@@ -448,48 +448,114 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 	return nil
 }
 
-// webhookRoutes: a topic's saved templates. Scope publish on the topic,
-// since a template decides what gets published there.
+// templateOwner: scope publish on the topic, since a template decides what
+// gets published there. name may be "" to check only the topic.
+func templateOwner(tok *Token, topic, name string) error {
+	if err := validTopic(topic); err != nil {
+		return err
+	}
+	if name != "" && !webhookNameRe.MatchString(name) {
+		return errf(400, "bad_request", "invalid template name %q: use letters, digits, _ and -, at most 64", name)
+	}
+	return tok.need(ScopePublish, topic)
+}
+
+// SavedTemplate is a saved template as the API shows it: has_secret, never the secret.
+type SavedTemplate struct {
+	Topic string `json:"topic"`
+	Name  string `json:"name"`
+	Webhook
+	HasSecret bool `json:"has_secret"`
+}
+
+// BuiltinTemplates are the names of the built-in templates, sorted.
+func BuiltinTemplates() []string { return builtinNames() }
+
+// Templates lists the saved templates on topic, or, when topic is "", on
+// every topic the token may publish to.
+func (s *Server) Templates(ctx context.Context, tok *Token, topic string) ([]SavedTemplate, error) {
+	if topic != "" {
+		if err := templateOwner(tok, topic, ""); err != nil {
+			return nil, err
+		}
+	} else if tok == nil {
+		return nil, errf(401, "unauthorized", noToken)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, name, spec FROM webhook_templates WHERE ? = '' OR topic = ? ORDER BY topic, name`, topic, topic)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SavedTemplate{}
+	for rows.Next() {
+		var v SavedTemplate
+		var spec string
+		if err := rows.Scan(&v.Topic, &v.Name, &spec); err != nil {
+			return nil, err
+		}
+		if tok.need(ScopePublish, v.Topic) != nil {
+			continue
+		}
+		if err := json.Unmarshal([]byte(spec), &v.Webhook); err != nil {
+			return nil, err
+		}
+		v.HasSecret, v.Secret = v.Secret != "", ""
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// SaveTemplate saves h as the template name on topic, replacing any saved
+// one. With keepSecret, an empty h.Secret keeps the secret already saved.
+func (s *Server) SaveTemplate(ctx context.Context, tok *Token, topic, name string, h Webhook, keepSecret bool) error {
+	if err := templateOwner(tok, topic, name); err != nil {
+		return err
+	}
+	if name == "" {
+		return errf(400, "bad_request", "a template needs a name")
+	}
+	if err := h.check(name); err != nil {
+		return err
+	}
+	if keepSecret && h.Secret == "" {
+		var spec string
+		err := s.db.QueryRowContext(ctx, `SELECT spec FROM webhook_templates WHERE topic = ? AND name = ?`, topic, name).Scan(&spec)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		var old Webhook
+		json.Unmarshal([]byte(spec), &old)
+		h.Secret = old.Secret
+	}
+	spec, _ := json.Marshal(h)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO webhook_templates (topic, name, spec) VALUES (?, ?, ?)
+		ON CONFLICT(topic, name) DO UPDATE SET spec = excluded.spec`, topic, name, string(spec))
+	return err
+}
+
+// DeleteTemplate removes a saved template.
+func (s *Server) DeleteTemplate(ctx context.Context, tok *Token, topic, name string) error {
+	if err := templateOwner(tok, topic, name); err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM webhook_templates WHERE topic = ? AND name = ?`, topic, name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errf(404, "not_found", "no saved template %q on topic %q", name, topic)
+	}
+	return nil
+}
+
 func (s *Server) webhookRoutes() {
 	owner := func(r *http.Request, tok *Token) (topic, name string, err error) {
 		topic, name = r.PathValue("topic"), r.PathValue("name")
-		if err = validTopic(topic); err != nil {
-			return
-		}
-		if name != "" && !webhookNameRe.MatchString(name) {
-			return "", "", errf(400, "bad_request", "invalid template name %q: use letters, digits, _ and -, at most 64", name)
-		}
-		return topic, name, tok.need(ScopePublish, topic)
+		return topic, name, templateOwner(tok, topic, name)
 	}
 	s.api("GET /api/v1/topics/{topic}/templates", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		topic, _, err := owner(r, tok)
+		out, err := s.Templates(r.Context(), tok, r.PathValue("topic"))
 		if err != nil {
-			return err
-		}
-		rows, err := s.db.QueryContext(r.Context(), `SELECT name, spec FROM webhook_templates WHERE topic = ? ORDER BY name`, topic)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		type saved struct {
-			Name string `json:"name"`
-			Webhook
-			HasSecret bool `json:"has_secret"`
-		}
-		out := []saved{}
-		for rows.Next() {
-			var v saved
-			var spec string
-			if err := rows.Scan(&v.Name, &spec); err != nil {
-				return err
-			}
-			if err := json.Unmarshal([]byte(spec), &v.Webhook); err != nil {
-				return err
-			}
-			v.HasSecret, v.Secret = v.Secret != "", ""
-			out = append(out, v)
-		}
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		writeJSON(w, 200, map[string]any{"webhooks": out, "builtin": builtinNames()})
@@ -504,12 +570,7 @@ func (s *Server) webhookRoutes() {
 		if err := decodeJSON(r, &h); err != nil {
 			return err
 		}
-		if err := h.check(name); err != nil {
-			return err
-		}
-		spec, _ := json.Marshal(h)
-		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO webhook_templates (topic, name, spec) VALUES (?, ?, ?)
-			ON CONFLICT(topic, name) DO UPDATE SET spec = excluded.spec`, topic, name, string(spec)); err != nil {
+		if err := s.SaveTemplate(r.Context(), tok, topic, name, h, false); err != nil {
 			return err
 		}
 		h.Secret = ""
@@ -564,16 +625,8 @@ func (s *Server) webhookRoutes() {
 		return nil
 	})
 	s.api("DELETE /api/v1/topics/{topic}/templates/{name}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		topic, name, err := owner(r, tok)
-		if err != nil {
+		if err := s.DeleteTemplate(r.Context(), tok, r.PathValue("topic"), r.PathValue("name")); err != nil {
 			return err
-		}
-		res, err := s.db.ExecContext(r.Context(), `DELETE FROM webhook_templates WHERE topic = ? AND name = ?`, topic, name)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errf(404, "not_found", "no saved template %q on topic %q", name, topic)
 		}
 		writeJSON(w, 200, map[string]bool{"deleted": true})
 		return nil

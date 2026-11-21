@@ -478,6 +478,48 @@
   document.addEventListener('submit', e => {
     const f = e.target.closest('[data-hook-delete]');
     if (f && !confirm(`Delete the webhook ${f.dataset.hookDelete} and its delivery log?`)) e.preventDefault();
+    const t = e.target.closest('[data-template-delete]');
+    if (t && !confirm(`Delete the template ${t.dataset.templateDelete}?`)) e.preventDefault();
+  });
+
+  // Settings: run a template's unsaved fields over a sample post (#129).
+  // Nothing is published or stored; the server shows what a real post would make.
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-template-preview]');
+    if (!b) return;
+    const f = b.closest('form'), box = b.closest('[data-template-try]');
+    const status = box.querySelector('[data-template-status]'), out = box.querySelector('[data-template-out]');
+    const v = k => f.elements.namedItem(k).value, topic = v('topic').trim(), name = v('name').trim();
+    out.replaceChildren();
+    if (!topic || !name) return void (status.textContent = 'Fill in the topic and name first.');
+    let payload;
+    try { payload = JSON.parse(box.querySelector('[data-template-payload]').value); } catch { return void (status.textContent = 'The sample is not valid JSON.'); }
+    const headers = {};
+    for (const line of box.querySelector('[data-template-headers]').value.split('\n')) {
+      const i = line.indexOf(':');
+      if (i > 0) headers[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    }
+    const template = {};
+    for (const k of ['each', 'title', 'message', 'priority', 'tags', 'click', 'id', 'resolve']) if (v(k).trim()) template[k] = v(k);
+    status.textContent = 'Running...';
+    const r = await fetch(`/api/v1/topics/${encodeURIComponent(topic)}/templates/${encodeURIComponent(name)}/preview`,
+      { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload, headers, template }) }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    if (!r || !r.ok) return void (status.textContent = r ? j.error || `Not run (${r.status}).` : 'Not run: no connection.');
+    const ns = j.notifications || [];
+    status.textContent = ns.length ? `A post like this makes ${ns.length} ${ns.length === 1 ? 'notification' : 'notifications'}.` : 'A post like this makes no notifications.';
+    for (const n of ns) {
+      const card = document.createElement('div'), h = document.createElement('p'), m = document.createElement('p'), meta = document.createElement('p');
+      card.className = 'bg-card grid gap-1 rounded-xl border p-4';
+      h.className = 'text-sm font-semibold [overflow-wrap:anywhere]';
+      m.className = 'text-body text-sm [overflow-wrap:anywhere]';
+      meta.className = 'meta [overflow-wrap:anywhere]';
+      h.textContent = n.title || '(no title)';
+      m.textContent = n.message || '';
+      meta.textContent = [n.status === 'resolved' ? 'Resolves' : `Priority ${n.priority || 3}`, n.external_id && `ID ${n.external_id}`, n.tags?.length && `Tags ${n.tags.join(', ')}`, n.click].filter(Boolean).join('. ');
+      card.append(h, m, meta);
+      out.append(card);
+    }
   });
 
   // Settings: message display switches, each saved on its own.
