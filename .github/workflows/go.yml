@@ -3,24 +3,35 @@ name: go
 on:
   push:
     branches: [main]
+    paths:
+      - "server/**"
+      - "web/**"
+      - "docs/**"
+      - "assets/**"
+      - "*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - ".github/workflows/go.yml"
+      - ".github/size-*"
   pull_request:
     paths:
       - "server/**"
       - "web/**"
       - "docs/**"
       - "assets/**"
-      - "embed.go"
+      - "*.go"
       - "go.mod"
       - "go.sum"
       - "Dockerfile"
       - ".github/workflows/go.yml"
       - ".github/size-*"
 
-# A new push to a pull request cancels its older run. Pushes to main each
-# get their own group (by commit), so main always gets a full run.
+# A new push cancels the older run on the same branch or pull request, so
+# main runs only its newest commit (#379). Publishing lives in fdroid.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
