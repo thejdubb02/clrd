@@ -403,3 +403,24 @@ func TestNtfyMIDRejectsPaths(t *testing.T) {
 		t.Error("real id refused")
 	}
 }
+
+// Imported events carry old times; after live ones a prune would drop the
+// live ones too (#388), so a used database is refused.
+func TestNtfyImportNeedsFreshDB(t *testing.T) {
+	s, _, _ := newTest(t)
+	if _, err := s.db.Exec(`INSERT INTO events (type, topic, data, created_at) VALUES ('created', 'live', '', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	in := NtfyImport{AuthFile: dir + "/user.db", CacheFile: dir + "/cache.db", DefaultAccess: "deny-all"}
+	if err := s.ImportNtfy(context.Background(), in, io.Discard); err == nil || !strings.Contains(err.Error(), "fresh") {
+		t.Fatalf("import into a used database: %v", err)
+	}
+	// Events pruned away, a notification left: still used.
+	if _, err := s.db.Exec(`DELETE FROM events; INSERT INTO notifications (id, topic, state, created_at, updated_at) VALUES ('n1', 'live', 'active', 0, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ImportNtfy(context.Background(), in, io.Discard); err == nil || !strings.Contains(err.Error(), "fresh") {
+		t.Fatalf("import with notifications but no events: %v", err)
+	}
+}
