@@ -56,6 +56,36 @@ wait $hook || fail "approve hook failed"
 check "$(cat "$WORK/decision")" '.hookSpecificOutput.hookEventName == "PermissionRequest" and .hookSpecificOutput.decision.behavior == "allow"' "decision"
 ok "a permission prompt is allowed from the phone, never from the agent's token"
 
+# Answered on screen (#364): Claude Code leaves the hook running, then runs
+# the tool. PostToolUse's sweep stops the hook and the phone's prompt clears.
+export CLAUDE_PLUGIN_DATA=$WORK/plugin-data
+echo '{"session_id":"s-364","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"touch onscreen"},"cwd":"/src/myproj"}' |
+  "$H" approve >"$WORK/decision2" &
+hook=$!
+id=
+for _ in $(seq 40); do
+  id=$(api "/api/v1/notifications?topic=agents" | jq -r '[.notifications[] | select(.message == "touch onscreen")][0].id // empty')
+  [ -n "$id" ] && break
+  sleep 0.5
+done
+[ -n "$id" ] || fail "no approval notification for the on-screen prompt"
+echo '{"session_id":"s-other","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{}}' | "$H" sweep
+echo '{"session_id":"s-364","hook_event_name":"PostToolUse","tool_name":"Read","tool_input":{}}' | "$H" sweep
+sleep 1
+kill -0 $hook 2>/dev/null || fail "a sweep for another session or tool stopped the hook"
+echo '{"session_id":"s-364","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"touch onscreen"},"tool_use_id":"t1"}' | "$H" sweep
+for _ in $(seq 20); do kill -0 $hook 2>/dev/null || break; sleep 0.5; done
+kill -0 $hook 2>/dev/null && fail "sweep did not stop the approve hook"
+wait $hook && fail "a stopped approve hook exited 0"
+[ ! -s "$WORK/decision2" ] || fail "a stopped approve hook printed a decision: $(cat "$WORK/decision2")"
+for _ in $(seq 20); do
+  state=$(api "/api/v1/notifications/$id" | jq -r .state)
+  [ "$state" = resolved ] && break
+  sleep 0.5
+done
+[ "$state" = resolved ] || fail "the phone's prompt is still $state after an on-screen answer"
+ok "a prompt answered on screen leaves the phone"
+
 cmd="npm i -g --silent --no-fund --no-audit @anthropic-ai/claude-code@2.1.329 >/dev/null && claude plugin validate /repo && claude plugin validate /repo/plugins/claude-code"
 out=$(dock -v "$ROOT:/repo:ro" -e HOME=/tmp -e npm_config_prefix=/tmp/npm -e PATH=/tmp/npm/bin:/usr/local/bin:/usr/bin:/bin -e DISABLE_AUTOUPDATER=1 node:22-slim sh -ec "$cmd" 2>&1) || fail "claude plugin validate: $out"
 ok "claude plugin validate passes for the marketplace and the plugin"
