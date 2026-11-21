@@ -64,3 +64,24 @@ func TestFormatCheck(t *testing.T) {
 		t.Fatalf("other topic: %d", code)
 	}
 }
+
+// Issue #315: the example pasted into an agent hides what looks like a
+// secret, and leaves ordinary words, times and short numbers alone.
+func TestExcerptHidesSecrets(t *testing.T) {
+	for in, want := range map[string]string{
+		"login password=hunter2 ok":                                       "login password=[hidden] ok",
+		`{"token": "abc", "api_key":"x1"}`:                                `{"token": "[hidden]", "api_key":"[hidden]"}`,
+		"sent as bearer FAKE1 then":                                       "sent as bearer [hidden] then",
+		"see https://me:FAKE_PW@host.test/x":                              "see https://me:[hidden]@host.test/x",
+		"used clrd_FAKE000000000000000000 by mistake":                     "used [hidden] by mistake",
+		"Disk 91% at 12:30:45, token revoked, key point":                  "Disk 91% at 12:30:45, token revoked, key point",
+		"averyveryverylongwordwithnodigitsatall here":                     "averyveryverylongwordwithnodigitsatall here",
+		`password="correct horse battery" next`:                           `password="[hidden]" next`,
+		`{"token":123456}`:                                                `{"token":[hidden]}`,
+		strings.Repeat("x", 180) + " https://me:FAKE_PW_LONGER@host.test": strings.Repeat("x", 180) + " https://me:[hidden]...",
+	} {
+		if got := excerpt(&Notification{Message: in}); got != want {
+			t.Errorf("%q\n got %q\nwant %q", in, got, want)
+		}
+	}
+}

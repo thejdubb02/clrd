@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: the format check's example message, which goes into the prompt you
+  paste into your agent, now shows passwords, keys and tokens in it as
+  `[hidden]` (#315).
 - Server: changing a device's sound answers with the sound it saved, even
   when two changes land at once, and a browser unlinked mid-request can no
   longer change one. The MCP `sound` tool now refuses an empty name like the
