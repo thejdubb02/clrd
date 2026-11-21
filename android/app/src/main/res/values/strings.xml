@@ -88,6 +88,14 @@
     <string name="sound_soft">Soft</string>
     <string name="sound_overridden">This phone\'s own notification settings changed the sound or turned it down for clrd, so they win over the choice above.</string>
     <string name="sound_open_settings">Open notification settings</string>
+    <string name="reply_sent_to_confirm">Your answer was sent for confirmation. It counts once an allowed device confirms it.</string>
+    <string name="reply_approve_denied">Not answered: this phone may not answer approval requests. An allowed device can change that.</string>
+    <string name="reply_own_request">Not answered: this request came from this phone\'s own token, so another device has to answer it.</string>
+    <string name="reply_changed">Not answered: the question changed or was already answered.</string>
+    <string name="approve_title">Approval requests</string>
+    <string name="approve_allowed">This phone can answer approval requests.</string>
+    <string name="approve_ask">This phone\'s answers to approval requests need an allowed device to confirm them.</string>
+    <string name="approve_denied">This phone may not answer approval requests. An allowed device can change that.</string>
     <string name="sound_phone_only">Saved on this phone only: %1$s It is sent again on the next connect.</string>
     <string name="sound_no_connection">no connection.</string>
     <string name="sound_no_server">no server set up.</string>

@@ -36,6 +36,12 @@ interface Store {
 
     fun pending(): List<Pending>
     fun removePending(p: Pending)
+
+    /**
+     * How a reply tap ended when it did not simply count (#330): `confirm` (sent to an allowed device
+     * to confirm), `approve_denied`, `own_request` or `conflict` (the question changed).
+     */
+    fun replyOutcome(p: Pending, outcome: String) {}
 }
 
 /**
@@ -280,10 +286,21 @@ fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synch
         if (!live()) break
         var mine = true // the row after our own action: the person just tapped it, so no sound
         val answer = try {
-            api.action(p)
+            api.action(p).let { body ->
+                // An ask device gets back the confirm prompt (202), not the question: the question stays unanswered.
+                val prompt = p.action == "reply" && runCatching { JSONObject(body).optString("id") }.getOrNull().orEmpty().let { it.isNotEmpty() && it != p.notifId }
+                if (!prompt) body else {
+                    // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
+                    store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
+                    store.replyOutcome(p, "confirm")
+                    try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
+                }
+            }
         } catch (e: HttpError) {
             if (!e.isPermanent) throw e
-            mine = false
+            // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
+            if (p.action == "reply" && (e.code == 403 || e.code == 409)) store.replyOutcome(p, if (e.code == 409) "conflict" else e.reason)
+            else mine = false
             // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
             // so take the server's current row instead. A fetch that may work later throws and keeps the
             // action queued: the event that changed the row may already be behind the cursor.

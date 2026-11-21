@@ -657,6 +657,32 @@ private fun SnoozeButton(app: App, id: String) {
 }
 
 /** The shared snooze times and default, saved on the server for every device (#193). */
+/** This phone's own approve setting (docs/SPEC.md, who may approve). Hidden until the server answers. */
+@Composable
+private fun ApproveSettings(app: App, resumes: Int) {
+    val b = LocalBrand.current
+    val server by app.saved.collectAsState()
+    var approve by remember(server) { mutableStateOf<String?>(null) }
+    LaunchedEffect(server, resumes) {
+        val api = app.api()
+        app.io.execute {
+            runCatching {
+                val a = org.json.JSONObject(api.get("/api/v1/devices?all=1")).getJSONArray("devices")
+                (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.optBoolean("this") }?.optString("approve")
+            }.getOrNull()?.let { approve = it }
+        }
+    }
+    val text = when (approve) {
+        "allowed" -> R.string.approve_allowed
+        "ask" -> R.string.approve_ask
+        "denied" -> R.string.approve_denied
+        else -> return
+    }
+    Spacer(Modifier.height(8.dp))
+    Text(stringResource(R.string.approve_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(text), color = b.slate, fontSize = 13.sp)
+}
+
 @Composable
 private fun SnoozeSettings(app: App) {
     val b = LocalBrand.current
@@ -839,6 +865,7 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
         }
         SoundSettings(app, resumes)
         if (app.configured) SnoozeSettings(app)
+        if (app.configured) ApproveSettings(app, resumes)
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.about, BuildConfig.VERSION_NAME), style = Mono, color = b.slate)
     }

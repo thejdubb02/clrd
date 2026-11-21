@@ -10,8 +10,9 @@ import org.json.JSONObject
 import java.io.IOException
 
 /** HTTP error from the server. [code] is the HTTP status. */
-class HttpError(val code: Int, msg: String, val retryAfterMs: Long? = null) : IOException("HTTP $code: $msg") {
-    val isAuth get() = code == 401 || code == 403
+class HttpError(val code: Int, msg: String, val retryAfterMs: Long? = null, val reason: String = "") : IOException("HTTP $code: $msg") {
+    /** A refused approval tap (403 `approve_denied` or `own_request`) is about the tap, not the token. */
+    val isAuth get() = code == 401 || (code == 403 && reason != "approve_denied" && reason != "own_request")
 
     /** The server is turning us away for now (429, or 503 with a Retry-After), not down. */
     val isBusy get() = code == 429 || (code == 503 && retryAfterMs != null)
@@ -72,7 +73,10 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
 
     private fun call(b: Request.Builder): String = http.newCall(b.build()).execute().use { r ->
         val text = r.body?.string().orEmpty()
-        if (!r.isSuccessful) throw HttpError(r.code, runCatching { JSONObject(text).optString("error") }.getOrNull() ?: text.take(200), retryAfterMs(r))
+        if (!r.isSuccessful) {
+            val o = runCatching { JSONObject(text) }.getOrNull()
+            throw HttpError(r.code, o?.optString("error") ?: text.take(200), retryAfterMs(r), o?.optString("code").orEmpty())
+        }
         text
     }
 

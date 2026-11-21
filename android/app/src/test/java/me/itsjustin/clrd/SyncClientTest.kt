@@ -80,6 +80,8 @@ class SyncClientTest {
                         }
                         else if (path.contains("stale")) MockResponse().setResponseCode(409).setBody("""{"error":"changed"}""")
                         else if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
+                        else if (path.contains("denied")) MockResponse().setResponseCode(403).setBody("""{"error":"no","code":"approve_denied"}""")
+                        else if (path.contains("asked")) MockResponse().setResponseCode(202).setBody(notifJson("prompt", "active", 7))
                         else MockResponse().setBody(answer(path))
                     }
                     else -> MockResponse().setResponseCode(500)
@@ -223,6 +225,28 @@ class SyncClientTest {
         await { store.queue.isEmpty() && SyncClient.Status.CONNECTED in statuses }
         assertEquals(List(2) { "/api/v1/notifications/stale" }, gets)
         assertEquals("active", store.rows["stale"]!!.state)
+    }
+
+    @Test fun aRefusedApprovalSaysWhyAndIsNotRetried() { // #330: a 403 on a reply is about the tap, not the token
+        store.rows["denied"] = notif("denied", "acknowledged", 4)
+        store.queue += Pending(1, "denied", "reply", """{"reply":"yes","seq":4}""")
+        current = { notifJson(it, "active", 4) }
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(emptyList<Pending>(), store.queue)
+        assertEquals(listOf("approve_denied"), store.outcomes)
+        assertEquals("active", store.rows["denied"]!!.state)
+        assertEquals(listOf(true), store.quiet)
+    }
+
+    @Test fun anAskAnswerShowsThePromptAndKeepsTheQuestionOpen() { // #330: 202 with the confirm prompt
+        store.rows["asked"] = notif("asked", "acknowledged", 4) // the tap's local guess
+        store.queue += Pending(1, "asked", "reply", """{"reply":"yes","seq":4}""")
+        current = { notifJson(it, "active", 4) }
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(listOf("confirm"), store.outcomes)
+        assertEquals("active", store.rows["asked"]!!.state)
+        assertEquals("active", store.rows["prompt"]!!.state)
+        assertEquals(listOf("/api/v1/notifications/asked"), gets)
     }
 
     @Test fun aHungSendDoesNotHoldBackEvents() {
@@ -469,5 +493,7 @@ class SyncClientTest {
         override fun saveEpoch(epoch: String) { this.epoch = epoch }
         override fun pending() = queue.toList()
         override fun removePending(p: Pending) { queue.remove(p) }
+        val outcomes = CopyOnWriteArrayList<String>()
+        override fun replyOutcome(p: Pending, outcome: String) { outcomes += outcome }
     }
 }
