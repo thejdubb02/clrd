@@ -277,6 +277,7 @@
       if (mine !== gen) return;
       doc = new DOMParser().parseFromString(html, 'text/html');
     } catch {
+      if (mine !== gen) return; // a newer refresh is already on its way
       // seq has already moved past this change, so the WebSocket will not
       // replay it: keep trying until the page loads.
       clearTimeout(pending);
