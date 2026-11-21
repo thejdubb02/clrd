@@ -88,9 +88,21 @@ try {
     await tp.locator('[data-tips]').hover();
     await tp.clock.runFor(30000);
     assert.equal(await title(), second, 'the tip stays put while hovered');
+    // Pause stops the rotation with the pointer and focus gone (a screen
+    // reader's virtual cursor triggers neither); Play starts it again (#352).
+    const away = async () => { await tp.mouse.move(0, 0); await tp.evaluate(() => document.activeElement.blur()); };
+    await tp.getByRole('button', { name: 'Pause tips' }).click();
+    await away();
+    await tp.clock.runFor(30000);
+    assert.equal(await title(), second, 'the tip stays put once paused');
+    // Play from the keyboard: focus stays on the button, and it still rotates.
+    await tp.getByRole('button', { name: 'Play tips' }).focus();
+    await tp.keyboard.press('Enter');
+    await tp.clock.runFor(10000);
+    assert.notEqual(await title(), second, 'Play starts the rotation again, focus or not');
     await tp.close();
   }
-  console.log('ok: tips advance on their own and pause on hover');
+  console.log('ok: tips advance on their own, pause on hover, and have Pause and Play');
 
   // Clearing it here offers Undo, and Undo brings it back.
   const a = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Disk full on web-1', message: '/var at 99%' });
