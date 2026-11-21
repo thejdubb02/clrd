@@ -35,6 +35,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: Clear all on stacks stays right when the server is slow to answer: a
+  stack fades as one instead of shrinking card by card, a topic that arrives
+  meanwhile is no longer shown as Cleared, and another stack's count updates
+  at once while one fades. (#387)
 - Web: J and K now stop on a closed stack and Enter opens it. A notification
   another device clears inside a closed stack updates its count and newest
   title at once, and Clear all takes every stack with it. (#227)

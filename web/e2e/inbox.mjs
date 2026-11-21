@@ -604,6 +604,45 @@ try {
     console.log('ok: Stack by topic folds a topic into one card that opens and clears');
   }
 
+  // Stack edge cases (#387), in a browser that sees only its own topics, so
+  // its Clear all touches nothing else in this run.
+  {
+    const own = execFileSync(bin, ['token', 'create', '--name', 'stacker', '--scope', 'read,publish', '--topics', 'pumps,tanks,late'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const sp = await (await browser.newContext()).newPage();
+    await sp.goto(`${base}/app?auth=${Buffer.from(`Bearer ${own}`).toString('base64url')}`);
+    await sp.evaluate(() => localStorage.setItem('clrd.stack', '1'));
+    const send = async (topic, title) => (await api(phone, '/api/v1/notifications', { topic, title, message: 'x' })).id;
+    for (const t of ['Pump 1 down', 'Pump 2 down']) await send('pumps', t);
+    const tanks = [];
+    for (const t of ['Tank 1 low', 'Tank 2 low', 'Tank 3 low']) tanks.push(await send('tanks', t));
+    await sp.reload();
+    const stackOf = t => sp.locator(`[data-stack="${t}"]`);
+    await stackOf('tanks').waitFor();
+    // Another device clears one inside a closed stack while a different stack
+    // fades out: the count changes at once, not after the fade (about 1.7 s).
+    await stackOf('pumps').getByRole('button', { name: 'Clear all' }).click();
+    await sp.locator('[data-stack="pumps"].is-leaving').waitFor();
+    await api(phone, `/api/v1/notifications/${tanks[2]}/dismiss`);
+    await stackOf('tanks').locator('[data-stack-count]', { hasText: '2 notifications' }).waitFor({ timeout: 1000 });
+    await stackOf('pumps').waitFor({ state: 'detached' });
+    // Clear all with its reply held back: the live events for the clear land
+    // first, and a new topic arrives meanwhile. The stack still fades as one,
+    // and the new topic is not marked Cleared.
+    let release;
+    const held = new Promise(r => { release = r; });
+    await sp.route('**/api/v1/notifications/clear', async route => { const res = await route.fetch(); await held; await route.fulfill({ response: res }); });
+    await sp.locator('[data-act="clear-all"]').click();
+    for (const t of ['Late 1', 'Late 2']) await send('late', t);
+    await sp.waitForTimeout(1000); // nothing to wait on: the events must change nothing
+    assert.equal(await stackOf('tanks').locator('[data-stack-count]').textContent(), '2 notifications', 'the stack shrank card by card');
+    release();
+    await sp.locator('[data-stack="tanks"].is-leaving').waitFor();
+    assert.equal(await sp.locator('[data-stack].is-leaving').count(), 1, 'a stack that came in while clearing was marked Cleared');
+    await stackOf('late').locator('[data-stack-count]', { hasText: '2 notifications' }).waitFor();
+    await sp.context().close();
+    console.log('ok: stacks stay right while Clear all waits and while one fades');
+  }
+
   // QR sign-in (#74): a signed-out browser shows a code, a signed-in phone
   // opens the link and taps Approve, and the waiting browser signs itself in.
   const pc = await (await browser.newContext()).newPage();
