@@ -49,6 +49,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- An ntfy subscription with `?scheduled=1` no longer shows a delayed message
+  sent just after the stream opened as if it were due now. Only messages that
+  were already waiting when you subscribed are listed early; new delayed ones
+  arrive when they fire (#432).
 - `clrd import ntfy` refuses a database that already has notifications, as the
   Gotify import does. Before, importing into a server in use could let the
   next cleanup delete recent live events, so phones offline at the time
