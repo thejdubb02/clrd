@@ -492,8 +492,9 @@
     const v = k => f.elements.namedItem(k).value, topic = v('topic').trim(), name = v('name').trim();
     out.replaceChildren();
     if (!topic || !name) return void (status.textContent = 'Fill in the topic and name first.');
-    let payload;
-    try { payload = JSON.parse(box.querySelector('[data-template-payload]').value); } catch { return void (status.textContent = 'The sample is not valid JSON.'); }
+    // Sent as typed, not re-encoded: JSON.parse rounds whole numbers over 2^53, and a real post keeps them.
+    const payload = box.querySelector('[data-template-payload]').value.trim();
+    try { JSON.parse(payload); } catch { return void (status.textContent = 'The sample is not valid JSON.'); }
     const headers = {};
     for (const line of box.querySelector('[data-template-headers]').value.split('\n')) {
       const i = line.indexOf(':');
@@ -502,9 +503,11 @@
     const template = {};
     for (const k of ['each', 'title', 'message', 'priority', 'tags', 'click', 'id', 'resolve']) if (v(k).trim()) template[k] = v(k);
     status.textContent = 'Running...';
+    const run = box.dataset.run = String(+(box.dataset.run || 0) + 1); // only the latest click shows
     const r = await fetch(`/api/v1/topics/${encodeURIComponent(topic)}/templates/${encodeURIComponent(name)}/preview`,
-      { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload, headers, template }) }).catch(() => null);
+      { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: `{"payload":${payload},"headers":${JSON.stringify(headers)},"template":${JSON.stringify(template)}}` }).catch(() => null);
     const j = r ? await r.json().catch(() => ({})) : {};
+    if (box.dataset.run !== run) return;
     if (!r || !r.ok) return void (status.textContent = r ? j.error || `Not run (${r.status}).` : 'Not run: no connection.');
     const ns = j.notifications || [];
     status.textContent = ns.length ? `A post like this makes ${ns.length} ${ns.length === 1 ? 'notification' : 'notifications'}.` : 'A post like this makes no notifications.';

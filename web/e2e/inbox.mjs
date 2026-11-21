@@ -1012,11 +1012,11 @@ try {
     await card.locator('summary', { hasText: 'Edit' }).click();
     await edit.getByLabel('Title').fill('Try {{get . "name"}}');
     await edit.locator('summary', { hasText: 'Try it on a sample' }).click();
-    await edit.getByLabel('Sample JSON').fill('{"name": "Preview only", "id": "p1"}');
+    await edit.getByLabel('Sample JSON').fill('{"name": "Preview only", "id": 9007199254740993}');
     await edit.getByRole('button', { name: 'Preview' }).click();
     await edit.locator('[data-template-out]').getByText('Try Preview only').waitFor();
     assert.match(await edit.locator('[data-template-status]').innerText(), /makes 1 notification\./, 'preview count');
-    assert.match(await edit.locator('[data-template-out]').innerText(), /ID p1/, 'preview shows the id');
+    assert.match(await edit.locator('[data-template-out]').innerText(), /ID 9007199254740993\b/, 'preview shows the id, a big number unrounded');
     await edit.getByLabel('Sample JSON').fill('{oops');
     await edit.getByRole('button', { name: 'Preview' }).click();
     await edit.getByText('The sample is not valid JSON.').waitFor();
