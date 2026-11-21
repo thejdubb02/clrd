@@ -53,6 +53,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Web: Settings shows the format check under Message format: each topic with
   hard to read messages, the count per problem, and a button to copy the fix
   prompt. Nothing shows when there is nothing to fix (#308).
+- Server: give one topic its own "keep cleared messages" days with `topic_keep_cleared_days`, over the API or MCP, and preview it per topic (#262).
+
 - Server: a format check finds topics whose messages are hard to read
   (Markdown sent as plain text, unknown shortcodes, no title, very long
   messages, raw JSON) and gives a ready prompt to fix the sender, through

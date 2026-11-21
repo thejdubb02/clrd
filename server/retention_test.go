@@ -102,3 +102,84 @@ func TestKeepCleared(t *testing.T) {
 		t.Fatal("forever removed a cleared message")
 	}
 }
+
+// TestTopicKeepCleared: a topic with its own keep_cleared_days goes by it,
+// every other topic by the global one, and the preview counts the same (#262).
+func TestTopicKeepCleared(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	day := 24 * time.Hour
+	mk := func(topic string, age time.Duration) string {
+		t.Helper()
+		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": topic, "message": "m"})
+		id := n["id"].(string)
+		call(t, ts, "POST", "/api/v1/notifications/"+id+"/dismiss", admin, nil)
+		if _, err := s.db.Exec(`UPDATE notifications SET updated_at = ? WHERE id = ?`, ms(time.Now().Add(-age)), id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	exists := func(id string) bool {
+		var n int
+		s.db.QueryRow(`SELECT COUNT(*) FROM notifications WHERE id = ?`, id).Scan(&n)
+		return n == 1
+	}
+	ci3, ci10 := mk("ci", 3*day), mk("ci", 10*day)
+	keep20, keep40 := mk("keep", 20*day), mk("keep", 40*day)
+	other10, other40 := mk("other", 10*day), mk("other", 40*day)
+
+	// Only an admin token for the topic may set or drop its keep.
+	limited := mkToken(t, s, "ci-admin", []string{ScopeRead, ScopeAdmin}, []string{"ci"})
+	reader := mkToken(t, s, "reader", []string{ScopeRead}, nil)
+	for _, c := range []struct {
+		tok  string
+		body map[string]any
+		want int
+	}{
+		{reader, map[string]any{"ci": 2}, 403},
+		{reader, map[string]any{"ci": nil}, 403},
+		{limited, map[string]any{"other": 2}, 403},
+		{admin, map[string]any{"ci": -1}, 400},
+		{admin, map[string]any{"bad topic": 2}, 400},
+		{limited, map[string]any{"ci": 2}, 200},
+	} {
+		if code, out := call(t, ts, "PUT", "/api/v1/settings", c.tok, map[string]any{"topic_keep_cleared_days": c.body}); code != c.want {
+			t.Fatalf("%v: want %d, got %d %v", c.body, c.want, code, out)
+		}
+	}
+	call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"keep_cleared_days": 7, "topic_keep_cleared_days": map[string]any{"keep": 0}})
+
+	// The topic-limited admin sees only its own topic's keep.
+	if _, st := call(t, ts, "GET", "/api/v1/settings", limited, nil); len(st["topic_keep_cleared_days"].(map[string]any)) != 1 {
+		t.Fatalf("limited read: %v", st["topic_keep_cleared_days"])
+	}
+	for q, want := range map[string]float64{"keep_cleared_days=7": 2, "keep_cleared_days=2&topic=ci": 2, "keep_cleared_days=5&topic=ci": 1} {
+		if _, c := call(t, ts, "GET", "/api/v1/counts?"+q, admin, nil); c["would_remove"] != want {
+			t.Fatalf("preview %s: %v", q, c["would_remove"])
+		}
+	}
+	// Events older than the shortest keep (ci's 2 days) go too, so a
+	// client that far behind gets a reset, not replays of removed rows.
+	if _, err := s.db.Exec(`UPDATE events SET created_at = ?`, ms(time.Now().Add(-3*day))); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/events?since=0", admin, nil); code != 410 {
+		t.Fatalf("events older than a topic keep: want 410, got %d", code)
+	}
+	if exists(ci3) || exists(ci10) || !exists(keep20) || !exists(keep40) || exists(other10) || exists(other40) {
+		t.Fatalf("ci3=%v ci10=%v keep20=%v keep40=%v other10=%v other40=%v",
+			exists(ci3), exists(ci10), exists(keep20), exists(keep40), exists(other10), exists(other40))
+	}
+
+	// Null drops the topic's keep: it follows the global one again.
+	call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"topic_keep_cleared_days": map[string]any{"keep": nil}})
+	if err := s.prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if exists(keep20) || exists(keep40) {
+		t.Fatal("dropped override still kept forever")
+	}
+}
