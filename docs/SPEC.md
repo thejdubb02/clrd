@@ -96,6 +96,14 @@ may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
 message at priority 1. Quiet hours on one device are a client setting, not a
 silence.
 
+**Live:** `"live": true` on publish (ntfy's `Cache: no`) sends the message to
+the ntfy streams open right now and stores nothing: no row, no event, no seq,
+no hook. It is never replayed, so a reconnect sees nothing, and native and
+MCP streams never get it. The reply carries `live: true` and a 12 character
+`id` starting with `l`; ntfy's `since=<that id>` replays what was stored after
+it. A live publish with `snooze_until`, `repeat`, `expires`, `external_id`,
+`status` or an uploaded file is a 400.
+
 **Repeat:** `"repeat": "5m"` on publish (1m to 24h) re-alerts while the row
 stays `active`, up to `repeat_times` (1 to 100, default 10). Each re-alert is
 a `repeat` event with the full notification; `repeat.count` goes up and
@@ -714,7 +722,7 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?, live?)`, `list(topic?, state?)`,
 `topics()`, `counts(keep_cleared_days?, topic?)`, `format_check(topic?, by?)`, `format_dismiss(topic, rule, sender_id?, dismissed?)` (the format
 check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),

@@ -199,9 +199,9 @@ func TestDeviceLiveStatus(t *testing.T) {
 func TestDeviceStatusTwoStreams(t *testing.T) {
 	var h hub
 	h.subs = map[chan Event]*stream{}
-	one, st := h.subscribe("tok")
+	one, st := h.subscribe("tok", false)
 	st.ready.Store(true)
-	two, _ := h.subscribe("tok") // still replaying
+	two, _ := h.subscribe("tok", false) // still replaying
 	if c, up, _ := h.status("tok"); !c || !up {
 		t.Fatalf("one of two caught up: connected %v caught up %v", c, up)
 	}

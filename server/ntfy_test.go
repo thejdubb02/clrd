@@ -55,10 +55,10 @@ func TestNtfyPublish(t *testing.T) {
 	if code, _ := raw(t, "HEAD", ts.URL+"/alerts/trigger?message=x", admin, "", nil); code != 405 {
 		t.Fatalf("HEAD publish: %d", code)
 	}
-	if code, _ := raw(t, "PUT", ts.URL+"/alerts", admin, "secret", map[string]string{"Cache": "no"}); code != 400 {
+	if code, _ := raw(t, "PUT", ts.URL+"/alerts", admin, "secret", map[string]string{"Cache": "no"}); code != 200 {
 		t.Fatalf("Cache: no: %d", code)
 	}
-	if code, _ := raw(t, "POST", ts.URL+"/", admin, `{"topic":"alerts","message":"secret","cache":"no"}`, nil); code != 400 {
+	if code, _ := raw(t, "POST", ts.URL+"/", admin, `{"topic":"alerts","message":"secret","cache":"no"}`, nil); code != 200 {
 		t.Fatalf("JSON cache no: %d", code)
 	}
 	if s.seq.Load() != before {

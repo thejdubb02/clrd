@@ -64,13 +64,21 @@ type ntfyAttach struct {
 // 12 chars like ntfy's own), so since=<id> works.
 func ntfyID(seq int64) string { return fmt.Sprintf("s%011d", seq) }
 
+// ntfyMsgID is n's ntfy id as of seq: a live message keeps its own (live.go).
+func ntfyMsgID(n *Notification, seq int64) string {
+	if n.Live {
+		return n.ID
+	}
+	return ntfyID(seq)
+}
+
 // ntfyMessage renders a notification as of event seq. The ntfy event comes
 // from the state: active shows, acknowledged/snoozed clear, dismissed/resolved delete.
 // With sched (ntfy's ?scheduled=1, and the reply to a delayed publish), a
 // notification snoozed until later shows as a message at that time, as ntfy
 // lists a delayed message.
 func (s *Server) ntfyMessage(n *Notification, seq int64, sched bool) ntfyMsg {
-	m := ntfyMsg{ID: ntfyID(seq), Time: n.UpdatedAt.Unix(), Event: "message", Topic: n.Topic, SequenceID: n.ExternalID}
+	m := ntfyMsg{ID: ntfyMsgID(n, seq), Time: n.UpdatedAt.Unix(), Event: "message", Topic: n.Topic, SequenceID: n.ExternalID}
 	if m.SequenceID == "" {
 		m.SequenceID = n.ID
 	}
@@ -287,7 +295,7 @@ func ntfyDelay(v string) (*time.Time, error) {
 	return nil, errf(400, "bad_request", "invalid delay %q: use a unix time or a duration like 30m", v)
 }
 
-var errNoCache = errf(400, "bad_request", "Cache: no is not supported: clrd stores every notification so it can sync")
+var errNoCache = errf(400, "bad_request", "Cache: no is not supported with a webhook template")
 
 func parseDuration(v string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(v, "d"); ok {
@@ -306,11 +314,9 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == http.MethodHead { // GET routes also match HEAD; a probe must not publish
 		return errf(405, "bad_request", "use GET, PUT or POST to publish")
 	}
-	if strings.EqualFold(param(r, "Cache"), "no") { // ntfy drops these after delivery; clrd keeps every notification
-		return errNoCache
-	}
 	tok := s.ntfyAuth(r)
 	s.noteIgnored(r)
+	live := strings.EqualFold(param(r, "Cache"), "no") // sent to open streams, stored nowhere (live.go)
 	file := ntfyFilename(r)
 	if r.Method == http.MethodGet {
 		file = "" // GET /{topic}/publish has no body to be the file
@@ -319,9 +325,12 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	yes := inline != nil && *inline
 	tpl := yes && file == "" && r.Method != http.MethodGet
 	if t := r.URL.Query().Get("template"); t != "" && !yes && r.Method != http.MethodGet {
+		if live {
+			return errNoCache
+		}
 		return s.webhookIn(w, r, tok, t) // webhooks.go
 	}
-	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid")}
+	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid"), Live: live}
 	if in.ExternalID == "" {
 		in.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
 	}
@@ -465,11 +474,9 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	s.noteIgnored(r, unknown...)
-	if strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no") {
-		return errNoCache
-	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
-		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown}
+		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown,
+		Live: strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no")}
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
 	p.Icon = ntfyIcon(icon)
@@ -689,15 +696,14 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		// published once the client could see the stream was open, so it is live.
 		// A poll has no live part: it lists all it returns.
 		replayEnd := s.CurrentSeq()
-		if !poll {
-			if err := write(ntfyEvent("open", joined)); err != nil {
-				return nil
-			}
+		opened := func() error { return write(ntfyEvent("open", joined)) }
+		if poll {
+			opened = nil
 		}
 		// ntfy has no reset: since= means all that is left after it, so a
 		// prune (before or during replay) restarts from the oldest event left.
 		for tries := 0; ; tries++ {
-			err := s.follow(ctx, tok, since, topics, func(raw []byte, seq int64) error {
+			err := s.follow(ctx, tok, since, topics, opened, func(raw []byte, seq int64) error {
 				if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
 					if poll {
 						return errStop
@@ -710,12 +716,14 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 					}
 					return nil
 				}
-				since = seq
 				var e Event
 				if err := json.Unmarshal(raw, &e); err != nil {
 					return err
 				}
-				if !f.pass(e.Notification, ntfyID(seq)) {
+				if !e.Notification.Live { // a live one is not in the log: a retry must not skip from it
+					since = seq
+				}
+				if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
 					return nil
 				}
 				return write(s.ntfyMessage(e.Notification, seq, f.sched && (poll || seq <= replayEnd)))
@@ -723,6 +731,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			if err != errPruned {
 				return nil
 			}
+			opened = nil // the client saw it once
 			var oldest int64
 			if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(seq) - 1, ?) FROM events`, s.CurrentSeq()).Scan(&oldest); err != nil {
 				return nil
@@ -837,6 +846,9 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		var seq int64
 		if s.db.QueryRowContext(ctx, `SELECT seq FROM ntfy_mids WHERE mid = ?`, v).Scan(&seq) == nil {
 			return min(seq, cur), nil
+		}
+		if n, ok := liveSeq(v); ok { // after the imported ids, which can start with l too
+			return min(n, cur), nil
 		}
 		return 0, nil
 	}

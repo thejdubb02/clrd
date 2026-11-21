@@ -289,6 +289,9 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		if v := str(a, "repeat"); v != "" {
 			body["repeat"] = v
 		}
+		if v, ok := a["live"].(bool); ok && v {
+			body["live"] = true
+		}
 		if v, ok := a["repeat_times"].(float64); ok {
 			body["repeat_times"] = int(v)
 		}
@@ -500,6 +503,7 @@ var tools = []map[string]any{
 			"priority":     map[string]any{"type": "integer", "minimum": 1, "maximum": 5, "description": "1..5, 5 = urgent"},
 			"repeat":       p("string", "Optional: alert again every this long (1m to 24h, e.g. 5m) until someone acknowledges, snoozes, dismisses or resolves it"),
 			"repeat_times": map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "How many times to repeat at most (default 10)"},
+			"live":         map[string]any{"type": "boolean", "description": "Optional: send only to ntfy streams open now and keep nothing (no inbox, no replay, no buttons to answer)"},
 			"id":           p("string", "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id)."),
 			"actions": map[string]any{"type": "array", "maxItems": 3,
 				"description": "Optional answer buttons, e.g. [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]. wait_for_reply returns the tapped one as answer.",

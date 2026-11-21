@@ -192,6 +192,7 @@ type Server struct {
 	mu       sync.Mutex // serialises writes: seq order = delivery order
 	lastMS   int64      // newID state, guarded by mu
 	lastRand [10]byte
+	liveN    uint32                   // live id counter (live.go), guarded by mu
 	seq      atomic.Int64             // last committed event seq
 	pruned   atomic.Int64             // events with seq <= pruned are gone
 	origins  atomic.Pointer[[]string] // ntfy_origins allow list once read (ntfyorigins.go)
@@ -307,6 +308,7 @@ func New(opt Options) (*Server, error) {
 	}
 	s.epoch = strconv.FormatInt(epoch, 36)
 	s.seq.Store(seq)
+	s.liveN = rand.Uint32() // so a restart at the same seq never reuses a live id
 	s.pruned.Store(pruned)
 	s.fetch = newFetcher(filepath.Join(filepath.Dir(opt.DB), "cache"))
 	s.routesSetup()

@@ -155,6 +155,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: live-only messages. ntfy's `Cache: no`, or `"live": true` on the API and MCP `send`, goes to the ntfy streams open now and is stored nowhere (#400).
+
 - A file edit sent for approval shows on the phone with the change itself,
   not only the file path: removed and added lines for Edit and MultiEdit, the
   text for Write and NotebookEdit (#366).
