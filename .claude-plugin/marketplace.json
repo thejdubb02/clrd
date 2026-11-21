@@ -1,0 +1,11 @@
+{
+  "name": "clrd",
+  "owner": { "name": "clrd" },
+  "plugins": [
+    {
+      "name": "clrd",
+      "source": "./plugins/claude-code",
+      "description": "clrd for Claude Code: the clrd MCP server, a ping when a task finishes or waits on you, and permission prompts you approve from your phone."
+    }
+  ]
+}

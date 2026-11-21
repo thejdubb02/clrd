@@ -89,6 +89,12 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Integrations: a Claude Code plugin, installed from this repo with
+  `/plugin marketplace add thejdubb02/clrd`. One install and two questions
+  (server URL and token) give Claude the clrd MCP server, a ping when a task
+  finishes or waits on you, and permission prompts you allow or deny from
+  your phone. No answer in time leaves the prompt on screen. (#156)
+
 - Server: try a webhook template before pointing a service at it.
   `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
   `preview_template`) takes a sample payload and returns the notifications a

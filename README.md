@@ -93,7 +93,9 @@ offline catches up the moment it reconnects.
   show the same 4-digit number, so no token is typed or copied.
 - **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
   and an MCP server so an AI agent can notify you and wait for your answer.
-  Claude Code and Codex can ask your phone before running a command.
+  Claude Code and Codex can ask your phone before running a command, and a
+  [Claude Code plugin](docs/integrations/claude-code.md) sets that up with
+  pings when a task finishes, in one install.
   A format check finds senders whose messages are hard to read and hands an
   agent a ready prompt to fix them.
 

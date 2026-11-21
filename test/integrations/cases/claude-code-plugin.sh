@@ -1,0 +1,44 @@
+# docs/integrations/claude-code.md: the plugin's hook script against a real
+# clrd, with the hook JSON Claude Code sends, then `claude plugin validate`.
+P=$ROOT/plugins/claude-code
+H=$P/hooks/clrd-hook.sh
+export CLAUDE_PLUGIN_OPTION_SERVER_URL=$CLRD/ CLAUDE_PLUGIN_OPTION_TOKEN=$CLRD_TOKEN CLAUDE_PROJECT_DIR=/src/myproj
+last() { api "/api/v1/notifications?topic=agents" | jq -c '.notifications[0]'; }
+
+for u in http://example.com http://localhost.example.com https://user:pw@example.com; do
+  out=$(CLAUDE_PLUGIN_OPTION_SERVER_URL=$u "$H" approve </dev/null 2>&1) && fail "ran against $u"
+  [ "$out" = "clrd: server URL must be https (or http on localhost)" ] || fail "not refused before sending, $u: $out"
+done
+ok "plain http off localhost and user:password URLs are refused"
+
+echo '{"hook_event_name":"Stop","cwd":"/src/myproj"}' | "$H" stop || fail "stop hook"
+check "$(last)" '.title == "Claude finished: myproj" and .message == "Task finished."' "finished ping"
+ok "Stop sends a finished ping titled with the project"
+
+echo '{"hook_event_name":"Notification","notification_type":"idle_prompt","message":"Claude is waiting for your input"}' | "$H" wait || fail "wait hook"
+check "$(last)" '.title == "Claude is waiting: myproj" and .message == "Claude is waiting for your input" and .priority == 4' "waiting ping"
+ok "Notification sends a waiting ping with Claude's message"
+
+"$H" no-raise | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null || fail "no-raise did not deny"
+ok "request_approve is denied before it runs"
+
+# A permission prompt: the agent's token cannot answer it, the phone can.
+echo '{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"touch proof"},"cwd":"/src/myproj"}' |
+  "$H" approve >"$WORK/decision" &
+hook=$!
+for _ in $(seq 40); do
+  id=$(api "/api/v1/notifications?topic=agents" | jq -r '[.notifications[] | select(.title | startswith("Allow"))][0].id // empty')
+  [ -n "$id" ] && break
+  sleep 0.5
+done
+[ -n "$id" ] || fail "no approval notification"
+reply() { curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d '{"reply":"allow"}' "$CLRD/api/v1/notifications/$id/reply"; }
+[ "$(reply "$CLRD_TOKEN")" = 403 ] || fail "the agent's own token answered its prompt"
+[ "$(reply "$CLRD_PHONE")" = 200 ] || fail "the phone could not answer"
+wait $hook || fail "approve hook failed"
+check "$(cat "$WORK/decision")" '.hookSpecificOutput.decision.behavior == "allow"' "decision"
+ok "a permission prompt is allowed from the phone, never from the agent's token"
+
+cmd="npm i -g --silent --no-fund --no-audit @anthropic-ai/claude-code@2.1.329 >/dev/null && claude plugin validate /repo && claude plugin validate /repo/plugins/claude-code"
+out=$(dock -v "$ROOT:/repo:ro" -e HOME=/tmp -e npm_config_prefix=/tmp/npm -e PATH=/tmp/npm/bin:/usr/local/bin:/usr/bin:/bin -e DISABLE_AUTOUPDATER=1 node:22-slim sh -ec "$cmd" 2>&1) || fail "claude plugin validate: $out"
+ok "claude plugin validate passes for the marketplace and the plugin"
