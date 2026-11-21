@@ -101,6 +101,8 @@
     <string name="approve_allowed">This phone can answer approval requests.</string>
     <string name="approve_ask">This phone\'s answers to approval requests need an allowed device to confirm them.</string>
     <string name="approve_denied">This phone may not answer approval requests. An allowed device can change that.</string>
+    <string name="dnd_explain">Urgent notifications (priority 5) are quiet in Do Not Disturb unless you let them through. Only you can turn that on, in Android\'s settings.</string>
+    <string name="dnd_open">Let urgent ones through Do Not Disturb</string>
     <string name="sound_phone_only">Saved on this phone only: %1$s It is sent again on the next connect.</string>
     <string name="sound_no_connection">no connection.</string>
     <string name="sound_no_server">no server set up.</string>

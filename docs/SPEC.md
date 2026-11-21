@@ -105,7 +105,7 @@ every device; a reopen or snooze wake does not restart it. A scheduled send
 (`snooze_until`) counts from its delivery. A publish that updates the row
 replaces `repeat` with its own (none if it gave none). ntfy subscribers get
 each re-alert as a new message. The web inbox plays its sound again on a
-`repeat` event; the Android app does not alert on `repeat` events yet.
+`repeat` event, and the Android app alerts again even while it is showing.
 
 **Actions:** each action is a link (`url`) or an answer button (`reply`),
 exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
