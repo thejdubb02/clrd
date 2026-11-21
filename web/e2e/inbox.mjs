@@ -1092,6 +1092,19 @@ try {
     const listed = await (await fetch(base + '/api/v1/topics/tpl/templates', { headers: { Authorization: `Bearer ${laptop}` } })).json();
     assert.deepEqual(listed.webhooks.map(t => t.name), ['my-app'], 'a read-only device saved a template');
 
+    // A field saved with a newline through the API keeps it through Edit (#376).
+    const api = (method, body) => fetch(base + '/api/v1/topics/tpl/templates/multi', { method, headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, ...(body && { body: JSON.stringify(body) }) });
+    assert.ok((await api('PUT', { title: 'Build\n{{get . "name"}}', tags: 'a,\nb' })).ok, 'save a two-line template');
+    await sp.reload();
+    const multi = sp.locator('[data-template="tpl/multi"]');
+    await multi.locator('summary', { hasText: 'Edit' }).click();
+    await multi.getByRole('button', { name: 'Save template' }).click();
+    await multi.waitFor();
+    const kept = (await (await fetch(base + '/api/v1/topics/tpl/templates', { headers: { Authorization: `Bearer ${laptop}` } })).json()).webhooks.find(t => t.name === 'multi');
+    assert.deepEqual([kept.title.replace(/\r/g, ''), kept.tags.replace(/\r/g, '')], ['Build\n{{get . "name"}}', 'a,\nb'], 'Edit dropped a newline');
+    assert.ok((await api('DELETE')).ok, 'delete the two-line template');
+    await sp.reload();
+
     // Delete removes it, after a confirm.
     sp.once('dialog', d => d.accept());
     await card.getByRole('button', { name: 'Delete' }).click();

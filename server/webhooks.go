@@ -517,19 +517,13 @@ func (s *Server) SaveTemplate(ctx context.Context, tok *Token, topic, name strin
 	if err := h.check(name); err != nil {
 		return err
 	}
-	if keepSecret && h.Secret == "" {
-		var spec string
-		err := s.db.QueryRowContext(ctx, `SELECT spec FROM webhook_templates WHERE topic = ? AND name = ?`, topic, name).Scan(&spec)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		var old Webhook
-		json.Unmarshal([]byte(spec), &old)
-		h.Secret = old.Secret
-	}
 	spec, _ := json.Marshal(h)
+	// One statement, so a rotate or clear landing in between is never undone (#376).
 	_, err := s.db.ExecContext(ctx, `INSERT INTO webhook_templates (topic, name, spec) VALUES (?, ?, ?)
-		ON CONFLICT(topic, name) DO UPDATE SET spec = excluded.spec`, topic, name, string(spec))
+		ON CONFLICT(topic, name) DO UPDATE SET spec = CASE
+			WHEN ? AND json_extract(excluded.spec, '$.secret') IS NULL AND json_extract(webhook_templates.spec, '$.secret') IS NOT NULL
+			THEN json_set(excluded.spec, '$.secret', json_extract(webhook_templates.spec, '$.secret'))
+			ELSE excluded.spec END`, topic, name, string(spec), keepSecret)
 	return err
 }
 

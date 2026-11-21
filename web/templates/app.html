@@ -482,20 +482,20 @@
   <input id="{{$id}}-each" class="input" name="each" value="{{.Each}}" maxlength="256" aria-describedby="{{$id}}-each-hint" autocomplete="off" spellcheck="false">
   <p id="{{$id}}-each-hint" class="meta">A dotted path to a list in the JSON, for one notification per item. Empty makes the whole post one notification.</p></div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-title">Title</label>
-  <input id="{{$id}}-title" class="input" name="title" value="{{.Title}}" autocomplete="off" spellcheck="false"></div>
+  {{if multiline .Title}}<textarea id="{{$id}}-title" class="textarea" name="title" rows="2" spellcheck="false">{{.Title}}</textarea>{{else}}<input id="{{$id}}-title" class="input" name="title" value="{{.Title}}" autocomplete="off" spellcheck="false">{{end}}</div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-message">Message</label>
   <textarea id="{{$id}}-message" class="textarea" name="message" rows="3" spellcheck="false">{{.Message}}</textarea></div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-priority">Priority</label>
-  <input id="{{$id}}-priority" class="input" name="priority" value="{{.Priority}}" autocomplete="off" spellcheck="false"></div>
+  {{if multiline .Priority}}<textarea id="{{$id}}-priority" class="textarea" name="priority" rows="2" spellcheck="false">{{.Priority}}</textarea>{{else}}<input id="{{$id}}-priority" class="input" name="priority" value="{{.Priority}}" autocomplete="off" spellcheck="false">{{end}}</div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-tags">Tags</label>
-  <input id="{{$id}}-tags" class="input" name="tags" value="{{.Tags}}" autocomplete="off" spellcheck="false"></div>
+  {{if multiline .Tags}}<textarea id="{{$id}}-tags" class="textarea" name="tags" rows="2" spellcheck="false">{{.Tags}}</textarea>{{else}}<input id="{{$id}}-tags" class="input" name="tags" value="{{.Tags}}" autocomplete="off" spellcheck="false">{{end}}</div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-click">Click link</label>
-  <input id="{{$id}}-click" class="input" name="click" value="{{.Click}}" autocomplete="off" spellcheck="false"></div>
+  {{if multiline .Click}}<textarea id="{{$id}}-click" class="textarea" name="click" rows="2" spellcheck="false">{{.Click}}</textarea>{{else}}<input id="{{$id}}-click" class="input" name="click" value="{{.Click}}" autocomplete="off" spellcheck="false">{{end}}</div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-id">ID</label>
-  <input id="{{$id}}-id" class="input" name="id" value="{{.ID}}" aria-describedby="{{$id}}-id-hint" autocomplete="off" spellcheck="false">
+  {{if multiline .ID}}<textarea id="{{$id}}-id" class="textarea" name="id" rows="2" aria-describedby="{{$id}}-id-hint" spellcheck="false">{{.ID}}</textarea>{{else}}<input id="{{$id}}-id" class="input" name="id" value="{{.ID}}" aria-describedby="{{$id}}-id-hint" autocomplete="off" spellcheck="false">{{end}}
   <p id="{{$id}}-id-hint" class="meta">The same ID updates one notification instead of adding another.</p></div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-resolve">Resolve when</label>
-  <input id="{{$id}}-resolve" class="input" name="resolve" value="{{.Resolve}}" aria-describedby="{{$id}}-resolve-hint" autocomplete="off" spellcheck="false">
+  {{if multiline .Resolve}}<textarea id="{{$id}}-resolve" class="textarea" name="resolve" rows="2" aria-describedby="{{$id}}-resolve-hint" spellcheck="false">{{.Resolve}}</textarea>{{else}}<input id="{{$id}}-resolve" class="input" name="resolve" value="{{.Resolve}}" aria-describedby="{{$id}}-resolve-hint" autocomplete="off" spellcheck="false">{{end}}
   <p id="{{$id}}-resolve-hint" class="meta">Renders to true to resolve the notification with that ID.</p></div>
 <p class="meta">Every field but Each is a Go template run over the posted JSON. Empty fields are left out.</p>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-secret">Secret</label>

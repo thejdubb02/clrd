@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"database/sql"
 	"encoding/base64"
 	"net/http"
 	"os"
@@ -82,6 +84,31 @@ func TestWebhookSignatureVectors(t *testing.T) {
 		}
 		if hubSignature(c.header)(r, []byte(c.body+" "), "It's a Secret to Everybody") {
 			t.Errorf("%s: changed body accepted", c.header)
+		}
+	}
+}
+
+// TestTemplateKeepSecret: a blank secret on Edit keeps the one saved now, in
+// the same write, so a rotate is never undone; without keep it is cleared (#376).
+func TestTemplateKeepSecret(t *testing.T) {
+	s, _, _ := newTest(t)
+	ctx, tok := context.Background(), &Token{Scopes: []string{ScopeAdmin}}
+	save := func(secret string, keep bool) string {
+		t.Helper()
+		if err := s.SaveTemplate(ctx, tok, "ci", "my-app", Webhook{Title: "t", Secret: secret}, keep); err != nil {
+			t.Fatal(err)
+		}
+		var got sql.NullString
+		s.db.QueryRow(`SELECT json_extract(spec, '$.secret') FROM webhook_templates WHERE topic = 'ci' AND name = 'my-app'`).Scan(&got)
+		return got.String
+	}
+	for i, c := range []struct {
+		secret string
+		keep   bool
+		want   string
+	}{{"", true, ""}, {"old", true, "old"}, {"new", true, "new"}, {"", true, "new"}, {"", false, ""}, {"", true, ""}} {
+		if got := save(c.secret, c.keep); got != c.want {
+			t.Fatalf("step %d: secret %q, want %q", i, got, c.want)
 		}
 	}
 }
