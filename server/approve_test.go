@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -212,14 +213,14 @@ func TestSetApprove(t *testing.T) {
 	if code := set(dadmin, idOf(other), ApproveDenied); code != 403 || setting(other) != ApproveAllowed {
 		t.Fatalf("denied admin changed another token: %d", code)
 	}
-	if code, _ := call(t, ts, "POST", "/api/v1/tokens", dadmin, map[string]any{"name": "x", "scopes": []string{"read"}, "approve": ApproveAllowed}); code != 403 {
-		t.Fatalf("denied admin made an allowed token: %d", code)
+	if code, _ := call(t, ts, "POST", "/api/v1/tokens", dadmin, map[string]any{"name": "x", "scopes": []string{"read"}, "approve": ApproveAllowed}); code != 400 {
+		t.Fatalf("denied admin asked for an allowed token: %d", code)
 	}
 	if code, tk := call(t, ts, "POST", "/api/v1/tokens", dadmin, map[string]any{"name": "x", "scopes": []string{"read"}}); code != 200 || tk["approve"] != ApproveDenied {
 		t.Fatalf("new token default: %d %v", code, tk)
 	}
-	if code, _ := call(t, ts, "POST", "/api/v1/tokens", dadmin, map[string]any{"name": "x", "scopes": []string{"read"}, "approve": ApproveAsk}); code != 403 {
-		t.Fatalf("denied admin made an ask token: %d", code)
+	if code, _ := call(t, ts, "POST", "/api/v1/tokens", dadmin, map[string]any{"name": "x", "scopes": []string{"read"}, "approve": ApproveAsk}); code != 400 {
+		t.Fatalf("denied admin asked for an ask token: %d", code)
 	}
 	if code, _ := call(t, ts, "POST", "/api/v1/tokens", admin, map[string]any{"name": "y", "scopes": []string{"read"}, "approve": "maybe"}); code != 400 {
 		t.Fatalf("unknown setting: %d", code)
@@ -462,4 +463,91 @@ func askBrowser(t *testing.T, s *Server, ts *httptest.Server) (string, *Token, s
 		t.Fatalf("lower to ask: %d", code)
 	}
 	return laptop, lp, braw
+}
+
+// TestMintNeverAboveMaker tries every way to make a token or device, from an
+// ask admin and a denied admin, and checks nothing made can approve more than
+// its maker or confirm a prompt (#187). An allowed admin's new token starts
+// denied too. MCP create_token forwards to the same POST /api/v1/tokens.
+func TestMintNeverAboveMaker(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	mint := func(tok, approve string) (int, map[string]any) {
+		body := map[string]any{"name": "script", "scopes": []string{ScopeAdmin}}
+		if approve != "" {
+			body["approve"] = approve
+		}
+		return call(t, ts, "POST", "/api/v1/tokens", tok, body)
+	}
+	for _, v := range []string{ApproveAllowed, ApproveAsk} {
+		if code, _ := mint(admin, v); code != 400 {
+			t.Fatalf("allowed admin minted %s: %d", v, code)
+		}
+	}
+	code, tk := mint(admin, "")
+	if code != 200 || tk["approve"] != ApproveDenied {
+		t.Fatalf("allowed admin's new token: %d %v", code, tk)
+	}
+	// Raising it is the same change as for any device.
+	if code, _ := call(t, ts, "PUT", "/api/v1/devices/"+tk["id"].(string)+"/approve", admin, map[string]any{"approve": ApproveAllowed}); code != 200 {
+		t.Fatalf("raise the new token: %d", code)
+	}
+
+	// A prompt for the children to try to confirm.
+	_, araw, err := s.CreateToken(ctx, "agent", ApproveDenied, []string{ScopeRead, ScopePublish}, []string{"agents"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, p := call(t, ts, "POST", "/api/v1/devices/approve-request", araw, map[string]any{"topic": "agents", "approve": ApproveAllowed})
+	if code != 202 {
+		t.Fatalf("approve request: %d %v", code, p)
+	}
+	pid := p["id"].(string)
+
+	for _, level := range []string{ApproveAsk, ApproveDenied} {
+		_, maker, err := s.CreateToken(ctx, "maker-"+level, level, []string{ScopeAdmin}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		kids := map[string]string{}
+		for _, v := range []string{ApproveAllowed, ApproveAsk} {
+			if code, _ := mint(maker, v); code != 400 {
+				t.Fatalf("%s maker minted %s: %d", level, v, code)
+			}
+		}
+		_, tk := mint(maker, "")
+		kids["api"], _ = tk["token"].(string)
+		if _, _, c := signIn(t, ts, `{"token":"`+maker+`"}`, firefoxLinux, nil); c != nil {
+			kids["sign-in"] = c.Value
+		}
+		pc := browser(t)
+		_, pr, _ := pairSend(t, pc, "POST", ts.URL+"/api/v1/pair", "", nil)
+		pc0 := pr["code"].(string)
+		pairSend(t, pc, "POST", ts.URL+"/api/v1/pair/claim", "", map[string]string{"code": pc0})
+		pairSend(t, pc, "POST", ts.URL+"/api/v1/pair/"+pc0+"/approve", maker, nil)
+		pairSend(t, pc, "POST", ts.URL+"/api/v1/pair/claim", "", map[string]string{"code": pc0})
+		u, _ := url.Parse(ts.URL)
+		for _, c := range pc.Jar.Cookies(u) {
+			if s.lookupToken(ctx, c.Value) != nil {
+				kids["pairing"] = c.Value
+			}
+		}
+		kids["phone link"] = linkPhone(t, ts, maker)
+
+		for how, raw := range kids {
+			got := s.lookupToken(ctx, raw)
+			if got == nil {
+				t.Fatalf("%s maker, %s: no token", level, how)
+			}
+			if got.Approve != ApproveDenied && got.Approve != level {
+				t.Fatalf("%s maker, %s: child is %s", level, how, got.Approve)
+			}
+			if code, out := call(t, ts, "POST", "/api/v1/notifications/"+pid+"/reply", raw, map[string]any{"reply": "confirm"}); code != 403 {
+				t.Fatalf("%s maker, %s: confirmed a prompt: %d %v", level, how, code, out)
+			}
+		}
+		if len(kids) != 4 {
+			t.Fatalf("%s maker: made %d of 4 kinds: %v", level, len(kids), kids)
+		}
+	}
 }

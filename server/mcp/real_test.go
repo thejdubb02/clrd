@@ -140,14 +140,14 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 	ok("delete_hook", map[string]any{"topic": "ops", "name": "audit"}, `"deleted":true`)
 
 	cam := ok("create_token", map[string]any{"name": "cam", "scopes": []string{"read", "publish"},
-		"grants": []any{map[string]any{"topic": "home-*", "scopes": []string{"publish"}}}}, `"topic":"home-*"`, `"token":"clrd_`)
+		"grants": []any{map[string]any{"topic": "home-*", "scopes": []string{"publish"}}}}, `"topic":"home-*"`, `"token":"clrd_`, `"approve":"denied"`)
 	ok("tokens", nil, `"name":"cam"`)
-	// A denied admin agent cannot make itself an approver through MCP (#187).
+	// No admin agent makes a token that may approve through MCP (#187).
 	_, dadmin, err := s.CreateToken(context.Background(), "denied agent", "denied", []string{"read", "admin"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text, isErr := tool(dadmin, "create_token", map[string]any{"name": "me too", "scopes": []string{"read"}, "approve": "allowed"}); !isErr || !strings.Contains(text, "403") {
+	if text, isErr := tool(dadmin, "create_token", map[string]any{"name": "me too", "scopes": []string{"read"}, "approve": "allowed"}); !isErr || !strings.Contains(text, "400") {
 		t.Fatalf("denied admin made an allowed token: %v %s", isErr, text)
 	}
 	ok("devices", nil, `"approve":"allowed"`)

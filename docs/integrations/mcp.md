@@ -226,8 +226,8 @@ answers the agent. The tap clears the notification on every other device.
   request it sent, nor can a phone or browser linked from it.
 - Only a device allowed to approve can tap Allow or Deny. The setup token is
   allowed, and a phone or browser takes the setting of the token it was
-  linked or signed in with. Any other new token is denied unless made with
-  `approve` set (`clrd token create` too, without `--approve`), so an
+  linked or signed in with. Any other new token starts denied, whoever makes
+  it (`clrd token create` too, without `--approve`), so an
   agent's token cannot approve its own prompts. Change it per device in the
   web inbox under Settings, Linked devices, May approve (an allowed browser
   sees the menu; it can lower its own setting, never raise it), or with
