@@ -191,3 +191,33 @@ func TestFormatCheckSenderDismissOff(t *testing.T) {
 		t.Fatalf("bad by: %d", code)
 	}
 }
+
+// Issue #406: by=sender names a sender, and gives the prompt that names it,
+// only to a full admin or to the token it belongs to, as Linked devices does.
+func TestFormatCheckSenderNamesStayPrivate(t *testing.T) {
+	s, ts, admin := newTest(t)
+	bot := mkToken(t, s, "backup-bot", []string{"publish"}, []string{"jobs"})
+	me := mkToken(t, s, "my-laptop", []string{"read", "publish"}, []string{"jobs"})
+	for _, tok := range []string{bot, me} {
+		if code, out := call(t, ts, "POST", "/api/v1/notifications", tok, map[string]any{"topic": "jobs", "message": "no title"}); code != 200 {
+			t.Fatalf("publish: %d %v", code, out)
+		}
+	}
+	view := func(tok string) map[string]string { // sender_id to name, prompt kept or not
+		t.Helper()
+		_, out := call(t, ts, "GET", "/api/v1/format-check?by=sender", tok, nil)
+		got := map[string]string{}
+		for _, g := range out["topics"].([]any) {
+			g := g.(map[string]any)
+			name, _ := g["sender"].(string)
+			got[name+"/"+fmt.Sprint(g["prompt"] != "")] = g["sender_id"].(string)
+		}
+		return got
+	}
+	if v := view(admin); len(v) != 2 || v["backup-bot/true"] == "" || v["my-laptop/true"] == "" {
+		t.Fatalf("admin sees every name: %v", v)
+	}
+	if v := view(me); len(v) != 2 || v["my-laptop/true"] == "" || v["/false"] == "" {
+		t.Fatalf("a token sees only its own name: %v", v)
+	}
+}
