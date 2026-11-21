@@ -77,24 +77,22 @@ func (s *Server) askConfirm(ctx context.Context, tx *sql.Tx, tok *Token, n *Noti
 	if !isNotFound(err) {
 		return p, nil, err
 	}
-	sender, err := topIn(ctx, tx, tok.ID) // the asker's tree may not confirm it
-	if err != nil {
-		return nil, nil, err
-	}
+	// No sender: the asker is ask so it cannot confirm, while the phone it
+	// shares a top token with must be able to.
 	link, _ := json.Marshal(confirmLink{n.ID, reply, tok.ID, tok.Name, n.Seq})
 	label := n.Actions[slices.IndexFunc(n.Actions, func(a Action) bool { return a.Reply == reply })].Label
 	t := now()
 	p = &Notification{ID: s.newID(t), Topic: n.Topic, Title: fmt.Sprintf("Confirm %s's answer: %s", tok.Name, label),
 		Message: n.Title + "\n\n" + n.Message, Format: n.Format, Priority: n.Priority, Tags: []string{}, Icon: n.Icon,
 		Actions: []Action{{Label: "Confirm", Reply: "confirm"}, {Label: "Reject", Reply: "reject"}},
-		State:   Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, sender: sender, confirm: string(link)}
+		State:   Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, confirm: string(link)}
 	return p, []Event{{Type: EventCreated, Notification: p}}, nil
 }
 
-// confirmed answers prompt p for tok (allowed, outside the asker's tree and
-// the question's). On confirm it applies the ask device's tap to the
-// question, which must be unanswered and unchanged since that tap. On reject
-// p drops its link, so reopening p cannot revive the tap.
+// confirmed answers prompt p for tok (allowed, outside the question's tree).
+// On confirm it applies the ask device's tap to the question, which must be
+// unanswered and unchanged since that tap. On reject p drops its link, so
+// reopening p cannot revive the tap.
 func (s *Server) confirmed(ctx context.Context, tx *sql.Tx, tok *Token, p *Notification, reply, via string) ([]Event, error) {
 	var l confirmLink
 	if err := json.Unmarshal([]byte(p.confirm), &l); err != nil {

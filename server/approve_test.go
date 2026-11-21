@@ -80,7 +80,7 @@ func TestApproveReply(t *testing.T) {
 }
 
 // TestApproveAsk: an ask device's tap counts only once an allowed device
-// outside both the asker's and the sender's trees confirms it (#187).
+// outside the sender's tree confirms it (#187).
 func TestApproveAsk(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()
@@ -133,10 +133,7 @@ func TestApproveAsk(t *testing.T) {
 	if _, again := reply(braw, q, "allow"); again["id"] != pid {
 		t.Fatalf("repeat tap made another prompt: %v", again)
 	}
-	// Nobody in the asker's tree, nor the sender's, nor an ask device confirms.
-	if code, out := reply(laptop, pid, "confirm"); code != 403 || out["code"] != "own_request" {
-		t.Fatalf("asker's laptop confirmed: %d %v", code, out)
-	}
+	// Neither the sender's tree nor an ask device confirms.
 	if code, out := reply(agent, pid, "confirm"); code != 403 || out["code"] != "own_request" {
 		t.Fatalf("sender confirmed its own request: %d %v", code, out)
 	}
@@ -147,8 +144,12 @@ func TestApproveAsk(t *testing.T) {
 	if code, out := reply(ask2, pid, "confirm"); code != 403 || out["code"] != "approve_denied" {
 		t.Fatalf("ask device confirmed: %d %v", code, out)
 	}
-	// An allowed phone confirms: the browser's answer counts.
-	phone := mkToken(t, s, "phone", []string{ScopeRead}, nil)
+	// A phone linked from the same laptop as the browser, as on a real
+	// install, confirms: the browser's answer counts.
+	_, phone, err := s.childToken(ctx, lp, lp.ID, "phone", true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if code, out := reply(phone, pid, "confirm"); code != 200 || out["state"] != Acknowledged {
 		t.Fatalf("confirm: %d %v", code, out)
 	}
