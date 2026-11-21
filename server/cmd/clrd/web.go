@@ -194,6 +194,22 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		for _, t := range snap.Topics {
 			snap.CanSilence = snap.CanSilence || tok.MaySilence(t.Name)
 		}
+		// Webhooks are admin only (#238): anyone else gets no hook URLs at all.
+		if hooks, err := a.s.OutHooks(ctx, tok, ""); err == nil {
+			snap.CanHooks = true
+			if err := convert(hooks, &snap.Hooks); err != nil {
+				return snap, err
+			}
+			for i, h := range hooks {
+				ds, err := a.s.HookDeliveries(ctx, tok, h.Topic, h.Name, 10)
+				if err != nil {
+					return snap, err
+				}
+				if err := convert(ds, &snap.Hooks[i].Deliveries); err != nil {
+					return snap, err
+				}
+			}
+		}
 	}
 	return snap, nil
 }
@@ -243,6 +259,26 @@ func (a webAPI) EndSilence(r *http.Request, id string) error {
 	err := a.s.EndSilence(r.Context(), tok, id)
 	if status, _ := server.PublicError(err); status == 404 {
 		return nil // it already ran out: the list was just stale
+	}
+	return webError(err)
+}
+
+func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []string, secret string, clearSecret bool) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	return webError(a.s.SaveHook(r.Context(), tok, topic, name, server.OutHook{URL: url, Events: events, Secret: secret}, !clearSecret))
+}
+
+func (a webAPI) DeleteHook(r *http.Request, topic, name string) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	err := a.s.DeleteHook(r.Context(), tok, topic, name)
+	if status, _ := server.PublicError(err); status == 404 {
+		return nil // already gone: the page was stale
 	}
 	return webError(err)
 }

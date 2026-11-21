@@ -855,6 +855,70 @@ try {
     await ctx.close();
     console.log('ok: silences work without JavaScript; a read-only device sees no controls');
   }
+
+  // Webhooks in Settings (#238), without script so the plain form posts are tested.
+  // The secret never reaches the page, a blank secret on Edit keeps it, and a
+  // device that is not admin sees no hooks and cannot save one.
+  {
+    const ctx = await browser.newContext({ javaScriptEnabled: false });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'hooks' } })).ok(), 'hooks sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/settings');
+    await sp.getByText('No webhooks yet.').waitFor();
+    const add = sp.locator('[data-hook-add]');
+    await add.getByLabel('Topic').fill('hooked');
+    await add.getByLabel('Name').fill('ops');
+    await add.getByLabel('URL').fill('https://ops.example.invalid/in');
+    await add.getByLabel('Snoozed').uncheck();
+    await add.getByLabel('Secret').fill('topsecret-238');
+    await add.getByRole('button', { name: 'Add webhook' }).click();
+    const card = sp.locator('[data-hook="hooked/ops"]');
+    await card.waitFor();
+    assert.match(await card.innerText(), /Sends Dismissed, Acknowledged, Resolved, Action tapped\. Signed with a secret\./, 'saved events and secret');
+    assert.ok(!(await sp.content()).includes('topsecret-238'), 'the secret is in the Settings page');
+
+    // A dismiss on the topic shows up in the delivery log (.invalid never resolves, so it fails).
+    const n = await api(phone, '/api/v1/notifications', { topic: 'hooked', title: 'Hook me' });
+    await api(phone, `/api/v1/notifications/${n.id}/dismiss`);
+    // The log sits in a closed <details>, so read textContent, not innerText.
+    let row = '';
+    for (let i = 0; ; i++) {
+      await sp.reload();
+      row = (await card.locator('[data-hook-log] tbody tr', { hasText: 'dismissed' }).allTextContents())[0] || '';
+      if (/Retrying|Failed/.test(row)) break;
+      assert.ok(i < 20, `no failed delivery in the log: "${row}"`);
+      await new Promise(r => setTimeout(r, 500));
+    }
+    assert.match(row, /Retrying, try 1/, 'a failed delivery says which try');
+
+    // Edit with the secret left empty keeps it.
+    await card.locator('summary', { hasText: 'Edit' }).click();
+    const edit = card.locator('form', { has: sp.getByRole('button', { name: 'Save webhook' }) });
+    await edit.getByLabel('URL').fill('https://ops2.example.invalid/in');
+    await edit.getByRole('button', { name: 'Save webhook' }).click();
+    await card.getByText('ops2.example.invalid').waitFor();
+    assert.match(await card.innerText(), /Signed with a secret\./, 'a blank secret on Edit removed it');
+
+    // Not admin: no hooks on the page, and the form post is refused.
+    const pub = execFileSync(bin, ['token', 'create', '--name', 'hooks-pub', '--scope', 'read,publish'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const rctx = await browser.newContext();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: pub, name: 'hooks-pub' } })).ok(), 'publish sign-in');
+    const rp = await rctx.newPage();
+    await rp.goto(base + '/app/settings');
+    await rp.getByText('Webhooks need an admin sign-in.').waitFor();
+    assert.ok(!(await rp.content()).includes('ops2.example.invalid'), 'a hook URL shown to a non-admin');
+    const refused = await rctx.request.post(base + '/app/hooks', { form: { topic: 'hooked', name: 'evil', url: 'https://x.example.invalid/' }, headers: { Origin: base }, maxRedirects: 0 });
+    assert.equal(refused.status(), 400, `non-admin hook save: ${refused.status()}`);
+    await rctx.close();
+    const listed = await (await fetch(base + '/api/v1/topics/hooked/hooks', { headers: { Authorization: `Bearer ${laptop}` } })).json();
+    assert.deepEqual(listed.hooks.map(h => h.name), ['ops'], 'a non-admin saved a hook');
+
+    // Delete removes it.
+    await card.getByRole('button', { name: 'Delete' }).click();
+    await sp.getByText('No webhooks yet.').waitFor();
+    await ctx.close();
+    console.log('ok: webhooks are added, logged, edited and deleted in Settings; a non-admin sees none');
+  }
 } finally {
   await browser?.close();
   server.kill();

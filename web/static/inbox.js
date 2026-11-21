@@ -473,6 +473,11 @@
     const b = e.target.closest('[data-silence-end]');
     if (b) e.preventDefault(), silSave([`/api/v1/silences/${encodeURIComponent(b.dataset.silenceEnd)}`, { method: 'DELETE', credentials: 'same-origin' }], $('[data-silence-status]'));
   });
+  // Settings: deleting a webhook also drops its delivery log, so ask first.
+  document.addEventListener('submit', e => {
+    const f = e.target.closest('[data-hook-delete]');
+    if (f && !confirm(`Delete the webhook ${f.dataset.hookDelete} and its delivery log?`)) e.preventDefault();
+  });
 
   // Settings: message display switches, each saved on its own.
   disp && disp.addEventListener('change', async e => {

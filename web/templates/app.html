@@ -272,6 +272,52 @@
       <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Start silence</button><span class="meta" role="status" data-silence-status></span></div>
     </form>{{else}}<p class="meta">This device can see silences but not start or end them: its token cannot publish.</p>{{end}}
   </section>
+  <section class="grid gap-3" aria-labelledby="hooks-h" data-hooks>
+    <h2 id="hooks-h" class="text-base font-semibold">Webhooks</h2>
+    <p class="text-body text-sm/relaxed">Send a topic's answers to another app as they happen: each dismiss, acknowledge, resolve, snooze or action tap is posted to your URL as JSON. <a class="underline" href="{{base}}/docs/integrations/webhooks-out">How webhooks work</a></p>
+    {{if .Snap.CanHooks}}
+    {{range .Snap.Hooks}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-hook="{{.Topic}}/{{.Name}}">
+      <div class="grid gap-1">
+        <h3 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h3>
+        <p class="meta [overflow-wrap:anywhere]">{{.URL}}</p>
+        <p class="meta">Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .HasSecret}} Signed with a secret.{{end}}</p>
+        {{if not .Enabled}}<p class="text-destructive text-sm" data-hook-off>Turned off after a day of failed deliveries. Fix the receiver, then save it again to turn it back on.</p>
+        {{else if .FailingSince}}<p class="text-destructive text-sm">Failing since {{clock .FailingSince}}. It turns off after a day of failures.</p>{{end}}
+      </div>
+      <details class="text-sm" data-hook-log>
+        <summary class="cursor-pointer font-medium">Delivery log</summary>
+        {{if .Deliveries}}<table class="table mt-2">
+          <thead><tr><th scope="col">When</th><th scope="col">Event</th><th scope="col">Result</th></tr></thead>
+          <tbody>{{range .Deliveries}}<tr><td class="meta whitespace-nowrap"><time datetime="{{iso .UpdatedAt}}">{{clock .UpdatedAt}}</time></td><td>{{.Event}}</td>
+            <td class="whitespace-normal [overflow-wrap:anywhere]">{{if eq .Status "ok"}}Sent{{with .Code}} ({{.}}){{end}}{{else if eq .Status "pending"}}{{if .Attempts}}Retrying, try {{.Attempts}}{{else}}Waiting to send{{end}}{{else}}Failed after {{.Attempts}} tries{{end}}{{with .Error}}<div class="meta">{{.}}</div>{{end}}</td></tr>{{end}}</tbody>
+        </table><p class="meta mt-2">The last {{len .Deliveries}}. The API keeps the last 100.</p>{{else}}<p class="meta mt-2">Nothing sent yet.</p>{{end}}
+      </details>
+      <details class="text-sm">
+        <summary class="cursor-pointer font-medium">Edit</summary>
+        <form class="mt-3 grid max-w-md gap-3" method="post" action="{{base}}/app/hooks">
+          <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
+          {{template "hook-fields" .}}
+          <div><button class="btn" data-variant="outline">Save webhook</button></div>
+        </form>
+      </details>
+      <form method="post" action="{{base}}/app/hooks" data-hook-delete="{{.Name}}">
+        <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
+        <button class="btn" data-variant="outline" data-size="sm" name="delete" value="1">Delete</button>
+      </form>
+    </div>{{else}}<p class="text-body text-sm">No webhooks yet.</p>{{end}}
+    <form class="grid max-w-md gap-3" method="post" action="{{base}}/app/hooks" data-hook-add>
+      <h3 class="text-sm font-semibold">Add a webhook</h3>
+      <div class="grid gap-1.5"><label class="label" for="hk-topic">Topic</label>
+        <input id="hk-topic" class="input" name="topic" list="hk-topics" required autocomplete="off" spellcheck="false">
+        <datalist id="hk-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
+      <div class="grid gap-1.5"><label class="label" for="hk-name">Name</label>
+        <input id="hk-name" class="input" name="name" required maxlength="64" pattern="[A-Za-z0-9_\-]+" aria-describedby="hk-name-hint" autocomplete="off" spellcheck="false">
+        <p id="hk-name-hint" class="meta">Letters, digits, _ and -. Saving a name that exists replaces it.</p></div>
+      {{template "hook-fields" newHook}}
+      <div><button class="btn" data-variant="outline">Add webhook</button></div>
+    </form>
+    {{else}}<p class="meta">Webhooks need an admin sign-in.</p>{{end}}
+  </section>
   <section class="js-only grid gap-3" aria-labelledby="msg-h">
     <h2 id="msg-h" class="text-base font-semibold">Messages</h2>
     <p class="text-body text-sm/relaxed">How message text shows. These settings apply to every device.</p>
@@ -382,3 +428,14 @@
     </div>
   </div>
 </dialog>{{end}}
+{{define "hook-fields"}}{{$h := .}}{{$id := print "hk-" .Topic "/" .Name}}
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-url">URL</label>
+  <input id="{{$id}}-url" class="input" type="url" name="url" value="{{.URL}}" required maxlength="2048" placeholder="https://" autocomplete="off" spellcheck="false"></div>
+<fieldset class="grid gap-2"><legend class="label mb-1">Send</legend>
+  {{range hookEvents}}<label class="label font-normal"><input type="checkbox" class="input" name="events" value="{{.Name}}"{{if $h.Sends .Name}} checked{{end}}> {{.Label}}</label>{{end}}
+  <p class="meta">None ticked sends every event.</p></fieldset>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-secret">Secret</label>
+  <input id="{{$id}}-secret" class="input" type="password" name="secret" maxlength="256" autocomplete="new-password" aria-describedby="{{$id}}-secret-hint">
+  <p id="{{$id}}-secret-hint" class="meta">{{if .HasSecret}}A secret is saved. Leave this empty to keep it.{{else}}Optional. Signs each delivery so the receiver can check it came from here.{{end}}</p>
+  {{if .HasSecret}}<label class="label font-normal"><input type="checkbox" class="input" name="clear_secret" value="1"> Remove the saved secret</label>{{end}}</div>
+{{end}}
