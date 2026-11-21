@@ -108,7 +108,7 @@
   const stackTpl = $('[data-stack-tpl]'), unfolded = new Set();
   // The ids of a Clear all waiting for its reply. Until it comes, live events
   // and refreshes leave the screen alone, so the stacks fade as one (#387).
-  let clearing = null;
+  const clearing = new Set();
   let stacking = false;
   try { stacking = localStorage.getItem('clrd.stack') === '1'; } catch {}
   const stackOn = () => stacking && !new URLSearchParams(location.search).has('topic');
@@ -232,7 +232,7 @@
       // come back. Once they are gone, a stack still fading changes nothing.
       announce.textContent = `${c.querySelector('.card-title').textContent.trim()}: ${why}`;
       c.remove();
-      if (!clearing) restack();
+      if (!clearing.size) restack();
       return tidy();
     }
     if (key(c) === selId) { const all = nav(), i = all.indexOf(c); select(all[i + 1] || all[i - 1] || null, c.contains(document.activeElement)); }
@@ -263,7 +263,7 @@
   let pending, gen = 0;
   const refresh = () => { clearTimeout(pending); pending = setTimeout(patch, 250); };
   async function patch() {
-    if (clearing || (list && list.querySelector('.is-leaving'))) return refresh();
+    if (clearing.size || (list && list.querySelector('.is-leaving'))) return refresh();
     let doc;
     const mine = ++gen; // a slower, older response must not overwrite a newer one
     try {
@@ -314,7 +314,7 @@
     if (m.seq > seq) seq = m.seq;
     const c = card(n.id);
     if (c && m.seq <= Number(c.dataset.seq)) return;
-    if (c && !show.includes(n.state) && !(clearing && clearing.has(n.id))) leave(c, reason(n));
+    if (c && !show.includes(n.state) && !clearing.has(n.id)) leave(c, reason(n));
     refresh();
   }
 
@@ -647,15 +647,16 @@
       const s = act === 'clear-stack' && b.closest('[data-stack]');
       const ids = cards().filter(c => !s || c.dataset.topic === s.dataset.stack).map(c => c.dataset.id);
       b.disabled = true; // one tap, one clear
-      clearing = new Set(ids);
+      ids.forEach(id => clearing.add(id)); // two clears at once share it
       const r = ids.length && await post('/api/v1/notifications/clear', { ids, via: 'web_bulk' });
       b.disabled = false;
-      if (!r) { clearing = null; return; }
+      const done = () => ids.forEach(id => clearing.delete(id));
+      if (!r) { done(); return; }
       const n = (await r.json().catch(() => ({}))).cleared;
       // Clear all takes every stack with it, so none shrinks card by card.
       for (const st of s ? [s] : list.querySelectorAll('[data-stack]')) { unfolded.delete(st.dataset.stack); leave(st, 'Cleared'); }
       ids.forEach(id => leave(card(id), 'Cleared'));
-      clearing = null;
+      done();
       // Undo only when we know every id was ours to clear; otherwise it could
       // reopen something another device cleared first.
       say(n === undefined ? 'Cleared.' : `Cleared ${n} ${n === 1 ? 'notification' : 'notifications'}.`, n === ids.length ? ids : undefined);
