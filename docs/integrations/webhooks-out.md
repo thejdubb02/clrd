@@ -8,7 +8,11 @@ service with no WebSocket client still learns what happened.
 ## Saving one
 
 Webhooks are managed with an admin token, because a webhook sends a topic's
-answers to any URL you give it.
+answers to any URL you give it. In the web inbox, signed in with an admin
+token, Settings > Webhooks adds, edits and deletes them and shows each one's
+last 10 deliveries. There, leaving Secret empty on Edit keeps the saved one.
+
+With the API:
 
 ```sh
 curl -X PUT https://clrd.example.com/api/v1/topics/alerts/hooks/github \

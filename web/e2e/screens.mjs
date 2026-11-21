@@ -76,6 +76,12 @@ try {
   // A sender with format problems, for the format check on Settings (#308).
   const ci = await send({ topic: 'ci', format: 'text', message: '**Build** failed on main\nSee [the log](https://ci.example.com/42)' });
   await api(`/api/v1/notifications/${ci.id}/dismiss`);
+  // A webhook with a delivery in its log, for Settings (#238). .invalid never resolves, so nothing leaves the box.
+  const hook = await fetch(main.base + '/api/v1/topics/infra/hooks/ops-bot', { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ url: 'https://ops.example.invalid/clrd', events: ['dismissed', 'resolved'], secret: 's3' }) });
+  if (!hook.ok) throw new Error(`hook: ${hook.status}`);
+  const hooked = await send({ topic: 'infra', title: 'Swap in use on web-2', message: 'Back under 10%.' });
+  await api(`/api/v1/notifications/${hooked.id}/dismiss`);
+  await new Promise(r => setTimeout(r, 3000)); // the delivery job runs every 2 seconds
 
   browser = await chromium.launch();
   const link = Buffer.from(`Bearer ${laptop}`).toString('base64url');

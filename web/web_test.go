@@ -126,6 +126,12 @@ func (readOnly) StartSilence(*http.Request, string, string, string, string) erro
 
 func (readOnly) EndSilence(*http.Request, string) error { return ErrUnauthorized }
 
+func (readOnly) SaveHook(*http.Request, string, string, string, []string, string, bool) error {
+	return ErrUnauthorized
+}
+
+func (readOnly) DeleteHook(*http.Request, string, string) error { return ErrUnauthorized }
+
 type deny struct{ readOnly }
 
 func (deny) Snapshot(*http.Request, Query) (Snapshot, error) { return Snapshot{}, ErrUnauthorized }

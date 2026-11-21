@@ -75,6 +75,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: Settings lists outgoing webhooks with their recent delivery log, and
+  an admin can add, edit and delete them there, with or without JavaScript
+  (#238).
 - Web: Settings gives each topic its own "keep cleared messages" period, and
   asks first when a change deletes messages, like the global setting (#323).
 - Web: starting and ending a silence in Settings works without JavaScript, and a device that cannot change silences no longer sees Start silence or End now (#326).

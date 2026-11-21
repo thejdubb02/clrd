@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -261,6 +262,42 @@ type Snapshot struct {
 	Format                                       []FormatTopic   // format check (#308), Settings only: topics with problems
 	Silences                                     []Silence       // running silences (docs/silences.md), Settings only
 	CanSilence                                   bool            // the token may start a silence (it can publish)
+	Hooks                                        []Hook          // outgoing webhooks (#238), Settings and admin only
+	CanHooks                                     bool            // the token may manage webhooks (admin)
+}
+
+// Hook is an outgoing webhook on one topic (docs/integrations/webhooks-out.md).
+// The secret is write only: the page knows only whether one is set.
+type Hook struct {
+	Topic        string         `json:"topic"`
+	Name         string         `json:"name"`
+	URL          string         `json:"url"`
+	Events       []string       `json:"events"`
+	HasSecret    bool           `json:"has_secret"`
+	Enabled      bool           `json:"enabled"`
+	FailingSince *time.Time     `json:"failing_since"`
+	Deliveries   []HookDelivery `json:"-"` // newest first
+}
+
+// HookEvents are the events a hook can send, with their names on the page.
+var HookEvents = []struct{ Name, Label string }{
+	{"dismissed", "Dismissed"}, {"acknowledged", "Acknowledged"}, {"resolved", "Resolved"},
+	{"snoozed", "Snoozed"}, {"action", "Action tapped"},
+}
+
+// Sends says whether the hook sends event e.
+func (h Hook) Sends(e string) bool { return slices.Contains(h.Events, e) }
+
+// HookDelivery is one try to send an event to a hook.
+type HookDelivery struct {
+	Seq       int64      `json:"seq"`
+	Event     string     `json:"event"`
+	Status    string     `json:"status"` // ok, pending or failed
+	Attempts  int        `json:"attempts"`
+	NextAt    *time.Time `json:"next_at"`
+	Code      int        `json:"code"`
+	Error     string     `json:"error"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 // timeLeft says how long until t, to the minute: "3d 4h", "2h 5m", "12m".
@@ -330,6 +367,10 @@ type API interface {
 	// silence form without script. Their error text is shown on the page.
 	StartSilence(r *http.Request, topic, tag, dur, comment string) error
 	EndSilence(r *http.Request, id string) error
+	// SaveHook adds or replaces a webhook; an empty secret keeps the saved
+	// one unless clearSecret. DeleteHook removes it and its log.
+	SaveHook(r *http.Request, topic, name, url string, events []string, secret string, clearSecret bool) error
+	DeleteHook(r *http.Request, topic, name string) error
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
@@ -378,7 +419,16 @@ func templates(base string) *template.Template {
 		},
 		"snoozeLabel": snoozeLabel,
 		"left":        timeLeft,
-		"add":         func(a, b int) int { return a + b },
+		"hookEvents":  func() any { return HookEvents },
+		// newHook is the add form's blank webhook: every event ticked.
+		"newHook": func() Hook {
+			h := Hook{}
+			for _, e := range HookEvents {
+				h.Events = append(h.Events, e.Name)
+			}
+			return h
+		},
+		"add": func(a, b int) int { return a + b },
 		"plural": func(n int, one, many string) string {
 			if n == 1 {
 				return one
@@ -789,6 +839,28 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		http.Redirect(w, r, "/app/settings", http.StatusSeeOther)
+	})
+
+	// Settings webhooks (#238): save or delete one as a plain form post.
+	mux.HandleFunc("POST /app/hooks", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		topic, name := strings.TrimSpace(f.Get("topic")), strings.TrimSpace(f.Get("name"))
+		var err error
+		if f.Get("delete") != "" {
+			err = api.DeleteHook(r, topic, name)
+		} else {
+			err = api.SaveHook(r, topic, name, strings.TrimSpace(f.Get("url")), f["events"], f.Get("secret"), f.Get("clear_secret") != "")
+		}
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
+			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "/app/settings#hooks-h", http.StatusSeeOther)
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

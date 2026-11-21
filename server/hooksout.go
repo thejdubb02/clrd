@@ -198,144 +198,199 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 	return err
 }
 
-func (s *Server) hookOutRoutes() {
-	// ponytail: admin only. A hook sends a topic's answers to any URL, so a
-	// per-topic publish token could leak them; widen it if someone asks.
-	owner := func(r *http.Request, tok *Token) (topic, name string, err error) {
-		topic, name = r.PathValue("topic"), r.PathValue("name")
-		if err = validTopic(topic); err != nil {
-			return
+// hookOwner checks a hook's topic and name and that tok may manage hooks.
+// ponytail: admin only. A hook sends a topic's answers to any URL, so a
+// per-topic publish token could leak them; widen it if someone asks.
+func hookOwner(tok *Token, topic, name string) error {
+	if topic != "" {
+		if err := validTopic(topic); err != nil {
+			return err
 		}
-		if name != "" && !webhookNameRe.MatchString(name) {
-			return "", "", errf(400, "bad_request", "invalid webhook name %q: use letters, digits, _ and -, at most 64", name)
-		}
-		return topic, name, tok.need(ScopeAdmin, "")
 	}
+	if name != "" && !webhookNameRe.MatchString(name) {
+		return errf(400, "bad_request", "invalid webhook name %q: use letters, digits, _ and -, at most 64", name)
+	}
+	return tok.need(ScopeAdmin, "")
+}
+
+// TopicHook is an outgoing hook with its topic, for the web inbox.
+type TopicHook struct {
+	Topic string `json:"topic"`
+	OutHook
+}
+
+// OutHooks lists the hooks on topic, or on every topic when topic is "".
+func (s *Server) OutHooks(ctx context.Context, tok *Token, topic string) ([]TopicHook, error) {
+	if err := hookOwner(tok, topic, ""); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, name, url, events, secret != '', enabled, failing_since
+		FROM hooks_out WHERE ? = '' OR topic = ? ORDER BY topic, name`, topic, topic)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TopicHook{}
+	for rows.Next() {
+		var h TopicHook
+		var events string
+		var since sql.NullInt64
+		if err := rows.Scan(&h.Topic, &h.Name, &h.URL, &events, &h.HasSecret, &h.Enabled, &since); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(events), &h.Events)
+		if since.Valid {
+			v := fromMS(since.Int64)
+			h.FailingSince = &v
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// SaveHook adds or replaces a hook. With keepSecret, an empty h.Secret keeps
+// the one already saved instead of removing it.
+func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h OutHook, keepSecret bool) error {
+	if err := hookOwner(tok, topic, name); err != nil {
+		return err
+	}
+	if topic == "" || name == "" {
+		return errf(400, "bad_request", "a webhook needs a topic and a name")
+	}
+	if u, err := url.Parse(h.URL); err != nil || len(h.URL) > 2048 || checkURL(u) != nil {
+		return errf(400, "bad_request", "url must be an http(s) URL of at most 2048 characters")
+	}
+	if len(h.Events) == 0 {
+		h.Events = hookEvents
+	}
+	for _, e := range h.Events {
+		if !slices.Contains(hookEvents, e) {
+			return errf(400, "bad_request", "unknown event %q: use %s", e, strings.Join(hookEvents, ", "))
+		}
+	}
+	events, _ := json.Marshal(h.Events)
+	// Saving again turns a hook back on and starts a fresh failure streak.
+	_, err := s.db.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(topic, name) DO UPDATE SET url = excluded.url, events = excluded.events,
+		secret = CASE WHEN ? AND excluded.secret = '' THEN hooks_out.secret ELSE excluded.secret END, enabled = 1, failing_since = NULL`,
+		topic, name, h.URL, string(events), h.Secret, keepSecret)
+	return err
+}
+
+// DeleteHook removes a hook and its delivery log.
+func (s *Server) DeleteHook(ctx context.Context, tok *Token, topic, name string) error {
+	if err := hookOwner(tok, topic, name); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`DELETE FROM hooks_out WHERE topic = ? AND name = ?`, topic, name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errf(404, "not_found", "no webhook %q on topic %q", name, topic)
+	}
+	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE topic = ? AND name = ?`, topic, name); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// HookDelivery is one queued or sent delivery of a hook.
+type HookDelivery struct {
+	ID        int64      `json:"id"`
+	Seq       int64      `json:"seq"`
+	Event     string     `json:"event"`
+	Status    string     `json:"status"`
+	Attempts  int        `json:"attempts"`
+	NextAt    *time.Time `json:"next_at"` // the next try while pending
+	Code      int        `json:"code"`
+	Error     string     `json:"error"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// HookDeliveries lists a hook's newest deliveries first, at most limit.
+func (s *Server) HookDeliveries(ctx context.Context, tok *Token, topic, name string, limit int) ([]HookDelivery, error) {
+	if err := hookOwner(tok, topic, name); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, seq, event, status, attempts, next_at, code, error, updated_at
+		FROM hook_deliveries WHERE topic = ? AND name = ? ORDER BY id DESC LIMIT ?`, topic, name, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []HookDelivery{}
+	for rows.Next() {
+		var d HookDelivery
+		var next, upd int64
+		if err := rows.Scan(&d.ID, &d.Seq, &d.Event, &d.Status, &d.Attempts, &next, &d.Code, &d.Error, &upd); err != nil {
+			return nil, err
+		}
+		if d.Status == "pending" {
+			v := fromMS(next)
+			d.NextAt = &v
+		}
+		d.UpdatedAt = fromMS(upd)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (s *Server) hookOutRoutes() {
 	s.api("GET /api/v1/topics/{topic}/hooks", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		topic, _, err := owner(r, tok)
+		topic := r.PathValue("topic")
+		if err := validTopic(topic); err != nil {
+			return err
+		}
+		hooks, err := s.OutHooks(r.Context(), tok, topic)
 		if err != nil {
 			return err
 		}
-		rows, err := s.db.QueryContext(r.Context(), `SELECT name, url, events, secret != '', enabled, failing_since FROM hooks_out WHERE topic = ? ORDER BY name`, topic)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		out := []OutHook{}
-		for rows.Next() {
-			var h OutHook
-			var events string
-			var since sql.NullInt64
-			if err := rows.Scan(&h.Name, &h.URL, &events, &h.HasSecret, &h.Enabled, &since); err != nil {
-				return err
-			}
-			json.Unmarshal([]byte(events), &h.Events)
-			if since.Valid {
-				v := fromMS(since.Int64)
-				h.FailingSince = &v
-			}
-			out = append(out, h)
-		}
-		if err := rows.Err(); err != nil {
-			return err
+		out := make([]OutHook, len(hooks))
+		for i, h := range hooks {
+			out[i] = h.OutHook
 		}
 		writeJSON(w, 200, map[string]any{"hooks": out})
 		return nil
 	})
 	s.api("PUT /api/v1/topics/{topic}/hooks/{name}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		topic, name, err := owner(r, tok)
-		if err != nil {
-			return err
+		topic, name := r.PathValue("topic"), r.PathValue("name")
+		if err := hookOwner(tok, topic, name); err != nil {
+			return err // before reading the body, as it always was
 		}
 		var h OutHook
 		if err := decodeJSON(r, &h); err != nil {
 			return err
 		}
-		if u, err := url.Parse(h.URL); err != nil || len(h.URL) > 2048 || checkURL(u) != nil {
-			return errf(400, "bad_request", "url must be an http(s) URL of at most 2048 characters")
+		if err := s.SaveHook(r.Context(), tok, topic, name, h, false); err != nil {
+			return err
 		}
 		if len(h.Events) == 0 {
 			h.Events = hookEvents
-		}
-		for _, e := range h.Events {
-			if !slices.Contains(hookEvents, e) {
-				return errf(400, "bad_request", "unknown event %q: use %s", e, strings.Join(hookEvents, ", "))
-			}
-		}
-		events, _ := json.Marshal(h.Events)
-		// Saving again turns a hook back on and starts a fresh failure streak.
-		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO hooks_out (topic, name, url, events, secret) VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(topic, name) DO UPDATE SET url = excluded.url, events = excluded.events, secret = excluded.secret, enabled = 1, failing_since = NULL`,
-			topic, name, h.URL, string(events), h.Secret); err != nil {
-			return err
 		}
 		h.Name, h.HasSecret, h.Secret, h.Enabled = name, h.Secret != "", "", true
 		writeJSON(w, 200, h)
 		return nil
 	})
 	s.api("DELETE /api/v1/topics/{topic}/hooks/{name}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		topic, name, err := owner(r, tok)
-		if err != nil {
-			return err
-		}
-		tx, err := s.db.BeginTx(r.Context(), nil)
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
-		res, err := tx.Exec(`DELETE FROM hooks_out WHERE topic = ? AND name = ?`, topic, name)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errf(404, "not_found", "no webhook %q on topic %q", name, topic)
-		}
-		if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE topic = ? AND name = ?`, topic, name); err != nil {
-			return err
-		}
-		if err := tx.Commit(); err != nil {
+		if err := s.DeleteHook(r.Context(), tok, r.PathValue("topic"), r.PathValue("name")); err != nil {
 			return err
 		}
 		writeJSON(w, 200, map[string]bool{"deleted": true})
 		return nil
 	})
 	s.api("GET /api/v1/topics/{topic}/hooks/{name}/deliveries", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		topic, name, err := owner(r, tok)
-		if err != nil {
+		topic, name := r.PathValue("topic"), r.PathValue("name")
+		if err := validTopic(topic); err != nil {
 			return err
 		}
-		rows, err := s.db.QueryContext(r.Context(), `SELECT id, seq, event, status, attempts, next_at, code, error, updated_at
-			FROM hook_deliveries WHERE topic = ? AND name = ? ORDER BY id DESC LIMIT 100`, topic, name)
+		out, err := s.HookDeliveries(r.Context(), tok, topic, name, 100)
 		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		type delivery struct {
-			ID        int64      `json:"id"`
-			Seq       int64      `json:"seq"`
-			Event     string     `json:"event"`
-			Status    string     `json:"status"`
-			Attempts  int        `json:"attempts"`
-			NextAt    *time.Time `json:"next_at"` // the next try while pending
-			Code      int        `json:"code"`
-			Error     string     `json:"error"`
-			UpdatedAt time.Time  `json:"updated_at"`
-		}
-		out := []delivery{}
-		for rows.Next() {
-			var d delivery
-			var next, upd int64
-			if err := rows.Scan(&d.ID, &d.Seq, &d.Event, &d.Status, &d.Attempts, &next, &d.Code, &d.Error, &upd); err != nil {
-				return err
-			}
-			if d.Status == "pending" {
-				v := fromMS(next)
-				d.NextAt = &v
-			}
-			d.UpdatedAt = fromMS(upd)
-			out = append(out, d)
-		}
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		writeJSON(w, 200, map[string]any{"deliveries": out})
