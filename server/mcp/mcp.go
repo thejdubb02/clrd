@@ -134,7 +134,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		dec := json.NewDecoder(bytes.NewReader(req.Params))
 		dec.UseNumber() // a big whole number keeps its exact digits on the way to the API (#355)
-		if err := dec.Decode(&p); err != nil {
+		err := dec.Decode(&p)
+		if err == nil {
+			_, err = exact(p.Arguments)
+		}
+		if err != nil {
 			writeRPC(w, req.ID, nil, &rpcErr{-32602, "invalid params"})
 			return
 		}
@@ -236,6 +240,32 @@ func str(a map[string]any, k string) string {
 		return fmt.Sprint(v)
 	}
 	return ""
+}
+
+// exact keeps a plain whole number as its digits (#355); any other number
+// becomes a float64 as before, so 5.0 still reaches an int field as 5.
+func exact(v any) (any, error) {
+	var err error
+	switch t := v.(type) {
+	case json.Number:
+		f, err := t.Float64()
+		if err != nil || strings.ContainsAny(string(t), ".eE") {
+			return f, err
+		}
+	case map[string]any:
+		for k, x := range t {
+			if t[k], err = exact(x); err != nil {
+				return nil, err
+			}
+		}
+	case []any:
+		for i, x := range t {
+			if t[i], err = exact(x); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return v, nil
 }
 
 // num reads a number argument: a json.Number from a tool call, a float64

@@ -249,6 +249,15 @@ func TestBigNumberArgs(t *testing.T) {
 	if _, b := f.last(); b["priority"] != float64(5) || b["repeat_times"] != float64(2) {
 		t.Fatalf("numbers after UseNumber: %v", b)
 	}
+	// Any other number goes as before: 5.0 reaches an int field as 5, 1e309 is refused.
+	callTool(t, h, "settings", map[string]any{"keep_cleared_days": json.Number("5.0")})
+	if !strings.Contains(f.raw, `"keep_cleared_days":5}`) {
+		t.Fatalf("5.0 sent as: %s", f.raw)
+	}
+	code, out := rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send","arguments":{"topic":"ci","message":"m","priority":1e309}}}`)
+	if code != 200 || out["error"] == nil {
+		t.Fatalf("1e309: want invalid params, got %d %v", code, out)
+	}
 }
 
 func TestMissingArgsAreToolErrors(t *testing.T) {
