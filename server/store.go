@@ -72,7 +72,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   seq INTEGER NOT NULL DEFAULT 0,
   silenced INTEGER NOT NULL DEFAULT 0,
   repeat TEXT NOT NULL DEFAULT '',
-  marks TEXT NOT NULL DEFAULT ''
+  marks TEXT NOT NULL DEFAULT '',
+  devices TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -231,6 +232,7 @@ type Notification struct {
 	Live        bool        `json:"live,omitempty"` // sent to open streams only, never stored (#400): ID is a live id, Seq the log seq at send
 	Repeat      *Repeat     `json:"repeat"`         // re-alert until answered, or null
 	Marks       Marks       `json:"marks"`          // who saw or acted on it (marks.go); never changes the state
+	Devices     []string    `json:"devices"`        // token ids it alerts on, [] for every device; the rest get it silenced (#82)
 }
 
 // Attachment is a file on a notification: uploaded (URL is /api/v1/files/<id>)
@@ -301,7 +303,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -429,20 +431,26 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks, devices`
 
 type scanner interface{ Scan(...any) error }
 
 func scanNotification(r scanner) (*Notification, error) {
 	var n Notification
-	var tags, actions, att, rep, marks string
+	var tags, actions, att, rep, marks, devs string
 	var snooze, expires sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
-		&n.Silenced, &rep, &n.sender, &n.confirm, &marks)
+		&n.Silenced, &rep, &n.sender, &n.confirm, &marks, &devs)
 	if err != nil {
 		return nil, err
+	}
+	n.Devices = []string{}
+	if devs != "" {
+		if err := json.Unmarshal([]byte(devs), &n.Devices); err != nil {
+			return nil, err
+		}
 	}
 	if marks != "" {
 		if err := json.Unmarshal([]byte(marks), &n.Marks); err != nil {
@@ -492,15 +500,22 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 		b, _ := json.Marshal(n.Marks)
 		marks = string(b)
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(27)+`)
+	devs := ""
+	if len(n.Devices) > 0 {
+		b, _ := json.Marshal(n.Devices)
+		devs = string(b)
+	} else {
+		n.Devices = []string{} // every event says [] for everyone, never null
+	}
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(28)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm, marks=excluded.marks`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm, marks=excluded.marks, devices=excluded.devices`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep, n.sender, n.confirm, marks)
+		n.Silenced, rep, n.sender, n.confirm, marks, devs)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -640,6 +655,9 @@ type PublishInput struct {
 	// Live sends it to the streams open now and stores nothing: no inbox,
 	// no replay, nothing to act on (ntfy's Cache: no, #400).
 	Live bool `json:"live,omitempty"`
+	// Devices limits who alerts (#82): device names or token ids, each a
+	// device that may read the topic. The rest list it silenced. Empty is everyone.
+	Devices []string `json:"devices,omitempty"`
 }
 
 // Publish creates a notification, or updates the open one with the same
@@ -678,6 +696,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	}
 	format, err := publishFormat(in.Format, in.Markdown)
 	if err != nil {
+		return nil, err
+	}
+	if in.Devices, err = s.targets(ctx, in.Topic, in.Devices); err != nil {
 		return nil, err
 	}
 	if in.Live {
@@ -746,6 +767,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
 				replaced, n.Attachment, n.file, n.ExpiresAt, n.Repeat, n.sender = n.file, in.Attachment, in.file, expires, repeat, sender
+				n.Devices = in.Devices
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -768,7 +790,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
 			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions,
 			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires,
-			Repeat: repeat, sender: sender}
+			Repeat: repeat, sender: sender, Devices: in.Devices}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
@@ -1672,6 +1694,11 @@ func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Eve
 			return nil, err
 		}
 		e.Raw, e.Notification = []byte(data), &Notification{Topic: topic}
+		if strings.Contains(data, `"devices":["`) { // only a targeted event pays for a decode (#82)
+			var d struct{ Notification struct{ Devices []string } }
+			json.Unmarshal(e.Raw, &d)
+			e.Notification.Devices = d.Notification.Devices
+		}
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {

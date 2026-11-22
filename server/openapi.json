@@ -5800,6 +5800,13 @@
        }
       }
      },
+     "devices": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Token ids it alerts on; every other reader gets it silenced. Always present, [] for every device."
+     },
      "marks": {
       "type": "array",
       "description": "Who saw or acted on it, one per author. Never changes the state. Always present, [] for none.",
@@ -5926,6 +5933,14 @@
       "minimum": 1,
       "maximum": 100,
       "description": "How many re-alerts at most. Default 10 when repeat is set."
+     },
+     "devices": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+       "type": "string"
+      },
+      "description": "Only these devices alert: names (any case) or token ids from GET /api/v1/devices, each one able to read the topic, else 400. Every other reader gets it silenced. Omit for every device."
      },
      "status": {
       "type": "string",

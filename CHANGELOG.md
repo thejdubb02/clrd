@@ -221,6 +221,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: send a notification to chosen devices only (#82). Publish with
+  `"devices": ["pixel-9"]` (names or ids from the devices list, or the MCP
+  `send` tool's `devices`) and only those devices alert. Every other device
+  still lists it and syncs it, without sound. An unknown name is an error, so
+  a typo never silences everyone. Without `devices` nothing changes.
 - Server: outgoing webhooks can reach a receiver on your LAN or on another
   port once an admin lists its network and port, through the API or the MCP
   `set_hook_allow` tool. Off by default: with nothing listed, webhooks still

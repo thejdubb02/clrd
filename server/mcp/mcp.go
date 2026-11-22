@@ -346,6 +346,9 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		if v, ok := a["actions"].([]any); ok {
 			body["actions"] = v
 		}
+		if v, ok := a["devices"]; ok {
+			body["devices"] = v // anything but a list of strings is the server's 400, never a send to everyone
+		}
 		if v, ok := a["attachment"].(map[string]any); ok {
 			if str(v, "url") == "" {
 				return nil, fmt.Errorf("attachment.url is required")
@@ -565,6 +568,7 @@ var tools = []map[string]any{
 			"repeat":       p("string", "Optional: alert again every this long (1m to 24h, e.g. 5m) until someone acknowledges, snoozes, dismisses or resolves it"),
 			"repeat_times": map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "How many times to repeat at most (default 10)"},
 			"live":         map[string]any{"type": "boolean", "description": "Optional: send only to ntfy streams open now and keep nothing (no inbox, no replay, no buttons to answer)"},
+			"devices":      strs("Optional: only these devices alert (names or ids from devices, at most 20); every other reader lists it silently"),
 			"id":           p("string", "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id)."),
 			"actions": map[string]any{"type": "array", "maxItems": 3,
 				"description": "Optional buttons, each with one of reply, url, http or broadcast. Answer buttons: [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]; wait_for_reply returns the tapped one as answer. http and broadcast need the topic's device_actions on (set_topic).",

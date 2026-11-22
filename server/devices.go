@@ -141,6 +141,40 @@ type querier interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
+// targets resolves a publish's devices (names, any case, or token ids) to
+// the ids of every token that may read topic and matches (#82). A name on
+// several devices targets them all; one that matches none is refused, so a
+// typo never silences everyone. Empty is every device.
+func (s *Server) targets(ctx context.Context, topic string, want []string) ([]string, error) {
+	out := []string{}
+	if len(want) == 0 {
+		return out, nil
+	}
+	if len(want) > 20 {
+		return nil, errf(400, "bad_request", "devices: at most 20")
+	}
+	toks, err := s.Tokens(ctx, time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range want {
+		hit := false
+		byID := slices.ContainsFunc(toks, func(t *Token) bool { return t.ID == w }) // an id never also matches a device named like it
+		for _, t := range toks {
+			if (t.ID == w || !byID && strings.EqualFold(t.Name, w)) && s.withUser(ctx, t) == nil && t.may(ScopeRead, topic) {
+				hit = true
+				if !slices.Contains(out, t.ID) {
+					out = append(out, t.ID)
+				}
+			}
+		}
+		if !hit {
+			return nil, errf(400, "bad_request", "devices: %q is not a device that may read %q", w, topic)
+		}
+	}
+	return out, nil
+}
+
 // Devices lists the devices tok may see, oldest first.
 func (s *Server) Devices(ctx context.Context, tok *Token) ([]LinkedDevice, error) {
 	return s.devices(ctx, s.db, tok)

@@ -120,6 +120,24 @@ func visible(tok *Token, topics []string, topic string) bool {
 	return tok.may(ScopeRead, topic) && (len(topics) == 0 || slices.Contains(topics, topic))
 }
 
+// rawFor is e as tok gets it. One sent to chosen devices (#82) still reaches
+// every reader, but silenced on the others, so only the chosen ones alert.
+// Only this copy changes: the row, the log and webhooks keep what was stored.
+func rawFor(tok *Token, e Event) []byte {
+	if n := e.Notification; len(n.Devices) == 0 || slices.Contains(n.Devices, tok.ID) {
+		return e.Raw
+	}
+	var c Event
+	if json.Unmarshal(e.Raw, &c) != nil || c.Notification == nil || c.Notification.Silenced {
+		return e.Raw
+	}
+	c.Notification.Silenced = true
+	if b, err := json.Marshal(c); err == nil {
+		return b
+	}
+	return e.Raw
+}
+
 // follow is the sync loop every stream shares: replay events after since,
 // send ready, then live events, pinging every 30s, until ctx ends or the
 // subscriber is dropped. send gets each message and its seq (-1 for reset;
@@ -203,7 +221,7 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 		}
 		for _, e := range evs {
 			if visible(tok, topics, e.Notification.Topic) {
-				if err := send(e.Raw, e.Seq); err != nil {
+				if err := send(rawFor(tok, e), e.Seq); err != nil {
 					return err
 				}
 			}
@@ -287,7 +305,7 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 			}
 			if e.Notification.Live { // never stored, so outside the seq order: last stays
 				if visible(tok, topics, e.Notification.Topic) {
-					if err := send(e.Raw, e.Seq); err != nil {
+					if err := send(rawFor(tok, e), e.Seq); err != nil {
 						return err
 					}
 				}
@@ -298,7 +316,7 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 			}
 			last = e.Seq
 			if visible(tok, topics, e.Notification.Topic) {
-				if err := send(e.Raw, e.Seq); err != nil {
+				if err := send(rawFor(tok, e), e.Seq); err != nil {
 					return err
 				}
 			}
@@ -418,7 +436,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 	next := since
 	for _, e := range evs {
 		if visible(tok, topics, e.Notification.Topic) {
-			out = append(out, e.Raw)
+			out = append(out, rawFor(tok, e))
 		}
 		next = e.Seq
 	}
