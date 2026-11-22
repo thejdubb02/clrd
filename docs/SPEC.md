@@ -665,6 +665,7 @@ resolved`) and `ntfy_import`.
 | PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret","body"}`, replaces and turns it back on; `body` is an optional template, #239) or remove an outgoing webhook. Admin. |
 | GET | `/api/v1/topics/{topic}/hooks/{name}/deliveries` | The last 100 deliveries, newest first. Admin. |
 | POST | `/api/v1/topics/{topic}/hooks/preview` | Dry run a body template (`{"body","event"?}`, a sample event without one): returns `{"body"}` as a delivery would send it, sends nothing. Admin. |
+| GET/PUT | `/api/v1/hooks/allow` | Private networks and extra ports outgoing webhooks may reach: `{"networks":["192.168.1.0/24"],"ports":[8080]}`, both empty by default. PUT needs both fields (`[]` for none), at most 64 of each; a bare address is a single-address network. Full admin. |
 | GET | `/api/v1/silences` | Scope read. Active silences on topics this token may read, plus those with no topic: `{"silences":[{"id","topic","tag","until","comment","created_by","created_at"}]}`. |
 | POST | `/api/v1/silences` | Body `{"topic","tag","for":"8h"}` or `"until":"RFC3339"` instead of `for` (exactly one, at most 8784h ahead), optional `comment`. Needs `topic`, `tag` or both. Returns 201 and the silence. Scope publish on the topic; no topic (every topic) needs a token without a topic list. |
 | DELETE | `/api/v1/silences/{id}` | End a silence early. Same scope as creating it. 204. |
@@ -745,7 +746,10 @@ By external id (what scripts and monitors use):
   most, or the try fails unsent), on dismissed, acknowledged, resolved, snoozed and `action` (a
   reply tapped), with `X-Clrd-Event`, `X-Clrd-Delivery` and, with a secret,
   `X-Clrd-Signature: sha256=<hex HMAC>`. Same address guard as the favicon
-  fetcher. Non-2xx is tried again from 30 s, doubling, 8 tries in all; 24 h of failures turns
+  fetcher, on a connection pool of its own, unless an admin lists networks
+  and ports with `PUT /api/v1/hooks/allow` (#237): a dial then passes when
+  the address is public or in a listed network and the port is 80, 443 or
+  listed. Non-2xx is tried again from 30 s, doubling, 8 tries in all; 24 h of failures turns
   it off with a notification on the topic. Each try uses the hook's URL,
   secret and body saved at that moment. Docs:
   `docs/integrations/webhooks-out.md`.
@@ -827,7 +831,7 @@ the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dism
 `set_template(topic, name, ...)`, `delete_template(topic, name)`,
 `preview_template(topic, name, payload, headers?, template?)`, and, admin
 only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?, body?)`,
-`preview_hook(topic, body, event?)`, `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
+`preview_hook(topic, body, event?)`, `hook_allow()`, `set_hook_allow(networks, ports)`, `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
 `create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
 `server_env()` (`GET /api/v1/server`) and `ntfy_ignored()`.

@@ -141,6 +141,8 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 	ok("set_hook", map[string]any{"topic": "ops", "name": "audit", "url": "https://example.com/h", "events": []string{"acknowledged"}, "secret": "s"}, `"has_secret":true`)
 	ok("hooks", map[string]any{"topic": "ops"}, `"name":"audit"`)
 	ok("preview_hook", map[string]any{"topic": "ops", "body": `{"t": {{json .notification.topic}}}`}, `"body":"{\"t\": \"ops\"}"`)
+	ok("set_hook_allow", map[string]any{"networks": []string{"192.168.1.7/24"}, "ports": []int{8080}}, `"networks":["192.168.1.0/24"]`, `"ports":[8080]`)
+	ok("hook_allow", map[string]any{}, `"networks":["192.168.1.0/24"]`)
 	ok("hook_deliveries", map[string]any{"topic": "ops", "name": "audit"}, `"deliveries"`)
 	ok("delete_hook", map[string]any{"topic": "ops", "name": "audit"}, `"deleted":true`)
 
