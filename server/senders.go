@@ -76,6 +76,7 @@ func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string)
 		topicsJSON, recentJSON = "{}", "[]"
 		if tokID == nil {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM senders WHERE id IN (SELECT id FROM senders WHERE token_id IS NULL AND rules = '{}'
+				AND NOT EXISTS (SELECT 1 FROM sender_changes c WHERE c.sender = senders.id) -- keep the undo trail (#537)
 				ORDER BY last_seen DESC LIMIT -1 OFFSET ?)`, senderAnonLimit-1); err != nil {
 				return nil, err
 			}
@@ -247,6 +248,22 @@ func (s *Server) Sender(ctx context.Context, tok *Token, id string) (*Sender, er
 			return nil, err
 		}
 		sd.Recent = append(sd.Recent, n)
+	}
+	// The cached ids can all be pruned while an older one from this sender
+	// is still stored (#530). Anonymous senders share a token, so only a
+	// token sender can be looked up by the sender column.
+	// ponytail: unindexed scan, admin detail view only; index sender if it shows.
+	if len(sd.Recent) < senderRecent && sd.TokenID != "" {
+		older, err := queryNotifications(s.db, `SELECT `+notifCols+` FROM notifications WHERE sender = ?
+			ORDER BY updated_at DESC LIMIT ?`, sd.TokenID, senderRecent*2)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range older {
+			if len(sd.Recent) < senderRecent && !slices.ContainsFunc(sd.Recent, func(r *Notification) bool { return r.ID == n.ID }) {
+				sd.Recent = append(sd.Recent, n)
+			}
+		}
 	}
 	return sd, nil
 }

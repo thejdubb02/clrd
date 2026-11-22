@@ -83,6 +83,37 @@ func TestSendersDiscovered(t *testing.T) {
 	if _, one := call(t, ts, "GET", "/api/v1/senders/"+g["id"].(string), admin, nil); len(one["recent"].([]any)) != 2 {
 		t.Fatalf("taken-over row still listed: %v", one["recent"])
 	}
+	// Ten newer ones pruned away: the two older ones still stored still show (#530).
+	for i := range senderRecent {
+		if code, _ := call(t, ts, "POST", "/api/v1/notifications", svc, map[string]any{"topic": "gone", "message": fmt.Sprint(i)}); code != 201 && code != 200 {
+			t.Fatalf("publish %d: %d", i, code)
+		}
+	}
+	if _, err := s.db.Exec(`DELETE FROM notifications WHERE topic = 'gone'`); err != nil {
+		t.Fatal(err)
+	}
+	_, one = call(t, ts, "GET", "/api/v1/senders/"+g["id"].(string), admin, nil)
+	if rec, _ := one["recent"].([]any); len(rec) != 2 {
+		t.Fatalf("older stored ones missing: %v", one["recent"])
+	}
+	// An anonymous sender with a change log outlives the address cap (#537).
+	var anonID string
+	s.db.QueryRow(`SELECT id FROM senders WHERE address = '203.0.113.2'`).Scan(&anonID)
+	for _, p := range []bool{true, false} {
+		if code, _ := call(t, ts, "PUT", "/api/v1/senders/"+anonID, admin, map[string]any{"paused": p}); code != 200 {
+			t.Fatalf("pause %v: %d", p, code)
+		}
+	}
+	if _, err := s.db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < ?)
+		INSERT INTO senders (id, first_seen, last_seen, count, topics, recent) SELECT 'filler-'||i, 1, 9e15, 1, '{}', '[]' FROM n`, senderAnonLimit); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := raw(t, "POST", ts.URL+"/open", "", "x", map[string]string{"X-Forwarded-For": "203.0.113.9"}); code != 200 {
+		t.Fatalf("anonymous publish: %d", code)
+	}
+	if _, ch := call(t, ts, "GET", "/api/v1/senders/"+anonID+"/changes", admin, nil); len(ch["changes"].([]any)) != 2 {
+		t.Fatalf("change log pruned with its sender: %v", ch)
+	}
 }
 
 // #119: a sender's rules route, mute, clamp and pause what it publishes;
