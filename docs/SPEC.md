@@ -376,10 +376,12 @@ the session cookie (same-origin only) as well as a Bearer token.
   Tokens imported from ntfy keep their `tk_...` value (also stored hashed) and
   work everywhere a `clrd_` token does.
 - **Per-topic grants:** a token may instead carry an ordered list of grants,
-  each a topic pattern (`*` matches any run of characters; matching ignores
-  case, as in ntfy) and the scopes it
+  each a topic pattern (`*` matches any run of characters) and the scopes it
   gives there (`read`, `publish`, both, or none, which denies). For a topic the
-  first grant whose pattern matches decides; no match means no access. The
+  first grant whose pattern matches decides; no match means no access.
+  Matching ignores case, as in ntfy, but topics are case-sensitive, so a grant
+  that matches only in another case denies: `home` allows `home` and denies
+  `HOME`, and a deny on `secret` also denies `SECRET`. The
   token's own scopes are the ceiling: a grant never adds a scope the token
   lacks, and a grant never holds `admin`. A write-only grant (`publish` only)
   lets the token publish to the topic but not list, get, stream, download
