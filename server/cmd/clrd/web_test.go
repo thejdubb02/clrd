@@ -188,6 +188,73 @@ func TestDeviceActionsShown(t *testing.T) {
 	}
 }
 
+// A signed-in browser sets, changes and removes its own mark with the card's
+// plain form (#451). Its session token is a child, so its marks are the top
+// token's: the page must know that to offer Remove, and only for its own.
+func TestMarkForm(t *testing.T) {
+	s, ts, raw := realServer(t)
+	_, stew, err := s.CreateToken(context.Background(), "stew", "", []string{"admin"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := func(tok, method, path, body string) {
+		t.Helper()
+		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("%s %s: %d", method, path, res.StatusCode)
+		}
+	}
+	api(raw, "POST", "/api/v1/notifications", `{"topic":"ops","message":"disk full"}`)
+	c := browser()
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	_, page = submit(t, c, ts.URL, page, raw, "")
+	m := regexp.MustCompile(`data-id="([^"]+)"`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatal("no card")
+	}
+	api(stew, "POST", "/api/v1/notifications/"+m[1]+"/mark", `{"mark":"seen"}`)
+	post := func(c *http.Client, v url.Values) (int, string) {
+		t.Helper()
+		v.Set("id", m[1])
+		req, _ := http.NewRequest("POST", ts.URL+"/app/mark", strings.NewReader(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", ts.URL)
+		res, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(b)
+	}
+	if code, body := post(c, url.Values{"mark": {"actioned"}, "link": {"javascript:alert(1)"}}); code != 400 || !strings.Contains(body, "Not marked: link") {
+		t.Errorf("a script link: %d %q, want 400 with the reason", code, body)
+	}
+	if code, page := post(c, url.Values{"mark": {"actioned"}, "note": {" filed #1 "}, "link": {"https://x.example/1"}, "next": {"/app"}}); code != 200 ||
+		!strings.Contains(page, `data-mark="actioned">phone actioned: filed #1 <a`) || !strings.Contains(page, `data-mark="seen">stew seen<`) ||
+		!strings.Contains(page, `Marked actioned`) || !strings.Contains(page, `name="note" maxlength="200" placeholder="Note (optional)" value="filed #1"`) ||
+		strings.Count(page, "Remove my mark") != 1 {
+		t.Errorf("after marking: %d, page has no own mark with Remove", code)
+	}
+	other := browser()
+	_, page, _ = fetch(t, other, ts.URL+"/app")
+	_, page = submit(t, other, ts.URL, page, stew, "")
+	if !strings.Contains(page, "phone actioned: filed #1") || !strings.Contains(page, "Marked seen") || strings.Count(page, "Remove my mark") != 1 || strings.Contains(page, `value="filed #1"`) {
+		t.Error("another reader sees the mark but may only remove its own")
+	}
+	post(c, url.Values{"mark": {""}})
+	n, _ := s.Get(context.Background(), mustTok(t, s, raw), m[1])
+	if len(n.Marks) != 1 || n.Marks[0].By != "stew" {
+		t.Errorf("after Remove: %+v, want only stew's mark", n.Marks)
+	}
+}
+
 func realServer(t *testing.T) (*server.Server, *httptest.Server, string) {
 	t.Helper()
 	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RateToken: -1, RateTopic: -1})

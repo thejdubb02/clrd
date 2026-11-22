@@ -83,6 +83,7 @@ type Notification struct {
 // never changes the state.
 type Mark struct {
 	By   string `json:"by"`
+	ByID string `json:"by_id"`
 	Mark string `json:"mark"` // seen or actioned
 	Note string `json:"note"`
 	Link string `json:"link"`
@@ -359,6 +360,7 @@ type Snapshot struct {
 	Log    []DeviceEvent
 	Me     string // device name of the signed-in token, the state_by its own actions get
 	MeID   string // its token id, the state_by_id its own actions get (names can repeat)
+	MarkID string // the by_id its marks get: its person, or the top of its token tree
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
@@ -518,6 +520,8 @@ type API interface {
 	Act(r *http.Request, id, action string, until *time.Time) error
 	// Reply answers with one of the notification's reply actions, as shown at seq.
 	Reply(r *http.Request, id, reply string, seq int64) error
+	// Mark sets the reader's own mark (seen or actioned); mark "" removes it.
+	Mark(r *http.Request, id, mark, note, link string) error
 	// StartSilence (dur is a Go duration) and EndSilence back the Settings
 	// silence form without script. Their error text is shown on the page.
 	StartSilence(r *http.Request, topic, tag, dur, comment string) error
@@ -582,16 +586,23 @@ func templates(base string) *template.Template {
 			if !snap.Formatting {
 				n.Format = "text" // the untitled headline shows as typed too
 			}
-			return struct {
+			c := struct {
 				N             Notification
 				View, Here    string
 				Snooze        []string
 				SnoozeDefault string
 				Text          template.HTML
 				Preview       bool
-				Silence       bool // offer Silence topic for 1 hour (#326)
+				Silence       bool  // offer Silence topic for 1 hour (#326)
+				Mine          *Mark // the reader's own mark, which it may change or remove
 			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic),
-				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence })}
+				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence }), nil}
+			for i, m := range n.Marks {
+				if snap.MarkID != "" && m.ByID == snap.MarkID {
+					c.Mine = &n.Marks[i]
+				}
+			}
+			return c
 		},
 		"snoozeLabel": snoozeLabel,
 		"left":        timeLeft,
@@ -1038,6 +1049,25 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		http.Redirect(w, r, next, http.StatusSeeOther) // signed out: next shows the sign-in page
+	})
+
+	// Card marks (#451) as a plain form post. The card has a form of its own
+	// for them, so Enter in the note never presses Ack or a reply button.
+	// mark "" removes the reader's own mark.
+	mux.HandleFunc("POST /app/mark", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		err := api.Mark(r, f.Get("id"), f.Get("mark"), strings.TrimSpace(f.Get("note")), strings.TrimSpace(f.Get("link")))
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
+			log.Printf("web: mark: %v", err)
+			http.Error(w, "Not marked: "+err.Error()+". Go back and reload the page.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, inboxNext(f.Get("next"), "/app"), http.StatusSeeOther) // signed out: next shows the sign-in page
 	})
 
 	// The Settings silence form and End now as a plain form post (#326). A set

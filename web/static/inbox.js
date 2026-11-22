@@ -678,6 +678,22 @@
     }, 9000); // long enough to read one tip (#292)
   }
 
+  // Card marks (#451): seen or actioned, with an optional note and link, for
+  // everyone on the topic. A mark changes no state; Remove takes yours off.
+  async function markCard(b, c) {
+    const f = b.form.elements, url = `/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/mark`;
+    b.disabled = true;
+    const r = b.value ? await post(url, { mark: b.value, note: f.note.value.trim(), link: f.link.value.trim() }, true)
+      : await fetch(url, { method: 'DELETE', credentials: 'same-origin' }).catch(() => say('Could not reach the server. Nothing changed.'));
+    b.disabled = false;
+    if (!r) return;
+    if (r.status === 401) return location.reload();
+    if (!r.ok) return say(`${b.value ? 'Not marked' : 'Not removed'}: ${(await r.json().catch(() => ({}))).error || r.status}.`);
+    b.closest('details').open = false;
+    tell(b.value ? `Marked ${b.value}.` : 'Your mark is removed.');
+    refresh();
+  }
+
   const done = { ack: 'Acknowledged', dismiss: 'Cleared', reopen: 'Restored to the inbox' };
   const tell = text => { announce.textContent = text; };
   document.addEventListener('click', async e => {
@@ -708,6 +724,7 @@
     }
     const c = b.closest('.card');
     if (act === 'share' || act === 'copy') return shareCard(act, c);
+    if (act === 'mark') return markCard(b, c);
     let body;
     if (act === 'snooze') {
       const t = !b.dataset.for && snoozeAt(b.dataset.at, c);

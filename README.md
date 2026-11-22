@@ -52,7 +52,7 @@ offline catches up the moment it reconnects.
 - **State that syncs.** Dismiss (hide it), acknowledge (someone is on it),
   resolve (it is fixed) and snooze, each shown on every device. Snooze times
   and the default are one setting shared by every device.
-- **Marks.** Another person or an agent with its own token can mark a card
+- **Marks.** You (in the web inbox), another person or an agent with its own token can mark a card
   seen, or actioned with a note and link ("stew actioned: filed relay#512").
   It clears nothing; everyone on the topic sees who handled it.
 - **Self-resolving alerts.** Senders tag an alert with their own ID and resolve

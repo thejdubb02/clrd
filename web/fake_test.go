@@ -69,7 +69,7 @@ func (f *Fake) put(n Notification) {
 func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s := Snapshot{Seq: f.seq, Counts: map[string]int{}, Items: []Notification{}, Me: "web", MeID: "tok-web", SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h", TopicKeepClearedDays: map[string]int{"home": 14, "gone": 3}} // gone has no notifications left (#336)
+	s := Snapshot{Seq: f.seq, Counts: map[string]int{}, Items: []Notification{}, Me: "web", MeID: "tok-web", MarkID: "me", SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h", TopicKeepClearedDays: map[string]int{"home": 14, "gone": 3}} // gone has no notifications left (#336)
 	topics := map[string]int{}
 	needle := strings.ToLower(q.Q)
 	for _, n := range f.items {
@@ -115,6 +115,23 @@ func (f *Fake) Act(r *http.Request, id, action string, until *time.Time) error {
 	m := *n
 	m.State = map[string]string{"ack": "acknowledged", "snooze": "snoozed", "dismiss": "dismissed", "reopen": "active"}[action]
 	m.StateBy, m.SnoozeUntil, m.Reply = "web", until, ""
+	f.put(m)
+	return nil
+}
+
+// Mark keeps one mark, by "me", like the server's one per author.
+func (f *Fake) Mark(r *http.Request, id, mark, note, link string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.items[id]
+	if !ok {
+		return errors.New("not found")
+	}
+	m := *n
+	m.Marks = nil
+	if mark != "" {
+		m.Marks = []Mark{{By: "web", ByID: "me", Mark: mark, Note: note, Link: link}}
+	}
 	f.put(m)
 	return nil
 }

@@ -196,6 +196,7 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web inbox: mark a card seen or actioned, with an optional note and link, from its Mark menu, and remove your own mark there. A mark clears nothing.
 - Marks: anyone who can read a topic, a person or an agent with its own token, can mark a notification seen, or actioned with a note and a link. A mark never clears or hides it; everyone on the topic sees who marked it on the card in the web inbox and the Android app, for example "stew actioned: filed relay#512". API `POST`/`DELETE /api/v1/notifications/{id}/mark`, MCP `mark`, and `mark`/`unmark` in the Go, JS and Python SDKs.
 - Web: the inbox shows a message's `http` and `broadcast` buttons under the
   card as text (the label, plus the method and URL or the broadcast intent), so a

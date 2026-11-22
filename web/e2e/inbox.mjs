@@ -387,6 +387,28 @@ try {
   assert.equal(await card('Merge 212?').getByRole('button', { name: 'No', exact: true }).count(), 0, 'answered card still offers replies');
   console.log('ok: reply button stores the answer');
 
+  // Marks (#451): Enter in the note marks it actioned, never acks or answers
+  // the card; Remove takes only this reader's mark off.
+  const mq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Deploy 213?', actions: [{ label: 'Go', reply: 'go' }] });
+  await api(phone, `/api/v1/notifications/${mq.id}/mark`, { mark: 'seen' });
+  await page.reload();
+  await card('Deploy 213?').locator('[data-mark-menu] summary').click();
+  await card('Deploy 213?').getByLabel('Note').fill('on it');
+  await card('Deploy 213?').getByLabel('Note').press('Enter');
+  await announce.filter({ hasText: 'Marked actioned.' }).waitFor({ state: 'attached' });
+  await card('Deploy 213?').locator('[data-mark="actioned"]', { hasText: 'laptop actioned: on it' }).waitFor();
+  let mn = await get(laptop, mq.id);
+  assert.equal(mn.state, 'active', 'Enter in the note changed the card state');
+  assert.ok(!mn.reply, 'Enter in the note answered the card');
+  assert.equal(mn.marks.length, 2, 'own mark not added next to the phone one');
+  await card('Deploy 213?').getByText('Marked actioned').click();
+  await card('Deploy 213?').getByRole('button', { name: 'Remove my mark' }).click();
+  await announce.filter({ hasText: 'Your mark is removed.' }).waitFor({ state: 'attached' });
+  await until(page, () => !document.querySelector('[data-mark="actioned"]'));
+  mn = await get(laptop, mq.id);
+  assert.deepEqual(mn.marks.map(m => m.by), ['pixel-9'], 'Remove took the wrong mark');
+  console.log('ok: mark a card seen or actioned and remove your own mark');
+
   // Share and Copy hand over the title, the message and the link; the icon and attachments show on the card.
   const sharePage = await page.context().newPage();
   await sharePage.addInitScript(() => {

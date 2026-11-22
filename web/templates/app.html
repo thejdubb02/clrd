@@ -176,9 +176,19 @@
           {{if .Silence}}<button class="btn justify-start border-t" data-variant="ghost" data-size="sm" formaction="{{base}}/app/silence" name="for" value="1h" data-silence-quick title="Every new message in {{$n.Topic}} arrives quietly for an hour">Silence {{$n.Topic}} for 1 hour</button>{{end}}
         </div>
       </details></span>{{end}}
+      <details class="popover static" data-mark-menu>
+        <summary class="btn" data-variant="outline" title="Tell everyone on {{$n.Topic}} you saw or dealt with it. It clears nothing.">{{with .Mine}}Marked {{.Mark}}{{else}}Mark{{end}}{{template "i-chevron-down"}}</summary>
+        <div data-popover class="start-5 top-full mt-1 grid w-72 gap-1 p-1 max-w-[calc(100%-1.25rem)] min-w-0">
+          <label class="sr-only" for="mn-{{$n.ID}}">Note</label><input id="mn-{{$n.ID}}" class="input h-7 text-xs" form="mk-{{$n.ID}}" name="note" maxlength="200" placeholder="Note (optional)" value="{{with .Mine}}{{.Note}}{{end}}">
+          <label class="sr-only" for="ml-{{$n.ID}}">Link</label><input id="ml-{{$n.ID}}" class="input h-7 text-xs" form="mk-{{$n.ID}}" name="link" type="url" placeholder="Link (optional)" value="{{with .Mine}}{{.Link}}{{end}}">
+          <span class="flex gap-1"><button class="btn" data-variant="outline" data-size="sm" form="mk-{{$n.ID}}" name="mark" value="actioned" data-act="mark">Actioned</button><button class="btn" data-variant="outline" data-size="sm" form="mk-{{$n.ID}}" name="mark" value="seen" data-act="mark">Seen</button></span>
+          {{if .Mine}}<button class="btn justify-start border-t" data-variant="ghost" data-size="sm" form="mk-{{$n.ID}}" name="mark" value="" data-act="mark">Remove my mark</button>{{end}}
+        </div>
+      </details>
       <button class="btn" data-variant="clear" name="act" value="dismiss" data-act="dismiss">{{template "i-check"}}Clear</button>
     {{end}}
   </form>
+  {{if ne .View "cleared"}}<form id="mk-{{$n.ID}}" method="post" action="{{base}}/app/mark" hidden><input type="hidden" name="id" value="{{$n.ID}}"><input type="hidden" name="next" value="{{.Here}}"></form>{{end}}
 </article>
 {{end}}
 
