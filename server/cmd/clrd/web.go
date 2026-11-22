@@ -128,6 +128,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return snap, err
 	}
 	snap.SnoozeIntervals, snap.SnoozeDefault = ds.SnoozeIntervals, ds.SnoozeDefault
+	snap.SwipeStart, snap.SwipeEnd = ds.SwipeStart, ds.SwipeEnd
 	snap.KeepClearedDays = *ds.KeepClearedDays // Settings fills it from CLRD_RETENTION when unset
 	snap.TopicKeepClearedDays = ds.TopicKeepClearedDays
 	snap.Formatting, snap.Autolink, snap.Favicons = ds.RenderFormatting, ds.Autolink, ds.Favicons

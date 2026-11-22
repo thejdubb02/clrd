@@ -92,7 +92,7 @@ offline catches up the moment it reconnects.
   show both.
 - **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
   work without JavaScript, Markdown formatting and links, link previews,
-  Share and Copy on each card, optional stacking by topic, a Ctrl+K command
+  Share and Copy on each card, a part swipe on a phone that shows a card's buttons, optional stacking by topic, a Ctrl+K command
   palette, a Send box for a quick note to your phone, a sound for new
   notifications (pick one in Settings, silenced ones stay quiet), silences
   started and ended from Settings, a dot for each linked device (up to six)

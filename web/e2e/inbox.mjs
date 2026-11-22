@@ -1661,6 +1661,100 @@ try {
     console.log('ok: sender rules pause, log, undo, quiet alarm and round trip without JavaScript; bad routes, a bad duration, a stale page and a non-admin get 400');
   }
 
+  // Swipe on a touch screen (#161): a part swipe shows the buttons Settings
+  // picked for that side and changes nothing; swiping back, a vertical drag
+  // and a full swipe change nothing either; a tapped button acts; a mouse drag
+  // shows nothing; a sign-in that may not change settings sees them read-only.
+  {
+    const ctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'swiper' } })).ok(), 'swipe sign-in');
+    const sp = await ctx.newPage();
+    const cdp = await ctx.newCDPSession(sp);
+    const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    const swipe = async (loc, dx, dy = 0, held) => {
+      const b = await loc.boundingBox(), x = b.x + b.width / 2, y = b.y + 20; // on the title, not a button
+      await touch('touchStart', x, y);
+      for (let i = 1; i <= 8; i++) { await touch('touchMove', x + dx * i / 8, y + dy * i / 8); await sp.waitForTimeout(20); }
+      await sp.waitForTimeout(150); // held still, so no fling follows to eat the next tap
+      if (held) await held(); // checked while the finger is still down
+      await touch('touchEnd');
+    };
+    const a = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-a', message: 'one' });
+    const b = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-b', message: 'two' });
+    await sp.goto(base + '/app');
+    const ca = sp.locator('article.card', { hasText: 'swipe-a' }), cb = sp.locator('article.card', { hasText: 'swipe-b' });
+    const tray = c => c.locator('[data-swipe-tray]');
+    await swipe(ca, -120);
+    await tray(ca).getByRole('button', { name: 'Clear' }).waitFor();
+    assert.deepEqual(await tray(ca).getByRole('button').allTextContents(), ['Snooze', 'Clear'], 'swipe left shows Snooze, then Clear at the edge');
+    assert.equal((await get(laptop, a.id)).state, 'active', 'a part swipe changes nothing');
+    await swipe(ca, 120);
+    await tray(ca).waitFor({ state: 'detached' });
+    await swipe(ca, -150, 200); // far enough to open, were it sideways
+    assert.equal(await tray(ca).count(), 0, 'a mostly vertical drag shows nothing');
+    let mid; await swipe(ca, -380, 0, async () => { mid = await ca.evaluate(c => c.x <= c.trayW); });
+    assert.ok(mid, 'the slide stops at the buttons while the finger is still moving');
+    await tray(ca).waitFor();
+    assert.ok(await ca.evaluate(c => c.x === c.trayW), 'a full swipe stops at the buttons');
+    await sp.waitForTimeout(300);
+    assert.equal((await get(laptop, a.id)).state, 'active', 'a full swipe does not clear');
+    await tray(ca).getByRole('button', { name: 'Clear' }).tap();
+    await sp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).waitFor();
+    assert.equal((await get(laptop, a.id)).state, 'dismissed', 'the tapped Clear clears');
+    await swipe(cb, 120);
+    assert.deepEqual(await tray(cb).getByRole('button').allTextContents(), ['Ack'], 'swipe right shows Ack');
+    await tray(cb).getByRole('button', { name: 'Ack' }).tap();
+    await cb.locator('.badge[data-state=acknowledged]').waitFor();
+    assert.equal((await get(laptop, b.id)).state, 'acknowledged', 'the tapped Ack acknowledges');
+
+    // Settings move Ack to the left and leave the right empty.
+    await sp.goto(base + '/app/settings');
+    await sp.getByLabel('Swipe left, button 1').selectOption('ack');
+    await sp.getByLabel('Swipe left, button 2').selectOption('');
+    await sp.getByLabel('Swipe right, button 1').selectOption('');
+    await Promise.all([sp.waitForEvent('load'), sp.locator('[data-swipe-settings]').getByRole('button', { name: 'Save' }).click()]);
+    assert.equal(await sp.getByLabel('Swipe left, button 1').inputValue(), 'ack', 'swipe setting saved');
+    const c = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-c', message: 'three' });
+    await sp.goto(base + '/app');
+    const cc = sp.locator('article.card', { hasText: 'swipe-c' });
+    await swipe(cc, 120);
+    assert.equal(await tray(cc).count(), 0, 'an empty side shows nothing');
+    await swipe(cc, -120);
+    assert.deepEqual(await tray(cc).getByRole('button').allTextContents(), ['Ack'], 'the new left side');
+    await ctx.close();
+
+    // A mouse drag shows nothing.
+    const mctx = await browser.newContext();
+    assert.ok((await mctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'mouse' } })).ok(), 'mouse sign-in');
+    const mp = await mctx.newPage();
+    await mp.goto(base + '/app');
+    const pm = mp.locator('article.card', { hasText: 'swipe-c' }), box = await pm.boundingBox();
+    await mp.mouse.move(box.x + box.width / 2, box.y + 20);
+    await mp.mouse.down();
+    await mp.mouse.move(box.x + 20, box.y + 20, { steps: 8 });
+    await mp.mouse.up();
+    assert.equal(await tray(pm).count(), 0, 'a mouse drag shows nothing');
+    assert.equal((await get(laptop, c.id)).state, 'active', 'and changes nothing');
+    // Swipe settings changed elsewhere reload an open page, so its buttons and form are current.
+    await mp.locator('#sync.is-live').waitFor();
+    const [, put] = await Promise.all([mp.waitForEvent('load'), fetch(base + '/api/v1/settings', { method: 'PUT', headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ swipe_start: ['clear', 'snooze'], swipe_end: ['ack'] }) })]);
+    assert.equal(put.status, 200, 'swipe settings put back');
+    assert.equal(await mp.locator('[data-inbox]').getAttribute('data-swipe-end'), 'ack ', 'the reloaded page has the new buttons');
+    await mctx.close();
+
+    // A topic-limited sign-in cannot change settings: 403, then read-only.
+    const lim = execFileSync(bin, ['token', 'create', '--name', 'swp-only', '--scope', 'read,publish', '--topics', 'swp'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const lctx = await browser.newContext();
+    assert.ok((await lctx.request.post(base + '/api/v1/session', { data: { token: lim, name: 'swp-only' } })).ok(), 'limited sign-in');
+    const lp = await lctx.newPage();
+    await lp.goto(base + '/app/settings');
+    await lp.locator('[data-swipe-settings]').getByRole('button', { name: 'Save' }).click();
+    await lp.locator('[data-swipe-status]:not(:empty)').waitFor();
+    assert.ok(await lp.getByLabel('Swipe left, button 1').isDisabled(), 'read-only after a refused save');
+    await lctx.close();
+    console.log('ok: on a touch screen a part swipe shows the chosen buttons and acts only on a tap; swipe back, vertical, full and mouse drags change nothing; settings move them; a refused save is read-only');
+  }
+
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
   // scripts send every request inside it, and a setting saved from the page
   // reaches the server.

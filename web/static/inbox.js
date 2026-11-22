@@ -447,6 +447,84 @@
   }, true);
   document.addEventListener('keydown', () => { held = null; }, true); // a touch long press may end with no click
 
+  // Swipe on a touch screen (#161): a part swipe on a card slides it to show
+  // the buttons Settings picked for that side, and nothing changes until one
+  // is tapped. The slide stops at the buttons, so a full swipe never acts; a
+  // mostly vertical drag scrolls as before. Mouse and keyboard keep the card's
+  // own buttons, which the revealed ones press, so Clear keeps its Undo.
+  const words = s => (s || '').split(' ').filter(Boolean);
+  const sides = { start: words(shell.dataset.swipeStart), end: words(shell.dataset.swipeEnd) };
+  const swipeFor = { clear: ['[data-act=dismiss]', 'Clear'], ack: ['[data-act=ack]', 'Ack'], snooze: ['[data-snooze-main]', 'Snooze'] }; // no Resolve control here, so it is skipped
+  let opened = null, drag = null; // the card showing its buttons; the touch moving a card
+  const slide = (card, x) => { // x > 0 slides toward the start of the line
+    const rtl = getComputedStyle(card).direction === 'rtl';
+    for (const c of card.children) if (c !== card.tray) c.style.transform = x ? `translateX(${rtl ? x : -x}px)` : '';
+    card.x = x;
+    if (card.tray) card.tray.style.width = `${Math.abs(x)}px`;
+  };
+  const shut = card => {
+    if (!card) return;
+    slide(card, 0);
+    card.tray?.remove();
+    card.tray = null;
+    if (opened === card) opened = null;
+  };
+  // The buttons for one side, the first nearest the edge; null when none fit this card.
+  const tray = (card, side) => {
+    const bs = sides[side].map(a => [a, swipeFor[a] && (a !== 'snooze' || shell.dataset.view === 'inbox') && card.querySelector(swipeFor[a][0])])
+      .filter(([, t]) => t).map(([a, t]) => {
+        const b = document.createElement('button');
+        Object.assign(b, { type: 'button', className: 'btn shrink-0', textContent: swipeFor[a][1] });
+        b.dataset.variant = a === 'clear' ? 'clear' : 'outline';
+        b.addEventListener('click', () => { shut(card); t.click(); });
+        return b;
+      });
+    if (!bs.length) return null;
+    if (side === 'start') bs.reverse(); // that tray sits at the end of the line
+    const t = document.createElement('div');
+    t.dataset.swipeTray = side;
+    Object.assign(t.style, { position: 'absolute', insetBlock: '0', [side === 'start' ? 'insetInlineEnd' : 'insetInlineStart']: '0', display: 'flex', alignItems: 'center',
+      justifyContent: side === 'start' ? 'flex-end' : 'flex-start', gap: '0.5rem', paddingInline: '0.75rem', overflow: 'hidden', width: 'max-content' });
+    t.append(...bs);
+    card.style.position = 'relative';
+    card.prepend(t);
+    card.tray = t;
+    card.trayW = t.offsetWidth;
+    return t;
+  };
+  if (list && (sides.start.length || sides.end.length)) list.style.touchAction = 'pan-y pinch-zoom';
+  document.addEventListener('pointerdown', e => {
+    if (drag?.on) return; // a second finger leaves the first one's swipe alone
+    const card = e.pointerType === 'touch' && list?.contains(e.target) && e.target.closest('article[data-id]');
+    if (opened && opened !== card) shut(opened); // a touch or click anywhere else closes it
+    drag = card && !e.target.closest('input, textarea, select, [data-swipe-tray]') ? { card, id: e.pointerId, x: e.clientX, y: e.clientY, from: card.x || 0, on: false } : null;
+  });
+  document.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { card } = drag;
+    const rtl = getComputedStyle(card).direction === 'rtl';
+    const dx = (e.clientX - drag.x) * (rtl ? 1 : -1), dy = e.clientY - drag.y; // dx > 0: toward the start
+    if (!drag.on) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (!(card.tray || tray(card, dx > 0 ? 'start' : 'end'))) { drag = null; return; } // nothing on that side (touch-action hands a vertical drag to the scroll, which cancels the pointer)
+      drag.on = true;
+      clearTimeout(hold); down = null; // not a long press on Snooze
+      card.setPointerCapture(e.pointerId);
+    }
+    const w = card.trayW, x = drag.from + dx;
+    slide(card, card.tray.dataset.swipeTray === 'start' ? Math.min(Math.max(x, 0), w) : Math.max(Math.min(x, 0), -w));
+  });
+  const release = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { card, on, from } = drag;
+    drag = null;
+    if (!on) return;
+    if (e.type === 'pointercancel') from ? slide(card, from) : shut(card); // the browser took the gesture: back to how it was
+    else if (Math.abs(card.x) > card.trayW / 2) { slide(card, Math.sign(card.x) * card.trayW); opened = card; } else shut(card);
+  };
+  document.addEventListener('pointerup', release);
+  document.addEventListener('pointercancel', release);
+
   // Settings: snooze times. "2d" is sent as "48h", the form the server reads.
   const snz = $('[data-snooze-settings]');
   const snzTyped = () => snz.times.value.split(',').map(v => v.trim()).filter(Boolean);
@@ -469,7 +547,29 @@
   const keep = $('[data-keep-settings]');
   const sil = $('[data-silence-form]');
   const tkeep = $('[data-topic-keep]');
-  const lock = on => [snz, disp, keep, sil, tkeep].forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
+  const swp = $('[data-swipe-settings]');
+  const forms = [snz, disp, keep, sil, tkeep, swp];
+  const lock = on => forms.forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
+  // Settings: swipe buttons (#161), three places per side. A sign-in that may
+  // not change settings gets 403, and the form then stays read-only.
+  swp?.querySelectorAll('[data-side]').forEach(d => d.replaceChildren(...[0, 1, 2].map(i => {
+    const s = document.createElement('select');
+    Object.assign(s, { className: 'input min-w-0 flex-1', name: d.dataset.side });
+    s.setAttribute('aria-label', `${d.parentElement.firstChild.textContent}, button ${i + 1}`);
+    s.append(...[['', 'None'], ['clear', 'Clear'], ['snooze', 'Snooze'], ['ack', 'Ack'], ['resolve', 'Resolve']].map(([v, t]) => new Option(t, v, false, (sides[d.dataset.side][i] || '') === v)));
+    return s;
+  })));
+  swp && swp.addEventListener('submit', async e => {
+    e.preventDefault();
+    const pick = side => [...swp.querySelectorAll(`select[name=${side}]`)].map(s => s.value).filter(Boolean);
+    const status = $('[data-swipe-status]');
+    lock(true);
+    const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ swipe_start: pick('start'), swipe_end: pick('end') }) }).catch(() => null);
+    if (r && r.ok) return location.reload();
+    if (r && r.status === 403) forms.pop(); // swp is last: lock(false) leaves it disabled
+    lock(false);
+    status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  });
   snz && snz.addEventListener('submit', async e => {
     e.preventDefault();
     const times = snzTyped().map(snzValue);
@@ -984,6 +1084,7 @@
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
         else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) reset(); // a stale form would save the old period back
         else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
+        else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) reset(); // the buttons and the form would be stale
       }
       else if (m.notification) {
         // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
