@@ -357,6 +357,32 @@ type Query struct {
 	Topic   string   // empty = all topics
 	Q       string   // free-text search, empty = none
 	Devices bool     // fill Log (the Settings page)
+	Senders bool     // fill Senders (the Senders page, #119)
+	Sender  string   // fill Sender with this one, or ErrNotFound
+}
+
+// Sender is one service or device that publishes (#119), as GET
+// /api/v1/senders returns it (docs/SPEC.md section 5.1). Read only for now.
+type Sender struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Kind      string         `json:"kind"`
+	Template  string         `json:"template"`
+	UserAgent string         `json:"user_agent"`
+	Address   string         `json:"address"`
+	FirstSeen time.Time      `json:"first_seen"`
+	LastSeen  time.Time      `json:"last_seen"`
+	Count     int            `json:"count"`
+	Topics    map[string]int `json:"topics"`
+	Recent    []Notification `json:"recent"`
+}
+
+// KindLabel names the kind for people.
+func (s Sender) KindLabel() string {
+	if l, ok := map[string]string{"person": "Person", "ntfy_user": "ntfy user", "gotify_app": "Gotify app", "pushover_app": "Pushover app", "anonymous": "Anonymous"}[s.Kind]; ok {
+		return l
+	}
+	return "Token"
 }
 
 // Snapshot is everything one inbox page needs. Seq must be read before (or in
@@ -394,6 +420,9 @@ type Snapshot struct {
 	CanTemplates                                 bool            // the token may publish, so it may save templates
 	CanInvite                                    bool            // the token may make an agent invite (#456): a person's session or a full admin
 	BuiltinTemplates                             []string        // names of the built-in webhook templates
+	CanSenders                                   bool            // a full admin: the Senders page is theirs (#119)
+	Senders                                      []Sender        // the Senders page only
+	Sender                                       *Sender         // a sender's own page only
 }
 
 // Template is a saved webhook template on one topic
@@ -557,6 +586,9 @@ type API interface {
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
+
+// ErrNotFound: Query.Sender names no sender.
+var ErrNotFound = errors.New("web: not found")
 
 // Views of the inbox and the states each one shows.
 var views = map[string][]string{
@@ -958,8 +990,13 @@ func Handler(api API, baseURL string) http.Handler {
 			if states == nil { // settings: no list, the rest of the snapshot still counts
 				states = []string{}
 			}
-			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings"}
+			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings",
+				Senders: view == "senders", Sender: r.PathValue("id")}
 			snap, err := api.Snapshot(r, q)
+			status := 200
+			if errors.Is(err, ErrNotFound) {
+				status, err = http.StatusNotFound, nil
+			}
 			if errors.Is(err, ErrUnauthorized) {
 				next := *r.URL // keep the filters, drop a stale ?auth= that would beat the new cookie
 				v := next.Query()
@@ -987,13 +1024,19 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 			w.Header().Set("Cache-Control", "no-store")
 			c := snap.Counts
-			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings"}
+			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender"}
+			if snap.Sender != nil {
+				titles["sender"] = snap.Sender.Name
+			}
+			if (view == "senders" || view == "sender") && !snap.CanSenders {
+				status = http.StatusForbidden
+			}
 			// A new tip on each visit; the send-a-test tip while nothing has ever arrived.
 			ts, tip := tips(base(r), q.Topic, snap.Topics), 0
 			if c["active"]+c["acknowledged"]+c["snoozed"]+c["dismissed"]+c["resolved"] > 0 {
 				tip = rand.IntN(len(ts))
 			}
-			page(w, "app", 200, struct {
+			page(w, "app", status, struct {
 				meta
 				View, Heading, Topic, Q, Here string
 				Snap                          Snapshot
@@ -1014,6 +1057,8 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/snoozed", app("snoozed"))
 	mux.HandleFunc("GET /app/cleared", app("cleared"))
 	mux.HandleFunc("GET /app/settings", app("settings"))
+	mux.HandleFunc("GET /app/senders", app("senders"))
+	mux.HandleFunc("GET /app/senders/{id}", app("sender"))
 	// The style guide: every component in every state, no data, no sign-in.
 	mux.HandleFunc("GET /app/ui", func(w http.ResponseWriter, r *http.Request) {
 		page(w, "ui", 200, meta{Title: "Components: clrd", Path: "/app/ui", Base: base(r)})

@@ -1521,6 +1521,38 @@ try {
     console.log('ok: the format check groups by sender, dismisses, leaves a topic out and undoes in Settings');
   }
 
+  // Senders (#119): an admin sees who sent what, on a page that works without
+  // JavaScript, and opens one sender; anyone else gets 403 and no nav link.
+  {
+    const bot = execFileSync(bin, ['token', 'create', '--name', 'sens-bot', '--scope', 'publish'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    await api(bot, '/api/v1/notifications', { topic: 'sens-a', title: 'Pump 3 stopped', message: 'x' });
+    await api(bot, '/api/v1/notifications', { topic: 'sens-b', title: 'Tank low', message: 'y' });
+    const ctx = await browser.newContext({ javaScriptEnabled: false });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'sens-web' } })).ok(), 'senders sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app');
+    await sp.getByRole('link', { name: 'Senders', exact: true }).click();
+    const row = sp.locator('tr[data-sender]', { hasText: 'sens-bot' });
+    await row.waitFor();
+    assert.match(await row.innerText(), /sens-a \(1\)\s+sens-b \(1\)\s+2/, 'the row lists both topics and the count');
+    await row.getByRole('link', { name: 'sens-bot' }).click();
+    await sp.getByRole('heading', { name: /sens-bot/ }).waitFor();
+    assert.equal(await sp.locator('tr[data-recent]').count(), 2, 'the detail lists both notifications');
+    await sp.locator('tr[data-recent]', { hasText: 'Pump 3 stopped' }).waitFor();
+    assert.equal((await sp.goto(base + '/app/senders/nope')).status(), 404, 'an unknown sender');
+    const rctx = await browser.newContext();
+    const reader = execFileSync(bin, ['token', 'create', '--name', 'sens-ro', '--scope', 'read'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: reader, name: 'sens-ro' } })).ok(), 'reader sign-in');
+    const rp = await rctx.newPage();
+    assert.equal((await rp.goto(base + '/app/senders')).status(), 403, 'a non-admin on Senders');
+    assert.ok(!(await rp.content()).includes('sens-bot'), 'a non-admin sees a sender');
+    await rp.goto(base + '/app');
+    assert.equal(await rp.getByRole('link', { name: 'Senders', exact: true }).count(), 0, 'a non-admin got the Senders link');
+    await rctx.close();
+    await ctx.close();
+    console.log('ok: Senders lists who sent what without JavaScript, opens one sender, 404s an unknown one and 403s a non-admin');
+  }
+
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
   // scripts send every request inside it, and a setting saved from the page
   // reaches the server.
