@@ -165,7 +165,10 @@ class TrayRaceTest {
         bg { store.apply(listOf(a.copy(seq = 4)), 4, again = true) }
         assertTrue(once("a"))
         assertEquals(6L, bg { dao.get("a")!!.seq })
-        bg { store.apply(listOf(a.copy(seq = 7)), 7, again = true) } // a repeat sent after the Undo still rings
+        bg { store.apply(listOf(a.copy(seq = 8, marks = "[{\"mark\":\"seen\"}]")), 0, quiet = true) } // a mark after the Undo
+        bg { store.apply(listOf(a.copy(seq = 3)), 3, again = true) } // still sent before the Clear
+        assertTrue(once("a"))
+        bg { store.apply(listOf(a.copy(seq = 9)), 9, again = true) } // a repeat sent after the Undo still rings
         assertTrue(!once("a"))
     }
 

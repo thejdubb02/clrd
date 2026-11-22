@@ -283,6 +283,7 @@ class SyncClientTest {
         start()
         await { store.queue.isEmpty() && SyncClient.Status.CONNECTED in statuses }
         assertEquals(listOf("/api/v1/notifications/a/dismiss", "/api/v1/notifications/gone/ack"), posts)
+        assertEquals(listOf("a"), store.applies.zip(store.answers).filter { it.second }.flatMap { p -> p.first.map { it.id } }) // the taken Clear (#550)
     }
 
     @Test fun aRefusedActionTakesTheServersRow() {
@@ -306,6 +307,7 @@ class SyncClientTest {
         assertEquals(listOf("approve_denied"), store.outcomes)
         assertEquals("active", store.rows["denied"]!!.state)
         assertEquals(listOf(true), store.quiet)
+        assertEquals(listOf(false), store.answers) // refused: the row is not this phone's change (#550)
     }
 
     @Test fun aRefusedTypedAnswerSaysWhyQuietly() { // #153: a 400 is about the text, so it says so and never rings
@@ -349,6 +351,7 @@ class SyncClientTest {
         assertEquals(listOf("confirm"), store.outcomes)
         assertEquals("active", store.rows["asked"]!!.state)
         assertEquals("active", store.rows["prompt"]!!.state)
+        assertEquals(listOf(false, false), store.answers) // the question did not change, so a repeat behind it may still ring (#550)
         assertEquals(listOf("/api/v1/notifications/asked"), gets)
     }
 
@@ -601,11 +604,13 @@ class SyncClientTest {
 
         override fun lastSeq() = seq
         val again = CopyOnWriteArrayList<Boolean>()
+        val answers = CopyOnWriteArrayList<Boolean>()
         @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) {
             if (failOnce) { failOnce = false; throw IllegalStateException("disk full") }
             applies += notifs
             this.quiet += quiet
             this.again += again
+            answers += answer
             for (n in notifs) if (n.seq >= (rows[n.id]?.seq ?: 0)) rows[n.id] = n
             this.seq = maxOf(this.seq, seq)
         }

@@ -336,6 +336,7 @@ private fun sendOne(store: Store, api: Api, p: Pending) {
                 // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
                 store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
                 if (told.add(p.key)) store.replyOutcome(p, "confirm")
+                changed = false // the question waits for the confirm, so the row fetched below is not our change
                 try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
             }
         }

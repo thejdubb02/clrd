@@ -369,12 +369,12 @@ class RoomStore(private val app: App) : Store {
     override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
         val saved = dao.applyAll(notifs, seq)
-        if (answer) saved.forEach { app.ownAnswers[it.id] = it.seq }
+        if (answer) saved.forEach { app.ownAnswers.merge(it.id, it.seq, ::maxOf) }
         // #500: a live repeat Room dropped (our own mark's answer got in first) still rings the newer row, if that one shows unacked.
         // Only when the newer row differs by marks alone (#504): after a Clear and Undo it is a new state, and an Undo stays quiet.
-        // And never when the newer row is this phone's own state change: when it made every change the rows can match (#550).
-        val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } }.mapNotNull { n ->
-            dao.get(n.id)?.takeIf { app.ownAnswers[it.id] != it.seq && it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt, silenced = n.silenced) == n }
+        // And never when the repeat is older than this phone's own state change: when it made every change the rows can match (#550).
+        val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } && n.seq >= (app.ownAnswers[n.id] ?: 0) }.mapNotNull { n ->
+            dao.get(n.id)?.takeIf { it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt, silenced = n.silenced) == n }
         }
         val muted = app.muted
         val waiting = waiting()
