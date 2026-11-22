@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -34,6 +35,9 @@ func checkApprove(v string) error {
 func approveOf(ctx context.Context, q querier, id string) (string, error) {
 	var v string
 	err := q.QueryRowContext(ctx, `SELECT approve FROM tokens WHERE id = ?`, id).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) { // revoked since it signed in (#349)
+		err = errf(401, "unauthorized", "token revoked")
+	}
 	return v, err
 }
 
