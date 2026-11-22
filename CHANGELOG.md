@@ -130,6 +130,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: a late repeat no longer rings a notification again after Clear
+  and Undo when this phone also sent it, cleared it and undid it (#550).
 - Android: text typed in a reply box is kept as a draft when the box closes
   without Send or Cancel (the question was edited, back was pressed, or the
   phone turned),

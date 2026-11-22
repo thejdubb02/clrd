@@ -601,7 +601,7 @@ class SyncClientTest {
 
         override fun lastSeq() = seq
         val again = CopyOnWriteArrayList<Boolean>()
-        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean) {
+        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) {
             if (failOnce) { failOnce = false; throw IllegalStateException("disk full") }
             applies += notifs
             this.quiet += quiet
