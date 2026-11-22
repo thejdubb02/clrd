@@ -387,7 +387,41 @@ try {
   assert.ok(await sendBox.getByLabel('Title').isVisible(), 'a finished send closed the new note');
   await sendPage.keyboard.press('Escape');
   await sendPage.close();
+  assert.deepEqual(sent[0].devices, [], 'a send with nothing ticked was aimed at chosen devices');
   console.log('ok: send a notification from the inbox');
+
+  // Alert only these devices (#82): off by default, sends the ticked ids, clears
+  // after a send, and a device the server refuses is named, not shown as an id.
+  {
+    const pumps = execFileSync(bin, ['token', 'create', '--name', 'pumps-only', '--scope', 'read', '--topics', 'pumps'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const all = (await (await fetch(`${base}/api/v1/devices?all=1`, { headers: { Authorization: `Bearer ${laptop}` } })).json()).devices;
+    const idOf = n => all.find(d => d.name === n).id;
+    const dp = await page.context().newPage();
+    await dp.goto(`${base}/app`);
+    const box = dp.getByRole('dialog', { name: 'Send a notification' });
+    await dp.getByRole('button', { name: 'Send', exact: true }).click();
+    assert.ok(!(await box.getByLabel('pumps-only').isVisible()), 'the device picker starts open');
+    await box.locator('summary', { hasText: 'Alert only these devices' }).click();
+    assert.equal(await box.locator('[name=devices]:checked').count(), 0, 'a device is ticked by default');
+    await box.getByLabel('Topic').fill('notes');
+    await box.getByLabel('Message').fill('only the phone');
+    await box.getByLabel('pixel-9').check();
+    await box.getByLabel('pumps-only').check();
+    await box.getByRole('button', { name: 'Send' }).click();
+    const refused = box.locator('[data-send-status]').filter({ hasText: '"pumps-only" is not a device that may read' });
+    await refused.waitFor();
+    assert.ok(!(await refused.textContent()).includes(idOf('pumps-only')), 'the refusal shows an id, not the name');
+    await box.getByLabel('pumps-only').uncheck();
+    await box.getByRole('button', { name: 'Send' }).click();
+    await box.getByLabel('Message').waitFor({ state: 'hidden' });
+    const got = (await (await fetch(`${base}/api/v1/notifications?topic=notes`, { headers: { Authorization: `Bearer ${phone}` } })).json()).notifications.find(n => n.message === 'only the phone');
+    assert.deepEqual(got.devices, [idOf('pixel-9')], 'the ticked device was not the target');
+    await dp.getByRole('button', { name: 'Send', exact: true }).click();
+    assert.equal(await box.locator('[name=devices]:checked').count(), 0, 'a ticked device carried over to the next send');
+    await dp.close();
+    assert.ok(pumps, 'pumps-only token');
+    console.log('ok: a send from the inbox can alert only chosen devices');
+  }
 
   // A reply button stores the answer for whoever waits on it; the card then shows it.
   const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Merge 212?', message: 'tests pass', actions: [{ label: 'Yes', reply: 'yes' }, { label: 'No', reply: 'no' }] });

@@ -114,6 +114,12 @@
         <textarea id="send-message" class="textarea" name="message" rows="3" required></textarea></div>
       <div class="grid gap-1.5"><label class="label" for="send-priority">Priority</label>
         <select id="send-priority" class="input" name="priority"><option value="1">Min</option><option value="2">Low</option><option value="3" selected>Default</option><option value="4">High</option><option value="5">Urgent</option></select></div>
+      {{with .Snap.Linked}}<details class="text-sm" data-send-devices>
+        <summary class="cursor-pointer font-medium">Alert only these devices <span class="text-muted-foreground font-normal">(optional)</span></summary>
+        <fieldset class="mt-2 grid max-h-48 gap-2 overflow-y-auto"><legend class="sr-only">Alert only these devices</legend>
+          {{range .}}<label class="label font-normal"><input type="checkbox" class="input" name="devices" value="{{.ID}}" data-name="{{.Name}}"> {{.Name}} <span class="meta">{{.Kind}}</span></label>{{end}}
+          <p class="meta">None ticked alerts every device. The others still get it, without sound.</p></fieldset>
+      </details>{{end}}
       <p class="text-destructive text-sm" role="status" data-send-status></p>
     </section>
     <footer><button type="button" class="btn" data-variant="outline" data-send-close>Cancel</button><button class="btn">{{template "i-send"}}Send</button></footer>
