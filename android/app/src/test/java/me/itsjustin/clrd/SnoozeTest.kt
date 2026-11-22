@@ -14,6 +14,16 @@ class SnoozeTest {
         assertEquals("1.5h", snoozeLabel("1.5h")) // anything else as typed
     }
 
+    @Test fun readsEveryDurationTheServerDoes() { // #508
+        assertEquals(5_400_000L, goMillis("1.5h"))
+        assertEquals(500L, goMillis("500ms"))
+        assertEquals(5_400_000L, goMillis("1h30m"))
+        assertEquals(172_800_000L, goMillis("2d"))
+        assertNull(goMillis("1x"))
+        assertNull(goMillis("h"))
+        assertNull(goMillis(""))
+    }
+
     @Test fun typedTimesSendDaysAsHours() {
         assertEquals(listOf("15m", "48h", "4h"), Snooze.parse(" 15m, 2d,,4h "))
         assertEquals(listOf("99999999999999999999d"), Snooze.parse("99999999999999999999d")) // too big: left for the server to refuse

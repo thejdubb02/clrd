@@ -119,6 +119,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: snooze and Undo (#508). A snooze tapped offline now ends at the
+  time the phone showed, not an hour after it reconnects, so Snooze, Clear,
+  Undo while offline lands the same on every device. Undo of a Clear no longer sends a second snooze that could
+  overwrite an acknowledgment from another device. Any snooze time the server
+  takes, such as `1.5h` or `500ms`, now shows its end at once.
 - Android: typed answers (#516). A reply box left open while an earlier
   answer is refused because the question changed now closes, keeping its
   text for the next box. When the server refuses a typed answer, the tray

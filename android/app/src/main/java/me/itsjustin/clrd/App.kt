@@ -260,8 +260,7 @@ class App : Application() {
         if (rest.isNotEmpty()) act(rest.map { it.id }, "reopen")
         snoozed.forEach {
             val body = JSONObject().put("until", java.time.Instant.ofEpochMilli(it.snoozeUntil!!).toString()).toString()
-            act(it.id, "reopen", body) // #473: one change, never active in between
-            act(it.id, "snooze", body) // a server older than #473 only reopens; this snoozes it there
+            act(it.id, "reopen", body) // #473: one change, never active in between. No follow-up snooze (#508): it could undo another device's ack
         }
     }
 
@@ -275,11 +274,13 @@ class App : Application() {
 
     private fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
         val json = JSONObject(rawBody)
+        val until = if (action == "snooze" || action == "reopen") snoozeEnd(json) else null
+        // #508: a snooze is sent as the time shown here, so one sent late (offline) ends when this phone and its Undo say
+        if (action == "snooze" && until != null) json.remove("for")?.let { json.put("until", java.time.Instant.ofEpochMilli(until).toString()) }
         val body = json.put("via", via).toString()
         val gen = configGen // read now, not when the save runs
         acts.execute {
             try {
-                val until = if (action == "snooze" || action == "reopen") snoozeEnd(json) else null
                 val local = when (action) {
                     "dismiss" -> Notif.DISMISSED
                     "snooze" -> Notif.SNOOZED
