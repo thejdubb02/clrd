@@ -299,6 +299,9 @@ func TestSenderQuiet(t *testing.T) {
 	if a := alarms("up"); len(a) != 0 {
 		t.Fatalf("alarm right after setting expect: %v", a)
 	}
+	if _, err := s.db.Exec(`UPDATE senders SET last_topic = '' WHERE id = ?`, id); err != nil { // as if last heard before the upgrade
+		t.Fatal(err)
+	}
 	quiet()
 	sweep()
 	a := alarms("up")

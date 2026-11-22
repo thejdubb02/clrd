@@ -46,7 +46,7 @@ type Sender struct {
 	Count     int             `json:"count"`
 	Topics    map[string]int  `json:"topics"`
 	Rules     SenderRules     `json:"rules"`
-	Alarm     string          `json:"alarm,omitempty"` // the topic of its open quiet alarm
+	Alarm     string          `json:"alarm,omitempty"` // the topic of its quiet alarm, until it publishes
 	Recent    []*Notification `json:"recent,omitempty"`
 	recent    []string
 }
@@ -139,7 +139,9 @@ func endQuiet(ctx context.Context, tx *sql.Tx, key string) ([]Event, error) {
 // message at least every so often and that has gone quiet that long. Its
 // next publish, kept or dropped, resolves it.
 func (s *Server) quietSenders(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT s.id, COALESCE(t.name, 'anonymous'), s.rules, s.last_topic, MAX(s.last_seen, s.alarm_from)
+	// A sender last heard before last_topic existed falls back to its busiest topic.
+	rows, err := s.db.QueryContext(ctx, `SELECT s.id, COALESCE(t.name, 'anonymous'), s.rules,
+		  COALESCE(NULLIF(s.last_topic, ''), (SELECT key FROM json_each(s.topics) ORDER BY value DESC LIMIT 1), ''), MAX(s.last_seen, s.alarm_from)
 		FROM senders s LEFT JOIN tokens t ON t.id = s.token_id WHERE s.alarm_topic = '' AND s.rules LIKE '%"expect"%'`)
 	if err != nil {
 		return err
@@ -173,7 +175,7 @@ func (s *Server) quietSenders(ctx context.Context) error {
 	}
 	for _, in := range due {
 		if _, err := s.Publish(ctx, serverToken, in); err != nil && !errors.Is(err, errOnTime) {
-			return err
+			s.log.Warn("quiet sender alarm", "sender", in.quiet, "topic", in.Topic, "err", err) // the rest still get theirs
 		}
 	}
 	return nil

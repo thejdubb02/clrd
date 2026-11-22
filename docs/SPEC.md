@@ -859,17 +859,20 @@ hidden.
 
 The silence alarm: `expect` (a duration, 1m to 8784h, like `"25h"`; `""`
 for off) makes the server watch the sender. When it has sent nothing,
-counted or dropped, for that long, the server publishes an urgent
+stored or dropped by its rules, for that long, the server publishes an urgent
 notification (priority 5, title "<name> went quiet") with external_id
 `clrd-quiet-{id}`, in `alert_topic` if set, else in the first topic its last
 publish routes to, else in that topic itself. A sender that has never
-published and has no `alert_topic` raises nothing. The sender shows the
-open alarm's topic as `alarm`. Its next publish resolves the alarm (reason
-`quiet`), and so does a change to `expect` or `alert_topic`, which also
-starts the wait over. One alarm at a time: the next can only come a full
-`expect` after the last publish or change. Publishers cannot use an
-external_id starting `clrd-quiet-` (400). Like the topic check-in, the alarm
-counts as a message in its topic, so it resets that topic's own check-in.
+published and has no `alert_topic` raises nothing. A live publish (`Cache:
+no`) and a `status: resolved` publish are not counted (as for `count`), so
+they do not keep the alarm away. The sender shows the alarm's topic as
+`alarm` until its next publish resolves it (reason `quiet`); a change to
+`expect` or `alert_topic` resolves it too and starts the wait over. One
+alarm at a time: clearing it by hand raises no new one until the sender
+publishes or the rule changes, and the next can only come a full `expect`
+after that. Publishers cannot create a notification with an external_id
+starting `clrd-quiet-` (400). The alarm counts as a message in its topic, so
+it resets that topic's own check-in.
 
 ### ntfy compatibility (must pass ntfy's own client behaviour)
 

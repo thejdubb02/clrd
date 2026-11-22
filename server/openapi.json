@@ -5863,7 +5863,7 @@
      },
      "alarm": {
       "type": "string",
-      "description": "The topic of the sender's open quiet alarm; absent when none is open."
+      "description": "The topic of the sender's last quiet alarm, until its next publish or a change to expect or alert_topic; absent when there is none."
      },
      "recent": {
       "type": "array",
