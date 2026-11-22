@@ -46,6 +46,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
@@ -57,6 +58,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -352,6 +354,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
     var unfolded by rememberSaveable { mutableStateOf(setOf<String>()) } // stacks opened in the list
+    var sending by rememberSaveable { mutableStateOf(false) } // the Send box (#150)
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val dao = app.db.dao()
@@ -382,6 +385,11 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     Scaffold(
         containerColor = b.paper,
         snackbarHost = { SnackbarHost(snackbar) },
+        floatingActionButton = {
+            if (tab == Tab.Inbox && app.configured) FloatingActionButton(onClick = { sending = true }, containerColor = b.ink, contentColor = b.paper) {
+                Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.send_title))
+            }
+        },
         bottomBar = {
             NavigationBar(containerColor = b.paper, tonalElevation = 0.dp) {
                 Tab.entries.forEach { t ->
@@ -399,6 +407,10 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(app)
+            if (sending) SendBox(app, topic.orEmpty(), close = { sending = false }) {
+                sending = false
+                scope.launch { snackbar.showSnackbar(ctx.getString(R.string.send_done)) }
+            }
             when (tab) {
                 Tab.Settings -> SettingsScreen(app, battery, resumes, scan)
                 else -> {
@@ -413,7 +425,8 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                     // Stack by topic also folds the list here, as on the web; not when one topic is picked (#231).
                     val entries = if (app.stack && picked == null) stacked(shown, unfolded) else shown.map(::One)
                     if (shown.isEmpty()) Empty(tab) else LazyColumn(
-                        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 16.dp),
+                        // Room under the last card for the Send button on the inbox.
+                        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, if (tab == Tab.Inbox) 88.dp else 16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(entries, key = { it.key }) { e ->
@@ -989,6 +1002,64 @@ private fun DeviceSettings(app: App, resumes: Int) {
             dismissButton = { TextButton(onClick = { unlink = null }) { Text(stringResource(R.string.link_cancel)) } },
         )
     }
+}
+
+/** The body of POST /api/v1/notifications from the Send box (#150), or null without a topic or without both title and message. */
+internal fun sendBody(topic: String, title: String, message: String, priority: Int): org.json.JSONObject? {
+    if (topic.isBlank() || (message.isBlank() && title.isBlank())) return null // the server needs only a topic; a blank one says nothing
+    return org.json.JSONObject().put("topic", topic.trim()).put("message", message.trim()).put("priority", priority)
+        .apply { if (title.isNotBlank()) put("title", title.trim()) }
+}
+
+/**
+ * Send a notification from this phone with its own token (#150), like the web inbox's Send box:
+ * topic, title, message, priority. An error keeps the box open with the server's reason.
+ */
+@Composable
+private fun SendBox(app: App, topic0: String, close: () -> Unit, sent: () -> Unit) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    var topic by rememberSaveable { mutableStateOf(topic0) }
+    var title by rememberSaveable { mutableStateOf("") }
+    var message by rememberSaveable { mutableStateOf("") }
+    var priority by rememberSaveable { mutableStateOf(3) }
+    var busy by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    val body = sendBody(topic, title, message, priority)
+    AlertDialog(
+        onDismissRequest = { if (!busy) close() },
+        title = { Text(stringResource(R.string.send_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.send_hint), color = b.slate, fontSize = 13.sp)
+                OutlinedTextField(topic, { topic = it }, label = { Text(stringResource(R.string.send_topic)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.send_title_field)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(message, { message = it }, label = { Text(stringResource(R.string.send_message)) }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                Text(stringResource(R.string.send_priority), color = b.slate, fontSize = 13.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(R.string.send_p1, R.string.send_p2, R.string.send_p3, R.string.send_p4, R.string.send_p5).forEachIndexed { i, label ->
+                        FilterChip(selected = priority == i + 1, onClick = { priority = i + 1 }, label = { Text(stringResource(label)) })
+                    }
+                }
+                err?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = body != null && !busy, onClick = { // one tap, one notification
+                if (busy) return@TextButton // a second tap before the redraw
+                busy = true
+                err = null
+                val api = app.api()
+                app.io.execute {
+                    runCatching { api.post("/api/v1/notifications", body.toString()) }
+                        .onSuccess { android.os.Handler(android.os.Looper.getMainLooper()).post(sent) }
+                        .onFailure { err = ctx.getString(R.string.send_failed, (it as? HttpError)?.message?.substringAfter(": ")?.ifBlank { it.message } ?: it.message) }
+                    busy = false
+                }
+            }) { Text(stringResource(R.string.send)) }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = close) { Text(stringResource(R.string.link_cancel)) } },
+    )
 }
 
 /** The topics typed in the Add agent form, split on commas and spaces. */

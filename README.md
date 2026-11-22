@@ -94,7 +94,8 @@ offline catches up the moment it reconnects.
   showing which are connected, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, notifications stacked by
-  topic if you turn it on (off by default), Share and Copy, Markdown formatting and tappable links. A choice of
+  topic if you turn it on (off by default), Share and Copy, Markdown formatting and tappable links, a Send
+  button for a quick note to your other devices. A choice of
   six built-in notification sounds (or the phone's default, or none), kept
   on the server so an agent can set it. Trusts
   certificate authorities you install, for a server on a home-lab CA.
