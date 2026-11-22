@@ -77,7 +77,8 @@ For Discord, use `{"content": {{json .notification.title}}}`. The output must
 be valid JSON of at most 16 KB. If it is not, nothing is sent and the
 delivery log shows why; fix the template and the waiting retries use it. The
 signature covers the body as sent. Leave `body` empty to send the event.
-The web inbox form has no body field yet; saving there keeps the saved one.
+The web inbox has a Body template field on each webhook under Settings >
+Webhooks; empty there sends the event too.
 
 Try a template before saving it. This sends nothing and returns what a
 delivery would POST as a string, exactly as sent, or the error it would log:

@@ -408,6 +408,7 @@ type Hook struct {
 	Name         string         `json:"name"`
 	URL          string         `json:"url"`
 	Events       []string       `json:"events"`
+	Body         string         `json:"body"` // a body template; "" sends the event (#239)
 	HasSecret    bool           `json:"has_secret"`
 	Enabled      bool           `json:"enabled"`
 	FailingSince *time.Time     `json:"failing_since"`
@@ -530,9 +531,11 @@ type API interface {
 	// when senderID is set), or with rule "" leaves the topic out; on false
 	// undoes it.
 	FormatIgnore(r *http.Request, topic, rule, senderID string, on bool) error
-	// SaveHook adds or replaces a webhook; an empty secret keeps the saved
-	// one unless clearSecret. DeleteHook removes it and its log.
-	SaveHook(r *http.Request, topic, name, url string, events []string, secret string, clearSecret bool) error
+	// SaveHook adds or replaces a webhook. A nil body keeps the saved body
+	// template, "" sends the event; an empty secret keeps the saved one unless
+	// clearSecret.
+	// DeleteHook removes it and its log.
+	SaveHook(r *http.Request, topic, name, url string, events []string, body *string, secret string, clearSecret bool) error
 	DeleteHook(r *http.Request, topic, name string) error
 	// SaveTemplate saves a webhook template (t.Topic, t.Name); an empty
 	// secret keeps the saved one unless clearSecret. DeleteTemplate removes it.
@@ -1133,7 +1136,12 @@ func Handler(api API, baseURL string) http.Handler {
 		if f.Get("delete") != "" {
 			err = api.DeleteHook(r, topic, name)
 		} else {
-			err = api.SaveHook(r, topic, name, strings.TrimSpace(f.Get("url")), f["events"], f.Get("secret"), f.Get("clear_secret") != "")
+			var body *string // a tab from before the field kept no body: keep the saved one
+			if _, ok := f["body"]; ok {
+				b := strings.TrimSpace(f.Get("body"))
+				body = &b
+			}
+			err = api.SaveHook(r, topic, name, strings.TrimSpace(f.Get("url")), f["events"], body, f.Get("secret"), f.Get("clear_secret") != "")
 		}
 		if err != nil && !errors.Is(err, ErrUnauthorized) {
 			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
