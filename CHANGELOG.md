@@ -11,6 +11,12 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Server: `CLRD_HOOK_ALLOW=off` lets the operator lock the webhook LAN allow
+  list (#498). It then stays empty whatever was saved, `PUT
+  /api/v1/hooks/allow` answers 403 `locked`, the MCP tool `set_hook_allow`
+  fails with the same message, and `GET` shows `"locked": true`. No token can undo it, so a
+  leaked admin token cannot point webhooks at services on the server's own
+  network. Unset by default: nothing changes.
 - Server: a page on clrd's own host now counts as clrd's own only when its
   scheme matches too, so an https page cannot act on a plain http endpoint
   (or the reverse) when clrd knows the request's scheme. Behind a proxy that

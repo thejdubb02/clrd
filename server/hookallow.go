@@ -22,6 +22,7 @@ import (
 type hookAllow struct {
 	Networks []string `json:"networks"`
 	Ports    []int    `json:"ports"`
+	Locked   bool     `json:"locked"` // CLRD_HOOK_ALLOW=off: empty, and PUT refuses
 	nets     []netip.Prefix
 }
 
@@ -141,6 +142,9 @@ func (s *Server) hookAllowRoutes() {
 	s.api("PUT /api/v1/hooks/allow", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		if err := tok.needFullAdmin(); err != nil {
 			return err
+		}
+		if s.hookAllow.Load() != nil && s.hookAllow.Load().Locked {
+			return errf(403, "locked", "the server operator locked the webhook allow list (CLRD_HOOK_ALLOW=off); it stays empty")
 		}
 		var in struct {
 			Networks *[]string `json:"networks"`

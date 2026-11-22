@@ -5532,6 +5532,11 @@
        "maximum": 65535
       },
       "description": "Ports besides 80 and 443."
+     },
+     "locked": {
+      "type": "boolean",
+      "readOnly": true,
+      "description": "True when the server operator set CLRD_HOOK_ALLOW=off: both lists stay empty and PUT answers 403 locked."
      }
     }
    },

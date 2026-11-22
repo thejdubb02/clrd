@@ -672,7 +672,7 @@ var tools = []map[string]any{
 			"event": map[string]any{"type": "object", "description": "A sync stream event to render against"}}, "topic", "body")},
 	{"name": "hook_allow", "description": "Which private networks and extra ports outgoing webhooks may reach. Empty by default: public addresses on ports 80 and 443 only. Needs an admin token.",
 		"inputSchema": schema(map[string]any{})},
-	{"name": "set_hook_allow", "description": "Let outgoing webhooks reach a receiver on a LAN or another port. A dial passes when the address is public or in a listed network, and the port is 80, 443 or listed. Both lists are required; empty lists turn it off. Needs an admin token.",
+	{"name": "set_hook_allow", "description": "Let outgoing webhooks reach a receiver on a LAN or another port. A dial passes when the address is public or in a listed network, and the port is 80, 443 or listed. Both lists are required; empty lists turn it off. Refused when the server operator set CLRD_HOOK_ALLOW=off. Needs an admin token.",
 		"inputSchema": schema(map[string]any{"networks": strs("CIDR ranges like 192.168.1.0/24, or single addresses"),
 			"ports": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Ports besides 80 and 443, like 8080"}}, "networks", "ports")},
 	{"name": "delete_hook", "description": "Delete an outgoing webhook. Needs an admin token.",

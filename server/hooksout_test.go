@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -224,6 +225,32 @@ func TestHooksOutGuard(t *testing.T) {
 	allow([]string{}, []int{})
 	if fire() != 1 {
 		t.Fatal("a pooled connection outlived the allow list")
+	}
+
+	// The operator lock (#498): a saved list is ignored, and no token changes it.
+	allow([]string{"127.0.0.1"}, []int{port})
+	s2, err := New(Options{DB: s.DBPath(), Logger: s.opt.Logger, LockHookAllow: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts2 := httptest.NewServer(s2)
+	defer func() { ts2.Close(); s2.Close() }()
+	_, n = call(t, ts2, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m"})
+	call(t, ts2, "POST", "/api/v1/notifications/"+n["id"].(string)+"/dismiss", admin, nil)
+	if err := s2.deliverHooks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(hits()) != 1 {
+		t.Fatal("a saved list opened the LAN while locked")
+	}
+	if _, a := call(t, ts2, "GET", "/api/v1/hooks/allow", admin, nil); a["locked"] != true || fmt.Sprint(a["networks"], a["ports"]) != "[] []" {
+		t.Fatalf("GET while locked: %v", a)
+	}
+	if code, a := call(t, ts2, "PUT", "/api/v1/hooks/allow", admin, map[string]any{"networks": []string{}, "ports": []int{}}); code != 403 || a["code"] != "locked" {
+		t.Fatalf("PUT while locked: %d %v", code, a)
+	}
+	if _, out := call(t, ts2, "GET", "/api/v1/server", admin, nil); out["env"].(map[string]any)["CLRD_HOOK_ALLOW"] != "off" {
+		t.Fatalf("server settings while locked: %v", out["env"])
 	}
 }
 

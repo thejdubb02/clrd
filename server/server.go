@@ -47,6 +47,10 @@ type Options struct {
 	// the inbox, /docs and /sitemap.xml are 404, and robots.txt disallows all.
 	HidePublicPages bool
 
+	// LockHookAllow (CLRD_HOOK_ALLOW=off) keeps the webhook allow list empty
+	// and read-only, whatever is saved, so no token can open the LAN (#498).
+	LockHookAllow bool
+
 	Attachments     string // CLRD_ATTACHMENTS, default "attachments" next to DB
 	AttachmentMax   int64  // CLRD_ATTACHMENT_MAX_MB, bytes, default 15 MB
 	AttachmentTotal int64  // CLRD_ATTACHMENT_TOTAL_MB, bytes, default 5000 MB
@@ -79,6 +83,13 @@ func ConfigFromEnv() (Options, error) {
 		o.HidePublicPages = true
 	default:
 		return o, fmt.Errorf("CLRD_PUBLIC_PAGES: want on or off, got %q", v)
+	}
+	switch v := os.Getenv("CLRD_HOOK_ALLOW"); v {
+	case "", "on":
+	case "off":
+		o.LockHookAllow = true
+	default:
+		return o, fmt.Errorf("CLRD_HOOK_ALLOW: want on or off, got %q", v)
 	}
 	for _, v := range []struct {
 		env string
@@ -323,6 +334,9 @@ func New(opt Options) (*Server, error) {
 	s.liveN = rand.Uint32() // so a restart at the same seq never reuses a live id
 	s.pruned.Store(pruned)
 	s.fetch = newFetcher(filepath.Join(filepath.Dir(opt.DB), "cache"))
+	if opt.LockHookAllow { // set before any read, so the saved list is never loaded
+		s.hookAllow.Store(&hookAllow{Networks: []string{}, Ports: []int{}, Locked: true})
+	}
 	s.hookHTTP.Store(s.newHookClient())
 	s.routesSetup()
 	return s, nil
@@ -356,9 +370,12 @@ func (s *Server) effectiveEnv() map[string]string {
 	for i, p := range o.TrustedProxies {
 		proxies[i] = p.String()
 	}
-	public := "on"
+	public, hookAllow := "on", "on"
 	if o.HidePublicPages {
 		public = "off"
+	}
+	if o.LockHookAllow {
+		hookAllow = "off"
 	}
 	rate := func(n int) string { return strconv.Itoa(max(n, 0)) } // -1 is off, set as 0
 	return map[string]string{
@@ -366,7 +383,7 @@ func (s *Server) effectiveEnv() map[string]string {
 		"CLRD_ATTACHMENTS": o.Attachments, "CLRD_ATTACHMENT_MAX_MB": strconv.FormatInt(o.AttachmentMax>>20, 10),
 		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
 		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
-		"CLRD_CONFIG": o.Config,
+		"CLRD_CONFIG": o.Config, "CLRD_HOOK_ALLOW": hookAllow,
 	}
 }
 
