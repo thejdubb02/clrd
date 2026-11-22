@@ -226,6 +226,8 @@ Fixed, Removed, Security), as one line a user can understand.
 - Server: try an outgoing webhook body template before saving it. The API
   and the MCP `preview_hook` tool return the JSON a delivery would send, or
   its error, and send nothing (#241).
+- Web: a Preview button under the webhook Body template field shows what a
+  delivery would send, or why it would fail, without saving or sending (#495).
 - Web: Settings > Webhooks has a Body template field, so a custom delivery
   body can be set, changed or cleared from the browser (#490).
 - Server: an outgoing webhook can have its own body template, so Slack,
