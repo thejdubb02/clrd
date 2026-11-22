@@ -869,7 +869,8 @@ published and has no `alert_topic` raises nothing. A live publish (`Cache:
 no`) and a `status: resolved` publish are not counted (as for `count`), so
 they do not keep the alarm away. The sender shows the alarm's topic as
 `alarm` until its next publish resolves it (reason `quiet`); a change to
-`expect` or `alert_topic` resolves it too and starts the wait over. One
+`expect` or `alert_topic` resolves it too and starts the wait over, and
+revoking the sender's token resolves it for good. One
 alarm at a time: clearing it by hand raises no new one until the sender
 publishes or the rule changes, and the next can only come a full `expect`
 after that. Publishers cannot create a notification with an external_id
