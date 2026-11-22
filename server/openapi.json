@@ -5189,14 +5189,11 @@
     "tags": [
      "auth"
     ],
-    "description": "No auth. Query c is the invite code. For an agent that can only fetch a URL: how to claim, its topics, publish, ask, wait and MCP addresses, and limits. Spends nothing and holds no token. 410 when expired, used or unknown.",
+    "description": "No auth. The invite link is /agent#<code>: the code after # is never sent, so this page is the same for every invite. For an agent that can only fetch a URL: how to claim with its code, publish, ask, wait and MCP addresses, and limits. Spends nothing and holds no token.",
     "security": [],
     "responses": {
      "200": {
       "description": "Plain text guide"
-     },
-     "410": {
-      "description": "Expired, used or unknown"
      }
     }
    }
@@ -5207,7 +5204,7 @@
     "tags": [
      "auth"
     ],
-    "description": "Body {\"name\", \"topics\": [...], \"expires_in\": \"15m\"} (1m to 1h, default 15m). From a browser or phone of a person, or a full admin token; an agent's own token or devices get 403. Each topic gets the read and publish the caller holds there; a topic the caller may not use is 403, and only a full admin may name a pattern. 201 {\"code\", \"invite\": \"clrd://agent?server=...&code=...\", \"url\": \"<server>/agent?c=<code>\", \"expires_at\", \"name\", \"grants\"}. Single use; 429 busy when too many wait; 409 when the name is taken.",
+    "description": "Body {\"name\", \"topics\": [...], \"expires_in\": \"15m\"} (1m to 1h, default 15m). From a browser or phone of a person, or a full admin token; an agent's own token or devices get 403. Each topic gets the read and publish the caller holds there; a topic the caller may not use is 403, and only a full admin may name a pattern. 201 {\"code\", \"invite\": \"clrd://agent?server=...&code=...\", \"url\": \"<server>/agent#<code>\", \"expires_at\", \"name\", \"grants\"}. Single use; 429 busy when too many wait; 409 when the name is taken.",
     "responses": {
      "201": {
       "description": "The invite"

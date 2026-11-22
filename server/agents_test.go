@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-func invitePage(t *testing.T, ts string, code string) (int, string) {
+func invitePage(t *testing.T, link string) (int, string) {
 	t.Helper()
-	res, err := http.Get(ts + "/agent?c=" + url.QueryEscape(code))
+	res, err := http.Get(link) // a client never sends the part after #
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestAgentInvite(t *testing.T) {
 	code, iv := call(t, ts, "POST", "/api/v1/agents/invite", person, ask)
 	ic, _ := iv["code"].(string)
 	if code != 201 || len(ic) != 22 || iv["invite"] != "clrd://agent?code="+ic+"&server="+url.QueryEscape(ts.URL) ||
-		iv["url"] != ts.URL+"/agent?c="+ic {
+		iv["url"] != ts.URL+"/agent#"+ic { // #463: after #, so no request or proxy log carries it
 		t.Fatalf("invite: %d %v", code, iv)
 	}
 	exp, _ := time.Parse(time.RFC3339Nano, iv["expires_at"].(string))
@@ -82,8 +82,8 @@ func TestAgentInvite(t *testing.T) {
 
 	// The https form is a plain text guide, spends nothing and holds no token.
 	for range 2 {
-		code, page := invitePage(t, ts.URL, ic)
-		if code != 200 || !strings.Contains(page, "/api/v1/agents/claim") || !strings.Contains(page, "home (read, publish)") ||
+		code, page := invitePage(t, iv["url"].(string))
+		if code != 200 || !strings.Contains(page, "/api/v1/agents/claim") || !strings.Contains(page, "after #") ||
 			strings.Contains(page, tokenPrefix) {
 			t.Fatalf("page: %d %s", code, page)
 		}
@@ -98,9 +98,6 @@ func TestAgentInvite(t *testing.T) {
 	}
 	if code, _ := call(t, ts, "POST", "/api/v1/agents/claim", "", map[string]string{"code": ic}); code != 410 {
 		t.Fatalf("second claim: %d, want 410", code)
-	}
-	if code, _ := invitePage(t, ts.URL, ic); code != 410 {
-		t.Fatalf("page after claim: %d, want 410", code)
 	}
 
 	// Held to the invite's topics.

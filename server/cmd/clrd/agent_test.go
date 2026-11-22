@@ -22,7 +22,7 @@ func TestAgentInviteCmd(t *testing.T) {
 	w.Close()
 	out, _ := io.ReadAll(r)
 	lines := strings.Fields(string(out))
-	if err != nil || len(lines) != 2 || !strings.HasPrefix(lines[0], "clrd://agent?") || !strings.HasPrefix(lines[1], ts.URL+"/agent?c=") {
+	if err != nil || len(lines) != 2 || !strings.HasPrefix(lines[0], "clrd://agent?") || !strings.HasPrefix(lines[1], ts.URL+"/agent#") {
 		t.Fatalf("agent invite: %v %q", err, out)
 	}
 	t.Setenv("CLRD_TOKEN", "clrd_wrong")
