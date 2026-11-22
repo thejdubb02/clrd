@@ -154,7 +154,8 @@ notification after the button runs. Because any publisher could make every
 reader's device call any address, a topic takes them only after an admin turns
 `device_actions` on (`PUT /api/v1/topics/{topic}`); off by default. With it off
 the native API answers 403 and a ntfy publish drops them silently. Turning it
-off keeps what was already published. Readers, ntfy subscribers and outgoing
+off keeps what was already published, and once the switch answers, no publish
+still in flight keeps one. Readers, ntfy subscribers and outgoing
 webhooks get the whole action, headers and body included, so do not put a
 secret there that a reader of the topic must not see. ntfy apps run device
 actions, and so does clrd's Android app, as tray buttons (a broadcast with no
