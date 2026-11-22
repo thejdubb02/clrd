@@ -157,22 +157,16 @@ class TrayRaceTest {
     @Test fun aLateRepeatStaysQuietWhenThisPhoneMadeEveryChange() { // #550: this phone published it, cleared it and undid it
         val store = RoomStore(app)
         val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
-        val due = """{"every":"5m","left":8,"count":2,"next":"2026-11-22T05:05:00Z"}"""
-        val stopped = """{"every":"5m","left":8,"count":2,"next":null}"""
         val a = row("a", Notif.ACTIVE, 1).copy(createdAt = 1, stateBy = "phone")
-        bg { store.apply(listOf(a.copy(repeat = due)), 1) }
-        bg { store.apply(listOf(a.copy(state = Notif.DISMISSED, seq = 5, repeat = stopped)), 0, quiet = true) }
-        bg { store.apply(listOf(a.copy(seq = 6, repeat = stopped)), 0, quiet = true) }
+        bg { store.apply(listOf(a), 1) }
+        bg { store.apply(listOf(a.copy(state = Notif.DISMISSED, seq = 5)), 0, quiet = true, answer = true) }
+        bg { store.apply(listOf(a.copy(seq = 6)), 0, quiet = true, answer = true) } // the same row as the repeat, bar seq
         assertTrue(once("a"))
-        bg { store.apply(listOf(a.copy(seq = 4, repeat = due)), 4, again = true) }
+        bg { store.apply(listOf(a.copy(seq = 4)), 4, again = true) }
         assertTrue(once("a"))
         assertEquals(6L, bg { dao.get("a")!!.seq })
-    }
-
-    @Test fun repeatIsReadFromTheServer() {
-        val o = org.json.JSONObject("""{"id":"a","repeat":{"every":"5m","left":8,"count":2,"next":null}}""")
-        assertEquals("""{"every":"5m","left":8,"count":2,"next":null}""", Notif.fromJson(o).repeat)
-        assertEquals("", Notif.fromJson(org.json.JSONObject("""{"id":"a","repeat":null}""")).repeat)
+        bg { store.apply(listOf(a.copy(seq = 7)), 7, again = true) } // a repeat sent after the Undo still rings
+        assertTrue(!once("a"))
     }
 
     @Test fun reconcileWaitsForSyncWrites() {

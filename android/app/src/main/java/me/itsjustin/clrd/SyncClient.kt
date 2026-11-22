@@ -22,7 +22,7 @@ interface Store {
      * A row older than the one already saved is dropped. `seq = 0` leaves the cursor where it is.
      * [quiet] posts to the tray without a sound (part of a replay that is not finished).
      * [again] is a live `repeat` event: an active row alerts again even while it is showing.
-     * [answer] is the server's row after this phone's own queued action (a state change, never a mark).
+     * [answer] is the server's row after it took this phone's own queued action (a state change, never a mark).
      */
     fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false, again: Boolean = false, answer: Boolean = false)
 
@@ -327,6 +327,7 @@ fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }): Unit =
 /** Send one queued action and save the server's row; see [flushPending]. */
 private fun sendOne(store: Store, api: Api, p: Pending) {
     var mine = true // the row after our own action: the person just tapped it, so no sound
+    var changed = true // the server took the action, so the row it sends back is our own change (#550)
     val answer = try {
         api.action(p).let { body ->
             // An ask device gets back the confirm prompt (202), not the question: the question stays unanswered.
@@ -340,6 +341,7 @@ private fun sendOne(store: Store, api: Api, p: Pending) {
         }
     } catch (e: HttpError) {
         if (!e.isPermanent) throw e
+        changed = false
         // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
         if (p.action == "reply" && e.code in setOf(400, 403, 409)) { if (told.add(p.key)) store.replyOutcome(p, when (e.code) { 409 -> "conflict"; 400 -> "bad_request"; else -> e.reason }) }
         else mine = false
@@ -348,7 +350,7 @@ private fun sendOne(store: Store, api: Api, p: Pending) {
         // action queued: the event that changed the row may already be behind the cursor.
         try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
     }
-    answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine, answer = true) }
+    answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine, answer = changed) }
     store.removePending(p)
     told.remove(p.key)
 }

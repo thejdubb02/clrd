@@ -49,6 +49,13 @@ class App : Application() {
     /** Bumped on every server or token switch. A store made before the bump is fenced off. */
     @Volatile var configGen = 0
 
+    /**
+     * Per notification, the seq of the row the server sent back after this phone's own state change (Clear, Undo,
+     * Ack, Snooze, reply). A repeat older than that row was sent before the change and never rings it again (#550).
+     * ponytail: in memory, so a restart between the answer and a late repeat forgets it; one entry per acted id.
+     */
+    val ownAnswers = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     var serverUrl: String
         get() = prefs.getString("url", "").orEmpty()
         set(v) = prefs.edit().putString("url", v.trim().trimEnd('/')).apply()
@@ -354,14 +361,15 @@ class RoomStore(private val app: App) : Store {
 
     override fun lastSeq() = dao.lastSeq() ?: 0
 
-    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean) = ifMine {
+    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
         val saved = dao.applyAll(notifs, seq)
+        if (answer) saved.forEach { app.ownAnswers[it.id] = it.seq }
         // #500: a live repeat Room dropped (our own mark's answer got in first) still rings the newer row, if that one shows unacked.
         // Only when the newer row differs by marks alone (#504): after a Clear and Undo it is a new state, and an Undo stays quiet.
-        // The Clear stopped the repeat (repeat.next is null), so the rows differ even when this phone made every change (#550).
+        // And never when the newer row is this phone's own state change: when it made every change the rows can match (#550).
         val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } }.mapNotNull { n ->
-            dao.get(n.id)?.takeIf { it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt, silenced = n.silenced) == n }
+            dao.get(n.id)?.takeIf { app.ownAnswers[it.id] != it.seq && it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt, silenced = n.silenced) == n }
         }
         val muted = app.muted
         val waiting = waiting()
