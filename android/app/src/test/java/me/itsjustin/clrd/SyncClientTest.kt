@@ -171,7 +171,7 @@ class SyncClientTest {
             ws.send(ev(8, "y", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":8}}", mark.replace(":6", ":8") + "}"))
         }
         start()
-        await { store.rows["y"]?.seq == 8L }
+        await { store.lastSeq() == 8L } // set after the row, so the row is there too
         assertEquals(listOf("stew actioned: filed relay#512"), store.rows["z"]!!.markLines)
         assertEquals(listOf("stew actioned: filed relay#512"), store.rows["y"]!!.markLines)
         assertEquals(listOf(true, false, false, true), store.quiet.toList()) // mark z, the empty replay save, y created, mark y

@@ -83,6 +83,10 @@ func TestMarks(t *testing.T) {
 	if code, out := raw(t, "GET", ts.URL+"/triage/json?poll=1", admin, "", nil); code != 200 || len(lines(out)) != 2 { // created, then the reply's state
 		t.Fatalf("ntfy poll: %d %q", code, out)
 	}
+	call(t, ts, "POST", path, admin, map[string]any{"mark": "actioned"}) // now the newest event is a mark
+	if _, out := raw(t, "GET", ts.URL+"/triage/json?poll=1&since=latest", admin, "", nil); out == "" || len(lines(out)) != 1 {
+		t.Fatalf("since=latest after a mark: %q", out)
+	}
 }
 
 // A person's devices share one mark, named for the person.

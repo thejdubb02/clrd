@@ -81,6 +81,7 @@ class SyncClient(
 
     private var replaying = false
     private val buffer = LinkedHashMap<String, Notif>()
+    private val marks = LinkedHashMap<String, Notif>() // replayed marks on cards not in [buffer]: saved quietly with it, after `ready` checks the epoch
     private var bufferSeq = 0L
     private var replayQuiet = false // part of this replay was already saved quietly, so the rest is too
 
@@ -140,6 +141,7 @@ class SyncClient(
         val myGen = ++gen
         replaying = true
         buffer.clear()
+        marks.clear()
         replayQuiet = false
         bufferSeq = 0 // or a silent new socket would save the dropped replay's cursor with none of its rows
         ws = http.newWebSocket(api.wsRequest(store.lastSeq()), object : WebSocketListener() {
@@ -186,11 +188,9 @@ class SyncClient(
             "mark" -> { // someone saw or actioned it: the card updates quietly and a card hidden on this phone stays hidden
                 val n = Notif.fromJson(o.getJSONObject("notification"))
                 val seq = o.optLong("seq", n.seq)
-                if (replaying && n.id in buffer) {
-                    buffer[n.id] = n // the earlier event in this replay still decides whether it rings
-                    bufferSeq = maxOf(bufferSeq, seq)
-                } else if (replaying) {
-                    store.apply(listOf(n), 0, quiet = true) // 0: the cursor moves with the buffer, not past it
+                if (replaying) {
+                    // Only the marks change: the earlier event in this replay still decides whether it rings.
+                    buffer[n.id]?.let { buffer[n.id] = it.copy(marks = n.marks) } ?: run { marks[n.id] = n }
                     bufferSeq = maxOf(bufferSeq, seq)
                 } else {
                     store.apply(listOf(n), seq, quiet = true)
@@ -224,6 +224,10 @@ class SyncClient(
     }
 
     private fun applyBuffer(quiet: Boolean = false) {
+        if (marks.isNotEmpty()) { // before the buffer, which holds newer copies of the same cards
+            store.apply(marks.values.toList(), 0, quiet = true) // 0: the cursor moves with the buffer
+            marks.clear()
+        }
         if (buffer.isEmpty() && bufferSeq <= store.lastSeq()) return
         store.apply(buffer.values.toList(), bufferSeq, quiet)
         if (quiet && buffer.isNotEmpty()) replayQuiet = true

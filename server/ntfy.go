@@ -785,11 +785,11 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		return 0, nil
 	case "latest":
 		var seq *int64
-		args := make([]any, len(topics))
-		for i, t := range topics {
-			args[i] = t
+		args := []any{EventMark} // the stream skips marks, so the latest message is never one
+		for _, t := range topics {
+			args = append(args, t)
 		}
-		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
+		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE type != ? AND topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
 		if err != nil || seq == nil {
 			return cur, err
 		}
