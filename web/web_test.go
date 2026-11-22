@@ -265,6 +265,11 @@ func TestActForm(t *testing.T) {
 	if _, body := get(t, h, "/app?topic=agents"); !strings.Contains(body, `name="reply" value="yes" data-act="reply">Approve</button>`) || strings.Contains(body, ` data-links>`) {
 		t.Fatal("reply actions are not answer buttons, or show as empty links")
 	}
+	// Device actions (#450) are shown as text, never as a link or a button the browser runs.
+	if _, body := get(t, h, "/app?topic=infra"); !strings.Contains(body, `Clean /tmp</span> runs on a phone: POST https://ops.example.com/clean?host=web-1</li>`) ||
+		!strings.Contains(body, `Ping</span> runs on a phone: Android broadcast (the app&#39;s default)</li>`) || strings.Contains(body, `href="https://ops.example.com`) {
+		t.Fatal("device actions missing, or rendered as links")
+	}
 	seq := strconv.FormatInt(f.items[agent].Seq, 10)
 	if w := post(url.Values{"id": {agent}, "reply": {"yes"}, "seq": {seq}, "next": {"/app?topic=agents"}}); w.Code != 303 || f.items[agent].Reply != "yes" || f.items[agent].State != "acknowledged" {
 		t.Fatalf("reply: %d, stored %q state %s", w.Code, f.items[agent].Reply, f.items[agent].State)

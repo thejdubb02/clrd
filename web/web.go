@@ -85,11 +85,25 @@ type Repeat struct {
 	Next  *time.Time `json:"next"`
 }
 
-// Action is a link (URL) or an answer button (Reply), never both.
+// Action is a link (URL), an answer button (Reply) or a device action (HTTP
+// or Broadcast, #401) that only a phone runs; the inbox shows it, never runs it.
 type Action struct {
 	Label string `json:"label"`
 	URL   string `json:"url"`
 	Reply string `json:"reply,omitempty"`
+	HTTP      *HTTPAction `json:"http,omitempty"`
+	Broadcast *BroadcastAction `json:"broadcast,omitempty"`
+}
+
+// BroadcastAction is an Android broadcast; Intent "" is the app's default.
+type BroadcastAction struct {
+	Intent string `json:"intent"`
+}
+
+// HTTPAction is the request a phone sends; headers and body are not shown.
+type HTTPAction struct {
+	Method string `json:"method"`
+	URL    string `json:"url"`
 }
 
 // Attachment is a file on a notification: uploaded (/api/v1/files/<id>, with
@@ -132,6 +146,16 @@ func (n Notification) Links() (out []Action) {
 func (n Notification) Replies() (out []Action) {
 	for _, a := range n.Actions {
 		if a.Reply != "" && n.Reply == "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// DeviceActions are the http and broadcast buttons, shown read-only (#450).
+func (n Notification) DeviceActions() (out []Action) {
+	for _, a := range n.Actions {
+		if a.HTTP != nil || a.Broadcast != nil {
 			out = append(out, a)
 		}
 	}
