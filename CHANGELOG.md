@@ -130,6 +130,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: a repeat sent before you cleared a notification no longer rings
+  it again after you tap Undo, when the repeat reaches the phone late (#504).
 - Web: saving sender rules from a page opened before someone else changed them
   is now refused, so it can no longer undo the newer change. Reload and save
   again. The API takes the same check as an optional `base_seq`. (#543)
