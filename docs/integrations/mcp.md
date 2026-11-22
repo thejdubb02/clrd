@@ -52,6 +52,7 @@ Tools:
 | `create_pushover_app` | `name, topic` | Pushover app key for one topic, for Apprise and scripts; the key is in the result once, with a `user` value clrd never checks. It only publishes, only to that topic, only on `POST /1/messages.json`. Admin. |
 | `create_token` | `name, scopes, topics? or grants?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. It starts denied for approval requests, whoever makes it; raise it from an allowed device or with `request_approve`. Admin. |
 | `revoke_token` | `id` | Revoke a token; its streams close at once. Admin. |
+| `create_agent_invite` | `name, topics, expires_in?` | One single-use invite (15m default, 1m to 1h) that gives another agent its own user and token on those topics; see [Agent invite](agent-invite.md). Admin. |
 | `server_env` | none | Every `CLRD_*` setting in effect, defaults filled in. Read only: those change by setting the variable and restarting. Admin. |
 | `ntfy_anonymous` | none | Whether ntfy routes take requests with no credentials, and on which topics. Admin. |
 | `set_ntfy_anonymous` | `grants` | Topics anyone may read or publish on ntfy routes with no credentials, like ntfy's everyone rules; an empty list turns it off. Admin. |

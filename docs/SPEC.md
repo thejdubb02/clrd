@@ -493,6 +493,33 @@ the session cookie (same-origin only) as well as a Bearer token.
   `clrd://link?server=<base>&code=<code>`. Link codes share the pairing
   expiry and single use; they have their own cap of 64, so waiting public
   sign-ins cannot crowd them out.
+- **Agent invite (#454):** one short string enrolls an agent as a user of
+  kind `agent`. `POST /api/v1/agents/invite` `{name, topics, expires_in?}`
+  from a person's browser or phone (a session token, not one of an agent) or
+  a full admin token (so agents with admin can provision agents); a typed-in
+  non-admin token or anything of an agent gets 403. `topics` is 1 to 64
+  names. Each gets the `read` and `publish` the creator holds on it, never
+  more; a topic with neither is 403. Only a full admin may name a pattern
+  (`ops-*`). `expires_in` is 1m to 1h, default 15m. A name a user already
+  has is 409. Answer 201 `{code, invite, url, expires_at, name, grants}`:
+  `invite` is `clrd://agent?code=<code>&server=<base>`, `url` is
+  `<base>/agent?c=<code>`. The agent posts `POST /api/v1/agents/claim`
+  `{code}` (no auth): 200 `{token, user, name, guide}` once, where `guide`
+  is `{server, grants, publish, notification, events, mcp, approve_request,
+  approve, limits: {publish_per_minute, attachment_max_bytes}}`. The claim
+  makes the user (grants as in the invite) and its own token (`read`,
+  `publish`, approve `denied`) in one transaction. The code is spent by the
+  first claim, even one that fails (a name taken since: 409); after that, or
+  once expired or unknown, 410 `gone`. `GET /agent?c=` is the same guide as
+  plain text with the claim command; it spends nothing and holds no token
+  (410 when the code is dead). Invites share the pairing store: single use,
+  their own cap of 64, held in memory, so a restart drops them. The agent
+  shows in the creator's device list (kind `agent`, can unlink) and in
+  `GET /api/v1/users` (`kind`, `last_seen_at`). Unlinking it revokes the
+  token, ends its streams and drops its user. Access is fixed at claim: a
+  later change to the creator does not change the agent; an admin changes it
+  with `PUT /api/v1/users/{id}`. The agent's own request for approve rights
+  goes to a person (`request_approve`); it cannot answer its own requests.
 - Setup: with no admin token in the database the server logs
   `<CLRD_BASE_URL>/setup?code=<one-time code>`. Opening it shows a form; posting
   it creates an admin token, shows it once and signs the browser in.
@@ -763,6 +790,7 @@ the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dism
 only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?)`,
 `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
+`create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
 `server_env()` (`GET /api/v1/server`) and `ntfy_ignored()`.
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
