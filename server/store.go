@@ -179,6 +179,20 @@ CREATE TABLE IF NOT EXISTS hook_deliveries (
 );
 CREATE INDEX IF NOT EXISTS hook_deliveries_due ON hook_deliveries (status, next_at);
 CREATE INDEX IF NOT EXISTS hook_deliveries_hook ON hook_deliveries (topic, name, id);
+-- Senders (issue #119, senders.go): one row per token tree that published; token_id
+-- NULL is an anonymous sender, one per address. topics and recent are JSON.
+CREATE TABLE IF NOT EXISTS senders (
+  id TEXT PRIMARY KEY,
+  token_id TEXT REFERENCES tokens(id) ON DELETE CASCADE,
+  user_agent TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  template TEXT NOT NULL DEFAULT '',
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  count INTEGER NOT NULL,
+  topics TEXT NOT NULL,
+  recent TEXT NOT NULL
+);
 -- Silences (issue #81): topic "" matches every topic, tag "" every tag.
 CREATE TABLE IF NOT EXISTS silences (
   id TEXT PRIMARY KEY,
@@ -645,6 +659,7 @@ type PublishInput struct {
 	file        string
 	dropDevice  bool       // compat: drop http and broadcast actions a topic does not allow, instead of refusing
 	checkin     bool       // clrd's own missed check-in alert: does not reset the timer
+	template    string     // the webhook template it came through, for the senders list (#119)
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
 	Expires     string     `json:"expires"`      // optional: a duration ("30m") or RFC3339 time; then the server resolves it
 	Repeat      string     `json:"repeat"`       // optional: re-alert every this long ("5m") until someone acts
@@ -784,6 +799,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 				if n.State == Acknowledged || (n.State == Snoozed && !n.SnoozeUntil.Equal(from)) {
 					n.stopRepeat() // someone already answered this row
 				}
+				if err := seeSender(ctx, tx, sender, in.Topic, in.template, n.ID); err != nil {
+					return nil, err
+				}
 				return append([]Event{{Type: EventUpdated, Notification: n}}, extra...), nil
 			}
 			if !isNotFound(err) {
@@ -798,6 +816,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
+		}
+		if err := seeSender(ctx, tx, sender, in.Topic, in.template, n.ID); err != nil {
+			return nil, err
 		}
 		return append([]Event{{Type: EventCreated, Notification: n}}, extra...), nil
 	})

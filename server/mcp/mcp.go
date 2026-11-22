@@ -728,6 +728,10 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{})},
 	{"name": "ntfy_ignored", "description": "ntfy publish options senders used that clrd accepts but ignores (email, call and the like), with counts, so a migrated sender can be fixed. Needs an admin token.",
 		"inputSchema": schema(map[string]any{})},
+	{"name": "senders", "description": "Every service or token that has published, most recently heard first: name, kind, webhook template, User-Agent and address hints, first and last seen, message count per topic. Found on its first message, no setup. Needs an admin token without a topic list.",
+		"inputSchema": schema(map[string]any{})},
+	{"name": "sender", "description": "One sender from senders, by its id, with its recent notifications that are still stored.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Sender id")}, "id")},
 }
 
 // restTools are tools that are one REST call: {x} in the path comes from the
@@ -772,6 +776,8 @@ var restTools = map[string]struct {
 	"set_ntfy_origins":    {"PUT", "/api/v1/ntfy/origins", false},
 	"server_env":          {"GET", "/api/v1/server", false},
 	"ntfy_ignored":        {"GET", "/api/v1/ntfy/ignored", false},
+	"senders":             {"GET", "/api/v1/senders", false},
+	"sender":              {"GET", "/api/v1/senders/{id}", false},
 }
 
 func strs(desc string) map[string]any {

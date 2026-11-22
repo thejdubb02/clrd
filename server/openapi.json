@@ -2507,6 +2507,81 @@
     }
    }
   },
+  "/api/v1/senders": {
+   "get": {
+    "summary": "Every sender that has published",
+    "description": "Admin with no topic limit. One row per token tree that stored a notification, most recently heard first, found on its first message. Anonymous ntfy publishers are one sender per address.",
+    "tags": [
+     "admin"
+    ],
+    "responses": {
+     "200": {
+      "description": "Senders.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "senders": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Sender"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/senders/{id}": {
+   "get": {
+    "summary": "One sender with its recent notifications",
+    "description": "Admin with no topic limit. recent holds up to its last 10 notifications that are still stored, newest first.",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The sender.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Sender"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/ws": {
    "get": {
     "summary": "WebSocket sync stream",
@@ -5583,6 +5658,66 @@
      "token_id": {
       "type": "string",
       "description": "The anonymous token's id while on; revoking it also turns access off."
+     }
+    }
+   },
+   "Sender": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "token_id": {
+      "type": "string",
+      "description": "The top token of the sender's tree; empty for an anonymous sender."
+     },
+     "name": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "token",
+       "person",
+       "ntfy_user",
+       "gotify_app",
+       "pushover_app",
+       "anonymous"
+      ]
+     },
+     "template": {
+      "type": "string",
+      "description": "The last webhook template it posted through, empty for none."
+     },
+     "user_agent": {
+      "type": "string"
+     },
+     "address": {
+      "type": "string"
+     },
+     "first_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "count": {
+      "type": "integer"
+     },
+     "topics": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "integer"
+      }
+     },
+     "recent": {
+      "type": "array",
+      "description": "Only on GET /api/v1/senders/{id}.",
+      "items": {
+       "$ref": "#/components/schemas/Notification"
+      }
      }
     }
    },

@@ -738,6 +738,8 @@ resolved`) and `ntfy_import`.
 | POST | `/api/v1/devices/approve-request` | Body `{"approve":"allowed"}` or `ask`, `topic` optional (default `agents`, needs publish there): the calling device asks to raise its own setting (section 4). 202 with a confirm prompt on that topic; a repeat returns the same open prompt; 400 unless it is a raise. |
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. It starts denied for approval requests (section 4); `approve` other than `denied` is 400. |
+| GET | `/api/v1/senders` | Every sender, most recently heard first (section 5.1). Admin with no topic limit. |
+| GET | `/api/v1/senders/{id}` | One sender with `recent`, its last notifications still stored (section 5.1). 404 for an unknown id. |
 | GET | `/api/v1/server` | Admin. The section 7 settings in effect, defaults filled in: `{"env":{"CLRD_LISTEN":":8080",...}}`, each written the way its variable takes it (`CLRD_BASE_URL` empty when unset, a password in it shown as `xxxxx`; `0` for a rate limit that is off). Read only; no secrets. |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
 | POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |
@@ -749,6 +751,41 @@ By external id (what scripts and monitors use):
 |---|---|---|
 | POST | `/{topic}/{external_id}/resolve` | Resolve the open row with that key. 404 if none. |
 | POST | `/{topic}/{external_id}/ack` | Same, ack. |
+
+### 5.1 Senders (#119)
+
+A sender is everything that publishes under one token tree: the token typed
+in, and every browser or phone signed in under it (the same top token as
+`sender_id` in section 2.1). It appears on its first stored notification,
+with nothing to set up, so after a move from ntfy or Gotify the list already
+shows every service still talking. A person's own web app or phone counts
+when it publishes, as kind `person`. clrd's own alerts (missed check-ins,
+webhooks turned off) are no sender. A publish that stores nothing (`live`, or
+`status: resolved`) is not counted. Anonymous ntfy publishers share one
+token, so each client address is its own sender, at most 500 of them; the one
+heard from longest ago goes first.
+
+`GET /api/v1/senders` (admin with no topic limit; the list names every token
+and its address) returns `{senders:[Sender]}`, last heard first:
+
+| Field | Meaning |
+|---|---|
+| `id` | The sender id: its top token id, or `anonymous-` and 12 hex digits for an anonymous address |
+| `token_id` | The top token id; `""` for anonymous. Rename, rotate and revoke go through `/api/v1/tokens` with it; revoking it removes the sender |
+| `name` | The token's name, `anonymous` for anonymous |
+| `kind` | `token`, `person` (a token owned by a user), `ntfy_user`, `gotify_app`, `pushover_app` or `anonymous` |
+| `template` | The webhook template (`?template=`) it last posted through, `""` if none ever |
+| `user_agent`, `address` | From its last publish: hints, never checked. `address` is the client IP (behind a trusted proxy, the forwarded one; IPv6 as its /64) |
+| `first_seen`, `last_seen` | RFC 3339 |
+| `count` | Stored publishes, an update by `external_id` included; it outlives the rows themselves |
+| `topics` | `{topic: count}` of the same publishes |
+
+`GET /api/v1/senders/{id}` returns one Sender plus `recent`: up to its last
+10 notifications, newest first, that are still stored (full notifications,
+section 2). A row updated again by `external_id` shows once. 404 for an unknown id.
+
+Routing, pause, mute, priority limits, change history and the silence alarm
+come in later parts of #119 and are not served yet.
 
 ### ntfy compatibility (must pass ntfy's own client behaviour)
 
@@ -895,7 +932,8 @@ only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?, body?)`,
 `preview_hook(topic, body, event?)`, `hook_allow()`, `set_hook_allow(networks, ports)`, `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
 `create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
-`server_env()` (`GET /api/v1/server`) and `ntfy_ignored()`.
+`server_env()` (`GET /api/v1/server`), `ntfy_ignored()`, `senders()` and
+`sender(id)` (section 5.1).
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
 `PermissionRequest` hook body, sends an Allow / Deny notification, waits, and

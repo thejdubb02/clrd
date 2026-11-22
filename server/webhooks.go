@@ -468,6 +468,7 @@ func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, n
 	}
 	var created, resolved int
 	for _, p := range ps { // ponytail: a 429 mid-batch keeps the ones before it; senders give external ids, so a retry upserts
+		p.template = name
 		_, err := s.Publish(r.Context(), tok, p)
 		switch {
 		case p.Status == "resolved" && isNotFound(err): // already cleared
