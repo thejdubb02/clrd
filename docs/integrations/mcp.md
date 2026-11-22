@@ -45,9 +45,10 @@ Tools:
 | `delete_template` | `topic, name` | Delete a saved template. |
 | `preview_template` | `topic, name, payload, headers?, template?` | Dry run a template over a sample payload: returns the notifications a post would make, publishes nothing. `template` tries an unsaved one. |
 | `hooks` | `topic` | Outgoing webhooks: URLs clrd calls when a notification is dismissed, acknowledged, resolved, snoozed or a button tapped. Admin. |
-| `set_hook` | `topic, name, url, events?, secret?` | Add or replace one. `events` defaults to all; `secret` signs each call. Saving again turns a failing hook back on. Admin. |
+| `set_hook` | `topic, name, url, events?, secret?, body?` | Add or replace one. `events` defaults to all; `secret` signs each call; `body` is an optional template for the POST body. Saving again turns a failing hook back on. Admin. |
 | `delete_hook` | `topic, name` | Delete one. Admin. |
 | `hook_deliveries` | `topic, name` | Its recent calls, with status and error. Admin. |
+| `preview_hook` | `topic, body, event?` | Dry run a body template: returns the JSON it would POST, sends nothing. Without `event`, a sample resolved notification is used. Admin. |
 | `tokens` | none | API tokens, never their secrets. Admin. |
 | `create_gotify_app` | `name, topic, priority?` | Gotify app key for one topic, for shoutrrr, Watchtower and the gotify CLI; the key is in the result once. It only publishes, only to that topic, only on `POST /message`. Admin. |
 | `create_pushover_app` | `name, topic` | Pushover app key for one topic, for Apprise and scripts; the key is in the result once, with a `user` value clrd never checks. It only publishes, only to that topic, only on `POST /1/messages.json`. Admin. |

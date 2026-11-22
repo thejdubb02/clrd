@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/netip"
@@ -321,5 +322,29 @@ func TestHooksOutBody(t *testing.T) {
 	// Big numbers print as digits.
 	if out, err := renderHookBody(`{"seq": {{.seq}}}`, `{"seq": 1000000}`); err != nil || out != `{"seq": 1000000}` {
 		t.Fatalf("seq: %q %v", out, err)
+	}
+}
+
+// TestHooksOutPreview: the dry run renders like a delivery and sends nothing (#241).
+func TestHooksOutPreview(t *testing.T) {
+	_, ts, admin := newTest(t)
+	path := "/api/v1/topics/alerts/hooks/preview"
+	tmpl := `{"text": {{json .notification.title}}, "topic": {{json .notification.topic}}}`
+	tmpl2 := `{"text": {{json .notification.title}}, "topic": {{json .notification.topic}}, "p": {{.notification.priority}}}`
+	if code, out := call(t, ts, "POST", path, admin, map[string]any{"body": tmpl2}); code != 200 ||
+		out["body"] != `{"text": "Disk full", "topic": "alerts", "p": 3}` {
+		t.Fatalf("sample: %d %v", code, out)
+	}
+	ev := map[string]any{"seq": 7, "notification": map[string]any{"title": "a <b>", "topic": "x"}}
+	if code, out := call(t, ts, "POST", path, admin, map[string]any{"body": tmpl, "event": ev}); code != 200 ||
+		out["body"] != `{"text": "a \u003cb\u003e", "topic": "x"}` {
+		t.Fatalf("event: %d %v", code, out)
+	}
+	if code, out := call(t, ts, "POST", path, admin, map[string]any{"body": `{"text": {{.notification.title}}}`}); code != 400 ||
+		!strings.Contains(fmt.Sprint(out), "not valid JSON") {
+		t.Fatalf("bad output: %d %v", code, out)
+	}
+	if code, out := call(t, ts, "POST", path, admin, map[string]any{}); code != 400 || !strings.Contains(fmt.Sprint(out), "body is required") {
+		t.Fatalf("no body: %d %v", code, out)
 	}
 }

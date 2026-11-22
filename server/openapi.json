@@ -4781,6 +4781,66 @@
     }
    }
   },
+  "/api/v1/topics/{topic}/hooks/preview": {
+   "post": {
+    "summary": "Dry run an outgoing webhook body template: returns the JSON it would POST, sends nothing",
+    "description": "Scope admin. Same render and checks as a delivery (valid JSON, 16 KB at most). Without event, a sample resolved notification on the topic is used.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "body"
+        ],
+        "properties": {
+         "body": {
+          "type": "string",
+          "description": "The body template, as for PUT"
+         },
+         "event": {
+          "type": "object",
+          "description": "A sync stream event to render against"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "body": {
+           "type": "string",
+           "description": "The rendered JSON, exactly as a delivery sends it"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/topics/{topic}/templates": {
    "get": {
     "summary": "List the webhook templates saved for a topic, and the built-in names",
