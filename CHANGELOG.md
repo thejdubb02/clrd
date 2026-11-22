@@ -17,6 +17,10 @@ Fixed, Removed, Security), as one line a user can understand.
   case now never allows, so a deny on `secret` still blocks `SECRET`. An ntfy
   import whose rules differ in case from the topics it names now gives less
   access; rewrite those rules in the topic's own case (#458).
+- Server: a user in the config file (`CLRD_CONFIG`) named like an agent no
+  longer takes the agent over and hands it the file's grants. The start stops
+  with a message to rename the user, and the file never removes an agent
+  (#458).
 - Server: the ntfy and Gotify routes no longer answer every web site. A page
   on another site gets 403 (requests, preflight and WebSocket) unless an admin
   adds its origin with `PUT /api/v1/ntfy/origins` or the `set_ntfy_origins`
