@@ -450,6 +450,20 @@ try {
     await tc.locator('[data-note]').filter({ hasText: 'Not answered:' }).waitFor();
     assert.equal((await box.inputValue()).length, 1001, 'a refused answer lost what was typed');
     assert.ok(!(await get(laptop, tq.id)).reply, 'an over-long answer was stored');
+    // A live change (a mark from another device) redraws the card: the half-typed answer stays.
+    {
+      const lp = await page.context().newPage(); // page no longer hears live events (above)
+      await lp.goto(page.url());
+      await lp.locator('.is-live').waitFor();
+      const lc = lp.locator('article.card').filter({ hasText: 'Name the release?' }), lbox = lc.getByLabel('Other: type an answer');
+      await lbox.fill('half typed');
+      const seq0 = await lc.getAttribute('data-seq');
+      await api(phone, `/api/v1/notifications/${tq.id}/mark`, { mark: 'seen' });
+      await lp.locator(`article.card[data-id="${tq.id}"]:not([data-seq="${seq0}"])`).waitFor({ state: 'attached' });
+      assert.equal(await lbox.inputValue(), 'half typed', 'a live update wiped a half-typed answer');
+      assert.ok(await lbox.evaluate(e => e === document.activeElement), 'a live update took focus off the text box');
+      await lp.close();
+    }
     await box.fill('  <b>calm</b> fox  ');
     await tc.getByRole('button', { name: 'Other' }).click();
     await announce.filter({ hasText: 'Answered Other' }).waitFor({ state: 'attached' });
