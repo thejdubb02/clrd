@@ -1772,8 +1772,10 @@ try {
       let perm = ss('perm') || 'default';
       Object.defineProperty(Notification, 'permission', { get: () => perm, configurable: true });
       Notification.requestPermission = async () => { window.asked++; perm = ss('answer') || 'granted'; ss('perm', perm); return perm; };
-      let sub = null; // gone after a reload: the browser lost it
-      PushManager.prototype.subscribe = async () => (sub = { ...f, toJSON: () => f, unsubscribe: async () => { sub = null; return true; } });
+      // Gone after a reload (the browser lost it) unless keep is set.
+      const mk = () => ({ ...f, toJSON: () => f, unsubscribe: async () => { sub = null; ss('keep', ''); return true; } });
+      let sub = ss('keep') ? mk() : null;
+      PushManager.prototype.subscribe = async () => (sub = mk());
       PushManager.prototype.getSubscription = async () => sub;
     }, fake);
     const pp = await ctx.newPage();
@@ -1812,6 +1814,19 @@ try {
     await pp.reload();
     await ready('Turn on notifications');
     assert.equal(await subscribed(), false, 'a lost browser subscription left the server row');
+    // Both sides keep it: still on after a reload.
+    await btn.click();
+    await ready('Turn off notifications');
+    await pp.evaluate(() => sessionStorage.setItem('keep', '1'));
+    await pp.reload();
+    await ready('Turn off notifications');
+    assert.equal(await subscribed(), true);
+    // The server dropped it (the push service said gone): the browser drops it too, never re-sends it.
+    await ctx.request.delete(base + '/api/v1/push');
+    await pp.reload();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'a subscription the server dropped was sent again');
+    assert.equal(await pp.evaluate(() => sessionStorage.getItem('keep')), '', 'the browser kept a subscription the server dropped');
     // On, then off.
     await btn.click();
     await ready('Turn off notifications');

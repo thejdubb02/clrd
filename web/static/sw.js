@@ -20,7 +20,8 @@ self.addEventListener('notificationclick', e => {
   e.notification.close();
   const app = new URL('../app', self.location).href;
   e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ws => {
-    const w = ws.find(w => w.url === app || (w.url.startsWith(app) && /^[/?#]/.test(w.url.slice(app.length))));
+    // The inbox itself (any view or search), not Settings or another page under it.
+    const w = ws.find(w => w.url === app || (w.url.startsWith(app) && /^[?#]/.test(w.url.slice(app.length))));
     return w ? w.focus() : clients.openWindow(app);
   }));
 });

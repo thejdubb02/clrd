@@ -237,25 +237,26 @@
     const show = (on, why) => { pushBtn.dataset.on = on ? '1' : ''; pushBtn.textContent = on ? 'Turn off notifications' : 'Turn on notifications'; hint.textContent = why; };
     const local = async () => (await navigator.serviceWorker.getRegistration(scope))?.pushManager.getSubscription();
     const save = s => fetch('/api/v1/push', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) });
-    const off = async () => { await (await local().catch(() => null))?.unsubscribe().catch(() => {}); await fetch('/api/v1/push', { method: 'DELETE' }).catch(() => {}); };
+    // True once the server stopped pushing; the browser's own copy is best effort.
+    const off = async () => { await (await local().catch(() => null))?.unsubscribe().catch(() => {}); return !!(await fetch('/api/v1/push', { method: 'DELETE' }).catch(() => null))?.ok; };
     if (!('PushManager' in window) || !navigator.serviceWorker) show(false, 'This browser cannot show notifications from clrd.');
     else fetch('/api/v1/push').then(r => r.ok ? r.json() : Promise.reject()).then(async g => {
       key = g.public_key;
       const s = await local().catch(() => null);
       if (Notification.permission === 'denied') { if (g.subscribed || s) await off(); return show(false, blockedPush); }
-      if (s && Notification.permission === 'granted') { await save(s).catch(() => {}); show(true, 'On for this device.'); } // the server keeps the browser's current endpoint
+      if (g.subscribed && s && Notification.permission === 'granted') { await save(s).catch(() => {}); show(true, 'On for this device.'); } // the server keeps the browser's current endpoint
       else { if (g.subscribed || s) await off(); show(false, ''); }
       pushBtn.disabled = false;
     }).catch(() => show(false, 'Could not reach the server. Reload to try again.'));
     pushBtn.addEventListener('click', async () => {
       pushBtn.disabled = true;
-      if (pushBtn.dataset.on) { await off(); show(false, 'Off for this device.'); pushBtn.disabled = false; return; }
+      if (pushBtn.dataset.on) { (await off()) ? show(false, 'Off for this device.') : show(true, 'Could not turn notifications off. Try again.'); pushBtn.disabled = false; return; }
       const p = await Notification.requestPermission(); // first, while the tap still counts
       if (p !== 'granted') { pushBtn.disabled = p === 'denied'; return show(false, p === 'denied' ? blockedPush : 'Not turned on: the browser was not allowed to show notifications.'); }
       try {
         const reg = await navigator.serviceWorker.register(`${scope}sw.js`);
         const w = reg.installing || reg.waiting || reg.active; // ready never settles: this page is outside the worker's scope
-        if (w.state !== 'activated') await new Promise(ok => w.addEventListener('statechange', () => w.state === 'activated' && ok()));
+        if (w.state !== 'activated') await new Promise((ok, no) => w.addEventListener('statechange', () => w.state === 'activated' ? ok() : w.state === 'redundant' && no()));
         const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)) });
         if (!(await save(s)).ok) { await s.unsubscribe(); throw new Error(); }
         show(true, 'On. New notifications show on this device.');
