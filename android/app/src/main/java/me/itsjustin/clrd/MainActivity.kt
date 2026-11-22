@@ -1025,7 +1025,7 @@ internal fun senderKind(kind: String) = when (kind) {
 /** "alerts (3), ci (1)": a sender's topics by name, as the web lists them. */
 internal fun senderTopics(s: org.json.JSONObject): String {
     val t = s.optJSONObject("topics") ?: return ""
-    return t.keys().asSequence().sorted().joinToString(", ") { "$it (${t.optLong(it)})" }
+    return t.keys().asSequence().sorted().joinToString(", ") { it + " (" + t.optLong(it) + ")" }
 }
 
 /** What a sender's detail says in place of its recent list, or null when it has some (#530: never "nothing" while it has sent). */
@@ -1051,12 +1051,13 @@ private fun SenderSettings(app: App, resumes: Int) {
         val api = app.api()
         app.io.execute { senders = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull() }
     }
-    LaunchedEffect(open) {
+    LaunchedEffect(open, resumes) {
         val id = open ?: return@LaunchedEffect
         val api = app.api()
         app.io.execute {
-            val d = runCatching { org.json.JSONObject(api.get("/api/v1/senders/${android.net.Uri.encode(id)}")) }.getOrNull()
-            if (d != null) detail = d
+            runCatching { org.json.JSONObject(api.get("/api/v1/senders/${android.net.Uri.encode(id)}")) }
+                .onSuccess { detail = it }
+                .onFailure { if ((it as? HttpError)?.isAuth == true) { senders = null; detail = null } } // no longer a full admin: hide it all
         }
     }
     val list = senders ?: return
