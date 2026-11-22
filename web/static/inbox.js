@@ -655,7 +655,14 @@
     const b = e.target.closest('[data-hook-preview] button');
     if (!b) return;
     const f = b.closest('form'), out = f.querySelector('[data-hook-preview-out]'), topic = f.elements.topic.value.trim();
-    const show = (text, bad) => { out.textContent = text; out.classList.toggle('text-destructive', bad); out.hidden = false; };
+    // Only the latest press may write; the region is shown before it is filled
+    // so a screen reader hears the first result too.
+    const n = f.previewN = (f.previewN || 0) + 1;
+    const show = (text, bad) => {
+      if (n !== f.previewN) return;
+      out.hidden = false;
+      requestAnimationFrame(() => { out.textContent = text; out.classList.toggle('text-destructive', bad); });
+    };
     if (!topic) return show('Pick a topic first.', true);
     if (!f.elements.body.value.trim()) return show('Empty: each delivery sends the event as it is.', false);
     const r = await fetch(`/api/v1/topics/${encodeURIComponent(topic)}/hooks/preview`, {

@@ -1187,6 +1187,18 @@ try {
       await out.getByText('{"t": "Disk full"}', { exact: true }).waitFor();
       assert.ok(!(await out.getAttribute('class')).includes('text-destructive'), 'a good preview is shown as an error');
       assert.equal(await hookBody(), tmpl, 'Preview saved the template');
+      // A slow earlier answer never replaces the latest one.
+      let slow = true;
+      await jp.route('**/hooks/preview', async r => { if (slow) { slow = false; await new Promise(ok => setTimeout(ok, 800)); } await r.continue(); });
+      const late = jp.waitForResponse(r => r.url().endsWith('/hooks/preview') && r.status() === 400);
+      await jedit.getByLabel('Body template').fill(tmpl.slice(0, -1));
+      await jedit.getByRole('button', { name: 'Preview' }).click();
+      await jedit.getByLabel('Body template').fill('{"u": {{json .notification.title}}}');
+      await jedit.getByRole('button', { name: 'Preview' }).click();
+      await out.getByText('{"u": "Disk full"}', { exact: true }).waitFor();
+      await late;
+      await jp.evaluate(() => new Promise(ok => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(ok)), 50)));
+      assert.equal(await out.textContent(), '{"u": "Disk full"}', 'a stale preview replaced the latest one');
       await jctx.close();
     }
     await sp.reload();
