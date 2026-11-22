@@ -57,6 +57,15 @@ Fixed, Removed, Security), as one line a user can understand.
   text box yet. Nothing changes for senders that do not ask for
   text.
 
+### Changed
+
+- Android: a swipe on a card no longer clears it (#161). Swiping slides the
+  card aside and shows round buttons (Clear and Snooze to the left, Ack to the
+  right), and nothing happens until you tap one. Swipe back to close it. Long
+  press the revealed Snooze for the other times. A new "Full swipe acts" switch
+  in Settings, off by default, makes a swipe all the way across run the first
+  button. A clear can still be undone.
+
 ### Security
 
 - Templates: `print`, `println`, `html`, `js`, `urlquery` and an outgoing

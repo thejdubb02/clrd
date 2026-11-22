@@ -24,6 +24,13 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.AnchoredDraggableState
+import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.anchoredDraggable
+import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,6 +61,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -73,17 +82,16 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -91,6 +99,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -106,6 +117,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.journeyapps.barcodescanner.ScanContract
@@ -115,6 +127,7 @@ import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 
 /**
  * Null when the phone already lets clrd run in the background, else the system prompt that allows it.
@@ -360,6 +373,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val dao = app.db.dao()
     val ctx = LocalContext.current
     val status by app.status.collectAsState()
+    val snooze by app.snooze.collectAsState() // the times a swiped card's Snooze offers
     LaunchedEffect(status) { if (status == SyncClient.Status.AUTH_FAILED) tab = Tab.Settings } // signed out: show the sign-in screen
 
     // Clear with an Undo toast, as on the web inbox.
@@ -438,7 +452,17 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                             }
                             val n = (e as One).n
                             if (tab == Tab.Cleared) Card(n) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text(stringResource(R.string.restore), color = b.ink) } }
-                            else Swipeable(n, onClear = { clear(n) }) {
+                            else RevealRow(
+                                listOfNotNull(
+                                    RevealAction(stringResource(R.string.clear), Icons.Filled.Check, b.clear, "reveal_clear") { clear(n) },
+                                    if (tab == Tab.Inbox) RevealAction(
+                                        stringResource(R.string.tray_snooze), Icons.Filled.DateRange, b.snooze, "reveal_snooze",
+                                        snooze.times.map { t -> snoozeLabel(t) to { app.act(n.id, "snooze", Snooze.body(t)) } },
+                                    ) { app.act(n.id, "snooze", Snooze.body(snooze.default)) } else null,
+                                ),
+                                if (n.state == Notif.ACTIVE) listOf(RevealAction(stringResource(R.string.ack), Icons.Filled.ThumbUp, b.ink, "reveal_ack") { app.act(n.id, "ack") }) else emptyList(),
+                                app.fastSwipe,
+                            ) {
                                 Card(n) {
                                     if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text(stringResource(R.string.ack), color = b.ink) }
                                     if (tab == Tab.Inbox) SnoozeButton(app, n.id)
@@ -518,30 +542,87 @@ private fun Pills(topics: List<String>, counts: Map<String, Int>, total: Int, se
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+/** One button a swipe reveals. [menu] is what a long press offers, such as the other snooze times. */
+class RevealAction(
+    val label: String, val icon: ImageVector, val color: Color, val tag: String,
+    val menu: List<Pair<String, () -> Unit>> = emptyList(), val run: () -> Unit,
+)
+
+private enum class Reveal { Closed, Start, End, FullStart, FullEnd }
+
+/**
+ * A swipe slides the card aside and shows round buttons (#161). Nothing changes until one is tapped, and
+ * swiping back closes the row. [toStart] shows on a swipe toward the start (left in English), [toEnd] on a
+ * swipe toward the end; both mirror in right-to-left languages. With [fast] on, a swipe all the way across
+ * runs that side's first button once the card settles there. A fling only opens the row: while [fast] is
+ * off there is no stop past the buttons.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Swipeable(n: Notif, onClear: () -> Unit, content: @Composable () -> Unit) {
+fun RevealRow(toStart: List<RevealAction>, toEnd: List<RevealAction>, fast: Boolean, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    val slot = with(density) { 76.dp.toPx() }
+    val state = remember {
+        AnchoredDraggableState(
+            Reveal.Closed, positionalThreshold = { it / 2 }, velocityThreshold = { with(density) { 400.dp.toPx() } },
+            snapAnimationSpec = tween(), decayAnimationSpec = exponentialDecay(),
+        )
+    }
+    var width by remember { mutableIntStateOf(0) }
+    LaunchedEffect(width, fast, toStart.size, toEnd.size) {
+        if (width == 0) return@LaunchedEffect
+        state.updateAnchors(DraggableAnchors {
+            Reveal.Closed at 0f
+            if (toStart.isNotEmpty()) { Reveal.Start at -slot * toStart.size; if (fast) Reveal.FullStart at -width.toFloat() }
+            if (toEnd.isNotEmpty()) { Reveal.End at slot * toEnd.size; if (fast) Reveal.FullEnd at width.toFloat() }
+        })
+    }
+    val scope = rememberCoroutineScope()
+    val close: () -> Unit = { scope.launch { state.animateTo(Reveal.Closed) } }
+    val sides by rememberUpdatedState(toStart to toEnd)
+    // settledValue, not currentValue: currentValue flips halfway through a drag, before the finger lifts.
+    LaunchedEffect(state.settledValue) {
+        when (state.settledValue) {
+            Reveal.FullStart -> sides.first.firstOrNull()?.run?.invoke()
+            Reveal.FullEnd -> sides.second.firstOrNull()?.run?.invoke()
+            else -> return@LaunchedEffect
+        }
+        state.animateTo(Reveal.Closed)
+    }
+    val x = state.offset.takeUnless { it.isNaN() } ?: 0f
+    Box(Modifier.fillMaxWidth().onSizeChanged { width = it.width }) {
+        // Composed only while the card is moved that way, so a closed row has no hidden buttons to hit.
+        if (x != 0f) Row(
+            Modifier.matchParentSize(),
+            horizontalArrangement = if (x < 0) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically,
+        ) { (if (x < 0) toStart else toEnd).forEach { RevealButton(it) { it.run(); close() } } }
+        // offset mirrors in right-to-left, as anchoredDraggable's drag direction does. No grab while settling,
+        // so a scroll that starts on a card still moving back is still a scroll.
+        Box(Modifier.offset { IntOffset(x.roundToInt(), 0) }.anchoredDraggable(state, Orientation.Horizontal, startDragImmediately = false)) { content() }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RevealButton(a: RevealAction, tap: () -> Unit) {
     val b = LocalBrand.current
-    val state = rememberSwipeToDismissBoxState(confirmValueChange = {
-        if (it != SwipeToDismissBoxValue.Settled) onClear()
-        it != SwipeToDismissBoxValue.Settled
-    })
-    SwipeToDismissBox(
-        state = state,
-        backgroundContent = {
-            // Green means it went away.
-            Row(
-                Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(b.clear).padding(horizontal = 24.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) Arrangement.End else Arrangement.Start,
-            ) {
-                Icon(Icons.Filled.Check, null, tint = b.paper)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.clear), color = b.paper, fontWeight = FontWeight.SemiBold)
-            }
-        },
-        content = { content() },
-    )
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        Column(
+            Modifier.width(76.dp).clip(RoundedCornerShape(12.dp)).testTag(a.tag)
+                .combinedClickable(role = Role.Button, onLongClick = if (a.menu.isEmpty()) null else ({ menu = true }), onClick = tap)
+                .padding(vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(Modifier.size(44.dp).clip(CircleShape).background(a.color), contentAlignment = Alignment.Center) { Icon(a.icon, null, tint = b.paper) }
+            Spacer(Modifier.height(4.dp))
+            Text(a.label, color = b.ink, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        DropdownMenu(menu, { menu = false }) {
+            a.menu.forEach { (label, pick) -> DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; pick() }) }
+        }
+    }
 }
 
 @Composable
@@ -1594,6 +1675,15 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
                 app.dropCleared = on
                 app.io.execute { app.pruneCleared() }
             })
+        }
+        var fast by remember { mutableStateOf(app.fastSwipe) }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.fast_swipe), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.fast_swipe_explain), color = b.slate, fontSize = 13.sp)
+            }
+            Switch(checked = fast, onCheckedChange = { on -> fast = on; app.fastSwipe = on })
         }
         SoundSettings(app, resumes)
         if (app.configured) SnoozeSettings(app)
