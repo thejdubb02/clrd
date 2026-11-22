@@ -1595,7 +1595,7 @@ try {
     assert.equal((await sp.locator('#r-routes').inputValue()).trim(), '*: rule-b\nrule-a: rule-b, rule-c', 'routes after save');
 
     // Each refused post leaves the rules alone (checked by the count below).
-    const full = { priority_min: '0', priority_max: '0' };
+    const full = { priority_min: '0', priority_max: '0', base_seq: '0' };
     for (const [form, why] of [[{ ...full, routes: 'no colon here' }, 'bad routes'], [{ ...full, routes: 'a: b\na: ' }, 'a topic routed twice'], [{}, 'an empty post'], [{ ...full, priority_min: 'x' }, 'a bad priority']]) {
       const bad = await ctx.request.post(base + path, { form, headers: { Origin: base }, maxRedirects: 0 });
       assert.equal(bad.status(), 400, `${why}: ${bad.status()}`);
@@ -1611,8 +1611,28 @@ try {
     await sp.reload();
     assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'a non-admin paused a sender');
     assert.equal(await change.count(), 3, 'a refused save logged a change');
+
+    // A stale page (#543): a second tab mutes the sender; saving the first
+    // tab's older form is refused and the mute stays.
+    const sp2 = await ctx.newPage();
+    await sp2.goto(base + path);
+    await sp2.locator('[name=muted]').check();
+    await sp2.getByRole('button', { name: 'Save rules' }).click();
+    await sp2.locator('[data-rules] tr[data-change]:nth-child(4)').waitFor();
+    await sp2.close();
+    await sp.locator('[name=paused]').check();
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await sp.getByText(/Not saved: the rules changed since you loaded them/).waitFor();
+    await sp.goto(base + path);
+    assert.equal(await sp.locator('[name=muted]').isChecked(), true, 'a stale form undid a newer mute');
+    assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'a stale form saved');
+    assert.equal(await change.count(), 4, 'a stale save logged a change');
+    await sp.locator('[name=paused]').check();
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await rules.locator('tr[data-change]:nth-child(5)').waitFor();
+    assert.equal(await sp.locator('[name=muted]').isChecked(), true, 'muted after a fresh save');
     await ctx.close();
-    console.log('ok: sender rules pause, log, undo and round trip without JavaScript; bad routes and a non-admin get 400');
+    console.log('ok: sender rules pause, log, undo and round trip without JavaScript; bad routes, a stale page and a non-admin get 400');
   }
 
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair

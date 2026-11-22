@@ -401,7 +401,16 @@ func (s *Server) SetSenderRules(ctx context.Context, tok *Token, id string, patc
 	if err := json.Unmarshal(patch, &fields); err != nil {
 		return nil, errf(400, "bad_request", "bad JSON body: %v", err)
 	}
-	return s.setRules(ctx, tok, id, func(r *SenderRules) error {
+	var base *int64 // the newest change seq the caller saw, if it says (#543)
+	if raw, ok := fields["base_seq"]; ok {
+		if err := json.Unmarshal(raw, &base); err != nil {
+			return nil, errf(400, "bad_request", "base_seq: %v", err)
+		}
+	}
+	return s.setRules(ctx, tok, id, func(r *SenderRules, last int64) error {
+		if base != nil && *base != last {
+			return errf(409, "conflict", "the rules changed since you loaded them; reload and try again")
+		}
 		if _, ok := fields["routes"]; ok {
 			r.Routes = nil
 		}
@@ -424,13 +433,14 @@ func (s *Server) UndoSenderChange(ctx context.Context, tok *Token, id string, se
 	} else if err != nil {
 		return nil, err
 	}
-	return s.setRules(ctx, tok, id, func(r *SenderRules) error {
+	return s.setRules(ctx, tok, id, func(r *SenderRules, _ int64) error {
 		*r = SenderRules{}
 		return json.Unmarshal([]byte(before), r)
 	})
 }
 
-func (s *Server) setRules(ctx context.Context, tok *Token, id string, edit func(*SenderRules) error) (*Sender, error) {
+// edit gets the rules and the seq of the sender's newest change (0 for none).
+func (s *Server) setRules(ctx context.Context, tok *Token, id string, edit func(r *SenderRules, last int64) error) (*Sender, error) {
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		var raw string
 		err := tx.QueryRowContext(ctx, `SELECT rules FROM senders WHERE id = ?`, id).Scan(&raw)
@@ -451,7 +461,11 @@ func (s *Server) setRules(ctx context.Context, tok *Token, id string, edit func(
 		var before, after SenderRules
 		json.Unmarshal([]byte(raw), &before)
 		json.Unmarshal([]byte(raw), &after)
-		if err := edit(&after); err != nil {
+		var last int64
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM sender_changes WHERE sender = ?`, id).Scan(&last); err != nil {
+			return nil, err
+		}
+		if err := edit(&after, last); err != nil {
 			return nil, err
 		}
 		if err := after.check(); err != nil {

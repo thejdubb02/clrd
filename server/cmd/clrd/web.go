@@ -363,12 +363,15 @@ func (a webAPI) SaveTemplate(r *http.Request, t web.Template, secret string, cle
 	return webError(a.s.SaveTemplate(r.Context(), tok, t.Topic, t.Name, h, !clearSecret))
 }
 
-func (a webAPI) SetSenderRules(r *http.Request, id string, rules web.SenderRules) error {
+func (a webAPI) SetSenderRules(r *http.Request, id string, rules web.SenderRules, base int64) error {
 	tok := a.s.Authenticate(r)
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	patch, err := json.Marshal(rules)
+	patch, err := json.Marshal(struct {
+		web.SenderRules
+		BaseSeq int64 `json:"base_seq"`
+	}{rules, base})
 	if err != nil {
 		return err
 	}
