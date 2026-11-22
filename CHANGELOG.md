@@ -154,6 +154,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a sender route that copies an upload to several topics no longer
+  loses the later copies when the first copy is replaced right away (#536).
 - Android: a late repeat no longer rings a notification again after Clear
   and Undo when this phone also sent it, cleared it and undid it (#550).
 - Android: text typed in a reply box is kept as a draft when the box closes
