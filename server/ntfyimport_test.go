@@ -328,6 +328,23 @@ func TestNtfyImportReplacesAnonymous(t *testing.T) {
 	}
 }
 
+// #458: topics are case-sensitive, so a grant allows only its own case, and
+// a match in another case still denies (first match wins).
+func TestGrantCase(t *testing.T) {
+	tok := &Token{Scopes: []string{ScopeRead, ScopePublish}, Grants: []Grant{
+		{Topic: "home", Scopes: []string{ScopeRead, ScopePublish}},
+		{Topic: "secret", Scopes: []string{}},
+		{Topic: "ops-*", Scopes: []string{ScopePublish}},
+		{Topic: "HOME", Scopes: []string{ScopeRead, ScopePublish}},
+	}}
+	for topic, want := range map[string]bool{"home": true, "HOME": true, "Home": false,
+		"secret": false, "SECRET": false, "ops-a": true, "OPS-a": false, "other": false} {
+		if got := tok.may(ScopePublish, topic); got != want {
+			t.Errorf("publish %s: %v, want %v", topic, got, want)
+		}
+	}
+}
+
 func TestGrantsRejectBadPatterns(t *testing.T) {
 	if _, _, err := ntfyGrants([]ntfyRule{{topic: "a/b", read: true}}, nil, nil); err == nil {
 		t.Fatal("bad pattern imported")

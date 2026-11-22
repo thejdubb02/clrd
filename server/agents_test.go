@@ -108,8 +108,8 @@ func TestAgentInvite(t *testing.T) {
 		code, _ := call(t, ts, "POST", "/api/v1/notifications", tok, map[string]any{"topic": topic, "message": "x"})
 		return code
 	}
-	if pub(agent, "home") != 200 || pub(agent, "work") != 403 {
-		t.Fatalf("agent publish: home %d, work %d", pub(agent, "home"), pub(agent, "work"))
+	if pub(agent, "home") != 200 || pub(agent, "work") != 403 || pub(agent, "HOME") != 403 {
+		t.Fatalf("agent publish: home %d, work %d, HOME %d (#458)", pub(agent, "home"), pub(agent, "work"), pub(agent, "HOME"))
 	}
 	// An agent never invites another, from its token or a browser made from it.
 	for _, tok := range []string{agent, childOf(t, s, agent)} {
