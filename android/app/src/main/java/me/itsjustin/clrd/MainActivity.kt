@@ -1566,6 +1566,19 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
                 app.io.execute { RoomStore(app).reconcile() } // reposts every row in or out of its stack
             })
         }
+        var drop by remember { mutableStateOf(app.dropCleared) }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.drop_cleared), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.drop_cleared_explain), color = b.slate, fontSize = 13.sp)
+            }
+            Switch(checked = drop, onCheckedChange = { on ->
+                drop = on
+                app.dropCleared = on
+                app.io.execute { app.pruneCleared() }
+            })
+        }
         SoundSettings(app, resumes)
         if (app.configured) SnoozeSettings(app)
         if (app.configured) DeviceSettings(app, resumes)

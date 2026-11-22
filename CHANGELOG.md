@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: a "Remove cleared items" switch in Settings (#151). When on, a
+  cleared item leaves the phone at once instead of staying in the Cleared tab
+  for up to 7 days. Off by default; the server keeps its copy either way.
 - Android: sender rules in Settings (#545, #119 part 2). Open a sender to pause,
   mute, cap its priority or reroute its topics, and see and undo each change,
   as on the web.

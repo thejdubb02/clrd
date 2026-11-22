@@ -80,6 +80,8 @@
     <string name="topic_muted">muted</string>
     <string name="topic_on">on</string>
     <string name="stack">Stack by topic</string>
+    <string name="drop_cleared">Remove cleared items</string>
+    <string name="drop_cleared_explain">Clearing an item also removes it from this phone, so the Cleared tab stays empty. The server keeps its copy, and the web inbox still shows it.</string>
     <string name="stack_show">Show all</string>
     <string name="stack_hide">Hide</string>
     <string name="stack_explain">Notifications from the same topic fold into one stack, in the app\'s list and in the phone\'s notification shade. Tap a stack in the list to open it. Swiping a notification or stack away only hides it on this phone; clear it in the app to clear it everywhere.</string>
