@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 )
 
@@ -46,6 +47,7 @@ type OutHook struct {
 	HasSecret    bool       `json:"has_secret"`
 	Enabled      bool       `json:"enabled"`
 	FailingSince *time.Time `json:"failing_since"`
+	Body         string     `json:"body"` // a template for the POST body; "" sends the event (#239)
 }
 
 // queueHooks adds a delivery for every enabled hook on the event's topic that
@@ -69,13 +71,60 @@ type hookJob struct {
 	id                 int64
 	topic, name, event string
 	url, secret, body  string
+	tmpl               string // the hook's body template, rendered at each try
 	attempts           int
+}
+
+// parseHookBody compiles a hook's body template with the incoming
+// templates' functions and limits, plus json, which quotes a value so a title
+// with a quote or a newline still makes valid JSON.
+func parseHookBody(src string) (*template.Template, error) {
+	if len(src) > webhookFieldMax {
+		return nil, errf(400, "bad_request", "template body: over 16 KB")
+	}
+	t, err := template.New("body").Funcs(webhookFuncs(nil)).Funcs(template.FuncMap{"json": func(v any) string {
+		b, _ := json.Marshal(v)
+		return string(b)
+	}}).Option("missingkey=zero").Parse(src)
+	if err != nil {
+		return nil, errf(400, "bad_request", "template body: %v", err)
+	}
+	if len(t.Templates()) > 1 {
+		return nil, errf(400, "bad_request", "template: define and block are not allowed")
+	}
+	if err := plain(t.Root); err != nil {
+		return nil, errf(400, "bad_request", "template body: %v", err)
+	}
+	return t, nil
+}
+
+// renderHookBody renders src against one sync stream event and checks the
+// result is JSON, as the Content-Type says.
+func renderHookBody(src, event string) (string, error) {
+	t, err := parseHookBody(src)
+	if err != nil {
+		return "", err
+	}
+	dec := json.NewDecoder(strings.NewReader(event))
+	dec.UseNumber() // a seq of 1000000 prints as 1000000, not 1e+06
+	var data any
+	if err := dec.Decode(&data); err != nil {
+		return "", err
+	}
+	out, err := render(t, "body", data)
+	if err != nil {
+		return "", err
+	}
+	if !json.Valid([]byte(out)) {
+		return "", errf(400, "bad_request", "template body: output is not valid JSON")
+	}
+	return out, nil
 }
 
 // deliverHooks sends every due delivery. Only database errors fail the job;
 // a receiver's failure is recorded on its delivery.
 func (s *Server) deliverHooks(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT d.id, d.topic, d.name, d.event, h.url, h.secret, d.body, d.attempts
+	rows, err := s.db.QueryContext(ctx, `SELECT d.id, d.topic, d.name, d.event, h.url, h.secret, d.body, h.body, d.attempts
 		FROM hook_deliveries d JOIN hooks_out h ON h.topic = d.topic AND h.name = d.name
 		WHERE d.status = 'pending' AND d.next_at <= ? AND h.enabled = 1 ORDER BY d.id LIMIT ?`, ms(now()), hookBatch)
 	if err != nil {
@@ -84,7 +133,7 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 	var jobs []hookJob
 	for rows.Next() {
 		var j hookJob
-		if err := rows.Scan(&j.id, &j.topic, &j.name, &j.event, &j.url, &j.secret, &j.body, &j.attempts); err != nil {
+		if err := rows.Scan(&j.id, &j.topic, &j.name, &j.event, &j.url, &j.secret, &j.body, &j.tmpl, &j.attempts); err != nil {
 			rows.Close()
 			return err
 		}
@@ -122,8 +171,16 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 
 // sendHook POSTs one delivery through the favicon fetcher's guarded transport
 // (no private addresses, ports 80 and 443 only, no proxy) and never follows a
-// redirect. It returns the status code, or an error when none came back.
+// redirect. It returns the status code, or an error when none came back. A
+// body template that fails to render is an error too, and nothing is sent.
 func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
+	if j.tmpl != "" {
+		body, err := renderHookBody(j.tmpl, j.body)
+		if err != nil {
+			return 0, err
+		}
+		j.body = body // what is signed is what is sent
+	}
 	req, err := http.NewRequestWithContext(ctx, "POST", j.url, strings.NewReader(j.body))
 	if err != nil {
 		return 0, err
@@ -232,7 +289,7 @@ func (s *Server) OutHooks(ctx context.Context, tok *Token, topic string) ([]Topi
 	if err := hookOwner(tok, topic, ""); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, name, url, events, secret != '', enabled, failing_since
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, name, url, events, secret != '', enabled, failing_since, body
 		FROM hooks_out WHERE ? = '' OR topic = ? ORDER BY topic, name`, topic, topic)
 	if err != nil {
 		return nil, err
@@ -243,7 +300,7 @@ func (s *Server) OutHooks(ctx context.Context, tok *Token, topic string) ([]Topi
 		var h TopicHook
 		var events string
 		var since sql.NullInt64
-		if err := rows.Scan(&h.Topic, &h.Name, &h.URL, &events, &h.HasSecret, &h.Enabled, &since); err != nil {
+		if err := rows.Scan(&h.Topic, &h.Name, &h.URL, &events, &h.HasSecret, &h.Enabled, &since, &h.Body); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(events), &h.Events)
@@ -257,8 +314,9 @@ func (s *Server) OutHooks(ctx context.Context, tok *Token, topic string) ([]Topi
 }
 
 // SaveHook adds or replaces a hook. With keepSecret, an empty h.Secret keeps
-// the one already saved instead of removing it.
-func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h OutHook, keepSecret bool) error {
+// the one already saved instead of removing it; keepBody does the same for
+// h.Body, for the web form, which has no body field.
+func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h OutHook, keepSecret, keepBody bool) error {
 	if err := hookOwner(tok, topic, name); err != nil {
 		return err
 	}
@@ -276,12 +334,16 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 			return errf(400, "bad_request", "unknown event %q: use %s", e, strings.Join(hookEvents, ", "))
 		}
 	}
+	if _, err := parseHookBody(h.Body); err != nil {
+		return err
+	}
 	events, _ := json.Marshal(h.Events)
 	// Saving again turns a hook back on and starts a fresh failure streak.
-	_, err := s.db.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret) VALUES (?, ?, ?, ?, ?)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret, body) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(topic, name) DO UPDATE SET url = excluded.url, events = excluded.events,
-		secret = CASE WHEN ? AND excluded.secret = '' THEN hooks_out.secret ELSE excluded.secret END, enabled = 1, failing_since = NULL`,
-		topic, name, h.URL, string(events), h.Secret, keepSecret)
+		secret = CASE WHEN ? AND excluded.secret = '' THEN hooks_out.secret ELSE excluded.secret END,
+		body = CASE WHEN ? AND excluded.body = '' THEN hooks_out.body ELSE excluded.body END, enabled = 1, failing_since = NULL`,
+		topic, name, h.URL, string(events), h.Secret, h.Body, keepSecret, keepBody)
 	return err
 }
 
@@ -375,7 +437,7 @@ func (s *Server) hookOutRoutes() {
 		if err := decodeJSON(r, &h); err != nil {
 			return err
 		}
-		if err := s.SaveHook(r.Context(), tok, topic, name, h, false); err != nil {
+		if err := s.SaveHook(r.Context(), tok, topic, name, h, false, false); err != nil {
 			return err
 		}
 		if len(h.Events) == 0 {

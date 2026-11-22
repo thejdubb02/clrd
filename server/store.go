@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS hooks_out (
   secret TEXT NOT NULL DEFAULT '',
   enabled INTEGER NOT NULL DEFAULT 1,
   failing_since INTEGER, -- first failure since the last 2xx
+  body TEXT NOT NULL DEFAULT '', -- a template for the POST body; '' sends the event (#239)
   PRIMARY KEY (topic, name)
 );
 -- One row per event per hook, written in the event's own transaction.
@@ -356,6 +357,11 @@ func openDB(path string) (*sql.DB, error) {
 	} else if !strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
 		return nil, fmt.Errorf("add qseq column: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE hooks_out ADD COLUMN body TEXT NOT NULL DEFAULT ''`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add hooks_out body column: %w", err)
 	}
 	if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN phone INTEGER NOT NULL DEFAULT 0`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {

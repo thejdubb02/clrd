@@ -4636,7 +4636,7 @@
   "/api/v1/topics/{topic}/hooks/{name}": {
    "put": {
     "summary": "Save an outgoing webhook: POST the topic's state changes to a URL",
-    "description": "Scope admin. Replaces the whole hook and turns it back on. Each delivery's body is the sync stream event; X-Clrd-Event names it and X-Clrd-Signature is sha256=<hex HMAC-SHA256 of the body> when a secret is set. Private addresses and ports other than 80 and 443 are refused at send time. See docs/integrations/webhooks-out.md.",
+    "description": "Scope admin. Replaces the whole hook and turns it back on. Each delivery's body is the sync stream event, or the hook's body template rendered against it; X-Clrd-Event names it and X-Clrd-Signature is sha256=<hex HMAC-SHA256 of the body> when a secret is set. Private addresses and ports other than 80 and 443 are refused at send time. See docs/integrations/webhooks-out.md.",
     "tags": [
      "notifications"
     ],
@@ -4680,6 +4680,10 @@
          },
          "secret": {
           "type": "string"
+         },
+         "body": {
+          "type": "string",
+          "description": "Optional template for the POST body, rendered against the sync stream event at each try, with the incoming template functions plus json (quotes a value). Must render valid JSON, at most 16 KB. Empty sends the event."
          }
         }
        }
@@ -5482,6 +5486,9 @@
       "type": "string",
       "format": "date-time",
       "nullable": true
+     },
+     "body": {
+      "type": "string"
      }
     }
    },

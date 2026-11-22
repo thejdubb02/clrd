@@ -662,7 +662,7 @@ resolved`) and `ntfy_import`.
 | DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
 | POST | `/api/v1/topics/{topic}/templates/{name}/preview` | Dry run: `{payload, headers?, template?}` returns `{notifications}`, what a post of payload would publish, through the same render path, without storing or sending anything and without the secret check. `template` previews an unsaved one. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/hooks` | The topic's outgoing webhooks (secret hidden, `has_secret` shown). Admin. |
-| PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret"}`, replaces and turns it back on) or remove an outgoing webhook. Admin. |
+| PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret","body"}`, replaces and turns it back on; `body` is an optional template, #239) or remove an outgoing webhook. Admin. |
 | GET | `/api/v1/topics/{topic}/hooks/{name}/deliveries` | The last 100 deliveries, newest first. Admin. |
 | GET | `/api/v1/silences` | Scope read. Active silences on topics this token may read, plus those with no topic: `{"silences":[{"id","topic","tag","until","comment","created_by","created_at"}]}`. |
 | POST | `/api/v1/silences` | Body `{"topic","tag","for":"8h"}` or `"until":"RFC3339"` instead of `for` (exactly one, at most 8784h ahead), optional `comment`. Needs `topic`, `tag` or both. Returns 201 and the silence. Scope publish on the topic; no topic (every topic) needs a token without a topic list. |
@@ -739,12 +739,14 @@ By external id (what scripts and monitors use):
   `X-Markdown` / `?markdown=` work as on any ntfy publish (section 2.1).
   Docs: `docs/integrations/custom-webhooks.md`.
 - Webhooks out: a topic's outgoing webhook POSTs the sync stream event
-  (section 3) on dismissed, acknowledged, resolved, snoozed and `action` (a
+  (section 3), or its `body` template rendered against that event (the
+  incoming template functions plus `json`; must render valid JSON, 16 KB at
+  most, or the try fails unsent), on dismissed, acknowledged, resolved, snoozed and `action` (a
   reply tapped), with `X-Clrd-Event`, `X-Clrd-Delivery` and, with a secret,
   `X-Clrd-Signature: sha256=<hex HMAC>`. Same address guard as the favicon
   fetcher. Non-2xx is tried again from 30 s, doubling, 8 tries in all; 24 h of failures turns
-  it off with a notification on the topic. Each try uses the hook's URL and
-  secret saved at that moment. Docs:
+  it off with a notification on the topic. Each try uses the hook's URL,
+  secret and body saved at that moment. Docs:
   `docs/integrations/webhooks-out.md`.
 
 Full ntfy parity checklist lives in issue #2; tick it off there.

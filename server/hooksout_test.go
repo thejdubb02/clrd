@@ -261,3 +261,65 @@ func TestHooksOutRaces(t *testing.T) {
 	}
 	one(t, s, "alerts", "webhook-off-gh")
 }
+
+// A body template (#239): the receiver gets its own JSON shape, signed as
+// sent; a template that does not make JSON sends nothing and says why.
+func TestHooksOutBody(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	var status atomic.Int64
+	status.Store(200)
+	url, hits := receiver(t, &status)
+	path := "/api/v1/topics/alerts/hooks/slack"
+	if code, _ := call(t, ts, "PUT", path, admin, map[string]any{"url": url, "body": "{{range .}}{{end}}"}); code != 400 {
+		t.Fatalf("range template saved: %d", code)
+	}
+	slack := `{"text": {{json .notification.title}}, "seq": {{.seq}}}`
+	if code, h := call(t, ts, "PUT", path, admin, map[string]any{"url": url, "body": slack, "secret": "s3"}); code != 200 || h["body"] != slack {
+		t.Fatalf("save: %d %v", code, h)
+	}
+	resolve := func(title string) {
+		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "title": title, "message": "m"})
+		call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/resolve", admin, nil)
+		if err := s.deliverHooks(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	title := "He said \"hi\"\nthen left"
+	resolve(title)
+	got := hits()
+	if len(got) != 1 || got[0].body["text"] != title || got[0].body["seq"] == nil || len(got[0].body) != 2 {
+		t.Fatalf("templated body: %v", got)
+	}
+	mac := hmac.New(sha256.New, []byte("s3"))
+	mac.Write(got[0].raw)
+	if got[0].sig != "sha256="+hex.EncodeToString(mac.Sum(nil)) {
+		t.Fatalf("signature does not match the sent body")
+	}
+
+	// The web form has no body field: its save keeps the template, even
+	// when it clears the secret.
+	if err := s.SaveHook(ctx, serverToken, "alerts", "slack", OutHook{URL: url}, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if hs, _ := s.OutHooks(ctx, serverToken, "alerts"); hs[0].Body != slack || hs[0].HasSecret {
+		t.Fatalf("after web save: %+v", hs[0])
+	}
+
+	// Not JSON: nothing is sent and the delivery log says why.
+	call(t, ts, "PUT", path, admin, map[string]any{"url": url, "body": `{"text": {{.notification.title}}}`})
+	resolve("plain")
+	if len(hits()) != 1 {
+		t.Fatalf("a body that is not JSON was sent")
+	}
+	_, log := call(t, ts, "GET", path+"/deliveries", admin, nil)
+	if d := log["deliveries"].([]any)[0].(map[string]any); d["status"] != "pending" || !strings.Contains(d["error"].(string), "not valid JSON") {
+		t.Fatalf("delivery: %v", d)
+	}
+
+	// Big numbers print as digits.
+	if out, err := renderHookBody(`{"seq": {{.seq}}}`, `{"seq": 1000000}`); err != nil || out != `{"seq": 1000000}` {
+		t.Fatalf("seq: %q %v", out, err)
+	}
+}

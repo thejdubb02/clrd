@@ -60,6 +60,25 @@ The notification has every field the API returns; this shows a few. Headers:
 - `X-Clrd-Delivery`: an id, the same on every retry of one delivery.
 - `X-Clrd-Signature`: when the webhook has a secret.
 
+## Your own body shape
+
+Some receivers, like Slack and Discord, want their own JSON instead of the
+event. Give the webhook a `body` template and clrd sends what it renders. It
+uses the same template language as [incoming webhooks](custom-webhooks.md),
+run against the event above, plus `json`, which quotes a value so a title
+with a quote or a line break still makes valid JSON:
+
+```json
+{"url": "https://hooks.slack.com/services/...",
+ "body": "{\"text\": {{json .notification.title}}}"}
+```
+
+For Discord, use `{"content": {{json .notification.title}}}`. The output must
+be valid JSON of at most 16 KB. If it is not, nothing is sent and the
+delivery log shows why; fix the template and the waiting retries use it. The
+signature covers the body as sent. Leave `body` empty to send the event.
+The web inbox form has no body field yet; saving there keeps the saved one.
+
 ## Retries and turning off
 
 Any 2xx answer is a success. Anything else, a redirect or no answer within 10
@@ -70,9 +89,9 @@ to order them.
 If a webhook keeps failing for 24 hours, clrd turns it off and posts a
 notification to the topic saying so. Save it again to turn it back on.
 Deliveries still waiting then go out once it is back on. Each try uses the
-URL and secret saved at that moment, so saving a fixed URL also fixes the
-retries already queued. A webhook with nothing to send stays
-on; the next failure after 24 hours of failing turns it off at once.
+URL, secret and body template saved at that moment, so saving a fix also
+fixes the retries already queued. A webhook with nothing to send stays on;
+the next failure after 24 hours of failing turns it off at once.
 
 `GET /api/v1/topics/alerts/hooks/github/deliveries` shows the last 100
 deliveries: status (`pending`, `ok` or `failed`), tries, the last HTTP code
