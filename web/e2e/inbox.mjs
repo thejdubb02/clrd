@@ -1631,8 +1631,27 @@ try {
     await sp.getByRole('button', { name: 'Save rules' }).click();
     await rules.locator('tr[data-change]:nth-child(5)').waitFor();
     assert.equal(await sp.locator('[name=muted]').isChecked(), true, 'muted after a fresh save');
+
+    // The quiet alarm (#119 part 3, #560): a bad duration comes back as the
+    // page with the server's message by the field and the typed value kept.
+    await sp.locator('#r-expect').fill('5s');
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await sp.locator('#r-expect-err', { hasText: /Not saved: expect must be a duration from 1m to 8784h/ }).waitFor();
+    assert.equal(await sp.locator('#r-expect').inputValue(), '5s', 'typed duration kept');
+    assert.equal(await sp.locator('#r-expect').getAttribute('aria-invalid'), 'true', 'expect marked invalid');
+    assert.equal(await change.count(), 5, 'a bad duration logged a change');
+    const badExpect = await ctx.request.post(base + path, { form: { ...full, expect: '5s', base_seq: await sp.locator('[name=base_seq]').inputValue() }, headers: { Origin: base }, maxRedirects: 0 });
+    assert.equal(badExpect.status(), 400, `bad duration: ${badExpect.status()}`);
+    await sp.locator('#r-expect').fill('25h');
+    await sp.locator('#r-alert').fill('rule-alarm');
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await rules.locator('tr[data-change]:nth-child(6)').waitFor();
+    await sp.reload();
+    assert.equal(await sp.locator('#r-expect').inputValue(), '25h', 'expect after reload');
+    assert.equal(await sp.locator('#r-alert').inputValue(), 'rule-alarm', 'alert topic after reload');
+    await rules.locator('tr[data-change]', { hasText: 'alarm if quiet 25h in rule-alarm' }).first().waitFor();
     await ctx.close();
-    console.log('ok: sender rules pause, log, undo and round trip without JavaScript; bad routes, a stale page and a non-admin get 400');
+    console.log('ok: sender rules pause, log, undo, quiet alarm and round trip without JavaScript; bad routes, a bad duration, a stale page and a non-admin get 400');
   }
 
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair

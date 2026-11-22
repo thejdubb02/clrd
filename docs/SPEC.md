@@ -849,7 +849,8 @@ by_id, at}]}`, newest first, with `before` and `after` the full rules. `POST
 sender, its rules and its log.
 
 The web inbox shows the list at `/app/senders` and one sender at
-`/app/senders/{id}`, where a form sets every rule above and each change
+`/app/senders/{id}`, where a form sets every rule above (an `expect` or `alert_topic` the server
+refuses comes back with its message by that field) and each change
 has an Undo button, for the same admins only; anyone
 else gets 403. The form sends `base_seq`, so saving a page drawn before a
 newer change is refused rather than undoing that change. The Android app

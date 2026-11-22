@@ -19,6 +19,9 @@ Fixed, Removed, Security), as one line a user can understand.
   (like `25h`) on a sender, through the API or the MCP `set_sender` tool, and
   the server raises an urgent notification when that sender sends nothing for
   that long; its next message resolves it. Off unless set.
+- Web: the quiet alarm on the sender Rules form (#119, part 3, #560). Set
+  "Alarm if quiet for" (like `25h`) and an alarm topic on a sender's page; a
+  value the server refuses shows its message next to that field. Off until set.
 - Android: a "Remove cleared items" switch in Settings (#151). When on, a
   cleared item leaves the phone as soon as the server has the clear, instead
   of staying in the Cleared tab for up to 7 days. Off by default; the server keeps its copy either way.
