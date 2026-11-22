@@ -1132,6 +1132,9 @@
          "link_previews": {
           "type": "boolean"
          },
+         "clear_marks_on_republish": {
+          "type": "boolean"
+         },
          "topic_previews": {
           "type": "object",
           "additionalProperties": {
@@ -6736,6 +6739,10 @@
      "link_previews": {
       "type": "boolean",
       "description": "Show a preview card for links. Default false."
+     },
+     "clear_marks_on_republish": {
+      "type": "boolean",
+      "description": "A publish that updates a notification by external_id drops its marks. Default false (marks stay)."
      },
      "topic_previews": {
       "type": "object",

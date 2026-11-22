@@ -562,6 +562,7 @@ type Snapshot struct {
 	KeepClearedDays                              int             // days cleared messages are kept, 0 = forever
 	TopicKeepClearedDays                         map[string]int  // overrides KeepClearedDays for one topic
 	Sound                                        string          // this device's own sound (SPEC 2.2), "default" when unset
+	ClearMarks                                   bool            // a re-sent alert drops its marks (SPEC 2, Marks)
 	Format                                       []FormatTopic   // format check (#308), Settings only: topic and sender groups with problems
 	FormatOff                                    []FormatOff     // topics left out of the check (#320)
 	FormatDismissed                              []FormatDismiss // findings dismissed (#320)

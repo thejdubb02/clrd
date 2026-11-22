@@ -75,7 +75,9 @@ author: a token attached to a person marks as that person (`by_id` is the
 person's id), any other token as the token its device tree starts from.
 Setting it again replaces it; only the author changes or removes it. A mark
 writes a `mark` event (section 3) and moves `updated_at`. A publish that
-updates the row by `external_id` keeps its marks.
+updates the row by `external_id` keeps its marks, unless the setting
+`clear_marks_on_republish` (section 2.1, default `false`) is on: then it
+drops them, so a problem that came back does not look handled.
 
 **Emoji (#306):** `title` and `message` are sent with common GitHub and
 Slack shortcodes shown as the emoji (`:warning:` becomes ⚠️), and a tag that
@@ -287,6 +289,8 @@ shows messages the same way:
 
 `render_formatting` off shows Markdown as plain text. `autolink` turns bare
 http(s) URLs into links. `favicons` shows a site icon next to links.
+`clear_marks_on_republish` (default `false`) drops a notification's marks when
+a publish updates it by `external_id` (section 2, Marks).
 `link_previews` shows a card for links, and `topic_previews` overrides it per
 topic. `GET /api/v1/settings` reads them and `PUT` changes only the fields
 given (a topic mapped to `null` drops its override); both need scope read. A

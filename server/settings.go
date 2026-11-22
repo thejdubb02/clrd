@@ -73,6 +73,10 @@ type Settings struct {
 	// Sound is the asking device's own sound (#282), filled on reads and
 	// set with PUT /api/v1/devices/{id}.
 	Sound string `json:"sound,omitempty"`
+	// ClearMarksOnRepublish drops a card's marks when its sender sends it
+	// again by external_id, so a problem that came back does not look
+	// handled. Off by default: marks stay.
+	ClearMarksOnRepublish bool `json:"clear_marks_on_republish"`
 }
 
 // maxKeepDays is the longest keep_cleared_days a number can ask for (100 years).
@@ -218,6 +222,7 @@ type SettingsPatch struct {
 	KeepClearedDays  *int             `json:"keep_cleared_days"`
 	TopicKeep        map[string]*int  `json:"topic_keep_cleared_days"`
 	Sound            *string          `json:"sound"` // this device's own sound
+	ClearMarks       *bool            `json:"clear_marks_on_republish"`
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -282,7 +287,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
 		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil ||
-		p.SwipeStart != nil || p.SwipeEnd != nil
+		p.SwipeStart != nil || p.SwipeEnd != nil || p.ClearMarks != nil
 	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews and topic_keep_cleared_days")
 	}
@@ -347,7 +352,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		for _, f := range []struct {
 			from *bool
 			to   *bool
-		}{{p.RenderFormatting, &st.RenderFormatting}, {p.Autolink, &st.Autolink}, {p.Favicons, &st.Favicons}, {p.LinkPreviews, &st.LinkPreviews}} {
+		}{{p.RenderFormatting, &st.RenderFormatting}, {p.Autolink, &st.Autolink}, {p.Favicons, &st.Favicons}, {p.LinkPreviews, &st.LinkPreviews}, {p.ClearMarks, &st.ClearMarksOnRepublish}} {
 			if f.from != nil {
 				*f.to = *f.from
 			}
