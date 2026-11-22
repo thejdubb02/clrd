@@ -54,6 +54,12 @@ func markAuthor(ctx context.Context, q querier, tok *Token) (id, name string, er
 	return
 }
 
+// MarkAuthor is the by_id tok's marks get, so a client can tell its own.
+func (s *Server) MarkAuthor(ctx context.Context, tok *Token) (string, error) {
+	id, _, err := markAuthor(ctx, s.db, tok)
+	return id, err
+}
+
 // SetMark sets tok's mark on notification id. kind "" removes it.
 func (s *Server) SetMark(ctx context.Context, tok *Token, id, kind, note, link string) (*Notification, error) {
 	if tok == nil {

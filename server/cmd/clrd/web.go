@@ -120,6 +120,9 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return snap, err
 	}
 	snap.Counts = counts
+	if snap.MarkID, err = a.s.MarkAuthor(ctx, tok); err != nil {
+		return snap, err
+	}
 	ds, err := a.s.Settings(ctx, tok)
 	if err != nil {
 		return snap, err
@@ -358,4 +361,13 @@ func (a webAPI) Reply(r *http.Request, id, reply string, seq int64) error {
 	}
 	_, err := a.s.Reply(r.Context(), tok, id, reply, "web_form", seq)
 	return webError(err) // the page shows why: not allowed, its own request, or answered already
+}
+
+func (a webAPI) Mark(r *http.Request, id, mark, note, link string) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.SetMark(r.Context(), tok, id, mark, note, link)
+	return webError(err) // the page shows why: a long note or a link that is not http
 }

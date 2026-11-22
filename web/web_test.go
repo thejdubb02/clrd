@@ -119,8 +119,9 @@ func TestLinks(t *testing.T) {
 // readOnly is for page tests that never act.
 type readOnly struct{}
 
-func (readOnly) Act(*http.Request, string, string, *time.Time) error { return ErrUnauthorized }
-func (readOnly) Reply(*http.Request, string, string, int64) error    { return ErrUnauthorized }
+func (readOnly) Act(*http.Request, string, string, *time.Time) error      { return ErrUnauthorized }
+func (readOnly) Reply(*http.Request, string, string, int64) error         { return ErrUnauthorized }
+func (readOnly) Mark(*http.Request, string, string, string, string) error { return ErrUnauthorized }
 
 func (readOnly) StartSilence(*http.Request, string, string, string, string) error {
 	return ErrUnauthorized
