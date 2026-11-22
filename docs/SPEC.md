@@ -833,7 +833,8 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   private-network peer is trusted.
   `CLRD_CONFIG` (unset): a JSON file `{"users": [...], "tokens": [...]}`
   applied at every start (#155). A user is `name` and `grants` as on the
-  API. A token is `name`, `secret` (`clrd_` and 20 or more characters in all; `"$NAME"` reads
+  API; a user named like an agent stops the start, since it would take the
+  agent over. A token is `name`, `secret` (`clrd_` and 20 or more characters in all; `"$NAME"` reads
   the environment variable), `scopes`, `topics`, `grants`, `approve` and
   `user` (a user name in the file), and is matched by the hash of its
   secret, so one made on the API is taken over. Rows the file made and no
