@@ -462,6 +462,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadTimeout))
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
+	} else if r.ContentLength > maxBody { // refused by its declared length, before a slow read can time out
+		s.fail(w, errf(413, "too_large", "request body over %d bytes", maxBody))
+		return
 	} else if r.ContentLength != 0 { // read the whole body now, under a deadline
 		rc := http.NewResponseController(w)
 		rc.SetReadDeadline(time.Now().Add(bodyTimeout))
