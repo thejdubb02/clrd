@@ -31,4 +31,14 @@ class SenderTest {
         assertTrue("try again", s.send({}) { "no" })
         assertNull("a new try clears the old reason", s.err)
     }
+
+    @Test fun aTapAfterSuccessBeforeTheBoxClosesSendsNothing() {
+        var posts = 0
+        s.send({ posts++ }) { "no" }
+        queued.removeAt(0).run()
+        assertFalse("busy is off but the box has not closed yet", s.send({ posts++ }) { "no" })
+        assertEquals(1, posts)
+        s.open()
+        assertTrue("the next box sends again", s.send({ posts++ }) { "no" })
+    }
 }

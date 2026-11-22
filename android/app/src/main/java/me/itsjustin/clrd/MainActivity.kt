@@ -387,7 +387,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
         containerColor = b.paper,
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            if (tab == Tab.Inbox && app.configured) FloatingActionButton(onClick = { if (!app.sender.busy) app.sender.err = null; sending = true }, containerColor = b.ink, contentColor = b.paper) {
+            if (tab == Tab.Inbox && app.configured) FloatingActionButton(onClick = { app.sender.open(); sending = true }, containerColor = b.ink, contentColor = b.paper) {
                 Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.send_title))
             }
         },
@@ -409,8 +409,9 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(app)
             LaunchedEffect(app.sender.sent) {
-                if (app.sender.sent == seenSent) return@LaunchedEffect
+                val was = seenSent
                 seenSent = app.sender.sent
+                if (app.sender.sent <= was) return@LaunchedEffect // the same send, or a fresh process whose count starts at 0
                 sending = false
                 snackbar.showSnackbar(ctx.getString(R.string.send_done))
             }
@@ -1016,14 +1017,19 @@ class Sender(private val run: (Runnable) -> Unit) {
     var busy by mutableStateOf(false); private set
     var err by mutableStateOf<String?>(null)
     var sent by mutableStateOf(0); private set
+    /** This box's notification went out; no more sends until the box opens again, even in the moment before it closes. */
+    var done by mutableStateOf(false); private set
 
-    /** Starts [post] unless a send is already in flight; false then. [why] turns a failure into the line the box shows. */
+    /** A fresh box: no old reason, ready to send. Does nothing while a send is in flight. */
+    fun open() { if (!busy) { err = null; done = false } }
+
+    /** Starts [post] unless a send is in flight or already done; false then. [why] turns a failure into the line the box shows. */
     fun send(post: () -> Unit, why: (Throwable) -> String): Boolean {
-        if (busy) return false
+        if (busy || done) return false
         busy = true
         err = null
         run(Runnable {
-            runCatching(post).onSuccess { sent++ }.onFailure { err = why(it) }
+            runCatching(post).onSuccess { done = true; sent++ }.onFailure { err = why(it) }
             busy = false
         })
         return true
@@ -1050,7 +1056,7 @@ private fun SendBox(app: App, topic0: String, close: () -> Unit) {
     var message by rememberSaveable { mutableStateOf("") }
     var priority by rememberSaveable { mutableStateOf(3) }
     val s = app.sender
-    val busy = s.busy
+    val busy = s.busy || s.done
     val body = sendBody(topic, title, message, priority)
     AlertDialog(
         onDismissRequest = { if (!busy) close() },
