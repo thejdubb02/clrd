@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,8 +24,15 @@ func newTest(t *testing.T) (*Server, *httptest.Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(s)
-	t.Cleanup(func() { ts.Close(); s.Close() })
+	// ts.Close does not wait for hijacked WebSocket handlers, so they could
+	// still use the database while the temp dir goes. Wait for every handler.
+	var wg sync.WaitGroup
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wg.Add(1)
+		defer wg.Done()
+		s.ServeHTTP(w, r)
+	}))
+	t.Cleanup(func() { ts.Close(); wg.Wait(); s.Close() })
 	return s, ts, mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
 }
 
