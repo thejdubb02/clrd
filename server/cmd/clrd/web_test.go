@@ -158,6 +158,36 @@ func TestSignInLink(t *testing.T) {
 	}
 }
 
+// TestDeviceActionsShown checks that http and broadcast actions reach the card
+// through the real server as text, without headers or body (#450).
+func TestDeviceActionsShown(t *testing.T) {
+	_, ts, raw := realServer(t)
+	for _, r := range [][3]string{
+		{"PUT", "/api/v1/topics/ops", `{"device_actions":true}`},
+		{"POST", "/api/v1/notifications", `{"topic":"ops","message":"m","actions":[{"label":"Off","http":{"method":"PUT","url":"https://lamp.example.com/off","headers":{"X-Key":"hidden-head"},"body":"hidden-body"}},{"label":"Ping","broadcast":{"intent":"io.example.PING"}}]}`},
+	} {
+		req, _ := http.NewRequest(r[0], ts.URL+r[1], strings.NewReader(r[2]))
+		req.Header.Set("Authorization", "Bearer "+raw)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("%s %s: %d", r[0], r[1], res.StatusCode)
+		}
+	}
+	_, body, _ := fetch(t, browser(), ts.URL+"/app?auth="+base64.RawURLEncoding.EncodeToString([]byte("Bearer "+raw)))
+	for _, want := range []string{"Off</span> runs on a phone: PUT https://lamp.example.com/off<", "Ping</span> runs on a phone: Android broadcast io.example.PING<"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page misses %q", want)
+		}
+	}
+	if strings.Contains(body, "hidden-") {
+		t.Error("page shows the request's headers or body")
+	}
+}
+
 func realServer(t *testing.T) (*server.Server, *httptest.Server, string) {
 	t.Helper()
 	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RateToken: -1, RateTopic: -1})

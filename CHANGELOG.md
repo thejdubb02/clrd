@@ -175,6 +175,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: the inbox shows a message's `http` and `broadcast` buttons under the
+  card as text (the label, plus the method and URL or the broadcast intent), so a
+  reader knows what they do. The browser never runs them (#450).
+
 - Web: an "Add agent" button in Settings. Give the agent a name and its topics, pick how long the invite lasts (15 minutes by default) and copy the one-use invite it shows. The agent then shows in Linked devices as an agent, where you can unlink it (#456).
 
 - Android: an "Add agent" button under Linked devices makes an agent invite
