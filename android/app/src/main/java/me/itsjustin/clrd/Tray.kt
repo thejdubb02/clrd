@@ -264,6 +264,7 @@ class Tray(private val ctx: Context) {
             .setSubText(
                 when {
                     n.reply.isNotEmpty() -> ctx.getString(R.string.tray_answered, n.replyText.ifEmpty { n.reply }, n.stateBy ?: ctx.getString(R.string.tray_another_device))
+                    app.drafts.containsKey(n.id) -> ctx.getString(R.string.tray_draft) // a tray reply cannot be prefilled; the app box has the text (#516)
                     n.state == Notif.ACKNOWLEDGED -> ctx.getString(R.string.tray_acked, n.stateBy ?: ctx.getString(R.string.tray_another_device))
                     else -> n.topic
                 },

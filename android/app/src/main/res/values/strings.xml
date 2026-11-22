@@ -201,6 +201,7 @@
     <string name="tray_open">Open</string>
     <string name="tray_answered">Answered %1$s on %2$s</string>
     <string name="tray_acked">Acknowledged on %1$s</string>
+    <string name="tray_draft">Answer not accepted: tap to edit it in the app</string>
     <string name="tray_another_device">another device</string>
 
     <!-- Signing in a browser from a clrd://pair link -->

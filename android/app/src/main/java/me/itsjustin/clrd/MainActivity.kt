@@ -817,6 +817,9 @@ private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
     var text by rememberSaveable { mutableStateOf(app.drafts[n.id].orEmpty()) }
     val seq = rememberSaveable { n.seq } // the question as the box opened: an edit since then gets 409, never this answer
     val body = TrayButton.typed(a.reply!!, text, seq)
+    // An earlier answer came back 409: this box answers the old question too. Close it, text kept for the next box (#516).
+    val changed0 = remember { app.changed[n.id] ?: 0 }
+    LaunchedEffect(app.changed[n.id]) { if ((app.changed[n.id] ?: 0) != changed0) { if (text.isNotBlank()) app.drafts[n.id] = text; close() } }
     val count = text.trim().let { it.codePointCount(0, it.length) }
     AlertDialog(
         onDismissRequest = close,
