@@ -1162,6 +1162,11 @@ try {
     await edit.getByRole('button', { name: 'Save webhook' }).click();
     await card.getByText('Custom body.').waitFor();
     assert.equal(await hookBody(), tmpl, 'the body template was not saved');
+    // A form from before the field (no body sent) keeps the saved template.
+    const old = await ctx.request.post(base + '/app/hooks', { form: { topic: 'hooked', name: 'ops', url: 'https://ops2.example.invalid/in' }, headers: { Origin: base }, maxRedirects: 0 });
+    assert.equal(old.status(), 303, `old-form hook save: ${old.status()}`);
+    assert.equal(await hookBody(), tmpl, 'a save without the body field wiped the template');
+    await sp.reload();
     await card.locator('summary', { hasText: 'Edit' }).click();
     assert.equal((await edit.getByLabel('Body template').inputValue()).trim(), tmpl, 'Edit does not show the saved body');
     await edit.getByLabel('Body template').fill('');

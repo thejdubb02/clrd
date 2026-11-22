@@ -133,7 +133,7 @@ func (readOnly) FormatIgnore(*http.Request, string, string, string, bool) error 
 	return ErrUnauthorized
 }
 
-func (readOnly) SaveHook(*http.Request, string, string, string, []string, string, string, bool) error {
+func (readOnly) SaveHook(*http.Request, string, string, string, []string, *string, string, bool) error {
 	return ErrUnauthorized
 }
 

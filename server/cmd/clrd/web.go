@@ -312,12 +312,16 @@ func (a webAPI) EndSilence(r *http.Request, id string) error {
 	return webError(err)
 }
 
-func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []string, body, secret string, clearSecret bool) error {
+func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []string, body *string, secret string, clearSecret bool) error {
+	h := server.OutHook{URL: url, Events: events, Secret: secret}
+	if body != nil {
+		h.Body = *body
+	}
 	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	return webError(a.s.SaveHook(r.Context(), tok, topic, name, server.OutHook{URL: url, Events: events, Body: body, Secret: secret}, !clearSecret, false))
+	return webError(a.s.SaveHook(r.Context(), tok, topic, name, h, !clearSecret, body == nil))
 }
 
 func (a webAPI) SaveTemplate(r *http.Request, t web.Template, secret string, clearSecret bool) error {
