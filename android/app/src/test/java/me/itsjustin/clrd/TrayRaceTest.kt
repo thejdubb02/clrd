@@ -132,14 +132,26 @@ class TrayRaceTest {
         val store = RoomStore(app)
         val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
         bg { store.apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
-        bg { store.apply(listOf(row("a", Notif.ACTIVE, 5)), 0, quiet = true) }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 5).copy(createdAt = 1, marks = "[{\"mark\":\"seen\"}]")), 0, quiet = true) }
         assertTrue(once("a"))
-        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4)), 4, again = true) }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4).copy(createdAt = 1)), 4, again = true) }
         assertTrue(!once("a"))
         assertEquals(5L, bg { dao.get("a")!!.seq }) // the newer row stays
         bg { store.apply(listOf(row("c", Notif.ACKNOWLEDGED, 7)), 7) }
         bg { store.apply(listOf(row("c", Notif.ACTIVE, 6)), 7, again = true) } // acked since: no ring, no going back
         assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("c")!!.groupAlertBehavior)
+    }
+
+    @Test fun aLateRepeatAfterClearAndUndoStaysQuiet() { // #504: the Clear (5) and Undo (6) answers land before a repeat sent at 4
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1).copy(createdAt = 1, stateBy = "web")), 1) }
+        bg { store.apply(listOf(row("a", Notif.DISMISSED, 5).copy(createdAt = 1, stateBy = "phone")), 0, quiet = true) }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 6).copy(createdAt = 1, stateBy = "phone")), 0, quiet = true) }
+        assertTrue(once("a"))
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4).copy(createdAt = 1, stateBy = "web")), 4, again = true) }
+        assertTrue(once("a")) // the user's own Undo stays quiet
+        assertEquals(6L, bg { dao.get("a")!!.seq })
     }
 
     @Test fun reconcileWaitsForSyncWrites() {
