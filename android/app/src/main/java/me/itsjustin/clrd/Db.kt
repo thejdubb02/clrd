@@ -48,6 +48,13 @@ interface NotifDao {
     @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before AND topic NOT IN (:skip)")
     fun prune(before: Long, skip: List<String>)
 
+    /**
+     * Every cleared row, whatever its age or topic (#151), once it is safe to forget: the stream cursor has passed
+     * its seq, so no older event can bring it back, and nothing is waiting to send, so an offline Undo still finds it.
+     */
+    @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND seq <= (SELECT v FROM meta WHERE k = 'seq') AND NOT EXISTS (SELECT 1 FROM pending)")
+    fun dropCleared()
+
     @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before AND topic = :topic")
     fun pruneTopic(topic: String, before: Long)
 

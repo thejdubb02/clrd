@@ -469,7 +469,8 @@ private fun ServerCleared(app: App, here: Int, newest: String?) {
         app.io.execute { runCatching { org.json.JSONObject(api.get("/api/v1/counts")).getInt("cleared") }.getOrNull()?.let { total = it } }
     }
     if (total > here) Text(
-        pluralStringResource(R.plurals.cleared_on_server, total, total, App.KEEP_DAYS),
+        if (app.dropCleared) pluralStringResource(R.plurals.cleared_on_server_dropped, total, total)
+        else pluralStringResource(R.plurals.cleared_on_server, total, total, App.KEEP_DAYS),
         color = b.slate, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp),
     )
 }
@@ -1564,6 +1565,19 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
                 stack = on
                 app.stack = on
                 app.io.execute { RoomStore(app).reconcile() } // reposts every row in or out of its stack
+            })
+        }
+        var drop by remember { mutableStateOf(app.dropCleared) }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.drop_cleared), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.drop_cleared_explain), color = b.slate, fontSize = 13.sp)
+            }
+            Switch(checked = drop, onCheckedChange = { on ->
+                drop = on
+                app.dropCleared = on
+                app.io.execute { app.pruneCleared() }
             })
         }
         SoundSettings(app, resumes)

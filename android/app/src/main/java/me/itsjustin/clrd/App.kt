@@ -67,6 +67,11 @@ class App : Application() {
         get() = prefs.getBoolean("stack", false)
         set(v) = prefs.edit().putBoolean("stack", v).apply()
 
+    /** Remove cleared items from this phone as soon as they are cleared (#151). Off by default; the server keeps its own copy either way. */
+    var dropCleared: Boolean
+        get() = prefs.getBoolean("drop_cleared", false)
+        set(v) = prefs.edit().putBoolean("drop_cleared", v).apply()
+
     /** This phone's notification sound (docs/SPEC.md section 2.2). Unset means the phone's own default. Change it with [saveSound]. */
     val sound: String get() = Sounds.known(prefs.getString("sound", null))
 
@@ -184,6 +189,7 @@ class App : Application() {
         val topics = k.optJSONObject("topics") ?: org.json.JSONObject()
         val own = topics.keys().asSequence().toList()
         val dao = db.dao()
+        if (dropCleared) return dao.dropCleared()
         dao.prune(before(k.optInt("days", KEEP_DAYS)), own)
         own.forEach { dao.pruneTopic(it, before(topics.optInt(it, KEEP_DAYS))) }
     }
