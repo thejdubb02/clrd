@@ -1058,7 +1058,7 @@ private fun SenderSettings(app: App, resumes: Int) {
         app.io.execute {
             val path = "/api/v1/senders/${android.net.Uri.encode(id)}"
             // Its change log rides along in the same object, under "log" (a key the server never sends).
-            runCatching { org.json.JSONObject(api.get(path)).put("log", org.json.JSONObject(api.get("$path/changes")).optJSONArray("changes")) }
+            runCatching { org.json.JSONObject(api.get(path)).put("log", runCatching { org.json.JSONObject(api.get("$path/changes")).optJSONArray("changes") }.getOrNull()) }
                 .onSuccess { detail = it }
                 .onFailure { if ((it as? HttpError)?.isAuth == true) { senders = null; detail = null } } // no longer a full admin: hide it all
         }
@@ -1145,14 +1145,13 @@ private fun SenderRules(app: App, d: org.json.JSONObject, changed: () -> Unit) {
     val rules = d.optJSONObject("rules") ?: org.json.JSONObject()
     val path = "/api/v1/senders/${android.net.Uri.encode(d.optString("id"))}"
     var error by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    var busy by remember(d) { mutableStateOf(false) } // stays on until the reloaded sender arrives, so a control never shows stale rules
     val send: (() -> Unit) -> Unit = { call ->
         busy = true
         error = null
         app.io.execute {
-            error = runCatching(call).exceptionOrNull()?.let { ctx.getString(R.string.rules_failed, it.message) }
-            busy = false
-            changed()
+            runCatching(call).onSuccess { changed() }
+                .onFailure { error = ctx.getString(R.string.rules_failed, it.message); busy = false }
         }
     }
     val api = app.api()
@@ -1183,7 +1182,7 @@ private fun SenderRules(app: App, d: org.json.JSONObject, changed: () -> Unit) {
     }
     val saved = routeLines(rules)
     var routes by remember(d.optString("id"), saved) { mutableStateOf(saved) } // kept while typing; a new saved value replaces it
-    OutlinedTextField(routes, { routes = it }, label = { Text(stringResource(R.string.rules_routes)) }, minLines = 2, textStyle = Mono, modifier = Modifier.fillMaxWidth())
+    OutlinedTextField(routes, { routes = it }, enabled = !busy, label = { Text(stringResource(R.string.rules_routes)) }, minLines = 2, textStyle = Mono, modifier = Modifier.fillMaxWidth())
     Text(stringResource(R.string.rules_routes_hint), color = b.slate, fontSize = 12.sp)
     TextButton(enabled = !busy && routes != saved, onClick = {
         parseRoutes(routes)?.let { put(org.json.JSONObject().put("routes", it)) } ?: run { error = ctx.getString(R.string.rules_routes_bad) }
