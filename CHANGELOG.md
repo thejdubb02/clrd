@@ -75,6 +75,9 @@ Fixed, Removed, Security), as one line a user can understand.
 - Android: Undo after Clear puts a snoozed message back in Snoozed until its
   old time, instead of in the Inbox. Offline, an Ack queued before a stack's
   Clear no longer splits that Clear into one request per message (#425).
+- Pushover: `attachment_base64` sent as a multipart form field takes a file
+  up to the attachment cap. Before, a file over about 8 MiB sent that way
+  was refused (#437).
 - ntfy: a subscriber whose `since=` was pruned while it caught up no longer
   misses a live-only (`Cache: no`) message sent in that moment. The stream
   now starts over from the oldest message left without closing its live
