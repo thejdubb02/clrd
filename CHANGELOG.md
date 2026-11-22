@@ -20,6 +20,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Templates: `print`, `println`, `html`, `js`, `urlquery` and an outgoing
+  hook's `json` now fail when their arguments or result pass 16 KB, so a
+  small template that doubles a variable can no longer build a huge string
+  in memory before the 16 KB output cap applies (#492).
 - Approvals: the phone now shows every field of a tool request, not only its
   command or description, one `key: value` line each, so Allow never approves
   a field you were not shown (a working directory, a scope, flags).

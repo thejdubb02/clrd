@@ -100,7 +100,8 @@ Functions:
   cookie, secret, signature, token or key always read as empty.
 - `contains`, `lower`, `split`, plus Go's `eq`, `ne`, `and`, `or`, `not`,
   `index`, `if` and `with`. `range`, `define`, `template` and `printf` are
-  refused: use `each` for lists.
+  refused: use `each` for lists. Each field renders at most 16 KB, and
+  `print`, `html`, `js` and `urlquery` fail past 16 KB too.
 
 A template that does not parse is refused when you save it. Saving under a
 built-in's name keeps the built-in and overrides only the fields you give, so

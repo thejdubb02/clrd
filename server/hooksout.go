@@ -82,9 +82,9 @@ func parseHookBody(src string) (*template.Template, error) {
 	if len(src) > webhookFieldMax {
 		return nil, errf(400, "bad_request", "template body: over 16 KB")
 	}
-	t, err := template.New("body").Funcs(webhookFuncs(nil)).Funcs(template.FuncMap{"json": func(v any) string {
-		b, _ := json.Marshal(v)
-		return string(b)
+	t, err := template.New("body").Funcs(webhookFuncs(nil)).Funcs(template.FuncMap{"json": func(v any) (string, error) {
+		b, _ := json.Marshal(v) // capped: json of json grows each time
+		return capResult(string(b))
 	}}).Option("missingkey=zero").Parse(src)
 	if err != nil {
 		return nil, errf(400, "bad_request", "template body: %v", err)
