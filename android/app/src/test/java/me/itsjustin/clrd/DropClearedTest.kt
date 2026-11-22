@@ -9,7 +9,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.util.concurrent.TimeUnit
 
 /** "Remove cleared items" (#151): a cleared row leaves the phone at once, an open one never does. */
 @RunWith(RobolectricTestRunner::class)
@@ -21,7 +20,9 @@ class DropClearedTest {
 
     @After fun tearDown() { app.dropCleared = false }
 
-    private fun onIo(f: () -> Unit) { app.io.submit { f() }.get(10, TimeUnit.SECONDS) } // Room refuses the main thread
+    // Room refuses the main thread. No time limit: the first call opens the database cold (2.8 s on an idle cezar1),
+    // and a 10 s limit failed this test on a loaded run (#551). Every step here is synchronous Room work, nothing waits on another thread.
+    private fun onIo(f: () -> Unit) { app.io.submit { f() }.get() }
 
     @Test fun offKeepsRecentHistoryOnKeepsNone() = onIo {
         val now = System.currentTimeMillis()
