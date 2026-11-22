@@ -189,6 +189,11 @@ Fixed, Removed, Security), as one line a user can understand.
 - Web: the inbox shows a message's `http` and `broadcast` buttons under the
   card as text (the label, plus the method and URL or the broadcast intent), so a
   reader knows what they do. The browser never runs them (#450).
+- Android: ntfy-style `http` and `broadcast` buttons now run from the tray,
+  on topics where an admin turned device actions on. A button that fails says
+  so and leaves the notification; one with `clear` clears it everywhere once
+  it worked. A broadcast with no intent uses ntfy's, so Tasker profiles made
+  for ntfy keep working (#449).
 
 - Web: an "Add agent" button in Settings. Give the agent a name and its topics, pick how long the invite lasts (15 minutes by default) and copy the one-use invite it shows. The agent then shows in Linked devices as an agent, where you can unlink it (#456).
 

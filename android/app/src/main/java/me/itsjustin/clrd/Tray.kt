@@ -38,7 +38,7 @@ sealed interface TrayStep {
 }
 
 /** One tray button: a sender link or reply (docs/SPEC.md section 2), or one of ours, by its [Tray] action. */
-data class TrayButton(val label: String = "", val res: Int = 0, val url: String? = null, val action: String? = null, val reply: String? = null) {
+data class TrayButton(val label: String = "", val res: Int = 0, val url: String? = null, val action: String? = null, val reply: String? = null, val device: Int? = null) {
     companion object {
         val ACK = TrayButton(res = R.string.tray_ack, action = Tray.ACTION_ACK)
         val SNOOZE = TrayButton(res = R.string.tray_snooze, action = Tray.ACTION_SNOOZE)
@@ -46,7 +46,7 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
 
         /**
          * Android shows 3 buttons at most. The sender's replies come first (at most 3, until someone answers),
-         * then up to 2 sender links (http and https only), then ours fill what is left in this order:
+         * then up to 2 sender links (http and https only) or device actions (http and broadcast, #449), then ours fill what is left in this order:
          * Ack (unless acked already), Clear, Snooze.
          * A swipe still clears, so Clear is never the only way out. Pure, so it is unit tested on the JVM.
          */
@@ -55,8 +55,9 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
             // An answer approves the whole text (#366), so a text the tray may cut answers in the app, where it shows in full.
             // A picture's tray style shows the text as a short summary only.
             val replies = if (fitsTray(n.message) && n.file?.isImage != true) replies(n) else emptyList()
-            val links = objs.mapNotNull { o ->
+            val links = objs.mapIndexedNotNull { i, o ->
                 val url = o.optString("url")
+                if (DeviceAction.isDevice(o)) return@mapIndexedNotNull TrayButton(o.optString("label"), if (o.optString("label").isBlank()) R.string.tray_open else 0, device = i)
                 // Web links only, and short: a huge URL would not fit through Binder and would crash the post.
                 if (url.length > 2048 || (!url.startsWith("https://", true) && !url.startsWith("http://", true))) null
                 // Android matches intent schemes case-sensitively, so HTTPS://x must become https://x
@@ -71,7 +72,8 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
             o.optString("reply").takeIf { it.isNotEmpty() }?.let { TrayButton(o.optString("label").ifBlank { it }, reply = it) }
         }.take(3)
 
-        private fun objs(n: Notif): List<JSONObject> {
+        /** The sender's action objects; a device button's index points into this list. */
+        fun objs(n: Notif): List<JSONObject> {
             val a = runCatching { JSONArray(n.actions) }.getOrNull() ?: JSONArray()
             return (0 until a.length()).mapNotNull { a.optJSONObject(it) }
         }
@@ -272,7 +274,8 @@ class Tray(private val ctx: Context) {
                 ?: images.prefetch(f.url, Images.PICTURE_PX, ::redraw)
         }
         TrayButton.pick(n).forEach {
-            b.addAction(0, if (it.res != 0) ctx.getString(it.res) else it.label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) } ?: action(n, it.action!!))
+            b.addAction(0, if (it.res != 0) ctx.getString(it.res) else it.label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) }
+                ?: it.device?.let { d -> action(n, ACTION_DEVICE, index = d) } ?: action(n, it.action!!))
         }
         nm.notify(n.id, 0, b.build())
     }
@@ -307,7 +310,7 @@ class Tray(private val ctx: Context) {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
-    private fun action(n: Notif, action: String, reply: String? = null): PendingIntent {
+    private fun action(n: Notif, action: String, reply: String? = null, index: Int? = null): PendingIntent {
         val server = App.of(ctx).serverUrl // a tap after a server switch must not reach the new server
         val i = Intent(ctx, ActionReceiver::class.java)
             .setAction(action)
@@ -315,12 +318,15 @@ class Tray(private val ctx: Context) {
             .setData(
                 Uri.parse("clrd://n/${n.id}/$action").buildUpon().appendQueryParameter("server", server)
                     // a reply also carries the version shown, so a tap on an older post cannot send a newer seq
-                    .apply { if (reply != null) appendQueryParameter("reply", reply).appendQueryParameter("seq", "${n.seq}") }.build(),
+                    .apply { if (reply != null) appendQueryParameter("reply", reply).appendQueryParameter("seq", "${n.seq}") }
+                    // a device button carries its index and the version shown, so a tap runs only the button it showed
+                    .apply { if (index != null) appendQueryParameter("i", "$index").appendQueryParameter("seq", "${n.seq}") }.build(),
             )
             .putExtra(EXTRA_ID, n.id)
             .putExtra(EXTRA_SERVER, server)
             .putExtra(EXTRA_REPLY, reply)
             .putExtra(EXTRA_SEQ, n.seq)
+            .putExtra(EXTRA_INDEX, index ?: -1)
         return PendingIntent.getBroadcast(ctx, 0, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -331,6 +337,7 @@ class Tray(private val ctx: Context) {
         const val ACTION_DISMISS = "me.itsjustin.clrd.DISMISS" // the delete intent only
         const val ACTION_CLEAR = "me.itsjustin.clrd.CLEAR" // the Clear button
         const val ACTION_REPLY = "me.itsjustin.clrd.REPLY"
+        const val ACTION_DEVICE = "me.itsjustin.clrd.DEVICE"
         const val ACTION_DISMISS_STACK = "me.itsjustin.clrd.DISMISS_STACK"
         const val EXTRA_IDS = "ids"
         const val GROUP = "topic:"
@@ -340,5 +347,6 @@ class Tray(private val ctx: Context) {
         const val EXTRA_SERVER = "server"
         const val EXTRA_REPLY = "reply"
         const val EXTRA_SEQ = "seq"
+        const val EXTRA_INDEX = "index"
     }
 }

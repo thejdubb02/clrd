@@ -143,9 +143,11 @@ the native API answers 403 and a ntfy publish drops them silently. Turning it
 off keeps what was already published. Readers, ntfy subscribers and outgoing
 webhooks get the whole action, headers and body included, so do not put a
 secret there that a reader of the topic must not see. ntfy apps run device
-actions; clrd's own Android app does not yet. The web inbox never runs them: it
-shows each one under the card as text (the label and the method and URL, or the
-broadcast intent), without headers or body (#450).
+actions, and so does clrd's Android app, as tray buttons (a broadcast with no
+intent sends ntfy's `io.heckel.ntfy.USER_ACTION`, and `clear` applies only when
+the button worked). The web inbox never runs them: it shows each one under the
+card as text (the label and the method and URL, or the broadcast intent),
+without headers or body (#450).
 
 **Icons:** `icon` is an absolute `http` or `https` URL with a host (at most
 2048 characters); anything else is a 400. Clients load it straight from that

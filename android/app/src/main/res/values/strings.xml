@@ -99,6 +99,8 @@
     <string name="reply_sent_to_confirm">Your answer was sent for confirmation. It counts once an allowed device confirms it.</string>
     <string name="reply_approve_denied">Not answered: this phone may not answer approval requests. An allowed device can change that.</string>
     <string name="reply_own_request">Not answered: this request came from this phone\'s own token, so another device has to answer it.</string>
+    <string name="device_failed">%1$s did not work. Try again from the tray.</string>
+    <string name="device_changed">Not run: this notification changed or is gone.</string>
     <string name="reply_changed">Not answered: the question changed or was already answered.</string>
     <string name="approve_title">Approval requests</string>
     <string name="approve_allowed">This phone can answer approval requests.</string>

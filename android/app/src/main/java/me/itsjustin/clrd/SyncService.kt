@@ -133,6 +133,11 @@ class ActionReceiver : BroadcastReceiver() {
             app.trayHidden += id
             return
         }
+        if (intent.action == Tray.ACTION_DEVICE) { // a sender's http or broadcast button (#449)
+            val r = goAsync()
+            DeviceAction.run(ctx, id, intent.getIntExtra(Tray.EXTRA_INDEX, -1), intent.getLongExtra(Tray.EXTRA_SEQ, -1), server) { r.finish() }
+            return
+        }
         val (action, body) = when (intent.action) {
             Tray.ACTION_ACK -> "ack" to "{}"
             Tray.ACTION_SNOOZE -> "snooze" to Snooze.body(App.of(ctx).snooze.value.default)
