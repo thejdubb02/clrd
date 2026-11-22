@@ -509,16 +509,17 @@ scheme.
   (`ops-*`). `expires_in` is 1m to 1h, default 15m. A name a user already
   has is 409. Answer 201 `{code, invite, url, expires_at, name, grants}`:
   `invite` is `clrd://agent?code=<code>&server=<base>`, `url` is
-  `<base>/agent?c=<code>`. The agent posts `POST /api/v1/agents/claim`
+  `<base>/agent#<code>` (after `#`, so the code never reaches a request
+  line or a proxy log, #463). The agent posts `POST /api/v1/agents/claim`
   `{code}` (no auth): 200 `{token, user, name, guide}` once, where `guide`
   is `{server, grants, publish, notification, events, mcp, approve_request,
   approve, limits: {publish_per_minute, attachment_max_bytes}}`. The claim
   makes the user (grants as in the invite) and its own token (`read`,
   `publish`, approve `denied`) in one transaction. The code is spent by the
   first claim, even one that fails (a name taken since: 409); after that, or
-  once expired or unknown, 410 `gone`. `GET /agent?c=` is the same guide as
-  plain text with the claim command; it spends nothing and holds no token
-  (410 when the code is dead). Invites share the pairing store: single use,
+  once expired or unknown, 410 `gone`. `GET /agent` is the guide as plain
+  text with the claim command, the same for every invite (the server never
+  sees the code); it spends nothing and holds no token. Invites share the pairing store: single use,
   their own cap of 64, held in memory, so a restart drops them. The agent
   shows in the creator's device list (kind `agent`, can unlink) and in
   `GET /api/v1/users` (`kind`, `last_seen_at`). Unlinking it revokes the

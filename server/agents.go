@@ -149,7 +149,7 @@ func (s *Server) handleInviteCreate(w http.ResponseWriter, r *http.Request, tok 
 	writeJSON(w, 201, map[string]any{
 		"code":       code,
 		"invite":     "clrd://agent?" + url.Values{"server": {base}, "code": {code}}.Encode(),
-		"url":        base + "/agent?c=" + code,
+		"url":        base + "/agent#" + code,
 		"expires_at": p.expires().UTC(),
 		"name":       name,
 		"grants":     grants,
@@ -221,44 +221,28 @@ func (s *Server) handleInviteClaim(w http.ResponseWriter, r *http.Request) error
 }
 
 // handleInvitePage is the https form, for an agent that can only fetch a
-// URL: the guide as plain text and how to claim. It spends nothing and
-// holds no token.
+// URL: how to claim, as plain text. The code rides after # in the link, so
+// it never reaches the server, a proxy's log or a Referer (#463); the page
+// is the same for every invite, and the claim answer holds the topics.
 func (s *Server) handleInvitePage(w http.ResponseWriter, r *http.Request) error {
-	code := r.URL.Query().Get("c")
-	s.pairMu.Lock()
-	p := s.pairingLocked(code, kindAgent)
-	var iv invite
-	var exp time.Time
-	if p != nil {
-		iv, exp = *p.invite, p.expires()
-	}
-	s.pairMu.Unlock()
 	h := w.Header()
 	h.Set("Content-Type", "text/plain; charset=utf-8")
-	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("X-Robots-Tag", "noindex")
-	if p == nil {
-		w.WriteHeader(http.StatusGone)
-		fmt.Fprintln(w, "This clrd agent invite expired or was already used. Ask the person who sent it for a new one.")
-		return nil
-	}
+	h.Set("Cache-Control", "no-store") // the claim URL follows the request's scheme and host
 	base := s.baseFor(r)
-	g := s.guide(base, &iv)
-	fmt.Fprintf(w, "clrd agent invite for %q on %s\nSingle use, expires %s.\n\n", iv.name, base, exp.UTC().Format(time.RFC3339))
-	fmt.Fprintf(w, "1. Claim it once, with no token:\n   curl -sS -X POST %s/api/v1/agents/claim -H 'Content-Type: application/json' -d '{\"code\":\"%s\"}'\n", base, code)
-	fmt.Fprintf(w, "   The answer holds your token (shown only once: keep it) and this guide as JSON.\n\n")
-	fmt.Fprintf(w, "2. Send with Authorization: Bearer <token>:\n   POST %s  {\"topic\":\"%s\",\"title\":\"...\",\"message\":\"...\"}\n", g.Publish, iv.grants[0].Topic)
+	g := s.guide(base, &invite{})
+	fmt.Fprintf(w, "clrd agent invite on %s\nYour code is the part of your invite link after # (%s/agent#<code>). Single use, short-lived.\n\n", base, base)
+	fmt.Fprintf(w, "1. Claim it once, with no token:\n   curl -sS -X POST %s/api/v1/agents/claim -H 'Content-Type: application/json' -d '{\"code\":\"<code>\"}'\n", base)
+	fmt.Fprintf(w, "   The answer holds your token (shown only once: keep it) and a guide as JSON, with your topics in guide.grants.\n\n")
+	fmt.Fprintf(w, "2. Send with Authorization: Bearer <token>:\n   POST %s  {\"topic\":\"<one of your topics>\",\"title\":\"...\",\"message\":\"...\"}\n", g.Publish)
 	fmt.Fprintf(w, "   Ask a question: add \"actions\":[{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]\n")
 	fmt.Fprintf(w, "   Wait for the answer: GET %s until \"reply\" is set, or follow %s\n\n", g.Notification, g.Events)
 	fmt.Fprintf(w, "3. MCP: %s with the same token (send, wait_for_reply, request_approve).\n\n", g.MCP)
-	fmt.Fprintf(w, "Your topics:\n")
-	for _, gr := range iv.grants {
-		fmt.Fprintf(w, "   %s (%s)\n", gr.Topic, strings.Join(gr.Scopes, ", "))
-	}
-	fmt.Fprintf(w, "\nApprovals: you may not answer approval requests, and never your own. To ask a person: POST %s\n", g.ApproveRequest)
+	fmt.Fprintf(w, "Approvals: you may not answer approval requests, and never your own. To ask a person: POST %s\n", g.ApproveRequest)
 	fmt.Fprintf(w, "Limits: %s\n", g.Limits.text())
+	fmt.Fprintf(w, "A claim answers 410 when the invite expired or was used: ask the person who sent it for a new one.\n")
 	return nil
 }
 

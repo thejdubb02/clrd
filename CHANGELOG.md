@@ -16,6 +16,11 @@ Fixed, Removed, Security), as one line a user can understand.
   (or the reverse) when clrd knows the request's scheme. Behind a proxy that
   rewrites the host or drops the port, a page from `CLRD_BASE_URL` now passes
   instead of getting 403 (#430).
+- Server: the https form of an agent invite is now `<server>/agent#<code>`.
+  The code sits after `#`, which is never sent, so it no longer lands in a
+  proxy's access log. The page is the same for every invite and tells the
+  agent to claim with the part after `#` (#463).
+
 - Server: a grant now allows a topic only in the grant's own case. A grant for
   `home` used to also allow `HOME` and `Home`, which are different topics, so
   a token or agent invite could reach more than it named. A match in another

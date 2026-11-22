@@ -36,16 +36,18 @@ Or from an agent that already has an admin token, with the MCP tool
 The answer holds two forms of the same invite:
 
 - `clrd://agent?code=...&server=https://clrd.example.com`
-- `https://clrd.example.com/agent?c=...`
+- `https://clrd.example.com/agent#...`
 
 Each invite works once and lasts 15 minutes unless you set `expires_in`
-(1m to 1h). Hand it to the agent privately, like a password.
+(1m to 1h). Hand it to the agent privately, like a password. In the https
+form the code sits after `#`, which a browser or HTTP client never sends, so
+it stays out of server and proxy logs.
 
 ## 2. The agent claims it
 
 An agent that can only fetch a URL opens the https form. It gets a plain text
-guide: what it may do, where to publish, and the one command to claim. Opening
-the page spends nothing and shows no token.
+guide: where its code is (the part after `#`), where to publish, and the one
+command to claim. Opening the page spends nothing and shows no token.
 
 The claim is one call with no auth:
 
