@@ -17,6 +17,7 @@ clrd.resolve("infra", "disk-build")      # clears it on every device
 n = clrd.send("deploys", "Ship v2?")
 clrd.ack(n["id"])                         # by server id
 clrd.snooze(n["id"], "1h")
+clrd.mark(n["id"], "actioned", note="filed #5")  # others see it; it clears nothing
 clrd.list("infra")                        # open notifications
 
 c = clrd.Client("https://clrd.example.com", "clrd_...")  # explicit config

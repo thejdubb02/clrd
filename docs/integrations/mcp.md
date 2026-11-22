@@ -26,6 +26,7 @@ Tools:
 | `ack` | `id` | Acknowledge by server id. |
 | `resolve` | `id` or `topic + external_id` | Clear it everywhere. |
 | `snooze` | `id, for` | Snooze, e.g. `for: "1h"`. |
+| `mark` | `id, mark?, note?, link?` | Mark it `seen` or `actioned` (note and link optional) so everyone on the topic sees you handled it. Clears nothing. No `mark` removes yours. |
 | `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped. Default 60 s, max 600 s. |
 | `devices` | none | Every linked device this token can see: name, kind (token, browser or phone), how it was linked, last seen. Never a secret. |
 | `device_log` | none | The last 200 links, sign-ins and unlinks, newest first. |

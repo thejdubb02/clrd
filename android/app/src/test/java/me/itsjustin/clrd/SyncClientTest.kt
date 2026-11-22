@@ -162,6 +162,48 @@ class SyncClientTest {
         assertEquals(listOf(false, true), store.again.toList()) // only the repeat rings while it is showing
     }
 
+    @Test fun aMarkUpdatesTheCardQuietly() { // card marks: someone else saw or actioned it, nothing rings
+        val mark = """"marks":[{"by":"stew","mark":"actioned","note":"filed relay#512"}],"seq":6}"""
+        onConnect = { _, ws ->
+            ws.send(ev(5, "z", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":5}}", "$mark}")) // only a mark in the replay
+            ws.send("""{"type":"ready","seq":6}""")
+            ws.send(ev(7, "y", "active"))
+            ws.send(ev(8, "y", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":8}}", mark.replace(":6", ":8") + "}"))
+        }
+        start()
+        await { store.lastSeq() == 8L } // set after the row, so the row is there too
+        assertEquals(listOf("stew actioned: filed relay#512"), store.rows["z"]!!.markLines)
+        assertEquals(listOf("stew actioned: filed relay#512"), store.rows["y"]!!.markLines)
+        assertEquals(listOf(true, false, false, true), store.quiet.toList()) // mark z, the empty replay save, y created, mark y
+        assertEquals(8L, store.lastSeq())
+    }
+
+    @Test fun aReplayedMarkKeepsTheAlertsSilence() { // the mark event has no silenced field, the created one does
+        val mark = """"marks":[{"by":"stew","mark":"seen"}],"seq":6}"""
+        onConnect = { _, ws ->
+            ws.send(ev(5, "x", "active").replace("\"seq\":5}}", "\"silenced\":true,\"seq\":5}}"))
+            ws.send(ev(6, "x", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":6}}", "$mark}"))
+            ws.send("""{"type":"ready","seq":6}""")
+        }
+        start()
+        await { store.lastSeq() == 6L }
+        assertTrue(store.rows["x"]!!.silenced)
+        assertEquals(listOf("stew seen"), store.rows["x"]!!.markLines)
+    }
+
+    @Test fun aReplayedMarkIsDroppedOnANewEpoch() {
+        store.epoch = "old"
+        open = { """{"notifications":[${notifJson("fresh", "active", 2)}],"seq":3,"epoch":"new"}""" }
+        onConnect = { n, ws ->
+            if (n == 1) ws.send(ev(91, "other", "active").replace("\"created\"", "\"mark\""))
+            ws.send("""{"type":"ready","seq":${if (n == 1) 91 else 3},"epoch":"new"}""")
+        }
+        start()
+        await { wsSince.size >= 2 }
+        assertEquals(setOf("fresh"), store.rows.keys)
+        assertTrue(store.applies.none { c -> c.any { it.id == "other" } }) // the other database's mark is never saved, not even briefly
+    }
+
     @Test fun reconnectAsksForEventsSinceLastSeq() {
         onConnect = { n, ws ->
             if (n == 1) {

@@ -186,6 +186,7 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Marks: anyone who can read a topic, a person or an agent with its own token, can mark a notification seen, or actioned with a note and a link. A mark never clears or hides it; everyone on the topic sees who marked it on the card in the web inbox and the Android app, for example "stew actioned: filed relay#512". API `POST`/`DELETE /api/v1/notifications/{id}/mark`, MCP `mark`, and `mark`/`unmark` in the Go, JS and Python SDKs.
 - Web: the inbox shows a message's `http` and `broadcast` buttons under the
   card as text (the label, plus the method and URL or the broadcast intent), so a
   reader knows what they do. The browser never runs them (#450).

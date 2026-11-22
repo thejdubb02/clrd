@@ -29,7 +29,16 @@ data class Notif(
     @ColumnInfo(defaultValue = "") val attachment: String = "", // raw JSON object, "" if none
     @ColumnInfo(defaultValue = "markdown") val format: String = "markdown", // or "text": shown exactly as sent
     @ColumnInfo(defaultValue = "0") val silenced: Boolean = false, // a server silence matched this event: show, never alert (#328)
+    @ColumnInfo(defaultValue = "") val marks: String = "", // raw JSON array of {by, mark, note, link}, "" if none
 ) {
+    /** Who saw or actioned it, for the card: "stew actioned: filed relay#512". */
+    val markLines: List<String> get() = runCatching {
+        val a = JSONArray(marks)
+        (0 until a.length()).map { a.getJSONObject(it) }.map { m ->
+            "${m.optString("by")} ${m.optString("mark")}" + (m.optString("note").takeIf { it.isNotEmpty() }?.let { ": $it" } ?: "")
+        }
+    }.getOrDefault(emptyList())
+
     val isFinal get() = state == DISMISSED || state == RESOLVED
 
     /** The one file this notification carries, or null (docs/SPEC.md section 2, "Attachments"). */
@@ -70,6 +79,7 @@ data class Notif(
             attachment = o.optJSONObject("attachment")?.toString() ?: "",
             format = o.str("format") ?: "markdown", // events logged before formats existed are Markdown
             silenced = o.optBoolean("silenced"), // missing on events logged before silences: not silenced
+            marks = o.optJSONArray("marks")?.takeIf { it.length() > 0 }?.toString() ?: "",
         )
 
         private fun millis(s: String) = OffsetDateTime.parse(s).toInstant().toEpochMilli()

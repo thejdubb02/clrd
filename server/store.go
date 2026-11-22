@@ -43,6 +43,7 @@ const (
 	EventUpdated = "updated"
 	EventState   = "state"
 	EventRepeat  = "repeat" // a re-alert of an unanswered notification (#80)
+	EventMark    = "mark"   // someone marked it seen or actioned (marks.go): no state change, no alert
 )
 
 const schema = `
@@ -70,7 +71,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   updated_at INTEGER NOT NULL,
   seq INTEGER NOT NULL DEFAULT 0,
   silenced INTEGER NOT NULL DEFAULT 0,
-  repeat TEXT NOT NULL DEFAULT ''
+  repeat TEXT NOT NULL DEFAULT '',
+  marks TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -227,6 +229,7 @@ type Notification struct {
 	Silenced    bool        `json:"silenced"`       // a silence matched when this was written: show, do not alert
 	Live        bool        `json:"live,omitempty"` // sent to open streams only, never stored (#400): ID is a live id, Seq the log seq at send
 	Repeat      *Repeat     `json:"repeat"`         // re-alert until answered, or null
+	Marks       Marks       `json:"marks"`          // who saw or acted on it (marks.go); never changes the state
 }
 
 // Attachment is a file on a notification: uploaded (URL is /api/v1/files/<id>)
@@ -297,7 +300,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -402,20 +405,25 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks`
 
 type scanner interface{ Scan(...any) error }
 
 func scanNotification(r scanner) (*Notification, error) {
 	var n Notification
-	var tags, actions, att, rep string
+	var tags, actions, att, rep, marks string
 	var snooze, expires sql.NullInt64
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
-		&n.Silenced, &rep, &n.sender, &n.confirm)
+		&n.Silenced, &rep, &n.sender, &n.confirm, &marks)
 	if err != nil {
 		return nil, err
+	}
+	if marks != "" {
+		if err := json.Unmarshal([]byte(marks), &n.Marks); err != nil {
+			return nil, err
+		}
 	}
 	if att != "" {
 		if err := json.Unmarshal([]byte(att), &n.Attachment); err != nil {
@@ -455,15 +463,20 @@ func saveNotification(tx *sql.Tx, n *Notification) error {
 		b, _ := json.Marshal(n.Repeat)
 		rep = string(b)
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(26)+`)
+	marks := ""
+	if len(n.Marks) > 0 {
+		b, _ := json.Marshal(n.Marks)
+		marks = string(b)
+	}
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(27)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm, marks=excluded.marks`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep, n.sender, n.confirm)
+		n.Silenced, rep, n.sender, n.confirm, marks)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -1029,9 +1042,9 @@ func (s *Server) changedSince(ctx context.Context, tx *sql.Tx, n *Notification, 
 		return nil
 	}
 	changed := 1
-	if seq < n.Seq && seq >= s.pruned.Load() {
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE seq > ? AND type != ? AND json_extract(data, '$.notification.id') = ?`,
-			seq, EventRepeat, n.ID).Scan(&changed); err != nil {
+	if seq < n.Seq && seq >= s.pruned.Load() { // a re-alert or a mark changes the seq, not the question
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE seq > ? AND type NOT IN (?, ?) AND json_extract(data, '$.notification.id') = ?`,
+			seq, EventRepeat, EventMark, n.ID).Scan(&changed); err != nil {
 			return err
 		}
 	}
