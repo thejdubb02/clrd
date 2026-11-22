@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,18 @@ func TestSlowBodyTimesOut(t *testing.T) {
 	res, err := http.ReadResponse(bufio.NewReader(c), nil)
 	if err != nil || res.StatusCode != 408 {
 		t.Fatalf("stalled body: %v %v", res, err)
+	}
+	// A body declared too large is refused by its length, not timed out (#507).
+	c2, err := net.Dial("tcp", ts.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	io.WriteString(c2, "POST /api/v1/notifications HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer "+admin+
+		"\r\nContent-Type: application/json\r\nContent-Length: "+strconv.Itoa(maxBody+1)+"\r\n\r\n{")
+	c2.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if res, err := http.ReadResponse(bufio.NewReader(c2), nil); err != nil || res.StatusCode != 413 {
+		t.Fatalf("stalled huge body: %v %v", res, err)
 	}
 	// A normal body still works, and a large one is refused.
 	if code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "ok"}); code != 201 && code != 200 {
