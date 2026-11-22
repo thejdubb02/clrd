@@ -58,6 +58,9 @@ offline catches up the moment it reconnects.
 - **Self-resolving alerts.** Senders tag an alert with their own ID and resolve
   it by that ID when the fault clears. Or give one `"expires": "30m"` and it
   clears itself then.
+- **Senders.** Every service, app or person that sends shows up on its own, with
+  nothing to set up: an admin sees who sent what, where and when, in the web
+  inbox or at `GET /api/v1/senders`.
 - **Missed check-in alerts.** Give a topic an interval, say 25 hours, and clrd
   raises an urgent alert when a backup or cron job stops reporting in.
 - **Repeat and silence.** Send with `"repeat": "5m"` and the alert rings

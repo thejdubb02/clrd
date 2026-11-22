@@ -176,6 +176,28 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	for _, d := range devs {
 		snap.CanApprove = snap.CanApprove || d.CanApprove
 	}
+	// Senders (#119): a full admin only, the same check as the API's.
+	snap.CanSenders = tok.Has(server.ScopeAdmin) && len(tok.Topics) == 0 && len(tok.Grants) == 0
+	if q.Senders && snap.CanSenders {
+		ss, err := a.s.Senders(ctx, tok)
+		if err != nil {
+			return snap, err
+		}
+		if err := convert(ss, &snap.Senders); err != nil {
+			return snap, err
+		}
+	}
+	if q.Sender != "" && snap.CanSenders {
+		sd, err := a.s.Sender(ctx, tok, q.Sender)
+		if code, _ := server.PublicError(err); err != nil && code == http.StatusNotFound {
+			return snap, web.ErrNotFound
+		} else if err != nil {
+			return snap, err
+		}
+		if err := convert(sd, &snap.Sender); err != nil {
+			return snap, err
+		}
+	}
 	if q.Devices {
 		evs, err := a.s.DeviceLog(ctx, tok)
 		if err != nil {

@@ -13,6 +13,7 @@
       <a class="side-link" href="{{base}}/app"{{if eq .View "inbox"}} aria-current="page"{{end}}>{{template "i-inbox"}}Inbox <span class="count">{{.Inbox}}</span></a>
       <a class="side-link" href="{{base}}/app/snoozed"{{if eq .View "snoozed"}} aria-current="page"{{end}}>{{template "i-clock"}}Snoozed <span class="count">{{.Snoozed}}</span></a>
       <a class="side-link" href="{{base}}/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>{{template "i-check-check"}}Cleared <span class="count">{{.Cleared}}</span></a>
+      {{if .Snap.CanSenders}}<a class="side-link" href="{{base}}/app/senders"{{if eq .View "senders" "sender"}} aria-current="page"{{end}}>{{template "i-bot"}}Senders</a>{{end}}
       <a class="side-link" href="{{base}}/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>{{template "i-settings"}}Settings</a>
     </nav>
     <nav class="order-3 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-labelledby="topics-h" data-live="topics"{{if not .Snap.Topics}} hidden{{end}}>
@@ -30,7 +31,7 @@
 
   <main id="main" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
     <div class="alert mb-4" data-variant="destructive" role="alert" data-offline hidden>{{template "i-wifi-off"}}<h2>Lost the live connection</h2><section>This page may be out of date. Still trying. <a href="" class="underline">Reload</a></section></div>
-    {{if eq .View "settings"}}{{template "settings" .}}{{else}}
+    {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else}}
     <header class="mb-4 flex flex-wrap items-center gap-2 md:min-h-9 md:flex-nowrap">
       <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{.Heading}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
       {{if eq .View "inbox"}}<button type="button" class="btn js-only" data-variant="outline" data-send-open title="Send a notification">{{template "i-send"}}<span class="max-md:sr-only">Send</span></button>{{end}}
@@ -589,4 +590,58 @@
     <div class="grid gap-2" data-template-out></div>
   </div>
 </details>
+{{end}}
+
+{{define "senders"}}
+<header class="mb-6 flex min-h-9 items-center gap-2">
+  <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{if eq .View "sender"}}<a class="text-muted-foreground font-normal" href="{{base}}/app/senders">Senders</a> / {{end}}{{.Heading}}</h1>
+  <button type="button" class="btn js-only" data-variant="outline" data-palette aria-label="Commands" title="Commands">{{template "i-command"}}<kbd class="kbd max-md:hidden" data-mod>Ctrl K</kbd></button>
+</header>
+<div class="grid max-w-2xl gap-3" data-live="senders">
+  {{if not .Snap.CanSenders}}<p class="text-body text-sm">Only an admin token for every topic can see senders.</p>
+  {{else if eq .View "senders"}}<p class="text-body text-sm/relaxed">Every token, app and person that has sent a notification here. A sender shows up with its first one.</p>
+  {{if .Snap.Senders}}<div class="bg-card rounded-xl border">
+    <table class="table">
+      <thead><tr><th scope="col">Sender</th><th scope="col" class="max-sm:hidden">Topics</th><th scope="col">Sent</th><th scope="col">Last seen</th></tr></thead>
+      <tbody>
+        {{range .Snap.Senders}}<tr data-sender="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><a class="underline" href="{{base}}/app/senders/{{.ID}}">{{.Name}}</a>
+          <div class="meta">{{.KindLabel}}{{with .Template}}, template {{.}}{{end}}</div></td>
+          <td class="meta whitespace-normal max-sm:hidden">{{range $t, $n := .Topics}}<span class="whitespace-nowrap">{{$t}} ({{$n}})</span> {{end}}</td>
+          <td class="tabular-nums">{{.Count}}</td>
+          <td class="meta whitespace-nowrap"><time datetime="{{iso .LastSeen}}" title="{{clock .LastSeen}}">{{clock .LastSeen}}</time></td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}<p class="text-body text-sm">No senders yet. Send a notification and its sender shows up here.</p>{{end}}
+  {{else if .Snap.Sender}}{{with .Snap.Sender}}<div class="bg-card rounded-xl border">
+    <table class="table">
+      <tbody>
+        <tr><th scope="row">Kind</th><td>{{.KindLabel}}</td></tr>
+        {{with .Template}}<tr><th scope="row">Template</th><td>{{.}}</td></tr>{{end}}
+        {{with .UserAgent}}<tr><th scope="row">User agent</th><td class="whitespace-normal [overflow-wrap:anywhere]">{{.}}</td></tr>{{end}}
+        {{with .Address}}<tr><th scope="row">Address</th><td>{{.}}</td></tr>{{end}}
+        <tr><th scope="row">Sent</th><td class="tabular-nums">{{.Count}}</td></tr>
+        <tr><th scope="row">Topics</th><td class="whitespace-normal">{{range $t, $n := .Topics}}<span class="whitespace-nowrap">{{$t}} ({{$n}})</span> {{end}}</td></tr>
+        <tr><th scope="row">First seen</th><td><time datetime="{{iso .FirstSeen}}" title="{{clock .FirstSeen}}">{{clock .FirstSeen}}</time></td></tr>
+        <tr><th scope="row">Last seen</th><td><time datetime="{{iso .LastSeen}}" title="{{clock .LastSeen}}">{{clock .LastSeen}}</time></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h2 class="mt-4 text-base font-semibold">Recent</h2>
+  {{if .Recent}}<div class="bg-card rounded-xl border">
+    <table class="table">
+      <tbody>
+        {{range .Recent}}<tr data-recent="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]">{{or .Title .Message}}<div class="meta">{{.Topic}}</div></td>
+          <td>{{if eq .State "acknowledged"}}<span class="badge" data-state="acknowledged">Acknowledged</span>{{else if eq .State "snoozed"}}<span class="badge" data-state="snoozed">Snoozed</span>{{else if eq .State "dismissed"}}<span class="badge" data-state="dismissed">Cleared</span>{{else if eq .State "resolved"}}<span class="badge" data-state="resolved">Resolved</span>{{end}}</td>
+          <td class="meta whitespace-nowrap"><time datetime="{{iso .CreatedAt}}" title="{{clock .CreatedAt}}">{{clock .CreatedAt}}</time></td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else if .Count}}<p class="text-body text-sm">None of its last 10 notifications are still stored.</p>
+  {{else}}<p class="text-body text-sm">Nothing sent yet.</p>{{end}}
+  {{end}}
+  {{else}}<p class="text-body text-sm">No sender with that id. <a class="underline" href="{{base}}/app/senders">See every sender</a>.</p>{{end}}
+</div>
 {{end}}

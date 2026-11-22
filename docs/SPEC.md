@@ -821,6 +821,10 @@ by_id, at}]}`, newest first, with `before` and `after` the full rules. `POST
 `before`, and is logged as a change itself. Revoking the token removes the
 sender, its rules and its log.
 
+The web inbox shows the list at `/app/senders` and one sender at
+`/app/senders/{id}` (read only for now), for the same admins only; anyone
+else gets 403.
+
 The silence alarm comes in a later part of #119 and is not served yet.
 
 ### ntfy compatibility (must pass ntfy's own client behaviour)

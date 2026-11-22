@@ -11,6 +11,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: a Senders page for admins (#119, part 1). It lists every token, app
+  and person that has sent here, with its kind, topics, count and last seen,
+  and opens one sender with its details and last notifications. Works without
+  JavaScript.
+
 - Server and API: a list of senders (#119, part 1). Every service or token
   that publishes shows up on its first message, with its kind, webhook
   template, User-Agent and address, first and last seen, and a count per
