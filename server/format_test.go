@@ -320,3 +320,49 @@ func TestSnoozeSettings(t *testing.T) {
 		t.Fatalf("a rejected change was stored: %v", st)
 	}
 }
+
+func TestSwipeSettings(t *testing.T) {
+	s, ts, admin := newTest(t)
+	_, st := call(t, ts, "GET", "/api/v1/settings", admin, nil)
+	if fmt.Sprint(st["swipe_start"]) != "[clear snooze]" || fmt.Sprint(st["swipe_end"]) != "[ack]" {
+		t.Fatalf("defaults on a fresh server: %v %v", st["swipe_start"], st["swipe_end"])
+	}
+	// Moving ack to the start side is fine once the end side gives it up.
+	code, st := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"swipe_start": []string{"ack", "resolve", "clear"}, "swipe_end": []string{}})
+	if code != 200 || fmt.Sprint(st["swipe_start"]) != "[ack resolve clear]" || fmt.Sprint(st["swipe_end"]) != "[]" {
+		t.Fatalf("put: %d %v %v", code, st["swipe_start"], st["swipe_end"])
+	}
+	for _, c := range []struct {
+		key  string // the key the error must name
+		body map[string]any
+	}{
+		{"swipe_end", map[string]any{"swipe_end": []string{"clear"}}},                                     // repeat against the stored start side
+		{"swipe_end", map[string]any{"swipe_start": []string{"snooze"}, "swipe_end": []string{"snooze"}}}, // repeat across the two
+		{"swipe_start", map[string]any{"swipe_start": []string{"ack", "ack"}}},                            // repeat within one
+		{"swipe_start", map[string]any{"swipe_start": []string{"archive"}}},                               // unknown action
+		{"swipe_start", map[string]any{"swipe_start": []string{"clear", "snooze", "ack", "resolve"}, "swipe_end": []string{}}},
+		{"swipe_start", map[string]any{"swipe_start": nil}},
+		{"swipe_start", map[string]any{"swipe_start": "clear"}},
+		{"swipe_end", map[string]any{"swipe_end": []any{1}}},
+		{"snooze_default", map[string]any{"swipe_start": []string{"snooze"}, "snooze_default": "5h"}}, // valid swipe, bad snooze
+	} {
+		code, body := call(t, ts, "PUT", "/api/v1/settings", admin, c.body)
+		if msg, _ := body["error"].(string); code != 400 || !strings.Contains(msg, c.key) {
+			t.Errorf("%v: got %d %q, want 400 naming %s", c.body, code, msg, c.key)
+		}
+	}
+	lim := mkToken(t, s, "phone", []string{ScopeRead}, []string{"mine"})
+	if code, _ := call(t, ts, "PUT", "/api/v1/settings", lim, map[string]any{"swipe_end": []string{"snooze"}}); code != 403 {
+		t.Fatalf("limited token changed a swipe side: %d", code)
+	}
+	if _, st = call(t, ts, "GET", "/api/v1/settings", admin, nil); fmt.Sprint(st["swipe_start"]) != "[ack resolve clear]" || fmt.Sprint(st["swipe_end"]) != "[]" || st["snooze_default"] != "1h" {
+		t.Fatalf("a rejected change was stored: %v", st)
+	}
+	// A row saved before the swipe keys existed still gets their defaults.
+	if _, err := s.db.Exec(`UPDATE settings SET value = '{"render_formatting":true}' WHERE key = 'display'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, st = call(t, ts, "GET", "/api/v1/settings", admin, nil); fmt.Sprint(st["swipe_start"]) != "[clear snooze]" || fmt.Sprint(st["swipe_end"]) != "[ack]" {
+		t.Fatalf("defaults on an old row: %v %v", st["swipe_start"], st["swipe_end"])
+	}
+}

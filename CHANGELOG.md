@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: settings `swipe_start` and `swipe_end` choose the buttons a swipe
+  on a card reveals (#161). Defaults match today's app (Clear and Snooze to
+  the left, Ack to the right); set them with the API or the MCP `settings`
+  tool. The app and web inbox follow them in a later release.
 - Server: an alarm when a sender goes quiet (#119, part 3). Set `expect`
   (like `25h`) on a sender, through the API or the MCP `set_sender` tool, and
   the server raises an urgent notification when that sender sends nothing for
