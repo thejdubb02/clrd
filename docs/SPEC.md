@@ -121,7 +121,8 @@ still gets the notification, lists it and syncs its state as usual, but the
 copy sent to it carries `silenced: true`, so it shows without sound (ntfy
 subscribers get priority 1). Only that copy changes: the row, the event log
 and outgoing webhooks keep the stored value. The list holds through state
-changes, snooze wakes and repeats; an update by `external_id` replaces it,
+changes, and a re-alert to a device not on it is silenced like the first
+(clients already never alert on a silenced `repeat`); an update by `external_id` replaces it,
 and an update without `devices` alerts everyone again. Live publishes take
 it too. An entry equal to a token id picks only that token, never a device
 named like it. The reply's `devices` shows a publisher the ids of the readers

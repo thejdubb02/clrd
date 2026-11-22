@@ -88,7 +88,7 @@ func TestDevicesTarget(t *testing.T) {
 	for i := range many {
 		many[i] = "phone"
 	}
-	for _, bad := range [][]string{{"nope"}, {"sender"}, many} {
+	for _, bad := range [][]string{{"nope"}, {"sender"}, {""}, many} {
 		if code, e := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "x", "devices": bad}); code != 400 {
 			b, _ := json.Marshal(e)
 			t.Fatalf("devices %q: %d %s", bad, code, b)
