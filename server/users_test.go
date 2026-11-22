@@ -156,6 +156,22 @@ func TestStreamMidStartGrantChange(t *testing.T) {
 	if strings.Contains(strings.Join(got, ""), "secret") {
 		t.Fatal("a stream mid-start kept the grant taken away")
 	}
+
+	// A change mid-replay stops the replay at once: nothing more goes out.
+	call(t, srv, "PUT", "/api/v1/users/"+uid, admin, map[string]any{"grants": []Grant{{Topic: "home", Scopes: []string{ScopeRead}}}})
+	call(t, srv, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "home", "message": "later"})
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel2()
+	got = nil
+	err := s.follow(ctx2, s.lookupToken(ctx2, out["token"].(string)), 0, nil, nil, func(msg []byte, seq int64) error {
+		if got = append(got, string(msg)); strings.Contains(string(msg), "secret") {
+			call(t, srv, "PUT", "/api/v1/users/"+uid, admin, map[string]any{"grants": []Grant{{Topic: "work", Scopes: []string{ScopeRead}}}})
+		}
+		return nil
+	}, func() error { return nil })
+	if err == nil || strings.Contains(strings.Join(got, ""), "later") {
+		t.Fatalf("a replay went on after the grant was taken away: %v", err)
+	}
 }
 
 // Sharing is a grant on the other user; scopes stay the token's ceiling,

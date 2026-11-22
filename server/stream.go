@@ -29,6 +29,7 @@ type stream struct {
 	live  bool         // takes live-only messages (#400): ntfy streams only
 	ready atomic.Bool  // replay done and ready sent: caught up
 	seq   atomic.Int64 // the last event seq the server sent it, or passed over as not visible to it
+	cut   atomic.Bool  // dropped for an access change: send nothing more, not even mid-replay (#428)
 }
 
 func (h *hub) subscribe(tokenID string, live bool) (chan Event, *stream) {
@@ -60,6 +61,7 @@ func (h *hub) drop(tokenID string) {
 	defer h.mu.Unlock()
 	for ch, st := range h.subs {
 		if st.tok == tokenID {
+			st.cut.Store(true)
 			delete(h.subs, ch)
 			close(ch)
 		}
@@ -146,6 +148,9 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 	send = func(msg []byte, seq int64) error {
 		if _, gone := s.revoked.Load(tok.ID); gone {
 			return errRevoked
+		}
+		if st.cut.Load() {
+			return errDropped
 		}
 		return inner(msg, seq)
 	}
