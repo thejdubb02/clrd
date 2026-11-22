@@ -53,9 +53,12 @@ class App : Application() {
         get() = prefs.getStringSet("muted", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("muted", v).apply()
 
-    /** Stack tray notifications by topic (#108). On by default: it is how Android groups anyway. */
+    /**
+     * Stack by topic (#108), in the tray and the app's list. Off until a person turns it on (#465), as on the web;
+     * a phone that never touched it reads the default, so it moves to off, and a stored choice is kept.
+     */
     var stack: Boolean
-        get() = prefs.getBoolean("stack", true)
+        get() = prefs.getBoolean("stack", false)
         set(v) = prefs.edit().putBoolean("stack", v).apply()
 
     /** This phone's notification sound (docs/SPEC.md section 2.2). Unset means the phone's own default. Change it with [saveSound]. */

@@ -352,6 +352,9 @@ Fixed, Removed, Security), as one line a user can understand.
 - Server: `clrd help` lists the commands and settings.
 
 ### Changed
+- Android: Stack by topic is now off until you turn it on, in the tray and
+  the app's list, as on the web. A phone where you chose a value keeps it
+  (#465).
 - Docs: plainer wording on the README and landing page. The badge row is
   gone, and the landing page no longer promises a five-minute switch from
   ntfy (#123).
