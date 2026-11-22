@@ -230,6 +230,7 @@ func (s *Server) handleInvitePage(w http.ResponseWriter, r *http.Request) error 
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("X-Robots-Tag", "noindex")
+	h.Set("Cache-Control", "no-store") // the claim URL follows the request's scheme and host
 	base := s.baseFor(r)
 	g := s.guide(base, &invite{})
 	fmt.Fprintf(w, "clrd agent invite on %s\nYour code is the part of your invite link after # (%s/agent#<code>). Single use, short-lived.\n\n", base, base)

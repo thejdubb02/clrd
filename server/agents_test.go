@@ -19,6 +19,9 @@ func invitePage(t *testing.T, link string) (int, string) {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
+	if res.Header.Get("Cache-Control") != "no-store" { // a shared cache must not hand out another host's claim URL
+		t.Fatalf("invite page Cache-Control %q", res.Header.Get("Cache-Control"))
+	}
 	b, _ := io.ReadAll(res.Body)
 	return res.StatusCode, string(b)
 }
