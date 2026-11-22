@@ -247,4 +247,23 @@
     <string name="snooze_save">Save snooze times</string>
     <string name="snooze_saved">Saved.</string>
     <string name="snooze_not_saved">Not saved: %1$s</string>
+    <!-- Senders (#119): shown only to an admin token for every topic. -->
+    <string name="senders_title">Senders</string>
+    <string name="senders_explain">Every token, app and person that has sent a notification here. Tap one for more.</string>
+    <string name="senders_none">No senders yet. Send a notification and its sender shows up here.</string>
+    <!-- %1$s is the kind (and template), %2$d how many it sent, %3$s when it was last heard from. -->
+    <string name="sender_line">%1$s, %2$d sent, last %3$s</string>
+    <string name="sender_template">template %1$s</string>
+    <string name="sender_agent">User agent: %1$s</string>
+    <string name="sender_address">Address: %1$s</string>
+    <string name="sender_first_seen">First seen: %1$s</string>
+    <string name="sender_recent">Recent</string>
+    <string name="sender_none_stored">None of its last 10 notifications are still stored.</string>
+    <string name="sender_none_sent">Nothing sent yet.</string>
+    <string name="sender_token">Token</string>
+    <string name="sender_person">Person</string>
+    <string name="sender_ntfy_user">ntfy user</string>
+    <string name="sender_gotify_app">Gotify app</string>
+    <string name="sender_pushover_app">Pushover app</string>
+    <string name="sender_anonymous">Anonymous</string>
 </resources>
