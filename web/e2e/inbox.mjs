@@ -265,6 +265,20 @@ try {
   assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'long press did not open the snooze times');
   assert.deepEqual(await sc('Prune images').locator('[data-popover] [data-for]').allTextContents(), ['15 min', '2 hours', '2 days']);
   await sc('Prune images').locator('details[open]').evaluate(d => { d.open = false; });
+  // A busy page handles the release before its 500 ms timer: still a long press,
+  // never a tap that snoozes (#476). The page is held busy from 300 to 900 ms,
+  // in its own browser: this one's clock is faked above, so a busy loop never ends.
+  const bctx = await browser.newContext();
+  assert.ok((await bctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'busy-web' } })).ok());
+  const bz = await bctx.newPage();
+  await bz.goto(`${base}/app`);
+  const pb = await bz.locator('article.card', { hasText: 'Prune images' }).getByText('Snooze', { exact: true }).boundingBox();
+  await bz.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2);
+  await bz.evaluate(() => document.addEventListener('pointerdown', () => setTimeout(() => { const t = performance.now(); while (performance.now() - t < 600); }, 300), { once: true, capture: true }));
+  await bz.mouse.down(); await bz.waitForTimeout(700); await bz.mouse.up();
+  assert.equal(await bz.locator('article.card', { hasText: 'Prune images' }).locator('details[open] [data-popover]').isVisible(), true, 'a long press on a busy page did not open the snooze times');
+  assert.equal((await get(laptop, hold.id)).state, 'active', 'a long press on a busy page snoozed');
+  await bctx.close();
   await sc('Prune images').getByText('Snooze', { exact: true }).click({ button: 'right' });
   assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'right click did not open the snooze times');
   await sp.waitForTimeout(300);
