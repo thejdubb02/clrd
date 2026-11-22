@@ -114,6 +114,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: typed answers (#516). A reply box left open while an earlier
+  answer is refused because the question changed now closes, keeping its
+  text for the next box. When the server refuses a typed answer, the tray
+  says the text waits in the app, since a tray reply starts empty.
 - Android: turning the phone while the Send box is sending no longer lets a
   second tap send the notification twice, and the result (sent, or the
   server's reason) still shows after the turn (#523).

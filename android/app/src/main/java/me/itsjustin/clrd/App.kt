@@ -26,6 +26,8 @@ class App : Application() {
     val acts = Executors.newSingleThreadExecutor()
     /** Typed answers the server refused, by notification id, so the reply box opens with them again (#153). */
     val drafts = java.util.concurrent.ConcurrentHashMap<String, String>()
+    /** Typed answers refused because the question changed (409), counted by notification id, so a reply box open on it closes (#516). */
+    val changed = androidx.compose.runtime.mutableStateMapOf<String, Int>()
     /** The Send box's send in flight, kept here so a rotation does not forget it (#523). */
     val sender by lazy { Sender { io.execute(it) } }
     /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
@@ -395,7 +397,10 @@ class RoomStore(private val app: App) : Store {
         val typed = runCatching { JSONObject(p.body).optString("text") }.getOrDefault("")
         if (outcome == "bad_request" || outcome == "approve_denied" || outcome == "own_request") { if (typed.isNotEmpty()) app.drafts[p.notifId] = typed }
         else app.drafts.remove(p.notifId)
-        android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show() }
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            if (outcome == "conflict") app.changed[p.notifId] = (app.changed[p.notifId] ?: 0) + 1 // Compose state, so on the main thread
+            android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun removePending(p: Pending) = ifMine {
