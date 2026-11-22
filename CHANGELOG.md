@@ -69,6 +69,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a webhook turned off as shutdown begins still posts its notice, and a
+  send that finishes after its webhook was deleted, recreated or turned off no
+  longer clears the new webhook's failure record (#240).
 - Server: a token revoked while its approval request or reply tap was in
   flight now gets 401 instead of 500 (#349).
 - MCP: a whole number past 2^53 in a tool argument, like a payload id given to
