@@ -1,12 +1,15 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -113,33 +116,80 @@ func hookAnswer(w http.ResponseWriter, behavior, message string) {
 const maxShown = 4000
 
 // summary is what the phone shows: a file edit's path and change, else the
-// command, else a url or description, else the raw input. Allow approves
-// what it shows, so an edit shows the text it writes (#366).
+// command, else a url or description, then every other field as a
+// "key: value" line, else the raw input. Allow approves what it shows, so an
+// edit shows the text it writes (#366) and no field is left out (#441).
 func summary(raw json.RawMessage) string {
 	var in map[string]any
-	_ = json.Unmarshal(raw, &in)
-	if s := edit(in); s != "" {
-		return s
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber() // 1e400 stays 1e400 instead of failing the decode
+	if d.Decode(&in) != nil {
+		in = nil // a half-read input falls back to the raw text below
 	}
-	s := ""
+	if p, b := edit(in); p != "" {
+		return p + others(in, editKeys...) + "\n" + b
+	}
 	for _, k := range []string{"command", "file_path", "url", "description"} {
 		if v, ok := in[k].(string); ok && v != "" {
-			s = v
-			break
+			rest := others(in, k)
+			if rest != "" && breaks(v) { // a line of v must not pass for a field
+				v = strconv.Quote(v)
+			}
+			return v + rest
 		}
 	}
-	if s == "" {
-		s = strings.TrimSpace(string(raw))
+	if s := strings.TrimSpace(string(raw)); s != "" {
+		return s
 	}
-	if s == "" {
-		s = "(no details)"
+	return "(no details)"
+}
+
+// others lists in's fields except skip, sorted, one "key: value" line each.
+// A value with a line break, or one that is not a string, is shown as JSON,
+// so it can never pass for a line of its own.
+func others(in map[string]any, skip ...string) string {
+	keys := make([]string, 0, len(in))
+	for k, v := range in {
+		if !slices.Contains(skip, k) && v != nil && v != "" {
+			keys = append(keys, k)
+		}
 	}
-	return s
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		key := k
+		if breaks(k) || strings.Contains(k, ":") {
+			key = strconv.Quote(k)
+		}
+		fmt.Fprintf(&b, "\n%s: %s", key, oneLine(in[k]))
+	}
+	return b.String()
+}
+
+// editKeys are the fields edit already shows.
+var editKeys = []string{"file_path", "notebook_path", "old_string", "new_string", "replace_all", "edits", "content", "new_source", "cell_id", "edit_mode", "cell_type"}
+
+// breaks reports whether s would start a new line on screen.
+func breaks(s string) bool { return strings.ContainsAny(s, "\r\n\u0085\u2028\u2029") }
+
+func oneLine(v any) string {
+	if s, ok := v.(string); ok {
+		if breaks(s) {
+			return strconv.Quote(s)
+		}
+		return s
+	}
+	var b strings.Builder
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false) // show && and < as typed
+	_ = e.Encode(v)
+	// Go escapes U+2028 and U+2029 already, not U+0085
+	return strings.ReplaceAll(strings.TrimSpace(b.String()), "\u0085", `\u0085`)
 }
 
 // edit renders Claude Code's Edit, MultiEdit, Write and NotebookEdit inputs
 // as the path and a diff-like body, "" for any other input.
-func edit(in map[string]any) string {
+func edit(in map[string]any) (string, string) {
 	p, _ := in["file_path"].(string)
 	nb, _ := in["notebook_path"].(string)
 	text := func(k string) (string, bool) { v, ok := in[k].(string); return v, ok }
@@ -177,16 +227,16 @@ func edit(in map[string]any) string {
 			b += "\n" + src
 		}
 	} else {
-		return ""
+		return "", ""
 	}
 	if b == "" {
 		b = "(empty)"
 	}
 	if p == "" {
-		return ""
+		return "", ""
 	}
-	if strings.ContainsAny(p, "\r\n") { // a newline in the path must not pass for the change
+	if breaks(p) { // a newline in the path must not pass for the change
 		p = strconv.Quote(p)
 	}
-	return p + "\n" + b
+	return p, b
 }
