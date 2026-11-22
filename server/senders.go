@@ -359,12 +359,12 @@ func (s *Server) discard(ctx context.Context, tok *Token, top string, in Publish
 	} else if err := s.publishLimit(tok, in.Topic); err != nil {
 		return nil, err
 	}
+	if err := in.fill(); err != nil { // a bad publish is refused, not counted
+		return nil, err
+	}
 	if _, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		return nil, seeSender(ctx, tx, top, in.Topic, in.template, "")
 	}); err != nil {
-		return nil, err
-	}
-	if err := in.fill(); err != nil {
 		return nil, err
 	}
 	t := now()

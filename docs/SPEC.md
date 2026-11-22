@@ -802,8 +802,10 @@ A routed notification keeps the topic it was sent to as `requested_topic`
 (section 2), and the sender is counted once, under that topic. Each target
 gets its own copy, and its own copy of any file. The publisher's answer is the
 first target's notification. A route is applied by the server on the
-sender's behalf, so its targets need no grant on the sender's token; an error
-on a later target is logged and skipped. The routes apply to `status:
+sender's behalf, so its targets need no grant on the sender's token. The
+sender's rate limit is spent once; each target topic spends its own topic
+limit. An error on a later target (a full topic included) is logged and
+skipped. The routes apply to `status:
 resolved` too, so a resolve follows the alert to its targets. One gap: change
 a route while an alert is open and its resolve goes to the new targets and
 finds nothing in the old one.

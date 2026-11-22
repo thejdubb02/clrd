@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 )
 
 // #119: every publisher shows up as a sender on its first message, with
@@ -128,7 +129,9 @@ func TestSenderRules(t *testing.T) {
 		out["rules"].(map[string]any)["muted"] != true {
 		t.Fatalf("set rules: %d %v", code, out)
 	}
-	pub(map[string]any{"topic": "up", "external_id": "k", "message": "routed"})
+	if _, out := call(t, ts, "POST", "/api/v1/notifications", svc, map[string]any{"topic": "up", "external_id": "k", "message": "routed"}); out["requested_topic"] != "up" {
+		t.Fatalf("the sender's reply names its own topic: %v", out)
+	}
 	for _, tp := range []string{"infra", "ops"} {
 		n := in(tp)
 		if len(n) != 1 || n[0]["requested_topic"] != "up" || n[0]["silenced"] != true || n[0]["priority"] != 4.0 || n[0]["message"] != "routed" {
@@ -161,6 +164,9 @@ func TestSenderRules(t *testing.T) {
 		t.Fatalf("pause: %d", code)
 	}
 	pub(map[string]any{"topic": "up", "message": "dropped"})
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", svc, map[string]any{"topic": "up", "message": "bad", "priority": 9}); code != 400 {
+		t.Fatalf("a bad publish while paused: %d", code)
+	}
 	if code, out := raw(t, "POST", ts.URL+"/up", svc, "dropped", nil); code != 200 {
 		t.Fatalf("ntfy publish while paused: %d %s", code, out)
 	}
@@ -202,5 +208,17 @@ func TestSenderRules(t *testing.T) {
 	}
 	if len(in("any")) != 0 {
 		t.Fatal("an empty route stored the publish")
+	}
+	// A route target still spends its own topic's allowance.
+	if code, _ := call(t, ts, "PUT", "/api/v1/senders/"+freshID, admin, map[string]any{"routes": map[string]any{"*": []string{"r1", "r2"}}}); code != 200 {
+		t.Fatalf("route: %d", code)
+	}
+	s.topicLimit = newLimiter(1, time.Hour)
+	s.topicLimit.take("r2", time.Now())
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", fresh, map[string]any{"topic": "any", "message": "y"}); code != 201 && code != 200 {
+		t.Fatalf("routed publish: %d", code)
+	}
+	if len(in("r1")) != 1 || len(in("r2")) != 0 {
+		t.Fatalf("full topic took a routed copy: %v", in("r2"))
 	}
 }

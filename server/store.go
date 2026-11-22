@@ -726,6 +726,10 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 		if err := s.publishLimit(tok, in.Topic); err != nil {
 			return nil, err
 		}
+	} else if in.counted || in.requested != "" { // a route target still spends its own topic's allowance
+		if err := s.topicTake(in.Topic); err != nil {
+			return nil, err
+		}
 	}
 	if err := checkImageURL("icon", in.Icon); err != nil {
 		return nil, err
@@ -874,6 +878,7 @@ func senderView(tok *Token, n *Notification, own bool) *Notification {
 	if own { // a publish: the content is the sender's own; the state is not
 		v.Title, v.Message, v.Priority, v.Tags, v.Click, v.Icon, v.Actions, v.Attachment, v.ExpiresAt =
 			n.Title, n.Message, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Attachment, n.ExpiresAt
+		v.RequestedTopic = n.RequestedTopic
 		v.State = Active
 	}
 	return v
