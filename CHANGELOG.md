@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: Web Push for browsers (#164, server side). A device can subscribe
+  at `/api/v1/push`, and each notification that would ring it in the inbox
+  is pushed, encrypted, even with the tab closed once the inbox side lands.
+  VAPID keys are made on first start. No new dependency.
 - Server: settings `swipe_start` and `swipe_end` choose the buttons a swipe
   on a card reveals (#161). Defaults match today's app (Clear and Snooze to
   the left, Ack to the right); set them with the API or the MCP `settings`

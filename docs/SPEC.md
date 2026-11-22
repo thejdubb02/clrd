@@ -1113,7 +1113,30 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `web/ui/build.sh` writes `web/static/app.css`, which is committed so a plain
   `go build` still works. CI rebuilds it and fails if it drifted. Icons are
   Lucide, inlined as SVG partials in `web/templates/icons.html`.
-- Web Push (VAPID) for browser notifications is a later issue.
+- Web Push (#164; server side built, the inbox half is a later change). The
+  server makes a VAPID key pair on first start and keeps it in the
+  database. A signed-in device subscribes with its token:
+  `GET /api/v1/push` gives `public_key` (pass it as `applicationServerKey`)
+  and `subscribed`; `PUT /api/v1/push` takes the browser's PushSubscription
+  JSON (`endpoint` must be https); `DELETE /api/v1/push` stops it. One
+  subscription per device, and revoking the device drops it. All three need
+  scope read.
+- What pushes: exactly what would ring that device in the open inbox. A new
+  notification, a repeat, or a snooze ending, while active and not silenced,
+  on a topic the device may read, and only to the chosen devices when the
+  notification names any. State changes (clear, ack, resolve) do not push.
+  Live publishes never push, since they are never stored.
+- Payload (encrypted per RFC 8291, `aes128gcm`): JSON
+  `{type, via, seq, id, topic, title, message, priority, tags, click, icon}`,
+  empty fields left out. A message too long for one 4 KB push is cut to fit;
+  if it still does not fit, only `{type, via, seq, id, topic}` is sent and
+  the page fetches the rest. Headers: `TTL: 86400`, `Urgency` high for
+  priority 4 and 5, low for 1 and 2, `Topic` the notification id so a
+  newer push replaces an older one waiting in the push service.
+- The push service answering 404 or 410 drops the subscription. Other
+  failures are logged, not retried. Push endpoints get the same guard as
+  link fetches (ports 80 and 443, no private addresses), so a subscription
+  cannot point the server at the local network.
 
 ## 10. Brand tokens
 

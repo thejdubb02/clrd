@@ -135,6 +135,14 @@ CREATE TABLE IF NOT EXISTS ntfy_mids (mid TEXT PRIMARY KEY, seq INTEGER NOT NULL
 -- ntfy headers, params and JSON fields received but ignored, for the admin page.
 CREATE TABLE IF NOT EXISTS ntfy_ignored (name TEXT PRIMARY KEY, count INTEGER NOT NULL, last_seen INTEGER NOT NULL);
 -- A web sign-in mints its own token; parent_id is the token typed in.
+-- Web Push subscriptions (#164): one per device, gone with its token.
+CREATE TABLE IF NOT EXISTS push_subs (
+  endpoint TEXT PRIMARY KEY,
+  token_id TEXT NOT NULL UNIQUE REFERENCES tokens(id) ON DELETE CASCADE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sessions (
   token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
   parent_id TEXT NOT NULL,
@@ -638,6 +646,7 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 		}
 		s.seq.Store(e.Seq)
 		s.hub.publish(e)
+		s.queuePush(e)
 	}
 	return evs, nil
 }
