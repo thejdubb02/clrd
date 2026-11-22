@@ -732,6 +732,16 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{})},
 	{"name": "sender", "description": "One sender from senders, by its id, with its recent notifications that are still stored.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Sender id")}, "id")},
+	{"name": "set_sender", "description": "Set a sender's rules: pause (accept and drop), mute (store, never alert), a priority floor and cap, and routes from the topic it names to other topics. Only the fields given change; routes, when given, replace them all. Each change is kept and can be undone. Needs an admin token without a topic list.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Sender id, or the id of a token that has not published yet"),
+			"paused": p("boolean", "Drop every publish, answering success"), "muted": p("boolean", "Store and show, never alert"),
+			"priority_min": p("integer", "1 to 5, 0 for none"), "priority_max": p("integer", "1 to 5, 0 for none"),
+			"routes": map[string]any{"type": "object", "description": "Topic it names (or \"*\") to a list of topics, like {\"*\":[\"infra\"]}; [] drops; {} clears every route",
+				"additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}}, "id")},
+	{"name": "sender_changes", "description": "A sender's rule changes, newest first: before, after, who and when.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Sender id")}, "id")},
+	{"name": "undo_sender_change", "description": "Put a sender's rules back to how they were before one change from sender_changes; recorded as a new change.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Sender id"), "seq": p("integer", "The change's seq")}, "id", "seq")},
 }
 
 // restTools are tools that are one REST call: {x} in the path comes from the
@@ -778,6 +788,9 @@ var restTools = map[string]struct {
 	"ntfy_ignored":        {"GET", "/api/v1/ntfy/ignored", false},
 	"senders":             {"GET", "/api/v1/senders", false},
 	"sender":              {"GET", "/api/v1/senders/{id}", false},
+	"set_sender":          {"PUT", "/api/v1/senders/{id}", false},
+	"sender_changes":      {"GET", "/api/v1/senders/{id}/changes", false},
+	"undo_sender_change":  {"POST", "/api/v1/senders/{id}/changes/{seq}/undo", false},
 }
 
 func strs(desc string) map[string]any {

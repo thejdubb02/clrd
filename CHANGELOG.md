@@ -16,6 +16,11 @@ Fixed, Removed, Security), as one line a user can understand.
   template, User-Agent and address, first and last seen, and a count per
   topic, at `GET /api/v1/senders` and the MCP tools `senders` and `sender`.
   Admin only, nothing to set up.
+- Server and API: sender rules (#119, part 2). Pause a sender (its publishes
+  are accepted and dropped), mute it, keep its priority in a range, or route
+  its topics elsewhere, with `PUT /api/v1/senders/{id}` or the MCP tool
+  `set_sender`. Every change is logged with who made it and can be undone
+  (`sender_changes`, `undo_sender_change`). Off until set.
 
 - Web: a question whose reply asks for text gets a text box on its card. The
   answer shows on the card once sent, and an Ask device confirm shows the

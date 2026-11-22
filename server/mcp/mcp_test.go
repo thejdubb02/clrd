@@ -159,7 +159,7 @@ func TestInitializeAndList(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,mark,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,preview_template,"+
-		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,ntfy_ignored,senders,sender" {
+		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,ntfy_ignored,senders,sender,set_sender,sender_changes,undo_sender_change" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
@@ -205,6 +205,8 @@ func TestTools(t *testing.T) {
 		{"sound", nil, "GET /api/v1/sounds", nil},
 		{"sound", map[string]any{"id": "d1", "sound": ""}, "PUT /api/v1/devices/d1", map[string]any{"sound": ""}}, // the server refuses it (#299)
 		{"request_approve", map[string]any{"approve": "allowed"}, "POST /api/v1/devices/approve-request", map[string]any{"approve": "allowed", "topic": ""}},
+		{"set_sender", map[string]any{"id": "tk1", "routes": map[string]any{"*": []any{"infra"}}}, "PUT /api/v1/senders/tk1", map[string]any{"routes": map[string]any{"*": []any{"infra"}}}},
+		{"undo_sender_change", map[string]any{"id": "tk1", "seq": 3}, "POST /api/v1/senders/tk1/changes/3/undo", map[string]any{}},
 		{"settings", nil, "GET /api/v1/settings", nil},
 		{"settings", map[string]any{"keep_cleared_days": 5}, "PUT /api/v1/settings", map[string]any{"keep_cleared_days": float64(5)}},
 	}
