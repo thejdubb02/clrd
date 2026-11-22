@@ -132,7 +132,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
 		}
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(req.Params))
+		dec.UseNumber() // a big whole number keeps its exact digits on the way to the API (#355)
+		err := dec.Decode(&p)
+		if err == nil {
+			_, err = exact(p.Arguments)
+		}
+		if err != nil {
 			writeRPC(w, req.ID, nil, &rpcErr{-32602, "invalid params"})
 			return
 		}
@@ -236,6 +242,45 @@ func str(a map[string]any, k string) string {
 	return ""
 }
 
+// exact keeps a plain whole number as its digits (#355); any other number
+// becomes a float64 as before, so 5.0 still reaches an int field as 5.
+func exact(v any) (any, error) {
+	var err error
+	switch t := v.(type) {
+	case json.Number:
+		f, err := t.Float64()
+		if err != nil || strings.ContainsAny(string(t), ".eE") {
+			return f, err
+		}
+	case map[string]any:
+		for k, x := range t {
+			if t[k], err = exact(x); err != nil {
+				return nil, err
+			}
+		}
+	case []any:
+		for i, x := range t {
+			if t[i], err = exact(x); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return v, nil
+}
+
+// num reads a number argument: a json.Number from a tool call, a float64
+// from an in-process caller such as approve.
+func num(a map[string]any, k string) (float64, bool) {
+	switch v := a[k].(type) {
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case float64:
+		return v, true
+	}
+	return 0, false
+}
+
 func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, error) {
 	if a == nil {
 		a = map[string]any{}
@@ -283,7 +328,7 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 				body[k] = v
 			}
 		}
-		if v, ok := a["priority"].(float64); ok {
+		if v, ok := num(a, "priority"); ok {
 			body["priority"] = int(v)
 		}
 		if v := str(a, "repeat"); v != "" {
@@ -292,7 +337,7 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		if v, ok := a["live"].(bool); ok && v {
 			body["live"] = true
 		}
-		if v, ok := a["repeat_times"].(float64); ok {
+		if v, ok := num(a, "repeat_times"); ok {
 			body["repeat_times"] = int(v)
 		}
 		if v := str(a, "id"); v != "" {
@@ -406,7 +451,7 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 // state, so an ack quickly followed by a snooze still counts as the reply.
 func (h *Handler) wait(r *http.Request, id string, a map[string]any) (any, error) {
 	d := 60 * time.Second
-	if v, ok := a["timeout_s"].(float64); ok && v > 0 {
+	if v, ok := num(a, "timeout_s"); ok && v > 0 {
 		d = time.Duration(v * float64(time.Second))
 	}
 	if d > MaxWait {

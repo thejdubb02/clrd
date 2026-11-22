@@ -69,6 +69,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- MCP: a whole number past 2^53 in a tool argument, like a payload id given to
+  `preview_template`, now reaches the server with its exact digits (#355).
 - Server: a reply tap on a question that was only marked or re-alerted after
   its older events were pruned is no longer refused with 409 (#452).
 - Server: a publish still in flight when an admin turns a topic's

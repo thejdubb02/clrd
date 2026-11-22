@@ -453,8 +453,9 @@ func TestApproveHook(t *testing.T) {
 	if code, dec := ask("Bearer "+raw, "", "deny"); code != 200 || dec["behavior"] != "deny" || !strings.Contains(fmt.Sprint(dec["message"]), "pixel-9") {
 		t.Fatalf("deny tap: %d %v", code, dec)
 	}
-	if code, dec := ask("Bearer "+raw, "?timeout=0.1", ""); code != 200 || dec["behavior"] != "deny" {
-		t.Fatalf("timeout: %d %v", code, dec)
+	t0 := time.Now()
+	if code, dec := ask("Bearer "+raw, "?timeout=0.1", ""); code != 200 || dec["behavior"] != "deny" || time.Since(t0) > 10*time.Second {
+		t.Fatalf("timeout: %d %v after %v", code, dec, time.Since(t0))
 	}
 	if open, _ := s.List(context.Background(), phone, server.ListQuery{Topics: []string{"agents"}, State: "active"}); len(open) != 0 {
 		t.Fatalf("timed-out ask still rings: %v", open)
