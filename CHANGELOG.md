@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: choose the buttons each swipe on a card reveals, in Settings, up
+  to 3 per side (#161). The choice is saved on your server, so every phone
+  follows it; offline the app keeps the last one it saw. A token that may not
+  change settings sees the choice read-only.
 - Server: Web Push for browsers (#164, server side). A device can subscribe
   at `/api/v1/push`, and each notification that would ring it in the inbox
   is pushed, encrypted, even with the tab closed. VAPID keys are made on

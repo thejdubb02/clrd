@@ -87,7 +87,15 @@
     <string name="drop_cleared">Remove cleared items</string>
     <string name="drop_cleared_explain">A cleared item also leaves this phone once the server has the clear, so the Cleared tab stays empty. The server keeps its copy, and the web inbox still shows it.</string>
     <string name="fast_swipe">Full swipe acts</string>
-    <string name="fast_swipe_explain">A swipe on a card shows its buttons, and nothing happens until you tap one. Turn this on and a swipe all the way across runs the first button: Clear to the left, Ack to the right. A clear can still be undone.</string>
+    <string name="fast_swipe_explain">A swipe on a card shows its buttons, and nothing happens until you tap one. Turn this on and a swipe all the way across runs the first button on that side, the one nearest the edge. A clear can still be undone.</string>
+    <string name="swipe_settings">Swipe buttons</string>
+    <string name="swipe_explain">The buttons a swipe on a card shows, numbered from the screen edge. Tap to add or take one off. Saved on your server, so every device shows the same. This app has no Resolve button yet, so it skips that one.</string>
+    <string name="swipe_locked">This token can see the swipe buttons but not change them. Change them from a device signed in with a full token.</string>
+    <string name="swipe_start">Swipe left</string>
+    <string name="swipe_end">Swipe right</string>
+    <string name="swipe_resolve">Resolve</string>
+    <string name="swipe_full">each swipe shows at most %1$d buttons</string>
+    <string name="swipe_place">%1$d. %2$s</string>
     <string name="stack_show">Show all</string>
     <string name="stack_hide">Hide</string>
     <string name="stack_explain">Notifications from the same topic fold into one stack, in the app\'s list and in the phone\'s notification shade. Tap a stack in the list to open it. Swiping a notification or stack away only hides it on this phone; clear it in the app to clear it everywhere.</string>

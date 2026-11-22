@@ -374,6 +374,10 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val ctx = LocalContext.current
     val status by app.status.collectAsState()
     val snooze by app.snooze.collectAsState() // the times a swiped card's Snooze offers
+    val swipes by app.swipes.collectAsState() // the buttons each swipe shows (#161)
+    val clearLabel = stringResource(R.string.clear)
+    val ackLabel = stringResource(R.string.ack)
+    val snoozeLabelText = stringResource(R.string.tray_snooze)
     LaunchedEffect(status) { if (status == SyncClient.Status.AUTH_FAILED) tab = Tab.Settings } // signed out: show the sign-in screen
 
     // Clear with an Undo toast, as on the web inbox.
@@ -452,21 +456,26 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                             }
                             val n = (e as One).n
                             if (tab == Tab.Cleared) Card(n) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text(stringResource(R.string.restore), color = b.ink) } }
-                            else RevealRow(
-                                listOfNotNull(
-                                    RevealAction(stringResource(R.string.clear), Icons.Filled.Check, b.clear, "reveal_clear") { clear(n) },
-                                    if (tab == Tab.Inbox) RevealAction(
-                                        stringResource(R.string.tray_snooze), Icons.Filled.DateRange, b.snooze, "reveal_snooze",
-                                        snooze.times.map { t -> snoozeLabel(t) to { app.act(n.id, "snooze", Snooze.body(t)) } },
-                                    ) { app.act(n.id, "snooze", Snooze.body(snooze.default)) } else null,
-                                ),
-                                if (n.state == Notif.ACTIVE) listOf(RevealAction(stringResource(R.string.ack), Icons.Filled.ThumbUp, b.ink, "reveal_ack") { app.act(n.id, "ack") }) else emptyList(),
-                                app.fastSwipe,
-                            ) {
-                                Card(n) {
-                                    if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text(stringResource(R.string.ack), color = b.ink) }
-                                    if (tab == Tab.Inbox) SnoozeButton(app, n.id)
-                                    TextButton(onClick = { clear(n) }) { Text(stringResource(R.string.clear), color = b.clear, fontWeight = FontWeight.SemiBold) }
+                            else {
+                                // The buttons the shared setting names, minus any this card cannot take (#161).
+                                val snoozeTimes = snooze.times.map { t -> snoozeLabel(t) to { app.act(n.id, "snooze", Snooze.body(t)) } }
+                                val reveal = { names: List<String> ->
+                                    Swipes.shown(names, n.state == Notif.ACTIVE, tab == Tab.Inbox).map { name ->
+                                        when (name) {
+                                            "clear" -> RevealAction(clearLabel, Icons.Filled.Check, b.clear, "reveal_clear") { clear(n) }
+                                            "snooze" -> RevealAction(snoozeLabelText, Icons.Filled.DateRange, b.snooze, "reveal_snooze", snoozeTimes) {
+                                                app.act(n.id, "snooze", Snooze.body(snooze.default))
+                                            }
+                                            else -> RevealAction(ackLabel, Icons.Filled.ThumbUp, b.ink, "reveal_ack") { app.act(n.id, "ack") }
+                                        }
+                                    }
+                                }
+                                RevealRow(reveal(swipes.start), reveal(swipes.end), app.fastSwipe) {
+                                    Card(n) {
+                                        if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text(ackLabel, color = b.ink) }
+                                        if (tab == Tab.Inbox) SnoozeButton(app, n.id)
+                                        TextButton(onClick = { clear(n) }) { Text(clearLabel, color = b.clear, fontWeight = FontWeight.SemiBold) }
+                                    }
                                 }
                             }
                         }
@@ -553,7 +562,8 @@ private enum class Reveal { Closed, Start, End, FullStart, FullEnd }
 /**
  * A swipe slides the card aside and shows round buttons (#161). Nothing changes until one is tapped, and
  * swiping back closes the row. [toStart] shows on a swipe toward the start (left in English), [toEnd] on a
- * swipe toward the end; both mirror in right-to-left languages. With [fast] on, a swipe all the way across
+ * swipe toward the end; both mirror in right-to-left languages, and each side's first button sits nearest the
+ * screen edge. A side with no buttons does not open. With [fast] on, a swipe all the way across
  * runs that side's first button once the card settles there. A fling only opens the row: while [fast] is
  * off there is no stop past the buttons.
  */
@@ -596,7 +606,7 @@ fun RevealRow(toStart: List<RevealAction>, toEnd: List<RevealAction>, fast: Bool
             Modifier.matchParentSize(),
             horizontalArrangement = if (x < 0) Arrangement.End else Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
-        ) { (if (x < 0) toStart else toEnd).forEach { RevealButton(it) { it.run(); close() } } }
+        ) { (if (x < 0) toStart.reversed() else toEnd).forEach { RevealButton(it) { it.run(); close() } } } // the first sits nearest the edge
         // offset mirrors in right-to-left, as anchoredDraggable's drag direction does. No grab while settling,
         // so a scroll that starts on a card still moving back is still a scroll.
         Box(Modifier.offset { IntOffset(x.roundToInt(), 0) }.anchoredDraggable(state, Orientation.Horizontal, startDragImmediately = false)) { content() }
@@ -1464,6 +1474,45 @@ private fun AgentInvite(app: App, hold: AgentHold, close: () -> Unit) {
     )
 }
 
+/**
+ * Which buttons each swipe shows (#161), saved on the server so every device shows the same. A tap adds a button
+ * last on that side (moving it from the other) or takes it off. A token that may not change them sees them read-only.
+ */
+@Composable
+private fun SwipeSettings(app: App) {
+    val b = LocalBrand.current
+    val s by app.swipes.collectAsState()
+    val locked by app.swipesLocked.collectAsState()
+    var result by remember { mutableStateOf<String?>(null) }
+    val full = stringResource(R.string.swipe_full, Swipes.MAX)
+    val names = mapOf(
+        "clear" to stringResource(R.string.clear), "snooze" to stringResource(R.string.tray_snooze),
+        "ack" to stringResource(R.string.ack), "resolve" to stringResource(R.string.swipe_resolve),
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(stringResource(R.string.swipe_settings), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(if (locked) R.string.swipe_locked else R.string.swipe_explain), color = b.slate, fontSize = 13.sp)
+    listOf(true to R.string.swipe_start, false to R.string.swipe_end).forEach { (toStart, side) ->
+        val mine = if (toStart) s.start else s.end
+        Text(stringResource(side), color = b.body, fontSize = 14.sp)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Swipes.NAMES.forEach { name ->
+                val at = mine.indexOf(name)
+                val label = names.getValue(name)
+                FilterChip(
+                    selected = at >= 0, enabled = !locked,
+                    onClick = {
+                        // From the latest value on io, not this frame's: two quick taps both count.
+                        app.io.execute { val next = app.swipes.value.toggle(name, toStart); result = if (next == null) full else app.saveSwipes(next) }
+                    },
+                    label = { Text(if (at >= 0) stringResource(R.string.swipe_place, at + 1, label) else label) },
+                )
+            }
+        }
+    }
+    result?.let { Text(stringResource(R.string.snooze_not_saved, it), color = b.body, fontSize = 14.sp) }
+}
+
 @Composable
 private fun SnoozeSettings(app: App) {
     val b = LocalBrand.current
@@ -1685,6 +1734,7 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
             }
             Switch(checked = fast, onCheckedChange = { on -> fast = on; app.fastSwipe = on })
         }
+        if (app.configured) SwipeSettings(app)
         SoundSettings(app, resumes)
         if (app.configured) SnoozeSettings(app)
         if (app.configured) DeviceSettings(app, resumes)

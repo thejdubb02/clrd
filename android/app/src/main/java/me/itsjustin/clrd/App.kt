@@ -154,6 +154,28 @@ class App : Application() {
     /** The shared snooze times, as the server last sent them (every connect sends them). */
     val snooze by lazy { MutableStateFlow(prefs.getString("snooze", null)?.let { runCatching { Snooze.from(org.json.JSONObject(it)) }.getOrNull() } ?: Snooze()) }
 
+    /** The buttons a swipe on a card shows (#161), as the server last sent them; the defaults until it does. */
+    val swipes by lazy { MutableStateFlow(Swipes.parse(prefs.getString("swipes", null))) }
+
+    /** This token got 403 changing [swipes], so Settings shows them read-only. In memory: a token's grants can widen. */
+    val swipesLocked = MutableStateFlow(false)
+
+    /**
+     * Sends [next] from Settings (#161). It shows at once; the server's settings message confirms it to every device.
+     * Null when the server took it or the token may not change it ([swipesLocked]), else why not. Call on [io].
+     */
+    fun saveSwipes(next: Swipes, api: Api = api()): String? {
+        swipes.value = next
+        return try {
+            api.put("/api/v1/settings", next.json())
+            prefs.edit().putString("swipes", next.json()).apply() // the server has it: a restart before its echo keeps it
+            null
+        } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
+            swipes.value = Swipes.parse(prefs.getString("swipes", null)) // back to what the server last said
+            if (e is HttpError && e.code == 403) { swipesLocked.value = true; null } else (e as? HttpError)?.message ?: getString(R.string.sound_no_connection)
+        }
+    }
+
     /** The `by_id` this phone's marks get on the current server, "" until a `ready` says (#451). */
     val markId by lazy { MutableStateFlow(prefs.getString("mark_id", "").orEmpty()) }
 
@@ -185,6 +207,11 @@ class App : Application() {
                 .put("topics", o.optJSONObject("topic_keep_cleared_days") ?: org.json.JSONObject())
             prefs.edit().putString("keep", keep.toString()).apply()
             io.execute { pruneCleared() }
+        }
+        if (o.has("swipe_start") || o.has("swipe_end")) { // the buttons a swipe shows (#161); an older server sends neither
+            val w = Swipes.from(o, Swipes.parse(prefs.getString("swipes", null)))
+            prefs.edit().putString("swipes", w.json()).apply()
+            swipes.value = w
         }
         val s = Snooze.from(o) ?: return
         prefs.edit().putString("snooze", s.json()).apply()
@@ -230,8 +257,10 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
+                swipes.value = Swipes()
+                swipesLocked.value = false // another token may change them
                 markId.value = ""
                 tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
