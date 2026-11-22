@@ -364,7 +364,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
         app.act(n.id, "dismiss")
         scope.launch {
             if (snackbar.showSnackbar(ctx.getString(R.string.cleared_everywhere), ctx.getString(R.string.undo), duration = androidx.compose.material3.SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                app.act(n.id, "reopen")
+                app.undoClear(listOf(n))
             }
         }
     }
@@ -374,7 +374,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
         app.act(ids, "dismiss", App.VIA_APP_BULK)
         scope.launch {
             if (snackbar.showSnackbar(ctx.getString(R.string.cleared_everywhere), ctx.getString(R.string.undo), duration = androidx.compose.material3.SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                app.act(ids, "reopen")
+                app.undoClear(rows)
             }
         }
     }
