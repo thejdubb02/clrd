@@ -231,7 +231,7 @@ try {
   await page.reload();
   await card('Renew domain').getByLabel('More snooze times').click();
   // The custom time box and its Set button fit inside the menu, not clipped by it.
-  const box = await card('Renew domain').locator('[data-popover]').boundingBox();
+  const box = await card('Renew domain').locator('details[open] [data-popover]').boundingBox();
   const set = await card('Renew domain').getByRole('button', { name: 'Set' }).boundingBox();
   assert.ok(set.x >= box.x && set.x + set.width <= box.x + box.width, 'Set button clipped by the snooze menu');
   const deskFit = await dateFit(card('Renew domain'));
@@ -389,20 +389,20 @@ try {
 
   // Marks (#451): Enter in the note marks it actioned, never acks or answers
   // the card; Remove takes only this reader's mark off.
-  const mq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Deploy 213?', actions: [{ label: 'Go', reply: 'go' }] });
+  const mq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Rollback 214?', actions: [{ label: 'Go', reply: 'go' }] });
   await api(phone, `/api/v1/notifications/${mq.id}/mark`, { mark: 'seen' });
   await page.reload();
-  await card('Deploy 213?').locator('[data-mark-menu] summary').click();
-  await card('Deploy 213?').getByLabel('Note').fill('on it');
-  await card('Deploy 213?').getByLabel('Note').press('Enter');
+  await card('Rollback 214?').locator('[data-mark-menu] summary').click();
+  await card('Rollback 214?').getByLabel('Note').fill('on it');
+  await card('Rollback 214?').getByLabel('Note').press('Enter');
   await announce.filter({ hasText: 'Marked actioned.' }).waitFor({ state: 'attached' });
-  await card('Deploy 213?').locator('[data-mark="actioned"]', { hasText: 'laptop actioned: on it' }).waitFor();
+  await card('Rollback 214?').locator('[data-mark="actioned"]', { hasText: 'laptop actioned: on it' }).waitFor();
   let mn = await get(laptop, mq.id);
   assert.equal(mn.state, 'active', 'Enter in the note changed the card state');
   assert.ok(!mn.reply, 'Enter in the note answered the card');
   assert.equal(mn.marks.length, 2, 'own mark not added next to the phone one');
-  await card('Deploy 213?').getByText('Marked actioned').click();
-  await card('Deploy 213?').getByRole('button', { name: 'Remove my mark' }).click();
+  await card('Rollback 214?').getByText('Marked actioned').click();
+  await card('Rollback 214?').getByRole('button', { name: 'Remove my mark' }).click();
   await announce.filter({ hasText: 'Your mark is removed.' }).waitFor({ state: 'attached' });
   await until(page, () => !document.querySelector('[data-mark="actioned"]'));
   mn = await get(laptop, mq.id);
@@ -543,12 +543,12 @@ try {
   await narrow.goto(`${base}/app?auth=${link}`);
   const wide = narrow.locator('article.card', { hasText: 'Deploy 213?' });
   await wide.getByLabel('More snooze times').click();
-  const menu = await wide.locator('[data-popover]').boundingBox();
+  const menu = await wide.locator('details[open] [data-popover]').boundingBox();
   assert.ok(menu.x >= 0 && menu.x + menu.width <= 360, `snooze menu spans ${menu.x} to ${menu.x + menu.width} on a 360 px screen`);
   assert.equal(await narrow.evaluate(() => document.documentElement.scrollWidth), 360, 'page scrolls sideways with the menu open');
   // A very small phone too.
   await narrow.setViewportSize({ width: 300, height: 740 });
-  const small = await wide.locator('[data-popover]').boundingBox();
+  const small = await wide.locator('details[open] [data-popover]').boundingBox();
   assert.ok(small.x >= 0 && small.x + small.width <= 300, `snooze menu spans ${small.x} to ${small.x + small.width} on a 300 px screen`);
   const smallSet = await wide.getByRole('button', { name: 'Set' }).boundingBox();
   assert.ok(smallSet.x >= small.x && smallSet.x + smallSet.width <= small.x + small.width, 'Set button clipped by the snooze menu on a 300 px screen');
