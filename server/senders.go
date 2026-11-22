@@ -76,6 +76,7 @@ func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string)
 		topicsJSON, recentJSON = "{}", "[]"
 		if tokID == nil {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM senders WHERE id IN (SELECT id FROM senders WHERE token_id IS NULL AND rules = '{}'
+				AND NOT EXISTS (SELECT 1 FROM sender_changes c WHERE c.sender = senders.id) -- keep the undo trail (#537)
 				ORDER BY last_seen DESC LIMIT -1 OFFSET ?)`, senderAnonLimit-1); err != nil {
 				return nil, err
 			}
@@ -248,6 +249,22 @@ func (s *Server) Sender(ctx context.Context, tok *Token, id string) (*Sender, er
 		}
 		sd.Recent = append(sd.Recent, n)
 	}
+	// The cached ids can all be pruned while an older one from this sender
+	// is still stored (#530). Anonymous senders share a token, so only a
+	// token sender can be looked up by the sender column.
+	// ponytail: unindexed scan, admin detail view only; index sender if it shows.
+	if len(sd.Recent) < senderRecent && sd.TokenID != "" {
+		older, err := queryNotifications(s.db, `SELECT `+notifCols+` FROM notifications WHERE sender = ?
+			ORDER BY updated_at DESC LIMIT ?`, sd.TokenID, senderRecent*2)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range older {
+			if len(sd.Recent) < senderRecent && !slices.ContainsFunc(sd.Recent, func(r *Notification) bool { return r.ID == n.ID }) {
+				sd.Recent = append(sd.Recent, n)
+			}
+		}
+	}
 	return sd, nil
 }
 
@@ -405,6 +422,15 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	rt := *tok
 	rt.Topics, rt.Grants = nil, nil
 	in.muted, in.prioMin, in.prioMax = rules.Muted, rules.PriorityMin, rules.PriorityMax
+	// Each copy owns its file, so clearing one leaves the rest. All are linked
+	// before the first publish: a replace of that row deletes the source (#536).
+	files := make([]string, len(targets))
+	for i := 1; i < len(targets) && in.file != ""; i++ {
+		if files[i], err = s.linkFile(in.file); err != nil {
+			s.log.Warn("sender route: copy attachment", "topic", targets[i], "err", err)
+			files[i] = ""
+		}
+	}
 	var first *Notification
 	var firstErr error
 	for i, t := range targets {
@@ -413,15 +439,17 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		if t != in.Topic {
 			one.requested = in.Topic
 		}
-		if i > 0 && in.file != "" { // each copy owns its file, so clearing one leaves the rest
-			if one.file, err = s.linkFile(in.file); err != nil {
-				s.log.Warn("sender route: copy attachment", "topic", t, "err", err)
+		if i > 0 && in.file != "" {
+			if one.file = files[i]; one.file == "" {
 				continue
 			}
 			a := *in.Attachment
 			a.URL, one.Attachment = "/api/v1/files/"+one.file, &a
 		}
 		n, err := s.publishTo(ctx, &rt, one)
+		if i == 0 && routeGap != nil {
+			routeGap(in.file)
+		}
 		if err != nil && i > 0 && one.file != "" {
 			os.Remove(filepath.Join(s.opt.Attachments, one.file))
 		}
@@ -431,6 +459,11 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		case err != nil && i == 0:
 			firstErr = err
 			if in.Status != "resolved" || !isNotFound(err) {
+				for _, f := range files[1:] {
+					if f != "" {
+						os.Remove(filepath.Join(s.opt.Attachments, f))
+					}
+				}
 				return nil, err // the first target fails as an unrouted publish would
 			}
 		case err != nil && !(in.Status == "resolved" && isNotFound(err)):
@@ -463,6 +496,10 @@ func (s *Server) discard(ctx context.Context, tok *Token, top string, in Publish
 	return &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title, Message: in.Message,
 		Priority: in.Priority, Tags: in.Tags, State: Active, CreatedAt: t, UpdatedAt: t, Live: true}, nil
 }
+
+// routeGap, set only by tests, runs right after a routed publish's first
+// copy commits, where a replace of that row can land.
+var routeGap func(file string)
 
 // linkFile gives an uploaded file a second id on disk, sharing its bytes.
 func (s *Server) linkFile(id string) (string, error) {

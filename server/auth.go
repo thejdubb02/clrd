@@ -311,29 +311,26 @@ func (s *Server) listTokens(ctx context.Context, q string, args ...any) ([]*Toke
 
 // DeleteToken revokes a token and every web session signed in with it.
 func (s *Server) DeleteToken(ctx context.Context, id string) error {
-	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE k(id) AS
-	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  DELETE FROM tokens WHERE id IN k RETURNING id`, id)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	n := 0
-	for ; rows.Next(); n++ {
-		var gone string
-		if err := rows.Scan(&gone); err != nil {
-			return err
+	var gone []string
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		// A revoked sender never speaks again: its quiet alarm ends now, before
+		// the cascade drops its row (#558). Sessions are never senders.
+		evs, err := endQuiet(ctx, tx, id)
+		if err != nil {
+			return nil, err
 		}
-		s.revoked.Store(gone, true) // streams check this before every send
-		s.hub.drop(gone)            // and wake on this, so an idle stream closes now
+		if gone, err = dropTokens(ctx, tx, `SELECT ?`, id); err != nil {
+			return nil, err
+		}
+		if len(gone) == 0 {
+			return nil, errf(404, "not_found", "token not found")
+		}
+		return evs, nil
+	})
+	if err == nil {
+		s.revokeAll(gone)
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if n == 0 {
-		return errf(404, "not_found", "token not found")
-	}
-	return nil
+	return err
 }
 
 func (s *Server) lookupToken(ctx context.Context, raw string) *Token {

@@ -334,7 +334,8 @@ scope publish on the card's topic) and any action it has no control for, and
 the device's own "Full swipe acts" switch runs the first button left on that
 side. Clear stays undoable from either side. Reads need scope read; a token
 limited to some topics or carrying per-topic grants cannot change them (403),
-as with the four switches.
+as with the four switches. The web inbox shows them on a touch screen only (mouse and keyboard keep
+the card's own buttons) and has no Resolve control, so it skips Resolve.
 
 Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
@@ -868,7 +869,8 @@ published and has no `alert_topic` raises nothing. A live publish (`Cache:
 no`) and a `status: resolved` publish are not counted (as for `count`), so
 they do not keep the alarm away. The sender shows the alarm's topic as
 `alarm` until its next publish resolves it (reason `quiet`); a change to
-`expect` or `alert_topic` resolves it too and starts the wait over. One
+`expect` or `alert_topic` resolves it too and starts the wait over, and
+revoking the sender's token resolves it for good. One
 alarm at a time: clearing it by hand raises no new one until the sender
 publishes or the rule changes, and the next can only come a full `expect`
 after that. Publishers cannot create a notification with an external_id
@@ -1114,7 +1116,39 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `web/ui/build.sh` writes `web/static/app.css`, which is committed so a plain
   `go build` still works. CI rebuilds it and fails if it drifted. Icons are
   Lucide, inlined as SVG partials in `web/templates/icons.html`.
-- Web Push (VAPID) for browser notifications is a later issue.
+- Web Push (#164). The
+  server makes a VAPID key pair on first start and keeps it in the
+  database. A signed-in device subscribes with its token:
+  `GET /api/v1/push` gives `public_key` (pass it as `applicationServerKey`)
+  and `subscribed`; `PUT /api/v1/push` takes the browser's PushSubscription
+  JSON (`endpoint` must be https); `DELETE /api/v1/push` stops it. One
+  subscription per device, and revoking the device drops it. All three need
+  scope read.
+- What pushes: exactly what would ring that device in the open inbox. A new
+  notification, a repeat, or a snooze ending, while active and not silenced,
+  on a topic the device may read, and only to the chosen devices when the
+  notification names any. State changes (clear, ack, resolve) do not push.
+  Live publishes never push, since they are never stored.
+- Payload (encrypted per RFC 8291, `aes128gcm`): JSON
+  `{type, via, seq, id, topic, title, message, priority, tags, click, icon}`,
+  empty fields left out. A message too long for one 4 KB push is cut to fit;
+  if it still does not fit, only `{type, via, seq, id, topic}` is sent and
+  the page fetches the rest. Headers: `TTL: 86400`, `Urgency` high for
+  priority 4 and 5, low for 1 and 2, `Topic` the notification id so a
+  newer push replaces an older one waiting in the push service.
+- The push service answering 404 or 410 drops the subscription. Other
+  failures are logged, not retried. Push endpoints get the same guard as
+  link fetches (ports 80 and 443, no private addresses), so a subscription
+  cannot point the server at the local network.
+- The web inbox (Settings, Notifications) registers its worker,
+  `static/sw.js`, only when the user turns notifications on there, and asks
+  for permission only on that tap. Nothing changes for a browser that never
+  opts in. A site the browser blocks, or a subscription one side lost, is
+  tidied to off on both sides at the next Settings load. The worker shows
+  every push (fetching the notification by id when only the short form
+  came), and a tap opens or focuses the inbox. The system notification only
+  signals: closing it changes nothing on the server. Browsers allow Web Push
+  only over HTTPS (or on localhost).
 
 ## 10. Brand tokens
 

@@ -1661,6 +1661,197 @@ try {
     console.log('ok: sender rules pause, log, undo, quiet alarm and round trip without JavaScript; bad routes, a bad duration, a stale page and a non-admin get 400');
   }
 
+  // Swipe on a touch screen (#161): a part swipe shows the buttons Settings
+  // picked for that side and changes nothing; swiping back, a vertical drag
+  // and a full swipe change nothing either; a tapped button acts; a mouse drag
+  // shows nothing; a sign-in that may not change settings sees them read-only.
+  {
+    const ctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'swiper' } })).ok(), 'swipe sign-in');
+    const sp = await ctx.newPage();
+    const cdp = await ctx.newCDPSession(sp);
+    const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    const swipe = async (loc, dx, dy = 0, held) => {
+      const b = await loc.boundingBox(), x = b.x + b.width / 2, y = b.y + 20; // on the title, not a button
+      await touch('touchStart', x, y);
+      for (let i = 1; i <= 8; i++) { await touch('touchMove', x + dx * i / 8, y + dy * i / 8); await sp.waitForTimeout(20); }
+      await sp.waitForTimeout(150); // held still, so no fling follows to eat the next tap
+      if (held) await held(); // checked while the finger is still down
+      await touch('touchEnd');
+    };
+    const a = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-a', message: 'one' });
+    const b = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-b', message: 'two' });
+    await sp.goto(base + '/app');
+    const ca = sp.locator('article.card', { hasText: 'swipe-a' }), cb = sp.locator('article.card', { hasText: 'swipe-b' });
+    const tray = c => c.locator('[data-swipe-tray]');
+    await swipe(ca, -120);
+    await tray(ca).getByRole('button', { name: 'Clear' }).waitFor();
+    assert.deepEqual(await tray(ca).getByRole('button').allTextContents(), ['Snooze', 'Clear'], 'swipe left shows Snooze, then Clear at the edge');
+    assert.equal((await get(laptop, a.id)).state, 'active', 'a part swipe changes nothing');
+    await swipe(ca, 120);
+    await tray(ca).waitFor({ state: 'detached' });
+    await swipe(ca, -150, 200); // far enough to open, were it sideways
+    assert.equal(await tray(ca).count(), 0, 'a mostly vertical drag shows nothing');
+    let mid; await swipe(ca, -380, 0, async () => { mid = await ca.evaluate(c => c.x <= c.trayW); });
+    assert.ok(mid, 'the slide stops at the buttons while the finger is still moving');
+    await tray(ca).waitFor();
+    assert.ok(await ca.evaluate(c => c.x === c.trayW), 'a full swipe stops at the buttons');
+    await sp.waitForTimeout(300);
+    assert.equal((await get(laptop, a.id)).state, 'active', 'a full swipe does not clear');
+    await tray(ca).getByRole('button', { name: 'Clear' }).tap();
+    await sp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).waitFor();
+    assert.equal((await get(laptop, a.id)).state, 'dismissed', 'the tapped Clear clears');
+    await swipe(cb, 120);
+    assert.deepEqual(await tray(cb).getByRole('button').allTextContents(), ['Ack'], 'swipe right shows Ack');
+    await tray(cb).getByRole('button', { name: 'Ack' }).tap();
+    await cb.locator('.badge[data-state=acknowledged]').waitFor();
+    assert.equal((await get(laptop, b.id)).state, 'acknowledged', 'the tapped Ack acknowledges');
+
+    // Settings move Ack to the left and leave the right empty.
+    await sp.goto(base + '/app/settings');
+    await sp.getByLabel('Swipe left, button 1').selectOption('ack');
+    await sp.getByLabel('Swipe left, button 2').selectOption('');
+    await sp.getByLabel('Swipe right, button 1').selectOption('');
+    await Promise.all([sp.waitForEvent('load'), sp.locator('[data-swipe-settings]').getByRole('button', { name: 'Save' }).click()]);
+    assert.equal(await sp.getByLabel('Swipe left, button 1').inputValue(), 'ack', 'swipe setting saved');
+    const c = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-c', message: 'three' });
+    await sp.goto(base + '/app');
+    const cc = sp.locator('article.card', { hasText: 'swipe-c' });
+    await swipe(cc, 120);
+    assert.equal(await tray(cc).count(), 0, 'an empty side shows nothing');
+    await swipe(cc, -120);
+    assert.deepEqual(await tray(cc).getByRole('button').allTextContents(), ['Ack'], 'the new left side');
+    await ctx.close();
+
+    // A mouse drag shows nothing.
+    const mctx = await browser.newContext();
+    assert.ok((await mctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'mouse' } })).ok(), 'mouse sign-in');
+    const mp = await mctx.newPage();
+    await mp.goto(base + '/app');
+    const pm = mp.locator('article.card', { hasText: 'swipe-c' }), box = await pm.boundingBox();
+    await mp.mouse.move(box.x + box.width / 2, box.y + 20);
+    await mp.mouse.down();
+    await mp.mouse.move(box.x + 20, box.y + 20, { steps: 8 });
+    await mp.mouse.up();
+    assert.equal(await tray(pm).count(), 0, 'a mouse drag shows nothing');
+    assert.equal((await get(laptop, c.id)).state, 'active', 'and changes nothing');
+    // Swipe settings changed elsewhere reload an open page, so its buttons and form are current.
+    await mp.locator('#sync.is-live').waitFor();
+    const [, put] = await Promise.all([mp.waitForEvent('load'), fetch(base + '/api/v1/settings', { method: 'PUT', headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ swipe_start: ['clear', 'snooze'], swipe_end: ['ack'] }) })]);
+    assert.equal(put.status, 200, 'swipe settings put back');
+    assert.equal(await mp.locator('[data-inbox]').getAttribute('data-swipe-end'), 'ack ', 'the reloaded page has the new buttons');
+    await mctx.close();
+
+    // A topic-limited sign-in cannot change settings: 403, then read-only.
+    const lim = execFileSync(bin, ['token', 'create', '--name', 'swp-only', '--scope', 'read,publish', '--topics', 'swp'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const lctx = await browser.newContext();
+    assert.ok((await lctx.request.post(base + '/api/v1/session', { data: { token: lim, name: 'swp-only' } })).ok(), 'limited sign-in');
+    const lp = await lctx.newPage();
+    await lp.goto(base + '/app/settings');
+    await lp.locator('[data-swipe-settings]').getByRole('button', { name: 'Save' }).click();
+    await lp.locator('[data-swipe-status]:not(:empty)').waitFor();
+    assert.ok(await lp.getByLabel('Swipe left, button 1').isDisabled(), 'read-only after a refused save');
+    await lctx.close();
+    console.log('ok: on a touch screen a part swipe shows the chosen buttons and acts only on a tap; swipe back, vertical, full and mouse drags change nothing; settings move them; a refused save is read-only');
+  }
+
+  // Web Push (#164): nothing asks for permission on load; the switch subscribes
+  // and unsubscribes against the server; a lost subscription and a blocked
+  // site tidy both sides to off; a push shows a notification, fetches the rest
+  // when only the id came, and clears nothing. Headless Chromium denies
+  // notifications, so permission and the push service are stubbed: no real
+  // push service is reached and a notification tap cannot be dispatched.
+  {
+    const { createECDH, randomBytes } = await import('node:crypto');
+    const ec = createECDH('prime256v1'); ec.generateKeys();
+    const fake = { endpoint: 'https://push.example.invalid/sub/1', keys: { p256dh: ec.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') } };
+    const ctx = await browser.newContext();
+    await ctx.addInitScript(f => {
+      const ss = (k, v) => { try { return v === undefined ? sessionStorage.getItem(k) : sessionStorage.setItem(k, v); } catch { return null; } };
+      window.asked = 0;
+      let perm = ss('perm') || 'default';
+      Object.defineProperty(Notification, 'permission', { get: () => perm, configurable: true });
+      Notification.requestPermission = async () => { window.asked++; perm = ss('answer') || 'granted'; ss('perm', perm); return perm; };
+      // Gone after a reload (the browser lost it) unless keep is set.
+      const mk = () => ({ ...f, toJSON: () => f, unsubscribe: async () => { sub = null; ss('keep', ''); return true; } });
+      let sub = ss('keep') ? mk() : null;
+      PushManager.prototype.subscribe = async () => (sub = mk());
+      PushManager.prototype.getSubscription = async () => sub;
+    }, fake);
+    const pp = await ctx.newPage();
+    await pp.goto(`${base}/app?auth=${Buffer.from(`Bearer ${laptop}`).toString('base64url')}`);
+    await pp.goto(base + '/app/settings');
+    const btn = pp.locator('[data-push]');
+    const subscribed = async () => (await (await ctx.request.get(base + '/api/v1/push')).json()).subscribed;
+    const ready = async name => { await pp.getByRole('button', { name }).waitFor(); await until(pp, () => !document.querySelector('[data-push]').disabled); };
+    await ready('Turn on notifications');
+    assert.equal(await pp.evaluate(() => window.asked), 0, 'asked for permission on load');
+    assert.equal(await pp.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0, 'a worker registered before opting in');
+    assert.equal(await subscribed(), false);
+
+    const swe = ctx.waitForEvent('serviceworker');
+    await btn.click();
+    await ready('Turn off notifications');
+    assert.equal(await pp.evaluate(() => window.asked), 1);
+    assert.equal(await subscribed(), true, 'turning on reached the server');
+    // A push: record what the worker shows instead of the browser's own call.
+    const sw = await swe;
+    await sw.evaluate(() => { self.seen = []; self.registration.showNotification = async (t, o) => { self.seen.push({ t, ...o }); }; });
+    const cdp = await ctx.newCDPSession(pp);
+    const regs = new Promise(ok => cdp.on('ServiceWorker.workerRegistrationUpdated', e => e.registrations[0] && ok(e.registrations[0].registrationId)));
+    await cdp.send('ServiceWorker.enable');
+    const regId = await regs;
+    const n = await api(phone, '/api/v1/notifications', { topic: 'pushy', title: 'Disk full', message: 'Free 2 GB' });
+    const push = async d => { await cdp.send('ServiceWorker.deliverPushMessage', { origin: base, registrationId: regId, data: JSON.stringify(d) }); };
+    await push({ type: 'notification', id: 'abc', topic: 'pushy', title: 'Short one', message: 'body' });
+    await push({ type: 'notification', via: 'new', seq: 1, id: n.id, topic: 'pushy' }); // too big: only the id came
+    for (let i = 0; i < 50 && (await sw.evaluate(() => self.seen.length)) < 2; i++) await pp.waitForTimeout(100);
+    const seen = await sw.evaluate(() => self.seen);
+    assert.deepEqual(seen.map(s => [s.t, s.body, s.tag, s.renotify]), [['Short one', 'body', 'abc', true], ['Disk full', 'Free 2 GB', n.id, true]], 'what the worker showed');
+    assert.equal((await get(laptop, n.id)).state, 'active', 'a push cleared the notification');
+
+    // The browser lost its subscription (stub gone after reload): tidy to off.
+    await pp.reload();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'a lost browser subscription left the server row');
+    // Both sides keep it: still on after a reload.
+    await btn.click();
+    await ready('Turn off notifications');
+    await pp.evaluate(() => sessionStorage.setItem('keep', '1'));
+    await pp.reload();
+    await ready('Turn off notifications');
+    assert.equal(await subscribed(), true);
+    // The server dropped it (the push service said gone): the browser drops it too, never re-sends it.
+    await ctx.request.delete(base + '/api/v1/push');
+    await pp.reload();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'a subscription the server dropped was sent again');
+    assert.equal(await pp.evaluate(() => sessionStorage.getItem('keep')), '', 'the browser kept a subscription the server dropped');
+    // On, then off.
+    await btn.click();
+    await ready('Turn off notifications');
+    await btn.click();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'turning off reached the server');
+    // Blocked after opting in: the next load tidies the server and says why.
+    await btn.click();
+    await ready('Turn off notifications');
+    await pp.evaluate(() => sessionStorage.setItem('perm', 'denied'));
+    await pp.reload();
+    await pp.locator('[data-push-hint]', { hasText: 'blocked' }).waitFor();
+    assert.equal(await btn.isDisabled(), true, 'the switch works while the site is blocked');
+    assert.equal(await subscribed(), false, 'a blocked site kept the server row');
+    // Refused when asked: nothing subscribed.
+    await pp.evaluate(() => { sessionStorage.setItem('perm', 'default'); sessionStorage.setItem('answer', 'denied'); });
+    await pp.reload();
+    await ready('Turn on notifications');
+    await btn.click();
+    await pp.locator('[data-push-hint]', { hasText: 'blocked' }).waitFor();
+    assert.equal(await subscribed(), false, 'a refused permission subscribed');
+    await ctx.close();
+    console.log('ok: web push asks only on tap, subscribes and unsubscribes, tidies a lost or blocked subscription, and a push shows without clearing');
+  }
+
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
   // scripts send every request inside it, and a setting saved from the page
   // reaches the server.

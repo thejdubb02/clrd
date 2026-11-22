@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +82,37 @@ func TestSendersDiscovered(t *testing.T) {
 	}
 	if _, one := call(t, ts, "GET", "/api/v1/senders/"+g["id"].(string), admin, nil); len(one["recent"].([]any)) != 2 {
 		t.Fatalf("taken-over row still listed: %v", one["recent"])
+	}
+	// Ten newer ones pruned away: the two older ones still stored still show (#530).
+	for i := range senderRecent {
+		if code, _ := call(t, ts, "POST", "/api/v1/notifications", svc, map[string]any{"topic": "gone", "message": fmt.Sprint(i)}); code != 201 && code != 200 {
+			t.Fatalf("publish %d: %d", i, code)
+		}
+	}
+	if _, err := s.db.Exec(`DELETE FROM notifications WHERE topic = 'gone'`); err != nil {
+		t.Fatal(err)
+	}
+	_, one = call(t, ts, "GET", "/api/v1/senders/"+g["id"].(string), admin, nil)
+	if rec, _ := one["recent"].([]any); len(rec) != 2 {
+		t.Fatalf("older stored ones missing: %v", one["recent"])
+	}
+	// An anonymous sender with a change log outlives the address cap (#537).
+	var anonID string
+	s.db.QueryRow(`SELECT id FROM senders WHERE address = '203.0.113.2'`).Scan(&anonID)
+	for _, p := range []bool{true, false} {
+		if code, _ := call(t, ts, "PUT", "/api/v1/senders/"+anonID, admin, map[string]any{"paused": p}); code != 200 {
+			t.Fatalf("pause %v: %d", p, code)
+		}
+	}
+	if _, err := s.db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < ?)
+		INSERT INTO senders (id, first_seen, last_seen, count, topics, recent) SELECT 'filler-'||i, 1, 9e15, 1, '{}', '[]' FROM n`, senderAnonLimit); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := raw(t, "POST", ts.URL+"/open", "", "x", map[string]string{"X-Forwarded-For": "203.0.113.9"}); code != 200 {
+		t.Fatalf("anonymous publish: %d", code)
+	}
+	if _, ch := call(t, ts, "GET", "/api/v1/senders/"+anonID+"/changes", admin, nil); len(ch["changes"].([]any)) != 2 {
+		t.Fatalf("change log pruned with its sender: %v", ch)
 	}
 }
 
@@ -160,6 +193,14 @@ func TestSenderRules(t *testing.T) {
 	if a["url"] == b["url"] || len(files(t, s)) != 2 {
 		t.Fatalf("routed upload: %v %v %v", a, b, files(t, s))
 	}
+	// A replace of the first copy's row right after it commits deletes the
+	// source file; the later copies were already linked (#536).
+	routeGap = func(f string) { os.Remove(filepath.Join(s.opt.Attachments, f)) }
+	upload(t, ts, svc, map[string]any{"topic": "up", "message": "gap"}, "c.txt", []byte("hi"), false)
+	routeGap = nil
+	if len(in("ops")) != 3 || len(files(t, s)) != 3 {
+		t.Fatalf("copy lost after the source went: ops %d, files %v", len(in("ops")), files(t, s))
+	}
 	// Paused: every dialect gets a 2xx and nothing is stored, not even the upload.
 	if code, _ := set(map[string]any{"paused": true}); code != 200 {
 		t.Fatalf("pause: %d", code)
@@ -174,10 +215,10 @@ func TestSenderRules(t *testing.T) {
 	if code, _ := upload(t, ts, svc, map[string]any{"topic": "up", "message": "dropped"}, "b.txt", []byte("bye"), false); code != 200 {
 		t.Fatalf("upload while paused: %d", code)
 	}
-	if len(in("infra")) != 2 || len(in("ops")) != 2 || len(in("up")) != 1 || len(files(t, s)) != 2 {
+	if len(in("infra")) != 3 || len(in("ops")) != 3 || len(in("up")) != 1 || len(files(t, s)) != 3 {
 		t.Fatalf("paused publish stored: %v %v", in("infra"), files(t, s))
 	}
-	if _, one := call(t, ts, "GET", "/api/v1/senders/"+id, admin, nil); one["count"] != 6.0 { // plain, routed, upload and three paused; a resolve is no new message
+	if _, one := call(t, ts, "GET", "/api/v1/senders/"+id, admin, nil); one["count"] != 7.0 { // plain, routed, two uploads and three paused; a resolve is no new message
 		t.Fatalf("paused publishes still count: %v", one["count"])
 	}
 	// Changes, newest first; undoing the first puts back no rules at all.
@@ -350,5 +391,12 @@ func TestSenderQuiet(t *testing.T) {
 	sweep()
 	if a := alarms("ops"); len(a) != 1 {
 		t.Fatalf("alert_topic ignored: %v", a)
+	}
+	// A revoked sender never speaks again: its alarm ends with it (#558).
+	if err := s.DeleteToken(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if a := alarms("ops"); len(a) != 0 {
+		t.Fatalf("revoked sender left its alarm open: %v", a)
 	}
 }

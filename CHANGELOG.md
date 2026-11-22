@@ -15,6 +15,18 @@ Fixed, Removed, Security), as one line a user can understand.
   to 3 per side (#161). The choice is saved on your server, so every phone
   follows it; offline the app keeps the last one it saw. A token that may not
   change settings sees the choice read-only.
+- Server: Web Push for browsers (#164, server side). A device can subscribe
+  at `/api/v1/push`, and each notification that would ring it in the inbox
+  is pushed, encrypted, even with the tab closed. VAPID keys are made on
+  first start. No new dependency.
+- Web: system notifications through Web Push (#164). Settings,
+  Notifications turns them on for that browser; nothing asks for permission
+  before you tap it. They show with clrd closed, a tap opens the inbox, and
+  closing one clears nothing. Needs HTTPS. Checked in Chromium only so far.
+- Web: on a touch screen, swipe a card part way to show its buttons, then
+  tap one (#161). Nothing changes until you tap, a full swipe never clears,
+  and swiping back hides them. Settings, Swipe picks the buttons for each
+  side. Mouse and keyboard keep the buttons on the card.
 - Server: settings `swipe_start` and `swipe_end` choose the buttons a swipe
   on a card reveals (#161). Defaults match today's app (Clear and Snooze to
   the left, Ack to the right); set them with the API or the MCP `settings`
@@ -154,6 +166,14 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a sender's detail still lists its older stored notifications when
+  its newest ones were cleaned up (#530), and an anonymous sender with a change
+  history is no longer dropped from the address list, so its changes can still
+  be undone (#537).
+- Server: revoking a token resolves its open quiet sender alarm instead of
+  leaving it to be cleared by hand (#558).
+- Server: a sender route that copies an upload to several topics no longer
+  loses the later copies when the first copy is replaced right away (#536).
 - Android: a late repeat no longer rings a notification again after Clear
   and Undo when this phone also sent it, cleared it and undid it (#550).
 - Android: text typed in a reply box is kept as a draft when the box closes

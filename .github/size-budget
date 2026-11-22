@@ -2,5 +2,6 @@
 # clrd stays smaller and lighter than ntfy. Raising a budget is a reviewed
 # one-line change: say in the PR what grew and why it is worth it.
 # Measured 2026-11-20: server 15,593,656, apk 1,945,004.
-server 16500000
+# Measured 2026-11-22: server 16,531,640 with Web Push (#164, +45,056).
+server 16600000
 apk 2100000
