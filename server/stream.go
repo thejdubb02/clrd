@@ -110,8 +110,10 @@ var (
 	errRevoked = errf(401, "unauthorized", "token revoked")
 )
 
-func msgReady(seq int64, epoch string) []byte {
-	return fmt.Appendf(nil, `{"type":"ready","seq":%d,"epoch":%q}`, seq, epoch)
+// msgReady ends the replay. mark_id is the by_id this token's marks get, so a
+// client can tell its own mark on a card (docs/SPEC.md section 2, "Marks").
+func msgReady(seq int64, epoch, markID string) []byte {
+	return fmt.Appendf(nil, `{"type":"ready","seq":%d,"epoch":%q,"mark_id":%q}`, seq, epoch, markID)
 }
 
 func visible(tok *Token, topics []string, topic string) bool {
@@ -239,7 +241,11 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 		}
 		devSeen = key
 	}
-	if err := send(msgReady(last, s.epoch), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
+	markID, err := s.MarkAuthor(ctx, tok)
+	if err != nil {
+		return err
+	}
+	if err := send(msgReady(last, s.epoch, markID), last); err != nil { // seq too, so SSE moves Last-Event-ID past a reset
 		return err
 	}
 	t := time.NewTicker(30 * time.Second)

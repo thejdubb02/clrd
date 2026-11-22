@@ -109,6 +109,15 @@ func TestMarksByPerson(t *testing.T) {
 	if len(ms) != 1 || ms[0].(map[string]any)["by"] != "Ann" || ms[0].(map[string]any)["by_id"] != u["id"] || ms[0].(map[string]any)["mark"] != "actioned" {
 		t.Fatalf("person mark: %v", ms)
 	}
+	// ready tells each stream which by_id is its own, so an app can find its mark on a card.
+	if r := dialWS(t, ts.URL, phone, 0).until(func(m msg) bool { return m.Type == "ready" }); r.MarkID != u["id"] {
+		t.Fatalf("ready mark_id %q, want the person %v", r.MarkID, u["id"])
+	}
+	stew := mkToken(t, s, "stew", []string{ScopeRead}, nil)
+	_, n = call(t, ts, "POST", path, stew, map[string]any{"mark": "seen"})
+	if r := dialWS(t, ts.URL, stew, 0).until(func(m msg) bool { return m.Type == "ready" }); r.MarkID != n["marks"].([]any)[1].(map[string]any)["by_id"] {
+		t.Fatalf("ready mark_id %q for a token with no person: %v", r.MarkID, n["marks"])
+	}
 }
 
 func TestMarksSurviveRestart(t *testing.T) {

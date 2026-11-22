@@ -165,6 +165,18 @@ class SyncClientTest {
         assertEquals(listOf(false, true), store.again.toList()) // only the repeat rings while it is showing
     }
 
+    @Test fun readyTellsThePhoneWhichMarksAreItsOwn() { // #451: never guessed, and an older server sends none
+        onConnect = { n, ws -> ws.send(if (n == 1) """{"type":"ready","seq":1,"mark_id":"u1"}""" else """{"type":"ready","seq":1}""") }
+        start()
+        await { store.markIds.isNotEmpty() }
+        assertEquals(listOf("u1"), store.markIds.toList())
+        val n = Notif.fromJson(org.json.JSONObject(notifJson("m", "active", 1)).put("marks", org.json.JSONArray(
+            """[{"by":"stew","by_id":"t9","mark":"seen"},{"by":"justin","by_id":"u1","mark":"actioned","note":"done"}]""")))
+        assertEquals("done", n.markBy("u1")!!.optString("note"))
+        assertEquals(null, n.markBy("u2"))
+        assertEquals(null, n.markBy("")) // no id from the server: no own mark, so no Remove
+    }
+
     @Test fun aMarkUpdatesTheCardQuietly() { // card marks: someone else saw or actioned it, nothing rings
         val mark = """"marks":[{"by":"stew","mark":"actioned","note":"filed relay#512"}],"seq":6}"""
         onConnect = { _, ws ->
@@ -594,6 +606,8 @@ class SyncClientTest {
         @Volatile var epoch = ""
         override fun epoch() = epoch
         override fun saveEpoch(epoch: String) { this.epoch = epoch }
+        val markIds = CopyOnWriteArrayList<String>()
+        override fun saveMarkId(id: String) { markIds += id }
         override fun pending() = queue.toList()
         override fun removePending(p: Pending) { queue.remove(p) }
         val outcomes = CopyOnWriteArrayList<String>()

@@ -208,6 +208,16 @@
     <string name="link_waiting_title">Approve on your computer</string>
     <string name="link_waiting_text">Your browser on %1$s now shows this phone. Approve it there only if it shows %2$s.</string>
     <string name="link_cancel">Cancel</string>
+    <string name="mark">Mark seen or actioned</string>
+    <string name="marked_seen">Marked seen</string>
+    <string name="marked_actioned">Marked actioned</string>
+    <string name="mark_note">Note (optional)</string>
+    <string name="mark_link">Link (optional)</string>
+    <string name="mark_seen">Seen</string>
+    <string name="mark_actioned">Actioned</string>
+    <string name="mark_remove">Remove my mark</string>
+    <string name="mark_failed">Not saved: %1$s</string>
+    <string name="mark_no_connection">no connection to the server</string>
     <string name="link_done">Phone linked. Syncing now.</string>
     <string name="link_expired">That code expired, was denied or was already used. Make a new one on the browser.</string>
     <string name="snooze_settings">Snooze</string>

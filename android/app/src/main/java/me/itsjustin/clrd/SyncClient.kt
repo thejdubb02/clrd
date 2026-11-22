@@ -35,6 +35,9 @@ interface Store {
     fun epoch(): String
     fun saveEpoch(epoch: String)
 
+    /** The `by_id` this phone's marks get, from `ready` (docs/SPEC.md section 3), so a card can show which mark is ours. */
+    fun saveMarkId(id: String) {}
+
     fun pending(): List<Pending>
     fun removePending(p: Pending)
 
@@ -203,6 +206,7 @@ class SyncClient(
                 val saved = store.epoch()
                 if (epoch.isNotEmpty() && saved.isNotEmpty() && epoch != saved) return reset()
                 if (epoch.isNotEmpty() && saved.isEmpty()) store.saveEpoch(epoch)
+                o.optString("mark_id").takeIf { it.isNotEmpty() }?.let(store::saveMarkId) // absent from a server older than #451
                 // Events this token cannot see still move the cursor, or a filtered token
                 // falls behind retention and resets on every reconnect.
                 bufferSeq = maxOf(bufferSeq, o.optLong("seq"))
