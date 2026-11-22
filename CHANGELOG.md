@@ -18,6 +18,8 @@ Fixed, Removed, Security), as one line a user can understand.
   and person that has sent here, with its kind, topics, count and last seen,
   and opens one sender with its details and last notifications. Works without
   JavaScript.
+- Android: the same Senders list for admins (#545, #119), in Settings. Tap a
+  sender for its details and last notifications. Hidden for any other token.
 
 - Server and API: a list of senders (#119, part 1). Every service or token
   that publishes shows up on its first message, with its kind, webhook

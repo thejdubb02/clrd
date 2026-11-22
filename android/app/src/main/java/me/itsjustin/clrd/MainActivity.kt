@@ -1012,6 +1012,85 @@ private fun DeviceSettings(app: App, resumes: Int) {
     }
 }
 
+/** A sender's kind (docs/SPEC.md section 5.1) in the web's words. */
+internal fun senderKind(kind: String) = when (kind) {
+    "person" -> R.string.sender_person
+    "ntfy_user" -> R.string.sender_ntfy_user
+    "gotify_app" -> R.string.sender_gotify_app
+    "pushover_app" -> R.string.sender_pushover_app
+    "anonymous" -> R.string.sender_anonymous
+    else -> R.string.sender_token
+}
+
+/** "alerts (3), ci (1)": a sender's topics by name, as the web lists them. */
+internal fun senderTopics(s: org.json.JSONObject): String {
+    val t = s.optJSONObject("topics") ?: return ""
+    return t.keys().asSequence().sorted().joinToString(", ") { "$it (${t.optLong(it)})" }
+}
+
+/** What a sender's detail says in place of its recent list, or null when it has some (#530: never "nothing" while it has sent). */
+internal fun senderEmpty(s: org.json.JSONObject) = when {
+    (s.optJSONArray("recent")?.length() ?: 0) > 0 -> null
+    s.optLong("count") > 0 -> R.string.sender_none_stored
+    else -> R.string.sender_none_sent
+}
+
+/**
+ * Every token, app and person that has sent here (#119, docs/SPEC.md section 5.1), read only.
+ * Only a full admin may list them; for any other token the server says no and this stays hidden.
+ */
+@Composable
+private fun SenderSettings(app: App, resumes: Int) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    val server by app.saved.collectAsState()
+    var senders by remember(server) { mutableStateOf<List<org.json.JSONObject>?>(null) }
+    var open by remember(server) { mutableStateOf<String?>(null) }
+    var detail by remember(server) { mutableStateOf<org.json.JSONObject?>(null) }
+    LaunchedEffect(server, resumes) {
+        val api = app.api()
+        app.io.execute { senders = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull() }
+    }
+    LaunchedEffect(open) {
+        val id = open ?: return@LaunchedEffect
+        val api = app.api()
+        app.io.execute {
+            val d = runCatching { org.json.JSONObject(api.get("/api/v1/senders/${android.net.Uri.encode(id)}")) }.getOrNull()
+            if (d != null) detail = d
+        }
+    }
+    val list = senders ?: return
+    Spacer(Modifier.height(8.dp))
+    Text(stringResource(R.string.senders_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(if (list.isEmpty()) R.string.senders_none else R.string.senders_explain), color = b.slate, fontSize = 13.sp)
+    list.forEach { s ->
+        val id = s.optString("id")
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { open = if (open == id) null else id }.padding(vertical = 4.dp)) {
+            Text(s.optString("name"), color = b.ink)
+            val kind = stringResource(senderKind(s.optString("kind")))
+            val template = s.optString("template").takeIf { it.isNotEmpty() }?.let { ", " + ctx.getString(R.string.sender_template, it) }.orEmpty()
+            val seen = millisOf(s.optString("last_seen"))?.let { ago(ctx, it) }.orEmpty()
+            Text(ctx.getString(R.string.sender_line, kind + template, s.optLong("count"), seen), color = b.slate, fontSize = 13.sp)
+            senderTopics(s).takeIf { it.isNotEmpty() }?.let { Text(it, style = Mono, color = b.slate, fontSize = 12.sp) }
+        }
+        // Only the detail for the sender open now: a slow answer for one closed since is not shown under another.
+        val d = detail?.takeIf { open == id && it.optString("id") == id } ?: return@forEach
+        Column(Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            d.optString("user_agent").takeIf { it.isNotEmpty() }?.let { Text(ctx.getString(R.string.sender_agent, it), color = b.slate, fontSize = 13.sp) }
+            d.optString("address").takeIf { it.isNotEmpty() }?.let { Text(ctx.getString(R.string.sender_address, it), color = b.slate, fontSize = 13.sp) }
+            millisOf(d.optString("first_seen"))?.takeIf { it > 0 }?.let { Text(ctx.getString(R.string.sender_first_seen, ago(ctx, it)), color = b.slate, fontSize = 13.sp) }
+            Text(stringResource(R.string.sender_recent), color = b.ink, fontWeight = FontWeight.SemiBold)
+            senderEmpty(d)?.let { Text(stringResource(it), color = b.slate, fontSize = 13.sp) }
+            objects(d, "recent").forEach { n ->
+                val at = millisOf(n.optString("created_at"))?.let { ago(ctx, it) }.orEmpty()
+                Text(n.optString("title").ifEmpty { n.optString("message") }, color = b.ink, maxLines = 2)
+                val state = stateLabel(n.optString("state"))?.let { ctx.getString(it) }.orEmpty()
+                Text(ctx.getString(R.string.device_log_line, at, n.optString("topic"), state).trimEnd(), style = Mono, color = b.slate, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
 /**
  * One send from the Send box at a time (#523). Held on [App], not in the box, so a box rebuilt after
  * a rotation still sees the send in flight and its result. [sent] counts successes for Home to notice.
@@ -1378,6 +1457,7 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
         SoundSettings(app, resumes)
         if (app.configured) SnoozeSettings(app)
         if (app.configured) DeviceSettings(app, resumes)
+        if (app.configured) SenderSettings(app, resumes)
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.about, BuildConfig.VERSION_NAME), style = Mono, color = b.slate)
     }
