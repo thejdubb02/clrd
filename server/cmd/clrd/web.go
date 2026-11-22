@@ -197,6 +197,13 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		if err := convert(sd, &snap.Sender); err != nil {
 			return snap, err
 		}
+		cs, err := a.s.SenderChanges(ctx, tok, q.Sender)
+		if err != nil {
+			return snap, err
+		}
+		if err := convert(cs, &snap.Sender.Changes); err != nil {
+			return snap, err
+		}
 	}
 	if q.Devices {
 		evs, err := a.s.DeviceLog(ctx, tok)
@@ -354,6 +361,28 @@ func (a webAPI) SaveTemplate(r *http.Request, t web.Template, secret string, cle
 	h := server.Webhook{Each: t.Each, Title: t.Title, Message: t.Message, Priority: t.Priority, Tags: t.Tags,
 		Click: t.Click, ID: t.ID, Resolve: t.Resolve, Secret: secret}
 	return webError(a.s.SaveTemplate(r.Context(), tok, t.Topic, t.Name, h, !clearSecret))
+}
+
+func (a webAPI) SetSenderRules(r *http.Request, id string, rules web.SenderRules) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	patch, err := json.Marshal(rules)
+	if err != nil {
+		return err
+	}
+	_, err = a.s.SetSenderRules(r.Context(), tok, id, patch)
+	return webError(err)
+}
+
+func (a webAPI) UndoSenderChange(r *http.Request, id string, seq int64) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.UndoSenderChange(r.Context(), tok, id, seq)
+	return webError(err)
 }
 
 func (a webAPI) DeleteTemplate(r *http.Request, topic, name string) error {
