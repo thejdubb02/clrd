@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -187,4 +188,76 @@ func one(t *testing.T, s *Server, topic, key string) *Notification {
 	}
 	t.Fatalf("no %s/%s", topic, key)
 	return nil
+}
+
+// Races from the #112 review (#240): a send whose outcome lands after the hook
+// changed under it.
+func TestHooksOutRaces(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	save := func() {
+		if code, _ := call(t, ts, "PUT", "/api/v1/topics/alerts/hooks/gh", admin, map[string]any{"url": "https://x.test/"}); code != 200 {
+			t.Fatalf("save: %d", code)
+		}
+	}
+	queued := func() hookJob {
+		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m"})
+		call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/dismiss", admin, nil)
+		j := hookJob{topic: "alerts", name: "gh", url: "https://x.test/"}
+		if err := s.db.QueryRow(`SELECT MAX(id) FROM hook_deliveries`).Scan(&j.id); err != nil {
+			t.Fatal(err)
+		}
+		return j
+	}
+	since := func() (on bool, failing bool) {
+		var f sql.NullInt64
+		s.db.QueryRow(`SELECT enabled, failing_since FROM hooks_out WHERE topic = 'alerts' AND name = 'gh'`).Scan(&on, &f)
+		return on, f.Valid
+	}
+	old := time.Now().Add(-25 * time.Hour)
+
+	// Deleted and saved again while a send was out: the late 2xx does not
+	// clear the new hook's failure streak.
+	save()
+	j := queued()
+	call(t, ts, "DELETE", "/api/v1/topics/alerts/hooks/gh", admin, nil)
+	save()
+	s.db.Exec(`UPDATE hooks_out SET failing_since = ?`, ms(old))
+	if err := s.recordHook(ctx, j, 200, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, failing := since(); !failing {
+		t.Fatal("a send to the deleted hook cleared the new one's streak")
+	}
+
+	// Another send turned the hook off: a success that lands after it keeps
+	// the streak, so the off hook still says since when it failed.
+	save()
+	a, b := queued(), queued()
+	s.db.Exec(`UPDATE hooks_out SET failing_since = ?`, ms(old))
+	if err := s.recordHook(ctx, a, 500, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.recordHook(ctx, b, 200, nil); err != nil {
+		t.Fatal(err)
+	}
+	if on, failing := since(); on || !failing {
+		t.Fatalf("after off then success: enabled %v, failing %v", on, failing)
+	}
+
+	// Shutdown starts while a failure is recorded: the hook still turns off
+	// with its notice.
+	save()
+	c := queued()
+	s.db.Exec(`UPDATE hooks_out SET failing_since = ?`, ms(old))
+	s.db.Exec(`DELETE FROM notifications WHERE external_id = 'webhook-off-gh'`)
+	cut, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := s.recordHook(cut, c, 500, nil); err != nil {
+		t.Fatal(err)
+	}
+	if on, _ := since(); on {
+		t.Fatal("hook still on")
+	}
+	one(t, s, "alerts", "webhook-off-gh")
 }

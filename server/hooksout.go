@@ -152,13 +152,21 @@ func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
 // anything else schedules a retry, and a streak past hookDisableAfter turns
 // the hook off and tells the topic.
 func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr error) error {
+	// The send is over: finish recording it even if shutdown starts now, so a
+	// hook turned off below always gets its notice (#240).
+	ctx = context.WithoutCancel(ctx)
 	t := now()
+	// mine limits each hook update to a delivery that still exists: a hook
+	// deleted while this send was out took its deliveries with it, and one
+	// saved since under the same name must not inherit this outcome (#240).
+	const mine = ` AND EXISTS (SELECT 1 FROM hook_deliveries WHERE id = ?)`
 	if sendErr == nil && code >= 200 && code < 300 {
 		if _, err := s.db.ExecContext(ctx, `UPDATE hook_deliveries SET status = 'ok', attempts = attempts + 1, code = ?, error = '', updated_at = ? WHERE id = ?`,
 			code, ms(t), j.id); err != nil {
 			return err
 		}
-		_, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET failing_since = NULL WHERE topic = ? AND name = ?`, j.topic, j.name)
+		// Only while on: a hook another send just turned off keeps its streak.
+		_, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET failing_since = NULL WHERE topic = ? AND name = ? AND enabled = 1`+mine, j.topic, j.name, j.id)
 		return err
 	}
 	msg := fmt.Sprintf("HTTP %d", code)
@@ -176,12 +184,12 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 		status, ms(next), code, msg, ms(t), j.id); err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET failing_since = COALESCE(failing_since, ?) WHERE topic = ? AND name = ?`,
-		ms(t), j.topic, j.name); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET failing_since = COALESCE(failing_since, ?) WHERE topic = ? AND name = ?`+mine,
+		ms(t), j.topic, j.name, j.id); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET enabled = 0 WHERE topic = ? AND name = ? AND enabled = 1 AND failing_since <= ?`,
-		j.topic, j.name, ms(t.Add(-hookDisableAfter)))
+	res, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET enabled = 0 WHERE topic = ? AND name = ? AND enabled = 1 AND failing_since <= ?`+mine,
+		j.topic, j.name, ms(t.Add(-hookDisableAfter)), j.id)
 	if err != nil {
 		return err
 	}

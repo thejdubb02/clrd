@@ -69,6 +69,10 @@ to order them.
 
 If a webhook keeps failing for 24 hours, clrd turns it off and posts a
 notification to the topic saying so. Save it again to turn it back on.
+Deliveries still waiting then go out once it is back on. Each try uses the
+URL and secret saved at that moment, so saving a fixed URL also fixes the
+retries already queued. A webhook with nothing to send stays
+on; the next failure after 24 hours of failing turns it off at once.
 
 `GET /api/v1/topics/alerts/hooks/github/deliveries` shows the last 100
 deliveries: status (`pending`, `ok` or `failed`), tries, the last HTTP code

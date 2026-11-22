@@ -742,8 +742,9 @@ By external id (what scripts and monitors use):
   (section 3) on dismissed, acknowledged, resolved, snoozed and `action` (a
   reply tapped), with `X-Clrd-Event`, `X-Clrd-Delivery` and, with a secret,
   `X-Clrd-Signature: sha256=<hex HMAC>`. Same address guard as the favicon
-  fetcher. Non-2xx retries 8 times from 30 s, doubling; 24 h of failures turns
-  it off with a notification on the topic. Docs:
+  fetcher. Non-2xx is tried again from 30 s, doubling, 8 tries in all; 24 h of failures turns
+  it off with a notification on the topic. Each try uses the hook's URL and
+  secret saved at that moment. Docs:
   `docs/integrations/webhooks-out.md`.
 
 Full ntfy parity checklist lives in issue #2; tick it off there.
