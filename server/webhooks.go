@@ -169,7 +169,42 @@ func webhookFuncs(h http.Header) template.FuncMap {
 		"contains": func(s any, sub string) bool { return strings.Contains(text(s), sub) },
 		"lower":    func(s any) string { return strings.ToLower(text(s)) },
 		"split":    func(s any, sep string) []string { return strings.Split(text(s), sep) },
+		// The builtins that can grow a string, capped: a variable doubled
+		// with print 30 times is refused at 16 KB, not after it allocates.
+		"print":    capFunc(fmt.Sprint),
+		"println":  capFunc(fmt.Sprintln),
+		"html":     capFunc(template.HTMLEscaper),
+		"js":       capFunc(template.JSEscaper),
+		"urlquery": capFunc(template.URLQueryEscaper),
 	}
+}
+
+var errFuncCap = errors.New("function result over 16 KB")
+
+// capFunc refuses a call whose arguments or result pass the output cap, so
+// many large arguments are refused before they are joined.
+func capFunc(f func(...any) string) func(...any) (string, error) {
+	return func(args ...any) (string, error) {
+		n := 0
+		for _, a := range args {
+			if s, ok := a.(string); ok {
+				n += len(s)
+			} else {
+				n += len(fmt.Sprint(a))
+			}
+			if n > webhookFieldMax {
+				return "", errFuncCap
+			}
+		}
+		return capResult(f(args...))
+	}
+}
+
+func capResult(s string) (string, error) {
+	if len(s) > webhookFieldMax {
+		return "", errFuncCap
+	}
+	return s, nil
 }
 
 // parse compiles every field; a PUT runs it so a bad template is refused
