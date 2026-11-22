@@ -196,7 +196,7 @@
         <thead><tr><th scope="col">Device</th><th scope="col" class="max-sm:hidden">Linked</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Unlink</span></th></tr></thead>
         <tbody>
           {{range .Snap.Linked}}<tr data-device="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><span>{{.Name}}</span>{{if .This}} <span class="text-muted-foreground">(this browser)</span>{{end}}
-            <div class="meta">{{if eq .Kind "phone"}}Phone, linked to{{else if eq .Kind "browser"}}Browser, signed in with{{else}}Token{{end}}{{with .Via}} {{.}}{{end}}</div></td>
+            <div class="meta">{{if eq .Kind "phone"}}Phone, linked to{{else if eq .Kind "browser"}}Browser, signed in with{{else if eq .Kind "agent"}}Agent{{else}}Token{{end}}{{with .Via}} {{.}}{{end}}</div></td>
             <td class="meta whitespace-nowrap max-sm:hidden"><time datetime="{{iso .LinkedAt}}" title="{{clock .LinkedAt}}">{{clock .LinkedAt}}</time></td>
             <td class="meta">{{if .Live}}Connected{{else if .Connected}}Catching up{{else}}Offline{{with .LastSeenAt}}<div>seen <time class="whitespace-nowrap" datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time></div>{{end}}{{end}}
               <div class="mt-1 grid gap-1"><span>May approve:</span> {{if $.Snap.CanApprove}}<select class="input w-auto js-only" data-approve="{{.ID}}" data-name="{{.Name}}"{{if $.Snap.Own .}} data-own{{end}} aria-label="May approve: {{.Name}}">{{range $.Snap.ApproveOptions .}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><noscript>{{.ApproveLabel}}</noscript>{{else}}{{.ApproveLabel}}{{end}}</div></td>
@@ -225,6 +225,29 @@
       <div class="flex gap-2"><button class="btn" data-variant="primary" type="button" data-link-approve>Approve</button><button class="btn" data-variant="outline" type="button" data-link-deny>Deny</button></div>
     </div>
   </section>
+  {{if .Snap.CanInvite}}<section class="grid gap-3" aria-labelledby="agent-h" data-agent hidden>
+    <h2 id="agent-h" class="text-base font-semibold">Add an agent</h2>
+    <p class="text-body text-sm/relaxed">Give an AI agent or a bot its own sign-in for the topics you pick, without copying a token. It may read and send there as far as you may, never more. It cannot tap reply buttons such as Approve. It shows in Linked devices, where you can unlink it.</p>
+    <div class="flex flex-wrap items-center gap-3"><button class="btn" data-variant="outline" type="button" data-agent-start>Add agent</button><span class="meta" role="status" data-agent-gone></span></div>
+    <form class="grid max-w-md gap-3" data-agent-form hidden>
+      <div class="grid gap-1.5"><label class="label" for="agent-name">Agent name</label>
+        <input id="agent-name" class="input" name="name" required maxlength="64" autocomplete="off" spellcheck="false" placeholder="build-bot"></div>
+      <fieldset class="grid gap-2"><legend class="label mb-1.5">Topics</legend>
+        {{range .Snap.Topics}}<label class="label font-normal [overflow-wrap:anywhere]"><input type="checkbox" class="input" name="topic" value="{{.Name}}"> {{.Name}}</label>{{end}}
+        <input class="input" name="more" autocomplete="off" spellcheck="false" aria-label="{{if .Snap.Topics}}Other topics{{else}}Topics{{end}}" aria-describedby="agent-topics-hint" placeholder="{{if .Snap.Topics}}Other topics{{else}}build, deploys{{end}}">
+        <p id="agent-topics-hint" class="meta">Separate topics with commas.</p></fieldset>
+      <div class="grid gap-1.5"><label class="label" for="agent-for">Invite works for</label>
+        <select id="agent-for" class="input" name="expires_in"><option value="5m">5 minutes</option><option value="15m" selected>15 minutes</option><option value="30m">30 minutes</option><option value="1h">1 hour</option></select></div>
+      <div class="flex items-center gap-3"><button class="btn" data-variant="primary">Make invite</button><span class="meta" role="status" data-agent-status></span></div>
+    </form>
+    <div class="grid gap-2" data-agent-done hidden>
+      <p class="text-sm">Give this to <b data-agent-name></b> privately, like a password:</p>
+      <pre tabindex="0" class="bg-muted/50 w-full rounded-md p-3 whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-agent-invite></code></pre>
+      <div class="flex flex-wrap items-center gap-2"><span class="[.no-copy_&]:hidden"><button type="button" class="btn" data-variant="outline" data-size="sm" data-agent-copy>{{template "i-copy"}}Copy invite</button></span><button type="button" class="btn" data-variant="ghost" data-size="sm" data-agent-again>Add another agent</button></div>
+      <p class="meta" data-agent-left>It works once, until <time data-agent-until></time>. The agent opens it and follows the steps it shows.</p>
+      <p class="meta">May approve starts at Denied, so it cannot answer its own questions.</p>
+    </div>
+  </section>{{end}}
   <script src="{{static "pair.js"}}" defer></script>
   <section class="grid gap-3" aria-labelledby="send-h">
     <h2 id="send-h" class="text-base font-semibold">Send a test notification</h2>

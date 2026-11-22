@@ -90,4 +90,55 @@
     link.querySelector('[data-link-approve]').addEventListener('click', () => decide('approve'));
     link.querySelector('[data-link-deny]').addEventListener('click', () => decide('deny'));
   }
+
+  // Add an agent (#456): a one-use invite string. It lives only in this page:
+  // never in a URL, storage or the console, and it leaves the page when it runs out.
+  const agent = document.querySelector('[data-agent]');
+  if (agent) {
+    agent.hidden = false;
+    const $ = s => agent.querySelector(s);
+    const start = $('[data-agent-start]'), form = $('[data-agent-form]'), done = $('[data-agent-done]'), status = $('[data-agent-status]'), gone = $('[data-agent-gone]');
+    let timer;
+    const open = () => {
+      clearTimeout(timer);
+      gone.textContent = '';
+      $('[data-agent-invite]').textContent = '';
+      done.hidden = true; start.hidden = true; form.hidden = false;
+      form.reset(); status.textContent = '';
+      form.elements.name.focus();
+    };
+    start.addEventListener('click', open);
+    $('[data-agent-again]').addEventListener('click', open);
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = form.elements;
+      const topics = [...new Set([...form.querySelectorAll('[name=topic]:checked')].map(c => c.value)
+        .concat(f.more.value.split(',').map(t => t.trim()).filter(Boolean)))];
+      if (!topics.length) { status.textContent = 'Pick at least one topic.'; return; }
+      const btn = form.querySelector('button');
+      btn.disabled = true; status.textContent = '';
+      try {
+        const r = await post('/api/v1/agents/invite', { name: f.name.value.trim(), topics, expires_in: f.expires_in.value });
+        const p = await r.json();
+        if (!r.ok) { status.textContent = p.error || 'Could not make an invite.'; return; }
+        $('[data-agent-name]').textContent = p.name;
+        $('[data-agent-invite]').textContent = p.url;
+        const until = $('[data-agent-until]');
+        until.dateTime = p.expires_at;
+        until.textContent = new Date(p.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        form.hidden = true; done.hidden = false;
+        // By the server's clock, as for link codes above.
+        const ms = Date.parse(p.expires_at) - (Date.parse(r.headers.get('Date')) || Date.now());
+        timer = setTimeout(() => {
+          $('[data-agent-invite]').textContent = '';
+          done.hidden = true; start.hidden = false;
+          gone.textContent = 'That invite ran out. If the agent used it in time, it is in Linked devices.';
+        }, ms);
+      } catch {
+        status.textContent = 'Could not reach the server.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
 })();

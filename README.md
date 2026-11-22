@@ -98,6 +98,11 @@ offline catches up the moment it reconnects.
 - **Add devices by QR code.** Sign a new browser in by scanning its code with
   the app, or link a phone from Settings in a signed-in browser. Both screens
   show the same 4-digit number, so no token is typed or copied.
+- **Add an agent in one step.** Press Add agent in Settings, give it a name
+  and its topics, and hand it the one-use invite. The agent gets its own user
+  and token held to those topics, cannot approve its own prompts, and shows in
+  Linked devices where you can unlink it. See
+  [docs/integrations/agent-invite.md](docs/integrations/agent-invite.md).
 - **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
   and an MCP server so an AI agent can notify you and wait for your answer.
   Claude Code and Codex can ask your phone before running a command, and

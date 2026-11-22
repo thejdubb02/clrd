@@ -187,7 +187,7 @@ type Topic struct {
 type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
-	Kind       string     `json:"kind"` // token, browser or phone
+	Kind       string     `json:"kind"` // token, browser, phone or agent
 	Via        string     `json:"via"`
 	ViaID      string     `json:"via_id"`
 	Approve    string     `json:"approve"` // allowed, ask or denied: may it tap a reply (#329)
@@ -344,6 +344,7 @@ type Snapshot struct {
 	CanApprove                                   bool            // the token may change who may approve: allowed, all topics (#329)
 	Templates                                    []Template      // saved webhook templates (#129), Settings only
 	CanTemplates                                 bool            // the token may publish, so it may save templates
+	CanInvite                                    bool            // the token may make an agent invite (#456): a person's session or a full admin
 	BuiltinTemplates                             []string        // names of the built-in webhook templates
 }
 

@@ -96,8 +96,9 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	s.Linked = []LinkedDevice{{ID: "tok-laptop", Name: "laptop", Kind: "token", LinkedAt: day, Approve: "denied"},
 		{ID: "tok-web", Name: "web", Kind: "browser", Via: "laptop", ViaID: "tok-laptop", Approve: "allowed", LinkedAt: day, LastSeenAt: &now, This: true, CanUnlink: true},
 		{ID: "tok-pixel", Name: "pixel-9", Kind: "phone", Via: "web", ViaID: "tok-web", Approve: "ask", LinkedAt: day, CanUnlink: true, Connected: true, CaughtUp: true},
-		{ID: "tok-tablet", Name: "tablet", Kind: "phone", Via: "web", ViaID: "tok-web", Approve: "denied", LinkedAt: day, CanUnlink: true}}
-	s.CanApprove = true
+		{ID: "tok-tablet", Name: "tablet", Kind: "phone", Via: "web", ViaID: "tok-web", Approve: "denied", LinkedAt: day, CanUnlink: true},
+		{ID: "tok-bot", Name: "build-bot", Kind: "agent", Approve: "denied", LinkedAt: day, CanUnlink: true}}
+	s.CanApprove, s.CanInvite = true, q.Devices
 	if q.Devices {
 		s.Log = []DeviceEvent{{At: day, Action: "linked", Device: "pixel-9", By: "web"}}
 	}
