@@ -188,6 +188,12 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		}
 	}
 	if q.Sender != "" && snap.CanSenders {
+		// Changes before rules: an edit landing between the two reads then
+		// makes the form's base_seq stale (refused), never its rules (#543).
+		cs, err := a.s.SenderChanges(ctx, tok, q.Sender)
+		if err != nil {
+			return snap, err
+		}
 		sd, err := a.s.Sender(ctx, tok, q.Sender)
 		if code, _ := server.PublicError(err); err != nil && code == http.StatusNotFound {
 			return snap, web.ErrNotFound
@@ -195,10 +201,6 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			return snap, err
 		}
 		if err := convert(sd, &snap.Sender); err != nil {
-			return snap, err
-		}
-		cs, err := a.s.SenderChanges(ctx, tok, q.Sender)
-		if err != nil {
 			return snap, err
 		}
 		if err := convert(cs, &snap.Sender.Changes); err != nil {

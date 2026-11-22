@@ -1605,7 +1605,7 @@ try {
     const rctx = await browser.newContext();
     const reader = execFileSync(bin, ['token', 'create', '--name', 'rule-ro', '--scope', 'read'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: reader, name: 'rule-ro' } })).ok(), 'reader sign-in');
-    const refused = await rctx.request.post(base + path, { form: { ...full, paused: 'on' }, headers: { Origin: base }, maxRedirects: 0 });
+    const refused = await rctx.request.post(base + path, { form: { ...full, paused: 'on', base_seq: await sp.locator('[name=base_seq]').inputValue() }, headers: { Origin: base }, maxRedirects: 0 });
     assert.equal(refused.status(), 400, `non-admin rules save: ${refused.status()}`);
     await rctx.close();
     await sp.reload();
