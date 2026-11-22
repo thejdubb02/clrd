@@ -39,6 +39,12 @@ data class Notif(
         }
     }.getOrDefault(emptyList())
 
+    /** The mark from [byId] (this phone's, from `ready`), or null. Never guessed: no id, no mark (#451). */
+    fun markBy(byId: String): JSONObject? = if (byId.isEmpty()) null else runCatching {
+        val a = JSONArray(marks)
+        (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.optString("by_id") == byId }
+    }.getOrNull()
+
     val isFinal get() = state == DISMISSED || state == RESOLVED
 
     /** The one file this notification carries, or null (docs/SPEC.md section 2, "Attachments"). */

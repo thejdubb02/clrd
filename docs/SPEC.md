@@ -347,7 +347,9 @@ conflict resolution, last write on the server wins.
 
 1. Server sends every event with `seq > since` (replay), then the display
    settings `{"type":"settings","settings":{...}}` (section 2.1), then
-   `{"type":"ready","seq":<current>,"epoch":"<id>"}`.
+   `{"type":"ready","seq":<current>,"epoch":"<id>","mark_id":"<by_id>"}`.
+   `mark_id` is the `by_id` this token's marks get (section 2, "Marks"), so
+   a client can tell its own mark on a card.
 2. Then live events as they happen, and a new `settings` message whenever a
    device changes the settings. When a device in this token's list (the one
    `GET /api/v1/devices?all=1` shows, section 6) connects, finishes its replay

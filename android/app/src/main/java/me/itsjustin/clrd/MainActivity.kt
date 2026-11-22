@@ -575,6 +575,7 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 IconButton(onClick = { share(ctx, n) }) { Icon(Icons.Filled.Share, stringResource(R.string.share), tint = b.slate) }
                 IconButton(onClick = { copy(ctx, n) }) { Icon(painterResource(R.drawable.ic_copy), stringResource(R.string.copy), tint = b.slate, modifier = Modifier.size(20.dp)) }
+                MarkButton(App.of(ctx), n)
                 Spacer(Modifier.weight(1f))
                 actions()
             }
@@ -737,6 +738,53 @@ private fun SnoozeButton(app: App, id: String) {
             }
         }
     }
+}
+
+/**
+ * Seen or Actioned, with an optional note and link, as on the web (#451). By hand only: opening a card
+ * never marks it. A mark clears nothing and never rings. Remove takes only this phone's own mark.
+ */
+@Composable
+private fun MarkButton(app: App, n: Notif) {
+    val b = LocalBrand.current
+    val me by app.markId.collectAsState()
+    val mine = n.markBy(me)
+    var open by remember { mutableStateOf(false) }
+    val label = when (mine?.optString("mark")) {
+        "actioned" -> stringResource(R.string.marked_actioned)
+        "seen" -> stringResource(R.string.marked_seen)
+        else -> stringResource(R.string.mark)
+    }
+    IconButton(onClick = { open = true }) { Icon(Icons.Filled.Check, label, tint = if (mine != null) b.ink else b.slate) }
+    if (!open) return
+    var note by remember(mine != null) { mutableStateOf(mine?.optString("note").orEmpty()) } // refill if ready names our mark late
+    var link by remember(mine != null) { mutableStateOf(mine?.optString("link").orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val send = { kind: String? ->
+        busy = true
+        app.mark(n.id, kind, note.trim(), link.trim()) { e -> busy = false; error = e; if (e == null) open = false }
+    }
+    AlertDialog(
+        onDismissRequest = { if (!busy) open = false }, // a pending send would close a reopened dialog
+        title = { Text(label) },
+        text = {
+            Column {
+                OutlinedTextField(note, { note = it }, label = { Text(stringResource(R.string.mark_note)) }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(link, { link = it }, label = { Text(stringResource(R.string.mark_link)) }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
+                error?.let { Text(stringResource(R.string.mark_failed, it), color = b.signal, modifier = Modifier.padding(top = 8.dp)) }
+                if (mine != null) TextButton(onClick = { send(null) }, enabled = !busy) { Text(stringResource(R.string.mark_remove), color = b.slate) }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(onClick = { send("seen") }, enabled = !busy) { Text(stringResource(R.string.mark_seen), color = b.ink) }
+                TextButton(onClick = { send("actioned") }, enabled = !busy) { Text(stringResource(R.string.mark_actioned), color = b.ink, fontWeight = FontWeight.SemiBold) }
+            }
+        },
+        dismissButton = { TextButton(onClick = { open = false }, enabled = !busy) { Text(stringResource(R.string.link_cancel)) } },
+    )
 }
 
 /** The shared snooze times and default, saved on the server for every device (#193). */

@@ -25,6 +25,7 @@ type msg struct {
 	Type         string         `json:"type"`
 	Seq          int64          `json:"seq"`
 	Epoch        string         `json:"epoch"`
+	MarkID       string         `json:"mark_id"`
 	Notification *Notification  `json:"notification"`
 	Devices      []LinkedDevice `json:"devices"`
 }
@@ -234,7 +235,7 @@ func TestStreamResetAndPoll(t *testing.T) {
 		t.Fatalf("sse first line: %q", sc.Text())
 	}
 	sc.Scan()
-	if sc.Text() != `data: {"type":"ready","seq":3,"epoch":"`+s.epoch+`"}` {
+	if !strings.HasPrefix(sc.Text(), `data: {"type":"ready","seq":3,"epoch":"`+s.epoch+`","mark_id":"`) {
 		t.Fatalf("sse ready: %q", sc.Text())
 	}
 	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "live"})

@@ -131,6 +131,29 @@ class App : Application() {
     /** The shared snooze times, as the server last sent them (every connect sends them). */
     val snooze by lazy { MutableStateFlow(prefs.getString("snooze", null)?.let { runCatching { Snooze.from(org.json.JSONObject(it)) }.getOrNull() } ?: Snooze()) }
 
+    /** The `by_id` this phone's marks get on the current server, "" until a `ready` says (#451). */
+    val markId by lazy { MutableStateFlow(prefs.getString("mark_id", "").orEmpty()) }
+
+    /**
+     * Sets this phone's mark on a card, or removes it when [kind] is null (#451). Sent now, not queued: a mark
+     * changes no state, and the person sees at once why one was refused. [done] gets null or the reason, on the main thread.
+     */
+    fun mark(id: String, kind: String?, note: String, link: String, done: (String?) -> Unit) {
+        val (store, api) = synchronized(configLock) { RoomStore(this) to api() }
+        io.execute {
+            val err = try {
+                val path = "/api/v1/notifications/$id/mark"
+                val out = if (kind == null) api.delete(path)
+                else api.post(path, JSONObject().put("mark", kind).put("note", note).put("link", link).toString())
+                store.apply(listOf(Notif.fromJson(JSONObject(out))), 0, quiet = true) // the card shows it now, the stream's copy changes nothing
+                null
+            } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
+                (e as? HttpError)?.message ?: getString(R.string.mark_no_connection)
+            }
+            android.os.Handler(mainLooper).post { done(err) }
+        }
+    }
+
     /** Keeps the snooze part of a server `settings` message. */
     fun saveSettings(o: org.json.JSONObject) {
         if (o.has("sound")) serverSound(o.optString("sound"))
@@ -183,8 +206,9 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
+                markId.value = ""
                 tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
                 token = newToken
@@ -339,6 +363,7 @@ class RoomStore(private val app: App) : Store {
 
     override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here
     override fun saveEpoch(epoch: String) = ifMine { app.epoch = epoch }
+    override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { app.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
     /**
