@@ -334,7 +334,8 @@
       const had = list.contains(document.activeElement) && !document.activeElement.closest('[data-stack]') && document.activeElement;
       list.replaceChildren(...keep);
       if (typing) typing.focus();
-      else if (had && !had.isConnected) select(selected()); // focus was on a node the refresh replaced
+      else if (had && had.isConnected) had.focus({ preventScroll: true }); // moving a node drops its focus mid-typing (#517)
+      else if (had) select(selected()); // focus was on a node the refresh replaced
     }
     restack(sf);
     const s = selected();

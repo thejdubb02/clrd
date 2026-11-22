@@ -1047,7 +1047,7 @@ func Handler(api API, baseURL string) http.Handler {
 			if seq, perr := strconv.ParseInt(f.Get("seq"), 10, 64); perr != nil || seq <= 0 {
 				err = errors.New("reply without the card's seq")
 			} else {
-				err = api.Reply(r, f.Get("id"), reply, f.Get("text"), seq)
+				err = api.Reply(r, f.Get("id"), reply, strings.ReplaceAll(f.Get("text"), "\r\n", "\n"), seq)
 			}
 		} else if act == "ack" || act == "snooze" || act == "dismiss" || act == "reopen" {
 			err = api.Act(r, f.Get("id"), act, until)

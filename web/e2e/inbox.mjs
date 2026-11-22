@@ -462,6 +462,10 @@ try {
       await lp.locator(`article.card[data-id="${tq.id}"]:not([data-seq="${seq0}"])`).waitFor({ state: 'attached' });
       assert.equal(await lbox.inputValue(), 'half typed', 'a live update wiped a half-typed answer');
       assert.ok(await lbox.evaluate(e => e === document.activeElement), 'a live update took focus off the text box');
+      // A new card arriving moves this unchanged card: typing goes on in the box (#517).
+      await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Arrived 517' });
+      await lp.locator('article.card', { hasText: 'Arrived 517' }).waitFor();
+      assert.ok(await lbox.evaluate(e => e === document.activeElement), 'a new card took focus off the text box');
       await lp.close();
     }
     // Shift+Enter makes a new line (#517); Enter sends.
@@ -679,10 +683,10 @@ try {
   assert.equal((await get(laptop, r.id)).reply, 'lock');
   const tr = await api(phone, '/api/v1/notifications', { topic: 'home', title: 'Which door?', actions: [{ label: 'Say', reply: 'say', text: true }] });
   await nojs.goto(`${base}/app?topic=home`);
-  await plain('Which door?').getByLabel('Say: type an answer').fill('back door');
+  await plain('Which door?').getByLabel('Say: type an answer').fill('back\ndoor');
   await plain('Which door?').getByRole('button', { name: 'Say' }).click();
   await plain('Which door?').getByText('Answer: back door').waitFor();
-  assert.equal((await get(laptop, tr.id)).reply_text, 'back door');
+  assert.equal((await get(laptop, tr.id)).reply_text, 'back\ndoor', 'a form post kept CRLF line breaks (#517)');
   console.log('ok: Clear, Snooze and reply work without JavaScript');
 
   // Stack by topic (#108): off by default; on, a topic with two or more
