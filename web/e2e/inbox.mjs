@@ -1735,6 +1735,11 @@ try {
     await mp.mouse.up();
     assert.equal(await tray(pm).count(), 0, 'a mouse drag shows nothing');
     assert.equal((await get(laptop, c.id)).state, 'active', 'and changes nothing');
+    // Swipe settings changed elsewhere reload an open page, so its buttons and form are current.
+    await mp.locator('#sync.is-live').waitFor();
+    const [, put] = await Promise.all([mp.waitForEvent('load'), fetch(base + '/api/v1/settings', { method: 'PUT', headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ swipe_start: ['clear', 'snooze'], swipe_end: ['ack'] }) })]);
+    assert.equal(put.status, 200, 'swipe settings put back');
+    assert.equal(await mp.locator('[data-inbox]').getAttribute('data-swipe-end'), 'ack ', 'the reloaded page has the new buttons');
     await mctx.close();
 
     // A topic-limited sign-in cannot change settings: 403, then read-only.
@@ -1747,8 +1752,6 @@ try {
     await lp.locator('[data-swipe-status]:not(:empty)').waitFor();
     assert.ok(await lp.getByLabel('Swipe left, button 1').isDisabled(), 'read-only after a refused save');
     await lctx.close();
-    const put = await fetch(base + '/api/v1/settings', { method: 'PUT', headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ swipe_start: ['clear', 'snooze'], swipe_end: ['ack'] }) });
-    assert.equal(put.status, 200, 'swipe settings put back');
     console.log('ok: on a touch screen a part swipe shows the chosen buttons and acts only on a tap; swipe back, vertical, full and mouse drags change nothing; settings move them; a refused save is read-only');
   }
 

@@ -494,6 +494,7 @@
   };
   if (list && (sides.start.length || sides.end.length)) list.style.touchAction = 'pan-y pinch-zoom';
   document.addEventListener('pointerdown', e => {
+    if (drag?.on) return; // a second finger leaves the first one's swipe alone
     const card = e.pointerType === 'touch' && list?.contains(e.target) && e.target.closest('article[data-id]');
     if (opened && opened !== card) shut(opened); // a touch or click anywhere else closes it
     drag = card && !e.target.closest('input, textarea, select, [data-swipe-tray]') ? { card, id: e.pointerId, x: e.clientX, y: e.clientY, from: card.x || 0, on: false } : null;
@@ -515,10 +516,11 @@
   });
   const release = e => {
     if (!drag || e.pointerId !== drag.id) return;
-    const { card, on } = drag;
+    const { card, on, from } = drag;
     drag = null;
     if (!on) return;
-    if (Math.abs(card.x) > card.trayW / 2) { slide(card, Math.sign(card.x) * card.trayW); opened = card; } else shut(card);
+    if (e.type === 'pointercancel') from ? slide(card, from) : shut(card); // the browser took the gesture: back to how it was
+    else if (Math.abs(card.x) > card.trayW / 2) { slide(card, Math.sign(card.x) * card.trayW); opened = card; } else shut(card);
   };
   document.addEventListener('pointerup', release);
   document.addEventListener('pointercancel', release);
@@ -1082,6 +1084,7 @@
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
         else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) reset(); // a stale form would save the old period back
         else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
+        else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) reset(); // the buttons and the form would be stale
       }
       else if (m.notification) {
         // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
