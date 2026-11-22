@@ -87,6 +87,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: two admins saving the ntfy origins list at the same moment can no
+  longer leave the server using a different list from the one saved (#497).
 - Undo after Clear on a snoozed card now puts it back snoozed in one step, so
   other devices no longer show it active for a moment (#473). `reopen` takes
   an optional `until`. On Android a snooze also shows its time in the Snoozed
