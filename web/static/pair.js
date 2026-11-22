@@ -127,6 +127,7 @@
         until.dateTime = p.expires_at;
         until.textContent = new Date(p.expires_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         form.hidden = true; done.hidden = false;
+        $('[data-agent-invite]').parentElement.focus(); // the form had focus; keep keyboard and screen readers on the invite
         // By the server's clock, as for link codes above.
         const ms = Date.parse(p.expires_at) - (Date.parse(r.headers.get('Date')) || Date.now());
         timer = setTimeout(() => {

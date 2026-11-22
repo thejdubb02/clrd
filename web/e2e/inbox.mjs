@@ -795,6 +795,7 @@ try {
     await ag.getByText('It works once, until').waitFor();
     assert.equal(await ag.locator('[data-agent-invite]').textContent(), inv.url, 'shows the invite');
     assert.equal(ag.url(), at, 'the code is never in the address');
+    assert.ok(await ag.evaluate(() => document.activeElement === document.querySelector('[data-agent-invite]').parentElement), 'focus moves to the invite');
     assert.match(await ag.locator('[data-agent-done]').textContent(), /May approve starts at Denied/, 'says approvals start denied');
     const claim = await fetch(base + '/api/v1/agents/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: inv.code }) });
     assert.equal(claim.status, 200, 'agent claims');
