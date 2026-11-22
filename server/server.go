@@ -510,13 +510,22 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := s.bootstrap(ctx); err != nil {
 		return err
 	}
-	go s.every(ctx, "snooze wake", wakeEvery, s.wakeSnoozed)
-	go s.every(ctx, "expiry", wakeEvery, s.expireDue)
-	go s.every(ctx, "repeats", wakeEvery, s.repeatDue)
-	go s.every(ctx, "check-ins", wakeEvery, s.checkins)
-	go s.every(ctx, "prune", time.Hour, s.prune)
-	go s.every(ctx, "cache sweep", time.Hour, s.fetch.sweep)
-	go s.every(ctx, "webhooks out", hookEvery, s.deliverHooks)
+	// Run returns only once every job has stopped, so the caller can close
+	// the database without cutting a write short (#486).
+	jctx, stop := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer func() { stop(); wg.Wait() }()
+	job := func(name string, d time.Duration, fn func(context.Context) error) {
+		wg.Add(1)
+		go func() { defer wg.Done(); s.every(jctx, name, d, fn) }()
+	}
+	job("snooze wake", wakeEvery, s.wakeSnoozed)
+	job("expiry", wakeEvery, s.expireDue)
+	job("repeats", wakeEvery, s.repeatDue)
+	job("check-ins", wakeEvery, s.checkins)
+	job("prune", time.Hour, s.prune)
+	job("cache sweep", time.Hour, s.fetch.sweep)
+	job("webhooks out", hookEvery, s.deliverHooks)
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }} // ends open streams on shutdown
 	errc := make(chan error, 1)
