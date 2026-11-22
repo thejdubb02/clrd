@@ -847,7 +847,10 @@
     f.addEventListener('submit', async e => {
       e.preventDefault();
       const v = name => f.elements[name].value.trim();
-      const body = { topic: v('topic'), title: v('title') || undefined, message: v('message'), priority: Number(v('priority')) };
+      // Chosen devices (#82): ticked ids, or none for every device.
+      const picked = [...f.querySelectorAll('[name=devices]:checked')];
+      const body = { topic: v('topic'), title: v('title') || undefined, message: v('message'), priority: Number(v('priority')),
+        devices: picked.length ? picked.map(c => c.value) : undefined };
       const btn = e.submitter, mine = opened;
       if (btn) btn.disabled = true; // one tap, one notification
       status.textContent = 'Sending...';
@@ -856,10 +859,13 @@
       if (r && r.status === 401) return location.reload();
       if (mine !== opened) return say(r && r.ok ? 'Sent.' : 'Not sent.');
       if (!r || !r.ok) {
-        status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not sent (${r.status}).` : 'Not sent: no connection.';
+        // The server names a refused device by its id; say its name instead.
+        const err = r && ((await r.json().catch(() => ({}))).error || `Not sent (${r.status}).`);
+        status.textContent = r ? picked.reduce((s, c) => s.replaceAll(`"${c.value}"`, `"${c.dataset.name}"`), err) : 'Not sent: no connection.';
         return;
       }
       f.elements.title.value = f.elements.message.value = '';
+      picked.forEach(c => { c.checked = false; }); // the next send alerts every device again
       sendBox.close();
       say('Sent.');
     });

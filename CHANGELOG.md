@@ -224,6 +224,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: the Send box can alert only chosen devices (#509). Open "Alert only
+  these devices" and tick some; the rest still get it, without sound. Nothing
+  ticked alerts every device, as before.
 - Server: send a notification to chosen devices only (#82). Publish with
   `"devices": ["pixel-9"]` (names or ids from the devices list, or the MCP
   `send` tool's `devices`) and only those devices alert. Every other device
