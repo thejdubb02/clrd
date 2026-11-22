@@ -568,3 +568,13 @@ func TestMintNeverAboveMaker(t *testing.T) {
 		}
 	}
 }
+
+// #349: a token revoked after it signed in gets 401, not 500.
+func TestApproveRevokedMidRequest(t *testing.T) {
+	s, _, _ := newTest(t)
+	gone := &Token{ID: "tok_gone", Name: "gone", Scopes: []string{ScopePublish, ScopeRead}}
+	_, err := s.AskApprove(context.Background(), gone, "agents", ApproveAllowed)
+	if code, _, _ := errorStatus(err); code != 401 {
+		t.Fatalf("want 401, got %d (%v)", code, err)
+	}
+}
