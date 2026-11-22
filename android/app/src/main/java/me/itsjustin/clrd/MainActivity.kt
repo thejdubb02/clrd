@@ -355,6 +355,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
     var unfolded by rememberSaveable { mutableStateOf(setOf<String>()) } // stacks opened in the list
     var sending by rememberSaveable { mutableStateOf(false) } // the Send box (#150)
+    var seenSent by rememberSaveable { mutableStateOf(app.sender.sent) } // a send that lands after a rotation still closes the box (#523)
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val dao = app.db.dao()
@@ -386,7 +387,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
         containerColor = b.paper,
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            if (tab == Tab.Inbox && app.configured) FloatingActionButton(onClick = { sending = true }, containerColor = b.ink, contentColor = b.paper) {
+            if (tab == Tab.Inbox && app.configured) FloatingActionButton(onClick = { if (!app.sender.busy) app.sender.err = null; sending = true }, containerColor = b.ink, contentColor = b.paper) {
                 Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.send_title))
             }
         },
@@ -407,10 +408,13 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(app)
-            if (sending) SendBox(app, topic.orEmpty(), close = { sending = false }) {
+            LaunchedEffect(app.sender.sent) {
+                if (app.sender.sent == seenSent) return@LaunchedEffect
+                seenSent = app.sender.sent
                 sending = false
-                scope.launch { snackbar.showSnackbar(ctx.getString(R.string.send_done)) }
+                snackbar.showSnackbar(ctx.getString(R.string.send_done))
             }
+            if (sending) SendBox(app, topic.orEmpty(), close = { sending = false })
             when (tab) {
                 Tab.Settings -> SettingsScreen(app, battery, resumes, scan)
                 else -> {
@@ -1004,6 +1008,28 @@ private fun DeviceSettings(app: App, resumes: Int) {
     }
 }
 
+/**
+ * One send from the Send box at a time (#523). Held on [App], not in the box, so a box rebuilt after
+ * a rotation still sees the send in flight and its result. [sent] counts successes for Home to notice.
+ */
+class Sender(private val run: (Runnable) -> Unit) {
+    var busy by mutableStateOf(false); private set
+    var err by mutableStateOf<String?>(null)
+    var sent by mutableStateOf(0); private set
+
+    /** Starts [post] unless a send is already in flight; false then. [why] turns a failure into the line the box shows. */
+    fun send(post: () -> Unit, why: (Throwable) -> String): Boolean {
+        if (busy) return false
+        busy = true
+        err = null
+        run(Runnable {
+            runCatching(post).onSuccess { sent++ }.onFailure { err = why(it) }
+            busy = false
+        })
+        return true
+    }
+}
+
 /** The body of POST /api/v1/notifications from the Send box (#150), or null without a topic or without both title and message. */
 internal fun sendBody(topic: String, title: String, message: String, priority: Int): org.json.JSONObject? {
     if (topic.isBlank() || (message.isBlank() && title.isBlank())) return null // the server needs only a topic; a blank one says nothing
@@ -1016,15 +1042,15 @@ internal fun sendBody(topic: String, title: String, message: String, priority: I
  * topic, title, message, priority. An error keeps the box open with the server's reason.
  */
 @Composable
-private fun SendBox(app: App, topic0: String, close: () -> Unit, sent: () -> Unit) {
+private fun SendBox(app: App, topic0: String, close: () -> Unit) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     var topic by rememberSaveable { mutableStateOf(topic0) }
     var title by rememberSaveable { mutableStateOf("") }
     var message by rememberSaveable { mutableStateOf("") }
     var priority by rememberSaveable { mutableStateOf(3) }
-    var busy by remember { mutableStateOf(false) }
-    var err by remember { mutableStateOf<String?>(null) }
+    val s = app.sender
+    val busy = s.busy
     val body = sendBody(topic, title, message, priority)
     AlertDialog(
         onDismissRequest = { if (!busy) close() },
@@ -1041,20 +1067,14 @@ private fun SendBox(app: App, topic0: String, close: () -> Unit, sent: () -> Uni
                         FilterChip(selected = priority == i + 1, onClick = { priority = i + 1 }, label = { Text(stringResource(label)) })
                     }
                 }
-                err?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+                s.err?.let { Text(it, color = b.signal, fontSize = 13.sp) }
             }
         },
         confirmButton = {
-            TextButton(enabled = body != null && !busy, onClick = { // one tap, one notification
-                if (busy) return@TextButton // a second tap before the redraw
-                busy = true
-                err = null
+            TextButton(enabled = body != null && !busy, onClick = { // one tap, one notification, across a rotation too
                 val api = app.api()
-                app.io.execute {
-                    runCatching { api.post("/api/v1/notifications", body.toString()) }
-                        .onSuccess { android.os.Handler(android.os.Looper.getMainLooper()).post(sent) }
-                        .onFailure { err = ctx.getString(R.string.send_failed, (it as? HttpError)?.message?.substringAfter(": ")?.ifBlank { it.message } ?: it.message) }
-                    busy = false
+                s.send({ api.post("/api/v1/notifications", body.toString()) }) {
+                    ctx.getString(R.string.send_failed, (it as? HttpError)?.message?.substringAfter(": ")?.ifBlank { it.message } ?: it.message)
                 }
             }) { Text(stringResource(R.string.send)) }
         },

@@ -109,6 +109,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: turning the phone while the Send box is sending no longer lets a
+  second tap send the notification twice, and the result (sent, or the
+  server's reason) still shows after the turn (#523).
 - Server: a request whose declared length is over 1 MB gets 413 at once,
   before reading the body, instead of 408 when the upload is slow (#507).
 - Server: shutdown now waits for background jobs (webhooks out, snooze
