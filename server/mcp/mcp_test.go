@@ -237,6 +237,20 @@ func TestTools(t *testing.T) {
 }
 
 // #355: a whole number past 2^53 reaches the API with its exact digits.
+// send passes devices through, so an agent can alert one phone (#82).
+func TestSendDevices(t *testing.T) {
+	f := &fakeAPI{}
+	callTool(t, New(f), "send", map[string]any{"topic": "ci", "message": "m", "devices": []any{"phone"}})
+	if _, b := f.last(); fmt.Sprint(b["devices"]) != "[phone]" {
+		t.Fatalf("devices: %v", b)
+	}
+	// Not a list: passed on for the server to refuse, never dropped.
+	callTool(t, New(f), "send", map[string]any{"topic": "ci", "message": "m", "devices": "phone"})
+	if _, b := f.last(); b["devices"] != "phone" {
+		t.Fatalf("devices string: %v", b)
+	}
+}
+
 func TestBigNumberArgs(t *testing.T) {
 	f := &fakeAPI{}
 	h := New(f)

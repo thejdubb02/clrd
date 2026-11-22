@@ -57,7 +57,8 @@ A **notification**:
   "seq": 48211,                // seq of the last event that touched it
   "silenced": false,           // a silence matched when that event was written: show, do not alert
   "repeat": null,              // or {"every": "5m", "left": 8, "count": 2, "next": "<RFC3339>" or null}
-  "marks": []                  // who saw or actioned it, below; never null
+  "marks": [],                 // who saw or actioned it, below; never null
+  "devices": []                // token ids it alerts on, [] for every device; never null. Missing in old events = []
 }
 ```
 
@@ -109,6 +110,24 @@ ends by itself; `DELETE` ends it early. Events logged before a server upgrade
 may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
 message at priority 1. Quiet hours on one device are a client setting, not a
 silence.
+
+**Chosen devices (#82):** `"devices": ["pixel-9", "k3j9x2m1q8wz"]` on publish
+alerts only those devices. Each entry is a device name (any case) or token
+id, as `GET /api/v1/devices` and MCP `devices` list them, and must match at
+least one device that may read the topic, else 400 (so a typo never silences
+everyone); a name on several devices picks them all; at most 20 entries.
+The server stores the matching token ids in `devices`. Every other reader
+still gets the notification, lists it and syncs its state as usual, but the
+copy sent to it carries `silenced: true`, so it shows without sound (ntfy
+subscribers get priority 1). Only that copy changes: the row, the event log
+and outgoing webhooks keep the stored value. The list holds through state
+changes, snooze wakes and repeats; an update by `external_id` replaces it,
+and an update without `devices` alerts everyone again. Live publishes take
+it too. An entry equal to a token id picks only that token, never a device
+named like it. The reply's `devices` shows a publisher the ids of the readers
+it picked; ids are labels, not credentials (`state_by_id` shows them too).
+Native JSON publishes (with or without an upload) and MCP `send` take it;
+the ntfy, Gotify, Pushover and incoming webhook doors have no such field.
 
 **Live:** `"live": true` on publish (ntfy's `Cache: no`) sends the message to
 the ntfy streams open right now and stores nothing: no row, no event, no seq,
@@ -811,7 +830,7 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?, live?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?, live?, devices?)`, `list(topic?, state?)`,
 `topics()`, `counts(keep_cleared_days?, topic?)`, `format_check(topic?, by?)`, `format_dismiss(topic, rule, sender_id?, dismissed?)` (the format
 check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
