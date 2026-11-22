@@ -194,7 +194,10 @@ CREATE TABLE IF NOT EXISTS senders (
   count INTEGER NOT NULL,
   topics TEXT NOT NULL,
   recent TEXT NOT NULL,
-  rules TEXT NOT NULL DEFAULT '{}'
+  rules TEXT NOT NULL DEFAULT '{}',
+  last_topic TEXT NOT NULL DEFAULT '',
+  alarm_from INTEGER NOT NULL DEFAULT 0,
+  alarm_topic TEXT NOT NULL DEFAULT ''
 );
 -- Every change to a sender's rules, so an admin can see who changed what and undo it.
 CREATE TABLE IF NOT EXISTS sender_changes (
@@ -344,7 +347,9 @@ func openDB(path string) (*sql.DB, error) {
 			return nil, fmt.Errorf("add %s column: %w", col, err)
 		}
 	}
-	for _, add := range []string{`notifications ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`, `senders ADD COLUMN rules TEXT NOT NULL DEFAULT '{}'`} {
+	for _, add := range []string{`notifications ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`, `senders ADD COLUMN rules TEXT NOT NULL DEFAULT '{}'`,
+		`senders ADD COLUMN last_topic TEXT NOT NULL DEFAULT ''`, `senders ADD COLUMN alarm_from INTEGER NOT NULL DEFAULT 0`,
+		`senders ADD COLUMN alarm_topic TEXT NOT NULL DEFAULT ''`} {
 		if _, err := db.Exec(`ALTER TABLE ` + add); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
 			return nil, fmt.Errorf("alter %s: %w", add, err)
@@ -708,6 +713,8 @@ type PublishInput struct {
 	counted          bool // the sender already counted (a second route target)
 	muted            bool
 	prioMin, prioMax int
+	quiet            string // clrd's own quiet alarm for this sender id
+	quietMS          int64
 }
 
 // publishTo creates a notification, or updates the open one with the same
@@ -809,6 +816,16 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 				return nil, err
 			}
 		}
+		if in.quiet != "" { // gives up if the sender spoke between the sweep and now
+			res, err := tx.ExecContext(ctx, `UPDATE senders SET alarm_topic = ? WHERE id = ? AND alarm_topic = ''
+				AND MAX(last_seen, alarm_from) + ? <= ?`, in.Topic, in.quiet, in.quietMS, ms(now()))
+			if err != nil {
+				return nil, err
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				return nil, errOnTime
+			}
+		}
 		if ev, err := s.checkIn(ctx, tx, in); err != nil {
 			return nil, err
 		} else if ev != nil {
@@ -835,10 +852,11 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 				if n.State == Acknowledged || (n.State == Snoozed && !n.SnoozeUntil.Equal(from)) {
 					n.stopRepeat() // someone already answered this row
 				}
-				if err := in.see(ctx, tx, sender, n.ID); err != nil {
+				ev, err := in.see(ctx, tx, sender, n.ID)
+				if err != nil {
 					return nil, err
 				}
-				return append([]Event{{Type: EventUpdated, Notification: n}}, extra...), nil
+				return append(append([]Event{{Type: EventUpdated, Notification: n}}, extra...), ev...), nil
 			}
 			if !isNotFound(err) {
 				return nil, err
@@ -853,10 +871,11 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
 		}
-		if err := in.see(ctx, tx, sender, n.ID); err != nil {
+		ev, err := in.see(ctx, tx, sender, n.ID)
+		if err != nil {
 			return nil, err
 		}
-		return append([]Event{{Type: EventCreated, Notification: n}}, extra...), nil
+		return append(append([]Event{{Type: EventCreated, Notification: n}}, extra...), ev...), nil
 	})
 	if err != nil {
 		return nil, err
@@ -1741,7 +1760,7 @@ func (s *Server) checkins(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return s.quietSenders(ctx)
 }
 
 // checkImageURL accepts "" or an absolute http(s) URL: clients load it as an
@@ -1823,6 +1842,9 @@ func (in *PublishInput) fill() error {
 	}
 	if in.ExternalID == checkinID && !in.checkin {
 		return errf(400, "bad_request", "external_id %s is reserved for missed check-in alerts", checkinID)
+	}
+	if strings.HasPrefix(in.ExternalID, quietPrefix) && in.quiet == "" {
+		return errf(400, "bad_request", "external_ids starting %s are reserved for quiet sender alarms", quietPrefix)
 	}
 	if in.ExternalID == "." || in.ExternalID == ".." { // a URL path would drop it
 		return errf(400, "bad_request", "external_id cannot be . or ..")

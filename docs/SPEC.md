@@ -313,6 +313,29 @@ keep in use. With `&topic=T`, `would_remove` counts only topic T, to preview
 its own value (the state counts stay over every readable topic).
 `keep_cleared_days=default` previews dropping a topic's value: it counts
 against the global keep exactly, `CLRD_RETENTION` to the hour when unset.
+
+Planned, not served yet (#161): `swipe_start` and `swipe_end` choose the
+buttons a swipe on a card reveals, on every client, like
+`{"swipe_start": ["clear", "snooze"], "swipe_end": ["ack"]}` (those are the
+defaults, and what the Android app shows today). `swipe_start` is what a
+swipe toward the start of the line reveals (a swipe to the left, or to the
+right in a right-to-left language) and `swipe_end` is the opposite swipe (to
+the right, or to the left in a right-to-left language). The buttons appear in
+the space the card slides away from, and the first entry sits nearest the
+screen edge on that side. Each value is a JSON array of 0 to 3 strings from
+`clear`, `snooze`, `ack` and `resolve`; an empty array means that swipe opens
+nothing. A string may appear once across both lists, checked against the pair
+the PUT would leave (a side not in the body keeps its stored list). Anything
+else gets 400 naming the key: `null`, a value that is not an array, an entry
+that is not a string, an unknown name, more than 3 entries or a repeat; a
+rejected PUT changes no field. A client skips a button the card cannot take
+(Ack on a card already acknowledged, Snooze outside the Inbox, Resolve without
+scope publish on the card's topic) and any action it has no control for, and
+the device's own "Full swipe acts" switch runs the first button left on that
+side. Clear stays undoable from either side. Reads need scope read; a token
+limited to some topics or carrying per-topic grants cannot change them (403),
+as with the four switches.
+
 Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
 
@@ -707,7 +730,8 @@ and via. Values clients send today:
 | `api` | Anything else (scripts, older clients) |
 
 The server's own changes use `snooze_end`, `expired`, `checkin` (a late
-check-in resolved by the next message), `publish` (a publish with `status
+check-in resolved by the next message), `quiet` (a sender's quiet alarm
+resolved by its next publish or a rule change, section 5.1), `publish` (a publish with `status
 resolved`) and `ntfy_import`.
 
 | Method | Path | Does |
@@ -797,6 +821,7 @@ Every Sender also carries `rules`, `{}` until someone sets one:
 | `muted` | Stored and synced, but `silenced` (section 2), so no sound or tray alert |
 | `priority_min`, `priority_max` | Priority clamped into the range, 1 to 5; `0` means no limit. Min above max is 400 |
 | `routes` | `{topic: [topics]}`: a publish to the key topic lands in each listed topic instead. Key `*` matches any topic with no route of its own. An empty list drops the publish like `paused` |
+| `expect`, `alert_topic` | Nothing on its publishes: an urgent alarm when the sender goes quiet that long, see the silence alarm below |
 
 A routed notification keeps the topic it was sent to as `requested_topic`
 (section 2), and the sender is counted once, under that topic. Each target
@@ -832,7 +857,22 @@ lists them in Settings with the same rules, change log and Undo, for the same
 admins, and sends one field per change; for anyone else the section stays
 hidden.
 
-The silence alarm comes in a later part of #119 and is not served yet.
+The silence alarm: `expect` (a duration, 1m to 8784h, like `"25h"`; `""`
+for off) makes the server watch the sender. When it has sent nothing,
+stored or dropped by its rules, for that long, the server publishes an urgent
+notification (priority 5, title "<name> went quiet") with external_id
+`clrd-quiet-{id}`, in `alert_topic` if set, else in the first topic its last
+publish routes to, else in that topic itself. A sender that has never
+published and has no `alert_topic` raises nothing. A live publish (`Cache:
+no`) and a `status: resolved` publish are not counted (as for `count`), so
+they do not keep the alarm away. The sender shows the alarm's topic as
+`alarm` until its next publish resolves it (reason `quiet`); a change to
+`expect` or `alert_topic` resolves it too and starts the wait over. One
+alarm at a time: clearing it by hand raises no new one until the sender
+publishes or the rule changes, and the next can only come a full `expect`
+after that. Publishers cannot create a notification with an external_id
+starting `clrd-quiet-` (400). The alarm counts as a message in its topic, so
+it resets that topic's own check-in.
 
 ### ntfy compatibility (must pass ntfy's own client behaviour)
 
@@ -1050,7 +1090,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   clearing happens in the app, the web or the API (#265). A new alert for a hidden item shows it
   again. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR are deliberate taps and do sync.
 - Incoming `dismissed`/`resolved` event -> `NotificationManager.cancel(tag)`. That is the headline feature.
-- Inbox screen per the brand board: filter pills by topic, swipe to clear with green reveal, tabs Inbox, Snoozed, Cleared, Settings.
+- Inbox screen per the brand board: filter pills by topic, a swipe that reveals round buttons (by default Clear and Snooze to the left, Ack to the right; planned settings `swipe_start` and `swipe_end` in section 2.1 will choose them) and changes nothing until one is tapped (#161; a "Full swipe acts" setting, off by default, lets a swipe all the way across run the first button), tabs Inbox, Snoozed, Cleared, Settings.
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.
 - `fastlane/metadata/android/` for F-Droid. Reproducible build, no proprietary deps.
 - UnifiedPush distributor support is a later issue, not v0.

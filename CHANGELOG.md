@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: an alarm when a sender goes quiet (#119, part 3). Set `expect`
+  (like `25h`) on a sender, through the API or the MCP `set_sender` tool, and
+  the server raises an urgent notification when that sender sends nothing for
+  that long; its next message resolves it. Off unless set.
 - Android: a "Remove cleared items" switch in Settings (#151). When on, a
   cleared item leaves the phone as soon as the server has the clear, instead
   of staying in the Cleared tab for up to 7 days. Off by default; the server keeps its copy either way.
@@ -56,6 +60,15 @@ Fixed, Removed, Security), as one line a user can understand.
   Allowed, Ask and Denied rules as a tap. The Android app does not offer a
   text box yet. Nothing changes for senders that do not ask for
   text.
+
+### Changed
+
+- Android: a swipe on a card no longer clears it (#161). Swiping slides the
+  card aside and shows round buttons (Clear and Snooze to the left, Ack to the
+  right), and nothing happens until you tap one. Swipe back to close it. Long
+  press the revealed Snooze for the other times. A new "Full swipe acts" switch
+  in Settings, off by default, makes a swipe all the way across run the first
+  button. A clear can still be undone.
 
 ### Security
 

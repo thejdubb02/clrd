@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -230,5 +231,124 @@ func TestSenderRules(t *testing.T) {
 	}
 	if len(in("r1")) != 1 || len(in("r2")) != 0 {
 		t.Fatalf("full topic took a routed copy: %v", in("r2"))
+	}
+}
+
+// #119 part 3: a sender with expect set raises one urgent alarm when it goes
+// quiet that long; its next publish, or a change to the rule, resolves it.
+func TestSenderQuiet(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	svc := mkToken(t, s, "svc", []string{ScopePublish}, []string{"up"})
+	pub := func() {
+		t.Helper()
+		if code, out := call(t, ts, "POST", "/api/v1/notifications", svc, map[string]any{"topic": "up", "message": "hi"}); code != 201 && code != 200 {
+			t.Fatalf("publish: %d %v", code, out)
+		}
+	}
+	pub()
+	_, l := call(t, ts, "GET", "/api/v1/senders", admin, nil)
+	id := l["senders"].([]any)[0].(map[string]any)["id"].(string)
+	set := func(body map[string]any) map[string]any {
+		t.Helper()
+		code, out := call(t, ts, "PUT", "/api/v1/senders/"+id, admin, body)
+		if code != 200 {
+			t.Fatalf("set %v: %d %v", body, code, out)
+		}
+		return out
+	}
+	for _, bad := range []map[string]any{{"expect": "10s"}, {"expect": "daily"}, {"expect": "9000h"}, {"alert_topic": "bad topic"}} {
+		if code, out := call(t, ts, "PUT", "/api/v1/senders/"+id, admin, bad); code != 400 {
+			t.Errorf("%v: %d %v", bad, code, out)
+		}
+	}
+	sweep := func() {
+		t.Helper()
+		if err := s.checkins(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	quiet := func() { // last publish and last rule change both 2h ago
+		t.Helper()
+		old := ms(time.Now().Add(-2 * time.Hour))
+		if _, err := s.db.Exec(`UPDATE senders SET last_seen = ?, alarm_from = ? WHERE id = ?`, old, old, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alarms := func(topic string) (open []map[string]any) {
+		t.Helper()
+		_, out := call(t, ts, "GET", "/api/v1/notifications?state=all&topic="+topic, admin, nil)
+		for _, n := range out["notifications"].([]any) {
+			if n := n.(map[string]any); n["external_id"] == quietPrefix+id && n["state"] != "resolved" {
+				open = append(open, n)
+			}
+		}
+		return open
+	}
+
+	// No expect: quiet for hours, nothing.
+	quiet()
+	sweep()
+	if a := alarms("up"); len(a) != 0 {
+		t.Fatalf("alarm without expect: %v", a)
+	}
+	if out := set(map[string]any{"expect": "1h"}); out["rules"].(map[string]any)["expect"] != "1h" {
+		t.Fatalf("expect not kept: %v", out)
+	}
+	sweep() // the rule is new: the wait starts now
+	if a := alarms("up"); len(a) != 0 {
+		t.Fatalf("alarm right after setting expect: %v", a)
+	}
+	if _, err := s.db.Exec(`UPDATE senders SET last_topic = '' WHERE id = ?`, id); err != nil { // as if last heard before the upgrade
+		t.Fatal(err)
+	}
+	quiet()
+	sweep()
+	a := alarms("up")
+	if len(a) != 1 || a[0]["priority"] != 5.0 || !strings.HasSuffix(a[0]["title"].(string), "svc went quiet") {
+		t.Fatalf("quiet sender raised: %v", a)
+	}
+	before := s.seq.Load()
+	sweep() // one alarm at a time
+	if s.seq.Load() != before {
+		t.Fatalf("second sweep changed something")
+	}
+	if _, out := call(t, ts, "GET", "/api/v1/senders/"+id, admin, nil); out["alarm"] != "up" {
+		t.Fatalf("sender alarm: %v", out["alarm"])
+	}
+	if code, out := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "up", "external_id": quietPrefix + "x"}); code != 400 {
+		t.Fatalf("reserved external_id: %d %v", code, out)
+	}
+	// A dropped publish counts as speaking too.
+	set(map[string]any{"paused": true})
+	if a := alarms("up"); len(a) != 1 {
+		t.Fatalf("pause alone resolved the alarm: %v", a)
+	}
+	pub()
+	if a := alarms("up"); len(a) != 0 {
+		t.Fatalf("publish did not resolve the alarm: %v", a)
+	}
+	if _, out := call(t, ts, "GET", "/api/v1/senders/"+id, admin, nil); out["alarm"] != nil {
+		t.Fatalf("sender alarm after publish: %v", out["alarm"])
+	}
+	// Quiet again; moving the alarm to another topic resolves it and waits anew.
+	set(map[string]any{"paused": false})
+	quiet()
+	sweep()
+	if len(alarms("up")) != 1 {
+		t.Fatalf("not raised again")
+	}
+	set(map[string]any{"alert_topic": "ops"})
+	if a := alarms("up"); len(a) != 0 {
+		t.Fatalf("rule change left the alarm open: %v", a)
+	}
+	sweep()
+	if a := alarms("ops"); len(a) != 0 {
+		t.Fatalf("raised before a full wait after the change: %v", a)
+	}
+	quiet()
+	sweep()
+	if a := alarms("ops"); len(a) != 1 {
+		t.Fatalf("alert_topic ignored: %v", a)
 	}
 }
