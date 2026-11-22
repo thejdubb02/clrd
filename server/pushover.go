@@ -6,10 +6,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
+	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -37,7 +40,8 @@ func (s *Server) pushoverRoutes() {
 	})
 	s.route("POST /1/users/validate.json", func(w http.ResponseWriter, r *http.Request) error {
 		return s.pushoverReply(w, func() (map[string]any, error) {
-			f, _, err := pushoverForm(r)
+			f, att, err := pushoverForm(r)
+			att.close()
 			if err != nil {
 				return nil, err
 			}
@@ -112,7 +116,7 @@ func pushoverRequestID() string {
 
 // pushoverForm reads the parameters as Pushover takes them: a form,
 // multipart (with the attachment file) or JSON.
-func pushoverForm(r *http.Request) (map[string]string, *multipart.FileHeader, error) {
+func pushoverForm(r *http.Request) (map[string]string, *pushoverFile, error) {
 	f := map[string]string{}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		var m map[string]any
@@ -131,18 +135,90 @@ func pushoverForm(r *http.Request) (map[string]string, *multipart.FileHeader, er
 		}
 		return f, nil, nil
 	}
-	if err := r.ParseMultipartForm(maxBody); err != nil && err != http.ErrNotMultipart {
+	mr, err := r.MultipartReader()
+	if err == http.ErrNotMultipart {
+		if r.ParseForm() != nil {
+			return nil, nil, pushoverBad("", "bad form body")
+		}
+		for k := range r.Form {
+			f[k] = r.Form.Get(k)
+		}
+		return f, nil, nil
+	}
+	for k, v := range r.URL.Query() { // first, as ParseMultipartForm had it
+		f[k] = v[0]
+	}
+	var att *pushoverFile
+	if err == nil {
+		att, err = pushoverParts(mr, f)
+	}
+	if err != nil {
+		att.close()
 		return nil, nil, pushoverBad("", "bad form body")
 	}
-	for k := range r.Form {
-		f[k] = r.Form.Get(k)
+	return f, att, nil
+}
+
+// pushoverFile is the attachment of a multipart publish, in a temp file.
+type pushoverFile struct {
+	*os.File
+	name string
+}
+
+func (a *pushoverFile) close() {
+	if a != nil {
+		a.File.Close()
+		os.Remove(a.File.Name())
 	}
-	if r.MultipartForm != nil {
-		if fh := r.MultipartForm.File["attachment"]; len(fh) > 0 {
-			return f, fh[0], nil
+}
+
+// pushoverParts reads a multipart body itself, not with ParseMultipartForm,
+// which keeps text fields to about 11 MiB in all: too small for
+// attachment_base64 near the file cap (#437). The upload body cap bounds the
+// fields; the attachment file goes to a temp file, as ParseMultipartForm did.
+func pushoverParts(mr *multipart.Reader, f map[string]string) (*pushoverFile, error) {
+	var att *pushoverFile
+	for n := 0; ; n++ {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			return att, nil
+		}
+		if err == nil && n == 1000 { // ParseMultipartForm's default part limit
+			err = errors.New("too many parts")
+		}
+		if err != nil {
+			return att, err
+		}
+		switch k := p.FormName(); {
+		case p.FileName() == "":
+			var in io.Reader = io.LimitReader(p, maxBody+1)
+			if k == "attachment_base64" { // only it may take the rest of the body cap
+				in = p
+			}
+			b, err := io.ReadAll(in)
+			if err == nil && k != "attachment_base64" && len(b) > maxBody {
+				err = errors.New("field too big")
+			}
+			if err != nil {
+				return att, err
+			}
+			if _, ok := f[k]; !ok {
+				f[k] = string(b)
+			}
+		case k == "attachment" && att == nil:
+			tf, err := os.CreateTemp("", "clrd-pushover-")
+			if err != nil {
+				return att, err
+			}
+			att = &pushoverFile{tf, p.FileName()}
+			if _, err = io.Copy(tf, p); err != nil {
+				return att, err
+			}
+			if _, err = tf.Seek(0, io.SeekStart); err != nil {
+				return att, err
+			}
 		}
 	}
-	return f, nil, nil
 }
 
 // pushoverToken finds the sender's token: a clrd token, or a Pushover app
@@ -164,10 +240,8 @@ func (s *Server) pushoverToken(ctx context.Context, f map[string]string) (*Token
 }
 
 func (s *Server) pushoverPublish(r *http.Request) (map[string]any, error) {
-	f, fh, err := pushoverForm(r)
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
+	f, att, err := pushoverForm(r)
+	defer att.close()
 	if err != nil {
 		return nil, err
 	}
@@ -225,13 +299,8 @@ func (s *Server) pushoverPublish(r *http.Request) (map[string]any, error) {
 		pub.Expires = strconv.Itoa(ttl) + "s"
 	}
 	switch {
-	case fh != nil:
-		file, err := fh.Open()
-		if err != nil {
-			return nil, err
-		}
-		defer file.Close()
-		_, err = s.PublishFile(r.Context(), tok, pub, fh.Filename, file)
+	case att != nil:
+		_, err = s.PublishFile(r.Context(), tok, pub, att.name, att)
 		return out, err
 	case f["attachment_base64"] != "":
 		b, err := base64.StdEncoding.DecodeString(f["attachment_base64"])
