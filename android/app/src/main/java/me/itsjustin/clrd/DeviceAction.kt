@@ -55,23 +55,29 @@ object DeviceAction {
      */
     fun run(ctx: Context, id: String, index: Int, seq: Long, server: String?, done: () -> Unit) {
         val app = App.of(ctx)
-        app.io.execute {
-            val n = app.db.dao().get(id)
-            val o = n?.takeIf { it.seq == seq && (server == null || server == app.serverUrl) }
-                ?.let { TrayButton.objs(it).getOrNull(index) }?.takeIf(::isDevice)
-            val label = o?.optString("label").orEmpty()
-            fun finish(ok: Boolean) {
-                if (!ok) toast(app, app.getString(R.string.device_failed, label.ifBlank { app.getString(R.string.tray_open) }))
-                if (ok && o?.optBoolean("clear") == true) app.act(id, "dismiss", "{}", server, App.VIA_TRAY_BUTTON) { done() } else done()
-            }
+        // acts, not io: io may be blocked on the network, and this must fit the receiver's 10 s budget.
+        app.acts.execute {
+            val o = runCatching {
+                app.db.dao().get(id)?.takeIf { it.seq == seq && (server == null || server == app.serverUrl) }
+                    ?.let { TrayButton.objs(it).getOrNull(index) }?.takeIf(::isDevice)
+            }.getOrNull()
             if (o == null) { toast(app, app.getString(R.string.device_changed)); done(); return@execute }
+            val label = o.optString("label").ifBlank { app.getString(R.string.tray_open) }
+            fun finish(ok: Boolean) {
+                if (!ok) toast(app, app.getString(R.string.device_failed, label))
+                // Only the version tapped: a row edited while the request ran is left for the person to see.
+                val clear = ok && o.optBoolean("clear") && runCatching { app.db.dao().get(id)?.seq == seq }.getOrDefault(false)
+                if (clear) app.act(id, "dismiss", "{}", server, App.VIA_TRAY_BUTTON) { done() } else done()
+            }
             intent(o)?.let { i ->
                 finish(runCatching { app.sendBroadcast(i) }.isSuccess)
                 return@execute
             }
             val req = request(o) ?: return@execute finish(false)
-            // A bare client: the clrd token is never sent to a sender's address. Under the receiver's 10 s budget.
-            app.http.newBuilder().pingInterval(0, TimeUnit.SECONDS).callTimeout(9, TimeUnit.SECONDS).build()
+            // A bare client: the clrd token is never sent to a sender's address, and no redirect carries the
+            // sender's headers to another host. 8 s leaves room in the receiver's budget to save a clear.
+            app.http.newBuilder().pingInterval(0, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
+                .callTimeout(8, TimeUnit.SECONDS).build()
                 .newCall(req).enqueue(object : Callback {
                     override fun onFailure(call: Call, e: IOException) = finish(false)
                     override fun onResponse(call: Call, response: Response) = response.use { finish(it.isSuccessful) }

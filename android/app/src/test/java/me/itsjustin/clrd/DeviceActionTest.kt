@@ -87,6 +87,14 @@ class DeviceActionTest {
         assertEquals(Notif.ACTIVE, bg { dao.get("a") }!!.state)
     }
 
+    @Test fun aRedirectIsNotFollowed() { // it would carry the sender's headers to wherever it points
+        web.enqueue(MockResponse().setResponseCode(302).setHeader("Location", web.url("/elsewhere").toString()))
+        web.enqueue(MockResponse().setResponseCode(200))
+        runIt(row(JSONArray().put(http(clear = true))), 0)
+        assertEquals(1, web.requestCount)
+        assertEquals(Notif.ACTIVE, bg { dao.get("a") }!!.state)
+    }
+
     @Test fun aTapOnAnOlderVersionRunsNothing() {
         runIt(row(JSONArray().put(http()), seq = 2), 0, seq = 1)
         assertEquals(0, web.requestCount)
