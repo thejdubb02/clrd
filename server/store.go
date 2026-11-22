@@ -1071,7 +1071,7 @@ func (s *Server) changedSince(ctx context.Context, tx *sql.Tx, n *Notification, 
 		if err := tx.QueryRowContext(ctx, `SELECT qseq FROM notifications WHERE id = ?`, n.ID).Scan(&q); err != nil {
 			return err
 		}
-		changed = seq < q
+		changed = seq < q || q == 0 // 0: an upgrade stopped before the fill, so refuse as before
 	}
 	if changed {
 		return errf(409, "conflict", "notification changed since seq %d; show the current one", seq)

@@ -607,6 +607,11 @@ func TestReplyStaleAfterPrune(t *testing.T) {
 	if code := reply(old); code != 409 {
 		t.Errorf("tap on the old card after a mark: want 409, got %d", code)
 	}
+	s.db.Exec(`UPDATE notifications SET qseq = 0`) // an upgrade that stopped before the fill
+	if code := reply(cur); code != 409 {
+		t.Errorf("tap with qseq unfilled: want 409, got %d", code)
+	}
+	s.db.Exec(`UPDATE notifications SET qseq = ?`, cur)
 	if code := reply(cur); code != 200 {
 		t.Errorf("tap on the current card: want 200, got %d", code)
 	}
