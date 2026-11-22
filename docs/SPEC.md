@@ -334,7 +334,8 @@ scope publish on the card's topic) and any action it has no control for, and
 the device's own "Full swipe acts" switch runs the first button left on that
 side. Clear stays undoable from either side. Reads need scope read; a token
 limited to some topics or carrying per-topic grants cannot change them (403),
-as with the four switches.
+as with the four switches. The web inbox shows them on a touch screen only (mouse and keyboard keep
+the card's own buttons) and has no Resolve control, so it skips Resolve.
 
 Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
