@@ -810,17 +810,14 @@ private fun MarkButton(app: App, n: Notif) {
 @Composable
 private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
     val b = LocalBrand.current
-    val ctx = LocalContext.current
-    val app = App.of(ctx)
+    val app = App.of(LocalContext.current)
     var text by rememberSaveable { mutableStateOf(app.drafts[n.id].orEmpty()) }
     val seq = rememberSaveable { n.seq } // the question as the box opened: an edit since then gets 409, never this answer
     val body = TrayButton.typed(a.reply!!, text, seq)
     // The box leaving for any reason but Send or Cancel (a 409, or an edit that drops the typed answer) keeps its text
-    // for the next box (#516, #539). A rotation keeps it on its own.
+    // for the next box (#516, #539), a rotation too, since the box closes when the screen is rebuilt.
     var ended by remember { mutableStateOf(false) }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { keepDraft(app.drafts, n.id, text, ended || (ctx as? android.app.Activity)?.isChangingConfigurations == true) }
-    }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { keepDraft(app.drafts, n.id, text, ended) } }
     // An earlier answer came back 409: this box answers the old question too. Close it.
     val changed0 = remember { app.changed[n.id] ?: 0 }
     LaunchedEffect(app.changed[n.id]) { if ((app.changed[n.id] ?: 0) != changed0) close() }
@@ -843,9 +840,10 @@ private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
     )
 }
 
-/** Keeps [text] as the draft for [id] when a reply box goes away unasked ([ended] false); a blank box keeps none. */
+/** Keeps [text] as the draft for [id] when a reply box goes away unasked ([ended] false); an emptied box drops it. */
 internal fun keepDraft(drafts: MutableMap<String, String>, id: String, text: String, ended: Boolean) {
-    if (!ended && text.isNotBlank()) drafts[id] = text
+    if (ended) return
+    if (text.isBlank()) drafts.remove(id) else drafts[id] = text
 }
 
 /** The shared snooze times and default, saved on the server for every device (#193). */
