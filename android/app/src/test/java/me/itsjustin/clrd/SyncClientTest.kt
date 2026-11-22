@@ -279,6 +279,7 @@ class SyncClientTest {
     @Test fun queuedActionsGoOutInOrderOnConnectAndA404IsDropped() {
         store.queue += Pending(1, "a", "dismiss")
         store.queue += Pending(2, "gone", "ack")
+        answer = { if (it.endsWith("/a/dismiss")) notifJson("a", "dismissed", 5) else "{}" }
         onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
         start()
         await { store.queue.isEmpty() && SyncClient.Status.CONNECTED in statuses }
