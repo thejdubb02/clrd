@@ -18,6 +18,7 @@ type fakeAPI struct {
 	mu    sync.Mutex
 	calls []string
 	body  map[string]any
+	raw   string // the body as sent
 	auth  string
 	state string
 	gets  int // GETs allowed before the token is revoked (401); 0 means no limit
@@ -48,7 +49,9 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, r.Method+" "+r.URL.RequestURI())
 	f.auth = r.Header.Get("Authorization")
 	f.body = nil
-	_ = json.NewDecoder(r.Body).Decode(&f.body)
+	b, _ := io.ReadAll(r.Body)
+	f.raw = string(b)
+	_ = json.Unmarshal(b, &f.body)
 	if r.Header.Get("Authorization") != "Bearer clrd_good" {
 		w.WriteHeader(403)
 		io.WriteString(w, `{"error":"token lacks scope","code":"forbidden"}`)
@@ -230,6 +233,21 @@ func TestTools(t *testing.T) {
 	}
 	if text, _ := callTool(t, h, "list", nil); !strings.Contains(text, `"items"`) {
 		t.Errorf("list array not wrapped: %s", text)
+	}
+}
+
+// #355: a whole number past 2^53 reaches the API with its exact digits.
+func TestBigNumberArgs(t *testing.T) {
+	f := &fakeAPI{}
+	h := New(f)
+	big := json.Number("9007199254740993")
+	callTool(t, h, "preview_template", map[string]any{"topic": "ci", "name": "github", "payload": map[string]any{"id": big}})
+	if !strings.Contains(f.raw, `"id":9007199254740993`) {
+		t.Fatalf("payload id lost precision: %s", f.raw)
+	}
+	callTool(t, h, "send", map[string]any{"topic": "ci", "message": "m", "priority": json.Number("5"), "repeat_times": json.Number("2")})
+	if _, b := f.last(); b["priority"] != float64(5) || b["repeat_times"] != float64(2) {
+		t.Fatalf("numbers after UseNumber: %v", b)
 	}
 }
 
