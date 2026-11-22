@@ -444,6 +444,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = &r2
 	}
 	p := r.URL.Path
+	r = r.WithContext(context.WithValue(r.Context(), senderHintKey{}, senderHint{r.UserAgent(), clientIP(r, s.opt.TrustedProxies)}))
 	var mounted http.Handler
 	for _, m := range s.mounts {
 		if m.prefix == "/" && r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -1003,6 +1004,7 @@ func (s *Server) routesSetup() {
 	s.webhookRoutes()
 	s.hookOutRoutes()
 	s.silenceRoutes()
+	s.senderRoutes()
 	s.ntfyRoutes()
 	s.gotifyAppRoutes()
 	s.pushoverRoutes()

@@ -11,6 +11,12 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server and API: a list of senders (#119, part 1). Every service or token
+  that publishes shows up on its first message, with its kind, webhook
+  template, User-Agent and address, first and last seen, and a count per
+  topic, at `GET /api/v1/senders` and the MCP tools `senders` and `sender`.
+  Admin only, nothing to set up.
+
 - Web: a question whose reply asks for text gets a text box on its card. The
   answer shows on the card once sent, and an Ask device confirm shows the
   text being confirmed (#153).

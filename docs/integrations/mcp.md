@@ -63,6 +63,8 @@ Tools:
 | `ntfy_origins` | none | Which other web sites may use the ntfy and Gotify routes from a browser. Empty by default. Admin. |
 | `set_ntfy_origins` | `origins` | Web sites (like `https://ntfy.sh`, or `*` for any) whose pages may publish and subscribe on the ntfy and Gotify routes; an empty list allows only clrd's own pages. Admin. |
 | `ntfy_ignored` | none | ntfy publish options senders used that clrd accepts but ignores, with counts. Admin. |
+| `senders` | none | Every service or token that has published, last heard first: kind, webhook template, User-Agent and address, first and last seen, count per topic. Found on its first message. Admin with no topic limit. |
+| `sender` | `id` | One sender from `senders`, with its recent notifications still stored. Admin with no topic limit. |
 
 With an admin token an agent can set up every feature from this list; only
 the `CLRD_*` environment settings need a restart, so `server_env` just reads
