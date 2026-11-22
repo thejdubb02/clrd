@@ -165,10 +165,11 @@ func TestDeviceActionsSwitchOffMidPublish(t *testing.T) {
 			done <- code
 		}()
 		time.Sleep(200 * time.Millisecond)
-		if _, err := s.db.Exec(`UPDATE topics SET device_actions = 0 WHERE topic = 'home'`); err != nil {
+		_, err := s.db.Exec(`UPDATE topics SET device_actions = 0 WHERE topic = 'home'`)
+		s.mu.Unlock()
+		if err != nil {
 			t.Fatal(err)
 		}
-		s.mu.Unlock()
 		if code := <-done; code != 403 {
 			t.Fatalf("live %v: a publish in flight kept an http action after the switch went off: %d", live, code)
 		}
