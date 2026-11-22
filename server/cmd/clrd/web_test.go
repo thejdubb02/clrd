@@ -168,8 +168,13 @@ func TestDeviceActionsShown(t *testing.T) {
 	} {
 		req, _ := http.NewRequest(r[0], ts.URL+r[1], strings.NewReader(r[2]))
 		req.Header.Set("Authorization", "Bearer "+raw)
-		if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 200 {
-			t.Fatalf("%s %s: %v %v", r[0], r[1], err, res)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("%s %s: %d", r[0], r[1], res.StatusCode)
 		}
 	}
 	_, body, _ := fetch(t, browser(), ts.URL+"/app?auth="+base64.RawURLEncoding.EncodeToString([]byte("Bearer "+raw)))
