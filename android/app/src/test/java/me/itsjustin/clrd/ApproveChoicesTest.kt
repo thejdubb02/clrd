@@ -28,6 +28,14 @@ class ApproveChoicesTest {
         assertEquals(emptyList<String>(), approveChoices(listOf(phone, other), phone))
     }
 
+    @Test fun aTopicLimitedPhoneGetsNoMenuEvenWhenAllowed() { // #433: the server says can_approve false
+        val phone = dev("p", "allowed", me = true).put("can_approve", false)
+        val other = dev("o", "denied")
+        assertEquals(emptyList<String>(), approveChoices(listOf(phone, other), other))
+        val full = dev("p", "allowed", me = true).put("can_approve", true)
+        assertEquals(all, approveChoices(listOf(full, other), other))
+    }
+
     @Test fun ownIsWalkedByIdAndALoopEnds() {
         val a = dev("a", "denied", via = "b")
         val b = dev("b", "denied", via = "a")

@@ -214,3 +214,26 @@ func TestDeviceStatusTwoStreams(t *testing.T) {
 		t.Fatal("connected with no stream")
 	}
 }
+
+// #433: the asker's own row says if it may change who approves, as SetApprove checks.
+func TestCanApproveOnOwnRow(t *testing.T) {
+	s, ts, admin := newTest(t)
+	limited := mkToken(t, s, "limited", []string{ScopeRead, ScopeAdmin}, []string{"home"})
+	own := func(tok string) map[string]any {
+		t.Helper()
+		_, out := call(t, ts, "GET", "/api/v1/devices?all=1", tok, nil)
+		for _, d := range out["devices"].([]any) {
+			if m := d.(map[string]any); m["this"] == true {
+				return m
+			}
+		}
+		t.Fatalf("no own row: %v", out)
+		return nil
+	}
+	if d := own(admin); d["approve"] != "allowed" || d["can_approve"] != true {
+		t.Fatalf("allowed full token: %v", d)
+	}
+	if d := own(limited); d["approve"] != "allowed" || d["can_approve"] != false {
+		t.Fatalf("allowed token limited to a topic: %v", d)
+	}
+}

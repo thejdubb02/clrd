@@ -770,7 +770,9 @@ internal fun isOwn(list: List<org.json.JSONObject>, d: org.json.JSONObject): Boo
  * never lets a device raise those. The server checks it all again.
  */
 internal fun approveChoices(list: List<org.json.JSONObject>, d: org.json.JSONObject): List<String> {
-    if (list.firstOrNull { it.optBoolean("this") }?.optString("approve") != "allowed") return emptyList()
+    // The server says if this phone may change it (#433); an older server sends no can_approve.
+    val me = list.firstOrNull { it.optBoolean("this") } ?: return emptyList()
+    if (!me.optBoolean("can_approve", me.optString("approve") == "allowed")) return emptyList()
     val i = approveOrder.indexOf(d.optString("approve"))
     return if (i >= 0 && isOwn(list, d)) approveOrder.take(i + 1) else approveOrder
 }

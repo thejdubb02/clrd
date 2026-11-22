@@ -169,9 +169,9 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	if err := convert(devs, &snap.Linked); err != nil {
 		return snap, err
 	}
-	// Who may approve (#329): only an allowed token on every topic may change it, as SetApprove checks.
+	// Who may approve (#329): the server sets it on this token's own row (#433).
 	for _, d := range devs {
-		snap.CanApprove = snap.CanApprove || d.This && d.Approve == server.ApproveAllowed && len(tok.Topics) == 0 && len(tok.Grants) == 0
+		snap.CanApprove = snap.CanApprove || d.CanApprove
 	}
 	if q.Devices {
 		evs, err := a.s.DeviceLog(ctx, tok)

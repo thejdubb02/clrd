@@ -32,6 +32,9 @@ type LinkedDevice struct {
 	CanUnlink  bool       `json:"can_unlink"`
 	Sound      string     `json:"sound"`   // one of GET /api/v1/sounds
 	Approve    string     `json:"approve"` // allowed, ask or denied: may it answer approval requests (#187)
+	// CanApprove is true on the asker's own row when it may change who
+	// approves (#329, #433): allowed, and on every topic, as SetApprove checks.
+	CanApprove bool `json:"can_approve"`
 	// Live sync state (#300): connected has a stream open now, caught_up has
 	// one past its replay, synced_seq is the last event seq the server sent it.
 	Connected bool  `json:"connected"`
@@ -202,6 +205,7 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 			return nil, err
 		}
 		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid || kind == "agent"
+		d.CanApprove = d.This && d.Approve == ApproveAllowed && len(tok.Topics) == 0 && len(tok.Grants) == 0
 		d.Sound = soundOf(sounds, d.ID)
 		d.Connected, d.CaughtUp, d.SyncedSeq = s.hub.status(d.ID)
 		if seen.Valid {
