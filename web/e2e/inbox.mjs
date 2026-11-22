@@ -264,12 +264,12 @@ try {
   await sc('Prune images').getByText('Snooze', { exact: true }).click({ delay: 700 });
   assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'long press did not open the snooze times');
   assert.deepEqual(await sc('Prune images').locator('[data-popover] [data-for]').allTextContents(), ['15 min', '2 hours', '2 days']);
-  await sc('Prune images').locator('details').evaluate(d => { d.open = false; });
+  await sc('Prune images').locator('details[open]').evaluate(d => { d.open = false; });
   await sc('Prune images').getByText('Snooze', { exact: true }).click({ button: 'right' });
   assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'right click did not open the snooze times');
   await sp.waitForTimeout(300);
   assert.equal((await get(laptop, hold.id)).state, 'active', 'long press or right click snoozed');
-  await sc('Prune images').locator('details').evaluate(d => { d.open = false; });
+  await sc('Prune images').locator('details[open]').evaluate(d => { d.open = false; });
   const before = Date.now();
   await sc('Rotate keys').getByText('Snooze', { exact: true }).click();
   await sc('Rotate keys').waitFor({ state: 'detached' });
