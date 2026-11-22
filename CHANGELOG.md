@@ -158,6 +158,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a sender's detail still lists its older stored notifications when
+  its newest ones were cleaned up (#530), and an anonymous sender with a change
+  history is no longer dropped from the address list, so its changes can still
+  be undone (#537).
 - Server: revoking a token resolves its open quiet sender alarm instead of
   leaving it to be cleared by hand (#558).
 - Server: a sender route that copies an upload to several topics no longer
