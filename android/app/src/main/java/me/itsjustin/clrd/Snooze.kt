@@ -28,12 +28,24 @@ data class Snooze(val default: String = "1h", val times: List<String> = listOf("
     }
 }
 
+/** Seconds in a Go duration of whole h, m and s ("1h30m"), or null for any other form. */
+fun goSeconds(v: String): Long? {
+    val m = Regex("""(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?""").matchEntire(v) ?: return null
+    if (v.isEmpty()) return null
+    val (h, mi, s) = m.destructured
+    return (h.toLongOrNull() ?: 0) * 3600 + (mi.toLongOrNull() ?: 0) * 60 + (s.toLongOrNull() ?: 0)
+}
+
+/** When a snooze or reopen action body ends, in epoch ms, or null when it has no future time this reads (#473). */
+fun snoozeEnd(body: JSONObject, now: Long = System.currentTimeMillis()): Long? {
+    val t = body.optString("until").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+        ?: goSeconds(body.optString("for"))?.let { now + it * 1000 }
+    return t?.takeIf { it > now }
+}
+
 /** A Go duration as people say it: "1 hour", "2 days", "90 min". Anything else is shown as typed, like the web. */
 fun snoozeLabel(v: String): String {
-    val m = Regex("""(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?""").matchEntire(v) ?: return v
-    if (v.isEmpty()) return v
-    val (h, mi, s) = m.destructured
-    val secs = (h.toLongOrNull() ?: 0) * 3600 + (mi.toLongOrNull() ?: 0) * 60 + (s.toLongOrNull() ?: 0)
+    val secs = goSeconds(v) ?: return v
     if (secs == 0L || secs % 60 != 0L) return v
     val mins = secs / 60
     val (n, unit) = when {

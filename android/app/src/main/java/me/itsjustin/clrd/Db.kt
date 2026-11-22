@@ -37,6 +37,10 @@ interface NotifDao {
     @Query("UPDATE notif SET state = :state WHERE id = :id AND (:state = 'active' OR state NOT IN ('dismissed', 'resolved'))")
     fun setState(id: String, state: String)
 
+    /** A snooze shown at once with its time (#473). [reopen] lets an Undo of a Clear bring a cleared row back snoozed. */
+    @Query("UPDATE notif SET state = 'snoozed', snoozeUntil = :until WHERE id = :id AND (:reopen OR state NOT IN ('dismissed', 'resolved'))")
+    fun snooze(id: String, until: Long, reopen: Boolean)
+
     @Query("DELETE FROM notif")
     fun clearAll()
 

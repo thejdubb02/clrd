@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newTest starts a server on a temp database and returns it with an admin token.
@@ -57,6 +58,24 @@ func call(t *testing.T, ts *httptest.Server, method, path, tok string, body any)
 	out := map[string]any{}
 	json.NewDecoder(res.Body).Decode(&out)
 	return res.StatusCode, out
+}
+
+// #473: Undo of a Clear on a snoozed row is one change, so no device sees it active in between.
+func TestReopenWithUntilLandsSnoozed(t *testing.T) {
+	_, ts, admin := newTest(t)
+	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "x"})
+	id := n["id"].(string)
+	until := time.Now().Add(time.Hour).UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano)
+	call(t, ts, "POST", "/api/v1/notifications/"+id+"/dismiss", admin, nil)
+	code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reopen", admin, map[string]any{"until": until})
+	if code != 200 || n["state"] != "snoozed" || n["snooze_until"] != until || n["seq"] != 3.0 {
+		t.Fatalf("reopen with until: %d %v", code, n)
+	}
+	call(t, ts, "POST", "/api/v1/notifications/"+id+"/dismiss", admin, nil)
+	past := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+	if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reopen", admin, map[string]any{"until": past}); code != 200 || n["state"] != "active" {
+		t.Fatalf("reopen with a past until: %d %v", code, n)
+	}
 }
 
 func TestPublishUpsertAndStates(t *testing.T) {

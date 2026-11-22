@@ -249,10 +249,13 @@ class App : Application() {
 
     /** Undo of a Clear (#425): rows come back as they were, so a snoozed one is snoozed again until its old time. */
     fun undoClear(rows: List<Notif>) {
-        act(rows.map { it.id }, "reopen") // the server snoozes only an open row
         val now = System.currentTimeMillis()
-        rows.filter { it.state == Notif.SNOOZED && (it.snoozeUntil ?: 0) > now }.forEach {
-            act(it.id, "snooze", JSONObject().put("until", java.time.Instant.ofEpochMilli(it.snoozeUntil!!).toString()).toString())
+        val (snoozed, rest) = rows.partition { it.state == Notif.SNOOZED && (it.snoozeUntil ?: 0) > now }
+        if (rest.isNotEmpty()) act(rest.map { it.id }, "reopen")
+        snoozed.forEach {
+            val body = JSONObject().put("until", java.time.Instant.ofEpochMilli(it.snoozeUntil!!).toString()).toString()
+            act(it.id, "reopen", body) // #473: one change, never active in between
+            act(it.id, "snooze", body) // a server older than #473 only reopens; this snoozes it there
         }
     }
 
@@ -265,15 +268,17 @@ class App : Application() {
         set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
 
     private fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
-        val body = JSONObject(rawBody).put("via", via).toString()
+        val json = JSONObject(rawBody)
+        val body = json.put("via", via).toString()
         val gen = configGen // read now, not when the save runs
         acts.execute {
             try {
+                val until = if (action == "snooze" || action == "reopen") snoozeEnd(json) else null
                 val local = when (action) {
                     "dismiss" -> Notif.DISMISSED
                     "snooze" -> Notif.SNOOZED
                     "ack", "reply" -> Notif.ACKNOWLEDGED
-                    "reopen" -> Notif.ACTIVE
+                    "reopen" -> if (until != null) Notif.SNOOZED else Notif.ACTIVE
                     else -> null
                 }
                 synchronized(configLock) {
@@ -284,7 +289,8 @@ class App : Application() {
                         // A stack swipe may also fire each row's own delete intent: those rows are cleared already.
                         ids.filterNot { action == "dismiss" && dao.get(it)?.state == Notif.DISMISSED }.onEach { id ->
                             dao.addPending(Pending(notifId = id, action = action, body = body))
-                            if (local != null) dao.setState(id, local)
+                            if (until != null && local == Notif.SNOOZED) dao.snooze(id, until, action == "reopen")
+                            else if (local != null) dao.setState(id, local)
                         }
                     }
                     if (local == Notif.DISMISSED || local == Notif.SNOOZED) saved.forEach { tray.apply(TrayStep.Cancel(it)) }

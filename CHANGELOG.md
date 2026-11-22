@@ -78,6 +78,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Undo after Clear on a snoozed card now puts it back snoozed in one step, so
+  other devices no longer show it active for a moment (#473). `reopen` takes
+  an optional `until`. On Android a snooze also shows its time in the Snoozed
+  list at once, not only after the server answers.
 - Android: a repeat that reaches the phone just after you mark the same card
   now still rings, unless the card was acknowledged or cleared since.
 - Server: a webhook turned off as shutdown begins still posts its notice, and a

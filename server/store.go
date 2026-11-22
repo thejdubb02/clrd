@@ -969,6 +969,12 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 	if action == "snooze" && (until == nil || !until.After(time.Now())) {
 		return nil, errf(400, "bad_request", "snooze needs a time in the future")
 	}
+	// #473: a reopen with a future until lands snoozed in one change, so no
+	// device shows the row active in between. A past until is a plain reopen.
+	reopenSnoozed := action == "reopen" && until != nil && until.After(time.Now())
+	if reopenSnoozed {
+		target = Snoozed
+	}
 	var out *Notification
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		n, err := getNotification(ctx, tx, where, args...)
@@ -979,6 +985,9 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 			return nil, err
 		}
 		out = n
+		if reopenSnoozed && n.Final() {
+			n.State = Active // the reopen half; transition then snoozes it
+		}
 		ev, err := transition(n, target, tok, via, until)
 		if err != nil || ev == nil {
 			return nil, err
