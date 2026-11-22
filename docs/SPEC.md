@@ -1150,6 +1150,50 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   signals: closing it changes nothing on the server. Browsers allow Web Push
   only over HTTPS (or on localhost).
 
+## 9.1 Settings layout (#575, web and Android)
+
+Settings is one page in five sections. Both clients use these names, in this
+order. A client leaves out a setting it does not have; it never renames one or
+moves it to another section. Each setting has a plain label, a one-line
+description and the keywords below. Its id is the anchor on web
+(`/app/settings#sound`) and the key Android uses to scroll to it.
+
+Search sits at the top. It matches when the typed text, trimmed and ignoring
+case, appears in the label, the description or a keyword. Matching settings
+show under their section name; a section with no match hides. Nothing
+matching shows "No settings match" with the typed text and a way to clear it.
+Search only ever lists what this device can open: a setting the signed-in
+token may not use is left out of the page, not greyed in the results. With
+JavaScript off the web page shows every section and no search box.
+
+| Section | Id | Label | Keywords | Where |
+|---|---|---|---|---|
+| Notifications | `sound` | Sound | sound, chime, ring, audio, volume | both |
+| Notifications | `push` | Browser notifications | push, system notification, pop up, desktop, alert | web |
+| Notifications | `silences` | Silences | mute, quiet, quiet hours, do not disturb, pause | web |
+| Notifications | `muted-topics` | Muted topics | mute, topic, pop up, quiet | Android |
+| Notifications | `battery` | Battery | battery, background, delayed, killed, optimization | Android |
+| Inbox | `stack` | Stack by topic | group, fold, bundle, collapse | both |
+| Inbox | `swipe` | Swipe buttons | swipe, gesture, slide, buttons | both |
+| Inbox | `full-swipe` | Full swipe acts | swipe, fast, gesture, one move | Android |
+| Inbox | `snooze` | Snooze times | later, remind, postpone, default time | both |
+| Inbox | `keep-cleared` | Cleared messages | delete, keep, retention, history, days | web |
+| Inbox | `drop-cleared` | Remove cleared items | hide, cleared tab, remove | Android |
+| Display | `formatting` | Message text | markdown, formatting, links, preview, site icons | web |
+| Display | `topic-icons` | Topic icons | icon, image, avatar, picture | web |
+| Display | `format` | Message format check | format, markdown check, broken, warning | web, only with findings |
+| Display | `appearance` | Appearance | theme, dark mode, light mode, colors | web |
+| Devices | `server` | Server | server, address, url, token, sign in, log in | Android |
+| Devices | `devices` | Linked devices | phone, browser, unlink, sign out, approve, may approve, activity | both |
+| Devices | `link-phone` | Link a phone | qr, scan, pair, code, add phone | web shows the code, Android scans it |
+| Devices | `add-agent` | Add an agent | agent, ai, bot, invite, mcp, token | web, admin only |
+| Integrations | `senders` | Senders | sender, rules, bot, agent, allow | both, only where the token may manage senders |
+| Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
+| Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
+| Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
+
+The Android version line stays at the foot of the page, outside the sections.
+
 ## 10. Brand tokens
 
 Fonts: Geist (UI), Geist Mono (meta, ids, code). Self-host the font files; no Google Fonts call from the app.
