@@ -186,6 +186,16 @@ func TestSenderRules(t *testing.T) {
 		t.Fatalf("changes: %v", list)
 	}
 	firstSeq := list[1].(map[string]any)["seq"].(float64)
+	// base_seq (#543): a save based on an older change is refused, unlogged.
+	if code, _ := set(map[string]any{"muted": false, "base_seq": firstSeq}); code != 409 {
+		t.Fatalf("stale base_seq: %d", code)
+	}
+	if _, ch := call(t, ts, "GET", "/api/v1/senders/"+id+"/changes", admin, nil); len(ch["changes"].([]any)) != 2 {
+		t.Fatalf("a refused save was logged: %v", ch)
+	}
+	if code, out := set(map[string]any{"paused": true, "base_seq": list[0].(map[string]any)["seq"]}); code != 200 {
+		t.Fatalf("current base_seq: %d %v", code, out)
+	}
 	if code, out := call(t, ts, "POST", fmt.Sprintf("/api/v1/senders/%s/changes/%.0f/undo", id, firstSeq), admin, nil); code != 200 ||
 		out["rules"].(map[string]any)["paused"] != false || out["rules"].(map[string]any)["routes"] != nil {
 		t.Fatalf("undo: %d %v", code, out)

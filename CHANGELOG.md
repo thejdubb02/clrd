@@ -127,6 +127,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Web: saving sender rules from a page opened before someone else changed them
+  is now refused, so it can no longer undo the newer change. Reload and save
+  again. The API takes the same check as an optional `base_seq`. (#543)
 - Android: snooze and Undo (#508). A snooze tapped offline now ends at the
   time the phone showed, not an hour after it reconnects, so Snooze, Clear,
   Undo while offline lands the same on every device. Undo of a Clear no longer sends a second snooze that could

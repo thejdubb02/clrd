@@ -649,6 +649,7 @@
   <h2 id="rules-h" class="text-base font-semibold">Rules</h2>
   <p class="text-body text-sm/relaxed">Off until you set one. They apply to everything this sender publishes from now on.</p>
   <form class="bg-card grid gap-4 rounded-xl border p-4" method="post" action="{{base}}/app/senders/{{.ID}}">
+    <input type="hidden" name="base_seq" value="{{.LastSeq}}">
     <label class="label font-normal"><input type="checkbox" class="input" name="paused" value="1"{{if .Rules.Paused}} checked{{end}}> Pause <span class="meta">accept and drop what it sends</span></label>
     <label class="label font-normal"><input type="checkbox" class="input" name="muted" value="1"{{if .Rules.Muted}} checked{{end}}> Mute <span class="meta">keep it, with no sound or alert</span></label>
     <div class="flex flex-wrap gap-3">

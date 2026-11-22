@@ -812,7 +812,9 @@ finds nothing in the old one.
 
 `PUT /api/v1/senders/{id}` (admin with no topic limit) takes any of the rule
 fields and changes only those; `routes`, when present, replaces the whole map.
-A bad topic is 400, an unknown id 404. Rules can be set on a token that has
+A bad topic is 400, an unknown id 404. An optional `base_seq` is the `seq`
+of the newest change the caller saw (0 for none); if a newer change exists
+the request is 409 and changes nothing. Rules can be set on a token that has
 not published yet (its id from `/api/v1/tokens`); it then shows with `count`
 0 and a zero `first_seen`. Each change is logged: `GET
 /api/v1/senders/{id}/changes` returns `{changes:[{seq, before, after, by,
@@ -824,8 +826,11 @@ sender, its rules and its log.
 The web inbox shows the list at `/app/senders` and one sender at
 `/app/senders/{id}`, where a form sets every rule above and each change
 has an Undo button, for the same admins only; anyone
-else gets 403. The Android app lists them in Settings with the same rules,
-change log and Undo, for the same admins; for anyone else the section stays hidden.
+else gets 403. The form sends `base_seq`, so saving a page drawn before a
+newer change is refused rather than undoing that change. The Android app
+lists them in Settings with the same rules, change log and Undo, for the same
+admins, and sends one field per change; for anyone else the section stays
+hidden.
 
 The silence alarm comes in a later part of #119 and is not served yet.
 
