@@ -228,11 +228,14 @@ func TestHooksOutGuard(t *testing.T) {
 }
 
 func TestHookAllowPermits(t *testing.T) {
-	a, err := cleanHookAllow([]string{"10.0.0.0/8", "::ffff:192.168.1.0/120", "fd00::1"}, []int{8080})
+	if _, err := cleanHookAllow([]string{"::ffff:0:0/95"}, nil); err == nil {
+		t.Fatal("a mapped range wider than IPv4 was accepted")
+	}
+	a, err := cleanHookAllow([]string{"10.0.0.0/8", "::ffff:192.168.1.0/120", "fd00::1", "fe80::/64"}, []int{8080})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(a.Networks) != "[10.0.0.0/8 192.168.1.0/24 fd00::1/128]" {
+	if fmt.Sprint(a.Networks) != "[10.0.0.0/8 192.168.1.0/24 fd00::1/128 fe80::/64]" {
 		t.Fatalf("networks: %v", a.Networks)
 	}
 	for _, c := range []struct {
@@ -240,7 +243,7 @@ func TestHookAllowPermits(t *testing.T) {
 		want     bool
 	}{
 		{"10.1.2.3", "8080", true}, {"10.1.2.3", "443", true}, {"::ffff:10.1.2.3", "80", true},
-		{"192.168.1.5", "8080", true}, {"fd00::1", "8080", true}, {"8.8.8.8", "8080", true},
+		{"192.168.1.5", "8080", true}, {"fd00::1", "8080", true}, {"8.8.8.8", "8080", true}, {"fe80::1%eth0", "80", true},
 		{"10.1.2.3", "22", false}, {"192.168.2.5", "80", false}, {"169.254.169.254", "80", false},
 		{"127.0.0.1", "8080", false}, {"fd00::2", "80", false},
 	} {

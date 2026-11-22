@@ -30,7 +30,7 @@ const hookAllowMax = 64
 // permits reports whether a webhook may dial ip:port under the list: the
 // address is public or in a listed network, and the port is 80, 443 or listed.
 func (a *hookAllow) permits(ip netip.Addr, port string) bool {
-	ip = ip.Unmap()
+	ip = ip.Unmap().WithZone("") // a prefix never contains a zoned address
 	okIP := !blockedIP(ip) || slices.ContainsFunc(a.nets, func(p netip.Prefix) bool { return p.Contains(ip) })
 	okPort := port == "80" || port == "443" || slices.ContainsFunc(a.Ports, func(p int) bool { return strconv.Itoa(p) == port })
 	return okIP && okPort
@@ -54,7 +54,10 @@ func cleanHookAllow(networks []string, ports []int) (*hookAllow, error) {
 			ip = ip.WithZone("").Unmap()
 			p = netip.PrefixFrom(ip, ip.BitLen())
 		}
-		if p.Addr().Is4In6() && p.Bits() >= 96 { // ::ffff:10.0.0.0/104 is 10.0.0.0/8
+		if p.Addr().Is4In6() { // ::ffff:10.0.0.0/104 is 10.0.0.0/8
+			if p.Bits() < 96 {
+				return nil, errf(400, "bad_request", "network %q: write IPv4 ranges as IPv4, like 10.0.0.0/8", n)
+			}
 			p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
 		}
 		if p = p.Masked(); !slices.Contains(a.nets, p) {
@@ -154,14 +157,20 @@ func (s *Server) hookAllowRoutes() {
 			return err
 		}
 		raw, _ := json.Marshal(a)
-		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO settings (key, value) VALUES ('hook_allow', ?)
-			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(raw)); err != nil {
+		s.mu.Lock() // two saves must store in the order they wrote
+		_, err = s.db.ExecContext(r.Context(), `INSERT INTO settings (key, value) VALUES ('hook_allow', ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(raw))
+		if err == nil {
+			s.hookAllow.Store(a)
+			// A connection to an address just taken off the list, pooled or
+			// still dialing, must not carry the next delivery: start a new pool.
+			old := s.hookHTTP.Swap(s.newHookClient())
+			old.Transport.(*http.Transport).CloseIdleConnections()
+		}
+		s.mu.Unlock()
+		if err != nil {
 			return err
 		}
-		s.hookAllow.Store(a)
-		// A pooled connection to an address just taken off the list must not
-		// carry the next delivery.
-		s.hookHTTP.Transport.(*http.Transport).CloseIdleConnections()
 		return get(w, r)
 	})
 }

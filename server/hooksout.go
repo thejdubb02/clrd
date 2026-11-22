@@ -197,7 +197,7 @@ func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
 	if _, err := s.hookAllowList(ctx); err != nil { // the dial checks the list in memory
 		return 0, err
 	}
-	resp, err := s.hookHTTP.Do(req)
+	resp, err := s.hookHTTP.Load().Do(req)
 	if err != nil {
 		return 0, err
 	}

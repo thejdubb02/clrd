@@ -96,9 +96,10 @@ event shaped like the one above to try your own. Agents use the MCP tool
 ## Receivers on your LAN
 
 To let webhooks reach a receiver like `http://192.168.1.20:8080/hook`, an
-admin lists its network and its port. Both must be listed: a listed network
-still gets ports 80 and 443 only, a listed port still needs a public or
-listed address.
+admin lists its network and its port. A dial passes when the address is
+public or in a listed network, and the port is 80, 443 or listed: a LAN
+receiver on port 80 needs only its network, a public one on 8080 only its
+port.
 
 ```sh
 curl -X PUT https://clrd.example.com/api/v1/hooks/allow \

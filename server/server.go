@@ -209,8 +209,8 @@ type Server struct {
 	revoked  sync.Map                 // token ids deleted while the server runs
 	failing  sync.Map                 // background job name -> true while it keeps failing; /healthz reports it
 
-	hookAllow atomic.Pointer[hookAllow] // webhook LAN and port allow list once read (hookallow.go)
-	hookHTTP  *http.Client              // webhook deliveries (hookallow.go)
+	hookAllow atomic.Pointer[hookAllow]   // webhook LAN and port allow list once read (hookallow.go)
+	hookHTTP  atomic.Pointer[http.Client] // webhook deliveries, replaced when the list changes (hookallow.go)
 
 	seen       sync.Map // token id -> time last written to last_seen_at
 	pwLimit    *limiter // ntfy password attempts per address
@@ -323,7 +323,7 @@ func New(opt Options) (*Server, error) {
 	s.liveN = rand.Uint32() // so a restart at the same seq never reuses a live id
 	s.pruned.Store(pruned)
 	s.fetch = newFetcher(filepath.Join(filepath.Dir(opt.DB), "cache"))
-	s.hookHTTP = s.newHookClient()
+	s.hookHTTP.Store(s.newHookClient())
 	s.routesSetup()
 	return s, nil
 }
