@@ -76,6 +76,10 @@ Fixed, Removed, Security), as one line a user can understand.
   misses a live-only (`Cache: no`) message sent in that moment. The stream
   now starts over from the oldest message left without closing its live
   feed (#443).
+- Android: the "May approve" menu no longer shows on a phone whose token is
+  limited to some topics, where every change was refused. The server now
+  marks each caller's own device row with `can_approve`, set as the web
+  inbox's check (#433).
 - A Pushover image sent as `attachment_base64` near the attachment cap is
   accepted. Before, base64 made the request a third bigger than the file, so
   it was refused as too large although the file itself fit (#404).
