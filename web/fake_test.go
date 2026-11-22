@@ -152,7 +152,7 @@ func (f *Fake) DeleteHook(*http.Request, string, string) error { return nil }
 func (f *Fake) SaveTemplate(*http.Request, Template, string, bool) error { return nil }
 func (f *Fake) DeleteTemplate(*http.Request, string, string) error       { return nil }
 
-func (f *Fake) Reply(r *http.Request, id, reply string, seq int64) error {
+func (f *Fake) Reply(r *http.Request, id, reply, text string, seq int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n, ok := f.items[id]
@@ -160,7 +160,7 @@ func (f *Fake) Reply(r *http.Request, id, reply string, seq int64) error {
 		return errors.New("conflict")
 	}
 	m := *n
-	m.State, m.StateBy, m.Reply = "acknowledged", "web", reply
+	m.State, m.StateBy, m.Reply, m.ReplyText = "acknowledged", "web", reply, strings.TrimSpace(text)
 	f.put(m)
 	return nil
 }

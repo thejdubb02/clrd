@@ -435,6 +435,46 @@ try {
   assert.equal(await card('Merge 212?').getByRole('button', { name: 'No', exact: true }).count(), 0, 'answered card still offers replies');
   console.log('ok: reply button stores the answer');
 
+  // A typed answer (#153): the text action gets a box, the others stay buttons;
+  // a refusal keeps what was typed; the answer shows as plain text.
+  {
+    const tq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Name the release?', actions: [{ label: 'Keep', reply: 'keep' }, { label: 'Other', reply: 'other', text: true }] });
+    await page.reload();
+    const tc = card('Name the release?');
+    const box = tc.getByLabel('Other: type an answer');
+    await tc.getByRole('button', { name: 'Keep' }).waitFor();
+    await tc.getByRole('button', { name: 'Other' }).click();
+    await page.locator('[data-toast]').filter({ hasText: 'Type an answer first.' }).waitFor({ state: 'attached' });
+    await box.fill('x'.repeat(1001));
+    await tc.getByRole('button', { name: 'Other' }).click();
+    await tc.locator('[data-note]').filter({ hasText: 'Not answered:' }).waitFor();
+    assert.equal((await box.inputValue()).length, 1001, 'a refused answer lost what was typed');
+    assert.ok(!(await get(laptop, tq.id)).reply, 'an over-long answer was stored');
+    // A live change (a mark from another device) redraws the card: the half-typed answer stays.
+    {
+      const lp = await page.context().newPage(); // page no longer hears live events (above)
+      await lp.goto(page.url());
+      await lp.locator('.is-live').waitFor();
+      const lc = lp.locator('article.card').filter({ hasText: 'Name the release?' }), lbox = lc.getByLabel('Other: type an answer');
+      await lbox.fill('half typed');
+      const seq0 = await lc.getAttribute('data-seq');
+      await api(phone, `/api/v1/notifications/${tq.id}/mark`, { mark: 'seen' });
+      await lp.locator(`article.card[data-id="${tq.id}"]:not([data-seq="${seq0}"])`).waitFor({ state: 'attached' });
+      assert.equal(await lbox.inputValue(), 'half typed', 'a live update wiped a half-typed answer');
+      assert.ok(await lbox.evaluate(e => e === document.activeElement), 'a live update took focus off the text box');
+      await lp.close();
+    }
+    await box.fill('  <b>calm</b> fox  ');
+    await tc.getByRole('button', { name: 'Other' }).click();
+    await announce.filter({ hasText: 'Answered Other' }).waitFor({ state: 'attached' });
+    const ta = await get(laptop, tq.id);
+    assert.equal(ta.reply, 'other');
+    assert.equal(ta.reply_text, '<b>calm</b> fox');
+    await tc.locator('[data-reply-text]').filter({ hasText: 'Answer: <b>calm</b> fox' }).waitFor();
+    assert.equal(await tc.getByLabel('Other: type an answer').count(), 0, 'answered card still offers the text box');
+    console.log('ok: a typed answer is sent, refused text stays, the answer shows as text');
+  }
+
   // Marks (#451): Enter in the note marks it actioned, never acks or answers
   // the card; Remove takes only this reader's mark off.
   const mq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Rollback 214?', actions: [{ label: 'Go', reply: 'go' }] });
@@ -632,6 +672,12 @@ try {
   await plain('Lock the door?').getByRole('button', { name: 'Lock' }).click();
   await plain('Lock the door?').getByText('Answered Lock').waitFor();
   assert.equal((await get(laptop, r.id)).reply, 'lock');
+  const tr = await api(phone, '/api/v1/notifications', { topic: 'home', title: 'Which door?', actions: [{ label: 'Say', reply: 'say', text: true }] });
+  await nojs.goto(`${base}/app?topic=home`);
+  await plain('Which door?').getByLabel('Say: type an answer').fill('back door');
+  await plain('Which door?').getByRole('button', { name: 'Say' }).click();
+  await plain('Which door?').getByText('Answer: back door').waitFor();
+  assert.equal((await get(laptop, tr.id)).reply_text, 'back door');
   console.log('ok: Clear, Snooze and reply work without JavaScript');
 
   // Stack by topic (#108): off by default; on, a topic with two or more
@@ -1289,6 +1335,19 @@ try {
     await bp.goto(base + '/app');
     await bp.locator('article.card', { hasText: "Confirm asker-web's answer: Ship" }).getByRole('button', { name: 'Confirm' }).click();
     for (let i = 0; (await get(laptop, q.id)).reply !== 'ship'; i++) { assert.ok(i < 20, 'confirm did not answer the question'); await new Promise(r => setTimeout(r, 250)); }
+
+    // A typed answer from the Ask browser: the confirm prompt shows the text (#153).
+    const tq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Why 153?', actions: [{ label: 'Because', reply: 'because', text: true }] });
+    await ap.goto(base + '/app');
+    const tcard = ap.locator('article.card', { hasText: 'Why 153?' });
+    await tcard.getByLabel('Because: type an answer').fill('the tests pass');
+    await tcard.getByRole('button', { name: 'Because' }).click();
+    await ap.locator('[data-toast]').filter({ hasText: 'Sent for confirmation.' }).waitFor();
+    await bp.goto(base + '/app');
+    const prompt = bp.locator('article.card', { hasText: "Confirm asker-web's answer: Because" });
+    await prompt.getByText('Answer: the tests pass').waitFor();
+    await prompt.getByRole('button', { name: 'Confirm' }).click();
+    for (let i = 0; (await get(laptop, tq.id)).reply_text !== 'the tests pass'; i++) { assert.ok(i < 20, 'confirm did not store the typed answer'); await new Promise(r => setTimeout(r, 250)); }
 
     // The allowed browser lowers the asker token to Denied from Settings.
     // Pick after the redraw that every page load does once it is live, so the

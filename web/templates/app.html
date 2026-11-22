@@ -153,6 +153,7 @@
     </div>
     <div class="col-start-2 min-w-0">
       {{if $n.Body}}<div class="msg text-body mt-1 text-[15px]/normal [overflow-wrap:anywhere]" data-body{{if .Preview}} data-preview="{{$n.Topic}}"{{end}}>{{.Text}}</div>{{end}}
+      {{with $n.ReplyText}}<p class="text-body mt-1.5 text-[15px]/normal whitespace-pre-wrap [overflow-wrap:anywhere]" data-reply-text><span class="font-medium text-foreground">Answer:</span> {{.}}</p>{{end}}
       {{with $n.Attachment}}{{if .Image}}<a class="mt-2 block w-fit" href="{{local .URL}}" rel="noopener noreferrer" data-attachment><img class="max-h-64 max-w-full rounded-md border" src="{{local .URL}}" alt="{{.Name}}" loading="lazy" referrerpolicy="no-referrer"></a>
       {{else}}<p class="mt-2 text-sm font-medium" data-attachment><a class="inline-flex items-center gap-1 underline decoration-foreground/35 underline-offset-3 hover:decoration-foreground [&_svg]:size-3.5" href="{{local .URL}}" download="{{.Name}}" rel="noopener noreferrer">{{template "i-paperclip"}}{{or .Name "Attachment"}}</a></p>{{end}}{{end}}
       <p class="meta mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5"><a class="hover:text-foreground hover:underline" href="?topic={{$n.Topic}}">{{$n.Topic}}</a><time datetime="{{iso $n.CreatedAt}}" title="{{clock $n.CreatedAt}}">{{clock $n.CreatedAt}}</time>{{with $n.Repeat}}{{with .Next}}<span data-repeat>Alerted {{add $n.Repeat.Count 1}} {{plural (add $n.Repeat.Count 1) "time" "times"}}, next at <time datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time></span>{{end}}{{end}}{{range $n.Tags}}<span>#{{.}}</span>{{end}}{{range $n.Marks}}<span class="text-foreground [overflow-wrap:anywhere]" data-mark="{{.Mark}}">{{.By}} {{.Mark}}{{with .Note}}: {{.}}{{end}}{{with .Link}} <a class="underline" href="{{.}}" rel="noopener noreferrer">link</a>{{end}}</span>{{end}}</p>
@@ -160,6 +161,11 @@
       {{with $n.DeviceActions}}<ul class="meta mt-2 grid gap-0.5" data-device-actions>{{range .}}<li class="[overflow-wrap:anywhere]"><span class="font-medium text-foreground">{{.Label}}</span> runs on a phone: {{with .HTTP}}{{or .Method "POST"}} {{.URL}}{{else}}Android broadcast {{or .Broadcast.Intent "(the app's default)"}}{{end}}</li>{{end}}</ul>{{end}}
     </div>
   </div>
+  {{if ne .View "cleared"}}{{with $n.TextReply}}<form class="flex flex-wrap gap-1.5 pb-2 ps-5" method="post" action="{{base}}/app/act" data-text-reply>
+    <input type="hidden" name="id" value="{{$n.ID}}"><input type="hidden" name="next" value="{{$.Here}}"><input type="hidden" name="seq" value="{{$n.Seq}}">
+    <input class="input min-w-0 flex-1 basis-48" name="text" required autocomplete="off" placeholder="Type an answer" aria-label="{{.Label}}: type an answer">
+    <button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>
+  </form>{{end}}{{end}}
   <form class="relative flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="{{base}}/app/act">
     <input type="hidden" name="id" value="{{$n.ID}}">
     <input type="hidden" name="next" value="{{.Here}}">

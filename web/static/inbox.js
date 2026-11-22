@@ -316,10 +316,15 @@
     const nextList = doc.querySelector('[data-list]');
     if (!list || !nextList) return tidy();
     const sf = stackFocus();
+    let typing = null;
     const keep = stackOrder([...nextList.children].map(n => {
       const old = card(n.dataset.id);
       if (old && old.dataset.seq === n.dataset.seq) return old;
       const fresh = document.adoptNode(n);
+      // A live change to a still-open question keeps a half-typed answer (#153).
+      const was = old && old.querySelector('[data-text-reply] [name=text]'), box = fresh.querySelector('[data-text-reply] [name=text]');
+      if (was && box && was.value) box.value = was.value;
+      if (was && box && was === document.activeElement) typing = box;
       localize(fresh);
       previews(fresh);
       return fresh;
@@ -328,7 +333,8 @@
     if (keep.some(c => c.contains(document.activeElement)) || keep.length !== now.length || keep.some((c, i) => c !== now[i])) {
       const had = list.contains(document.activeElement) && !document.activeElement.closest('[data-stack]') && document.activeElement;
       list.replaceChildren(...keep);
-      if (had && !had.isConnected) select(selected()); // focus was on a node the refresh replaced
+      if (typing) typing.focus();
+      else if (had && !had.isConnected) select(selected()); // focus was on a node the refresh replaced
     }
     restack(sf);
     const s = selected();
@@ -764,7 +770,9 @@
       if (!b.dataset.for && !(t > new Date())) return say('Pick a time in the future.');
       body = b.dataset.for ? { for: b.dataset.for } : { until: t.toISOString() };
     }
-    if (act === 'reply') body = { reply: b.value, seq: Number(c.dataset.seq) }; // 409 if it changed since this card
+    const typed = act === 'reply' && b.form.elements.text; // a typed answer (#153)
+    if (typed && !typed.value.trim()) { typed.focus(); return say('Type an answer first.'); }
+    if (act === 'reply') body = { reply: b.value, text: typed ? typed.value : undefined, seq: Number(c.dataset.seq) }; // 409 if it changed since this card
     b.disabled = true;
     const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, body, act === 'reply');
     b.disabled = false;
@@ -775,6 +783,8 @@
       const why = r.status === 202 ? 'Sent for confirmation. An allowed device has to confirm it.'
         : !r.ok && ({ approve_denied: 'This device may not answer approval requests. An allowed device can change that in Settings.',
           own_request: 'This device cannot answer a request its own token sent.',
+          // Too long or empty: the server says which; what was typed stays.
+          bad_request: typed && n.error && `Not answered: ${n.error}`,
           conflict: 'Not answered: it was answered, cleared or changed since. Reload to see it now.' }[n.code] || `The server refused that (${r.status}). Nothing changed.`);
       if (!why) { tell(`Answered ${b.textContent}.`); return refresh(); }
       let p = c.querySelector('[data-note]');

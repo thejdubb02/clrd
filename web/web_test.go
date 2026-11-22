@@ -120,7 +120,7 @@ func TestLinks(t *testing.T) {
 type readOnly struct{}
 
 func (readOnly) Act(*http.Request, string, string, *time.Time) error      { return ErrUnauthorized }
-func (readOnly) Reply(*http.Request, string, string, int64) error         { return ErrUnauthorized }
+func (readOnly) Reply(*http.Request, string, string, string, int64) error { return ErrUnauthorized }
 func (readOnly) Mark(*http.Request, string, string, string, string) error { return ErrUnauthorized }
 
 func (readOnly) StartSilence(*http.Request, string, string, string, string) error {
