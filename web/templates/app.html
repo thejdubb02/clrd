@@ -163,7 +163,7 @@
   </div>
   {{if ne .View "cleared"}}{{with $n.TextReply}}<form class="flex flex-wrap gap-1.5 pb-2 ps-5" method="post" action="{{base}}/app/act" data-text-reply>
     <input type="hidden" name="id" value="{{$n.ID}}"><input type="hidden" name="next" value="{{$.Here}}"><input type="hidden" name="seq" value="{{$n.Seq}}">
-    <input class="input min-w-0 flex-1 basis-48" name="text" required autocomplete="off" placeholder="Type an answer" aria-label="{{.Label}}: type an answer">
+    <textarea class="textarea min-h-9 min-w-0 flex-1 basis-48" name="text" rows="1" required autocomplete="off" placeholder="Type an answer" aria-label="{{.Label}}: type an answer"></textarea>
     <button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>
   </form>{{end}}{{end}}
   <form class="relative flex flex-wrap items-start gap-1.5 pb-3.5 ps-5" method="post" action="{{base}}/app/act">

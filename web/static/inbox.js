@@ -410,11 +410,15 @@
     if (d.open && d.matches && d.matches('article details.popover')) d.closest('article').querySelectorAll('details.popover[open]').forEach(o => { if (o !== d) o.open = false; });
   }, true);
 
-  // Enter in the date box would submit the card form with its first button (Ack).
+  // Enter in the date box would submit the card form with its first button
+  // (Ack). Enter in a typed answer sends it; Shift+Enter makes a new line.
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-until]')) {
       e.preventDefault();
       e.target.closest('.snooze-custom').querySelector('[data-act]').click();
+    } else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target.matches && e.target.matches('[data-text-reply] textarea')) {
+      e.preventDefault();
+      e.target.form.querySelector('[data-act]').click();
     }
   });
 
