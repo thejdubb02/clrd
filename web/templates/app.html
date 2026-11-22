@@ -319,7 +319,7 @@
       <div class="grid gap-1">
         <h3 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h3>
         <p class="meta [overflow-wrap:anywhere]">{{.URL}}</p>
-        <p class="meta">Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .HasSecret}} Signed with a secret.{{end}}</p>
+        <p class="meta">Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .Body}} Custom body.{{end}}{{if .HasSecret}} Signed with a secret.{{end}}</p>
         {{if not .Enabled}}<p class="text-destructive text-sm" data-hook-off>Turned off after a day of failed deliveries. Fix the receiver, then save it again to turn it back on.</p>
         {{else if .FailingSince}}<p class="text-destructive text-sm">Failing since {{clock .FailingSince}}. It turns off after a day of failures.</p>{{end}}
       </div>
@@ -522,6 +522,10 @@
 <fieldset class="grid gap-2"><legend class="label mb-1">Send</legend>
   {{range hookEvents}}<label class="label font-normal"><input type="checkbox" class="input" name="events" value="{{.Name}}"{{if $h.Sends .Name}} checked{{end}}> {{.Label}}</label>{{end}}
   <p class="meta">None ticked sends every event.</p></fieldset>
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-body">Body template</label>
+  <textarea id="{{$id}}-body" class="textarea" name="body" rows="3" maxlength="16384" spellcheck="false" placeholder="{&quot;text&quot;: {{"{{"}}json .notification.title{{"}}"}}}" aria-describedby="{{$id}}-body-hint">
+{{.Body}}</textarea>
+  <p id="{{$id}}-body-hint" class="meta">Optional. Shapes each delivery for a receiver that wants its own JSON. Empty sends the event as it is.</p></div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-secret">Secret</label>
   <input id="{{$id}}-secret" class="input" type="password" name="secret" maxlength="256" autocomplete="new-password" aria-describedby="{{$id}}-secret-hint">
   <p id="{{$id}}-secret-hint" class="meta">{{if .HasSecret}}A secret is saved. Leave this empty to keep it.{{else}}Optional. Signs each delivery so the receiver can check it came from here.{{end}}</p>
