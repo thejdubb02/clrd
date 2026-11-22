@@ -68,6 +68,11 @@ class App : Application() {
         set(v) = prefs.edit().putBoolean("stack", v).apply()
 
     /** Remove cleared items from this phone as soon as they are cleared (#151). Off by default; the server keeps its own copy either way. */
+    /** A swipe all the way across runs the first button it shows (#161). Off out of the box: a swipe only shows the buttons. */
+    var fastSwipe: Boolean
+        get() = prefs.getBoolean("fast_swipe", false)
+        set(v) = prefs.edit().putBoolean("fast_swipe", v).apply()
+
     var dropCleared: Boolean
         get() = prefs.getBoolean("drop_cleared", false)
         set(v) = prefs.edit().putBoolean("drop_cleared", v).apply()
