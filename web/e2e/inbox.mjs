@@ -1520,6 +1520,45 @@ try {
     await ctx.close();
     console.log('ok: the format check groups by sender, dismisses, leaves a topic out and undoes in Settings');
   }
+
+  // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
+  // scripts send every request inside it, and a setting saved from the page
+  // reaches the server.
+  {
+    const p2 = await new Promise(ok => { const s = createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+    const root = `http://127.0.0.1:${p2}`, sub = root + '/clrd';
+    const env2 = { ...process.env, CLRD_DB: join(mkdtempSync(join(tmpdir(), 'clrd-sub-')), 'clrd.db'), CLRD_LISTEN: `127.0.0.1:${p2}`, CLRD_BASE_URL: sub + '/' };
+    const tok = execFileSync(bin, ['token', 'create', '--name', 'sub', '--scope', 'admin', '--approve', 'allowed'], { env: env2, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const srv2 = spawn(bin, [], { env: env2, stdio: 'inherit' });
+    try {
+      for (let i = 0; ; i++) {
+        try { if ((await fetch(sub + '/healthz')).ok) break; } catch {}
+        if (i > 50) throw new Error('sub-path server did not start');
+        await new Promise(r => setTimeout(r, 100));
+      }
+      const ctx = await browser.newContext();
+      const outside = [];
+      ctx.on('request', r => { const u = new URL(r.url()); if (u.origin === root && !u.pathname.startsWith('/clrd/')) outside.push(u.pathname); });
+      const sp = await ctx.newPage();
+      await sp.goto(`${sub}/app?auth=${Buffer.from(`Bearer ${tok}`).toString('base64url')}`);
+      await sp.goto(sub + '/app/settings');
+      await sp.locator('.is-live').waitFor({ timeout: 5000 });
+      await sp.getByRole('combobox', { name: 'Sound', exact: true }).selectOption('pop');
+      const mine = async () => (await (await ctx.request.get(sub + '/api/v1/settings')).json()).sound;
+      for (let i = 0; i < 20 && (await mine()) !== 'pop'; i++) await sp.waitForTimeout(250);
+      assert.equal(await mine(), 'pop', 'a setting saved under a sub-path reached the server');
+      // Pair page: the sign-in code request also stays inside the sub-path.
+      const pc = await (await browser.newContext()).newPage();
+      pc.on('request', r => { const u = new URL(r.url()); if (u.origin === root && !u.pathname.startsWith('/clrd/')) outside.push(u.pathname); });
+      await pc.goto(sub + '/app');
+      await pc.getByRole('button', { name: 'Show sign-in code' }).click();
+      await pc.locator('[data-pair-qr]').waitFor({ state: 'visible' });
+      assert.deepEqual(outside, [], 'requests left the sub-path');
+      await pc.context().close();
+      await ctx.close();
+      console.log('ok: under a sub-path the inbox and sign-in code requests stay inside it and a setting saves');
+    } finally { srv2.kill(); }
+  }
 } finally {
   await browser?.close();
   server.kill();
