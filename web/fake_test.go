@@ -36,7 +36,7 @@ func NewFake() *Fake {
 			Actions: []Action{{Label: "Approve", Reply: "yes"}, {Label: "Reject", Reply: "no"}}, CreatedAt: ago(41)},
 		{Topic: "home", Title: "Front door open for 10 minutes", Priority: 4, CreatedAt: ago(18)},
 		{Topic: "infra", ExternalID: "disk-web-1", Title: "Disk 91% full on web-1", Message: "/var at 91%. Grows about 2% a day.", Priority: 4, Tags: []string{"disk"},
-			Actions: []Action{{Label: "Open dashboard", URL: "https://grafana.example.com/d/disk"}}, CreatedAt: ago(9)},
+			Actions: []Action{{Label: "Open dashboard", URL: "https://grafana.example.com/d/disk"}, {Label: "Clean /tmp", HTTP: &HTTPAction{URL: "https://ops.example.com/clean?host=web-1"}}, {Label: "Ping", Broadcast: &BroadcastAction{}}}, CreatedAt: ago(9)},
 		{Topic: "backups", Title: "Nightly backup failed", Message: "restic exited 1 after 4m 12s.\nRepository is locked by a stale process.", Priority: 5, Tags: []string{"restic"}, CreatedAt: ago(3)},
 	} {
 		if n.State == "" {

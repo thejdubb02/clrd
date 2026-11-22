@@ -149,12 +149,28 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 			return err
 		}
 	}
+	// reset tells the client its since is gone and gives where to go on: to
+	// (-1: the seq once sent), or, when send answers errPruned (ntfy has no
+	// reset), the oldest event left. Either way on the same subscription, so
+	// no live event is lost (#443).
+	reset := func(to int64) (int64, error) {
+		err := send(msgReset, -1)
+		if to < 0 {
+			to = max(since, s.seq.Load())
+		}
+		if err != errPruned {
+			return to, err
+		}
+		var oldest int64
+		err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(seq) - 1, ?) FROM events`, s.seq.Load()).Scan(&oldest)
+		return min(max(since, oldest), s.seq.Load()), err
+	}
 	last := s.seq.Load()
 	if since < s.pruned.Load() || since > last {
-		if err := send(msgReset, -1); err != nil {
+		var err error
+		if since, err = reset(last); err != nil {
 			return err
 		}
-		since = last
 	}
 	for {
 		if _, gone := s.revoked.Load(tok.ID); gone { // a long replay may send nothing visible
@@ -162,10 +178,9 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 		}
 		evs, err := s.eventsAfter(ctx, since, 500)
 		if err == errReset { // pruned under us mid-replay
-			if err := send(msgReset, -1); err != nil {
+			if since, err = reset(-1); err != nil {
 				return err
 			}
-			since = max(since, s.seq.Load())
 			continue
 		}
 		if err != nil {

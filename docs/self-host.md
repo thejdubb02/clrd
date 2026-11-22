@@ -265,8 +265,8 @@ It cannot be delayed, repeated, carry a file or an `Id`.
 `view` action buttons work everywhere. `http` and `broadcast` buttons are
 stored and passed to ntfy apps once an admin turns them on for the topic
 (`{"device_actions":true}` on `PUT /api/v1/topics/{topic}`, or the MCP tool
-`set_topic`); until then they are dropped. clrd's own app and web inbox do not
-run them yet.
+`set_topic`); until then they are dropped. clrd's own app does not run them
+yet. The web inbox shows them under the card as text and never runs them.
 
 Not supported yet: email and phone call forwarding.
 

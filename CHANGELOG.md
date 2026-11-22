@@ -69,6 +69,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- ntfy: a subscriber whose `since=` was pruned while it caught up no longer
+  misses a live-only (`Cache: no`) message sent in that moment. The stream
+  now starts over from the oldest message left without closing its live
+  feed (#443).
 - A Pushover image sent as `attachment_base64` near the attachment cap is
   accepted. Before, base64 made the request a third bigger than the file, so
   it was refused as too large although the file itself fit (#404).
@@ -176,6 +180,10 @@ Fixed, Removed, Security), as one line a user can understand.
 ### Added
 
 - Marks: anyone who can read a topic, a person or an agent with its own token, can mark a notification seen, or actioned with a note and a link. A mark never clears or hides it; everyone on the topic sees who marked it on the card in the web inbox and the Android app, for example "stew actioned: filed relay#512". API `POST`/`DELETE /api/v1/notifications/{id}/mark`, MCP `mark`, and `mark`/`unmark` in the Go, JS and Python SDKs.
+- Web: the inbox shows a message's `http` and `broadcast` buttons under the
+  card as text (the label, plus the method and URL or the broadcast intent), so a
+  reader knows what they do. The browser never runs them (#450).
+
 - Web: an "Add agent" button in Settings. Give the agent a name and its topics, pick how long the invite lasts (15 minutes by default) and copy the one-use invite it shows. The agent then shows in Linked devices as an agent, where you can unlink it (#456).
 
 - Android: an "Add agent" button under Linked devices makes an agent invite
@@ -353,6 +361,9 @@ Fixed, Removed, Security), as one line a user can understand.
 - Server: `clrd help` lists the commands and settings.
 
 ### Changed
+- Android: Stack by topic is now off until you turn it on, in the tray and
+  the app's list, as on the web. A phone where you chose a value keeps it
+  (#465).
 - Docs: plainer wording on the README and landing page. The badge row is
   gone, and the landing page no longer promises a five-minute switch from
   ntfy (#123).
