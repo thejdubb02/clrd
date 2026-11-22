@@ -69,11 +69,11 @@ func notOwn(ctx context.Context, q querier, tok *Token, sender string) error {
 // confirmLink is what a confirm prompt holds, server side only: which
 // answer an ask device gave, to which question as it stood then. With Kind
 // "approve" it is instead device Asker's request to raise its own setting
-// From one To Reply, and Target is empty.
+// From one To Reply, and Target is empty. Text is what the ask device typed.
 type confirmLink struct {
 	Target, Reply, Asker, AskerName string
 	Seq                             int64
-	Kind, From                      string `json:",omitempty"`
+	Kind, From, Text                string `json:",omitempty"`
 }
 
 // AskApprove posts tok's request to raise its own setting to approve, as a
@@ -130,20 +130,26 @@ func (s *Server) AskApprove(ctx context.Context, tok *Token, topic, approve stri
 
 // askConfirm is an ask device's tap on n: n stays unanswered, and a prompt
 // on the same topic asks an allowed device to confirm it. A repeat tap
-// returns the prompt already open, with no new event.
-func (s *Server) askConfirm(ctx context.Context, tx *sql.Tx, tok *Token, n *Notification, reply string) (*Notification, []Event, error) {
+// returns the prompt already open, with no new event; other text makes
+// another prompt, and the first one confirmed wins.
+func (s *Server) askConfirm(ctx context.Context, tx *sql.Tx, tok *Token, n *Notification, reply, text string) (*Notification, []Event, error) {
 	p, err := getNotification(ctx, tx, `state NOT IN ('dismissed', 'resolved') AND json_extract(NULLIF(confirm, ''), '$.Target') = ?
-	  AND json_extract(confirm, '$.Asker') = ? AND json_extract(confirm, '$.Reply') = ? AND json_extract(confirm, '$.Seq') = ?`, n.ID, tok.ID, reply, n.Seq)
+	  AND json_extract(confirm, '$.Asker') = ? AND json_extract(confirm, '$.Reply') = ? AND json_extract(confirm, '$.Seq') = ?
+	  AND COALESCE(json_extract(confirm, '$.Text'), '') = ?`, n.ID, tok.ID, reply, n.Seq, text)
 	if !isNotFound(err) {
 		return p, nil, err
 	}
 	// No sender: the asker is ask so it cannot confirm, while the phone it
 	// shares a top token with must be able to.
-	link, _ := json.Marshal(confirmLink{Target: n.ID, Reply: reply, Asker: tok.ID, AskerName: tok.Name, Seq: n.Seq})
+	link, _ := json.Marshal(confirmLink{Target: n.ID, Reply: reply, Asker: tok.ID, AskerName: tok.Name, Seq: n.Seq, Text: text})
 	label := n.Actions[slices.IndexFunc(n.Actions, func(a Action) bool { return a.Reply == reply })].Label
+	msg, format := n.Title+"\n\n"+n.Message, n.Format
+	if text != "" { // typed text is never rendered as markdown
+		msg, format = msg+"\n\nAnswer: "+text, FormatText
+	}
 	t := now()
 	p = &Notification{ID: s.newID(t), Topic: n.Topic, Title: fmt.Sprintf("Confirm %s's answer: %s", tok.Name, label),
-		Message: n.Title + "\n\n" + n.Message, Format: n.Format, Priority: n.Priority, Tags: []string{}, Icon: n.Icon,
+		Message: msg, Format: format, Priority: n.Priority, Tags: []string{}, Icon: n.Icon,
 		Actions: []Action{{Label: "Confirm", Reply: "confirm"}, {Label: "Reject", Reply: "reject"}},
 		State:   Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, confirm: string(link)}
 	return p, []Event{{Type: EventCreated, Notification: p}}, nil
@@ -180,7 +186,7 @@ func (s *Server) confirmed(ctx context.Context, tx *sql.Tx, tok *Token, p *Notif
 	if n.Reply != "" || n.Final() {
 		return nil, errf(409, "conflict", "already answered or cleared")
 	}
-	n.Reply, n.State, n.SnoozeUntil, n.StateBy, n.StateByID = l.Reply, Acknowledged, nil, l.AskerName, l.Asker
+	n.Reply, n.ReplyText, n.State, n.SnoozeUntil, n.StateBy, n.StateByID = l.Reply, l.Text, Acknowledged, nil, l.AskerName, l.Asker
 	n.stopRepeat()
 	return []Event{{Type: EventState, Notification: n, Via: via, replied: true}}, nil
 }

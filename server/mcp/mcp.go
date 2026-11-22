@@ -491,7 +491,7 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 		return nil, err
 	}
 	if st := str(n, "state"); replied(st) {
-		return answered(map[string]any{"reply": st, "by": n["state_by"], "notification": n}, st, str(n, "reply")), nil
+		return answered(map[string]any{"reply": st, "by": n["state_by"], "notification": n}, st, str(n, "reply"), str(n, "reply_text")), nil
 	}
 	var last any = n
 	for {
@@ -528,16 +528,20 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 				}
 				return nil, err
 			}
-			return answered(map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, x.State, x.Reply), nil
+			return answered(map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, x.State, x.Reply, x.ReplyText), nil
 		}
 	}
 }
 
 // answered adds which reply action was tapped. Only while the tap's own
-// acknowledged state stands, so "by" is the device that tapped it.
-func answered(out map[string]any, state, reply string) map[string]any {
+// acknowledged state stands, so "by" is the device that tapped it. text is
+// what was typed with a text reply action.
+func answered(out map[string]any, state, reply, text string) map[string]any {
 	if reply != "" && state == server.Acknowledged {
 		out["answer"] = reply
+		if text != "" {
+			out["text"] = text
+		}
 	}
 	return out
 }
@@ -571,12 +575,13 @@ var tools = []map[string]any{
 			"devices":      strs("Optional: only these devices alert (names or ids from devices, at most 20); every other reader lists it silently"),
 			"id":           p("string", "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id)."),
 			"actions": map[string]any{"type": "array", "maxItems": 3,
-				"description": "Optional buttons, each with one of reply, url, http or broadcast. Answer buttons: [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]; wait_for_reply returns the tapped one as answer. http and broadcast need the topic's device_actions on (set_topic).",
+				"description": "Optional buttons, each with one of reply, url, http or broadcast. Answer buttons: [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]; wait_for_reply returns the tapped one as answer. Add \"text\":true to one reply button to let the human type an answer (at most 1000 characters), returned as text. http and broadcast need the topic's device_actions on (set_topic).",
 				"items": schema(map[string]any{"label": p("string", "Button text"), "reply": map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Value returned as answer, unique"},
 					"url":       p("string", "Link to open"),
 					"http":      map[string]any{"type": "object", "description": "Request the reader's device sends: {method (POST if empty), url, headers, body}"},
 					"broadcast": map[string]any{"type": "object", "description": "Android broadcast: {intent (the app's default if empty), extras}"},
-					"clear":     p("boolean", "Clear the notification after the button runs")}, "label")},
+					"clear":     p("boolean", "Clear the notification after the button runs"),
+					"text":      p("boolean", "On one reply button: the human types an answer, returned by wait_for_reply as text")}, "label")},
 		}, "topic", "message")},
 	{"name": "list", "description": "List notifications.",
 		"inputSchema": schema(map[string]any{
@@ -621,7 +626,7 @@ var tools = []map[string]any{
 		})},
 	{"name": "snooze", "description": "Snooze a notification by server id.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id"), "for": p("string", "Duration, e.g. 30m or 1h")}, "id", "for")},
-	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout, and answer = the reply value when one of send's actions was tapped.",
+	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout, and answer = the reply value when one of send's actions was tapped, plus text = what the human typed when that action has text:true.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "timeout_s": map[string]any{"type": "number", "description": "Seconds to wait, default 60, max 600"}}, "id")},
 	{"name": "devices", "description": "List every linked device this token can see: id, name, kind (token, browser or phone), linked and last seen times, who may approve (allowed, ask or denied), and whether it can be unlinked.",
 		"inputSchema": schema(map[string]any{})},

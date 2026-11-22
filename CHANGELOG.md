@@ -9,6 +9,15 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ## Unreleased
 
+### Added
+
+- Server and API: typed answers (#153). One reply action can set
+  `"text": true`; answering it takes 1 to 1000 characters of plain text,
+  kept as `reply_text` and returned by MCP `wait_for_reply` as `text`. Same
+  Allowed, Ask and Denied rules as a tap. The web inbox and Android app do
+  not offer a text box yet. Nothing changes for senders that do not ask for
+  text.
+
 ### Security
 
 - Approvals: the phone now shows every field of a tool request, not only its

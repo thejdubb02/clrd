@@ -361,7 +361,7 @@ func TestReplyButtons(t *testing.T) {
 	}
 	sent := call("send", map[string]any{"topic": "agents", "message": "deploy?", "id": "deploy-2", "format": "text", "icon": "https://x.test/i.png",
 		"attachment": map[string]any{"url": "https://x.test/r.pdf", "name": "r.pdf"}, "actions": []any{
-			map[string]any{"label": "Yes", "reply": "yes"}, map[string]any{"label": "No", "reply": "no"}}})
+			map[string]any{"label": "Yes", "reply": "yes"}, map[string]any{"label": "Other", "reply": "other", "text": true}}})
 	id, _ := sent["id"].(string)
 	if acts, _ := sent["actions"].([]any); len(acts) != 2 {
 		t.Fatalf("send dropped the buttons: %v", sent)
@@ -371,17 +371,17 @@ func TestReplyButtons(t *testing.T) {
 	}
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		s.Reply(context.Background(), phone, id, "yes", "app", 0)
+		s.Reply(context.Background(), phone, id, "other", "next week", "app", 0)
 	}()
-	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "acknowledged" || got["answer"] != "yes" || got["by"] != "pixel-9" {
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "acknowledged" || got["answer"] != "other" || got["text"] != "next week" || got["by"] != "pixel-9" {
 		t.Fatalf("wait_for_reply: %v", got)
 	}
-	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["answer"] != "yes" {
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["answer"] != "other" || got["text"] != "next week" {
 		t.Fatalf("second wait_for_reply: %v", got)
 	}
 	// Once the sender resolves it, by is the sender, so no answer rides along.
 	call("resolve", map[string]any{"topic": "agents", "external_id": "deploy-2"})
-	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "resolved" || got["answer"] != nil {
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "resolved" || got["answer"] != nil || got["text"] != nil {
 		t.Fatalf("wait after resolve: %v", got)
 	}
 }
@@ -440,7 +440,7 @@ func TestApproveHook(t *testing.T) {
 					time.Sleep(10 * time.Millisecond)
 					open, _ := s.List(context.Background(), phone, server.ListQuery{Topics: []string{"agents"}, State: "active"})
 					if len(open) > 0 {
-						s.Reply(context.Background(), phone, open[0].ID, tap, "app", 0)
+						s.Reply(context.Background(), phone, open[0].ID, tap, "", "app", 0)
 						return
 					}
 				}
