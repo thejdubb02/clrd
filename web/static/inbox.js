@@ -865,7 +865,7 @@
         return;
       }
       f.elements.title.value = f.elements.message.value = '';
-      picked.forEach(c => { c.checked = false; }); // the next send alerts every device again
+      f.querySelectorAll('[name=devices]').forEach(c => { c.checked = false; }); // the next send alerts every device again
       sendBox.close();
       say('Sent.');
     });
