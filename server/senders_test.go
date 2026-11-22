@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -160,6 +162,14 @@ func TestSenderRules(t *testing.T) {
 	if a["url"] == b["url"] || len(files(t, s)) != 2 {
 		t.Fatalf("routed upload: %v %v %v", a, b, files(t, s))
 	}
+	// A replace of the first copy's row right after it commits deletes the
+	// source file; the later copies were already linked (#536).
+	routeGap = func(f string) { os.Remove(filepath.Join(s.opt.Attachments, f)) }
+	upload(t, ts, svc, map[string]any{"topic": "up", "message": "gap"}, "c.txt", []byte("hi"), false)
+	routeGap = nil
+	if len(in("ops")) != 3 || len(files(t, s)) != 3 {
+		t.Fatalf("copy lost after the source went: ops %d, files %v", len(in("ops")), files(t, s))
+	}
 	// Paused: every dialect gets a 2xx and nothing is stored, not even the upload.
 	if code, _ := set(map[string]any{"paused": true}); code != 200 {
 		t.Fatalf("pause: %d", code)
@@ -174,10 +184,10 @@ func TestSenderRules(t *testing.T) {
 	if code, _ := upload(t, ts, svc, map[string]any{"topic": "up", "message": "dropped"}, "b.txt", []byte("bye"), false); code != 200 {
 		t.Fatalf("upload while paused: %d", code)
 	}
-	if len(in("infra")) != 2 || len(in("ops")) != 2 || len(in("up")) != 1 || len(files(t, s)) != 2 {
+	if len(in("infra")) != 3 || len(in("ops")) != 3 || len(in("up")) != 1 || len(files(t, s)) != 3 {
 		t.Fatalf("paused publish stored: %v %v", in("infra"), files(t, s))
 	}
-	if _, one := call(t, ts, "GET", "/api/v1/senders/"+id, admin, nil); one["count"] != 6.0 { // plain, routed, upload and three paused; a resolve is no new message
+	if _, one := call(t, ts, "GET", "/api/v1/senders/"+id, admin, nil); one["count"] != 7.0 { // plain, routed, two uploads and three paused; a resolve is no new message
 		t.Fatalf("paused publishes still count: %v", one["count"])
 	}
 	// Changes, newest first; undoing the first puts back no rules at all.
