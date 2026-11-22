@@ -102,6 +102,11 @@
     <string name="device_failed">%1$s did not work. Try again from the tray.</string>
     <string name="device_changed">Not run: this notification changed or is gone.</string>
     <string name="reply_changed">Not answered: the question changed or was already answered.</string>
+    <string name="reply_text_refused">Not answered: the server refused the text. It is kept in the reply box.</string>
+    <string name="reply_text_invalid">Not sent: an answer is 1 to 1000 characters.</string>
+    <string name="reply_text_count">%1$d of 1000</string>
+    <string name="reply_text_send">Send</string>
+    <string name="answered_text">Answer: %1$s</string>
     <string name="approve_title">Approval requests</string>
     <string name="approve_allowed">This phone can answer approval requests.</string>
     <string name="approve_ask">This phone\'s answers to approval requests need an allowed device to confirm them.</string>

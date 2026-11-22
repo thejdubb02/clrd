@@ -11,6 +11,7 @@ import android.media.AudioAttributes
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
@@ -38,7 +39,7 @@ sealed interface TrayStep {
 }
 
 /** One tray button: a sender link or reply (docs/SPEC.md section 2), or one of ours, by its [Tray] action. */
-data class TrayButton(val label: String = "", val res: Int = 0, val url: String? = null, val action: String? = null, val reply: String? = null, val device: Int? = null) {
+data class TrayButton(val label: String = "", val res: Int = 0, val url: String? = null, val action: String? = null, val reply: String? = null, val device: Int? = null, val text: Boolean = false) {
     companion object {
         val ACK = TrayButton(res = R.string.tray_ack, action = Tray.ACTION_ACK)
         val SNOOZE = TrayButton(res = R.string.tray_snooze, action = Tray.ACTION_SNOOZE)
@@ -69,8 +70,15 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
 
         /** The sender's answer buttons, at most 3, until someone answers. The app card shows them too. */
         fun replies(n: Notif): List<TrayButton> = if (n.reply.isNotEmpty()) emptyList() else objs(n).mapNotNull { o ->
-            o.optString("reply").takeIf { it.isNotEmpty() }?.let { TrayButton(o.optString("label").ifBlank { it }, reply = it) }
+            o.optString("reply").takeIf { it.isNotEmpty() }?.let { TrayButton(o.optString("label").ifBlank { it }, reply = it, text = o.optBoolean("text")) }
         }.take(3)
+
+        /** A typed answer's body (#153): the text trimmed, 1 to 1000 characters (code points), or null when it cannot be sent. */
+        fun typed(reply: String, text: String, seq: Long): String? {
+            val t = text.trim { it.isWhitespace() || it.code == 0x85 } // as the server trims (Go unicode.IsSpace)
+            if (t.isEmpty() || t.codePointCount(0, t.length) > 1000) return null
+            return JSONObject().put("reply", reply).put("text", t).put("seq", seq).toString()
+        }
 
         /** The sender's action objects; a device button's index points into this list. */
         fun objs(n: Notif): List<JSONObject> {
@@ -162,6 +170,12 @@ class Tray(private val ctx: Context) {
             (3..5).associateWith { p -> nm.getNotificationChannel(Sounds.channel(p, sound))?.let { it.sound to it.importance } },
         )
 
+    /** Post one row again, quietly, as Room has it: clears the spinner Android shows after an inline reply (#153). */
+    fun repost(id: String) {
+        val n = App.of(ctx).db.dao().get(id) ?: return
+        apply(TrayStep.plan(n, App.of(ctx).muted).let { if (it is TrayStep.Show) TrayStep.Show(n, silent = true) else it })
+    }
+
     fun apply(step: TrayStep) {
         when (step) {
             is TrayStep.Cancel -> nm.cancel(step.id, 0)
@@ -249,7 +263,7 @@ class Tray(private val ctx: Context) {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSubText(
                 when {
-                    n.reply.isNotEmpty() -> ctx.getString(R.string.tray_answered, n.reply, n.stateBy ?: ctx.getString(R.string.tray_another_device))
+                    n.reply.isNotEmpty() -> ctx.getString(R.string.tray_answered, n.replyText.ifEmpty { n.reply }, n.stateBy ?: ctx.getString(R.string.tray_another_device))
                     n.state == Notif.ACKNOWLEDGED -> ctx.getString(R.string.tray_acked, n.stateBy ?: ctx.getString(R.string.tray_another_device))
                     else -> n.topic
                 },
@@ -274,7 +288,13 @@ class Tray(private val ctx: Context) {
                 ?: images.prefetch(f.url, Images.PICTURE_PX, ::redraw)
         }
         TrayButton.pick(n).forEach {
-            b.addAction(0, if (it.res != 0) ctx.getString(it.res) else it.label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) }
+            val label = if (it.res != 0) ctx.getString(it.res) else it.label
+            // A text action answers inline (#153); it never touches the delete intent, so a swipe still only hides.
+            if (it.text) b.addAction(
+                NotificationCompat.Action.Builder(0, label, action(n, ACTION_REPLY, it.reply, typed = true))
+                    .addRemoteInput(RemoteInput.Builder(EXTRA_TEXT).setLabel(label).build()).setAllowGeneratedReplies(false).build(),
+            )
+            else b.addAction(0, label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) }
                 ?: it.device?.let { d -> action(n, ACTION_DEVICE, index = d) } ?: action(n, it.action!!))
         }
         nm.notify(n.id, 0, b.build())
@@ -310,7 +330,7 @@ class Tray(private val ctx: Context) {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
-    private fun action(n: Notif, action: String, reply: String? = null, index: Int? = null): PendingIntent {
+    private fun action(n: Notif, action: String, reply: String? = null, index: Int? = null, typed: Boolean = false): PendingIntent {
         val server = App.of(ctx).serverUrl // a tap after a server switch must not reach the new server
         val i = Intent(ctx, ActionReceiver::class.java)
             .setAction(action)
@@ -319,6 +339,7 @@ class Tray(private val ctx: Context) {
                 Uri.parse("clrd://n/${n.id}/$action").buildUpon().appendQueryParameter("server", server)
                     // a reply also carries the version shown, so a tap on an older post cannot send a newer seq
                     .apply { if (reply != null) appendQueryParameter("reply", reply).appendQueryParameter("seq", "${n.seq}") }
+                    .apply { if (typed) appendQueryParameter("text", "1") }
                     // a device button carries its index and the version shown, so a tap runs only the button it showed
                     .apply { if (index != null) appendQueryParameter("i", "$index").appendQueryParameter("seq", "${n.seq}") }.build(),
             )
@@ -327,7 +348,9 @@ class Tray(private val ctx: Context) {
             .putExtra(EXTRA_REPLY, reply)
             .putExtra(EXTRA_SEQ, n.seq)
             .putExtra(EXTRA_INDEX, index ?: -1)
-        return PendingIntent.getBroadcast(ctx, 0, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        // Only the typed answer is mutable: Android writes the text into it. The explicit receiver keeps it ours.
+        val mutable = if (typed && android.os.Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else if (typed) 0 else PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getBroadcast(ctx, 0, i, mutable or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     companion object {
@@ -347,6 +370,7 @@ class Tray(private val ctx: Context) {
         const val EXTRA_SERVER = "server"
         const val EXTRA_REPLY = "reply"
         const val EXTRA_SEQ = "seq"
+        const val EXTRA_TEXT = "text" // the RemoteInput key of a typed answer (#153)
         const val EXTRA_INDEX = "index"
     }
 }

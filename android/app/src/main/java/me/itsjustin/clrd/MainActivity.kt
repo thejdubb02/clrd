@@ -566,10 +566,14 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
             val answers = if (n.isFinal) emptyList() else TrayButton.replies(n)
             if (answers.isNotEmpty() && !open) Text(stringResource(R.string.tap_to_answer), color = b.slate, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
             if (answers.isNotEmpty() && open) Row(Modifier.horizontalScroll(rememberScrollState())) { // a long label never hides the next one
+                var typing by remember { mutableStateOf(false) }
                 answers.forEach { a ->
-                    TextButton(onClick = { App.of(ctx).act(n.id, "reply", org.json.JSONObject().put("reply", a.reply).put("seq", n.seq).toString()) }) { Text(a.label, color = b.ink) }
+                    TextButton(onClick = { if (a.text) typing = true else App.of(ctx).act(n.id, "reply", org.json.JSONObject().put("reply", a.reply).put("seq", n.seq).toString()) }) { Text(a.label, color = b.ink) }
                 }
+                answers.firstOrNull { it.text }?.let { a -> if (typing) ReplyBox(n, a) { typing = false } }
             }
+            // What was typed, as plain text: never Markdown (#153).
+            if (n.replyText.isNotEmpty() && open) Text(stringResource(R.string.answered_text, n.replyText), color = b.body, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, end = 8.dp))
             Spacer(Modifier.height(8.dp))
             Text(meta(ctx, n), style = Mono, color = b.slate, maxLines = 2, overflow = TextOverflow.Ellipsis) // 2: a full date is long
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -784,6 +788,33 @@ private fun MarkButton(app: App, n: Notif) {
             }
         },
         dismissButton = { TextButton(onClick = { open = false }, enabled = !busy) { Text(stringResource(R.string.link_cancel)) } },
+    )
+}
+
+/** The reply box for a text action (#153): sends the trimmed text, 1 to 1000 characters; a refused one comes back. */
+@Composable
+private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
+    val b = LocalBrand.current
+    val app = App.of(LocalContext.current)
+    var text by rememberSaveable { mutableStateOf(app.drafts[n.id].orEmpty()) }
+    val seq = rememberSaveable { n.seq } // the question as the box opened: an edit since then gets 409, never this answer
+    val body = TrayButton.typed(a.reply!!, text, seq)
+    val count = text.trim().let { it.codePointCount(0, it.length) }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(a.label) },
+        text = {
+            Column {
+                OutlinedTextField(text, { text = it }, modifier = Modifier.fillMaxWidth())
+                Text(stringResource(R.string.reply_text_count, count), style = Mono, color = if (count > 1000) b.signal else b.slate, modifier = Modifier.padding(top = 4.dp))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { app.drafts.remove(n.id); app.act(n.id, "reply", body!!); close() }, enabled = body != null) {
+                Text(stringResource(R.string.reply_text_send), color = b.ink, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.link_cancel)) } },
     )
 }
 

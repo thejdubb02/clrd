@@ -24,6 +24,8 @@ class App : Application() {
     val io = Executors.newSingleThreadExecutor()
     /** User actions only, and they never wait on the network, so a tray tap is saved within its goAsync() deadline. */
     val acts = Executors.newSingleThreadExecutor()
+    /** Typed answers the server refused, by notification id, so the reply box opens with them again (#153). */
+    val drafts = java.util.concurrent.ConcurrentHashMap<String, String>()
     /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
     private val sends = Executors.newSingleThreadExecutor()
     private var sendNotBefore = 0L // System.nanoTime(); a busy server's Retry-After, touched only on [sends]
@@ -384,8 +386,13 @@ class RoomStore(private val app: App) : Store {
             "confirm" -> R.string.reply_sent_to_confirm
             "approve_denied" -> R.string.reply_approve_denied
             "own_request" -> R.string.reply_own_request
+            "bad_request" -> R.string.reply_text_refused
             else -> R.string.reply_changed
         }
+        // A refused typed answer (400, 403) is kept for the reply box (#153); a changed question drops it.
+        val typed = runCatching { JSONObject(p.body).optString("text") }.getOrDefault("")
+        if (outcome == "bad_request" || outcome == "approve_denied" || outcome == "own_request") { if (typed.isNotEmpty()) app.drafts[p.notifId] = typed }
+        else app.drafts.remove(p.notifId)
         android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show() }
     }
 

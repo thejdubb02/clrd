@@ -30,6 +30,7 @@ data class Notif(
     @ColumnInfo(defaultValue = "markdown") val format: String = "markdown", // or "text": shown exactly as sent
     @ColumnInfo(defaultValue = "0") val silenced: Boolean = false, // a server silence matched this event: show, never alert (#328)
     @ColumnInfo(defaultValue = "") val marks: String = "", // raw JSON array of {by, mark, note, link}, "" if none
+    @ColumnInfo(defaultValue = "") val replyText: String = "", // what was typed for a text action (#153), shown as plain text
 ) {
     /** Who saw or actioned it, for the card: "stew actioned: filed relay#512". */
     val markLines: List<String> get() = runCatching {
@@ -81,6 +82,7 @@ data class Notif(
             updatedAt = o.str("updated_at")?.let(::millis) ?: 0,
             seq = o.optLong("seq"),
             reply = o.str("reply") ?: "",
+            replyText = o.str("reply_text") ?: "",
             icon = o.str("icon") ?: "", // events logged before the server had icons leave it out
             attachment = o.optJSONObject("attachment")?.toString() ?: "",
             format = o.str("format") ?: "markdown", // events logged before formats existed are Markdown
