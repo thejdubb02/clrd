@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -179,16 +180,27 @@ func (s *Server) handleInviteClaim(w http.ResponseWriter, r *http.Request) error
 	defer tx.Rollback()
 	uid := randomString(12)
 	gs, _ := json.Marshal(iv.grants)
-	_, err = tx.ExecContext(ctx, `INSERT INTO people (id, name, grants, created_at, kind, owner) VALUES (?,?,?,?,'agent',?)`,
-		uid, iv.name, string(gs), ms(now()), iv.owner)
+	// Only while the creator's token still exists: revoking it kills its invites.
+	res, err := tx.ExecContext(ctx, `INSERT INTO people (id, name, grants, created_at, kind, owner)
+	  SELECT ?,?,?,?,'agent',id FROM tokens WHERE id = ?`, uid, iv.name, string(gs), ms(now()), iv.owner)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "a user named %q was made since the invite; ask for a new one", iv.name)
 	}
 	if err != nil {
 		return err
 	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errf(410, "gone", "the invite's maker was revoked")
+	}
+	// Token scopes are only those some grant holds: publish-only stays publish-only.
+	var scopes []string
+	for _, sc := range []string{ScopeRead, ScopePublish} {
+		if slices.ContainsFunc(iv.grants, func(g Grant) bool { return slices.Contains(g.Scopes, sc) }) {
+			scopes = append(scopes, sc)
+		}
+	}
 	raw := tokenPrefix + randomString(32)
-	t := &Token{ID: randomString(12), Name: iv.name, Scopes: []string{ScopeRead, ScopePublish}, Grants: iv.grants,
+	t := &Token{ID: randomString(12), Name: iv.name, Scopes: scopes, Grants: iv.grants,
 		User: uid, Approve: ApproveDenied, CreatedAt: now()}
 	if err := insertToken(ctx, tx, t, hashToken(raw)); err != nil {
 		return err

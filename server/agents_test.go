@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -207,5 +208,27 @@ func TestAgentInviteAdmin(t *testing.T) {
 	}
 	if code, _ := call(t, ts, "POST", "/api/v1/agents/claim", "", map[string]string{"code": "nope"}); code != 410 {
 		t.Fatalf("unknown code: %d, want 410", code)
+	}
+}
+
+// Review of #454: a publish-only maker gives a publish-only agent, and
+// revoking the maker kills its invites not yet claimed.
+func TestAgentInviteLimits(t *testing.T) {
+	s, ts, _ := newTest(t)
+	pubber := childOf(t, s, mkToken(t, s, "pubber", []string{ScopePublish}, []string{"alerts"}))
+	_, iv := call(t, ts, "POST", "/api/v1/agents/invite", pubber, map[string]any{"name": "p", "topics": []string{"alerts"}})
+	_, cl := call(t, ts, "POST", "/api/v1/agents/claim", "", map[string]string{"code": iv["code"].(string)})
+	agent, _ := cl["token"].(string)
+	if code, _ := call(t, ts, "GET", "/api/v1/devices/log", agent, nil); code != 403 {
+		t.Fatalf("publish-only agent read the device log: %d", code)
+	}
+
+	ot, ops, _ := s.CreateToken(context.Background(), "ops", "denied", []string{ScopeAdmin}, nil)
+	_, iv = call(t, ts, "POST", "/api/v1/agents/invite", ops, map[string]any{"name": "q", "topics": []string{"alerts"}})
+	if err := s.DeleteToken(context.Background(), ot.ID); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/agents/claim", "", map[string]string{"code": iv["code"].(string)}); code != 410 {
+		t.Fatalf("claim after the maker was revoked: %d, want 410", code)
 	}
 }
