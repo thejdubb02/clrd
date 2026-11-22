@@ -764,7 +764,9 @@
       if (!b.dataset.for && !(t > new Date())) return say('Pick a time in the future.');
       body = b.dataset.for ? { for: b.dataset.for } : { until: t.toISOString() };
     }
-    if (act === 'reply') body = { reply: b.value, seq: Number(c.dataset.seq) }; // 409 if it changed since this card
+    const typed = act === 'reply' && b.form.elements.text; // a typed answer (#153)
+    if (typed && !typed.value.trim()) { typed.focus(); return say('Type an answer first.'); }
+    if (act === 'reply') body = { reply: b.value, text: typed ? typed.value : undefined, seq: Number(c.dataset.seq) }; // 409 if it changed since this card
     b.disabled = true;
     const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, body, act === 'reply');
     b.disabled = false;
@@ -775,6 +777,8 @@
       const why = r.status === 202 ? 'Sent for confirmation. An allowed device has to confirm it.'
         : !r.ok && ({ approve_denied: 'This device may not answer approval requests. An allowed device can change that in Settings.',
           own_request: 'This device cannot answer a request its own token sent.',
+          // Too long or empty: the server says which; what was typed stays.
+          bad_request: typed && n.error && `Not answered: ${n.error}`,
           conflict: 'Not answered: it was answered, cleared or changed since. Reload to see it now.' }[n.code] || `The server refused that (${r.status}). Nothing changed.`);
       if (!why) { tell(`Answered ${b.textContent}.`); return refresh(); }
       let p = c.querySelector('[data-note]');

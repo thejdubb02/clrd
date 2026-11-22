@@ -358,13 +358,12 @@ func (a webAPI) DeleteHook(r *http.Request, topic, name string) error {
 	return webError(err)
 }
 
-func (a webAPI) Reply(r *http.Request, id, reply string, seq int64) error {
+func (a webAPI) Reply(r *http.Request, id, reply, text string, seq int64) error {
 	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	// The form has no text box yet (#153 web half), so a text action gets 400.
-	_, err := a.s.Reply(r.Context(), tok, id, reply, "", "web_form", seq)
+	_, err := a.s.Reply(r.Context(), tok, id, reply, text, "web_form", seq)
 	return webError(err) // the page shows why: not allowed, its own request, or answered already
 }
 

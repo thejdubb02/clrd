@@ -70,7 +70,8 @@ type Notification struct {
 	State       string      `json:"state"`
 	StateBy     string      `json:"state_by"`
 	StateByID   string      `json:"state_by_id"`
-	Reply       string      `json:"reply"` // the reply action tapped, "" until someone answers
+	Reply       string      `json:"reply"`      // the reply action tapped, "" until someone answers
+	ReplyText   string      `json:"reply_text"` // what was typed with a text reply action (#153), "" for none
 	SnoozeUntil *time.Time  `json:"snooze_until"`
 	Repeat      *Repeat     `json:"repeat"` // re-alert until answered (docs/repeat.md), or nil
 	Marks       []Mark      `json:"marks"`  // who saw or dealt with it (docs/SPEC.md section 2)
@@ -102,6 +103,7 @@ type Action struct {
 	Label     string           `json:"label"`
 	URL       string           `json:"url"`
 	Reply     string           `json:"reply,omitempty"`
+	Text      bool             `json:"text,omitempty"` // answered with typed text (#153)
 	HTTP      *HTTPAction      `json:"http,omitempty"`
 	Broadcast *BroadcastAction `json:"broadcast,omitempty"`
 }
@@ -153,14 +155,24 @@ func (n Notification) Links() (out []Action) {
 	return out
 }
 
-// Replies are the answer buttons still open: none once someone has answered.
+// Replies are the plain answer buttons still open: none once someone has answered.
 func (n Notification) Replies() (out []Action) {
 	for _, a := range n.Actions {
-		if a.Reply != "" && n.Reply == "" {
+		if a.Reply != "" && !a.Text && n.Reply == "" {
 			out = append(out, a)
 		}
 	}
 	return out
+}
+
+// TextReply is the open reply answered with typed text (#153), or nil.
+func (n Notification) TextReply() *Action {
+	for _, a := range n.Actions {
+		if a.Reply != "" && a.Text && n.Reply == "" {
+			return &a
+		}
+	}
+	return nil
 }
 
 // DeviceActions are the http and broadcast buttons, shown read-only (#450).
@@ -519,8 +531,9 @@ type API interface {
 	// Act changes one notification for the signed-in browser: ack, snooze
 	// (until is set), dismiss or reopen.
 	Act(r *http.Request, id, action string, until *time.Time) error
-	// Reply answers with one of the notification's reply actions, as shown at seq.
-	Reply(r *http.Request, id, reply string, seq int64) error
+	// Reply answers with one of the notification's reply actions, as shown at seq;
+	// text is what was typed for a text action (#153), "" for a plain one.
+	Reply(r *http.Request, id, reply, text string, seq int64) error
 	// Mark sets the reader's own mark (seen or actioned); mark "" removes it.
 	Mark(r *http.Request, id, mark, note, link string) error
 	// StartSilence (dur is a Go duration) and EndSilence back the Settings
@@ -1034,7 +1047,7 @@ func Handler(api API, baseURL string) http.Handler {
 			if seq, perr := strconv.ParseInt(f.Get("seq"), 10, 64); perr != nil || seq <= 0 {
 				err = errors.New("reply without the card's seq")
 			} else {
-				err = api.Reply(r, f.Get("id"), reply, seq)
+				err = api.Reply(r, f.Get("id"), reply, f.Get("text"), seq)
 			}
 		} else if act == "ack" || act == "snooze" || act == "dismiss" || act == "reopen" {
 			err = api.Act(r, f.Get("id"), act, until)

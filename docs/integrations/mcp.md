@@ -98,8 +98,9 @@ wait_for_reply {"id": "<id from send>", "timeout_s": 600}
 The text is plain, trimmed, 1 to 1000 characters, and follows the same device
 rules as a tap (a denied device cannot answer, an ask device needs a confirm,
 and the sender never answers its own question). The Android app types it in
-a reply box on the card or inline in the tray. The web inbox does not yet;
-any other client sends it as `text` on `POST /api/v1/notifications/{id}/reply`.
+a reply box on the card or inline in the tray, and the web inbox in a text box
+on the card. Any other client sends it as `text` on
+`POST /api/v1/notifications/{id}/reply`.
 
 `update` needs `publish` on the topic and works until the notification is
 dismissed or resolved. It refuses a notification with answer buttons

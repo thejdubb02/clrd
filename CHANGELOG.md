@@ -11,16 +11,22 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: a question whose reply asks for text gets a text box on its card. The
+  answer shows on the card once sent, and an Ask device confirm shows the
+  text being confirmed (#153).
 - Server and API: typed answers (#153). One reply action can set
   `"text": true`; answering it takes 1 to 1000 characters of plain text,
   kept as `reply_text` and returned by MCP `wait_for_reply` as `text`. Same
-  Allowed, Ask and Denied rules as a tap. The web inbox does not offer a
-  text box yet. Nothing changes for senders that do not ask for text.
+  Allowed, Ask and Denied rules as a tap.
+  Nothing changes for senders that do not ask for text.
 - Android: typed answers (#153). A reply action that asks for text opens a
   reply box on the card, and in the tray it is an inline reply field. The
   text is trimmed and must be 1 to 1000 characters; a refused answer says
   why and comes back in the box. An answered card shows the typed text as
   plain text. Swiping the notification still only hides it on that phone.
+  Allowed, Ask and Denied rules as a tap. The Android app does not offer a
+  text box yet. Nothing changes for senders that do not ask for
+  text.
 
 ### Security
 
