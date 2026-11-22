@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -321,6 +322,42 @@ func TestSnoozeWakes(t *testing.T) {
 	if _, n := call(t, ts, "GET", "/api/v1/notifications/"+id, admin, nil); n["state"] != Active || n["state_by"] != "server" || n["snooze_until"] != nil {
 		t.Fatalf("after wake: %v", n)
 	}
+}
+
+// Run must not return while a background job is still writing, or the
+// caller closes the database under it (#486). Holding s.mu parks every job
+// that writes on its first run, whenever its goroutine gets there.
+func TestRunWaitsForJobs(t *testing.T) {
+	s, _, _ := newTest(t)
+	s.opt.Listen = "127.0.0.1:0"
+	up := listenSignal(make(chan struct{}))
+	s.log = slog.New(slog.NewTextHandler(up, nil))
+	s.mu.Lock()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	<-up // past startup: the jobs are started
+	cancel()
+	select {
+	case <-done:
+		s.mu.Unlock()
+		t.Fatal("Run returned while a job was still waiting to write")
+	case <-time.After(300 * time.Millisecond):
+	}
+	s.mu.Unlock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// listenSignal is a log writer that closes once Run logs it is listening.
+type listenSignal chan struct{}
+
+func (c listenSignal) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("clrd listening")) {
+		close(c)
+	}
+	return len(p), nil
 }
 
 func TestRevokeClosesIdleStreams(t *testing.T) {

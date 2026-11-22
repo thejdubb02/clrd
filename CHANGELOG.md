@@ -87,6 +87,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: shutdown now waits for background jobs (webhooks out, snooze
+  wake, expiry, repeats, check-ins, prune) to stop before the database
+  closes, so a job mid-write is no longer cut short (#486).
 - Server: two admins saving the ntfy origins list at the same moment can no
   longer leave the server using a different list from the one saved (#497).
 - Undo after Clear on a snoozed card now puts it back snoozed in one step, so
