@@ -47,6 +47,7 @@ A **notification**:
   "attachment": {"name": "report.pdf", "url": "/api/v1/files/9f2c...", "type": "application/pdf", "size": 48213}, // or null
   "actions": [{"label": "Open draft", "url": "https://..."}, {"label": "Yes", "reply": "yes"}],
   "reply": "",                 // the reply action tapped, "" until someone answers
+  "reply_text": "",            // what was typed with a text reply action, plain text; "" for none
   "state": "active",
   "state_by": "pixel-9",       // device name that made the last change
   "state_by_id": "k3j9x2m1q8wz", // that device's token id ("" for the server); names can repeat, ids cannot
@@ -162,6 +163,41 @@ refuses a tap, even after older events are pruned (#452). An `acknowledged` noti
 and `state_by` is who tapped. The first answer wins: a second one gets 409.
 Any later state change except dismiss and resolve (reopen, snooze, a plain
 ack) clears `reply`. Reply actions are not sent to ntfy subscribers.
+
+**Typed answers** (#153): a reply action with `"text": true`, as in
+`{"label":"Other","reply":"other","text":true}`, is answered with typed text
+instead of a plain tap. At most one reply action per notification has it, and
+only a reply action may (400 otherwise). Senders that never set `text` see no
+change. The client contract:
+
+- Show a text box for the action with `text: true`; its other reply actions
+  stay plain buttons. Send `{"reply":"other","text":"...","seq":N}` to the
+  reply route. The server trims spaces and line breaks at both ends and keeps
+  the ones inside. The text must be 1 to 1000 characters (Unicode code
+  points, not bytes) after trimming.
+- 400 `bad_request`: no text for a text action, text for a plain one, or over
+  1000 characters. Keep what was typed and show the error. A client that
+  does not know `text` and taps the action gets this 400 too, so it answers
+  nothing by mistake.
+- 403 `approve_denied` (this device may not answer) and 403 `own_request`
+  (the token tree that sent it): the same rules as a tap (section 4). Show
+  why; nothing changed.
+- 409 `conflict`: already answered, cleared, or the question changed since
+  `seq`. Drop the text box and show the current row.
+- 202: this device is ask. The body is the confirm prompt; the question stays
+  unanswered until an allowed device confirms. The prompt's message ends with
+  `Answer: <text>` and its `format` is `text`, so the typed text is never
+  rendered as markdown. The same text again returns the same prompt; other
+  text edits that same prompt (an `updated` event, new `seq`), so a confirm
+  sent with the `seq` it showed before the edit gets 409.
+- 200: answered. The row has `reply`, `reply_text` and state `acknowledged`,
+  in one `state` event, like a tap.
+
+Every device shows `reply_text` on an answered row as plain text, never
+markdown or HTML. It is cleared together with `reply` (a new question,
+reopen, snooze, a plain ack) and kept on dismiss and resolve. Hooks get it in
+the event body like any other field. `reply_text` is in every notification
+JSON, `""` when there is none.
 
 **Device actions** (#401, ntfy's `http` and `broadcast` buttons) are a third
 and fourth kind: `{"label":"Off","http":{"method":"PUT","url":"https://...",
@@ -637,7 +673,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/notifications/{id}` | One. |
 | PATCH | `/api/v1/notifications/{id}` | Body `{"message":"..."}`: replace the message of an open notification in place (same id and state, an `updated` event). Scope publish on its topic; 409 once dismissed or resolved, or if it has reply buttons (a tap answers the text shown; link buttons are fine). |
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
-| POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`: answer with one of its reply actions (section 2). 400 if not one of them, 409 if already answered or final, 403 `approve_denied` from a device not allowed to approve, 403 `own_request` from the token tree that sent it, 202 with a confirm prompt from an ask device (section 4). |
+| POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`, plus `"text"` for a text action and optional `"seq"`, `"via"`: answer with one of its reply actions (section 2). 400 if not one of them, or the text is missing, not wanted or over 1000 characters, 409 if already answered or final, 403 `approve_denied` from a device not allowed to approve, 403 `own_request` from the token tree that sent it, 202 with a confirm prompt from an ask device (section 4). |
 | POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. |
 | POST | `/api/v1/notifications/{id}/mark` | Body `{"mark":"seen"\|"actioned","note"?,"link"?}`: set your mark (section 2). Scope read on its topic. Changes no state. |
 | DELETE | `/api/v1/notifications/{id}/mark` | Remove your own mark. |
@@ -843,7 +879,8 @@ the settings, arguments change those fields), `get(id)`, `update(id, message)` (
 dismissed or an action is tapped; returns which, so an agent can ask a human
 "yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
-`reply` (the state). `wait_for_reply` waits at most 600 s; on a timeout it
+`reply` (the state). One action may set `"text": true` (see Typed answers);
+its answer also returns `text`, what the human typed. `wait_for_reply` waits at most 600 s; on a timeout it
 returns the notification only while the token can still read it. `devices()`,
 `device_log()` and `unlink(id)` are the device list, its log and unlink,
 `sound(id?, sound?)` lists the sound names or sets one device's sound,

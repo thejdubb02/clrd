@@ -14,7 +14,7 @@ Tools:
 
 | Tool | Arguments | Does |
 |---|---|---|
-| `send` | `topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?, live?, devices?` | Publish. `format` is `markdown` (default) or `text`. `icon` is an http(s) image URL. `attachment` links a file, `{"url":"https://...","name":"report.pdf"}`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. `repeat` (`"5m"`, 1m to 24h) alerts again on that schedule until someone acts on it, at most `repeat_times` more times (default 10); see [Repeat until acknowledged](../repeat.md). `live` sends only to ntfy streams open now and keeps nothing. `devices` (names or ids from `devices`, at most 20) makes only those devices alert; every other reader lists it silently. |
+| `send` | `topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?, live?, devices?` | Publish. `format` is `markdown` (default) or `text`. `icon` is an http(s) image URL. `attachment` links a file, `{"url":"https://...","name":"report.pdf"}`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`; one of them may add `"text": true` to take a typed answer (at most 1000 characters). `repeat` (`"5m"`, 1m to 24h) alerts again on that schedule until someone acts on it, at most `repeat_times` more times (default 10); see [Repeat until acknowledged](../repeat.md). `live` sends only to ntfy streams open now and keeps nothing. `devices` (names or ids from `devices`, at most 20) makes only those devices alert; every other reader lists it silently. |
 | `list` | `topic?, state?` | List, default `open`. |
 | `topics` | none | Topics the token can read, with how many are open in each. |
 | `format_check` | `topic?, by?` | Topics whose newest messages are hard to read (Markdown sent as plain text, unknown `:shortcodes:`, no title, very long, raw JSON), each with a prompt that says how to fix the sender. `by: "sender"` splits each topic by sending token. Advice only. See [Message formatting](../formatting.md#format-check). |
@@ -27,7 +27,7 @@ Tools:
 | `resolve` | `id` or `topic + external_id` | Clear it everywhere. |
 | `snooze` | `id, for` | Snooze, e.g. `for: "1h"`. |
 | `mark` | `id, mark?, note?, link?` | Mark it `seen` or `actioned` (note and link optional) so everyone on the topic sees you handled it. Clears nothing. No `mark` removes yours. |
-| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped. Default 60 s, max 600 s. |
+| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped, and `text` when that button has `"text": true`. Default 60 s, max 600 s. |
 | `devices` | none | Every linked device this token can see: name, kind (token, browser or phone), how it was linked, last seen. Never a secret. |
 | `device_log` | none | The last 200 links, sign-ins and unlinks, newest first. |
 | `unlink` | `id` | Sign out a browser or phone from `devices` at once. Unlinking a phone also signs out the browsers it approved. |
@@ -85,6 +85,21 @@ wait_for_reply {"id": "<id from send>", "timeout_s": 600}
 
 The first tap wins; a second phone gets told it is already answered. A plain
 ack (no button) has no `answer`, and dismiss means no.
+
+To let the human type an answer, mark one button `"text": true`:
+
+```json
+send {"topic": "agents", "message": "When should I deploy?", "id": "deploy-2",
+      "actions": [{"label": "Now", "reply": "now"}, {"label": "Other", "reply": "other", "text": true}]}
+wait_for_reply {"id": "<id from send>", "timeout_s": 600}
+-> {"reply": "acknowledged", "answer": "other", "text": "after 5pm", "by": "pixel-9", "notification": {...}}
+```
+
+The text is plain, trimmed, 1 to 1000 characters, and follows the same device
+rules as a tap (a denied device cannot answer, an ask device needs a confirm,
+and the sender never answers its own question). Typing it is coming to the
+web inbox and the Android app; today a client sends it as `text` on
+`POST /api/v1/notifications/{id}/reply`.
 
 `update` needs `publish` on the topic and works until the notification is
 dismissed or resolved. It refuses a notification with answer buttons

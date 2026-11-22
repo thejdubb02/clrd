@@ -748,6 +748,10 @@
           "type": "string",
           "example": "yes"
          },
+         "text": {
+          "type": "string",
+          "description": "Typed answer, only for a reply action with text: true. Trimmed, then 1 to 1000 characters; 400 if missing, too long, or sent to an action without text."
+         },
          "seq": {
           "type": "integer",
           "format": "int64",
@@ -5660,7 +5664,7 @@
    },
    "Action": {
     "type": "object",
-    "description": "A link (url) or an answer button (reply), exactly one of the two. At most 3 reply actions; reply values are 1 to 64 of A-Z a-z 0-9 _ - and unique.",
+    "description": "A link (url) or an answer button (reply), exactly one of the two. At most 3 reply actions; reply values are 1 to 64 of A-Z a-z 0-9 _ - and unique. At most one reply action may set text: true; answering it needs typed text.",
     "properties": {
      "label": {
       "type": "string"
@@ -5672,6 +5676,10 @@
       "type": "string",
       "example": "yes",
       "pattern": "^[A-Za-z0-9_-]{1,64}$"
+     },
+     "text": {
+      "type": "boolean",
+      "description": "This reply action is answered with typed text (reply route body text)."
      }
     },
     "required": [
@@ -5742,6 +5750,10 @@
      "reply": {
       "type": "string",
       "description": "The reply action tapped, empty until someone answers"
+     },
+     "reply_text": {
+      "type": "string",
+      "description": "What the human typed for a text reply action, empty otherwise. Plain text, never markdown. Cleared with reply."
      },
      "state": {
       "type": "string",

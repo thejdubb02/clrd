@@ -728,13 +728,14 @@ func (s *Server) routesSetup() {
 	s.api("POST /api/v1/notifications/{id}/reply", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
 			Reply string `json:"reply"`
+			Text  string `json:"text"`
 			Seq   int64  `json:"seq"`
 			Via   string `json:"via"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		n, err := s.Reply(r.Context(), tok, r.PathValue("id"), in.Reply, cleanVia(in.Via, "api"), in.Seq)
+		n, err := s.Reply(r.Context(), tok, r.PathValue("id"), in.Reply, in.Text, cleanVia(in.Via, "api"), in.Seq)
 		if err != nil {
 			return err
 		}

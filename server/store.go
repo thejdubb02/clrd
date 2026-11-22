@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   silenced INTEGER NOT NULL DEFAULT 0,
   repeat TEXT NOT NULL DEFAULT '',
   marks TEXT NOT NULL DEFAULT '',
-  devices TEXT NOT NULL DEFAULT ''
+  devices TEXT NOT NULL DEFAULT '',
+  reply_text TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -200,6 +201,7 @@ type Action struct {
 	HTTP      *HTTPAction      `json:"http,omitempty"`
 	Broadcast *BroadcastAction `json:"broadcast,omitempty"`
 	Clear     bool             `json:"clear,omitempty"`
+	Text      bool             `json:"text,omitempty"` // a reply that is answered with typed text (#153)
 }
 
 // Notification is the server-owned record every client mirrors.
@@ -219,7 +221,8 @@ type Notification struct {
 	file        string      // uploaded file id, "" for none or external
 	sender      string      // top token of the last sender's tree: it may not answer it (#187)
 	confirm     string      // a confirm prompt: its confirmLink as JSON, "" for any other (#187)
-	Reply       string      `json:"reply"` // the reply action tapped, "" until one is
+	Reply       string      `json:"reply"`      // the reply action tapped, "" until one is
+	ReplyText   string      `json:"reply_text"` // what was typed with a text reply action, "" for none (#153)
 	State       string      `json:"state"`
 	StateBy     string      `json:"state_by"`
 	StateByID   string      `json:"state_by_id"` // token id: names can repeat
@@ -303,7 +306,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -431,7 +434,7 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks, devices`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks, devices, reply_text`
 
 type scanner interface{ Scan(...any) error }
 
@@ -442,7 +445,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
-		&n.Silenced, &rep, &n.sender, &n.confirm, &marks, &devs)
+		&n.Silenced, &rep, &n.sender, &n.confirm, &marks, &devs, &n.ReplyText)
 	if err != nil {
 		return nil, err
 	}
@@ -507,15 +510,15 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 	} else {
 		n.Devices = []string{} // every event says [] for everyone, never null
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(28)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(29)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm, marks=excluded.marks, devices=excluded.devices`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm, marks=excluded.marks, devices=excluded.devices, reply_text=excluded.reply_text`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep, n.sender, n.confirm, marks, devs)
+		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -766,6 +769,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			if err == nil {
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
+				n.ReplyText = ""
 				replaced, n.Attachment, n.file, n.ExpiresAt, n.Repeat, n.sender = n.file, in.Attachment, in.file, expires, repeat, sender
 				n.Devices = in.Devices
 				if in.Reopen && n.State == Acknowledged {
@@ -1000,11 +1004,14 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 	return senderView(tok, out, false), nil
 }
 
+// maxReplyText caps a typed answer (#153), in characters.
+const maxReplyText = 1000
+
 // checkActions: each action is one of a link, a reply, an http request or a
 // broadcast; reply values are short, unique, and at most 3 (what an Android
-// tray entry shows).
+// tray entry shows). At most one reply action takes typed text.
 func checkActions(as []Action) error {
-	seen, dev := map[string]bool{}, 0
+	seen, dev, texts := map[string]bool{}, 0, 0
 	for _, a := range as {
 		if dev += btoi(isDeviceAction(a)); dev > 3 {
 			return errf(400, "bad_request", "at most 3 http or broadcast actions")
@@ -1014,6 +1021,9 @@ func checkActions(as []Action) error {
 		}
 		if err := checkDeviceAction(a); err != nil {
 			return err
+		}
+		if texts += btoi(a.Text); a.Text && a.Reply == "" || texts > 1 {
+			return errf(400, "bad_request", "text is for one reply action only")
 		}
 		if a.Reply == "" {
 			continue
@@ -1038,7 +1048,9 @@ func checkActions(as []Action) error {
 // sender put a new question under the same key), the tap gets 409. A tap
 // from an ask device leaves it unanswered and returns the confirm prompt
 // instead, a notification with another id (#187).
-func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, seq int64) (*Notification, error) {
+// A text reply action takes 1 to maxReplyText characters of typed text, kept
+// as reply_text; any other takes none.
+func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, text, via string, seq int64) (*Notification, error) {
 	if tok == nil {
 		return nil, errf(401, "unauthorized", noToken)
 	}
@@ -1055,8 +1067,17 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 		if err := s.changedSince(ctx, tx, n, seq); err != nil {
 			return nil, err
 		}
-		if reply == "" || !slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply == reply }) {
+		i := slices.IndexFunc(n.Actions, func(a Action) bool { return a.Reply == reply })
+		if reply == "" || i < 0 {
 			return nil, errf(400, "bad_request", "%q is not one of this notification's replies", reply)
+		}
+		if !n.Actions[i].Text && text != "" {
+			return nil, errf(400, "bad_request", "reply %q takes no text", reply)
+		} else if text = strings.TrimSpace(text); n.Actions[i].Text && text == "" {
+			return nil, errf(400, "bad_request", "reply %q needs text", reply)
+		}
+		if utf8.RuneCountInString(text) > maxReplyText {
+			return nil, errf(400, "bad_request", "text over %d characters", maxReplyText)
 		}
 		v, err := mayApprove(ctx, tx, tok, n)
 		if err != nil {
@@ -1070,7 +1091,7 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 		}
 		var evs []Event
 		if v == ApproveAsk {
-			out, evs, err = s.askConfirm(ctx, tx, tok, n, reply)
+			out, evs, err = s.askConfirm(ctx, tx, tok, n, reply, text)
 			return evs, err
 		}
 		prompt := n.confirm != ""
@@ -1079,7 +1100,7 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 				return nil, err
 			}
 		}
-		out, n.Reply, n.State, n.SnoozeUntil = n, reply, Acknowledged, nil
+		out, n.Reply, n.ReplyText, n.State, n.SnoozeUntil = n, reply, text, Acknowledged, nil
 		n.setBy(tok)
 		n.stopRepeat()
 		// A tap on a confirm prompt is not an answer to the topic's hooks.
@@ -1148,7 +1169,7 @@ func transition(n *Notification, target string, by *Token, via string, until *ti
 		r.Next = &next
 	}
 	if target != Dismissed && target != Resolved {
-		n.Reply = "" // an answer stands only with the tap's own ack; dismiss and resolve keep it as history
+		n.Reply, n.ReplyText = "", "" // an answer stands only with the tap's own ack; dismiss and resolve keep it as history
 	}
 	if target == Snoozed {
 		u := until.UTC().Truncate(time.Millisecond)
