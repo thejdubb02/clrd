@@ -43,7 +43,7 @@ interface Store {
 
     /**
      * How a reply tap ended when it did not simply count (#330): `confirm` (sent to an allowed device
-     * to confirm), `approve_denied`, `own_request` or `conflict` (the question changed).
+     * to confirm), `approve_denied`, `own_request`, `conflict` (the question changed) or `bad_request` (typed text refused, #153).
      */
     fun replyOutcome(p: Pending, outcome: String) {}
 }
@@ -340,7 +340,7 @@ private fun sendOne(store: Store, api: Api, p: Pending) {
     } catch (e: HttpError) {
         if (!e.isPermanent) throw e
         // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
-        if (p.action == "reply" && (e.code == 403 || e.code == 409)) { if (told.add(p.key)) store.replyOutcome(p, if (e.code == 409) "conflict" else e.reason) }
+        if (p.action == "reply" && e.code in setOf(400, 403, 409)) { if (told.add(p.key)) store.replyOutcome(p, when (e.code) { 409 -> "conflict"; 400 -> "bad_request"; else -> e.reason }) }
         else mine = false
         // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
         // so take the server's current row instead. A fetch that may work later throws and keeps the

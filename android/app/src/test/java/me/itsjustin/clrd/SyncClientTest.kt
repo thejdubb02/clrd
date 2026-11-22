@@ -84,6 +84,7 @@ class SyncClientTest {
                         else if (path.contains("stale")) MockResponse().setResponseCode(409).setBody("""{"error":"changed"}""")
                         else if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
                         else if (path.contains("denied")) MockResponse().setResponseCode(403).setBody("""{"error":"no","code":"approve_denied"}""")
+                        else if (path.contains("badtext")) MockResponse().setResponseCode(400).setBody("""{"error":"text over 1000 characters","code":"bad_request"}""")
                         else if (path.contains("asked")) MockResponse().setResponseCode(202).setBody(notifJson("prompt", "active", 7))
                         else MockResponse().setBody(answer(path))
                     }
@@ -304,6 +305,17 @@ class SyncClientTest {
         assertEquals(emptyList<Pending>(), store.queue)
         assertEquals(listOf("approve_denied"), store.outcomes)
         assertEquals("active", store.rows["denied"]!!.state)
+        assertEquals(listOf(true), store.quiet)
+    }
+
+    @Test fun aRefusedTypedAnswerSaysWhyQuietly() { // #153: a 400 is about the text, so it says so and never rings
+        store.rows["badtext"] = notif("badtext", "acknowledged", 4)
+        store.queue += Pending(1, "badtext", "reply", """{"reply":"other","text":"x","seq":4}""")
+        current = { notifJson(it, "active", 4) }
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(emptyList<Pending>(), store.queue)
+        assertEquals(listOf("bad_request"), store.outcomes)
+        assertEquals("active", store.rows["badtext"]!!.state)
         assertEquals(listOf(true), store.quiet)
     }
 
