@@ -248,7 +248,12 @@ func TestMarkForm(t *testing.T) {
 	if !strings.Contains(page, "phone actioned: filed #1") || !strings.Contains(page, "Marked seen") || strings.Count(page, "Remove my mark") != 1 || strings.Contains(page, `value="filed #1"`) {
 		t.Error("another reader sees the mark but may only remove its own")
 	}
-	post(c, url.Values{"mark": {""}})
+	if code, _ := post(c, url.Values{"note": {"x"}}); code != 400 {
+		t.Errorf("a post with no mark field: %d, want 400 and the mark kept", code)
+	}
+	if code, _ := post(c, url.Values{"mark": {""}, "link": {"javascript:x"}, "note": {strings.Repeat("n", 999)}}); code != 200 {
+		t.Errorf("Remove with a bad draft link and note: %d, want it removed", code)
+	}
 	n, _ := s.Get(context.Background(), mustTok(t, s, raw), m[1])
 	if len(n.Marks) != 1 || n.Marks[0].By != "stew" {
 		t.Errorf("after Remove: %+v, want only stew's mark", n.Marks)

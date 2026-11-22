@@ -399,6 +399,9 @@
   document.addEventListener('toggle', e => {
     const t = e.target.querySelector && e.target.querySelector('[data-at=tonight]');
     if (t) t.hidden = new Date().getHours() >= 20;
+    // One menu open per card: Mark would cover Snooze.
+    const d = e.target;
+    if (d.open && d.matches && d.matches('article details.popover')) d.closest('article').querySelectorAll('details.popover[open]').forEach(o => { if (o !== d) o.open = false; });
   }, true);
 
   // Enter in the date box would submit the card form with its first button (Ack).

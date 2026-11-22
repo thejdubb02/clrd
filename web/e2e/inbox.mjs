@@ -392,7 +392,9 @@ try {
   const mq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Rollback 214?', actions: [{ label: 'Go', reply: 'go' }] });
   await api(phone, `/api/v1/notifications/${mq.id}/mark`, { mark: 'seen' });
   await page.reload();
+  await card('Rollback 214?').locator('summary[aria-label="More snooze times"]').click();
   await card('Rollback 214?').locator('[data-mark-menu] summary').click();
+  await until(page, () => [...document.querySelectorAll('article')].find(a => a.textContent.includes('Rollback 214?')).querySelectorAll('details[open]').length === 1);
   await card('Rollback 214?').getByLabel('Note').fill('on it');
   await card('Rollback 214?').getByLabel('Note').press('Enter');
   await announce.filter({ hasText: 'Marked actioned.' }).waitFor({ state: 'attached' });

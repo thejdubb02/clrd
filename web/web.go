@@ -1061,7 +1061,15 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		f := r.PostForm
-		err := api.Mark(r, f.Get("id"), f.Get("mark"), strings.TrimSpace(f.Get("note")), strings.TrimSpace(f.Get("link")))
+		mark, note, link := f.Get("mark"), strings.TrimSpace(f.Get("note")), strings.TrimSpace(f.Get("link"))
+		if !f.Has("mark") {
+			http.Error(w, "Bad form.", http.StatusBadRequest) // only Remove sends an empty mark
+			return
+		}
+		if mark == "" {
+			note, link = "", "" // Remove never fails on a draft note or link
+		}
+		err := api.Mark(r, f.Get("id"), mark, note, link)
 		if err != nil && !errors.Is(err, ErrUnauthorized) {
 			log.Printf("web: mark: %v", err)
 			http.Error(w, "Not marked: "+err.Error()+". Go back and reload the page.", http.StatusBadRequest)

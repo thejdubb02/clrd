@@ -182,7 +182,7 @@
           <label class="sr-only" for="mn-{{$n.ID}}">Note</label><input id="mn-{{$n.ID}}" class="input h-7 text-xs" form="mk-{{$n.ID}}" name="note" maxlength="200" placeholder="Note (optional)" value="{{with .Mine}}{{.Note}}{{end}}">
           <label class="sr-only" for="ml-{{$n.ID}}">Link</label><input id="ml-{{$n.ID}}" class="input h-7 text-xs" form="mk-{{$n.ID}}" name="link" type="url" placeholder="Link (optional)" value="{{with .Mine}}{{.Link}}{{end}}">
           <span class="flex gap-1"><button class="btn" data-variant="outline" data-size="sm" form="mk-{{$n.ID}}" name="mark" value="actioned" data-act="mark">Actioned</button><button class="btn" data-variant="outline" data-size="sm" form="mk-{{$n.ID}}" name="mark" value="seen" data-act="mark">Seen</button></span>
-          {{if .Mine}}<button class="btn justify-start border-t" data-variant="ghost" data-size="sm" form="mk-{{$n.ID}}" name="mark" value="" data-act="mark">Remove my mark</button>{{end}}
+          {{if .Mine}}<button class="btn justify-start border-t" data-variant="ghost" data-size="sm" form="mk-{{$n.ID}}" name="mark" value="" formnovalidate data-act="mark">Remove my mark</button>{{end}}
         </div>
       </details>
       <button class="btn" data-variant="clear" name="act" value="dismiss" data-act="dismiss">{{template "i-check"}}Clear</button>
