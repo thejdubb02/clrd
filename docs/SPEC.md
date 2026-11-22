@@ -730,7 +730,8 @@ and via. Values clients send today:
 | `api` | Anything else (scripts, older clients) |
 
 The server's own changes use `snooze_end`, `expired`, `checkin` (a late
-check-in resolved by the next message), `publish` (a publish with `status
+check-in resolved by the next message), `quiet` (a sender's quiet alarm
+resolved by its next publish or a rule change, section 5.1), `publish` (a publish with `status
 resolved`) and `ntfy_import`.
 
 | Method | Path | Does |
@@ -820,6 +821,7 @@ Every Sender also carries `rules`, `{}` until someone sets one:
 | `muted` | Stored and synced, but `silenced` (section 2), so no sound or tray alert |
 | `priority_min`, `priority_max` | Priority clamped into the range, 1 to 5; `0` means no limit. Min above max is 400 |
 | `routes` | `{topic: [topics]}`: a publish to the key topic lands in each listed topic instead. Key `*` matches any topic with no route of its own. An empty list drops the publish like `paused` |
+| `expect`, `alert_topic` | Nothing on its publishes: an urgent alarm when the sender goes quiet that long, see the silence alarm below |
 
 A routed notification keeps the topic it was sent to as `requested_topic`
 (section 2), and the sender is counted once, under that topic. Each target
@@ -855,7 +857,19 @@ lists them in Settings with the same rules, change log and Undo, for the same
 admins, and sends one field per change; for anyone else the section stays
 hidden.
 
-The silence alarm comes in a later part of #119 and is not served yet.
+The silence alarm: `expect` (a duration, 1m to 8784h, like `"25h"`; `""`
+for off) makes the server watch the sender. When it has sent nothing,
+counted or dropped, for that long, the server publishes an urgent
+notification (priority 5, title "<name> went quiet") with external_id
+`clrd-quiet-{id}`, in `alert_topic` if set, else in the first topic its last
+publish routes to, else in that topic itself. A sender that has never
+published and has no `alert_topic` raises nothing. The sender shows the
+open alarm's topic as `alarm`. Its next publish resolves the alarm (reason
+`quiet`), and so does a change to `expect` or `alert_topic`, which also
+starts the wait over. One alarm at a time: the next can only come a full
+`expect` after the last publish or change. Publishers cannot use an
+external_id starting `clrd-quiet-` (400). Like the topic check-in, the alarm
+counts as a message in its topic, so it resets that topic's own check-in.
 
 ### ntfy compatibility (must pass ntfy's own client behaviour)
 

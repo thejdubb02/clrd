@@ -46,6 +46,7 @@ type Sender struct {
 	Count     int             `json:"count"`
 	Topics    map[string]int  `json:"topics"`
 	Rules     SenderRules     `json:"rules"`
+	Alarm     string          `json:"alarm,omitempty"` // the topic of its open quiet alarm
 	Recent    []*Notification `json:"recent,omitempty"`
 	recent    []string
 }
@@ -63,9 +64,9 @@ func senderKey(ctx context.Context, top string) (string, any) {
 
 // seeSender counts one stored publish for the sender whose top token is top,
 // in the publish's own write. clrd's own alerts (top "") are no sender.
-func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string) error {
+func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string) ([]Event, error) {
 	if top == "" {
-		return nil
+		return nil, nil
 	}
 	h, _ := ctx.Value(senderHintKey{}).(senderHint)
 	key, tokID := senderKey(ctx, top)
@@ -76,11 +77,11 @@ func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string)
 		if tokID == nil {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM senders WHERE id IN (SELECT id FROM senders WHERE token_id IS NULL AND rules = '{}'
 				ORDER BY last_seen DESC LIMIT -1 OFFSET ?)`, senderAnonLimit-1); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	} else if err != nil {
-		return err
+		return nil, err
 	}
 	topics, recent := map[string]int{}, []string{}
 	json.Unmarshal([]byte(topicsJSON), &topics)
@@ -94,13 +95,88 @@ func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string)
 	rb, _ := json.Marshal(recent)
 	t := ms(now())
 	// A token revoked mid-publish is no sender, never a failed publish.
-	_, err = tx.ExecContext(ctx, `INSERT INTO senders (id, token_id, user_agent, address, template, first_seen, last_seen, count, topics, recent)
-		SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6, 1, ?7, ?8 WHERE ?2 IS NULL OR EXISTS (SELECT 1 FROM tokens WHERE id = ?2)
+	if _, err = tx.ExecContext(ctx, `INSERT INTO senders (id, token_id, user_agent, address, template, first_seen, last_seen, count, topics, recent, last_topic)
+		SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6, 1, ?7, ?8, ?9 WHERE ?2 IS NULL OR EXISTS (SELECT 1 FROM tokens WHERE id = ?2)
 		ON CONFLICT(id) DO UPDATE SET user_agent = excluded.user_agent, address = excluded.address,
 		  template = CASE WHEN ?5 = '' THEN template ELSE ?5 END, first_seen = CASE WHEN count = 0 THEN ?6 ELSE first_seen END,
-		  last_seen = ?6, count = count + 1, topics = ?7, recent = ?8`,
-		key, tokID, h.ua, h.addr, template, t, string(tb), string(rb))
-	return err
+		  last_seen = ?6, count = count + 1, topics = ?7, recent = ?8, last_topic = ?9`,
+		key, tokID, h.ua, h.addr, template, t, string(tb), string(rb), topic); err != nil {
+		return nil, err
+	}
+	return endQuiet(ctx, tx, key) // it spoke: its quiet alarm is over
+}
+
+// quietPrefix starts the external_id of a sender's quiet alarm (#119).
+const quietPrefix = "clrd-quiet-"
+
+// endQuiet resolves a sender's open quiet alarm, if it has one.
+func endQuiet(ctx context.Context, tx *sql.Tx, key string) ([]Event, error) {
+	var topic string
+	if err := tx.QueryRowContext(ctx, `SELECT alarm_topic FROM senders WHERE id = ?`, key).Scan(&topic); err != nil || topic == "" {
+		if errors.Is(err, sql.ErrNoRows) {
+			err = nil
+		}
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE senders SET alarm_topic = '' WHERE id = ?`, key); err != nil {
+		return nil, err
+	}
+	n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`, topic, quietPrefix+key)
+	if isNotFound(err) { // someone already cleared it
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	ev, err := transition(n, Resolved, serverToken, "quiet", nil)
+	if ev == nil {
+		return nil, err
+	}
+	return []Event{*ev}, err
+}
+
+// quietSenders raises an urgent alert for each sender whose rules expect a
+// message at least every so often and that has gone quiet that long. Its
+// next publish, kept or dropped, resolves it.
+func (s *Server) quietSenders(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT s.id, COALESCE(t.name, 'anonymous'), s.rules, s.last_topic, MAX(s.last_seen, s.alarm_from)
+		FROM senders s LEFT JOIN tokens t ON t.id = s.token_id WHERE s.alarm_topic = '' AND s.rules LIKE '%"expect"%'`)
+	if err != nil {
+		return err
+	}
+	var due []PublishInput
+	for rows.Next() {
+		var id, name, raw, last string
+		var since int64
+		if err := rows.Scan(&id, &name, &raw, &last, &since); err != nil {
+			rows.Close()
+			return err
+		}
+		var r SenderRules
+		json.Unmarshal([]byte(raw), &r)
+		every, _ := time.ParseDuration(r.Expect)
+		topic := r.AlertTopic
+		if to := r.route(last); topic == "" && len(to) > 0 {
+			topic = to[0]
+		} else if topic == "" {
+			topic = last // its last topic drops everything: alert there
+		}
+		if every <= 0 || topic == "" || since+every.Milliseconds() > ms(now()) {
+			continue // no topic yet: it has never published and has no alert_topic
+		}
+		due = append(due, PublishInput{Topic: topic, ExternalID: quietPrefix + id, Priority: 5, Title: name + " went quiet",
+			Message: "No message in " + every.String() + ".", Tags: []string{"rotating_light"}, quiet: id, quietMS: every.Milliseconds()})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, in := range due {
+		if _, err := s.Publish(ctx, serverToken, in); err != nil && !errors.Is(err, errOnTime) {
+			return err
+		}
+	}
+	return nil
 }
 
 const senderCols = `s.id, COALESCE(s.token_id, ''), COALESCE(t.name, 'anonymous'),
@@ -109,7 +185,7 @@ const senderCols = `s.id, COALESCE(s.token_id, ''), COALESCE(t.name, 'anonymous'
     WHEN EXISTS (SELECT 1 FROM gotify_apps g WHERE g.token_id = s.token_id) THEN 'gotify_app'
     WHEN s.token_id LIKE 'pushover-%' THEN 'pushover_app'
     WHEN t.user_id IS NOT NULL THEN 'person' ELSE 'token' END,
-  s.template, s.user_agent, s.address, s.first_seen, s.last_seen, s.count, s.topics, s.recent, s.rules
+  s.template, s.user_agent, s.address, s.first_seen, s.last_seen, s.count, s.topics, s.recent, s.rules, s.alarm_topic
   FROM senders s LEFT JOIN tokens t ON t.id = s.token_id`
 
 func scanSender(r scanner) (*Sender, error) {
@@ -117,7 +193,7 @@ func scanSender(r scanner) (*Sender, error) {
 	var first, last int64
 	var topics, recent, rules string
 	if err := r.Scan(&sd.ID, &sd.TokenID, &sd.Name, &sd.Kind, &sd.Template, &sd.UserAgent, &sd.Address,
-		&first, &last, &sd.Count, &topics, &recent, &rules); err != nil {
+		&first, &last, &sd.Count, &topics, &recent, &rules, &sd.Alarm); err != nil {
 		return nil, err
 	}
 	sd.FirstSeen, sd.LastSeen = fromMS(first), fromMS(last)
@@ -235,8 +311,13 @@ type SenderRules struct {
 	// targets. The exact topic wins over "*"; no match keeps the topic; an
 	// empty list drops it.
 	Routes map[string][]string `json:"routes,omitempty"`
+	// Expect raises a quiet alarm when the sender sends nothing for this
+	// long ("25h"), in AlertTopic, or else where its last topic routes to.
+	Expect     string `json:"expect,omitempty"`
+	AlertTopic string `json:"alert_topic,omitempty"`
 }
 
+// none is true when no rule touches a publish (Expect only watches).
 func (r SenderRules) none() bool {
 	return !r.Paused && !r.Muted && r.PriorityMin == 0 && r.PriorityMax == 0 && len(r.Routes) == 0
 }
@@ -245,6 +326,14 @@ func (r SenderRules) check() error {
 	if r.PriorityMin < 0 || r.PriorityMin > 5 || r.PriorityMax < 0 || r.PriorityMax > 5 ||
 		(r.PriorityMin > 0 && r.PriorityMax > 0 && r.PriorityMin > r.PriorityMax) {
 		return errf(400, "bad_request", "priority_min and priority_max are 0 (none) or 1 to 5, min at most max")
+	}
+	if d, err := time.ParseDuration(r.Expect); r.Expect != "" && (err != nil || d < time.Minute || d > 366*24*time.Hour) {
+		return errf(400, "bad_request", `expect must be a duration from 1m to 8784h, like "25h"`)
+	}
+	if r.AlertTopic != "" {
+		if err := validTopic(r.AlertTopic); err != nil {
+			return err
+		}
 	}
 	for from, to := range r.Routes {
 		if from != "*" {
@@ -272,9 +361,9 @@ func (r SenderRules) route(topic string) []string {
 }
 
 // see counts the publish for its sender once, under the topic it named.
-func (in *PublishInput) see(ctx context.Context, tx *sql.Tx, top, id string) error {
+func (in *PublishInput) see(ctx context.Context, tx *sql.Tx, top, id string) ([]Event, error) {
 	if in.counted {
-		return nil
+		return nil, nil
 	}
 	return seeSender(ctx, tx, top, cmp.Or(in.requested, in.Topic), in.template, id)
 }
@@ -363,7 +452,7 @@ func (s *Server) discard(ctx context.Context, tok *Token, top string, in Publish
 		return nil, err
 	}
 	if _, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
-		return nil, seeSender(ctx, tx, top, in.Topic, in.template, "")
+		return seeSender(ctx, tx, top, in.Topic, in.template, "")
 	}); err != nil {
 		return nil, err
 	}
@@ -473,15 +562,24 @@ func (s *Server) setRules(ctx context.Context, tok *Token, id string, edit func(
 		}
 		bb, _ := json.Marshal(before)
 		ab := []byte("{}")
-		if !after.none() {
+		if !after.none() || after.Expect != "" || after.AlertTopic != "" {
 			ab, _ = json.Marshal(after)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE senders SET rules = ? WHERE id = ?`, string(ab), id); err != nil {
 			return nil, err
 		}
+		var evs []Event
+		if before.Expect != after.Expect || before.AlertTopic != after.AlertTopic { // the quiet timer starts over
+			if _, err := tx.ExecContext(ctx, `UPDATE senders SET alarm_from = ? WHERE id = ?`, ms(now()), id); err != nil {
+				return nil, err
+			}
+			if evs, err = endQuiet(ctx, tx, id); err != nil {
+				return nil, err
+			}
+		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO sender_changes (sender, before, after, by_name, by_id, at) VALUES (?, ?, ?, ?, ?, ?)`,
 			id, string(bb), string(ab), tok.Name, tok.ID, ms(now()))
-		return nil, err
+		return evs, err
 	})
 	if err != nil {
 		return nil, err
