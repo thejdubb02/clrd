@@ -59,9 +59,8 @@ class TrayRaceTest {
         app.undoClear(listOf(snoozed, open))
         drainIo()
         val q = bg { dao.pending() }
-        assertEquals(listOf("s" to "dismiss", "o" to "dismiss", "o" to "reopen", "s" to "reopen", "s" to "snooze"), q.map { it.notifId to it.action })
+        assertEquals(listOf("s" to "dismiss", "o" to "dismiss", "o" to "reopen", "s" to "reopen"), q.map { it.notifId to it.action }) // #508: no follow-up snooze
         assertEquals(java.time.Instant.ofEpochMilli(until).toString(), JSONObject(q[3].body).getString("until")) // #473: the reopen itself snoozes
-        assertEquals(java.time.Instant.ofEpochMilli(until).toString(), JSONObject(q.last().body).getString("until"))
         assertEquals(Notif.SNOOZED, bg { dao.get("s")?.state })
         assertEquals(until, bg { dao.get("s")?.snoozeUntil })
         assertEquals(Notif.ACTIVE, bg { dao.get("o")?.state })
@@ -75,6 +74,20 @@ class TrayRaceTest {
         val got = bg { dao.get("a") }!!
         assertEquals(Notif.SNOOZED, got.state)
         assertTrue(got.snoozeUntil!! in before + 5_400_000..System.currentTimeMillis() + 5_400_000)
+        val queued = bg { dao.pending() }.single().body // #508: a late send ends at the time shown, not later
+        val late = got.snoozeUntil!! - 600_000 // sent 80 minutes after the tap
+        val sent = JSONObject(snoozeWire(queued, late))
+        assertEquals("600000ms", sent.getString("for"))
+        assertTrue(!sent.has(ENDS)) // the server never sees the phone's clock
+        assertEquals("1000ms", JSONObject(snoozeWire(queued, got.snoozeUntil!! + 1)).getString("for")) // ran out offline: still stops a repeat
+    }
+
+    @Test fun anyServerDurationShowsItsTime() { // #508: not only whole h, m and s
+        bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        val before = System.currentTimeMillis()
+        app.act("a", "snooze", Snooze.body("1.5h"))
+        drainIo()
+        assertTrue(bg { dao.get("a") }!!.snoozeUntil!! in before + 5_400_000..System.currentTimeMillis() + 5_400_000)
     }
 
     @Test fun anOlderEventNeverChangesTheTray() {

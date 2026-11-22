@@ -36,10 +36,35 @@ fun goSeconds(v: String): Long? {
     return (h.toLongOrNull() ?: 0) * 3600 + (mi.toLongOrNull() ?: 0) * 60 + (s.toLongOrNull() ?: 0)
 }
 
+/** Milliseconds in any duration the server's snooze reads ("1.5h", "500ms", "2d"), or null for any other form (#508). */
+fun goMillis(v: String): Long? {
+    Regex("""(\d{1,5})d""").matchEntire(v)?.let { return it.groupValues[1].toLong().takeIf { d -> d <= 36500 }?.times(86_400_000) }
+    val part = Regex("""(\d+\.?\d*|\.\d+)(ns|us|µs|μs|ms|s|m|h)""")
+    if (v.isEmpty() || part.replace(v, "").isNotEmpty()) return null
+    val unit = mapOf("ns" to 1e-6, "us" to 1e-3, "µs" to 1e-3, "μs" to 1e-3, "ms" to 1.0, "s" to 1e3, "m" to 6e4, "h" to 3.6e6)
+    return part.findAll(v).sumOf { it.groupValues[1].toDouble() * unit.getValue(it.groupValues[2]) }.toLong()
+}
+
+/** Phone-clock end of a queued snooze, kept in its body and never sent (#508). */
+const val ENDS = "ends_local"
+
+/**
+ * A queued snooze as sent: "for" is what is left of it now (#508), so one sent late ends when the phone
+ * showed. Relative, so a phone clock that is off cannot make the server refuse it. One that ran out
+ * while offline still goes as 1s, so it stops a repeating alert as the tap did.
+ */
+fun snoozeWire(body: String, now: Long = System.currentTimeMillis()): String {
+    val o = runCatching { JSONObject(body) }.getOrNull() ?: return body
+    if (!o.has(ENDS)) return body
+    val left = (o.optLong(ENDS) - now).coerceAtLeast(1000)
+    o.remove(ENDS)
+    return o.put("for", "${left}ms").toString()
+}
+
 /** When a snooze or reopen action body ends, in epoch ms, or null when it has no future time this reads (#473). */
 fun snoozeEnd(body: JSONObject, now: Long = System.currentTimeMillis()): Long? {
     val t = body.optString("until").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
-        ?: goSeconds(body.optString("for"))?.let { now + it * 1000 }
+        ?: goMillis(body.optString("for"))?.let { now + it }
     return t?.takeIf { it > now }
 }
 
