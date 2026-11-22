@@ -397,8 +397,8 @@ type SenderRules struct {
 	PriorityMin int                 `json:"priority_min"`
 	PriorityMax int                 `json:"priority_max"`
 	Routes      map[string][]string `json:"routes"`
-	Expect      string              `json:"expect,omitempty"`      // alarm when quiet this long, "" off
-	AlertTopic  string              `json:"alert_topic,omitempty"` // where that alarm goes
+	Expect      string              `json:"expect"`      // alarm when quiet this long, "" off; sent empty so a save clears it
+	AlertTopic  string              `json:"alert_topic"` // where that alarm goes
 }
 
 // RulesForm is a refused save shown again: what was typed, the base it was

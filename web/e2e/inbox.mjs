@@ -1650,6 +1650,13 @@ try {
     assert.equal(await sp.locator('#r-expect').inputValue(), '25h', 'expect after reload');
     assert.equal(await sp.locator('#r-alert').inputValue(), 'rule-alarm', 'alert topic after reload');
     await rules.locator('tr[data-change]', { hasText: 'alarm if quiet 25h in rule-alarm' }).first().waitFor();
+    // Emptied fields turn it off, not keep the old value.
+    await sp.locator('#r-expect').fill('');
+    await sp.locator('#r-alert').fill('');
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await rules.locator('tr[data-change]:nth-child(7)').waitFor();
+    assert.equal(await sp.locator('#r-expect').inputValue(), '', 'expect after clearing');
+    assert.equal(await sp.locator('#r-alert').inputValue(), '', 'alert topic after clearing');
     await ctx.close();
     console.log('ok: sender rules pause, log, undo, quiet alarm and round trip without JavaScript; bad routes, a bad duration, a stale page and a non-admin get 400');
   }
