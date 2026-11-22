@@ -317,7 +317,7 @@ func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []stri
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	return webError(a.s.SaveHook(r.Context(), tok, topic, name, server.OutHook{URL: url, Events: events, Secret: secret}, !clearSecret))
+	return webError(a.s.SaveHook(r.Context(), tok, topic, name, server.OutHook{URL: url, Events: events, Secret: secret}, !clearSecret, true))
 }
 
 func (a webAPI) SaveTemplate(r *http.Request, t web.Template, secret string, clearSecret bool) error {
