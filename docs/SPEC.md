@@ -643,7 +643,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | DELETE | `/api/v1/notifications/{id}/mark` | Remove your own mark. |
 | POST | `/api/v1/notifications/{id}/dismiss` | User clears it. |
 | POST | `/api/v1/notifications/{id}/resolve` | Sender clears it. |
-| POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). |
+| POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). Optional `{"until": RFC3339}` in the future lands it snoozed until then in one change, for undoing a Clear on a snoozed row; a past `until` is a plain reopen. |
 | POST | `/api/v1/notifications/clear` | Bulk dismiss, body `{"topic":"infra"}` or `{"ids":[...]}`. |
 
 Every state change above (ack, reply, snooze, dismiss, resolve, reopen, clear,

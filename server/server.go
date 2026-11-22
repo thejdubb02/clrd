@@ -714,6 +714,8 @@ func (s *Server) routesSetup() {
 				if until, err = snoozeUntil(in.For, in.Until); err != nil {
 					return err
 				}
+			} else if action == "reopen" && err == nil {
+				until = in.Until // #473: Undo of a Clear brings a snoozed row back snoozed
 			}
 			n, err := s.Act(r.Context(), tok, r.PathValue("id"), action, cleanVia(in.Via, "api"), until)
 			if err != nil {
