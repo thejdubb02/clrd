@@ -116,6 +116,24 @@
     <string name="kind_phone">phone</string>
     <string name="kind_browser">browser</string>
     <string name="kind_token">token</string>
+    <string name="kind_agent">agent</string>
+    <!-- Add agent (#457): an invite that gives an AI agent its own login, limited to some topics. -->
+    <string name="agent_add">Add agent</string>
+    <string name="agent_name">Agent name</string>
+    <string name="agent_topics">Topics</string>
+    <string name="agent_topics_hint">The topics it may read and publish on, separated by commas</string>
+    <string name="agent_lasts">The invite lasts</string>
+    <string name="agent_5m">5 min</string>
+    <string name="agent_15m">15 min</string>
+    <string name="agent_1h">1 hour</string>
+    <string name="agent_denied">Its approvals start as Denied: it can ask a person, but never answer a request itself.</string>
+    <string name="agent_make">Make invite</string>
+    <!-- %1$s is a clock time. -->
+    <string name="agent_once">Give this to the agent privately, like a password. It works once and runs out at %1$s.</string>
+    <string name="agent_copy">Copy</string>
+    <string name="agent_share">Share</string>
+    <string name="agent_done">Done</string>
+    <string name="agent_failed">No invite: %1$s</string>
     <string name="device_via">linked from %1$s</string>
     <string name="device_seen">seen %1$s</string>
     <string name="device_never_seen">never seen</string>

@@ -5,6 +5,10 @@ limited to the topics you name. You never copy a token by hand.
 
 ## 1. Make the invite
 
+In the Android app: Settings, Linked devices, Add agent. Type its name and
+topics, pick how long the invite lasts (15 minutes unless you change it),
+then copy or share the https form below.
+
 From the API, signed in as a person (a browser or phone session) or with a
 full admin token:
 
@@ -71,6 +75,6 @@ at once and deletes its user.
 - Invites live in the server's memory: a restart drops any not yet claimed.
 - Access is fixed when the agent claims. Changing the person later does not
   change the agent; an admin edits the agent's user instead.
-- No "Add agent" button in the web inbox or the Android app yet.
+- No "Add agent" button in the web inbox yet.
 - No per-agent rate plans. An agent cannot invite another agent without a
   person or an admin token.
