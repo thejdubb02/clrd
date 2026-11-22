@@ -96,13 +96,16 @@ func checkDeviceAction(a Action) error {
 }
 
 // gateDeviceActions refuses http and broadcast actions on a topic that has
-// not turned them on, or drops them for a compat sender (dropDevice).
-func (s *Server) gateDeviceActions(ctx context.Context, in *PublishInput) error {
+// not turned them on, or drops them for a compat sender (dropDevice). A
+// publish checks once early, so a refused file is never uploaded, and again
+// under s.mu, which the switch also takes: a publish that ends after an admin
+// turned it off never keeps one (#447).
+func (s *Server) gateDeviceActions(ctx context.Context, q querier, in *PublishInput) error {
 	if !slices.ContainsFunc(in.Actions, isDeviceAction) {
 		return nil
 	}
 	var on bool
-	err := s.db.QueryRowContext(ctx, `SELECT device_actions FROM topics WHERE topic = ?`, in.Topic).Scan(&on)
+	err := q.QueryRowContext(ctx, `SELECT device_actions FROM topics WHERE topic = ?`, in.Topic).Scan(&on)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -125,6 +128,8 @@ func (s *Server) SetTopicDeviceActions(ctx context.Context, tok *Token, topic st
 	if err := tok.need(ScopeAdmin, topic); err != nil {
 		return err
 	}
+	s.mu.Lock() // in order with publishes, which read it under s.mu
+	defer s.mu.Unlock()
 	if !on { // drop a row that held only this switch
 		if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ? AND icon = '' AND checkin_ms IS NULL`, topic); err != nil {
 			return err

@@ -61,6 +61,10 @@ func (s *Server) publishLive(ctx context.Context, tok *Token, in PublishInput, f
 	n.Silenced = silenced(sils, n)
 	s.mu.Lock() // so the seq it carries is in order with stored writes
 	defer s.mu.Unlock()
+	if err := s.gateDeviceActions(ctx, s.db, &in); err != nil { // again, as it is now (#447)
+		return nil, err
+	}
+	n.Actions = in.Actions
 	s.liveN++
 	e := Event{Seq: s.seq.Load(), Type: EventCreated, Notification: n}
 	n.ID, n.Seq = liveID(e.Seq, s.liveN), e.Seq

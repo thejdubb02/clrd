@@ -69,6 +69,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a publish still in flight when an admin turns a topic's
+  `device_actions` off no longer keeps its `http` or `broadcast` action, stored
+  or live (#447).
 - Server: a live stream that was still starting when a person's grants
   changed now follows the new grants, and an MCP `wait_for_reply` that times
   out shows the notification only while the token can still read it (#428).

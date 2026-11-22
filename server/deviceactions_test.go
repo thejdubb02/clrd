@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 // #401: ntfy's http and broadcast buttons, behind an admin-only topic switch.
@@ -147,5 +148,29 @@ func TestNtfyShortActions(t *testing.T) {
 	}
 	if _, err := ntfyActions(`http, X, https://example.com, body='open`); err == nil {
 		t.Fatal("unclosed quote: want an error")
+	}
+}
+
+// #447: a publish that read the switch as on, then waited behind a write
+// while it went off, keeps no device action, stored or live.
+func TestDeviceActionsSwitchOffMidPublish(t *testing.T) {
+	s, ts, admin := newTest(t)
+	for _, live := range []bool{false, true} {
+		call(t, ts, "PUT", "/api/v1/topics/home", admin, map[string]any{"device_actions": true})
+		s.mu.Lock() // a write in progress: the publish passes the early check, then waits here
+		done := make(chan int)
+		go func() {
+			code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "home", "title": "t", "live": live,
+				"actions": []any{map[string]any{"label": "Go", "http": map[string]any{"url": "https://example.com/go"}}}})
+			done <- code
+		}()
+		time.Sleep(200 * time.Millisecond)
+		if _, err := s.db.Exec(`UPDATE topics SET device_actions = 0 WHERE topic = 'home'`); err != nil {
+			t.Fatal(err)
+		}
+		s.mu.Unlock()
+		if code := <-done; code != 403 {
+			t.Fatalf("live %v: a publish in flight kept an http action after the switch went off: %d", live, code)
+		}
 	}
 }

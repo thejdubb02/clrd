@@ -624,7 +624,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
 		return nil, err
 	}
-	if err := s.gateDeviceActions(ctx, &in); err != nil {
+	if err := s.gateDeviceActions(ctx, s.db, &in); err != nil {
 		return nil, err
 	}
 	if in.file == "" { // PublishFile already spent it, before the upload
@@ -680,6 +680,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	var replaced string // file id an upsert drops, removed after commit
 	var extra []Event   // a check-in resolving the topic's missed check-in alert
 	evs, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		if err := s.gateDeviceActions(ctx, tx, &in); err != nil { // again, as it is now (#447)
+			return nil, err
+		}
 		// The sender's token tree, kept now so signing the sending browser
 		// out later cannot free its parent to answer (#187).
 		sender, err := topIn(ctx, tx, tok.ID)
@@ -789,7 +792,7 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 	if in.Live {
 		return nil, errLiveFile
 	}
-	if err := s.gateDeviceActions(ctx, &in); err != nil { // before the upload, not after
+	if err := s.gateDeviceActions(ctx, s.db, &in); err != nil { // before the upload, not after
 		return nil, err
 	}
 	if err := s.publishLimit(tok, in.Topic); err != nil {
