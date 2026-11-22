@@ -822,7 +822,8 @@ by_id, at}]}`, newest first, with `before` and `after` the full rules. `POST
 sender, its rules and its log.
 
 The web inbox shows the list at `/app/senders` and one sender at
-`/app/senders/{id}` (read only for now), for the same admins only; anyone
+`/app/senders/{id}`, where a form sets every rule above and each change
+has an Undo button, for the same admins only; anyone
 else gets 403.
 
 The silence alarm comes in a later part of #119 and is not served yet.

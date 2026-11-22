@@ -1553,6 +1553,68 @@ try {
     console.log('ok: Senders lists who sent what without JavaScript, opens one sender, 404s an unknown one and 403s a non-admin');
   }
 
+  // Sender rules (#119 part 2): off until set; Pause drops what it sends,
+  // the change log shows it, Undo puts it back, routes and priorities round
+  // trip, bad routes and a non-admin get 400. No JavaScript.
+  {
+    const bot = execFileSync(bin, ['token', 'create', '--name', 'rule-bot', '--scope', 'publish'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    await api(bot, '/api/v1/notifications', { topic: 'rule-a', title: 'Before rules', message: 'x' });
+    const ctx = await browser.newContext({ javaScriptEnabled: false });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'rule-web' } })).ok(), 'rules sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/senders');
+    await sp.locator('tr[data-sender]', { hasText: 'rule-bot' }).getByRole('link', { name: 'rule-bot' }).click();
+    const rules = sp.locator('[data-rules]');
+    await rules.getByText('No changes yet.').waitFor();
+    assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'paused before any rule');
+    const path = new URL(sp.url()).pathname;
+
+    await sp.locator('[name=paused]').check();
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    const change = rules.locator('tr[data-change]');
+    await change.first().waitFor();
+    assert.match(await change.first().innerText(), /Paused[\s\S]*was: No rules/, 'the change row');
+    assert.equal(await sp.locator('[name=paused]').isChecked(), true, 'paused after save');
+    await api(bot, '/api/v1/notifications', { topic: 'rule-a', title: 'Dropped one', message: 'x' });
+    await sp.reload();
+    assert.equal(await sp.locator('tr[data-recent]', { hasText: 'Dropped one' }).count(), 0, 'a paused sender stored a notification');
+
+    await change.first().getByRole('button', { name: 'Undo' }).click();
+    await rules.locator('tr[data-change]:nth-child(2)').waitFor();
+    assert.match(await change.first().innerText(), /^No rules[\s\S]*was: Paused/, 'the undo row');
+    assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'paused after undo');
+    await api(bot, '/api/v1/notifications', { topic: 'rule-a', title: 'Kept one', message: 'x' });
+    await sp.reload();
+    await sp.locator('tr[data-recent]', { hasText: 'Kept one' }).waitFor();
+
+    await sp.locator('#r-pmin').selectOption('2');
+    await sp.locator('#r-routes').fill('rule-a: rule-b, rule-c\n*: rule-b');
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await rules.locator('tr[data-change]:nth-child(3)').waitFor();
+    assert.equal(await sp.locator('#r-pmin').inputValue(), '2', 'priority min after save');
+    assert.equal((await sp.locator('#r-routes').inputValue()).trim(), '*: rule-b\nrule-a: rule-b, rule-c', 'routes after save');
+
+    // Each refused post leaves the rules alone (checked by the count below).
+    const full = { priority_min: '0', priority_max: '0' };
+    for (const [form, why] of [[{ ...full, routes: 'no colon here' }, 'bad routes'], [{ ...full, routes: 'a: b\na: ' }, 'a topic routed twice'], [{}, 'an empty post'], [{ ...full, priority_min: 'x' }, 'a bad priority']]) {
+      const bad = await ctx.request.post(base + path, { form, headers: { Origin: base }, maxRedirects: 0 });
+      assert.equal(bad.status(), 400, `${why}: ${bad.status()}`);
+      assert.match(await bad.text(), /Not saved/, `${why} message`);
+    }
+
+    const rctx = await browser.newContext();
+    const reader = execFileSync(bin, ['token', 'create', '--name', 'rule-ro', '--scope', 'read'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: reader, name: 'rule-ro' } })).ok(), 'reader sign-in');
+    const refused = await rctx.request.post(base + path, { form: { ...full, paused: 'on' }, headers: { Origin: base }, maxRedirects: 0 });
+    assert.equal(refused.status(), 400, `non-admin rules save: ${refused.status()}`);
+    await rctx.close();
+    await sp.reload();
+    assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'a non-admin paused a sender');
+    assert.equal(await change.count(), 3, 'a refused save logged a change');
+    await ctx.close();
+    console.log('ok: sender rules pause, log, undo and round trip without JavaScript; bad routes and a non-admin get 400');
+  }
+
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
   // scripts send every request inside it, and a setting saved from the page
   // reaches the server.

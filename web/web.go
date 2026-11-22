@@ -362,8 +362,10 @@ type Query struct {
 }
 
 // Sender is one service or device that publishes (#119), as GET
-// /api/v1/senders returns it (docs/SPEC.md section 5.1). Read only for now.
+// /api/v1/senders returns it (docs/SPEC.md section 5.1).
 type Sender struct {
+	Rules     SenderRules    `json:"rules"`
+	Changes   []SenderChange `json:"-"` // its rule changes, newest first: its own page only
 	ID        string         `json:"id"`
 	Name      string         `json:"name"`
 	Kind      string         `json:"kind"`
@@ -383,6 +385,106 @@ func (s Sender) KindLabel() string {
 		return l
 	}
 	return "Token"
+}
+
+// SenderRules are what an admin sets on a sender (SPEC 5.1); the zero value
+// changes nothing.
+type SenderRules struct {
+	Paused      bool                `json:"paused"`
+	Muted       bool                `json:"muted"`
+	PriorityMin int                 `json:"priority_min"`
+	PriorityMax int                 `json:"priority_max"`
+	Routes      map[string][]string `json:"routes"`
+}
+
+// SenderChange is one logged edit of a sender's rules.
+type SenderChange struct {
+	Seq    int64       `json:"seq"`
+	Before SenderRules `json:"before"`
+	After  SenderRules `json:"after"`
+	By     string      `json:"by"`
+	At     time.Time   `json:"at"`
+}
+
+// RouteLines are the routes as the form edits them: "topic: target, target",
+// one a line.
+func (r SenderRules) RouteLines() string {
+	var b strings.Builder
+	for _, k := range r.routeKeys() {
+		fmt.Fprintf(&b, "%s: %s\n", k, strings.Join(r.Routes[k], ", "))
+	}
+	return b.String()
+}
+
+func (r SenderRules) routeKeys() []string {
+	keys := make([]string, 0, len(r.Routes))
+	for k := range r.Routes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// Summary says the rules in a few words, for the change log.
+func (r SenderRules) Summary() string {
+	var p []string
+	if r.Paused {
+		p = append(p, "paused")
+	}
+	if r.Muted {
+		p = append(p, "muted")
+	}
+	if r.PriorityMin > 0 || r.PriorityMax > 0 {
+		lo, hi := r.PriorityMin, r.PriorityMax
+		if lo == 0 {
+			lo = 1
+		}
+		if hi == 0 {
+			hi = 5
+		}
+		p = append(p, fmt.Sprintf("priority %d to %d", lo, hi))
+	}
+	for _, k := range r.routeKeys() {
+		v := strings.Join(r.Routes[k], ", ")
+		if v == "" {
+			v = "nowhere"
+		}
+		if k == "*" {
+			k = "any other topic"
+		}
+		p = append(p, k+" to "+v)
+	}
+	if len(p) == 0 {
+		return "No rules"
+	}
+	s := strings.Join(p, "; ")
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// parseRoutes reads the routes box: "topic: target, target" a line, blank
+// lines skipped; "topic:" with no target drops that topic's publishes.
+func parseRoutes(s string) (map[string][]string, error) {
+	out := map[string][]string{}
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(l, ":")
+		if k = strings.TrimSpace(k); !ok || k == "" {
+			return nil, fmt.Errorf("route %q needs a topic, a colon, then its targets", l)
+		}
+		if _, dup := out[k]; dup {
+			return nil, fmt.Errorf("topic %q has two routes; put its targets on one line", k)
+		}
+		to := []string{}
+		for _, t := range strings.Split(v, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				to = append(to, t)
+			}
+		}
+		out[k] = to
+	}
+	return out, nil
 }
 
 // Snapshot is everything one inbox page needs. Seq must be read before (or in
@@ -583,6 +685,10 @@ type API interface {
 	// secret keeps the saved one unless clearSecret. DeleteTemplate removes it.
 	SaveTemplate(r *http.Request, t Template, secret string, clearSecret bool) error
 	DeleteTemplate(r *http.Request, topic, name string) error
+	// SetSenderRules replaces a sender's rules (#119); UndoSenderChange puts
+	// back the rules from before change seq.
+	SetSenderRules(r *http.Request, id string, rules SenderRules) error
+	UndoSenderChange(r *http.Request, id string, seq int64) error
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
@@ -666,6 +772,7 @@ func templates(base string) *template.Template {
 		"newTemplate": func() Template { return Template{} },
 		"has":         func(list []string, s string) bool { return slices.Contains(list, s) },
 		"add":         func(a, b int) int { return a + b },
+		"priorities":  func() []string { return []string{"No limit", "1 min", "2 low", "3 default", "4 high", "5 urgent"} },
 		"plural": func(n int, one, many string) string {
 			if n == 1 {
 				return one
@@ -1059,6 +1166,41 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/settings", app("settings"))
 	mux.HandleFunc("GET /app/senders", app("senders"))
 	mux.HandleFunc("GET /app/senders/{id}", app("sender"))
+	// A sender's rules (#119): save them all, or undo one change, as a plain
+	// form post. The server checks the full admin.
+	mux.HandleFunc("POST /app/senders/{id}", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f, id := r.PostForm, r.PathValue("id")
+		var err error
+		if u := f.Get("undo"); u != "" {
+			seq, perr := strconv.ParseInt(u, 10, 64)
+			if err = perr; err == nil {
+				err = api.UndoSenderChange(r, id, seq)
+			}
+		} else if !f.Has("priority_min") || !f.Has("priority_max") {
+			// Not the rules form: never read a missing field as "clear it".
+			err = errors.New("the rules form was incomplete")
+		} else {
+			rules := SenderRules{Paused: f.Get("paused") != "", Muted: f.Get("muted") != ""}
+			var e1, e2 error
+			rules.PriorityMin, e1 = strconv.Atoi(f.Get("priority_min"))
+			rules.PriorityMax, e2 = strconv.Atoi(f.Get("priority_max"))
+			if err = errors.Join(e1, e2); err == nil {
+				if rules.Routes, err = parseRoutes(f.Get("routes")); err == nil {
+					err = api.SetSenderRules(r, id, rules)
+				}
+			}
+		}
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
+			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "/app/senders/"+url.PathEscape(id)+"#rules-h", http.StatusSeeOther)
+	})
 	// The style guide: every component in every state, no data, no sign-in.
 	mux.HandleFunc("GET /app/ui", func(w http.ResponseWriter, r *http.Request) {
 		page(w, "ui", 200, meta{Title: "Components: clrd", Path: "/app/ui", Base: base(r)})

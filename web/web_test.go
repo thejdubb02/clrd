@@ -140,6 +140,8 @@ func (readOnly) SaveHook(*http.Request, string, string, string, []string, *strin
 func (readOnly) DeleteHook(*http.Request, string, string) error { return ErrUnauthorized }
 
 func (readOnly) SaveTemplate(*http.Request, Template, string, bool) error { return ErrUnauthorized }
+func (readOnly) SetSenderRules(*http.Request, string, SenderRules) error  { return ErrUnauthorized }
+func (readOnly) UndoSenderChange(*http.Request, string, int64) error      { return ErrUnauthorized }
 func (readOnly) DeleteTemplate(*http.Request, string, string) error       { return ErrUnauthorized }
 
 type deny struct{ readOnly }

@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: sender rules on each sender's page (#119, part 2). An admin can pause, mute,
+  cap the priority or reroute one sender, and see and undo each change. Nothing
+  changes until a rule is set.
 - Web: a Senders page for admins (#119, part 1). It lists every token, app
   and person that has sent here, with its kind, topics, count and last seen,
   and opens one sender with its details and last notifications. Works without
