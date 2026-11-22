@@ -361,4 +361,11 @@ func TestSenderQuiet(t *testing.T) {
 	if a := alarms("ops"); len(a) != 1 {
 		t.Fatalf("alert_topic ignored: %v", a)
 	}
+	// A revoked sender never speaks again: its alarm ends with it (#558).
+	if err := s.DeleteToken(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if a := alarms("ops"); len(a) != 0 {
+		t.Fatalf("revoked sender left its alarm open: %v", a)
+	}
 }

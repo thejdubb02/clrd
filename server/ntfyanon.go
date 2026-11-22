@@ -99,8 +99,8 @@ func dropAnonymous(ctx context.Context, tx *sql.Tx) ([]string, error) {
 }
 
 func (s *Server) revokeAll(ids []string) {
-	for _, id := range ids { // as DeleteToken does
-		s.revoked.Store(id, true)
-		s.hub.drop(id)
+	for _, id := range ids {
+		s.revoked.Store(id, true) // streams check this before every send
+		s.hub.drop(id)            // and wake on this, so an idle stream closes now
 	}
 }

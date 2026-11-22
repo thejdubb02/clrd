@@ -154,6 +154,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: revoking a token resolves its open quiet sender alarm instead of
+  leaving it to be cleared by hand (#558).
 - Server: a sender route that copies an upload to several topics no longer
   loses the later copies when the first copy is replaced right away (#536).
 - Android: a late repeat no longer rings a notification again after Clear
