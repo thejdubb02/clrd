@@ -75,6 +75,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: a repeat that reaches the phone just after you mark the same card
+  now still rings, unless the card was acknowledged or cleared since.
 - Server: a webhook turned off as shutdown begins still posts its notice, and a
   send that finishes after its webhook was deleted, recreated or turned off no
   longer clears the new webhook's failure record (#240).
