@@ -648,6 +648,25 @@
     if (!e.target.closest('[data-agent-copy]')) return;
     try { await copyText(document.querySelector('[data-agent-invite]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
   });
+  // Settings, webhook body template (#495): show what a delivery would send.
+  // The server renders it against a sample event and sends nothing (#241).
+  document.querySelectorAll('[data-hook-preview]').forEach(d => { d.hidden = false; });
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-hook-preview] button');
+    if (!b) return;
+    const f = b.closest('form'), out = f.querySelector('[data-hook-preview-out]'), topic = f.elements.topic.value.trim();
+    const show = (text, bad) => { out.textContent = text; out.classList.toggle('text-destructive', bad); out.hidden = false; };
+    if (!topic) return show('Pick a topic first.', true);
+    if (!f.elements.body.value.trim()) return show('Empty: each delivery sends the event as it is.', false);
+    const r = await fetch(`/api/v1/topics/${encodeURIComponent(topic)}/hooks/preview`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: f.elements.body.value.trim() }),
+    }).catch(() => null);
+    if (r && r.status === 401) return location.reload(); // signed out: show the sign-in page
+    const j = r ? await r.json().catch(() => ({})) : {};
+    if (r && r.ok) show(j.body, false);
+    else show(r ? j.error || `No preview (${r.status}).` : 'No preview: no connection.', true);
+  });
 
   // Empty-inbox tip card (#244): previous and next, a slow rotation that pauses
   // on hover or focus, and none at all under reduced motion.

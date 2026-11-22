@@ -1158,6 +1158,7 @@ try {
     const tmpl = '{"text": {{json .notification.title}}}';
     const hookBody = async () => (await (await fetch(base + '/api/v1/topics/hooked/hooks', { headers: { Authorization: `Bearer ${laptop}` } })).json()).hooks[0].body;
     await card.locator('summary', { hasText: 'Edit' }).click();
+    assert.ok(!(await edit.getByRole('button', { name: 'Preview' }).isVisible()), 'Preview shown without script, where it cannot work');
     await edit.getByLabel('Body template').fill(tmpl);
     await edit.getByRole('button', { name: 'Save webhook' }).click();
     await card.getByText('Custom body.').waitFor();
@@ -1166,6 +1167,28 @@ try {
     const old = await ctx.request.post(base + '/app/hooks', { form: { topic: 'hooked', name: 'ops', url: 'https://ops2.example.invalid/in' }, headers: { Origin: base }, maxRedirects: 0 });
     assert.equal(old.status(), 303, `old-form hook save: ${old.status()}`);
     assert.equal(await hookBody(), tmpl, 'a save without the body field wiped the template');
+    // With script, Preview renders the field against a sample event (#495),
+    // says why a broken one fails, and saves nothing.
+    {
+      const jctx = await browser.newContext();
+      assert.ok((await jctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'hooks-js' } })).ok(), 'hooks-js sign-in');
+      const jp = await jctx.newPage();
+      await jp.goto(base + '/app/settings');
+      const jcard = jp.locator('[data-hook="hooked/ops"]');
+      await jcard.locator('summary', { hasText: 'Edit' }).click();
+      const jedit = jcard.locator('form', { has: jp.getByRole('button', { name: 'Save webhook' }) });
+      const out = jedit.locator('[data-hook-preview-out]');
+      await jedit.getByLabel('Body template').fill(tmpl.slice(0, -1));
+      await jedit.getByRole('button', { name: 'Preview' }).click();
+      await out.getByText('not valid JSON').waitFor();
+      assert.ok((await out.getAttribute('class')).includes('text-destructive'), 'a broken preview is not shown as an error');
+      await jedit.getByLabel('Body template').fill('{"t": {{json .notification.title}}}');
+      await jedit.getByRole('button', { name: 'Preview' }).click();
+      await out.getByText('{"t": "Disk full"}', { exact: true }).waitFor();
+      assert.ok(!(await out.getAttribute('class')).includes('text-destructive'), 'a good preview is shown as an error');
+      assert.equal(await hookBody(), tmpl, 'Preview saved the template');
+      await jctx.close();
+    }
     await sp.reload();
     await card.locator('summary', { hasText: 'Edit' }).click();
     assert.equal((await edit.getByLabel('Body template').inputValue()).trim(), tmpl, 'Edit does not show the saved body');
@@ -1192,7 +1215,7 @@ try {
     await card.getByRole('button', { name: 'Delete' }).click();
     await sp.getByText('No webhooks yet.').waitFor();
     await ctx.close();
-    console.log('ok: webhooks are added, logged, edited (body template too) and deleted in Settings; a non-admin sees none');
+    console.log('ok: webhooks are added, logged, edited (body template and preview too) and deleted in Settings; a non-admin sees none');
   }
 
   // Who may approve (#329). An Ask browser's tap goes to an allowed device to

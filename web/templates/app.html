@@ -525,7 +525,9 @@
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-body">Body template</label>
   <textarea id="{{$id}}-body" class="textarea" name="body" rows="3" maxlength="16384" spellcheck="false" placeholder="{&quot;text&quot;: {{"{{"}}json .notification.title{{"}}"}}}" aria-describedby="{{$id}}-body-hint">
 {{.Body}}</textarea>
-  <p id="{{$id}}-body-hint" class="meta">Optional. Shapes each delivery for a receiver that wants its own JSON. Empty sends the event as it is.</p></div>
+  <p id="{{$id}}-body-hint" class="meta">Optional. Shapes each delivery for a receiver that wants its own JSON. Empty sends the event as it is.</p>
+  <div data-hook-preview hidden><button type="button" class="btn" data-variant="outline" data-size="sm">Preview</button></div>
+  <pre tabindex="0" class="bg-muted/50 w-full rounded-md p-3 whitespace-pre-wrap [overflow-wrap:anywhere]" aria-live="polite" data-hook-preview-out hidden></pre></div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-secret">Secret</label>
   <input id="{{$id}}-secret" class="input" type="password" name="secret" maxlength="256" autocomplete="new-password" aria-describedby="{{$id}}-secret-hint">
   <p id="{{$id}}-secret-hint" class="meta">{{if .HasSecret}}A secret is saved. Leave this empty to keep it.{{else}}Optional. Signs each delivery so the receiver can check it came from here.{{end}}</p>
