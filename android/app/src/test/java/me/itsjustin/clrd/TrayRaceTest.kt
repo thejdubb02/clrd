@@ -50,6 +50,21 @@ class TrayRaceTest {
         Notif(id, "t", "T", "m", 3, "", null, "[]", state, null, null, seq, System.currentTimeMillis(), seq) // recent, or prune drops it
     private fun buttons(n: Notification) = n.actions.orEmpty().map { it.title.toString() }
 
+    @Test fun undoAfterClearKeepsASnooze() { // #425: back as it was, not active
+        val until = System.currentTimeMillis() + 3_600_000
+        val snoozed = row("s", Notif.SNOOZED, 1).copy(snoozeUntil = until)
+        val open = row("o", Notif.ACTIVE, 2)
+        bg { dao.applyAll(listOf(snoozed, open), 2) }
+        app.act(listOf("s", "o"), "dismiss", App.VIA_APP_BULK)
+        app.undoClear(listOf(snoozed, open))
+        drainIo()
+        val q = bg { dao.pending() }
+        assertEquals(listOf("s" to "dismiss", "o" to "dismiss", "s" to "reopen", "o" to "reopen", "s" to "snooze"), q.map { it.notifId to it.action })
+        assertEquals(java.time.Instant.ofEpochMilli(until).toString(), JSONObject(q.last().body).getString("until"))
+        assertEquals(Notif.SNOOZED, bg { dao.get("s")?.state })
+        assertEquals(Notif.ACTIVE, bg { dao.get("o")?.state })
+    }
+
     @Test fun anOlderEventNeverChangesTheTray() {
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.ACKNOWLEDGED, 10)), 10) }

@@ -274,51 +274,59 @@ private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via"
  * One sender at a time, process wide: a stopped client's sender stops at [live] instead of
  * sending again what its replacement already sent.
  */
-fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synchronized(flushLock) {
-    // Several dismisses at the head of the queue (a stack swiped away, #108) go out as one clear call.
-    // Only the head run, so a later reopen of the same row still lands after its dismiss.
-    // Only one via per run, so the server logs each clear the way it was made (#267).
-    val head = store.pending()
-    val via = head.firstOrNull()?.let(::viaOf)
-    val run = head.takeWhile { it.action == "dismiss" && viaOf(it) == via }
-    if (run.size > 1 && live()) {
-        val sent = try {
-            val body = JSONObject().put("ids", JSONArray(run.map { it.notifId }))
-            if (!via.isNullOrEmpty()) body.put("via", via)
-            api.post("/api/v1/notifications/clear", body.toString())
-            true
-        } catch (e: HttpError) {
-            if (!e.isPermanent) throw e
-            false // refused as a batch: the loop below sends them one by one
-        }
-        if (sent) run.forEach(store::removePending) // the server's events bring the rows themselves
-    }
-    for (p in store.pending()) {
-        if (!live()) break
-        var mine = true // the row after our own action: the person just tapped it, so no sound
-        val answer = try {
-            api.action(p).let { body ->
-                // An ask device gets back the confirm prompt (202), not the question: the question stays unanswered.
-                val prompt = p.action == "reply" && runCatching { JSONObject(body).optString("id") }.getOrNull().orEmpty().let { it.isNotEmpty() && it != p.notifId }
-                if (!prompt) body else {
-                    // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
-                    store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
-                    if (told.add(p.key)) store.replyOutcome(p, "confirm")
-                    try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
-                }
+fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }): Unit = synchronized(flushLock) {
+    // Several dismisses in a row (a stack swiped away, #108) go out as one clear call, wherever they
+    // are in the queue (#425), so an Ack queued first does not split it. In order, so a later reopen
+    // of the same row still lands after its dismiss. One via per run, so the server logs each clear
+    // the way it was made (#267).
+    while (live()) {
+        val queue = store.pending()
+        val via = queue.firstOrNull()?.let(::viaOf) ?: return
+        val run = queue.takeWhile { it.action == "dismiss" && viaOf(it) == via }
+        if (run.size > 1) {
+            val sent = try {
+                val body = JSONObject().put("ids", JSONArray(run.map { it.notifId }))
+                if (via.isNotEmpty()) body.put("via", via)
+                api.post("/api/v1/notifications/clear", body.toString())
+                true
+            } catch (e: HttpError) {
+                if (!e.isPermanent) throw e
+                false // refused as a batch: sent one by one below
             }
-        } catch (e: HttpError) {
-            if (!e.isPermanent) throw e
-            // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
-            if (p.action == "reply" && (e.code == 403 || e.code == 409)) { if (told.add(p.key)) store.replyOutcome(p, if (e.code == 409) "conflict" else e.reason) }
-            else mine = false
-            // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
-            // so take the server's current row instead. A fetch that may work later throws and keeps the
-            // action queued: the event that changed the row may already be behind the cursor.
-            try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
+            if (sent) { run.forEach(store::removePending); continue } // the server's events bring the rows themselves
         }
-        answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine) }
-        store.removePending(p)
-        told.remove(p.key)
+        for (p in run.ifEmpty { queue.take(1) }) {
+            if (!live()) return
+            sendOne(store, api, p)
+        }
     }
+}
+
+/** Send one queued action and save the server's row; see [flushPending]. */
+private fun sendOne(store: Store, api: Api, p: Pending) {
+    var mine = true // the row after our own action: the person just tapped it, so no sound
+    val answer = try {
+        api.action(p).let { body ->
+            // An ask device gets back the confirm prompt (202), not the question: the question stays unanswered.
+            val prompt = p.action == "reply" && runCatching { JSONObject(body).optString("id") }.getOrNull().orEmpty().let { it.isNotEmpty() && it != p.notifId }
+            if (!prompt) body else {
+                // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
+                store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
+                if (told.add(p.key)) store.replyOutcome(p, "confirm")
+                try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
+            }
+        }
+    } catch (e: HttpError) {
+        if (!e.isPermanent) throw e
+        // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
+        if (p.action == "reply" && (e.code == 403 || e.code == 409)) { if (told.add(p.key)) store.replyOutcome(p, if (e.code == 409) "conflict" else e.reason) }
+        else mine = false
+        // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
+        // so take the server's current row instead. A fetch that may work later throws and keeps the
+        // action queued: the event that changed the row may already be behind the cursor.
+        try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
+    }
+    answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine) }
+    store.removePending(p)
+    told.remove(p.key)
 }

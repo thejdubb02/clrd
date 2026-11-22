@@ -223,6 +223,15 @@ class App : Application() {
     /** One action on several rows from the inbox, such as a stack's Clear (#360): the dismisses go out as one clear call. */
     fun act(ids: List<String>, action: String, via: String = VIA_APP) = actAll(ids, action, "{}", null, via) {}
 
+    /** Undo of a Clear (#425): rows come back as they were, so a snoozed one is snoozed again until its old time. */
+    fun undoClear(rows: List<Notif>) {
+        act(rows.map { it.id }, "reopen") // the server snoozes only an open row
+        val now = System.currentTimeMillis()
+        rows.filter { it.state == Notif.SNOOZED && (it.snoozeUntil ?: 0) > now }.forEach {
+            act(it.id, "snooze", JSONObject().put("until", java.time.Instant.ofEpochMilli(it.snoozeUntil!!).toString()).toString())
+        }
+    }
+
     /**
      * Rows swiped out of the shade (#265). A swipe, a stack swipe or Clear all only hides them on this
      * phone; clearing happens in the app, the web or the API. A new alert for one shows it again.

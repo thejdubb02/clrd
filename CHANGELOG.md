@@ -72,10 +72,17 @@ Fixed, Removed, Security), as one line a user can understand.
 - ntfy: the short form of `X-Actions` reads `\"` inside a quoted value as a
   quote, and keeps spaces inside quotes, as ntfy does. Before, `body="a\",b"`
   split at the comma and `' a '` lost its spaces (#446).
+- Android: Undo after Clear puts a snoozed message back in Snoozed until its
+  old time, instead of in the Inbox. Offline, an Ack queued before a stack's
+  Clear no longer splits that Clear into one request per message (#425).
 - ntfy: a subscriber whose `since=` was pruned while it caught up no longer
   misses a live-only (`Cache: no`) message sent in that moment. The stream
   now starts over from the oldest message left without closing its live
   feed (#443).
+- Android: the "May approve" menu no longer shows on a phone whose token is
+  limited to some topics, where every change was refused. The server now
+  marks each caller's own device row with `can_approve`, set as the web
+  inbox's check (#433).
 - A Pushover image sent as `attachment_base64` near the attachment cap is
   accepted. Before, base64 made the request a third bigger than the file, so
   it was refused as too large although the file itself fit (#404).
@@ -185,6 +192,11 @@ Fixed, Removed, Security), as one line a user can understand.
 - Web: the inbox shows a message's `http` and `broadcast` buttons under the
   card as text (the label, plus the method and URL or the broadcast intent), so a
   reader knows what they do. The browser never runs them (#450).
+- Android: ntfy-style `http` and `broadcast` buttons now run from the tray,
+  on topics where an admin turned device actions on. A button that fails says
+  so and leaves the notification; one with `clear` clears it everywhere once
+  it worked. A broadcast with no intent uses ntfy's, so Tasker profiles made
+  for ntfy keep working (#449).
 
 - Web: an "Add agent" button in Settings. Give the agent a name and its topics, pick how long the invite lasts (15 minutes by default) and copy the one-use invite it shows. The agent then shows in Linked devices as an agent, where you can unlink it (#456).
 

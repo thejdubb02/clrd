@@ -143,9 +143,11 @@ the native API answers 403 and a ntfy publish drops them silently. Turning it
 off keeps what was already published. Readers, ntfy subscribers and outgoing
 webhooks get the whole action, headers and body included, so do not put a
 secret there that a reader of the topic must not see. ntfy apps run device
-actions; clrd's own Android app does not yet. The web inbox never runs them: it
-shows each one under the card as text (the label and the method and URL, or the
-broadcast intent), without headers or body (#450).
+actions, and so does clrd's Android app, as tray buttons (a broadcast with no
+intent sends ntfy's `io.heckel.ntfy.USER_ACTION`, and `clear` applies only when
+the button worked). The web inbox never runs them: it shows each one under the
+card as text (the label and the method and URL, or the broadcast intent),
+without headers or body (#450).
 
 **Icons:** `icon` is an absolute `http` or `https` URL with a host (at most
 2048 characters); anything else is a 400. Clients load it straight from that
@@ -647,7 +649,7 @@ resolved`) and `ntfy_import`.
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
-| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,via_id,linked_at,last_seen_at,this,can_unlink,sound,approve,connected,caught_up,synced_seq}]}`; `kind` is `token`, `browser` or `phone`. `via` and `via_id` are the name and id of the token or device it hangs under (absent for a token), `approve` is its setting from "Who may approve" in section 4. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
+| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,via_id,linked_at,last_seen_at,this,can_unlink,sound,approve,can_approve,connected,caught_up,synced_seq}]}`; `kind` is `token`, `browser` or `phone`. `via` and `via_id` are the name and id of the token or device it hangs under (absent for a token), `approve` is its setting from "Who may approve" in section 4. `can_approve` is true only on the caller's own row (`this`), when the caller may change who approves: `approve` is `allowed` and the token is on every topic. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
 | GET | `/api/v1/devices/log` | The last 200 links, sign-ins and unlinks for the same devices, newest first: `{events:[{at,action,device,device_id,by}]}`. |
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
 | PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
