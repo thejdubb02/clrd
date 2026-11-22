@@ -407,8 +407,9 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(app)
-            LaunchedEffect(app.sender.sent) { // a send that lands after a rotation still closes the box (#523)
-                app.sender.confirm { sending = false; snackbar.showSnackbar(ctx.getString(R.string.send_done)) }
+            // A send that lands after a rotation still closes the box (#523); a box opened again since stays open (#532).
+            LaunchedEffect(app.sender.sent) {
+                app.sender.confirm { if (app.sender.done) sending = false; snackbar.showSnackbar(ctx.getString(R.string.send_done)) }
             }
             if (sending) SendBox(app, topic.orEmpty(), close = { sending = false })
             when (tab) {
