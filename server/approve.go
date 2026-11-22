@@ -225,6 +225,7 @@ func (s *Server) SetApprove(ctx context.Context, tok *Token, id, approve string)
 	}
 	if err == nil {
 		d.Approve = approve
+		d.CanApprove = d.CanApprove && approve == ApproveAllowed // lowering itself drops it (#433)
 		err = tx.Commit()
 	}
 	s.mu.Unlock()

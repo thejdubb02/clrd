@@ -236,4 +236,8 @@ func TestCanApproveOnOwnRow(t *testing.T) {
 	if d := own(limited); d["approve"] != "allowed" || d["can_approve"] != false {
 		t.Fatalf("allowed token limited to a topic: %v", d)
 	}
+	id := own(admin)["id"].(string)
+	if code, d := call(t, ts, "PUT", "/api/v1/devices/"+id+"/approve", admin, map[string]any{"approve": "ask"}); code != 200 || d["can_approve"] != false {
+		t.Fatalf("lowering itself: %d %v", code, d)
+	}
 }
