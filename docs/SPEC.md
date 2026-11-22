@@ -671,7 +671,8 @@ By external id (what scripts and monitors use):
 
 - `PUT|POST /{topic}` with the body as the message. Headers `X-Title`/`Title`/`t`,
   `X-Priority`/`Priority`/`p` (1-5 or min/low/default/high/urgent),
-  `X-Tags`/`Tags`, `X-Click`, `X-Actions` (JSON or the short form;
+  `X-Tags`/`Tags`, `X-Click`, `X-Actions` (JSON or the short form, where
+  a quoted value keeps its spaces and `\"` or `\'` is the quote itself;
   `view`, `http` and `broadcast`, the last two only on a topic with
   `device_actions` on, else dropped; `copy` is dropped), `X-Delay`, `X-Icon` (sets `icon`; a
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL

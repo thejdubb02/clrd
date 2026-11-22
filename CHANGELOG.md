@@ -69,6 +69,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- ntfy: the short form of `X-Actions` reads `\"` inside a quoted value as a
+  quote, and keeps spaces inside quotes, as ntfy does. Before, `body="a\",b"`
+  split at the comma and `' a '` lost its spaces (#446).
 - ntfy: a subscriber whose `since=` was pruned while it caught up no longer
   misses a live-only (`Cache: no`) message sent in that moment. The stream
   now starts over from the oldest message left without closing its live
