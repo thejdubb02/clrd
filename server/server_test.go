@@ -387,7 +387,7 @@ func TestServerEnvAndGrantsOverAPI(t *testing.T) {
 	code, out := call(t, ts, "GET", "/api/v1/server", admin, nil)
 	env, _ := out["env"].(map[string]any)
 	if code != 200 || env["CLRD_RATE_TOKEN"] != "60" || env["CLRD_BASE_URL"] != "" || env["CLRD_PUBLIC_PAGES"] != "on" ||
-		env["CLRD_RETENTION"] != "720h0m0s" || env["CLRD_DB"] != s.DBPath() || len(env) != 12 {
+		env["CLRD_RETENTION"] != "720h0m0s" || env["CLRD_DB"] != s.DBPath() || len(env) != 13 || env["CLRD_HOOK_ALLOW"] != "on" {
 		t.Fatalf("server settings: %d %v", code, out)
 	}
 	s2, err := New(Options{DB: filepath.Join(t.TempDir(), "c.db"), BaseURL: "https://u:pw@clrd.example.com/c", RateToken: -1})

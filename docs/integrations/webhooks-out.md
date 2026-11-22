@@ -119,6 +119,13 @@ those addresses, with a body it chooses, and read the status code in the
 delivery log, so a leaked admin token reaches whatever you list. Never
 list `127.0.0.0/8` or `169.254.0.0/16` unless the receiver lives there.
 
+If the box runs other services on loopback or a private network and no
+webhook needs them, lock the list: start clrd with `CLRD_HOOK_ALLOW=off`.
+Webhooks then reach only public addresses on ports 80 and 443, any saved
+list is ignored, `GET /api/v1/hooks/allow` shows `"locked": true`, and
+saving one answers 403 `locked`. Only the operator can undo it, by unsetting
+the variable (or setting it to `on`) and restarting.
+
 ## Retries and turning off
 
 Any 2xx answer is a success. Anything else, a redirect or no answer within 10
