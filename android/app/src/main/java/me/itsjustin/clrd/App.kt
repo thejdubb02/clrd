@@ -26,6 +26,8 @@ class App : Application() {
     val acts = Executors.newSingleThreadExecutor()
     /** Typed answers the server refused, by notification id, so the reply box opens with them again (#153). */
     val drafts = java.util.concurrent.ConcurrentHashMap<String, String>()
+    /** The Send box's send in flight, kept here so a rotation does not forget it (#523). */
+    val sender by lazy { Sender { io.execute(it) } }
     /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
     private val sends = Executors.newSingleThreadExecutor()
     private var sendNotBefore = 0L // System.nanoTime(); a busy server's Retry-After, touched only on [sends]
