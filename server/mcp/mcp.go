@@ -608,6 +608,8 @@ var tools = []map[string]any{
 			"link_previews":           p("boolean", "Show link previews"),
 			"snooze_intervals":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Snooze menu times as durations like 30m or 4h, 1 to 8"},
 			"snooze_default":          p("string", "The snooze time a plain tap uses, one of snooze_intervals"),
+			"swipe_start":             map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"clear", "snooze", "ack", "resolve"}}, "maxItems": 3, "description": "Buttons a swipe toward the start of the line (to the left) reveals on a card, first nearest the edge. Default [clear, snooze]. Each action at most once across swipe_start and swipe_end"},
+			"swipe_end":               map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"clear", "snooze", "ack", "resolve"}}, "maxItems": 3, "description": "Buttons the opposite swipe (to the right) reveals. Default [ack]"},
 		})},
 	{"name": "get", "description": "Get one notification by its server id, with its current state.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},

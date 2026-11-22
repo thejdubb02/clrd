@@ -1140,6 +1140,12 @@
             "null"
            ]
           }
+         },
+         "swipe_start": {
+          "$ref": "#/components/schemas/SwipeButtons"
+         },
+         "swipe_end": {
+          "$ref": "#/components/schemas/SwipeButtons"
          }
         }
        }
@@ -6639,6 +6645,21 @@
      }
     }
    },
+   "SwipeButtons": {
+    "type": "array",
+    "description": "0 to 3 actions, each at most once across swipe_start and swipe_end. A token limited to some topics cannot change them.",
+    "maxItems": 3,
+    "uniqueItems": true,
+    "items": {
+     "type": "string",
+     "enum": [
+      "clear",
+      "snooze",
+      "ack",
+      "resolve"
+     ]
+    }
+   },
    "Settings": {
     "type": "object",
     "description": "Display settings every device follows. One set per server.",
@@ -6673,6 +6694,14 @@
        "type": "boolean"
       },
       "description": "Per-topic override of link_previews. A token limited to some topics only sees its own."
+     },
+     "swipe_start": {
+      "$ref": "#/components/schemas/SwipeButtons",
+      "description": "Buttons a swipe toward the start of the line (to the left) reveals, first nearest the edge. Default [\"clear\", \"snooze\"]."
+     },
+     "swipe_end": {
+      "$ref": "#/components/schemas/SwipeButtons",
+      "description": "Buttons the opposite swipe reveals. Default [\"ack\"]."
      }
     },
     "required": [
