@@ -420,6 +420,7 @@
       <label class="label"><input type="checkbox" role="switch" class="input" name="autolink"{{if .Snap.Autolink}} checked{{end}}> Turn web addresses into links</label>
       <label class="label"><input type="checkbox" role="switch" class="input" name="favicons"{{if .Snap.Favicons}} checked{{end}}> Show site icons next to links</label>
       <label class="label"><input type="checkbox" role="switch" class="input" name="link_previews"{{if .Snap.LinkPreviews}} checked{{end}}> Show link previews</label>
+      <label class="label"><input type="checkbox" role="switch" class="input" name="clear_marks_on_republish"{{if .Snap.ClearMarks}} checked{{end}}> Clear seen and actioned marks when an alert is sent again</label>
       {{if .Snap.Topics}}<fieldset class="grid gap-2"><legend class="label mb-2">Link previews by topic</legend>
         {{range .Snap.Topics}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="tp-{{.Name}}">{{.Name}}</label>
           <select id="tp-{{.Name}}" class="input w-auto" data-topic="{{.Name}}">{{$v := $.Snap.TopicPreview .Name}}<option value=""{{if eq $v ""}} selected{{end}}>Default</option><option value="on"{{if eq $v "on"}} selected{{end}}>On</option><option value="off"{{if eq $v "off"}} selected{{end}}>Off</option></select></div>

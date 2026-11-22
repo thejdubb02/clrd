@@ -847,6 +847,11 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
 				n.ReplyText = ""
+				if st, err := s.loadSettings(ctx, tx); err != nil {
+					return nil, err
+				} else if st.ClearMarksOnRepublish { // the problem came back: it no longer looks handled
+					n.Marks = nil
+				}
 				replaced, n.Attachment, n.file, n.ExpiresAt, n.Repeat, n.sender = n.file, in.Attachment, in.file, expires, repeat, sender
 				n.Devices, n.muted, n.RequestedTopic = in.Devices, in.muted, in.requested
 				if in.Reopen && n.State == Acknowledged {

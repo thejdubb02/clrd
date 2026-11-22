@@ -89,6 +89,26 @@ func TestMarks(t *testing.T) {
 	}
 }
 
+// A re-publish by external_id keeps marks, unless the setting says to clear them.
+func TestMarksOnRepublish(t *testing.T) {
+	_, ts, admin := newTest(t)
+	send := func() map[string]any {
+		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "disk 91%", "external_id": "disk"})
+		return n
+	}
+	path := "/api/v1/notifications/" + send()["id"].(string) + "/mark"
+	call(t, ts, "POST", path, admin, map[string]any{"mark": "actioned"})
+	if ms, _ := send()["marks"].([]any); len(ms) != 1 {
+		t.Fatalf("default: marks dropped on re-publish: %v", ms)
+	}
+	if code, st := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"clear_marks_on_republish": true}); code != 200 || st["clear_marks_on_republish"] != true {
+		t.Fatalf("setting: %d %v", code, st)
+	}
+	if ms, _ := send()["marks"].([]any); len(ms) != 0 {
+		t.Fatalf("setting on: marks kept on re-publish: %v", ms)
+	}
+}
+
 // A person's devices share one mark, named for the person.
 func TestMarksByPerson(t *testing.T) {
 	s, ts, admin := newTest(t)

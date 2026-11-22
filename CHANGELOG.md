@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Settings: "Clear seen and actioned marks when an alert is sent again"
+  (`clear_marks_on_republish`). Off by default, so marks stay when a sender
+  updates an alert; on, a re-sent alert drops its marks.
 - Android: choose the buttons each swipe on a card reveals, in Settings, up
   to 3 per side (#161). The choice is saved on your server, so every phone
   follows it; offline the app keeps the last one it saw. A token that may not
