@@ -449,6 +449,13 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 	for {
 		select {
 		case <-r.Context().Done():
+			// Read again before showing it: the stream is not filtered, and the
+			// grant for this topic may have gone mid-wait (#428).
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+			defer cancel()
+			if _, err := h.api(r.WithContext(ctx), "GET", "/api/v1/notifications/"+id, nil); err != nil {
+				return map[string]any{"reply": "timeout"}, nil
+			}
 			return map[string]any{"reply": "timeout", "notification": last}, nil
 		case e, ok := <-evs:
 			if !ok {
