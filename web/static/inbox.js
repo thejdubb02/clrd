@@ -414,14 +414,18 @@
 
   // Long press (or right click) on Snooze opens the other times instead of
   // snoozing for the default; the click that ends a long press is dropped.
-  let hold = 0, held = null;
+  let hold = 0, held = null, down = null;
   const more = b => { held = b; b.nextElementSibling.open = true; };
   document.addEventListener('pointerdown', e => {
     const b = e.button === 0 && e.target.closest('[data-snooze-main]');
     held = null;
+    down = b && { b, at: e.timeStamp };
     if (b) hold = setTimeout(() => more(b), 500);
   });
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => document.addEventListener(t, () => clearTimeout(hold), true));
+  // A busy page can handle the release before the timer, so the release's own
+  // time decides too: held 500 ms or more is a long press, never a tap (#476).
+  document.addEventListener('pointerup', e => { if (down && !held && e.timeStamp - down.at >= 500) more(down.b); }, true);
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => document.addEventListener(t, () => { clearTimeout(hold); down = null; }, true));
   document.addEventListener('contextmenu', e => {
     const b = e.target.closest('[data-snooze-main]');
     if (b) { e.preventDefault(); clearTimeout(hold); more(b); }
