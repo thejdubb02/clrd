@@ -1755,6 +1755,88 @@ try {
     console.log('ok: on a touch screen a part swipe shows the chosen buttons and acts only on a tap; swipe back, vertical, full and mouse drags change nothing; settings move them; a refused save is read-only');
   }
 
+  // Web Push (#164): nothing asks for permission on load; the switch subscribes
+  // and unsubscribes against the server; a lost subscription and a blocked
+  // site tidy both sides to off; a push shows a notification, fetches the rest
+  // when only the id came, and clears nothing. Headless Chromium denies
+  // notifications, so permission and the push service are stubbed: no real
+  // push service is reached and a notification tap cannot be dispatched.
+  {
+    const { createECDH, randomBytes } = await import('node:crypto');
+    const ec = createECDH('prime256v1'); ec.generateKeys();
+    const fake = { endpoint: 'https://push.example.invalid/sub/1', keys: { p256dh: ec.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') } };
+    const ctx = await browser.newContext();
+    await ctx.addInitScript(f => {
+      const ss = (k, v) => { try { return v === undefined ? sessionStorage.getItem(k) : sessionStorage.setItem(k, v); } catch { return null; } };
+      window.asked = 0;
+      let perm = ss('perm') || 'default';
+      Object.defineProperty(Notification, 'permission', { get: () => perm, configurable: true });
+      Notification.requestPermission = async () => { window.asked++; perm = ss('answer') || 'granted'; ss('perm', perm); return perm; };
+      let sub = null; // gone after a reload: the browser lost it
+      PushManager.prototype.subscribe = async () => (sub = { ...f, toJSON: () => f, unsubscribe: async () => { sub = null; return true; } });
+      PushManager.prototype.getSubscription = async () => sub;
+    }, fake);
+    const pp = await ctx.newPage();
+    await pp.goto(`${base}/app?auth=${Buffer.from(`Bearer ${laptop}`).toString('base64url')}`);
+    await pp.goto(base + '/app/settings');
+    const btn = pp.locator('[data-push]');
+    const subscribed = async () => (await (await ctx.request.get(base + '/api/v1/push')).json()).subscribed;
+    const ready = async name => { await pp.getByRole('button', { name }).waitFor(); await until(pp, () => !document.querySelector('[data-push]').disabled); };
+    await ready('Turn on notifications');
+    assert.equal(await pp.evaluate(() => window.asked), 0, 'asked for permission on load');
+    assert.equal(await pp.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0, 'a worker registered before opting in');
+    assert.equal(await subscribed(), false);
+
+    const swe = ctx.waitForEvent('serviceworker');
+    await btn.click();
+    await ready('Turn off notifications');
+    assert.equal(await pp.evaluate(() => window.asked), 1);
+    assert.equal(await subscribed(), true, 'turning on reached the server');
+    // A push: record what the worker shows instead of the browser's own call.
+    const sw = await swe;
+    await sw.evaluate(() => { self.seen = []; self.registration.showNotification = async (t, o) => { self.seen.push({ t, ...o }); }; });
+    const cdp = await ctx.newCDPSession(pp);
+    const regs = new Promise(ok => cdp.on('ServiceWorker.workerRegistrationUpdated', e => e.registrations[0] && ok(e.registrations[0].registrationId)));
+    await cdp.send('ServiceWorker.enable');
+    const regId = await regs;
+    const n = await api(phone, '/api/v1/notifications', { topic: 'pushy', title: 'Disk full', message: 'Free 2 GB' });
+    const push = async d => { await cdp.send('ServiceWorker.deliverPushMessage', { origin: base, registrationId: regId, data: JSON.stringify(d) }); };
+    await push({ type: 'notification', id: 'abc', topic: 'pushy', title: 'Short one', message: 'body' });
+    await push({ type: 'notification', via: 'new', seq: 1, id: n.id, topic: 'pushy' }); // too big: only the id came
+    for (let i = 0; i < 50 && (await sw.evaluate(() => self.seen.length)) < 2; i++) await pp.waitForTimeout(100);
+    const seen = await sw.evaluate(() => self.seen);
+    assert.deepEqual(seen.map(s => [s.t, s.body, s.tag, s.renotify]), [['Short one', 'body', 'abc', true], ['Disk full', 'Free 2 GB', n.id, true]], 'what the worker showed');
+    assert.equal((await get(laptop, n.id)).state, 'active', 'a push cleared the notification');
+
+    // The browser lost its subscription (stub gone after reload): tidy to off.
+    await pp.reload();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'a lost browser subscription left the server row');
+    // On, then off.
+    await btn.click();
+    await ready('Turn off notifications');
+    await btn.click();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'turning off reached the server');
+    // Blocked after opting in: the next load tidies the server and says why.
+    await btn.click();
+    await ready('Turn off notifications');
+    await pp.evaluate(() => sessionStorage.setItem('perm', 'denied'));
+    await pp.reload();
+    await pp.locator('[data-push-hint]', { hasText: 'blocked' }).waitFor();
+    assert.equal(await btn.isDisabled(), true, 'the switch works while the site is blocked');
+    assert.equal(await subscribed(), false, 'a blocked site kept the server row');
+    // Refused when asked: nothing subscribed.
+    await pp.evaluate(() => { sessionStorage.setItem('perm', 'default'); sessionStorage.setItem('answer', 'denied'); });
+    await pp.reload();
+    await ready('Turn on notifications');
+    await btn.click();
+    await pp.locator('[data-push-hint]', { hasText: 'blocked' }).waitFor();
+    assert.equal(await subscribed(), false, 'a refused permission subscribed');
+    await ctx.close();
+    console.log('ok: web push asks only on tap, subscribes and unsubscribes, tidies a lost or blocked subscription, and a push shows without clearing');
+  }
+
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
   // scripts send every request inside it, and a setting saved from the page
   // reaches the server.

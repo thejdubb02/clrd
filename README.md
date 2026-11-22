@@ -94,7 +94,9 @@ offline catches up the moment it reconnects.
   work without JavaScript, Markdown formatting and links, link previews,
   Share and Copy on each card, a part swipe on a phone that shows a card's buttons, optional stacking by topic, a Ctrl+K command
   palette, a Send box for a quick note to your phone, a sound for new
-  notifications (pick one in Settings, silenced ones stay quiet), silences
+  notifications (pick one in Settings, silenced ones stay quiet), system
+  notifications through Web Push even with the tab closed (off until you
+  turn them on in Settings; needs HTTPS), silences
   started and ended from Settings, a dot for each linked device (up to six)
   showing which are connected, dark mode, phone width.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS

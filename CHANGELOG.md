@@ -13,8 +13,12 @@ Fixed, Removed, Security), as one line a user can understand.
 
 - Server: Web Push for browsers (#164, server side). A device can subscribe
   at `/api/v1/push`, and each notification that would ring it in the inbox
-  is pushed, encrypted, even with the tab closed once the inbox side lands.
-  VAPID keys are made on first start. No new dependency.
+  is pushed, encrypted, even with the tab closed. VAPID keys are made on
+  first start. No new dependency.
+- Web: system notifications through Web Push (#164). Settings,
+  Notifications turns them on for that browser; nothing asks for permission
+  before you tap it. They show with clrd closed, a tap opens the inbox, and
+  closing one clears nothing. Needs HTTPS. Checked in Chromium only so far.
 - Web: on a touch screen, swipe a card part way to show its buttons, then
   tap one (#161). Nothing changes until you tap, a full swipe never clears,
   and swiping back hides them. Settings, Swipe picks the buttons for each

@@ -1116,7 +1116,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `web/ui/build.sh` writes `web/static/app.css`, which is committed so a plain
   `go build` still works. CI rebuilds it and fails if it drifted. Icons are
   Lucide, inlined as SVG partials in `web/templates/icons.html`.
-- Web Push (#164; server side built, the inbox half is a later change). The
+- Web Push (#164). The
   server makes a VAPID key pair on first start and keeps it in the
   database. A signed-in device subscribes with its token:
   `GET /api/v1/push` gives `public_key` (pass it as `applicationServerKey`)
@@ -1140,6 +1140,15 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   failures are logged, not retried. Push endpoints get the same guard as
   link fetches (ports 80 and 443, no private addresses), so a subscription
   cannot point the server at the local network.
+- The web inbox (Settings, Notifications) registers its worker,
+  `static/sw.js`, only when the user turns notifications on there, and asks
+  for permission only on that tap. Nothing changes for a browser that never
+  opts in. A site the browser blocks, or a subscription one side lost, is
+  tidied to off on both sides at the next Settings load. The worker shows
+  every push (fetching the notification by id when only the short form
+  came), and a tap opens or focuses the inbox. The system notification only
+  signals: closing it changes nothing on the server. Browsers allow Web Push
+  only over HTTPS (or on localhost).
 
 ## 10. Brand tokens
 

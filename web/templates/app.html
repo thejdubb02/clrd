@@ -293,6 +293,12 @@
       <button type="button" class="btn" data-variant="outline" data-sound-play>Play</button></div>
     <p class="text-muted-foreground text-sm" role="status" data-sound-hint></p>
   </section>
+  <section class="js-only grid gap-3" aria-labelledby="push-h">
+    <h2 id="push-h" class="text-base font-semibold">Notifications</h2>
+    <p class="text-body text-sm/relaxed">Shows a system notification on this device when a new one arrives, even with clrd closed. Off until you turn it on here. Closing the system notification clears nothing; clear it in the inbox.</p>
+    <div><button type="button" class="btn" data-variant="outline" data-push disabled>Turn on notifications</button></div>
+    <p class="text-muted-foreground text-sm" role="status" data-push-hint></p>
+  </section>
   <section class="grid gap-3" aria-labelledby="sil-h">
     <h2 id="sil-h" class="text-base font-semibold">Silences</h2>
     <p class="text-body text-sm/relaxed">Mute a topic, a tag, or a tag in one topic for a while. Notifications still arrive and show on every device, but this inbox and ntfy apps play no sound for them. The clrd Android app does not read silences yet and still alerts.</p>
