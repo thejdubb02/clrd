@@ -154,6 +154,24 @@ class TrayRaceTest {
         assertEquals(6L, bg { dao.get("a")!!.seq })
     }
 
+    @Test fun aLateRepeatStaysQuietWhenThisPhoneMadeEveryChange() { // #550: this phone published it, cleared it and undid it
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        val a = row("a", Notif.ACTIVE, 1).copy(createdAt = 1, stateBy = "phone")
+        bg { store.apply(listOf(a), 1) }
+        bg { store.apply(listOf(a.copy(state = Notif.DISMISSED, seq = 5)), 0, quiet = true, answer = true) }
+        bg { store.apply(listOf(a.copy(seq = 6)), 0, quiet = true, answer = true) } // the same row as the repeat, bar seq
+        assertTrue(once("a"))
+        bg { store.apply(listOf(a.copy(seq = 4)), 4, again = true) }
+        assertTrue(once("a"))
+        assertEquals(6L, bg { dao.get("a")!!.seq })
+        bg { store.apply(listOf(a.copy(seq = 8, marks = "[{\"mark\":\"seen\"}]")), 0, quiet = true) } // a mark after the Undo
+        bg { store.apply(listOf(a.copy(seq = 3)), 3, again = true) } // still sent before the Clear
+        assertTrue(once("a"))
+        bg { store.apply(listOf(a.copy(seq = 9)), 9, again = true) } // a repeat sent after the Undo still rings
+        assertTrue(!once("a"))
+    }
+
     @Test fun reconcileWaitsForSyncWrites() {
         bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
         val store = RoomStore(app)
