@@ -96,6 +96,47 @@ func TestOriginChecksScheme(t *testing.T) {
 	}
 }
 
+// #430: the scheme must match when clrd knows it, and a proxy that rewrites
+// Host still passes when the page's origin is CLRD_BASE_URL.
+func TestSameOriginSchemeAndBase(t *testing.T) {
+	s, _, _ := newTest(t)
+	check := func(remote, xfp, host, origin string) bool {
+		r, _ := http.NewRequest("POST", "http://"+host+"/api/v1/session", nil)
+		r.RemoteAddr = remote
+		if xfp != "" {
+			r.Header.Set("X-Forwarded-Proto", xfp)
+		}
+		r.Header.Set("Origin", origin)
+		return s.sameOrigin(r)
+	}
+	proxy, direct := "127.0.0.1:5000", "203.0.113.9:5000"
+	for _, c := range []struct {
+		remote, xfp, host, origin string
+		want                      bool
+	}{
+		{proxy, "http", "a.example", "https://a.example", false}, // an https page on an http endpoint
+		{proxy, "https", "a.example", "http://a.example", false},
+		{proxy, "https", "a.example", "https://a.example", true},
+		{direct, "http", "a.example", "https://a.example", true}, // an untrusted peer's header is ignored
+		{direct, "", "a.example", "https://a.example", true},     // unknown: maybe a TLS proxy
+		{direct, "", "a.example", "http://a.example", true},
+		{direct, "", "a.example", "ftp://a.example", false},
+		{proxy, "https", "127.0.0.1:8080", "https://clrd.example", false},
+	} {
+		if got := check(c.remote, c.xfp, c.host, c.origin); got != c.want {
+			t.Errorf("%+v: got %v", c, got)
+		}
+	}
+	s.opt.BaseURL, s.baseSet = "https://clrd.example", true
+	if !check(proxy, "https", "127.0.0.1:8080", "https://clrd.example") || check(proxy, "https", "127.0.0.1:8080", "http://clrd.example") ||
+		check(direct, "", "a.example", "http://a.example") {
+		t.Fatal("base URL origin")
+	}
+	if s.opt.BaseURL = "https://clrd.example:443"; !check(proxy, "https", "127.0.0.1:8080", "https://clrd.example") {
+		t.Fatal("base URL with its default port")
+	}
+}
+
 // After a reset to an empty log, ready still carries id: 0, so EventSource
 // stops sending the old Last-Event-ID and does not reset on every reconnect.
 func TestSSEReadyIDAfterReset(t *testing.T) {

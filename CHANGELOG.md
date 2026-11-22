@@ -11,6 +11,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Server: a page on clrd's own host now counts as clrd's own only when its
+  scheme matches too, so an https page cannot act on a plain http endpoint
+  (or the reverse) when clrd knows the request's scheme. Behind a proxy that
+  rewrites the host or drops the port, a page from `CLRD_BASE_URL` now passes
+  instead of getting 403 (#430).
 - Server: a grant now allows a topic only in the grant's own case. A grant for
   `home` used to also allow `HOME` and `Home`, which are different topics, so
   a token or agent invite could reach more than it named. A match in another

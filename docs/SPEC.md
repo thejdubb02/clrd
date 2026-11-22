@@ -367,7 +367,10 @@ WebSocket (events, `settings`, `ready`, `reset`), one per `data:` line, and
 honours `Last-Event-ID` (`settings` and `reset` carry no `id:`).
 
 Browsers cannot set headers on a WebSocket, so the WebSocket and SSE accept
-the session cookie (same-origin only) as well as a Bearer token.
+the session cookie (same-origin only) as well as a Bearer token. Same origin
+means the page's scheme and host equal `CLRD_BASE_URL`'s, or this request's
+host and, when clrd knows it (TLS, or a trusted proxy's X-Forwarded-Proto),
+scheme.
 
 ## 4. Auth
 
