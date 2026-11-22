@@ -222,7 +222,7 @@
   </div>
   <section class="grid gap-8" aria-labelledby="g-notifications" data-settings-group>
     <h2 id="g-notifications" class="border-b pb-2 text-lg font-semibold tracking-tight">Notifications</h2>
-    <section id="sound" data-setting data-keywords="sound, chime, ring, audio, volume" class="js-only grid gap-3" aria-labelledby="sound-h">
+    <section id="sound" data-setting data-keywords="sound, chime, ring, audio, volume" class="js-only grid gap-3">
       <h3 id="sound-h" class="text-base font-semibold">Sound</h3>
       <p class="text-body text-sm/relaxed">Plays when a new notification arrives while clrd is open in this browser. Silenced notifications make no sound. Each browser and phone has its own sound.</p>
       <div class="flex flex-wrap items-center gap-2"><label for="sound-pick" class="label">Sound</label>
@@ -230,13 +230,13 @@
         <button type="button" class="btn" data-variant="outline" data-sound-play>Play</button></div>
       <p class="text-muted-foreground text-sm" role="status" data-sound-hint></p>
     </section>
-    <section id="push" data-setting data-keywords="push, system notification, pop up, desktop, alert" class="js-only grid gap-3" aria-labelledby="push-h">
+    <section id="push" data-setting data-keywords="push, system notification, pop up, desktop, alert" class="js-only grid gap-3">
       <h3 id="push-h" class="text-base font-semibold">Browser notifications</h3>
       <p class="text-body text-sm/relaxed">Shows a system notification on this device when a new one arrives, even with clrd closed. Off until you turn it on here. Closing the system notification clears nothing; clear it in the inbox.</p>
       <div><button type="button" class="btn" data-variant="outline" data-push disabled>Turn on notifications</button></div>
       <p class="text-muted-foreground text-sm" role="status" data-push-hint></p>
     </section>
-    <section id="silences" data-setting data-keywords="mute, quiet, quiet hours, do not disturb, pause" class="grid gap-3" aria-labelledby="sil-h">
+    <section id="silences" data-setting data-keywords="mute, quiet, quiet hours, do not disturb, pause" class="grid gap-3">
       <h3 id="sil-h" class="text-base font-semibold">Silences</h3>
       <p class="text-body text-sm/relaxed">Mute a topic, a tag, or a tag in one topic for a while. Notifications still arrive and show on every device, but this inbox and ntfy apps play no sound for them. The clrd Android app does not read silences yet and still alerts.</p>
       {{if .Snap.Silences}}<div class="bg-card rounded-xl border">
@@ -271,12 +271,12 @@
   <section class="grid gap-8" aria-labelledby="g-inbox" data-settings-group>
     <h2 id="g-inbox" class="border-b pb-2 text-lg font-semibold tracking-tight">Inbox</h2>
     <noscript><p class="meta">These settings need JavaScript.</p></noscript>
-    <section id="stack" data-setting data-keywords="group, fold, bundle, collapse" class="js-only grid gap-3" aria-labelledby="inbox-h">
+    <section id="stack" data-setting data-keywords="group, fold, bundle, collapse" class="js-only grid gap-3">
       <h3 id="inbox-h" class="text-base font-semibold">Stack by topic</h3>
       <p class="text-body text-sm/relaxed">With stacking on, two or more notifications from one topic show as one card in the inbox. This setting is for this browser only.</p>
       <label class="label"><input type="checkbox" role="switch" class="input" data-stack-setting> Stack by topic</label>
     </section>
-    <section id="swipe" data-setting data-keywords="swipe, gesture, slide, buttons" class="js-only grid gap-3" aria-labelledby="swp-h">
+    <section id="swipe" data-setting data-keywords="swipe, gesture, slide, buttons" class="js-only grid gap-3">
       <h3 id="swp-h" class="text-base font-semibold">Swipe buttons</h3>
       <p class="text-body text-sm/relaxed">On a touch screen, swipe a card part way to show these buttons. Nothing changes until you tap one; swipe back to hide them. The first button sits nearest the edge. These settings apply to every device, and Resolve shows only in the app.</p>
       <form class="grid max-w-md gap-3" data-swipe-settings>
@@ -285,7 +285,7 @@
         <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-swipe-status></span></div>
       </form>
     </section>
-    <section id="snooze" data-setting data-keywords="later, remind, postpone, default time" class="js-only grid gap-3" aria-labelledby="snz-h">
+    <section id="snooze" data-setting data-keywords="later, remind, postpone, default time" class="js-only grid gap-3">
       <h3 id="snz-h" class="text-base font-semibold">Snooze times</h3>
       <p class="text-body text-sm/relaxed">Snooze on a card uses the default time. Long press it, or use the arrow next to it, for the other times. These settings apply to every device.</p>
       <form class="grid max-w-md gap-3" data-snooze-settings>
@@ -297,7 +297,7 @@
         <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-snooze-status></span></div>
       </form>
     </section>
-    <section id="keep-cleared" data-setting data-keywords="delete, keep, retention, history, days" class="js-only grid gap-3" aria-labelledby="keep-h">
+    <section id="keep-cleared" data-setting data-keywords="delete, keep, retention, history, days" class="js-only grid gap-3">
       <h3 id="keep-h" class="text-base font-semibold">Cleared messages</h3>
       <p class="text-body text-sm/relaxed">Dismissed and resolved messages are deleted this long after they were cleared. Open and snoozed messages are never deleted. This applies to every device, and a topic can have its own period below; changing either needs an admin sign-in.</p>
       {{$k := .Snap.KeepClearedDays}}{{$preset := eq $k 0 1 5 7 30 90}}<form class="grid max-w-md gap-3" data-keep-settings>
@@ -315,7 +315,7 @@
   </section>
   <section class="grid gap-8" aria-labelledby="g-display" data-settings-group>
     <h2 id="g-display" class="border-b pb-2 text-lg font-semibold tracking-tight">Display</h2>
-    <section id="formatting" data-setting data-keywords="markdown, formatting, links, preview, site icons" class="js-only grid gap-3" aria-labelledby="msg-h">
+    <section id="formatting" data-setting data-keywords="markdown, formatting, links, preview, site icons" class="js-only grid gap-3">
       <h3 id="msg-h" class="text-base font-semibold">Message text</h3>
       <p class="text-body text-sm/relaxed">How message text shows. These settings apply to every device.</p>
       <form class="grid gap-3" data-display-settings>
@@ -330,7 +330,7 @@
         <span class="meta" role="status" data-display-status></span>
       </form>
     </section>
-    {{if .Snap.Topics}}<section id="topic-icons" data-setting data-keywords="icon, image, avatar, picture" class="js-only grid gap-3" aria-labelledby="ticon-h">
+    {{if .Snap.Topics}}<section id="topic-icons" data-setting data-keywords="icon, image, avatar, picture" class="js-only grid gap-3">
       <h3 id="ticon-h" class="text-base font-semibold">Topic icons</h3>
       <p class="text-body text-sm/relaxed">An image link shown on new notifications in the topic when the sender gives none. Leave it empty for no icon. Saved when you leave the box.</p>
       <form class="grid gap-2" data-topic-icons>
@@ -339,7 +339,7 @@
         {{end}}<span class="meta" role="status" data-topic-icon-status></span>
       </form>
     </section>{{end}}
-    {{if or .Snap.Format .Snap.FormatOff .Snap.FormatDismissed}}<section id="format" data-setting data-keywords="format, markdown check, broken, warning" class="grid gap-3" aria-labelledby="fmt-h" data-format-check>
+    {{if or .Snap.Format .Snap.FormatOff .Snap.FormatDismissed}}<section id="format" data-setting data-keywords="format, markdown check, broken, warning" class="grid gap-3" data-format-check>
       <h3 id="fmt-h" class="text-base font-semibold">Message format check</h3>
       {{with .Snap.Format}}<p class="text-body text-sm/relaxed">Some senders send messages that are hard to read. Copy the prompt into the agent or script that sends them, and it fixes the sender. Dismiss what you are happy with.</p>{{end}}
       {{range .Snap.Format}}{{$g := .}}<div class="grid gap-2" data-format-topic="{{.Topic}}/{{.Sender}}">
@@ -365,14 +365,14 @@
         </ul>
       </div>{{end}}
     </section>{{end}}
-    <section id="appearance" data-setting data-keywords="theme, dark mode, light mode, colors" class="grid gap-3" aria-labelledby="look-h">
+    <section id="appearance" data-setting data-keywords="theme, dark mode, light mode, colors" class="grid gap-3">
       <h3 id="look-h" class="text-base font-semibold">Appearance</h3>
       <p class="text-body text-sm/relaxed">The inbox follows your system's light or dark setting.</p>
     </section>
   </section>
   <section class="grid gap-8" aria-labelledby="g-devices" data-settings-group>
     <h2 id="g-devices" class="border-b pb-2 text-lg font-semibold tracking-tight">Devices</h2>
-    <section id="devices" data-setting data-keywords="phone, browser, unlink, sign out, approve, may approve, activity" class="grid gap-3" aria-labelledby="dev-h">
+    <section id="devices" data-setting data-keywords="phone, browser, unlink, sign out, approve, may approve, activity" class="grid gap-3">
       <h3 id="dev-h" class="text-base font-semibold">Linked devices</h3>
       <p class="text-body text-sm/relaxed">Every token, browser and phone that can read this inbox. Unlink a browser or phone and it is signed out at once. Unlinking a phone also signs out the browsers it approved.</p>
       <p class="text-body text-sm/relaxed">May approve says who can tap a reply button such as Approve. Ask sends the tap to an allowed device to confirm first. New tokens start at Denied. A device can lower its own setting, never raise it.</p>
@@ -398,7 +398,7 @@
         </ol>{{else}}<p class="text-body mt-2">No links, sign-ins or unlinks yet.</p>{{end}}
       </details>
     </section>
-    <section id="link-phone" data-setting data-keywords="qr, scan, pair, code, add phone" class="grid gap-3" aria-labelledby="link-h" data-link hidden>
+    <section id="link-phone" data-setting data-keywords="qr, scan, pair, code, add phone" class="grid gap-3" data-link hidden>
       <h3 id="link-h" class="text-base font-semibold">Link a phone</h3>
       <p class="text-body text-sm/relaxed">Open the clrd app on your phone, tap Scan QR code and scan the code. You approve the phone here before it connects, and it gets the same access as this browser.</p>
       <div><button class="btn" data-variant="primary" type="button" data-pair-start>Link a phone</button></div>
@@ -410,7 +410,7 @@
         <div class="flex gap-2"><button class="btn" data-variant="primary" type="button" data-link-approve>Approve</button><button class="btn" data-variant="outline" type="button" data-link-deny>Deny</button></div>
       </div>
     </section>
-    {{if .Snap.CanInvite}}<section id="add-agent" data-setting data-keywords="agent, ai, bot, invite, mcp, token" class="grid gap-3" aria-labelledby="agent-h" data-agent hidden>
+    {{if .Snap.CanInvite}}<section id="add-agent" data-setting data-keywords="agent, ai, bot, invite, mcp, token" class="grid gap-3" data-agent hidden>
       <h3 id="agent-h" class="text-base font-semibold">Add an agent</h3>
       <p class="text-body text-sm/relaxed">Give an AI agent or a bot its own sign-in for the topics you pick, without copying a token. It may read and send there as far as you may, never more. It cannot tap reply buttons such as Approve. It shows in Linked devices, where you can unlink it.</p>
       <div class="flex flex-wrap items-center gap-3"><button class="btn" data-variant="outline" type="button" data-agent-start>Add agent</button><span class="meta" role="status" data-agent-gone></span></div>
@@ -437,19 +437,19 @@
   </section>
   <section class="grid gap-8" aria-labelledby="g-integrations" data-settings-group>
     <h2 id="g-integrations" class="border-b pb-2 text-lg font-semibold tracking-tight">Integrations</h2>
-    {{if .Snap.CanSenders}}<section id="senders" data-setting data-keywords="sender, rules, bot, agent, allow" class="grid gap-3" aria-labelledby="snd-h">
+    {{if .Snap.CanSenders}}<section id="senders" data-setting data-keywords="sender, rules, bot, agent, allow" class="grid gap-3">
       <h3 id="snd-h" class="text-base font-semibold">Senders</h3>
       <p class="text-body text-sm/relaxed">Each agent, bot or script that sends to this inbox, and the rules it follows.</p>
       <div><a class="btn" data-variant="outline" href="{{base}}/app/senders">Open senders</a></div>
     </section>{{end}}
-    <section id="test-send" data-setting data-keywords="test, curl, publish, try, api" class="grid gap-3" aria-labelledby="send-h">
+    <section id="test-send" data-setting data-keywords="test, curl, publish, try, api" class="grid gap-3">
       <h3 id="send-h" class="text-base font-semibold">Send a test notification</h3>
       <p class="text-body text-sm/relaxed">Run this with a token that has the publish scope. It should appear on every device within a second.</p>
   <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
     -d '{"topic":"test","message":"Hello from clrd"}' \
     {{.Base}}/api/v1/notifications</code></pre>
     </section>
-    {{if .Snap.CanHooks}}<section id="webhooks" data-setting data-keywords="webhook, outgoing, callback, post, integration" class="grid gap-3" aria-labelledby="hooks-h" data-hooks>
+    {{if .Snap.CanHooks}}<section id="webhooks" data-setting data-keywords="webhook, outgoing, callback, post, integration" class="grid gap-3" data-hooks>
       <h3 id="hooks-h" class="text-base font-semibold">Webhooks</h3>
       <p class="text-body text-sm/relaxed">Send a topic's answers to another app as they happen: each dismiss, acknowledge, resolve, snooze or action tap is posted to your URL as JSON. <a class="underline" href="{{base}}/docs/integrations/webhooks-out">How webhooks work</a></p>
       {{range .Snap.Hooks}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-hook="{{.Topic}}/{{.Name}}">
@@ -493,7 +493,7 @@
         <div><button class="btn" data-variant="outline">Add webhook</button></div>
       </form>
     </section>{{end}}
-    <section id="templates" data-setting data-keywords="incoming, template, github, grafana, json" class="grid gap-3" aria-labelledby="tpl-h" data-templates>
+    <section id="templates" data-setting data-keywords="incoming, template, github, grafana, json" class="grid gap-3" data-templates>
       <h3 id="tpl-h" class="text-base font-semibold">Webhook templates</h3>
       <p class="text-body text-sm/relaxed">Turn another service's own webhook JSON into notifications: the service posts to a topic with <code>?template=</code> and a template name. The built-ins work with no setup; save one here to add a secret, change a field or make your own. <a class="underline" href="{{base}}/docs/integrations/custom-webhooks">How templates work</a></p>
       {{if .Snap.CanTemplates}}
