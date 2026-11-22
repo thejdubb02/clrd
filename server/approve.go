@@ -130,23 +130,29 @@ func (s *Server) AskApprove(ctx context.Context, tok *Token, topic, approve stri
 
 // askConfirm is an ask device's tap on n: n stays unanswered, and a prompt
 // on the same topic asks an allowed device to confirm it. A repeat tap
-// returns the prompt already open, with no new event; other text makes
-// another prompt, and the first one confirmed wins.
+// returns the prompt already open, with no new event; other text edits it.
 func (s *Server) askConfirm(ctx context.Context, tx *sql.Tx, tok *Token, n *Notification, reply, text string) (*Notification, []Event, error) {
 	p, err := getNotification(ctx, tx, `state NOT IN ('dismissed', 'resolved') AND json_extract(NULLIF(confirm, ''), '$.Target') = ?
-	  AND json_extract(confirm, '$.Asker') = ? AND json_extract(confirm, '$.Reply') = ? AND json_extract(confirm, '$.Seq') = ?
-	  AND COALESCE(json_extract(confirm, '$.Text'), '') = ?`, n.ID, tok.ID, reply, n.Seq, text)
-	if !isNotFound(err) {
-		return p, nil, err
+	  AND json_extract(confirm, '$.Asker') = ? AND json_extract(confirm, '$.Reply') = ? AND json_extract(confirm, '$.Seq') = ?`,
+		n.ID, tok.ID, reply, n.Seq)
+	if err != nil && !isNotFound(err) {
+		return nil, nil, err
 	}
 	// No sender: the asker is ask so it cannot confirm, while the phone it
 	// shares a top token with must be able to.
 	link, _ := json.Marshal(confirmLink{Target: n.ID, Reply: reply, Asker: tok.ID, AskerName: tok.Name, Seq: n.Seq, Text: text})
-	label := n.Actions[slices.IndexFunc(n.Actions, func(a Action) bool { return a.Reply == reply })].Label
 	msg, format := n.Title+"\n\n"+n.Message, n.Format
 	if text != "" { // typed text is never rendered as markdown
 		msg, format = msg+"\n\nAnswer: "+text, FormatText
 	}
+	if err == nil { // one prompt per tap: new text edits it, so text cannot pile up prompts
+		if p.confirm == string(link) {
+			return p, nil, nil
+		}
+		p.confirm, p.Message, p.Format = string(link), msg, format
+		return p, []Event{{Type: EventUpdated, Notification: p}}, nil
+	}
+	label := n.Actions[slices.IndexFunc(n.Actions, func(a Action) bool { return a.Reply == reply })].Label
 	t := now()
 	p = &Notification{ID: s.newID(t), Topic: n.Topic, Title: fmt.Sprintf("Confirm %s's answer: %s", tok.Name, label),
 		Message: msg, Format: format, Priority: n.Priority, Tags: []string{}, Icon: n.Icon,

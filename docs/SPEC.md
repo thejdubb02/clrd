@@ -188,8 +188,8 @@ change. The client contract:
   unanswered until an allowed device confirms. The prompt's message ends with
   `Answer: <text>` and its `format` is `text`, so the typed text is never
   rendered as markdown. The same text again returns the same prompt; other
-  text makes another prompt, and the first one confirmed wins (the rest get
-  409).
+  text edits that same prompt (an `updated` event, new `seq`), so a confirm
+  sent with the `seq` it showed before the edit gets 409.
 - 200: answered. The row has `reply`, `reply_text` and state `acknowledged`,
   in one `state` event, like a tap.
 

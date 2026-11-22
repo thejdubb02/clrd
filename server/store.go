@@ -1062,10 +1062,10 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, text, via str
 		if reply == "" || i < 0 {
 			return nil, errf(400, "bad_request", "%q is not one of this notification's replies", reply)
 		}
-		if text = strings.TrimSpace(text); n.Actions[i].Text && text == "" {
-			return nil, errf(400, "bad_request", "reply %q needs text", reply)
-		} else if !n.Actions[i].Text && text != "" {
+		if !n.Actions[i].Text && text != "" {
 			return nil, errf(400, "bad_request", "reply %q takes no text", reply)
+		} else if text = strings.TrimSpace(text); n.Actions[i].Text && text == "" {
+			return nil, errf(400, "bad_request", "reply %q needs text", reply)
 		}
 		if utf8.RuneCountInString(text) > maxReplyText {
 			return nil, errf(400, "bad_request", "text over %d characters", maxReplyText)

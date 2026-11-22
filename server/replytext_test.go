@@ -36,7 +36,7 @@ func TestReplyText(t *testing.T) {
 		t.Helper()
 		return call(t, ts, "POST", "/api/v1/notifications/"+id+"/reply", tok, map[string]any{"reply": r, "text": text})
 	}
-	for _, c := range [][2]string{{"other", ""}, {"other", " \n "}, {"yes", "hi"}, {"other", strings.Repeat("é", 1001)}} {
+	for _, c := range [][2]string{{"other", ""}, {"other", " \n "}, {"yes", "hi"}, {"yes", " "}, {"other", strings.Repeat("é", 1001)}} {
 		if code, _ := reply(phone, id, c[0], c[1]); code != 400 {
 			t.Errorf("reply %q text %q: want 400, got %d", c[0], c[1][:min(len(c[1]), 8)], code)
 		}
@@ -96,21 +96,22 @@ func TestReplyText(t *testing.T) {
 	if _, again := reply(braw, qid, "other", "**friday**"); again["id"] != p["id"] {
 		t.Fatalf("repeat tap made another prompt: %v", again)
 	}
+	// New text edits that one prompt, so typing cannot pile up prompts.
 	_, p2 := reply(braw, qid, "other", "monday")
-	if p2["id"] == p["id"] {
-		t.Fatal("other text returned the first prompt")
+	if p2["id"] != p["id"] || !strings.HasSuffix(p2["message"].(string), "\n\nAnswer: monday") {
+		t.Fatalf("other text: %v", p2)
 	}
 	_, conf, err := s.childToken(ctx, lp, lp.ID, "phone", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := reply(conf, p2["id"].(string), "confirm", ""); code != 200 {
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+p["id"].(string)+"/reply", conf, map[string]any{"reply": "confirm", "seq": p["seq"]}); code != 409 {
+		t.Errorf("confirm of the text it showed before the edit: want 409, got %d", code)
+	}
+	if code, _ := reply(conf, p["id"].(string), "confirm", ""); code != 200 {
 		t.Fatalf("confirm: %d", code)
 	}
 	if _, n := call(t, ts, "GET", "/api/v1/notifications/"+qid, agent, nil); n["reply_text"] != "monday" || n["state_by"] != "browser" {
 		t.Fatalf("confirmed text: %v", n)
-	}
-	if code, _ := reply(conf, p["id"].(string), "confirm", ""); code != 409 {
-		t.Errorf("second prompt confirmed: want 409, got %d", code)
 	}
 }
