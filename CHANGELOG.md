@@ -166,6 +166,11 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Claude Code plugin: the approve hook removes its own record of a waiting
+  phone prompt however it ends, so a later on-screen answer can no longer
+  stop another request that reused its process id, and clearing the phone
+  after an on-screen answer no longer needs `ps -o` (missing on Git Bash)
+  (#420).
 - Claude Code plugin: the MCP bridge reads a request's id at the top level
   only, so spaces or escapes around the id still get an answer, an `id` inside
   a notification's params no longer gets an error back, and a stuck request

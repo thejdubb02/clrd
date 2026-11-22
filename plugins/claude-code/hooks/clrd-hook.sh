@@ -63,15 +63,12 @@ key() {
 }
 if [ "$mode" = sweep ]; then
   key "$(cat)" || exit 0
+  # A hook removes its own file however it ends, so no ps is needed (#420).
+  # ponytail: a hook killed outright (SIGKILL) leaves its file, and its pid
+  # could be reused before the next sweep; check the pid's command if that
+  # ever shows up.
   for f in "$pending/$key".*; do
-    [ -e "$f" ] || continue
-    pid=${f##*.}
-    # Still bash, not yet curl: keep the file for the tool's own sweep.
-    if [[ $(ps -o args= -p "$pid" 2>/dev/null) == *curl*/mcp/approve* ]]; then
-      kill "$pid" && rm -f "$f"
-    elif ! kill -0 "$pid" 2>/dev/null; then
-      rm -f "$f"
-    fi
+    [ -e "$f" ] && { kill "${f##*.}" 2>/dev/null; rm -f "$f"; }
   done
   exit 0
 fi
@@ -133,12 +130,21 @@ case $mode in
     exec 3>&-
     wait
     ;;
-  # exec keeps this pid for curl, so sweep can stop it.
+  # The hook waits on curl, so it removes its file however curl ends, and a
+  # stop (sweep, or Claude Code on Deny) passes to curl: clrd clears the
+  # phone when the request hangs up. The file appears only once curl runs.
   approve)
     body=$(cat)
+    post "/mcp/approve?topic=$topic" 600 -H 'Content-Type: application/json' --data-binary @- <<<"$body" &
+    c=$! f=
+    trap 'kill "$c" 2>/dev/null; stopped=1' TERM INT HUP
     # shellcheck disable=SC2174 # only the pending dir itself needs 700
-    key "$body" && mkdir -p -m 700 "$pending" && : >"$pending/$key.$$"
-    post "/mcp/approve?topic=$topic" 600 -H 'Content-Type: application/json' --data-binary @- <<<"$body"
+    key "$body" && mkdir -p -m 700 "$pending" && f=$pending/$key.$$ && : >"$f"
+    wait "$c"
+    rc=$?
+    if [ -n "${stopped:-}" ]; then wait "$c"; rc=1; fi
+    [ -z "$f" ] || rm -f "$f"
+    exit $rc
     ;;
   # Stop's JSON carries Claude's last message, often past the 4 KB a topic
   # publish takes, so it goes to /mcp's send as is, still a JSON string.
