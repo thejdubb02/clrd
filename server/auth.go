@@ -428,16 +428,30 @@ func (s *Server) auth(r *http.Request, cookie bool) *Token {
 
 // sameOrigin: SameSite=Lax already blocks cross-site cookie POSTs; this also
 // stops sibling subdomains. A missing Origin header (old browsers) passes.
+// The page's scheme and host must match CLRD_BASE_URL (a proxy may rewrite
+// Host or drop the port) or this request's own (#430).
 func (s *Server) sameOrigin(r *http.Request) bool {
 	o := r.Header.Get("Origin")
 	if o == "" {
 		return true
 	}
 	u, err := url.Parse(o)
-	if err != nil || u.Host != r.Host {
+	if err != nil || u.Scheme != "https" && u.Scheme != "http" {
 		return false
 	}
-	return u.Scheme == "https" || !s.https(r) // a plain-http page cannot act on an https site
+	// A browser leaves out the default port, which CLRD_BASE_URL may spell out.
+	if b, err := url.Parse(s.opt.BaseURL); s.baseSet && err == nil && u.Scheme == b.Scheme &&
+		u.Host == strings.TrimSuffix(b.Host, map[string]string{"https": ":443", "http": ":80"}[b.Scheme]) {
+		return true
+	}
+	if u.Host != r.Host {
+		return false
+	}
+	if p := s.reqScheme(r); p != "" {
+		return u.Scheme == p
+	}
+	// Scheme unknown: a TLS proxy may hide https, but a plain-http page cannot act on an https site.
+	return u.Scheme == "https" || !s.https(r)
 }
 
 func (s *Server) https(r *http.Request) bool {
