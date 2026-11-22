@@ -188,6 +188,12 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		}
 	}
 	if q.Sender != "" && snap.CanSenders {
+		// Changes before rules: an edit landing between the two reads then
+		// makes the form's base_seq stale (refused), never its rules (#543).
+		cs, err := a.s.SenderChanges(ctx, tok, q.Sender)
+		if err != nil {
+			return snap, err
+		}
 		sd, err := a.s.Sender(ctx, tok, q.Sender)
 		if code, _ := server.PublicError(err); err != nil && code == http.StatusNotFound {
 			return snap, web.ErrNotFound
@@ -195,10 +201,6 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			return snap, err
 		}
 		if err := convert(sd, &snap.Sender); err != nil {
-			return snap, err
-		}
-		cs, err := a.s.SenderChanges(ctx, tok, q.Sender)
-		if err != nil {
 			return snap, err
 		}
 		if err := convert(cs, &snap.Sender.Changes); err != nil {
@@ -363,12 +365,15 @@ func (a webAPI) SaveTemplate(r *http.Request, t web.Template, secret string, cle
 	return webError(a.s.SaveTemplate(r.Context(), tok, t.Topic, t.Name, h, !clearSecret))
 }
 
-func (a webAPI) SetSenderRules(r *http.Request, id string, rules web.SenderRules) error {
+func (a webAPI) SetSenderRules(r *http.Request, id string, rules web.SenderRules, base int64) error {
 	tok := a.s.Authenticate(r)
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	patch, err := json.Marshal(rules)
+	patch, err := json.Marshal(struct {
+		web.SenderRules
+		BaseSeq int64 `json:"base_seq"`
+	}{rules, base})
 	if err != nil {
 		return err
 	}

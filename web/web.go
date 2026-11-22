@@ -397,6 +397,15 @@ type SenderRules struct {
 	Routes      map[string][]string `json:"routes"`
 }
 
+// LastSeq is the seq of the newest change, 0 for none: the rules form sends
+// it back so a save over a newer change is refused (#543).
+func (s Sender) LastSeq() int64 {
+	if len(s.Changes) == 0 {
+		return 0
+	}
+	return s.Changes[0].Seq
+}
+
 // SenderChange is one logged edit of a sender's rules.
 type SenderChange struct {
 	Seq    int64       `json:"seq"`
@@ -686,8 +695,9 @@ type API interface {
 	SaveTemplate(r *http.Request, t Template, secret string, clearSecret bool) error
 	DeleteTemplate(r *http.Request, topic, name string) error
 	// SetSenderRules replaces a sender's rules (#119); UndoSenderChange puts
-	// back the rules from before change seq.
-	SetSenderRules(r *http.Request, id string, rules SenderRules) error
+	// back the rules from before change seq. base is the newest change seq
+	// the form was drawn from; a newer change refuses the save (#543).
+	SetSenderRules(r *http.Request, id string, rules SenderRules, base int64) error
 	UndoSenderChange(r *http.Request, id string, seq int64) error
 }
 
@@ -1181,17 +1191,19 @@ func Handler(api API, baseURL string) http.Handler {
 			if err = perr; err == nil {
 				err = api.UndoSenderChange(r, id, seq)
 			}
-		} else if !f.Has("priority_min") || !f.Has("priority_max") {
+		} else if !f.Has("priority_min") || !f.Has("priority_max") || !f.Has("base_seq") {
 			// Not the rules form: never read a missing field as "clear it".
 			err = errors.New("the rules form was incomplete")
 		} else {
 			rules := SenderRules{Paused: f.Get("paused") != "", Muted: f.Get("muted") != ""}
-			var e1, e2 error
+			var e1, e2, e3 error
+			var base int64
 			rules.PriorityMin, e1 = strconv.Atoi(f.Get("priority_min"))
 			rules.PriorityMax, e2 = strconv.Atoi(f.Get("priority_max"))
-			if err = errors.Join(e1, e2); err == nil {
+			base, e3 = strconv.ParseInt(f.Get("base_seq"), 10, 64)
+			if err = errors.Join(e1, e2, e3); err == nil {
 				if rules.Routes, err = parseRoutes(f.Get("routes")); err == nil {
-					err = api.SetSenderRules(r, id, rules)
+					err = api.SetSenderRules(r, id, rules, base)
 				}
 			}
 		}
