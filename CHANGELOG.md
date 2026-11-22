@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Approvals: the phone now shows every field of a tool request, not only its
+  command or description, one `key: value` line each, so Allow never approves
+  a field you were not shown (a working directory, a scope, flags).
 - Server: `CLRD_HOOK_ALLOW=off` lets the operator lock the webhook LAN allow
   list (#498). It then stays empty whatever was saved, `PUT
   /api/v1/hooks/allow` answers 403 `locked`, the MCP tool `set_hook_allow`

@@ -390,7 +390,13 @@ func TestReplyButtons(t *testing.T) {
 // else denies, and a timeout denies and clears the phones.
 func TestApproveSummary(t *testing.T) {
 	for in, want := range map[string]string{
-		`{"command":"rm -rf build","description":"clean"}`:                                                          "rm -rf build",
+		`{"command":"rm -rf build","description":"clean"}`:                                                          "rm -rf build\ndescription: clean",
+		`{"command":"rm *","workdir":"/srv","timeout":5,"sandbox":null,"env":{"A":"1 && b"}}`:                       "rm *\nenv: {\"A\":\"1 && b\"}\ntimeout: 5\nworkdir: /srv", // #441: Allow approves every field
+		`{"description":"read","scope":"all\nworkdir: /safe"}`:                                                      "read\nscope: \"all\\nworkdir: /safe\"",                    // a line break cannot fake a field
+		`{"command":"ls\nworkdir: /safe","workdir":"/srv"}`:                                                         "\"ls\\nworkdir: /safe\"\nworkdir: /srv",
+		`{"description":"x","a: b":"c","n":"1\u2028m\u0085"}`:                                                       "x\n\"a: b\": c\nn: \"1\\u2028m\\u0085\"", // a colon or Unicode line break cannot fake a field
+		`{"command":"x","big":1e400}`:                                                                               "x\nbig: 1e400",
+		`{"file_path":"/a/x.go","content":"y","scope":"all"}`:                                                       "/a/x.go\nscope: all\ny",
 		`{"file_path":"/a/x.go","old_string":"a := 1\nb := 2","new_string":"a := 3"}`:                               "/a/x.go\n- a := 1\n- b := 2\n+ a := 3",
 		`{"file_path":"/a/x.go","old_string":"a","new_string":"","replace_all":true}`:                               "/a/x.go\n(every match)\n- a\n+ ",
 		`{"file_path":"/a/x.go","edits":[{"old_string":"a","new_string":"b"},{"old_string":"c","new_string":"d"}]}`: "/a/x.go\n- a\n+ b\n- c\n+ d",
