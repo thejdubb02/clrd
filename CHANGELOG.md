@@ -130,6 +130,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: the short "Sent" message after a send from the Send box shows
+  again if the phone turns while it is on screen, instead of being lost (#532).
 - Android: a repeat sent before you cleared a notification no longer rings
   it again after you tap Undo, when the repeat reaches the phone late (#504).
 - Web: saving sender rules from a page opened before someone else changed them
