@@ -339,6 +339,24 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add silenced column: %w", err)
 	}
+	// qseq: the seq of the row's last event that changed the question, so a
+	// mark or re-alert after a prune still lets an old tap through (#452).
+	// Filled once from the log; a row whose such event was pruned takes its
+	// seq, which refuses an older tap as before.
+	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN qseq INTEGER NOT NULL DEFAULT 0`); err == nil {
+		if _, err := db.Exec(`UPDATE notifications SET qseq = m.s FROM (SELECT json_extract(data, '$.notification.id') AS id, MAX(seq) AS s
+			FROM events WHERE type NOT IN (?, ?) GROUP BY 1) AS m WHERE m.id = notifications.id`, EventMark, EventRepeat); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("fill qseq: %w", err)
+		}
+		if _, err := db.Exec(`UPDATE notifications SET qseq = seq WHERE qseq = 0`); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("fill qseq: %w", err)
+		}
+	} else if !strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("add qseq column: %w", err)
+	}
 	if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN phone INTEGER NOT NULL DEFAULT 0`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
@@ -450,7 +468,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	return &n, json.Unmarshal([]byte(actions), &n.Actions)
 }
 
-func saveNotification(tx *sql.Tx, n *Notification) error {
+func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 	tags, _ := json.Marshal(n.Tags)
 	actions, _ := json.Marshal(n.Actions)
 	att := ""
@@ -479,6 +497,9 @@ func saveNotification(tx *sql.Tx, n *Notification) error {
 		n.Silenced, rep, n.sender, n.confirm, marks)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
+	}
+	if err == nil && typ != EventMark && typ != EventRepeat { // the question changed (#452)
+		_, err = tx.Exec(`UPDATE notifications SET qseq = ? WHERE id = ?`, n.Seq, n.ID)
 	}
 	return err
 }
@@ -525,7 +546,7 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 		}
 		e.Seq, _ = res.LastInsertId()
 		e.Notification.Seq, e.Notification.UpdatedAt = e.Seq, t
-		if err := saveNotification(tx, e.Notification); err != nil {
+		if err := saveNotification(tx, e.Notification, e.Type); err != nil {
 			return nil, err
 		}
 		if e.Raw, err = json.Marshal(e); err != nil {
@@ -1037,21 +1058,22 @@ func (s *Server) Reply(ctx context.Context, tok *Token, id, reply, via string, s
 }
 
 // changedSince refuses a tap on n from a device that showed it at seq, when
-// the question changed since; a re-alert changes the seq, not the question.
-// A seq the row never had, or one whose later events were pruned, cannot be
-// checked against the log: refuse it (#280).
+// the question changed since; a re-alert or a mark changes the seq, not the
+// question. The row keeps the seq of its last change to the question (qseq),
+// so this holds after a prune too (#452). A seq the row never had is refused.
 func (s *Server) changedSince(ctx context.Context, tx *sql.Tx, n *Notification, seq int64) error {
 	if seq == 0 || seq == n.Seq {
 		return nil
 	}
-	changed := 1
-	if seq < n.Seq && seq >= s.pruned.Load() { // a re-alert or a mark changes the seq, not the question
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE seq > ? AND type NOT IN (?, ?) AND json_extract(data, '$.notification.id') = ?`,
-			seq, EventRepeat, EventMark, n.ID).Scan(&changed); err != nil {
+	changed := seq > n.Seq
+	if seq < n.Seq {
+		var q int64
+		if err := tx.QueryRowContext(ctx, `SELECT qseq FROM notifications WHERE id = ?`, n.ID).Scan(&q); err != nil {
 			return err
 		}
+		changed = seq < q
 	}
-	if changed > 0 {
+	if changed {
 		return errf(409, "conflict", "notification changed since seq %d; show the current one", seq)
 	}
 	return nil

@@ -516,7 +516,7 @@ func importEvent(ctx context.Context, tx *sql.Tx, typ string, n *Notification, a
 	}
 	n.Seq, _ = res.LastInsertId()
 	n.UpdatedAt = at
-	if err := saveNotification(tx, n); err != nil {
+	if err := saveNotification(tx, n, typ); err != nil {
 		return err
 	}
 	ev := Event{Seq: n.Seq, Type: typ, Notification: n}

@@ -137,7 +137,8 @@ shows 3). Tapping one posts it to `/api/v1/notifications/{id}/reply`, which
 sets `reply`, sets the state to `acknowledged` with `state_by` = the device,
 and logs one `state` event. A device sends the `seq` it showed with the tap;
 if the notification changed since (a new question under the same key), the tap
-gets 409. An `acknowledged` notification with a non-empty `reply` is answered,
+gets 409. A mark or a re-alert does not change the question, so it never
+refuses a tap, even after older events are pruned (#452). An `acknowledged` notification with a non-empty `reply` is answered,
 and `state_by` is who tapped. The first answer wins: a second one gets 409.
 Any later state change except dismiss and resolve (reopen, snooze, a plain
 ack) clears `reply`. Reply actions are not sent to ntfy subscribers.

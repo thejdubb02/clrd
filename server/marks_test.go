@@ -143,3 +143,44 @@ func TestMarksSurviveRestart(t *testing.T) {
 		t.Fatalf("after restart: %+v", got.Marks)
 	}
 }
+
+// #452: a database from before qseq fills it from the log on start: the last
+// change to the question, not a later mark; the row's seq when that is pruned.
+func TestQseqFilled(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "clrd.db")
+	open := func() *Server {
+		s, err := New(Options{DB: db, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	s := open()
+	tok, _, _ := s.CreateToken(t.Context(), "stew", "allowed", []string{ScopeAdmin}, nil)
+	a, _ := s.Publish(t.Context(), tok, PublishInput{Topic: "triage", Message: "a"})
+	b, _ := s.Publish(t.Context(), tok, PublishInput{Topic: "triage", Message: "b"})
+	for _, id := range []string{a.ID, b.ID} {
+		if _, err := s.SetMark(t.Context(), tok, id, MarkSeen, "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.Exec(`DELETE FROM events WHERE seq = ?`, b.Seq); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE notifications DROP COLUMN qseq`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s = open()
+	defer s.Close()
+	q := func(id string) (q, seq int64) {
+		s.db.QueryRow(`SELECT qseq, seq FROM notifications WHERE id = ?`, id).Scan(&q, &seq)
+		return
+	}
+	if got, _ := q(a.ID); got != a.Seq {
+		t.Errorf("a: qseq %d, want its publish %d", got, a.Seq)
+	}
+	if got, seq := q(b.ID); got != seq || seq == b.Seq {
+		t.Errorf("b: qseq %d, want its row seq %d", got, seq)
+	}
+}
