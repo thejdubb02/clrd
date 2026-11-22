@@ -126,7 +126,9 @@ takes the same fields as `POST /api/v1/tokens`, plus `approve` and `user`
 (a user name from the file). A token already made on the API is taken over
 when the file names its secret. Tokens and users the file made and no
 longer lists are removed at the next start, with every browser signed in
-with them; ones made on the API are left alone. The file wins over API edits
+with them; ones made on the API are left alone. A user the file drops is
+kept, with a warning in the log, when it was made on the API or a token made
+there still uses it. The file wins over API edits
 to its rows at every start. A file with a mistake (an unknown field, a short
 secret, a user it does not list) stops the server with the reason, and
 changes nothing. With an admin token in the file, no setup link is printed.

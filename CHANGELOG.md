@@ -72,6 +72,10 @@ Fixed, Removed, Security), as one line a user can understand.
 - ntfy: the short form of `X-Actions` reads `\"` inside a quoted value as a
   quote, and keeps spaces inside quotes, as ntfy does. Before, `body="a\",b"`
   split at the comma and `' a '` lost its spaces (#446).
+- Server: a user in `CLRD_CONFIG` that was made on the API is no longer
+  deleted when the file drops it, and a dropped user that a token made on
+  the API still uses no longer stops the server from starting. Both are kept
+  as they are, with a warning in the log (#440).
 - Android: Undo after Clear puts a snoozed message back in Snoozed until its
   old time, instead of in the Inbox. Offline, an Ack queued before a stack's
   Clear no longer splits that Clear into one request per message (#425).
