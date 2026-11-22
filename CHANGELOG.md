@@ -69,6 +69,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a reply tap on a question that was only marked or re-alerted after
+  its older events were pruned is no longer refused with 409 (#452).
 - Server: a publish still in flight when an admin turns a topic's
   `device_actions` off no longer keeps its `http` or `broadcast` action, stored
   or live (#447).

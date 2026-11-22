@@ -600,6 +600,18 @@ func TestReplyStaleAfterPrune(t *testing.T) {
 	if code := reply(old); code != 409 {
 		t.Errorf("tap on the old card after a prune: want 409, got %d", code)
 	}
+	// #452: a mark after the prune moves the seq, not the question.
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/mark", admin, map[string]any{"mark": "seen"}); code != 200 {
+		t.Fatalf("mark: %d", code)
+	}
+	if code := reply(old); code != 409 {
+		t.Errorf("tap on the old card after a mark: want 409, got %d", code)
+	}
+	s.db.Exec(`UPDATE notifications SET qseq = 0`) // an upgrade that stopped before the fill
+	if code := reply(cur); code != 409 {
+		t.Errorf("tap with qseq unfilled: want 409, got %d", code)
+	}
+	s.db.Exec(`UPDATE notifications SET qseq = ?`, cur)
 	if code := reply(cur); code != 200 {
 		t.Errorf("tap on the current card: want 200, got %d", code)
 	}
