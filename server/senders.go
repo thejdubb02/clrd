@@ -51,7 +51,7 @@ func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string)
 	}
 	h, _ := ctx.Value(senderHintKey{}).(senderHint)
 	key, tokID := top, any(top)
-	if strings.HasPrefix(top, anonymousID+"-") { // one shared token: one sender per address
+	if top == anonymousID || strings.HasPrefix(top, anonymousID+"-") { // one shared token: one sender per address
 		sum := sha256.Sum256([]byte(h.addr))
 		key, tokID = anonymousID+"-"+hex.EncodeToString(sum[:6]), nil
 	}
@@ -77,8 +77,9 @@ func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string)
 	tb, _ := json.Marshal(topics)
 	rb, _ := json.Marshal(recent)
 	t := ms(now())
+	// A token revoked mid-publish is no sender, never a failed publish.
 	_, err = tx.ExecContext(ctx, `INSERT INTO senders (id, token_id, user_agent, address, template, first_seen, last_seen, count, topics, recent)
-		VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, 1, ?7, ?8)
+		SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6, 1, ?7, ?8 WHERE ?2 IS NULL OR EXISTS (SELECT 1 FROM tokens WHERE id = ?2)
 		ON CONFLICT(id) DO UPDATE SET user_agent = excluded.user_agent, address = excluded.address,
 		  template = CASE WHEN ?5 = '' THEN template ELSE ?5 END, last_seen = ?6, count = count + 1, topics = ?7, recent = ?8`,
 		key, tokID, h.ua, h.addr, template, t, string(tb), string(rb))
@@ -144,8 +145,8 @@ func (s *Server) Sender(ctx context.Context, tok *Token, id string) (*Sender, er
 	sd.Recent = []*Notification{}
 	for _, nid := range sd.recent {
 		n, err := getNotification(ctx, s.db, `id = ?`, nid)
-		if isNotFound(err) {
-			continue // purged or cleared away
+		if isNotFound(err) || (err == nil && sd.TokenID != "" && n.sender != sd.TokenID) {
+			continue // purged, cleared away, or replaced by another sender's external_id
 		} else if err != nil {
 			return nil, err
 		}

@@ -444,7 +444,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = &r2
 	}
 	p := r.URL.Path
-	r = r.WithContext(context.WithValue(r.Context(), senderHintKey{}, senderHint{r.UserAgent(), clientIP(r, s.opt.TrustedProxies)}))
+	if _, ok := r.Context().Value(senderHintKey{}).(senderHint); !ok { // an in-process call (MCP) keeps its caller's
+		r = r.WithContext(context.WithValue(r.Context(), senderHintKey{}, senderHint{r.UserAgent(), clientIP(r, s.opt.TrustedProxies)}))
+	}
 	var mounted http.Handler
 	for _, m := range s.mounts {
 		if m.prefix == "/" && r.Method != http.MethodGet && r.Method != http.MethodHead {

@@ -69,4 +69,12 @@ func TestSendersDiscovered(t *testing.T) {
 	if code, _ := call(t, ts, "GET", "/api/v1/senders/nope", admin, nil); code != 404 {
 		t.Fatalf("unknown sender: %d", code)
 	}
+	// Another token takes over gatus's external_id row: it leaves gatus's detail.
+	other := mkToken(t, s, "other", []string{ScopePublish}, nil)
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", other, map[string]any{"topic": "up", "external_id": "k", "message": "z"}); code != 201 && code != 200 {
+		t.Fatalf("other publish: %d", code)
+	}
+	if _, one := call(t, ts, "GET", "/api/v1/senders/"+g["id"].(string), admin, nil); len(one["recent"].([]any)) != 2 {
+		t.Fatalf("taken-over row still listed: %v", one["recent"])
+	}
 }
