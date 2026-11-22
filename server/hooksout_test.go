@@ -7,10 +7,12 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -172,6 +174,79 @@ func TestHooksOutGuard(t *testing.T) {
 	_, log := call(t, ts, "GET", "/api/v1/topics/alerts/hooks/local/deliveries", admin, nil)
 	if d := log["deliveries"].([]any)[0].(map[string]any); !strings.Contains(d["error"].(string), errBlocked.Error()) {
 		t.Fatalf("delivery: %v", d)
+	}
+
+	// The admin opt-in (#237): the address and the port must both be listed.
+	pub := mkToken(t, s, "ci", []string{ScopePublish, ScopeRead}, []string{"alerts"})
+	if code, _ := call(t, ts, "PUT", "/api/v1/hooks/allow", pub, map[string]any{"networks": []string{}, "ports": []int{}}); code != 403 {
+		t.Fatalf("publish token set the allow list: %d", code)
+	}
+	for _, bad := range []map[string]any{{}, {"networks": []string{"lan"}, "ports": []int{}}, {"networks": []string{}, "ports": []int{0}}} {
+		if code, _ := call(t, ts, "PUT", "/api/v1/hooks/allow", admin, bad); code != 400 {
+			t.Fatalf("%v: %d", bad, code)
+		}
+	}
+	port, _ := strconv.Atoi(url[strings.LastIndexByte(url, ':')+1:])
+	allow := func(networks []string, ports []int) {
+		t.Helper()
+		if code, a := call(t, ts, "PUT", "/api/v1/hooks/allow", admin, map[string]any{"networks": networks, "ports": ports}); code != 200 {
+			t.Fatalf("allow: %d %v", code, a)
+		}
+	}
+	fire := func() int {
+		t.Helper()
+		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m"})
+		call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/dismiss", admin, nil)
+		if err := s.deliverHooks(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return len(hits())
+	}
+	allow([]string{"127.0.0.1"}, []int{})
+	if fire() != 0 {
+		t.Fatal("reached an unlisted port")
+	}
+	allow([]string{}, []int{port})
+	if fire() != 0 {
+		t.Fatal("reached an unlisted address")
+	}
+	allow([]string{"127.0.0.9/8"}, []int{port, port})
+	if _, a := call(t, ts, "GET", "/api/v1/hooks/allow", admin, nil); fmt.Sprint(a["networks"], a["ports"]) != fmt.Sprintf("[127.0.0.0/8] [%d]", port) {
+		t.Fatalf("stored list: %v", a)
+	}
+	if fire() != 1 {
+		t.Fatal("listed address and port not reached")
+	}
+	// The favicon fetcher keeps its own guard and connections.
+	if _, _, err := s.fetch.get(context.Background(), mustURL(url), 10); !errors.Is(err, errBlocked) {
+		t.Fatalf("fetcher reached loopback: %v", err)
+	}
+	allow([]string{}, []int{})
+	if fire() != 1 {
+		t.Fatal("a pooled connection outlived the allow list")
+	}
+}
+
+func TestHookAllowPermits(t *testing.T) {
+	a, err := cleanHookAllow([]string{"10.0.0.0/8", "::ffff:192.168.1.0/120", "fd00::1"}, []int{8080})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(a.Networks) != "[10.0.0.0/8 192.168.1.0/24 fd00::1/128]" {
+		t.Fatalf("networks: %v", a.Networks)
+	}
+	for _, c := range []struct {
+		ip, port string
+		want     bool
+	}{
+		{"10.1.2.3", "8080", true}, {"10.1.2.3", "443", true}, {"::ffff:10.1.2.3", "80", true},
+		{"192.168.1.5", "8080", true}, {"fd00::1", "8080", true}, {"8.8.8.8", "8080", true},
+		{"10.1.2.3", "22", false}, {"192.168.2.5", "80", false}, {"169.254.169.254", "80", false},
+		{"127.0.0.1", "8080", false}, {"fd00::2", "80", false},
+	} {
+		if got := a.permits(netip.MustParseAddr(c.ip), c.port); got != c.want {
+			t.Errorf("%s:%s = %v", c.ip, c.port, got)
+		}
 	}
 }
 

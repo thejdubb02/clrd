@@ -2310,6 +2310,57 @@
     }
    }
   },
+  "/api/v1/hooks/allow": {
+   "get": {
+    "summary": "Private networks and ports webhooks may reach",
+    "description": "Full admin only. Outgoing webhooks reach only public addresses on ports 80 and 443 unless listed here. A dial passes when the address is public or in a listed network, and the port is 80, 443 or listed. Both lists are empty by default.",
+    "tags": [
+     "admin"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/HookAllow"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "summary": "Set the private networks and ports webhooks may reach",
+    "description": "Full admin only. Both fields are required ([] for none), at most 64 of each. A bare address is a single-address network; ranges are stored masked. Takes effect at once, pooled connections included.",
+    "tags": [
+     "admin"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HookAllow"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/HookAllow"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/ntfy/origins": {
   "get": {
    "summary": "Web sites allowed on ntfy routes",
@@ -5446,9 +5497,44 @@
       }
      }
     }
+   },
+   "HookAllow": {
+    "description": "The webhook allow list.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/HookAllow"
+      }
+     }
+    }
    }
   },
   "schemas": {
+   "HookAllow": {
+    "type": "object",
+    "required": [
+     "networks",
+     "ports"
+    ],
+    "properties": {
+     "networks": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "CIDR ranges like 192.168.1.0/24, or single addresses."
+     },
+     "ports": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 65535
+      },
+      "description": "Ports besides 80 and 443."
+     }
+    }
+   },
    "NtfyAnonymousGrant": {
     "type": "object",
     "required": [

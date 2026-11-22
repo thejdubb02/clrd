@@ -213,6 +213,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: outgoing webhooks can reach a receiver on your LAN or on another
+  port once an admin lists its network and port, through the API or the MCP
+  `set_hook_allow` tool. Off by default: with nothing listed, webhooks still
+  reach only public addresses on ports 80 and 443 (#237).
 - Server: try an outgoing webhook body template before saving it. The API
   and the MCP `preview_hook` tool return the JSON a delivery would send, or
   its error, and send nothing (#241).

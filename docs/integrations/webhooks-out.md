@@ -21,9 +21,10 @@ curl -X PUT https://clrd.example.com/api/v1/topics/alerts/hooks/github \
   -d '{"url": "https://hooks.example.com/clrd", "events": ["resolved"], "secret": "a long random string"}'
 ```
 
-- `url`: http or https. clrd refuses private, loopback and link-local
-  addresses and ports other than 80 and 443, the same guard it uses to fetch
-  favicons. Put a receiver on your LAN behind a public reverse proxy.
+- `url`: http or https. By default clrd refuses private, loopback and
+  link-local addresses and ports other than 80 and 443, the same guard it
+  uses to fetch favicons. For a receiver on your LAN, see
+  [Receivers on your LAN](#receivers-on-your-lan).
 - `events`: any of `dismissed`, `acknowledged`, `resolved`, `snoozed` and
   `action` (a tapped reply button). Leave it out for all five. A tapped reply
   also acknowledges, so a webhook on `acknowledged` gets it too.
@@ -91,6 +92,30 @@ curl -X POST https://clrd.example.com/api/v1/topics/alerts/hooks/preview \
 Without `event` it uses a sample resolved notification on the topic; pass an
 event shaped like the one above to try your own. Agents use the MCP tool
 `preview_hook`.
+
+## Receivers on your LAN
+
+To let webhooks reach a receiver like `http://192.168.1.20:8080/hook`, an
+admin lists its network and its port. Both must be listed: a listed network
+still gets ports 80 and 443 only, a listed port still needs a public or
+listed address.
+
+```sh
+curl -X PUT https://clrd.example.com/api/v1/hooks/allow \
+  -H "Authorization: Bearer clrd_..." -H "Content-Type: application/json" \
+  -d '{"networks": ["192.168.1.0/24"], "ports": [8080]}'
+```
+
+A single address works too, like `192.168.1.20`. Send both fields every
+time; `{"networks": [], "ports": []}` turns it off again, and webhooks no
+longer reach those addresses from that moment. `GET /api/v1/hooks/allow`
+shows the list. Agents use the MCP tools `hook_allow` and `set_hook_allow`.
+The favicon and link preview fetcher is not affected.
+
+List only what you need. A full admin token can then make clrd POST to
+those addresses, with a body it chooses, and read the status code in the
+delivery log, so a leaked admin token reaches whatever you list. Never
+list `127.0.0.0/8` or `169.254.0.0/16` unless the receiver lives there.
 
 ## Retries and turning off
 

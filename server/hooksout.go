@@ -169,9 +169,9 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 	return nil
 }
 
-// sendHook POSTs one delivery through the favicon fetcher's guarded transport
-// (no private addresses, ports 80 and 443 only, no proxy) and never follows a
-// redirect. It returns the status code, or an error when none came back. A
+// sendHook POSTs one delivery through the guarded webhook client (no private
+// addresses, ports 80 and 443 only, unless the admin's allow list says
+// otherwise, no proxy) and never follows a redirect. It returns the status code, or an error when none came back. A
 // body template that fails to render is an error too, and nothing is sent.
 func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
 	if j.tmpl != "" {
@@ -194,9 +194,10 @@ func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
 		mac.Write([]byte(j.body))
 		req.Header.Set("X-Clrd-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	}
-	c := &http.Client{Transport: s.fetch.client.Transport, Timeout: 10 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := c.Do(req)
+	if _, err := s.hookAllowList(ctx); err != nil { // the dial checks the list in memory
+		return 0, err
+	}
+	resp, err := s.hookHTTP.Do(req)
 	if err != nil {
 		return 0, err
 	}
