@@ -106,6 +106,44 @@ func TestConfigFile(t *testing.T) {
 	}
 }
 
+// #440: the file manages a person made on the API but never deletes it, and
+// a dropped user that a token made on the API still points at is kept, so
+// the start goes on.
+func TestConfigKeepsAPIPeople(t *testing.T) {
+	s, ts, admin := newTest(t)
+	if c, out := call(t, ts, "POST", "/api/v1/users", admin, map[string]any{"name": "ann", "grants": []map[string]any{{"topic": "work", "scopes": []string{"read"}}}}); c != 200 {
+		t.Fatalf("make ann: %d %v", c, out)
+	}
+	f := filepath.Join(t.TempDir(), "clrd.json")
+	s.opt.Config = f
+	apply := func(body string) error {
+		os.WriteFile(f, []byte(body), 0o600)
+		return s.applyConfig(context.Background())
+	}
+	if err := apply(`{"users": [{"name": "ann", "grants": [{"topic": "home", "scopes": ["read"]}]}, {"name": "bob", "grants": [{"topic": "home", "scopes": ["read"]}]}]}`); err != nil {
+		t.Fatal(err)
+	}
+	var grants string
+	s.db.QueryRow(`SELECT grants FROM people WHERE name = 'ann'`).Scan(&grants)
+	if !strings.Contains(grants, "home") {
+		t.Fatalf("the file does not manage ann: %s", grants)
+	}
+	tok := mkToken(t, s, "bob's phone", []string{ScopeRead}, nil) // made on the API, for the file's bob
+	s.db.Exec(`UPDATE tokens SET user_id = (SELECT id FROM people WHERE name = 'bob') WHERE hash = ?`, hashToken(tok))
+
+	if err := apply(`{}`); err != nil {
+		t.Fatalf("drop ann and bob: %v", err)
+	}
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM people WHERE name IN ('ann', 'bob') AND config = 0`).Scan(&n)
+	if n != 2 {
+		t.Fatalf("people kept and given back to the API: %d, want 2", n)
+	}
+	if c, _ := call(t, ts, "GET", "/api/v1/notifications?topic=home", tok, nil); c != 200 {
+		t.Fatalf("bob's phone after the drop: %d", c)
+	}
+}
+
 // #458: a file user never takes over an agent of the same name.
 func TestConfigSparesAgent(t *testing.T) {
 	s, ts, admin := newTest(t)

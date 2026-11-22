@@ -864,10 +864,13 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   agent over. A token is `name`, `secret` (`clrd_` and 20 or more characters in all; `"$NAME"` reads
   the environment variable), `scopes`, `topics`, `grants`, `approve` and
   `user` (a user name in the file), and is matched by the hash of its
-  secret, so one made on the API is taken over. Rows the file made and no
-  longer lists are removed, with their sessions, and a changed token drops
-  its sessions; rows made on the API are
-  not. Unknown fields or a bad entry stop the start and change nothing.
+  secret, so one made on the API is taken over. A user made on the API is
+  managed by the file while listed. Rows the file made and no longer lists
+  are removed, with their sessions, and a changed token drops its sessions;
+  rows made on the API are not. A dropped user made on the API, or one a
+  token made on the API still points at, goes back to the API as it is, with
+  a warning in the log, instead of stopping the start (#440). Unknown fields
+  or a bad entry stop the start and change nothing.
   An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.
