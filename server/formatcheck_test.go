@@ -86,6 +86,42 @@ func TestExcerptHidesSecrets(t *testing.T) {
 	}
 }
 
+// Issue #391: messages with no known sender group as "unknown", and a
+// dismiss for "unknown" hides only that group, not every sender.
+func TestFormatCheckUnknownSender(t *testing.T) {
+	s, ts, admin := newTest(t)
+	for _, m := range []string{"old", "new"} {
+		if code, out := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "jobs", "message": m}); code != 200 {
+			t.Fatalf("publish: %d %v", code, out)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET sender = '' WHERE message = 'old'`); err != nil {
+		t.Fatal(err)
+	}
+	groups := func() string {
+		t.Helper()
+		_, out := call(t, ts, "GET", "/api/v1/format-check?by=sender", admin, nil)
+		var ids []string
+		for _, g := range out["topics"].([]any) {
+			g := g.(map[string]any)
+			if g["sender_id"] == "unknown" && g["sender"] != nil {
+				t.Fatalf("unknown group has a name: %v", g)
+			}
+			ids = append(ids, fmt.Sprint(g["sender_id"]))
+		}
+		return strings.Join(ids, ",")
+	}
+	if g := groups(); !strings.Contains(g, "unknown") || strings.Count(g, ",") != 1 {
+		t.Fatalf("want a known and an unknown group: %s", g)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/format-check/dismiss", admin, map[string]any{"topic": "jobs", "rule": "no_title", "sender_id": "unknown"}); code != 200 {
+		t.Fatalf("dismiss: %d", code)
+	}
+	if g := groups(); g == "" || strings.Contains(g, "unknown") {
+		t.Fatalf("want only the known group left: %q", g)
+	}
+}
+
 // Issue #320: by=sender splits a topic by sending token, a dismissed rule
 // stops counting (for one sender or all), and a topic can be turned off.
 // All of it is off until set.

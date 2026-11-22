@@ -166,6 +166,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: in the format check by sender, messages with no known sender now
+  group under `sender_id` `"unknown"`, so a finding there can be dismissed for
+  that group alone instead of for every sender on the topic (#391).
 - Server: a sender's detail still lists its older stored notifications when
   its newest ones were cleaned up (#530), and an anonymous sender with a change
   history is no longer dropped from the address list, so its changes can still
