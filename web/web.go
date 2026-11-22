@@ -88,10 +88,10 @@ type Repeat struct {
 // Action is a link (URL), an answer button (Reply) or a device action (HTTP
 // or Broadcast, #401) that only a phone runs; the inbox shows it, never runs it.
 type Action struct {
-	Label string `json:"label"`
-	URL   string `json:"url"`
-	Reply string `json:"reply,omitempty"`
-	HTTP      *HTTPAction `json:"http,omitempty"`
+	Label     string           `json:"label"`
+	URL       string           `json:"url"`
+	Reply     string           `json:"reply,omitempty"`
+	HTTP      *HTTPAction      `json:"http,omitempty"`
 	Broadcast *BroadcastAction `json:"broadcast,omitempty"`
 }
 
