@@ -13,7 +13,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 - Web: a question whose reply asks for text gets a text box on its card. The
   answer shows on the card once sent, and an Ask device confirm shows the
-  text being confirmed (#153).
+  text being confirmed (#153). Enter sends the answer and Shift+Enter starts a
+  new line in it, and a new card arriving no longer takes focus off the box
+  while you type (#517).
 - Server and API: typed answers (#153). One reply action can set
   `"text": true`; answering it takes 1 to 1000 characters of plain text,
   kept as `reply_text` and returned by MCP `wait_for_reply` as `text`. Same
