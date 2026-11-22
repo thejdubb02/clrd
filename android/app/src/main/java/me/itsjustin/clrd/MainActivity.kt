@@ -355,7 +355,6 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
     var unfolded by rememberSaveable { mutableStateOf(setOf<String>()) } // stacks opened in the list
     var sending by rememberSaveable { mutableStateOf(false) } // the Send box (#150)
-    var seenSent by rememberSaveable { mutableStateOf(app.sender.sent) } // a send that lands after a rotation still closes the box (#523)
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val dao = app.db.dao()
@@ -408,12 +407,9 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Header(app)
+            // A send that lands after a rotation still closes the box (#523); a box opened again since stays open (#532).
             LaunchedEffect(app.sender.sent) {
-                val was = seenSent
-                seenSent = app.sender.sent
-                if (app.sender.sent <= was) return@LaunchedEffect // the same send, or a fresh process whose count starts at 0
-                sending = false
-                snackbar.showSnackbar(ctx.getString(R.string.send_done))
+                app.sender.confirm { if (app.sender.done) sending = false; snackbar.showSnackbar(ctx.getString(R.string.send_done)) }
             }
             if (sending) SendBox(app, topic.orEmpty(), close = { sending = false })
             when (tab) {
@@ -1214,6 +1210,15 @@ class Sender(private val run: (Runnable) -> Unit) {
     var sent by mutableStateOf(0); private set
     /** This box's notification went out; no more sends until the box opens again, even in the moment before it closes. */
     var done by mutableStateOf(false); private set
+    private var shown = 0 // sends whose Sent message finished showing
+
+    /** Runs [show] for the Sent message once per send. A screen rebuilt while it showed (a rotation) shows it again (#532). */
+    suspend fun confirm(show: suspend () -> Unit) {
+        val n = sent
+        if (n <= shown) return
+        show()
+        shown = n
+    }
 
     /** A fresh box: no old reason, ready to send. Does nothing while a send is in flight. */
     fun open() { if (!busy) { err = null; done = false } }
