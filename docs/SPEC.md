@@ -1165,7 +1165,7 @@ rules. Its token lives in the OS keychain and is sent only as an
   failures are logged, not retried. Push endpoints get the same guard as
   link fetches (ports 80 and 443, no private addresses), so a subscription
   cannot point the server at the local network.
-- The web inbox (Settings, Notifications) registers its worker,
+- The web inbox (Settings, Browser notifications) registers its worker,
   `static/sw.js`, only when the user turns notifications on there, and asks
   for permission only on that tap. Nothing changes for a browser that never
   opts in. A site the browser blocks, or a subscription one side lost, is

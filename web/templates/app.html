@@ -210,297 +210,325 @@
   <h1 class="me-auto text-xl font-semibold tracking-tight">Settings</h1>
   <button type="button" class="btn js-only" data-variant="outline" data-palette aria-label="Commands" title="Commands">{{template "i-command"}}<kbd class="kbd max-md:hidden" data-mod>Ctrl K</kbd></button>
 </header>
-<div class="grid max-w-2xl gap-10">
-  <section class="grid gap-3" aria-labelledby="dev-h">
-    <h2 id="dev-h" class="text-base font-semibold">Linked devices</h2>
-    <p class="text-body text-sm/relaxed">Every token, browser and phone that can read this inbox. Unlink a browser or phone and it is signed out at once. Unlinking a phone also signs out the browsers it approved.</p>
-    <p class="text-body text-sm/relaxed">May approve says who can tap a reply button such as Approve. Ask sends the tap to an allowed device to confirm first. New tokens start at Denied. A device can lower its own setting, never raise it.</p>
-    <div data-live="linked">{{if .Snap.Linked}}<div class="bg-card rounded-xl border">
-      <table class="table">
-        <thead><tr><th scope="col">Device</th><th scope="col" class="max-sm:hidden">Linked</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Unlink</span></th></tr></thead>
-        <tbody>
-          {{range .Snap.Linked}}<tr data-device="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><span>{{.Name}}</span>{{if .This}} <span class="text-muted-foreground">(this browser)</span>{{end}}
-            <div class="meta">{{if eq .Kind "phone"}}Phone, linked to{{else if eq .Kind "browser"}}Browser, signed in with{{else if eq .Kind "agent"}}Agent{{else}}Token{{end}}{{with .Via}} {{.}}{{end}}</div></td>
-            <td class="meta whitespace-nowrap max-sm:hidden"><time datetime="{{iso .LinkedAt}}" title="{{clock .LinkedAt}}">{{clock .LinkedAt}}</time></td>
-            <td class="meta">{{if .Live}}Connected{{else if .Connected}}Catching up{{else}}Offline{{with .LastSeenAt}}<div>seen <time class="whitespace-nowrap" datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time></div>{{end}}{{end}}
-              <div class="mt-1 grid gap-1"><span>May approve:</span> {{if $.Snap.CanApprove}}<select class="input w-auto js-only" data-approve="{{.ID}}" data-name="{{.Name}}"{{if $.Snap.Own .}} data-own{{end}} aria-label="May approve: {{.Name}}">{{range $.Snap.ApproveOptions .}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><noscript>{{.ApproveLabel}}</noscript>{{else}}{{.ApproveLabel}}{{end}}</div></td>
-            <td class="text-right">{{if and .CanUnlink (not .This)}}<button type="button" class="btn js-only" data-variant="outline" data-unlink="{{.ID}}" data-name="{{.Name}}">Unlink</button>{{end}}</td></tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>
-    {{else}}<p class="text-body text-sm">No devices yet. Open the inbox or the Android app on a device and it shows up here.</p>{{end}}</div>
-    <details class="text-sm">
-      <summary class="cursor-pointer font-medium">Device activity</summary>
-      {{if .Snap.Log}}<ol class="mt-2 grid gap-1" data-device-log>{{range .Snap.Log}}
-        <li><time class="meta" datetime="{{iso .At}}" title="{{clock .At}}">{{clock .At}}</time> {{.Device}} {{if eq .Action "signed in"}}signed in with{{else}}{{.Action}} by{{end}} {{.By}}</li>{{end}}
-      </ol>{{else}}<p class="text-body mt-2">No links, sign-ins or unlinks yet.</p>{{end}}
-    </details>
+<div class="js-only mb-8 grid max-w-2xl gap-1.5" role="search">
+  <label class="label" for="settings-q">Search settings</label>
+  <input id="settings-q" class="input" type="search" autocomplete="off" spellcheck="false" placeholder="Try sound, swipe or webhook" aria-describedby="settings-n" data-settings-q>
+  <p id="settings-n" class="meta" role="status" data-settings-n></p>
+</div>
+<div class="grid max-w-2xl gap-12">
+  <div class="grid gap-3" data-settings-none hidden>
+    <p class="text-body text-sm">No settings match "<b data-settings-term></b>".</p>
+    <div><button type="button" class="btn" data-variant="outline" data-settings-clear>Clear search</button></div>
+  </div>
+  <section class="grid gap-8" aria-labelledby="g-notifications" data-settings-group>
+    <h2 id="g-notifications" class="border-b pb-2 text-lg font-semibold tracking-tight">Notifications</h2>
+    <section id="sound" data-setting data-keywords="sound, chime, ring, audio, volume" class="js-only grid gap-3" aria-labelledby="sound-h">
+      <h3 id="sound-h" class="text-base font-semibold">Sound</h3>
+      <p class="text-body text-sm/relaxed">Plays when a new notification arrives while clrd is open in this browser. Silenced notifications make no sound. Each browser and phone has its own sound.</p>
+      <div class="flex flex-wrap items-center gap-2"><label for="sound-pick" class="label">Sound</label>
+        <select id="sound-pick" class="input w-auto" data-sound-setting><option value="default">Default (Chime)</option><option value="none">None</option><option value="chime">Chime</option><option value="ding">Ding</option><option value="pop">Pop</option><option value="bell">Bell</option><option value="alert">Alert</option><option value="soft">Soft</option></select>
+        <button type="button" class="btn" data-variant="outline" data-sound-play>Play</button></div>
+      <p class="text-muted-foreground text-sm" role="status" data-sound-hint></p>
+    </section>
+    <section id="push" data-setting data-keywords="push, system notification, pop up, desktop, alert" class="js-only grid gap-3" aria-labelledby="push-h">
+      <h3 id="push-h" class="text-base font-semibold">Browser notifications</h3>
+      <p class="text-body text-sm/relaxed">Shows a system notification on this device when a new one arrives, even with clrd closed. Off until you turn it on here. Closing the system notification clears nothing; clear it in the inbox.</p>
+      <div><button type="button" class="btn" data-variant="outline" data-push disabled>Turn on notifications</button></div>
+      <p class="text-muted-foreground text-sm" role="status" data-push-hint></p>
+    </section>
+    <section id="silences" data-setting data-keywords="mute, quiet, quiet hours, do not disturb, pause" class="grid gap-3" aria-labelledby="sil-h">
+      <h3 id="sil-h" class="text-base font-semibold">Silences</h3>
+      <p class="text-body text-sm/relaxed">Mute a topic, a tag, or a tag in one topic for a while. Notifications still arrive and show on every device, but this inbox and ntfy apps play no sound for them. The clrd Android app does not read silences yet and still alerts.</p>
+      {{if .Snap.Silences}}<div class="bg-card rounded-xl border">
+        <table class="table">
+          <thead><tr><th scope="col">Muted</th><th scope="col">Ends</th><th scope="col"><span class="sr-only">End now</span></th></tr></thead>
+          <tbody>
+            {{range .Snap.Silences}}<tr data-silence="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><span>{{if .Topic}}{{.Topic}}{{else}}Every topic{{end}}{{with .Tag}}, tag {{.}}{{end}}</span>
+              {{with .Comment}}<div class="text-body">{{.}}</div>{{end}}{{with .By}}<div class="meta">Set by {{.}}</div>{{end}}</td>
+              <td class="meta"><time class="whitespace-nowrap" datetime="{{iso .Until}}" title="{{clock .Until}}">{{clock .Until}}</time><div>{{left .Until}} left</div></td>
+              <td class="text-right">{{if .CanEnd}}<form method="post" action="{{base}}/app/silence"><button class="btn" data-variant="outline" name="end" value="{{.ID}}" data-silence-end="{{.ID}}">End now</button></form>{{end}}</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>{{else}}<p class="text-body text-sm">No silences running.</p>{{end}}
+      {{if .Snap.CanSilence}}<form class="grid max-w-md gap-3" method="post" action="{{base}}/app/silence" data-silence-form>
+        <div class="grid gap-1.5"><label class="label" for="sil-topic">Topic</label>
+          <input id="sil-topic" class="input" name="topic" list="sil-topics" autocomplete="off" spellcheck="false" aria-describedby="sil-hint">
+          <datalist id="sil-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
+        <div class="grid gap-1.5"><label class="label" for="sil-tag">Tag</label>
+          <input id="sil-tag" class="input" name="tag" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="sil-hint">
+          <p id="sil-hint" class="meta">Give a topic, a tag, or both. A tag with no topic mutes it in every topic.</p></div>
+        <div class="grid gap-1.5"><label class="label" for="sil-for">For</label>
+          <select id="sil-for" class="input" name="for"><option value="30m">30 minutes</option><option value="1h" selected>1 hour</option><option value="8h">8 hours</option><option value="24h">1 day</option><option value="168h">7 days</option><option class="js-only" value="until">Until a time</option></select></div>
+        <div class="grid gap-1.5" hidden data-silence-until><label class="label" for="sil-until">Until</label>
+          <input id="sil-until" class="input" type="datetime-local" name="until"></div>
+        <div class="grid gap-1.5"><label class="label" for="sil-comment">Comment</label>
+          <input id="sil-comment" class="input" name="comment" maxlength="256" autocomplete="off"></div>
+        <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Start silence</button><span class="meta" role="status" data-silence-status></span></div>
+      </form>{{else}}<p class="meta">This device can see silences but not start or end them: its token cannot publish.</p>{{end}}
+    </section>
   </section>
-  <section class="grid gap-3" aria-labelledby="link-h" data-link hidden>
-    <h2 id="link-h" class="text-base font-semibold">Link a phone</h2>
-    <p class="text-body text-sm/relaxed">Open the clrd app on your phone, tap Scan QR code and scan the code. You approve the phone here before it connects, and it gets the same access as this browser.</p>
-    <div><button class="btn" data-variant="primary" type="button" data-pair-start>Link a phone</button></div>
-    <img class="pair-qr" data-pair-qr alt="QR code to link a phone" width="232" height="232" hidden>
-    <p class="text-muted-foreground text-sm" data-pair-msg role="status"></p>
-    <div class="grid gap-3" data-link-ask hidden>
-      <p class="text-sm"><b data-link-name></b> wants to connect.</p>
-      <p class="text-sm">Approve only if your phone shows <b data-link-check></b>.</p>
-      <div class="flex gap-2"><button class="btn" data-variant="primary" type="button" data-link-approve>Approve</button><button class="btn" data-variant="outline" type="button" data-link-deny>Deny</button></div>
-    </div>
-  </section>
-  {{if .Snap.CanInvite}}<section class="grid gap-3" aria-labelledby="agent-h" data-agent hidden>
-    <h2 id="agent-h" class="text-base font-semibold">Add an agent</h2>
-    <p class="text-body text-sm/relaxed">Give an AI agent or a bot its own sign-in for the topics you pick, without copying a token. It may read and send there as far as you may, never more. It cannot tap reply buttons such as Approve. It shows in Linked devices, where you can unlink it.</p>
-    <div class="flex flex-wrap items-center gap-3"><button class="btn" data-variant="outline" type="button" data-agent-start>Add agent</button><span class="meta" role="status" data-agent-gone></span></div>
-    <form class="grid max-w-md gap-3" data-agent-form hidden>
-      <div class="grid gap-1.5"><label class="label" for="agent-name">Agent name</label>
-        <input id="agent-name" class="input" name="name" required maxlength="64" autocomplete="off" spellcheck="false" placeholder="build-bot"></div>
-      <fieldset class="grid gap-2"><legend class="label mb-1.5">Topics</legend>
-        {{range .Snap.Topics}}<label class="label font-normal [overflow-wrap:anywhere]"><input type="checkbox" class="input" name="topic" value="{{.Name}}"> {{.Name}}</label>{{end}}
-        <input class="input" name="more" autocomplete="off" spellcheck="false" aria-label="{{if .Snap.Topics}}Other topics{{else}}Topics{{end}}" aria-describedby="agent-topics-hint" placeholder="{{if .Snap.Topics}}Other topics{{else}}build, deploys{{end}}">
-        <p id="agent-topics-hint" class="meta">Separate topics with commas.</p></fieldset>
-      <div class="grid gap-1.5"><label class="label" for="agent-for">Invite works for</label>
-        <select id="agent-for" class="input" name="expires_in"><option value="5m">5 minutes</option><option value="15m" selected>15 minutes</option><option value="30m">30 minutes</option><option value="1h">1 hour</option></select></div>
-      <div class="flex items-center gap-3"><button class="btn" data-variant="primary">Make invite</button><span class="meta" role="status" data-agent-status></span></div>
-    </form>
-    <div class="grid gap-2" data-agent-done hidden>
-      <p class="text-sm">Give this to <b data-agent-name></b> privately, like a password:</p>
-      <pre tabindex="0" class="bg-muted/50 w-full rounded-md p-3 whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-agent-invite></code></pre>
-      <div class="flex flex-wrap items-center gap-2"><span class="[.no-copy_&]:hidden"><button type="button" class="btn" data-variant="outline" data-size="sm" data-agent-copy>{{template "i-copy"}}Copy invite</button></span><button type="button" class="btn" data-variant="ghost" data-size="sm" data-agent-again>Add another agent</button></div>
-      <p class="meta" data-agent-left>It works once, until <time data-agent-until></time>. The agent opens it and follows the steps it shows.</p>
-      <p class="meta">May approve starts at Denied, so it cannot answer its own questions.</p>
-    </div>
-  </section>{{end}}
-  <script src="{{static "pair.js"}}" defer></script>
-  <section class="grid gap-3" aria-labelledby="send-h">
-    <h2 id="send-h" class="text-base font-semibold">Send a test notification</h2>
-    <p class="text-body text-sm/relaxed">Run this with a token that has the publish scope. It should appear on every device within a second.</p>
-<pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
-  -d '{"topic":"test","message":"Hello from clrd"}' \
-  {{.Base}}/api/v1/notifications</code></pre>
-  </section>
-  <section class="js-only grid gap-3" aria-labelledby="inbox-h">
-    <h2 id="inbox-h" class="text-base font-semibold">Inbox</h2>
-    <p class="text-body text-sm/relaxed">With stacking on, two or more notifications from one topic show as one card in the inbox. This setting is for this browser only.</p>
-    <label class="label"><input type="checkbox" role="switch" class="input" data-stack-setting> Stack by topic</label>
-  </section>
-  <section class="js-only grid gap-3" aria-labelledby="sound-h">
-    <h2 id="sound-h" class="text-base font-semibold">Sound</h2>
-    <p class="text-body text-sm/relaxed">Plays when a new notification arrives while clrd is open in this browser. Silenced notifications make no sound. Each browser and phone has its own sound.</p>
-    <div class="flex flex-wrap items-center gap-2"><label for="sound" class="label">Sound</label>
-      <select id="sound" class="input w-auto" data-sound-setting><option value="default">Default (Chime)</option><option value="none">None</option><option value="chime">Chime</option><option value="ding">Ding</option><option value="pop">Pop</option><option value="bell">Bell</option><option value="alert">Alert</option><option value="soft">Soft</option></select>
-      <button type="button" class="btn" data-variant="outline" data-sound-play>Play</button></div>
-    <p class="text-muted-foreground text-sm" role="status" data-sound-hint></p>
-  </section>
-  <section class="js-only grid gap-3" aria-labelledby="push-h">
-    <h2 id="push-h" class="text-base font-semibold">Notifications</h2>
-    <p class="text-body text-sm/relaxed">Shows a system notification on this device when a new one arrives, even with clrd closed. Off until you turn it on here. Closing the system notification clears nothing; clear it in the inbox.</p>
-    <div><button type="button" class="btn" data-variant="outline" data-push disabled>Turn on notifications</button></div>
-    <p class="text-muted-foreground text-sm" role="status" data-push-hint></p>
-  </section>
-  <section class="grid gap-3" aria-labelledby="sil-h">
-    <h2 id="sil-h" class="text-base font-semibold">Silences</h2>
-    <p class="text-body text-sm/relaxed">Mute a topic, a tag, or a tag in one topic for a while. Notifications still arrive and show on every device, but this inbox and ntfy apps play no sound for them. The clrd Android app does not read silences yet and still alerts.</p>
-    {{if .Snap.Silences}}<div class="bg-card rounded-xl border">
-      <table class="table">
-        <thead><tr><th scope="col">Muted</th><th scope="col">Ends</th><th scope="col"><span class="sr-only">End now</span></th></tr></thead>
-        <tbody>
-          {{range .Snap.Silences}}<tr data-silence="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><span>{{if .Topic}}{{.Topic}}{{else}}Every topic{{end}}{{with .Tag}}, tag {{.}}{{end}}</span>
-            {{with .Comment}}<div class="text-body">{{.}}</div>{{end}}{{with .By}}<div class="meta">Set by {{.}}</div>{{end}}</td>
-            <td class="meta"><time class="whitespace-nowrap" datetime="{{iso .Until}}" title="{{clock .Until}}">{{clock .Until}}</time><div>{{left .Until}} left</div></td>
-            <td class="text-right">{{if .CanEnd}}<form method="post" action="{{base}}/app/silence"><button class="btn" data-variant="outline" name="end" value="{{.ID}}" data-silence-end="{{.ID}}">End now</button></form>{{end}}</td></tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>{{else}}<p class="text-body text-sm">No silences running.</p>{{end}}
-    {{if .Snap.CanSilence}}<form class="grid max-w-md gap-3" method="post" action="{{base}}/app/silence" data-silence-form>
-      <div class="grid gap-1.5"><label class="label" for="sil-topic">Topic</label>
-        <input id="sil-topic" class="input" name="topic" list="sil-topics" autocomplete="off" spellcheck="false" aria-describedby="sil-hint">
-        <datalist id="sil-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
-      <div class="grid gap-1.5"><label class="label" for="sil-tag">Tag</label>
-        <input id="sil-tag" class="input" name="tag" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="sil-hint">
-        <p id="sil-hint" class="meta">Give a topic, a tag, or both. A tag with no topic mutes it in every topic.</p></div>
-      <div class="grid gap-1.5"><label class="label" for="sil-for">For</label>
-        <select id="sil-for" class="input" name="for"><option value="30m">30 minutes</option><option value="1h" selected>1 hour</option><option value="8h">8 hours</option><option value="24h">1 day</option><option value="168h">7 days</option><option class="js-only" value="until">Until a time</option></select></div>
-      <div class="grid gap-1.5" hidden data-silence-until><label class="label" for="sil-until">Until</label>
-        <input id="sil-until" class="input" type="datetime-local" name="until"></div>
-      <div class="grid gap-1.5"><label class="label" for="sil-comment">Comment</label>
-        <input id="sil-comment" class="input" name="comment" maxlength="256" autocomplete="off"></div>
-      <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Start silence</button><span class="meta" role="status" data-silence-status></span></div>
-    </form>{{else}}<p class="meta">This device can see silences but not start or end them: its token cannot publish.</p>{{end}}
-  </section>
-  <section class="grid gap-3" aria-labelledby="hooks-h" data-hooks>
-    <h2 id="hooks-h" class="text-base font-semibold">Webhooks</h2>
-    <p class="text-body text-sm/relaxed">Send a topic's answers to another app as they happen: each dismiss, acknowledge, resolve, snooze or action tap is posted to your URL as JSON. <a class="underline" href="{{base}}/docs/integrations/webhooks-out">How webhooks work</a></p>
-    {{if .Snap.CanHooks}}
-    {{range .Snap.Hooks}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-hook="{{.Topic}}/{{.Name}}">
-      <div class="grid gap-1">
-        <h3 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h3>
-        <p class="meta [overflow-wrap:anywhere]">{{.URL}}</p>
-        <p class="meta">Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .Body}} Custom body.{{end}}{{if .HasSecret}} Signed with a secret.{{end}}</p>
-        {{if not .Enabled}}<p class="text-destructive text-sm" data-hook-off>Turned off after a day of failed deliveries. Fix the receiver, then save it again to turn it back on.</p>
-        {{else if .FailingSince}}<p class="text-destructive text-sm">Failing since {{clock .FailingSince}}. It turns off after a day of failures.</p>{{end}}
-      </div>
-      <details class="text-sm" data-hook-log>
-        <summary class="cursor-pointer font-medium">Delivery log</summary>
-        {{if .Deliveries}}<table class="table mt-2">
-          <thead><tr><th scope="col">When</th><th scope="col">Event</th><th scope="col">Result</th></tr></thead>
-          <tbody>{{range .Deliveries}}<tr><td class="meta whitespace-nowrap"><time datetime="{{iso .UpdatedAt}}">{{clock .UpdatedAt}}</time></td><td>{{.Event}}</td>
-            <td class="whitespace-normal [overflow-wrap:anywhere]">{{if eq .Status "ok"}}Sent{{with .Code}} ({{.}}){{end}}{{else if eq .Status "pending"}}{{if .Attempts}}Retrying, try {{.Attempts}}{{else}}Waiting to send{{end}}{{else}}Failed after {{.Attempts}} tries{{end}}{{with .Error}}<div class="meta">{{.}}</div>{{end}}</td></tr>{{end}}</tbody>
-        </table><p class="meta mt-2">The last {{len .Deliveries}}. The API keeps the last 100.</p>{{else}}<p class="meta mt-2">Nothing sent yet.</p>{{end}}
-      </details>
-      <details class="text-sm">
-        <summary class="cursor-pointer font-medium">Edit</summary>
-        <form class="mt-3 grid max-w-md gap-3" method="post" action="{{base}}/app/hooks">
-          <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
-          {{template "hook-fields" .}}
-          <div><button class="btn" data-variant="outline">Save webhook</button></div>
-        </form>
-      </details>
-      <form method="post" action="{{base}}/app/hooks" data-hook-delete="{{.Name}}">
-        <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
-        <button class="btn" data-variant="outline" data-size="sm" name="delete" value="1">Delete</button>
+  <section class="grid gap-8" aria-labelledby="g-inbox" data-settings-group>
+    <h2 id="g-inbox" class="border-b pb-2 text-lg font-semibold tracking-tight">Inbox</h2>
+    <noscript><p class="meta">These settings need JavaScript.</p></noscript>
+    <section id="stack" data-setting data-keywords="group, fold, bundle, collapse" class="js-only grid gap-3" aria-labelledby="inbox-h">
+      <h3 id="inbox-h" class="text-base font-semibold">Stack by topic</h3>
+      <p class="text-body text-sm/relaxed">With stacking on, two or more notifications from one topic show as one card in the inbox. This setting is for this browser only.</p>
+      <label class="label"><input type="checkbox" role="switch" class="input" data-stack-setting> Stack by topic</label>
+    </section>
+    <section id="swipe" data-setting data-keywords="swipe, gesture, slide, buttons" class="js-only grid gap-3" aria-labelledby="swp-h">
+      <h3 id="swp-h" class="text-base font-semibold">Swipe buttons</h3>
+      <p class="text-body text-sm/relaxed">On a touch screen, swipe a card part way to show these buttons. Nothing changes until you tap one; swipe back to hide them. The first button sits nearest the edge. These settings apply to every device, and Resolve shows only in the app.</p>
+      <form class="grid max-w-md gap-3" data-swipe-settings>
+        <fieldset><legend class="label mb-1.5">Swipe left</legend><div class="flex gap-2" data-side="start"></div></fieldset>
+        <fieldset><legend class="label mb-1.5">Swipe right</legend><div class="flex gap-2" data-side="end"></div></fieldset>
+        <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-swipe-status></span></div>
       </form>
-    </div>{{else}}<p class="text-body text-sm">No webhooks yet.</p>{{end}}
-    <form class="grid max-w-md gap-3" method="post" action="{{base}}/app/hooks" data-hook-add>
-      <h3 class="text-sm font-semibold">Add a webhook</h3>
-      <div class="grid gap-1.5"><label class="label" for="hk-topic">Topic</label>
-        <input id="hk-topic" class="input" name="topic" list="hk-topics" required autocomplete="off" spellcheck="false">
-        <datalist id="hk-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
-      <div class="grid gap-1.5"><label class="label" for="hk-name">Name</label>
-        <input id="hk-name" class="input" name="name" required maxlength="64" pattern="[A-Za-z0-9_\-]+" aria-describedby="hk-name-hint" autocomplete="off" spellcheck="false">
-        <p id="hk-name-hint" class="meta">Letters, digits, _ and -. Saving a name that exists replaces it.</p></div>
-      {{template "hook-fields" newHook}}
-      <div><button class="btn" data-variant="outline">Add webhook</button></div>
-    </form>
-    {{else}}<p class="meta">Webhooks need an admin sign-in.</p>{{end}}
-  </section>
-  <section class="grid gap-3" aria-labelledby="tpl-h" data-templates>
-    <h2 id="tpl-h" class="text-base font-semibold">Webhook templates</h2>
-    <p class="text-body text-sm/relaxed">Turn another service's own webhook JSON into notifications: the service posts to a topic with <code>?template=</code> and a template name. The built-ins work with no setup; save one here to add a secret, change a field or make your own. <a class="underline" href="{{base}}/docs/integrations/custom-webhooks">How templates work</a></p>
-    {{if .Snap.CanTemplates}}
-    {{range .Snap.Templates}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-template="{{.Topic}}/{{.Name}}">
-      <div class="grid gap-1">
-        <h3 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h3>
-        <p class="meta [overflow-wrap:anywhere]">Post to /{{.Topic}}?template={{.Name}}{{if has $.Snap.BuiltinTemplates .Name}}. Overrides the built-in for the fields set{{end}}.{{if .HasSecret}} Checked with a secret.{{end}}</p>
-      </div>
-      <details class="text-sm">
-        <summary class="cursor-pointer font-medium">Edit</summary>
-        <form class="mt-3 grid max-w-md gap-3" method="post" action="{{base}}/app/templates" data-template-form>
-          <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
-          {{template "tpl-fields" .}}
-          <div><button class="btn" data-variant="outline">Save template</button></div>
-        </form>
-      </details>
-      <form method="post" action="{{base}}/app/templates" data-template-delete="{{.Name}}">
-        <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
-        <button class="btn" data-variant="outline" data-size="sm" name="delete" value="1">Delete</button>
+    </section>
+    <section id="snooze" data-setting data-keywords="later, remind, postpone, default time" class="js-only grid gap-3" aria-labelledby="snz-h">
+      <h3 id="snz-h" class="text-base font-semibold">Snooze times</h3>
+      <p class="text-body text-sm/relaxed">Snooze on a card uses the default time. Long press it, or use the arrow next to it, for the other times. These settings apply to every device.</p>
+      <form class="grid max-w-md gap-3" data-snooze-settings>
+        <div class="grid gap-1.5"><label class="label" for="snz-times">Times</label>
+          <input id="snz-times" class="input" name="times" value="{{range $i, $v := .Snap.SnoozeIntervals}}{{if $i}}, {{end}}{{$v}}{{end}}" aria-describedby="snz-hint" autocomplete="off" spellcheck="false">
+          <p id="snz-hint" class="meta">Up to 8, separated by commas. Use m, h or d: 15m, 1h, 2d.</p></div>
+        <div class="grid gap-1.5"><label class="label" for="snz-default">Default</label>
+          <select id="snz-default" class="input" name="default">{{range .Snap.SnoozeIntervals}}<option value="{{.}}"{{if eq . $.Snap.SnoozeDefault}} selected{{end}}>{{snoozeLabel .}}</option>{{end}}</select></div>
+        <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-snooze-status></span></div>
       </form>
-    </div>{{else}}<p class="text-body text-sm">No saved templates yet.</p>{{end}}
-    <form class="grid max-w-md gap-3" method="post" action="{{base}}/app/templates" data-template-form data-template-add>
-      <h3 class="text-sm font-semibold">Add a template</h3>
-      <div class="grid gap-1.5"><label class="label" for="tpl-topic">Topic</label>
-        <input id="tpl-topic" class="input" name="topic" list="tpl-topics" required autocomplete="off" spellcheck="false">
-        <datalist id="tpl-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
-      <div class="grid gap-1.5"><label class="label" for="tpl-name">Name</label>
-        <input id="tpl-name" class="input" name="name" list="tpl-builtins" required maxlength="64" pattern="[A-Za-z0-9_\-]+" aria-describedby="tpl-name-hint" autocomplete="off" spellcheck="false">
-        <datalist id="tpl-builtins">{{range .Snap.BuiltinTemplates}}<option value="{{.}}"></option>{{end}}</datalist>
-        <p id="tpl-name-hint" class="meta">Letters, digits, _ and -. A built-in's name keeps the built-in and changes only the fields you fill in. Saving a name that exists replaces it.</p></div>
-      {{template "tpl-fields" newTemplate}}
-      <div><button class="btn" data-variant="outline">Add template</button></div>
-    </form>
-    {{else}}<p class="meta">This device cannot save templates: its token cannot publish.</p>{{end}}
+    </section>
+    <section id="keep-cleared" data-setting data-keywords="delete, keep, retention, history, days" class="js-only grid gap-3" aria-labelledby="keep-h">
+      <h3 id="keep-h" class="text-base font-semibold">Cleared messages</h3>
+      <p class="text-body text-sm/relaxed">Dismissed and resolved messages are deleted this long after they were cleared. Open and snoozed messages are never deleted. This applies to every device, and a topic can have its own period below; changing either needs an admin sign-in.</p>
+      {{$k := .Snap.KeepClearedDays}}{{$preset := eq $k 0 1 5 7 30 90}}<form class="grid max-w-md gap-3" data-keep-settings>
+        <div class="grid gap-1.5"><label class="label" for="keep-days">Keep cleared messages for</label>
+          <select id="keep-days" class="input" name="days"><option value="1"{{if eq $k 1}} selected{{end}}>1 day</option><option value="5"{{if eq $k 5}} selected{{end}}>5 days</option><option value="7"{{if eq $k 7}} selected{{end}}>7 days</option><option value="30"{{if eq $k 30}} selected{{end}}>30 days</option><option value="90"{{if eq $k 90}} selected{{end}}>90 days</option><option value="0"{{if eq $k 0}} selected{{end}}>Forever</option><option value="custom"{{if not $preset}} selected{{end}}>Custom</option></select></div>
+        <div class="grid gap-1.5"{{if $preset}} hidden{{end}} data-keep-custom><label class="label" for="keep-custom">Days</label>
+          <input id="keep-custom" class="input" type="number" min="1" max="36500" name="custom" value="{{if not $preset}}{{$k}}{{end}}"></div>
+        <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-keep-status></span></div>
+      </form>
+      {{if .Snap.KeepTopics}}<form class="grid max-w-md gap-2" data-topic-keep><fieldset class="grid gap-2"><legend class="label mb-2">By topic</legend>
+        {{range .Snap.KeepTopics}}{{$v := $.Snap.TopicKeep .}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="tk-{{.}}">{{.}}</label>
+          <select id="tk-{{.}}" class="input w-auto" data-topic="{{.}}"><option value=""{{if eq $v -1}} selected{{end}}>Default</option><option value="1"{{if eq $v 1}} selected{{end}}>1 day</option><option value="5"{{if eq $v 5}} selected{{end}}>5 days</option><option value="7"{{if eq $v 7}} selected{{end}}>7 days</option><option value="30"{{if eq $v 30}} selected{{end}}>30 days</option><option value="90"{{if eq $v 90}} selected{{end}}>90 days</option><option value="0"{{if eq $v 0}} selected{{end}}>Forever</option>{{if not (eq $v -1 0 1 5 7 30 90)}}<option value="{{$v}}" selected>{{$v}} days</option>{{end}}</select></div>
+        {{end}}</fieldset><span class="meta" role="status" data-topic-keep-status></span></form>{{end}}
+    </section>
   </section>
-  <section class="js-only grid gap-3" aria-labelledby="msg-h">
-    <h2 id="msg-h" class="text-base font-semibold">Messages</h2>
-    <p class="text-body text-sm/relaxed">How message text shows. These settings apply to every device.</p>
-    <form class="grid gap-3" data-display-settings>
-      <label class="label"><input type="checkbox" role="switch" class="input" name="render_formatting"{{if .Snap.Formatting}} checked{{end}}> Show Markdown formatting</label>
-      <label class="label"><input type="checkbox" role="switch" class="input" name="autolink"{{if .Snap.Autolink}} checked{{end}}> Turn web addresses into links</label>
-      <label class="label"><input type="checkbox" role="switch" class="input" name="favicons"{{if .Snap.Favicons}} checked{{end}}> Show site icons next to links</label>
-      <label class="label"><input type="checkbox" role="switch" class="input" name="link_previews"{{if .Snap.LinkPreviews}} checked{{end}}> Show link previews</label>
-      {{if .Snap.Topics}}<fieldset class="grid gap-2"><legend class="label mb-2">Link previews by topic</legend>
-        {{range .Snap.Topics}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="tp-{{.Name}}">{{.Name}}</label>
-          <select id="tp-{{.Name}}" class="input w-auto" data-topic="{{.Name}}">{{$v := $.Snap.TopicPreview .Name}}<option value=""{{if eq $v ""}} selected{{end}}>Default</option><option value="on"{{if eq $v "on"}} selected{{end}}>On</option><option value="off"{{if eq $v "off"}} selected{{end}}>Off</option></select></div>
-        {{end}}</fieldset>{{end}}
-      <span class="meta" role="status" data-display-status></span>
-    </form>
+  <section class="grid gap-8" aria-labelledby="g-display" data-settings-group>
+    <h2 id="g-display" class="border-b pb-2 text-lg font-semibold tracking-tight">Display</h2>
+    <section id="formatting" data-setting data-keywords="markdown, formatting, links, preview, site icons" class="js-only grid gap-3" aria-labelledby="msg-h">
+      <h3 id="msg-h" class="text-base font-semibold">Message text</h3>
+      <p class="text-body text-sm/relaxed">How message text shows. These settings apply to every device.</p>
+      <form class="grid gap-3" data-display-settings>
+        <label class="label"><input type="checkbox" role="switch" class="input" name="render_formatting"{{if .Snap.Formatting}} checked{{end}}> Show Markdown formatting</label>
+        <label class="label"><input type="checkbox" role="switch" class="input" name="autolink"{{if .Snap.Autolink}} checked{{end}}> Turn web addresses into links</label>
+        <label class="label"><input type="checkbox" role="switch" class="input" name="favicons"{{if .Snap.Favicons}} checked{{end}}> Show site icons next to links</label>
+        <label class="label"><input type="checkbox" role="switch" class="input" name="link_previews"{{if .Snap.LinkPreviews}} checked{{end}}> Show link previews</label>
+        {{if .Snap.Topics}}<fieldset class="grid gap-2"><legend class="label mb-2">Link previews by topic</legend>
+          {{range .Snap.Topics}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="tp-{{.Name}}">{{.Name}}</label>
+            <select id="tp-{{.Name}}" class="input w-auto" data-topic="{{.Name}}">{{$v := $.Snap.TopicPreview .Name}}<option value=""{{if eq $v ""}} selected{{end}}>Default</option><option value="on"{{if eq $v "on"}} selected{{end}}>On</option><option value="off"{{if eq $v "off"}} selected{{end}}>Off</option></select></div>
+          {{end}}</fieldset>{{end}}
+        <span class="meta" role="status" data-display-status></span>
+      </form>
+    </section>
+    {{if .Snap.Topics}}<section id="topic-icons" data-setting data-keywords="icon, image, avatar, picture" class="js-only grid gap-3" aria-labelledby="ticon-h">
+      <h3 id="ticon-h" class="text-base font-semibold">Topic icons</h3>
+      <p class="text-body text-sm/relaxed">An image link shown on new notifications in the topic when the sender gives none. Leave it empty for no icon. Saved when you leave the box.</p>
+      <form class="grid gap-2" data-topic-icons>
+        {{range .Snap.Topics}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="ti-{{.Name}}">{{.Name}}</label>
+          <input id="ti-{{.Name}}" class="input min-w-0 flex-1" type="url" placeholder="https://" value="{{.Icon}}" data-topic="{{.Name}}" autocomplete="off" spellcheck="false"></div>
+        {{end}}<span class="meta" role="status" data-topic-icon-status></span>
+      </form>
+    </section>{{end}}
+    {{if or .Snap.Format .Snap.FormatOff .Snap.FormatDismissed}}<section id="format" data-setting data-keywords="format, markdown check, broken, warning" class="grid gap-3" aria-labelledby="fmt-h" data-format-check>
+      <h3 id="fmt-h" class="text-base font-semibold">Message format check</h3>
+      {{with .Snap.Format}}<p class="text-body text-sm/relaxed">Some senders send messages that are hard to read. Copy the prompt into the agent or script that sends them, and it fixes the sender. Dismiss what you are happy with.</p>{{end}}
+      {{range .Snap.Format}}{{$g := .}}<div class="grid gap-2" data-format-topic="{{.Topic}}/{{.Sender}}">
+        <h4 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Topic}} <span class="meta font-normal">from {{if and .SenderID (ne .SenderID "unknown")}}{{or .Sender "another device"}}{{else}}a sender clrd does not know{{end}}, {{.Problems}} of the last {{.Checked}} messages</span></h4>
+        <ul class="text-body grid gap-2 text-sm">{{range .Findings}}<li class="flex flex-wrap items-center gap-2"><span class="flex-1">{{.Label}}: {{.Count}}</span>
+          {{if $g.CanFix}}<form method="post" action="{{base}}/app/format" class="flex flex-wrap gap-2"><input type="hidden" name="topic" value="{{$g.Topic}}"><input type="hidden" name="rule" value="{{.Rule}}">
+            {{if $g.SenderID}}<button class="btn" data-variant="outline" data-size="sm" name="sender_id" value="{{$g.SenderID}}" data-format-dismiss="sender">Dismiss for this sender</button>{{end}}
+            <button class="btn" data-variant="outline" data-size="sm" data-format-dismiss="topic">Dismiss for all of {{$g.Topic}}</button></form>{{end}}</li>{{end}}</ul>
+        {{if .Prompt}}<details class="text-sm">
+          <summary class="cursor-pointer font-medium">Fix prompt</summary>
+          <pre tabindex="0" class="bg-muted/50 mt-2 w-full border-transparent whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-format-prompt>{{.Prompt}}</code></pre>
+        </details>{{else}}<p class="meta">Sent by a device this one cannot see, so there is no fix prompt here.</p>{{end}}
+        <div class="flex flex-wrap gap-2">{{if .Prompt}}<span class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="outline" data-size="sm" data-format-copy>{{template "i-copy"}}Copy fix prompt</button></span>{{end}}
+          {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><button class="btn" data-variant="outline" data-size="sm" data-format-off>Stop checking {{.Topic}}</button></form>{{end}}</div>
+      </div>{{end}}
+      {{if or .Snap.FormatOff .Snap.FormatDismissed}}<div class="grid gap-2" data-format-ignored>
+        <h4 class="text-sm font-semibold">Dismissed and not checked</h4>
+        <ul class="text-body grid gap-2 text-sm">
+          {{range .Snap.FormatOff}}<li class="flex flex-wrap items-center gap-2" data-format-off-item="{{.Topic}}"><span class="flex-1 [overflow-wrap:anywhere]">{{.Topic}}: not checked</span>
+            {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><button class="btn" data-variant="outline" data-size="sm" name="undo" value="1">Check again</button></form>{{end}}</li>{{end}}
+          {{range .Snap.FormatDismissed}}<li class="flex flex-wrap items-center gap-2" data-format-dismissed-item="{{.Topic}}/{{.Rule}}/{{.Sender}}"><span class="flex-1 [overflow-wrap:anywhere]">{{.Topic}}: {{.Label}}, {{if eq .SenderID "unknown"}}from a sender clrd does not know{{else if .SenderID}}from {{or .Sender "another device"}}{{else}}every sender{{end}}</span>
+            {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="rule" value="{{.Rule}}"><input type="hidden" name="sender_id" value="{{.SenderID}}"><button class="btn" data-variant="outline" data-size="sm" name="undo" value="1">Undo</button></form>{{end}}</li>{{end}}
+        </ul>
+      </div>{{end}}
+    </section>{{end}}
+    <section id="appearance" data-setting data-keywords="theme, dark mode, light mode, colors" class="grid gap-3" aria-labelledby="look-h">
+      <h3 id="look-h" class="text-base font-semibold">Appearance</h3>
+      <p class="text-body text-sm/relaxed">The inbox follows your system's light or dark setting.</p>
+    </section>
   </section>
-  {{if or .Snap.Format .Snap.FormatOff .Snap.FormatDismissed}}<section id="format" class="grid gap-3" aria-labelledby="fmt-h" data-format-check>
-    <h2 id="fmt-h" class="text-base font-semibold">Message format</h2>
-    {{with .Snap.Format}}<p class="text-body text-sm/relaxed">Some senders send messages that are hard to read. Copy the prompt into the agent or script that sends them, and it fixes the sender. Dismiss what you are happy with.</p>{{end}}
-    {{range .Snap.Format}}{{$g := .}}<div class="grid gap-2" data-format-topic="{{.Topic}}/{{.Sender}}">
-      <h3 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Topic}} <span class="meta font-normal">from {{if and .SenderID (ne .SenderID "unknown")}}{{or .Sender "another device"}}{{else}}a sender clrd does not know{{end}}, {{.Problems}} of the last {{.Checked}} messages</span></h3>
-      <ul class="text-body grid gap-2 text-sm">{{range .Findings}}<li class="flex flex-wrap items-center gap-2"><span class="flex-1">{{.Label}}: {{.Count}}</span>
-        {{if $g.CanFix}}<form method="post" action="{{base}}/app/format" class="flex flex-wrap gap-2"><input type="hidden" name="topic" value="{{$g.Topic}}"><input type="hidden" name="rule" value="{{.Rule}}">
-          {{if $g.SenderID}}<button class="btn" data-variant="outline" data-size="sm" name="sender_id" value="{{$g.SenderID}}" data-format-dismiss="sender">Dismiss for this sender</button>{{end}}
-          <button class="btn" data-variant="outline" data-size="sm" data-format-dismiss="topic">Dismiss for all of {{$g.Topic}}</button></form>{{end}}</li>{{end}}</ul>
-      {{if .Prompt}}<details class="text-sm">
-        <summary class="cursor-pointer font-medium">Fix prompt</summary>
-        <pre tabindex="0" class="bg-muted/50 mt-2 w-full border-transparent whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-format-prompt>{{.Prompt}}</code></pre>
-      </details>{{else}}<p class="meta">Sent by a device this one cannot see, so there is no fix prompt here.</p>{{end}}
-      <div class="flex flex-wrap gap-2">{{if .Prompt}}<span class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="outline" data-size="sm" data-format-copy>{{template "i-copy"}}Copy fix prompt</button></span>{{end}}
-        {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><button class="btn" data-variant="outline" data-size="sm" data-format-off>Stop checking {{.Topic}}</button></form>{{end}}</div>
-    </div>{{end}}
-    {{if or .Snap.FormatOff .Snap.FormatDismissed}}<div class="grid gap-2" data-format-ignored>
-      <h3 class="text-sm font-semibold">Dismissed and not checked</h3>
-      <ul class="text-body grid gap-2 text-sm">
-        {{range .Snap.FormatOff}}<li class="flex flex-wrap items-center gap-2" data-format-off-item="{{.Topic}}"><span class="flex-1 [overflow-wrap:anywhere]">{{.Topic}}: not checked</span>
-          {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><button class="btn" data-variant="outline" data-size="sm" name="undo" value="1">Check again</button></form>{{end}}</li>{{end}}
-        {{range .Snap.FormatDismissed}}<li class="flex flex-wrap items-center gap-2" data-format-dismissed-item="{{.Topic}}/{{.Rule}}/{{.Sender}}"><span class="flex-1 [overflow-wrap:anywhere]">{{.Topic}}: {{.Label}}, {{if eq .SenderID "unknown"}}from a sender clrd does not know{{else if .SenderID}}from {{or .Sender "another device"}}{{else}}every sender{{end}}</span>
-          {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="rule" value="{{.Rule}}"><input type="hidden" name="sender_id" value="{{.SenderID}}"><button class="btn" data-variant="outline" data-size="sm" name="undo" value="1">Undo</button></form>{{end}}</li>{{end}}
-      </ul>
-    </div>{{end}}
-  </section>{{end}}
-  {{if .Snap.Topics}}<section class="js-only grid gap-3" aria-labelledby="ticon-h">
-    <h2 id="ticon-h" class="text-base font-semibold">Topic icons</h2>
-    <p class="text-body text-sm/relaxed">An image link shown on new notifications in the topic when the sender gives none. Leave it empty for no icon. Saved when you leave the box.</p>
-    <form class="grid gap-2" data-topic-icons>
-      {{range .Snap.Topics}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="ti-{{.Name}}">{{.Name}}</label>
-        <input id="ti-{{.Name}}" class="input min-w-0 flex-1" type="url" placeholder="https://" value="{{.Icon}}" data-topic="{{.Name}}" autocomplete="off" spellcheck="false"></div>
-      {{end}}<span class="meta" role="status" data-topic-icon-status></span>
-    </form>
-  </section>{{end}}
-  <section class="js-only grid gap-3" aria-labelledby="snz-h">
-    <h2 id="snz-h" class="text-base font-semibold">Snooze</h2>
-    <p class="text-body text-sm/relaxed">Snooze on a card uses the default time. Long press it, or use the arrow next to it, for the other times. These settings apply to every device.</p>
-    <form class="grid max-w-md gap-3" data-snooze-settings>
-      <div class="grid gap-1.5"><label class="label" for="snz-times">Times</label>
-        <input id="snz-times" class="input" name="times" value="{{range $i, $v := .Snap.SnoozeIntervals}}{{if $i}}, {{end}}{{$v}}{{end}}" aria-describedby="snz-hint" autocomplete="off" spellcheck="false">
-        <p id="snz-hint" class="meta">Up to 8, separated by commas. Use m, h or d: 15m, 1h, 2d.</p></div>
-      <div class="grid gap-1.5"><label class="label" for="snz-default">Default</label>
-        <select id="snz-default" class="input" name="default">{{range .Snap.SnoozeIntervals}}<option value="{{.}}"{{if eq . $.Snap.SnoozeDefault}} selected{{end}}>{{snoozeLabel .}}</option>{{end}}</select></div>
-      <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-snooze-status></span></div>
-    </form>
+  <section class="grid gap-8" aria-labelledby="g-devices" data-settings-group>
+    <h2 id="g-devices" class="border-b pb-2 text-lg font-semibold tracking-tight">Devices</h2>
+    <section id="devices" data-setting data-keywords="phone, browser, unlink, sign out, approve, may approve, activity" class="grid gap-3" aria-labelledby="dev-h">
+      <h3 id="dev-h" class="text-base font-semibold">Linked devices</h3>
+      <p class="text-body text-sm/relaxed">Every token, browser and phone that can read this inbox. Unlink a browser or phone and it is signed out at once. Unlinking a phone also signs out the browsers it approved.</p>
+      <p class="text-body text-sm/relaxed">May approve says who can tap a reply button such as Approve. Ask sends the tap to an allowed device to confirm first. New tokens start at Denied. A device can lower its own setting, never raise it.</p>
+      <div data-live="linked">{{if .Snap.Linked}}<div class="bg-card rounded-xl border">
+        <table class="table">
+          <thead><tr><th scope="col">Device</th><th scope="col" class="max-sm:hidden">Linked</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Unlink</span></th></tr></thead>
+          <tbody>
+            {{range .Snap.Linked}}<tr data-device="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><span>{{.Name}}</span>{{if .This}} <span class="text-muted-foreground">(this browser)</span>{{end}}
+              <div class="meta">{{if eq .Kind "phone"}}Phone, linked to{{else if eq .Kind "browser"}}Browser, signed in with{{else if eq .Kind "agent"}}Agent{{else}}Token{{end}}{{with .Via}} {{.}}{{end}}</div></td>
+              <td class="meta whitespace-nowrap max-sm:hidden"><time datetime="{{iso .LinkedAt}}" title="{{clock .LinkedAt}}">{{clock .LinkedAt}}</time></td>
+              <td class="meta">{{if .Live}}Connected{{else if .Connected}}Catching up{{else}}Offline{{with .LastSeenAt}}<div>seen <time class="whitespace-nowrap" datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time></div>{{end}}{{end}}
+                <div class="mt-1 grid gap-1"><span>May approve:</span> {{if $.Snap.CanApprove}}<select class="input w-auto js-only" data-approve="{{.ID}}" data-name="{{.Name}}"{{if $.Snap.Own .}} data-own{{end}} aria-label="May approve: {{.Name}}">{{range $.Snap.ApproveOptions .}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><noscript>{{.ApproveLabel}}</noscript>{{else}}{{.ApproveLabel}}{{end}}</div></td>
+              <td class="text-right">{{if and .CanUnlink (not .This)}}<button type="button" class="btn js-only" data-variant="outline" data-unlink="{{.ID}}" data-name="{{.Name}}">Unlink</button>{{end}}</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}<p class="text-body text-sm">No devices yet. Open the inbox or the Android app on a device and it shows up here.</p>{{end}}</div>
+      <details class="text-sm">
+        <summary class="cursor-pointer font-medium">Device activity</summary>
+        {{if .Snap.Log}}<ol class="mt-2 grid gap-1" data-device-log>{{range .Snap.Log}}
+          <li><time class="meta" datetime="{{iso .At}}" title="{{clock .At}}">{{clock .At}}</time> {{.Device}} {{if eq .Action "signed in"}}signed in with{{else}}{{.Action}} by{{end}} {{.By}}</li>{{end}}
+        </ol>{{else}}<p class="text-body mt-2">No links, sign-ins or unlinks yet.</p>{{end}}
+      </details>
+    </section>
+    <section id="link-phone" data-setting data-keywords="qr, scan, pair, code, add phone" class="grid gap-3" aria-labelledby="link-h" data-link hidden>
+      <h3 id="link-h" class="text-base font-semibold">Link a phone</h3>
+      <p class="text-body text-sm/relaxed">Open the clrd app on your phone, tap Scan QR code and scan the code. You approve the phone here before it connects, and it gets the same access as this browser.</p>
+      <div><button class="btn" data-variant="primary" type="button" data-pair-start>Link a phone</button></div>
+      <img class="pair-qr" data-pair-qr alt="QR code to link a phone" width="232" height="232" hidden>
+      <p class="text-muted-foreground text-sm" data-pair-msg role="status"></p>
+      <div class="grid gap-3" data-link-ask hidden>
+        <p class="text-sm"><b data-link-name></b> wants to connect.</p>
+        <p class="text-sm">Approve only if your phone shows <b data-link-check></b>.</p>
+        <div class="flex gap-2"><button class="btn" data-variant="primary" type="button" data-link-approve>Approve</button><button class="btn" data-variant="outline" type="button" data-link-deny>Deny</button></div>
+      </div>
+    </section>
+    {{if .Snap.CanInvite}}<section id="add-agent" data-setting data-keywords="agent, ai, bot, invite, mcp, token" class="grid gap-3" aria-labelledby="agent-h" data-agent hidden>
+      <h3 id="agent-h" class="text-base font-semibold">Add an agent</h3>
+      <p class="text-body text-sm/relaxed">Give an AI agent or a bot its own sign-in for the topics you pick, without copying a token. It may read and send there as far as you may, never more. It cannot tap reply buttons such as Approve. It shows in Linked devices, where you can unlink it.</p>
+      <div class="flex flex-wrap items-center gap-3"><button class="btn" data-variant="outline" type="button" data-agent-start>Add agent</button><span class="meta" role="status" data-agent-gone></span></div>
+      <form class="grid max-w-md gap-3" data-agent-form hidden>
+        <div class="grid gap-1.5"><label class="label" for="agent-name">Agent name</label>
+          <input id="agent-name" class="input" name="name" required maxlength="64" autocomplete="off" spellcheck="false" placeholder="build-bot"></div>
+        <fieldset class="grid gap-2"><legend class="label mb-1.5">Topics</legend>
+          {{range .Snap.Topics}}<label class="label font-normal [overflow-wrap:anywhere]"><input type="checkbox" class="input" name="topic" value="{{.Name}}"> {{.Name}}</label>{{end}}
+          <input class="input" name="more" autocomplete="off" spellcheck="false" aria-label="{{if .Snap.Topics}}Other topics{{else}}Topics{{end}}" aria-describedby="agent-topics-hint" placeholder="{{if .Snap.Topics}}Other topics{{else}}build, deploys{{end}}">
+          <p id="agent-topics-hint" class="meta">Separate topics with commas.</p></fieldset>
+        <div class="grid gap-1.5"><label class="label" for="agent-for">Invite works for</label>
+          <select id="agent-for" class="input" name="expires_in"><option value="5m">5 minutes</option><option value="15m" selected>15 minutes</option><option value="30m">30 minutes</option><option value="1h">1 hour</option></select></div>
+        <div class="flex items-center gap-3"><button class="btn" data-variant="primary">Make invite</button><span class="meta" role="status" data-agent-status></span></div>
+      </form>
+      <div class="grid gap-2" data-agent-done hidden>
+        <p class="text-sm">Give this to <b data-agent-name></b> privately, like a password:</p>
+        <pre tabindex="0" class="bg-muted/50 w-full rounded-md p-3 whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-agent-invite></code></pre>
+        <div class="flex flex-wrap items-center gap-2"><span class="[.no-copy_&]:hidden"><button type="button" class="btn" data-variant="outline" data-size="sm" data-agent-copy>{{template "i-copy"}}Copy invite</button></span><button type="button" class="btn" data-variant="ghost" data-size="sm" data-agent-again>Add another agent</button></div>
+        <p class="meta" data-agent-left>It works once, until <time data-agent-until></time>. The agent opens it and follows the steps it shows.</p>
+        <p class="meta">May approve starts at Denied, so it cannot answer its own questions.</p>
+      </div>
+    </section>{{end}}
+    <script src="{{static "pair.js"}}" defer></script>
   </section>
-  <section class="js-only grid gap-3" aria-labelledby="swp-h">
-    <h2 id="swp-h" class="text-base font-semibold">Swipe</h2>
-    <p class="text-body text-sm/relaxed">On a touch screen, swipe a card part way to show these buttons. Nothing changes until you tap one; swipe back to hide them. The first button sits nearest the edge. These settings apply to every device, and Resolve shows only in the app.</p>
-    <form class="grid max-w-md gap-3" data-swipe-settings>
-      <fieldset><legend class="label mb-1.5">Swipe left</legend><div class="flex gap-2" data-side="start"></div></fieldset>
-      <fieldset><legend class="label mb-1.5">Swipe right</legend><div class="flex gap-2" data-side="end"></div></fieldset>
-      <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-swipe-status></span></div>
-    </form>
-  </section>
-  <section class="js-only grid gap-3" aria-labelledby="keep-h">
-    <h2 id="keep-h" class="text-base font-semibold">Cleared messages</h2>
-    <p class="text-body text-sm/relaxed">Dismissed and resolved messages are deleted this long after they were cleared. Open and snoozed messages are never deleted. This applies to every device, and a topic can have its own period below; changing either needs an admin sign-in.</p>
-    {{$k := .Snap.KeepClearedDays}}{{$preset := eq $k 0 1 5 7 30 90}}<form class="grid max-w-md gap-3" data-keep-settings>
-      <div class="grid gap-1.5"><label class="label" for="keep-days">Keep cleared messages for</label>
-        <select id="keep-days" class="input" name="days"><option value="1"{{if eq $k 1}} selected{{end}}>1 day</option><option value="5"{{if eq $k 5}} selected{{end}}>5 days</option><option value="7"{{if eq $k 7}} selected{{end}}>7 days</option><option value="30"{{if eq $k 30}} selected{{end}}>30 days</option><option value="90"{{if eq $k 90}} selected{{end}}>90 days</option><option value="0"{{if eq $k 0}} selected{{end}}>Forever</option><option value="custom"{{if not $preset}} selected{{end}}>Custom</option></select></div>
-      <div class="grid gap-1.5"{{if $preset}} hidden{{end}} data-keep-custom><label class="label" for="keep-custom">Days</label>
-        <input id="keep-custom" class="input" type="number" min="1" max="36500" name="custom" value="{{if not $preset}}{{$k}}{{end}}"></div>
-      <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-keep-status></span></div>
-    </form>
-    {{if .Snap.KeepTopics}}<form class="grid max-w-md gap-2" data-topic-keep><fieldset class="grid gap-2"><legend class="label mb-2">By topic</legend>
-      {{range .Snap.KeepTopics}}{{$v := $.Snap.TopicKeep .}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="tk-{{.}}">{{.}}</label>
-        <select id="tk-{{.}}" class="input w-auto" data-topic="{{.}}"><option value=""{{if eq $v -1}} selected{{end}}>Default</option><option value="1"{{if eq $v 1}} selected{{end}}>1 day</option><option value="5"{{if eq $v 5}} selected{{end}}>5 days</option><option value="7"{{if eq $v 7}} selected{{end}}>7 days</option><option value="30"{{if eq $v 30}} selected{{end}}>30 days</option><option value="90"{{if eq $v 90}} selected{{end}}>90 days</option><option value="0"{{if eq $v 0}} selected{{end}}>Forever</option>{{if not (eq $v -1 0 1 5 7 30 90)}}<option value="{{$v}}" selected>{{$v}} days</option>{{end}}</select></div>
-      {{end}}</fieldset><span class="meta" role="status" data-topic-keep-status></span></form>{{end}}
-  </section>
-  <section class="grid gap-3" aria-labelledby="look-h">
-    <h2 id="look-h" class="text-base font-semibold">Appearance</h2>
-    <p class="text-body text-sm/relaxed">The inbox follows your system's light or dark setting.</p>
+  <section class="grid gap-8" aria-labelledby="g-integrations" data-settings-group>
+    <h2 id="g-integrations" class="border-b pb-2 text-lg font-semibold tracking-tight">Integrations</h2>
+    {{if .Snap.CanSenders}}<section id="senders" data-setting data-keywords="sender, rules, bot, agent, allow" class="grid gap-3" aria-labelledby="snd-h">
+      <h3 id="snd-h" class="text-base font-semibold">Senders</h3>
+      <p class="text-body text-sm/relaxed">Each agent, bot or script that sends to this inbox, and the rules it follows.</p>
+      <div><a class="btn" data-variant="outline" href="{{base}}/app/senders">Open senders</a></div>
+    </section>{{end}}
+    <section id="test-send" data-setting data-keywords="test, curl, publish, try, api" class="grid gap-3" aria-labelledby="send-h">
+      <h3 id="send-h" class="text-base font-semibold">Send a test notification</h3>
+      <p class="text-body text-sm/relaxed">Run this with a token that has the publish scope. It should appear on every device within a second.</p>
+  <pre tabindex="0"><code>curl -H "Authorization: Bearer $CLRD_TOKEN" \
+    -d '{"topic":"test","message":"Hello from clrd"}' \
+    {{.Base}}/api/v1/notifications</code></pre>
+    </section>
+    {{if .Snap.CanHooks}}<section id="webhooks" data-setting data-keywords="webhook, outgoing, callback, post, integration" class="grid gap-3" aria-labelledby="hooks-h" data-hooks>
+      <h3 id="hooks-h" class="text-base font-semibold">Webhooks</h3>
+      <p class="text-body text-sm/relaxed">Send a topic's answers to another app as they happen: each dismiss, acknowledge, resolve, snooze or action tap is posted to your URL as JSON. <a class="underline" href="{{base}}/docs/integrations/webhooks-out">How webhooks work</a></p>
+      {{range .Snap.Hooks}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-hook="{{.Topic}}/{{.Name}}">
+        <div class="grid gap-1">
+          <h4 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h4>
+          <p class="meta [overflow-wrap:anywhere]">{{.URL}}</p>
+          <p class="meta">Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .Body}} Custom body.{{end}}{{if .HasSecret}} Signed with a secret.{{end}}</p>
+          {{if not .Enabled}}<p class="text-destructive text-sm" data-hook-off>Turned off after a day of failed deliveries. Fix the receiver, then save it again to turn it back on.</p>
+          {{else if .FailingSince}}<p class="text-destructive text-sm">Failing since {{clock .FailingSince}}. It turns off after a day of failures.</p>{{end}}
+        </div>
+        <details class="text-sm" data-hook-log>
+          <summary class="cursor-pointer font-medium">Delivery log</summary>
+          {{if .Deliveries}}<table class="table mt-2">
+            <thead><tr><th scope="col">When</th><th scope="col">Event</th><th scope="col">Result</th></tr></thead>
+            <tbody>{{range .Deliveries}}<tr><td class="meta whitespace-nowrap"><time datetime="{{iso .UpdatedAt}}">{{clock .UpdatedAt}}</time></td><td>{{.Event}}</td>
+              <td class="whitespace-normal [overflow-wrap:anywhere]">{{if eq .Status "ok"}}Sent{{with .Code}} ({{.}}){{end}}{{else if eq .Status "pending"}}{{if .Attempts}}Retrying, try {{.Attempts}}{{else}}Waiting to send{{end}}{{else}}Failed after {{.Attempts}} tries{{end}}{{with .Error}}<div class="meta">{{.}}</div>{{end}}</td></tr>{{end}}</tbody>
+          </table><p class="meta mt-2">The last {{len .Deliveries}}. The API keeps the last 100.</p>{{else}}<p class="meta mt-2">Nothing sent yet.</p>{{end}}
+        </details>
+        <details class="text-sm">
+          <summary class="cursor-pointer font-medium">Edit</summary>
+          <form class="mt-3 grid max-w-md gap-3" method="post" action="{{base}}/app/hooks">
+            <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
+            {{template "hook-fields" .}}
+            <div><button class="btn" data-variant="outline">Save webhook</button></div>
+          </form>
+        </details>
+        <form method="post" action="{{base}}/app/hooks" data-hook-delete="{{.Name}}">
+          <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
+          <button class="btn" data-variant="outline" data-size="sm" name="delete" value="1">Delete</button>
+        </form>
+      </div>{{else}}<p class="text-body text-sm">No webhooks yet.</p>{{end}}
+      <form class="grid max-w-md gap-3" method="post" action="{{base}}/app/hooks" data-hook-add>
+        <h4 class="text-sm font-semibold">Add a webhook</h4>
+        <div class="grid gap-1.5"><label class="label" for="hk-topic">Topic</label>
+          <input id="hk-topic" class="input" name="topic" list="hk-topics" required autocomplete="off" spellcheck="false">
+          <datalist id="hk-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
+        <div class="grid gap-1.5"><label class="label" for="hk-name">Name</label>
+          <input id="hk-name" class="input" name="name" required maxlength="64" pattern="[A-Za-z0-9_\-]+" aria-describedby="hk-name-hint" autocomplete="off" spellcheck="false">
+          <p id="hk-name-hint" class="meta">Letters, digits, _ and -. Saving a name that exists replaces it.</p></div>
+        {{template "hook-fields" newHook}}
+        <div><button class="btn" data-variant="outline">Add webhook</button></div>
+      </form>
+    </section>{{end}}
+    <section id="templates" data-setting data-keywords="incoming, template, github, grafana, json" class="grid gap-3" aria-labelledby="tpl-h" data-templates>
+      <h3 id="tpl-h" class="text-base font-semibold">Webhook templates</h3>
+      <p class="text-body text-sm/relaxed">Turn another service's own webhook JSON into notifications: the service posts to a topic with <code>?template=</code> and a template name. The built-ins work with no setup; save one here to add a secret, change a field or make your own. <a class="underline" href="{{base}}/docs/integrations/custom-webhooks">How templates work</a></p>
+      {{if .Snap.CanTemplates}}
+      {{range .Snap.Templates}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-template="{{.Topic}}/{{.Name}}">
+        <div class="grid gap-1">
+          <h4 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h4>
+          <p class="meta [overflow-wrap:anywhere]">Post to /{{.Topic}}?template={{.Name}}{{if has $.Snap.BuiltinTemplates .Name}}. Overrides the built-in for the fields set{{end}}.{{if .HasSecret}} Checked with a secret.{{end}}</p>
+        </div>
+        <details class="text-sm">
+          <summary class="cursor-pointer font-medium">Edit</summary>
+          <form class="mt-3 grid max-w-md gap-3" method="post" action="{{base}}/app/templates" data-template-form>
+            <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
+            {{template "tpl-fields" .}}
+            <div><button class="btn" data-variant="outline">Save template</button></div>
+          </form>
+        </details>
+        <form method="post" action="{{base}}/app/templates" data-template-delete="{{.Name}}">
+          <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
+          <button class="btn" data-variant="outline" data-size="sm" name="delete" value="1">Delete</button>
+        </form>
+      </div>{{else}}<p class="text-body text-sm">No saved templates yet.</p>{{end}}
+      <form class="grid max-w-md gap-3" method="post" action="{{base}}/app/templates" data-template-form data-template-add>
+        <h4 class="text-sm font-semibold">Add a template</h4>
+        <div class="grid gap-1.5"><label class="label" for="tpl-topic">Topic</label>
+          <input id="tpl-topic" class="input" name="topic" list="tpl-topics" required autocomplete="off" spellcheck="false">
+          <datalist id="tpl-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
+        <div class="grid gap-1.5"><label class="label" for="tpl-name">Name</label>
+          <input id="tpl-name" class="input" name="name" list="tpl-builtins" required maxlength="64" pattern="[A-Za-z0-9_\-]+" aria-describedby="tpl-name-hint" autocomplete="off" spellcheck="false">
+          <datalist id="tpl-builtins">{{range .Snap.BuiltinTemplates}}<option value="{{.}}"></option>{{end}}</datalist>
+          <p id="tpl-name-hint" class="meta">Letters, digits, _ and -. A built-in's name keeps the built-in and changes only the fields you fill in. Saving a name that exists replaces it.</p></div>
+        {{template "tpl-fields" newTemplate}}
+        <div><button class="btn" data-variant="outline">Add template</button></div>
+      </form>
+      {{else}}<p class="meta">This device cannot save templates: its token cannot publish.</p>{{end}}
+    </section>
   </section>
 </div>
 {{end}}

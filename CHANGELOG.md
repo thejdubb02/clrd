@@ -11,6 +11,13 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Web: Settings is now one page in five sections (Notifications, Inbox,
+  Display, Devices, Integrations) with a search box (#575). It matches a
+  setting's name, its description or keywords such as "do not disturb",
+  Enter goes to the first match, and each setting has its own link such as
+  `/app/settings#sound`. Webhooks no longer show to a device that cannot
+  manage them, and an admin finds a link to Senders there. Without
+  JavaScript every section shows and the search box is hidden.
 - Android: choose the buttons each swipe on a card reveals, in Settings, up
   to 3 per side (#161). The choice is saved on your server, so every phone
   follows it; offline the app keeps the last one it saw. A token that may not

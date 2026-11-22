@@ -1161,7 +1161,7 @@ try {
     await rctx.close();
 
     await sp.locator('tr[data-silence]', { hasText: 'nojs' }).getByRole('button', { name: 'End now' }).click();
-    await sp.locator('h2', { hasText: 'Silences' }).waitFor();
+    await sp.locator('h3', { hasText: 'Silences' }).waitFor();
     assert.equal(await sp.locator('tr[data-silence]', { hasText: 'nojs' }).count(), 0, 'End now without script ends it');
     assert.equal((await api(phone, '/api/v1/notifications', { topic: 'nojs', title: 'Loud' })).silenced, false, 'and publishes alert again');
     await ctx.close();
@@ -1304,7 +1304,8 @@ try {
     assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: pub, name: 'hooks-pub' } })).ok(), 'publish sign-in');
     const rp = await rctx.newPage();
     await rp.goto(base + '/app/settings');
-    await rp.getByText('Webhooks need an admin sign-in.').waitFor();
+    await rp.locator('#templates').waitFor();
+    assert.equal(await rp.locator('#webhooks').count(), 0, 'Webhooks shown to a device that cannot open them');
     assert.ok(!(await rp.content()).includes('ops2.example.invalid'), 'a hook URL shown to a non-admin');
     const refused = await rctx.request.post(base + '/app/hooks', { form: { topic: 'hooked', name: 'evil', url: 'https://x.example.invalid/' }, headers: { Origin: base }, maxRedirects: 0 });
     assert.equal(refused.status(), 400, `non-admin hook save: ${refused.status()}`);
@@ -1850,6 +1851,53 @@ try {
     assert.equal(await subscribed(), false, 'a refused permission subscribed');
     await ctx.close();
     console.log('ok: web push asks only on tap, subscribes and unsubscribes, tidies a lost or blocked subscription, and a push shows without clearing');
+  }
+
+  // Settings search (#575): five sections in the order SPEC 9.1 gives; a
+  // keyword that is in no label finds its setting and hides the other
+  // sections; Enter goes to it; no match shows the empty state and Clear
+  // brings every setting back. Without script every section shows and there
+  // is no search box.
+  {
+    const order = ['Notifications', 'Inbox', 'Display', 'Devices', 'Integrations'];
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search' } })).ok(), 'search sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/settings');
+    const groups = () => sp.locator('[data-settings-group] > h2:visible').allTextContents();
+    const sets = () => sp.locator('[data-setting] > h3:visible').allTextContents();
+    assert.deepEqual(await groups(), order, 'settings sections or their order');
+    const q = sp.getByLabel('Search settings');
+    await q.fill('do not disturb');
+    await sp.locator('#sound').waitFor({ state: 'hidden' });
+    assert.deepEqual(await sets(), ['Silences'], 'a keyword found the wrong settings');
+    assert.deepEqual(await groups(), ['Notifications'], 'a section with no match still shows');
+    await q.press('Enter');
+    await until(sp, () => location.hash === '#silences' && document.activeElement?.id === 'silences');
+    await q.fill('Dark Mode ');
+    await sp.locator('#silences').waitFor({ state: 'hidden' });
+    assert.deepEqual(await sets(), ['Appearance'], 'a keyword in Display found the wrong settings');
+    assert.deepEqual(await groups(), ['Display'], 'only the matching section shows');
+    await q.fill('nothing like this');
+    await sp.locator('[data-settings-none]').waitFor();
+    assert.equal(await sp.locator('[data-settings-term]').textContent(), 'nothing like this', 'empty state names the search');
+    assert.deepEqual(await sets(), [], 'a setting shown with no match');
+    await sp.getByRole('button', { name: 'Clear search' }).click();
+    await sp.locator('#sound').waitFor();
+    assert.equal(await q.inputValue(), '', 'Clear left the search text');
+    assert.ok(await q.evaluate(e => e === document.activeElement), 'Clear did not return to the search box');
+    assert.deepEqual(await groups(), order, 'Clear did not bring every section back');
+    await ctx.close();
+
+    const nctx = await browser.newContext({ javaScriptEnabled: false });
+    assert.ok((await nctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search-nojs' } })).ok(), 'no-js sign-in');
+    const np = await nctx.newPage();
+    await np.goto(base + '/app/settings');
+    assert.deepEqual(await np.locator('[data-settings-group] > h2:visible').allTextContents(), order, 'a section missing without script');
+    assert.equal(await np.getByLabel('Search settings').isVisible(), false, 'search box shown without script');
+    assert.ok(await np.locator('#silences').isVisible(), 'Silences hidden without script');
+    await nctx.close();
+    console.log('ok: settings sit in five sections, search finds by keyword, goes to the match, shows an empty state and clears; without script all sections show');
   }
 
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
