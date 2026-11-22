@@ -662,43 +662,32 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			opened = nil
 		}
 		// ntfy has no reset: since= means all that is left after it, so a
-		// prune (before or during replay) restarts from the oldest event left.
-		for tries := 0; ; tries++ {
-			err := s.follow(ctx, tok, since, topics, opened, func(raw []byte, seq int64) error {
-				if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
-					if poll {
-						return errStop
-					}
-					return nil
+		// prune (before or during replay) restarts from the oldest event left,
+		// up to 3 times, then goes on from now.
+		resets := 0
+		s.follow(ctx, tok, since, topics, opened, func(raw []byte, seq int64) error {
+			if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
+				if poll {
+					return errStop
 				}
-				if seq < 0 {
-					if tries < 3 {
-						return errPruned
-					}
-					return nil
-				}
-				var e Event
-				if err := json.Unmarshal(raw, &e); err != nil {
-					return err
-				}
-				if !e.Notification.Live { // a live one is not in the log: a retry must not skip from it
-					since = seq
-				}
-				if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
-					return nil
-				}
-				return write(s.ntfyMessage(e.Notification, seq, f.sched && (poll || seq <= replayEnd)))
-			}, func() error { return write(ntfyEvent("keepalive", joined)) })
-			if err != errPruned {
 				return nil
 			}
-			opened = nil // the client saw it once
-			var oldest int64
-			if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(seq) - 1, ?) FROM events`, s.CurrentSeq()).Scan(&oldest); err != nil {
+			if seq < 0 {
+				if resets++; resets <= 3 {
+					return errPruned
+				}
 				return nil
 			}
-			since = max(since, oldest)
-		}
+			var e Event
+			if err := json.Unmarshal(raw, &e); err != nil {
+				return err
+			}
+			if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
+				return nil
+			}
+			return write(s.ntfyMessage(e.Notification, seq, f.sched && (poll || seq <= replayEnd)))
+		}, func() error { return write(ntfyEvent("keepalive", joined)) })
+		return nil
 	}
 }
 
