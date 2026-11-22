@@ -810,13 +810,20 @@ private fun MarkButton(app: App, n: Notif) {
 @Composable
 private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
     val b = LocalBrand.current
-    val app = App.of(LocalContext.current)
+    val ctx = LocalContext.current
+    val app = App.of(ctx)
     var text by rememberSaveable { mutableStateOf(app.drafts[n.id].orEmpty()) }
     val seq = rememberSaveable { n.seq } // the question as the box opened: an edit since then gets 409, never this answer
     val body = TrayButton.typed(a.reply!!, text, seq)
-    // An earlier answer came back 409: this box answers the old question too. Close it, text kept for the next box (#516).
+    // The box leaving for any reason but Send or Cancel (a 409, or an edit that drops the typed answer) keeps its text
+    // for the next box (#516, #539). A rotation keeps it on its own.
+    var ended by remember { mutableStateOf(false) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { keepDraft(app.drafts, n.id, text, ended || (ctx as? android.app.Activity)?.isChangingConfigurations == true) }
+    }
+    // An earlier answer came back 409: this box answers the old question too. Close it.
     val changed0 = remember { app.changed[n.id] ?: 0 }
-    LaunchedEffect(app.changed[n.id]) { if ((app.changed[n.id] ?: 0) != changed0) { if (text.isNotBlank()) app.drafts[n.id] = text; close() } }
+    LaunchedEffect(app.changed[n.id]) { if ((app.changed[n.id] ?: 0) != changed0) close() }
     val count = text.trim().let { it.codePointCount(0, it.length) }
     AlertDialog(
         onDismissRequest = close,
@@ -828,12 +835,17 @@ private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { app.drafts.remove(n.id); app.act(n.id, "reply", body!!); close() }, enabled = body != null) {
+            TextButton(onClick = { ended = true; app.drafts.remove(n.id); app.act(n.id, "reply", body!!); close() }, enabled = body != null) {
                 Text(stringResource(R.string.reply_text_send), color = b.ink, fontWeight = FontWeight.SemiBold)
             }
         },
-        dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.link_cancel)) } },
+        dismissButton = { TextButton(onClick = { ended = true; close() }) { Text(stringResource(R.string.link_cancel)) } },
     )
+}
+
+/** Keeps [text] as the draft for [id] when a reply box goes away unasked ([ended] false); a blank box keeps none. */
+internal fun keepDraft(drafts: MutableMap<String, String>, id: String, text: String, ended: Boolean) {
+    if (!ended && text.isNotBlank()) drafts[id] = text
 }
 
 /** The shared snooze times and default, saved on the server for every device (#193). */

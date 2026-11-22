@@ -130,6 +130,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Android: text typed in a reply box is kept as a draft when the box closes
+  without Send or Cancel (the question was edited, or back was pressed),
+  instead of being lost (#539).
 - Android: the short "Sent" message after a send from the Send box shows
   again if the phone turns while it is on screen, instead of being lost (#532).
 - Android: a repeat sent before you cleared a notification no longer rings
