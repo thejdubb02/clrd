@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := printf "%s/app" base}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "%s/app/%s" base .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-tkeep="{{range $t, $v := .Snap.TopicKeepClearedDays}}{{$t}}={{$v}};{{end}}" data-sound="{{.Snap.Sound}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-tkeep="{{range $t, $v := .Snap.TopicKeepClearedDays}}{{$t}}={{$v}};{{end}}" data-sound="{{.Snap.Sound}}" data-swipe-start="{{range .Snap.SwipeStart}}{{.}} {{end}}" data-swipe-end="{{range .Snap.SwipeEnd}}{{.}} {{end}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -466,6 +466,15 @@
       <div class="grid gap-1.5"><label class="label" for="snz-default">Default</label>
         <select id="snz-default" class="input" name="default">{{range .Snap.SnoozeIntervals}}<option value="{{.}}"{{if eq . $.Snap.SnoozeDefault}} selected{{end}}>{{snoozeLabel .}}</option>{{end}}</select></div>
       <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-snooze-status></span></div>
+    </form>
+  </section>
+  <section class="js-only grid gap-3" aria-labelledby="swp-h">
+    <h2 id="swp-h" class="text-base font-semibold">Swipe</h2>
+    <p class="text-body text-sm/relaxed">On a touch screen, swipe a card part way to show these buttons. Nothing changes until you tap one; swipe back to hide them. The first button sits nearest the edge. These settings apply to every device, and Resolve shows only in the app.</p>
+    <form class="grid max-w-md gap-3" data-swipe-settings>
+      <fieldset><legend class="label mb-1.5">Swipe left</legend><div class="flex gap-2" data-side="start"></div></fieldset>
+      <fieldset><legend class="label mb-1.5">Swipe right</legend><div class="flex gap-2" data-side="end"></div></fieldset>
+      <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-swipe-status></span></div>
     </form>
   </section>
   <section class="js-only grid gap-3" aria-labelledby="keep-h">

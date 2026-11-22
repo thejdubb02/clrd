@@ -554,6 +554,8 @@ type Snapshot struct {
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
+	// Buttons a part swipe on a card shows on a touch screen, per side (docs/SPEC.md section 2.1).
+	SwipeStart, SwipeEnd []string
 	// Display settings for message bodies (docs/SPEC.md section 2.1).
 	Formatting, Autolink, Favicons, LinkPreviews bool
 	TopicPreviews                                map[string]bool // overrides LinkPreviews for one topic

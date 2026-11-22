@@ -15,6 +15,10 @@ Fixed, Removed, Security), as one line a user can understand.
   at `/api/v1/push`, and each notification that would ring it in the inbox
   is pushed, encrypted, even with the tab closed once the inbox side lands.
   VAPID keys are made on first start. No new dependency.
+- Web: on a touch screen, swipe a card part way to show its buttons, then
+  tap one (#161). Nothing changes until you tap, a full swipe never clears,
+  and swiping back hides them. Settings, Swipe picks the buttons for each
+  side. Mouse and keyboard keep the buttons on the card.
 - Server: settings `swipe_start` and `swipe_end` choose the buttons a swipe
   on a card reveals (#161). Defaults match today's app (Clear and Snooze to
   the left, Ack to the right); set them with the API or the MCP `settings`
