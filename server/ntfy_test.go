@@ -552,3 +552,40 @@ func TestNtfyInlineTemplate(t *testing.T) {
 		t.Fatalf("range must be refused as in saved templates: %d %s", code, out)
 	}
 }
+
+// #443: since= older than the log makes a ntfy stream start over from the
+// oldest event left, on the same subscription, so a live-only message sent
+// while it does still arrives.
+func TestNtfyRestartKeepsLive(t *testing.T) {
+	s, ts, admin := newTest(t)
+	for _, m := range []string{"gone", "kept"} {
+		raw(t, "PUT", ts.URL+"/alerts", admin, m, nil)
+	}
+	if _, err := s.db.Exec(`DELETE FROM events WHERE seq <= 1`); err != nil {
+		t.Fatal(err)
+	}
+	s.pruned.Store(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var got []string
+	err := s.follow(ctx, s.lookupToken(ctx, admin), 0, []string{"alerts"}, nil, func(msg []byte, seq int64) error {
+		switch {
+		case seq < 0 && len(got) == 0:
+			got = append(got, "reset")
+			raw(t, "PUT", ts.URL+"/alerts", admin, "live", map[string]string{"Cache": "no"})
+			return errPruned
+		case strings.Contains(string(msg), `"type":"ready"`):
+			got = append(got, "ready")
+		default:
+			var e Event
+			json.Unmarshal(msg, &e)
+			if got = append(got, e.Notification.Message); e.Notification.Live {
+				cancel()
+			}
+		}
+		return nil
+	}, func() error { return nil })
+	if err != nil || strings.Join(got, " ") != "reset kept ready live" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}

@@ -69,6 +69,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- ntfy: a subscriber whose `since=` was pruned while it caught up no longer
+  misses a live-only (`Cache: no`) message sent in that moment. The stream
+  now starts over from the oldest message left without closing its live
+  feed (#443).
 - A Pushover image sent as `attachment_base64` near the attachment cap is
   accepted. Before, base64 made the request a third bigger than the file, so
   it was refused as too large although the file itself fit (#404).
