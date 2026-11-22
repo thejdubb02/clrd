@@ -408,6 +408,15 @@ class SyncClientTest {
         assertTrue(store.queue.isEmpty())
     }
 
+    @Test fun anAckQueuedFirstDoesNotSplitAClear() { // #425
+        store.queue += Pending(1, "a", "ack")
+        store.queue += Pending(2, "b", "dismiss")
+        store.queue += Pending(3, "c", "dismiss")
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(listOf("/api/v1/notifications/a/ack", "/api/v1/notifications/clear"), posts)
+        assertTrue(store.queue.isEmpty())
+    }
+
     @Test fun aClearRunKeepsOneVia() { // #267: each clear call is logged the way it was made
         store.queue += Pending(1, "a", "dismiss", """{"via":"tray_button"}""")
         store.queue += Pending(2, "b", "dismiss", """{"via":"tray_button"}""")
