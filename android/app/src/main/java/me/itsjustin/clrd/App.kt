@@ -337,7 +337,9 @@ class RoomStore(private val app: App) : Store {
 
     override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
-        val kept = dao.applyAll(notifs, seq)
+        val saved = dao.applyAll(notifs, seq)
+        // #500: a live repeat Room dropped (our own mark's answer got in first) still rings the newer row, if that one shows unacked.
+        val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } }.mapNotNull { dao.get(it.id) }
         val muted = app.muted
         val waiting = waiting()
         val acting = dao.pending().filter { it.action == "reopen" }.map { it.notifId }.toSet() // our own reopen's event may beat its answer here

@@ -103,6 +103,20 @@ class TrayRaceTest {
         assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("b")!!.groupAlertBehavior)
     }
 
+    @Test fun aRepeatBehindOurOwnMarkStillRings() { // #500: the mark's answer (seq 5) lands before the repeat (seq 4)
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 5)), 0, quiet = true) }
+        assertTrue(once("a"))
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4)), 4, again = true) }
+        assertTrue(!once("a"))
+        assertEquals(5L, bg { dao.get("a")!!.seq }) // the newer row stays
+        bg { store.apply(listOf(row("c", Notif.ACKNOWLEDGED, 7)), 7) }
+        bg { store.apply(listOf(row("c", Notif.ACTIVE, 6)), 7, again = true) } // acked since: no ring, no going back
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("c")!!.groupAlertBehavior)
+    }
+
     @Test fun reconcileWaitsForSyncWrites() {
         bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
         val store = RoomStore(app)
