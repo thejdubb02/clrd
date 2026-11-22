@@ -290,6 +290,15 @@ func TestWaitForReply(t *testing.T) {
 		t.Fatalf("want timeout showing snoozed, got %s", text)
 	}
 
+	// Access gone by the deadline: a bare timeout, not the card (#428).
+	evs = make(chan server.Event, 1)
+	evs <- ev(8, "01J", "snoozed")
+	f = &fakeAPI{state: "active", gets: 1, subs: []chan server.Event{evs}}
+	text, _ = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 0.05})
+	if text != `{"reply":"timeout"}` {
+		t.Fatalf("lost access at the deadline got %s", text)
+	}
+
 	// A token revoked mid-wait gets an error, not the reply.
 	evs = make(chan server.Event, 1)
 	evs <- ev(9, "01J", "acknowledged")

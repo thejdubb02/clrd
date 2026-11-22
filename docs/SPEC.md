@@ -435,6 +435,8 @@ scheme.
   /api/v1/users/{id}` (409 while tokens are attached) and the attach route.
   A change to a user's grants, or attaching or detaching a token, closes the
   open streams of that user's devices so they reconnect under the new rules.
+  A stream reads its access again once it is subscribed, so a change made
+  while it is still starting is never missed.
   A device whose user cannot be read is refused (401), never let through.
   These are separate from the ntfy password users below.
 - Bootstrap: first start with no users prints a one-time admin setup URL to the log.
@@ -807,7 +809,8 @@ the settings, arguments change those fields), `get(id)`, `update(id, message)` (
 dismissed or an action is tapped; returns which, so an agent can ask a human
 "yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
-`reply` (the state). `wait_for_reply` waits at most 600 s. `devices()`,
+`reply` (the state). `wait_for_reply` waits at most 600 s; on a timeout it
+returns the notification only while the token can still read it. `devices()`,
 `device_log()` and `unlink(id)` are the device list, its log and unlink,
 `sound(id?, sound?)` lists the sound names or sets one device's sound,
 and `request_approve(approve, topic?)` is `POST /api/v1/devices/approve-request`,

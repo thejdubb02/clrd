@@ -69,6 +69,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a live stream that was still starting when a person's grants
+  changed now follows the new grants, and an MCP `wait_for_reply` that times
+  out shows the notification only while the token can still read it (#428).
 - ntfy: the short form of `X-Actions` reads `\"` inside a quoted value as a
   quote, and keeps spaces inside quotes, as ntfy does. Before, `body="a\",b"`
   split at the comma and `' a '` lost its spaces (#446).

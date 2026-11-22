@@ -137,6 +137,11 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 		s.hub.unsubscribe(sub)
 		s.devicesChanged.fire() // after, so the others see this stream gone
 	}()
+	// Access as it is now: a grant change between sign-in and subscribe
+	// dropped no stream of ours, and any later one drops this (#428).
+	if tok = s.tokenWhere(ctx, `id = ?`, tok.ID); tok == nil {
+		return errRevoked
+	}
 	inner := send
 	send = func(msg []byte, seq int64) error {
 		if _, gone := s.revoked.Load(tok.ID); gone {

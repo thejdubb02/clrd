@@ -131,6 +131,33 @@ func TestUserGrantsFollowDevices(t *testing.T) {
 	}
 }
 
+// #428: a grant change that lands after a stream signed in but before it
+// subscribed drops nothing, so the stream reads access again once subscribed.
+func TestStreamMidStartGrantChange(t *testing.T) {
+	s, srv, admin := newTest(t)
+	_, u := call(t, srv, "POST", "/api/v1/users", admin, map[string]any{"name": "ann",
+		"grants": []Grant{{Topic: "home", Scopes: []string{ScopeRead}}}})
+	uid, _ := u["id"].(string)
+	_, out := call(t, srv, "POST", "/api/v1/tokens", admin, map[string]any{"name": "phone", "scopes": []string{"read"}, "user": uid})
+	call(t, srv, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "home", "message": "secret"})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stale := s.lookupToken(ctx, out["token"].(string)) // signed in under the old grants
+	if c, _ := call(t, srv, "PUT", "/api/v1/users/"+uid, admin, map[string]any{"grants": []Grant{{Topic: "work", Scopes: []string{ScopeRead}}}}); c != 200 {
+		t.Fatal("set grants")
+	}
+	var got []string
+	s.follow(ctx, stale, 0, nil, nil, func(msg []byte, seq int64) error {
+		if got = append(got, string(msg)); strings.Contains(string(msg), `"type":"ready"`) {
+			cancel()
+		}
+		return nil
+	}, func() error { return nil })
+	if strings.Contains(strings.Join(got, ""), "secret") {
+		t.Fatal("a stream mid-start kept the grant taken away")
+	}
+}
+
 // Sharing is a grant on the other user; scopes stay the token's ceiling,
 // a grant never gives admin, and a token with no user is unchanged.
 func TestUsersShareAndCeiling(t *testing.T) {
