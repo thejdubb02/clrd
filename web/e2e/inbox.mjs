@@ -1202,7 +1202,12 @@ try {
     for (let i = 0; (await get(laptop, q.id)).reply !== 'ship'; i++) { assert.ok(i < 20, 'confirm did not answer the question'); await new Promise(r => setTimeout(r, 250)); }
 
     // The allowed browser lowers the asker token to Denied from Settings.
+    // Pick after the redraw that every page load does once it is live, so the
+    // pick is not racing it (#476). The menu's handler is on the document and
+    // survives a redraw; this keeps the step about the menu, not the timing.
+    const settled = bp.waitForResponse(r => r.url() === base + '/app/settings' && r.request().resourceType() === 'fetch');
     await bp.goto(base + '/app/settings');
+    await (await settled).finished(); // the whole body, which the redraw reads before it swaps
     const sel = bp.locator('select[data-name="asker"]');
     assert.deepEqual(await sel.locator('option').allTextContents(), ['Denied', 'Ask', 'Allowed'], 'menu for another tree');
     await sel.selectOption('denied');
