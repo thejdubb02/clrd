@@ -1051,11 +1051,14 @@ private fun SenderSettings(app: App, resumes: Int) {
         val api = app.api()
         app.io.execute { senders = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull() }
     }
-    LaunchedEffect(open, resumes) {
+    var reload by remember { mutableStateOf(0) }
+    LaunchedEffect(open, resumes, reload) {
         val id = open ?: return@LaunchedEffect
         val api = app.api()
         app.io.execute {
-            runCatching { org.json.JSONObject(api.get("/api/v1/senders/${android.net.Uri.encode(id)}")) }
+            val path = "/api/v1/senders/${android.net.Uri.encode(id)}"
+            // Its change log rides along in the same object, under "log" (a key the server never sends).
+            runCatching { org.json.JSONObject(api.get(path)).put("log", runCatching { org.json.JSONObject(api.get("$path/changes")).optJSONArray("changes") }.getOrNull()) }
                 .onSuccess { detail = it }
                 .onFailure { if ((it as? HttpError)?.isAuth == true) { senders = null; detail = null } } // no longer a full admin: hide it all
         }
@@ -1088,6 +1091,114 @@ private fun SenderSettings(app: App, resumes: Int) {
                 val state = stateLabel(n.optString("state"))?.let { ctx.getString(it) }.orEmpty()
                 Text(ctx.getString(R.string.device_log_line, at, n.optString("topic"), state).trimEnd(), style = Mono, color = b.slate, fontSize = 12.sp)
             }
+            SenderRules(app, d) { reload++ }
+        }
+    }
+}
+
+/** A sender's rules as the server keeps them (docs/SPEC.md section 5.1), in a few words, like the web's change log. */
+internal fun rulesSummary(ctx: Context, r: org.json.JSONObject?): String {
+    r ?: return ctx.getString(R.string.rules_none)
+    val p = mutableListOf<String>()
+    if (r.optBoolean("paused")) p += ctx.getString(R.string.rules_paused)
+    if (r.optBoolean("muted")) p += ctx.getString(R.string.rules_muted)
+    val lo = r.optInt("priority_min")
+    val hi = r.optInt("priority_max")
+    if (lo > 0 || hi > 0) p += ctx.getString(R.string.rules_priority, lo.takeIf { it > 0 } ?: 1, hi.takeIf { it > 0 } ?: 5)
+    val routes = r.optJSONObject("routes")
+    routes?.keys()?.asSequence()?.sorted()?.forEach { k ->
+        val to = routes.optJSONArray(k)?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty()
+        p += ctx.getString(R.string.rules_route, if (k == "*") ctx.getString(R.string.rules_any_topic) else k,
+            to.joinToString(", ").ifEmpty { ctx.getString(R.string.rules_nowhere) })
+    }
+    return p.joinToString(", ").ifEmpty { ctx.getString(R.string.rules_none) }
+}
+
+/** Routes as the box edits them, "topic: target, target" one a line, the same form as the web. */
+internal fun routeLines(r: org.json.JSONObject?): String {
+    val routes = r?.optJSONObject("routes") ?: return ""
+    return routes.keys().asSequence().sorted().joinToString("") { k ->
+        val a = routes.optJSONArray(k)
+        k + ": " + List(a?.length() ?: 0) { a!!.optString(it) }.joinToString(", ") + "\n"
+    }
+}
+
+/** The routes typed in the box as the server takes them, or null for a line with no topic and colon, or a topic twice (as the web refuses). */
+internal fun parseRoutes(text: String): org.json.JSONObject? {
+    val out = org.json.JSONObject()
+    text.lines().map { it.trim() }.filter { it.isNotEmpty() }.forEach { l ->
+        val k = l.substringBefore(':', "").trim()
+        if (k.isEmpty() || out.has(k)) return null
+        out.put(k, org.json.JSONArray(l.substringAfter(':').split(',').map { it.trim() }.filter { it.isNotEmpty() }))
+    }
+    return out
+}
+
+/**
+ * Pause, mute, priority range and routes for one sender, and its change log with Undo (#119, docs/SPEC.md 5.1).
+ * Each control sends only its own field, so a screen loaded before someone else's change never undoes theirs.
+ */
+@Composable
+private fun SenderRules(app: App, d: org.json.JSONObject, changed: () -> Unit) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    val rules = d.optJSONObject("rules") ?: org.json.JSONObject()
+    val path = "/api/v1/senders/${android.net.Uri.encode(d.optString("id"))}"
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember(d) { mutableStateOf(false) } // stays on until the reloaded sender arrives, so a control never shows stale rules
+    val send: (() -> Unit) -> Unit = { call ->
+        busy = true
+        error = null
+        app.io.execute {
+            runCatching(call).onSuccess { changed() }
+                .onFailure { error = ctx.getString(R.string.rules_failed, it.message); busy = false }
+        }
+    }
+    val api = app.api()
+    val put: (org.json.JSONObject) -> Unit = { body -> send { api.put(path, body.toString()) } }
+    Spacer(Modifier.height(8.dp))
+    Text(stringResource(R.string.rules_title), color = b.ink, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(R.string.rules_explain), color = b.slate, fontSize = 13.sp)
+    listOf("paused" to R.string.rules_pause, "muted" to R.string.rules_mute).forEach { (key, label) ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(label), color = b.ink, modifier = Modifier.weight(1f))
+            Switch(checked = rules.optBoolean(key), enabled = !busy, onCheckedChange = { put(org.json.JSONObject().put(key, it)) })
+        }
+    }
+    val names = listOf(R.string.rules_no_limit, R.string.send_p1, R.string.send_p2, R.string.send_p3, R.string.send_p4, R.string.send_p5)
+    listOf("priority_min" to R.string.rules_lowest, "priority_max" to R.string.rules_highest).forEach { (key, label) ->
+        var menu by remember { mutableStateOf(false) }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(label), color = b.ink, modifier = Modifier.weight(1f))
+            Box {
+                TextButton(onClick = { menu = true }, enabled = !busy) { Text(stringResource(names[rules.optInt(key).coerceIn(0, 5)]), color = b.ink) }
+                DropdownMenu(menu, { menu = false }) {
+                    names.forEachIndexed { i, n ->
+                        DropdownMenuItem(text = { Text(stringResource(n)) }, onClick = { menu = false; if (i != rules.optInt(key)) put(org.json.JSONObject().put(key, i)) })
+                    }
+                }
+            }
+        }
+    }
+    val saved = routeLines(rules)
+    var routes by remember(d.optString("id"), saved) { mutableStateOf(saved) } // kept while typing; a new saved value replaces it
+    OutlinedTextField(routes, { routes = it }, enabled = !busy, label = { Text(stringResource(R.string.rules_routes)) }, minLines = 2, textStyle = Mono, modifier = Modifier.fillMaxWidth())
+    Text(stringResource(R.string.rules_routes_hint), color = b.slate, fontSize = 12.sp)
+    TextButton(enabled = !busy && routes != saved, onClick = {
+        parseRoutes(routes)?.let { put(org.json.JSONObject().put("routes", it)) } ?: run { error = ctx.getString(R.string.rules_routes_bad) }
+    }) { Text(stringResource(R.string.rules_save_routes), color = b.ink) }
+    error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+    Text(stringResource(R.string.rules_changes), color = b.ink, fontWeight = FontWeight.SemiBold)
+    val log = objects(d, "log")
+    if (log.isEmpty()) Text(stringResource(R.string.rules_no_changes), color = b.slate, fontSize = 13.sp)
+    log.forEach { c ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(rulesSummary(ctx, c.optJSONObject("after")), color = b.ink, fontSize = 14.sp)
+                val at = millisOf(c.optString("at"))?.let { ago(ctx, it) }.orEmpty()
+                Text(ctx.getString(R.string.rules_was, rulesSummary(ctx, c.optJSONObject("before")), c.optString("by"), at), color = b.slate, fontSize = 12.sp)
+            }
+            TextButton(enabled = !busy, onClick = { send { api.post("$path/changes/${c.optLong("seq")}/undo") } }) { Text(stringResource(R.string.rules_undo), color = b.ink) }
         }
     }
 }

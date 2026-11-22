@@ -828,8 +828,9 @@ The web inbox shows the list at `/app/senders` and one sender at
 has an Undo button, for the same admins only; anyone
 else gets 403. The form sends `base_seq`, so saving a page drawn before a
 newer change is refused rather than undoing that change. The Android app
-lists them in Settings, read only, for the same admins; for anyone else the
-section stays hidden.
+lists them in Settings with the same rules, change log and Undo, for the same
+admins, and sends one field per change; for anyone else the section stays
+hidden.
 
 The silence alarm comes in a later part of #119 and is not served yet.
 

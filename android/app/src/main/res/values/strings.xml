@@ -266,4 +266,27 @@
     <string name="sender_gotify_app">Gotify app</string>
     <string name="sender_pushover_app">Pushover app</string>
     <string name="sender_anonymous">Anonymous</string>
+    <string name="rules_title">Rules</string>
+    <string name="rules_explain">Paused drops what it sends. Muted keeps it but never rings. A priority range clamps what it asks for. Routes send a topic somewhere else.</string>
+    <string name="rules_pause">Pause</string>
+    <string name="rules_mute">Mute</string>
+    <string name="rules_lowest">Lowest priority</string>
+    <string name="rules_highest">Highest priority</string>
+    <string name="rules_no_limit">No limit</string>
+    <string name="rules_routes">Routes</string>
+    <string name="rules_routes_hint">One a line: topic: target, target. Use * for any other topic. Nothing after the colon drops it.</string>
+    <string name="rules_routes_bad">Each route needs a topic, a colon, then its targets, and each topic once.</string>
+    <string name="rules_save_routes">Save routes</string>
+    <string name="rules_failed">Could not change it: %1$s</string>
+    <string name="rules_changes">Change log</string>
+    <string name="rules_no_changes">No changes yet. An anonymous sender\'s log can age out.</string>
+    <string name="rules_was">was: %1$s, by %2$s, %3$s</string>
+    <string name="rules_undo">Undo</string>
+    <string name="rules_none">No rules</string>
+    <string name="rules_paused">paused</string>
+    <string name="rules_muted">muted</string>
+    <string name="rules_priority">priority %1$d to %2$d</string>
+    <string name="rules_route">%1$s to %2$s</string>
+    <string name="rules_any_topic">any other topic</string>
+    <string name="rules_nowhere">nowhere</string>
 </resources>
