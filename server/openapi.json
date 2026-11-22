@@ -1654,6 +1654,55 @@
     ]
    }
   },
+  "/api/v1/push": {
+   "get": {
+    "summary": "Web Push public key and whether this device is subscribed",
+    "description": "Scope read. public_key is the server's VAPID key (base64url, uncompressed P-256), made on first start; pass it as applicationServerKey to pushManager.subscribe.",
+    "tags": ["sync"],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {"application/json": {"schema": {"type": "object", "properties": {
+       "public_key": {"type": "string"},
+       "subscribed": {"type": "boolean"}
+      }}}}
+     },
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "put": {
+    "summary": "Subscribe this device to Web Push",
+    "description": "Scope read. The body is the browser's PushSubscription JSON. One subscription per device: a new one replaces the old. The server pushes each notification that would ring this device in the inbox.",
+    "tags": ["sync"],
+    "requestBody": {
+     "required": true,
+     "content": {"application/json": {"schema": {"type": "object", "required": ["endpoint", "keys"], "properties": {
+      "endpoint": {"type": "string", "description": "https URL from the browser's push service"},
+      "keys": {"type": "object", "required": ["p256dh", "auth"], "properties": {
+       "p256dh": {"type": "string"},
+       "auth": {"type": "string"}
+      }}
+     }}}}
+    },
+    "responses": {
+     "204": {"description": "Subscribed"},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "delete": {
+    "summary": "Stop Web Push to this device",
+    "description": "Scope read. Revoking the device's token also drops its subscription.",
+    "tags": ["sync"],
+    "responses": {
+     "204": {"description": "Unsubscribed"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
+    }
+   }
+  },
   "/api/v1/devices/log": {
    "get": {
     "summary": "Device activity log",

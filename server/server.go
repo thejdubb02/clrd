@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/ecdsa"
 	"database/sql"
 	_ "embed"
 	"encoding/json"
@@ -223,6 +224,13 @@ type Server struct {
 	hookAllow atomic.Pointer[hookAllow]   // webhook LAN and port allow list once read (hookallow.go)
 	hookHTTP  atomic.Pointer[http.Client] // webhook deliveries, replaced when the list changes (hookallow.go)
 
+	// Web Push (webpush.go). pushHTTP has the fetcher's guard only, never
+	// the webhook allow list: any device can name a push endpoint.
+	vapid    *ecdsa.PrivateKey
+	vapidPub string // base64url, uncompressed point
+	pushq    chan Event
+	pushHTTP *http.Client
+
 	seen       sync.Map // token id -> time last written to last_seen_at
 	pwLimit    *limiter // ntfy password attempts per address
 	tokLimit   *limiter // publishes per token, nil when off
@@ -338,6 +346,15 @@ func New(opt Options) (*Server, error) {
 		s.hookAllow.Store(&hookAllow{Networks: []string{}, Ports: []int{}, Locked: true})
 	}
 	s.hookHTTP.Store(s.newHookClient())
+	if s.vapid, err = loadVAPID(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	pub, _ := s.vapid.PublicKey.ECDH()
+	s.vapidPub = b64.EncodeToString(pub.Bytes())
+	s.pushq = make(chan Event, 256)
+	s.pushHTTP = &http.Client{Transport: s.fetch.client.Transport, Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	s.routesSetup()
 	return s, nil
 }
@@ -532,6 +549,8 @@ func (s *Server) Run(ctx context.Context) error {
 	job("prune", time.Hour, s.prune)
 	job("cache sweep", time.Hour, s.fetch.sweep)
 	job("webhooks out", hookEvery, s.deliverHooks)
+	wg.Add(1)
+	go func() { defer wg.Done(); s.pushLoop(jctx) }()
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }} // ends open streams on shutdown
 	errc := make(chan error, 1)
@@ -659,6 +678,7 @@ func (s *Server) routesSetup() {
 	s.linkRoutes()
 	s.agentRoutes()
 	s.deviceRoutes()
+	s.pushRoutes()
 	s.userRoutes()
 	s.soundRoutes()
 	s.approveRoutes()
