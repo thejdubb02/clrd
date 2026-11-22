@@ -649,18 +649,26 @@
   <h2 id="rules-h" class="text-base font-semibold">Rules</h2>
   <p class="text-body text-sm/relaxed">Off until you set one. They apply to everything this sender publishes from now on.</p>
   <form class="bg-card grid gap-4 rounded-xl border p-4" method="post" action="{{base}}/app/senders/{{.ID}}">
-    <input type="hidden" name="base_seq" value="{{.LastSeq}}">
-    <label class="label font-normal"><input type="checkbox" class="input" name="paused" value="1"{{if .Rules.Paused}} checked{{end}}> Pause <span class="meta">accept and drop what it sends</span></label>
-    <label class="label font-normal"><input type="checkbox" class="input" name="muted" value="1"{{if .Rules.Muted}} checked{{end}}> Mute <span class="meta">keep it, with no sound or alert</span></label>
+    {{$r := .FormRules}}<input type="hidden" name="base_seq" value="{{.LastSeq}}">
+    <label class="label font-normal"><input type="checkbox" class="input" name="paused" value="1"{{if $r.Paused}} checked{{end}}> Pause <span class="meta">accept and drop what it sends</span></label>
+    <label class="label font-normal"><input type="checkbox" class="input" name="muted" value="1"{{if $r.Muted}} checked{{end}}> Mute <span class="meta">keep it, with no sound or alert</span></label>
     <div class="flex flex-wrap gap-3">
-      {{$r := .Rules}}<div class="grid gap-1.5"><label class="label" for="r-pmin">Lowest priority</label>
+      <div class="grid gap-1.5"><label class="label" for="r-pmin">Lowest priority</label>
         <select id="r-pmin" class="input w-auto" name="priority_min">{{range $i, $n := priorities}}<option value="{{$i}}"{{if eq $i $r.PriorityMin}} selected{{end}}>{{$n}}</option>{{end}}</select></div>
       <div class="grid gap-1.5"><label class="label" for="r-pmax">Highest priority</label>
         <select id="r-pmax" class="input w-auto" name="priority_max">{{range $i, $n := priorities}}<option value="{{$i}}"{{if eq $i $r.PriorityMax}} selected{{end}}>{{$n}}</option>{{end}}</select></div>
     </div>
     <div class="grid gap-1.5"><label class="label" for="r-routes">Routes</label>
-      <textarea id="r-routes" class="textarea font-mono" name="routes" rows="3" spellcheck="false" aria-describedby="r-routes-hint" placeholder="alerts: ops, oncall">{{.Rules.RouteLines}}</textarea>
+      <textarea id="r-routes" class="textarea font-mono" name="routes" rows="3" spellcheck="false" aria-describedby="r-routes-hint" placeholder="alerts: ops, oncall">{{$r.RouteLines}}</textarea>
       <p id="r-routes-hint" class="meta">One a line: the topic it sends to, a colon, then the topics to deliver to instead. Use * for any other topic. Nothing after the colon drops it.</p></div>
+    <div class="field"{{if .FieldErr "expect"}} data-invalid="true"{{end}}><label for="r-expect">Alarm if quiet for</label>
+      <input id="r-expect" name="expect" type="text" autocomplete="off" spellcheck="false" placeholder="25h" value="{{$r.Expect}}" aria-describedby="r-expect-hint{{if .FieldErr "expect"}} r-expect-err{{end}}"{{if .FieldErr "expect"}} aria-invalid="true"{{end}}>
+      {{with .FieldErr "expect"}}<p id="r-expect-err" role="alert">Not saved: {{.}}.</p>{{end}}
+      <p id="r-expect-hint">One urgent alarm when it sends nothing for this long, like 25h or 30m. Its next notification clears the alarm. Empty is off.</p></div>
+    <div class="field"{{if .FieldErr "alert_topic"}} data-invalid="true"{{end}}><label for="r-alert">Alarm topic</label>
+      <input id="r-alert" name="alert_topic" type="text" autocomplete="off" spellcheck="false" placeholder="ops" value="{{$r.AlertTopic}}" aria-describedby="r-alert-hint{{if .FieldErr "alert_topic"}} r-alert-err{{end}}"{{if .FieldErr "alert_topic"}} aria-invalid="true"{{end}}>
+      {{with .FieldErr "alert_topic"}}<p id="r-alert-err" role="alert">Not saved: {{.}}.</p>{{end}}
+      <p id="r-alert-hint">Where the alarm goes. Empty means the topic it last sent to.</p></div>
     <div><button class="btn" data-variant="outline">Save rules</button></div>
   </form>
   <h2 class="mt-4 text-base font-semibold">Changes</h2>

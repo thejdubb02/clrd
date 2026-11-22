@@ -7,6 +7,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -377,6 +378,7 @@ type Sender struct {
 	Count     int            `json:"count"`
 	Topics    map[string]int `json:"topics"`
 	Recent    []Notification `json:"recent"`
+	Form      *RulesForm     `json:"-"` // a refused save, shown again
 }
 
 // KindLabel names the kind for people.
@@ -395,15 +397,47 @@ type SenderRules struct {
 	PriorityMin int                 `json:"priority_min"`
 	PriorityMax int                 `json:"priority_max"`
 	Routes      map[string][]string `json:"routes"`
+	Expect      string              `json:"expect"`      // alarm when quiet this long, "" off; sent empty so a save clears it
+	AlertTopic  string              `json:"alert_topic"` // where that alarm goes
+}
+
+// RulesForm is a refused save shown again: what was typed, the base it was
+// typed on, and the server's message for the one field it named.
+type RulesForm struct {
+	Rules      SenderRules
+	Base       int64
+	Field, Err string
+}
+
+type rulesFormKey struct{}
+
+// FormRules are the rules the form shows: a refused save's, else the saved.
+func (s Sender) FormRules() SenderRules {
+	if s.Form != nil {
+		return s.Form.Rules
+	}
+	return s.Rules
 }
 
 // LastSeq is the seq of the newest change, 0 for none: the rules form sends
-// it back so a save over a newer change is refused (#543).
+// it back so a save over a newer change is refused (#543). A refused save
+// keeps the base it was typed on, so the stale check still holds.
 func (s Sender) LastSeq() int64 {
+	if s.Form != nil {
+		return s.Form.Base
+	}
 	if len(s.Changes) == 0 {
 		return 0
 	}
 	return s.Changes[0].Seq
+}
+
+// FieldErr is the server's message for this form field, "" for none.
+func (s Sender) FieldErr(field string) string {
+	if s.Form != nil && s.Form.Field == field {
+		return s.Form.Err
+	}
+	return ""
 }
 
 // SenderChange is one logged edit of a sender's rules.
@@ -462,6 +496,13 @@ func (r SenderRules) Summary() string {
 			k = "any other topic"
 		}
 		p = append(p, k+" to "+v)
+	}
+	if r.Expect != "" {
+		a := "alarm if quiet " + r.Expect
+		if r.AlertTopic != "" {
+			a += " in " + r.AlertTopic
+		}
+		p = append(p, a)
 	}
 	if len(p) == 0 {
 		return "No rules"
@@ -1148,6 +1189,9 @@ func Handler(api API, baseURL string) http.Handler {
 			if (view == "senders" || view == "sender") && !snap.CanSenders {
 				status = http.StatusForbidden
 			}
+			if fm, ok := r.Context().Value(rulesFormKey{}).(*RulesForm); ok && snap.Sender != nil && status == 200 {
+				snap.Sender.Form, status = fm, http.StatusBadRequest
+			}
 			// A new tip on each visit; the send-a-test tip while nothing has ever arrived.
 			ts, tip := tips(base(r), q.Topic, snap.Topics), 0
 			if c["active"]+c["acknowledged"]+c["snoozed"]+c["dismissed"]+c["resolved"] > 0 {
@@ -1195,7 +1239,8 @@ func Handler(api API, baseURL string) http.Handler {
 			// Not the rules form: never read a missing field as "clear it".
 			err = errors.New("the rules form was incomplete")
 		} else {
-			rules := SenderRules{Paused: f.Get("paused") != "", Muted: f.Get("muted") != ""}
+			rules := SenderRules{Paused: f.Get("paused") != "", Muted: f.Get("muted") != "",
+				Expect: strings.TrimSpace(f.Get("expect")), AlertTopic: strings.TrimSpace(f.Get("alert_topic"))}
 			var e1, e2, e3 error
 			var base int64
 			rules.PriorityMin, e1 = strconv.Atoi(f.Get("priority_min"))
@@ -1204,6 +1249,15 @@ func Handler(api API, baseURL string) http.Handler {
 			if err = errors.Join(e1, e2, e3); err == nil {
 				if rules.Routes, err = parseRoutes(f.Get("routes")); err == nil {
 					err = api.SetSenderRules(r, id, rules, base)
+				}
+			}
+			// A field the server named: the page again, typed values kept, the
+			// message by that field.
+			for _, field := range []string{"expect", "alert_topic"} {
+				if err != nil && strings.HasPrefix(err.Error(), field) {
+					fm := &RulesForm{Rules: rules, Base: base, Field: field, Err: strings.TrimPrefix(err.Error(), "alert_topic: ")}
+					app("sender")(w, r.WithContext(context.WithValue(r.Context(), rulesFormKey{}, fm)))
+					return
 				}
 			}
 		}

@@ -334,7 +334,8 @@ func (r SenderRules) check() error {
 	}
 	if r.AlertTopic != "" {
 		if err := validTopic(r.AlertTopic); err != nil {
-			return err
+			_, _, m := errorStatus(err) // named, so a form can show it by the field
+			return errf(400, "bad_request", "alert_topic: %s", m)
 		}
 	}
 	for from, to := range r.Routes {
