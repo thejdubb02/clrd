@@ -216,6 +216,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		}
 		// Offer the form only if some silence would be accepted: a topic list
 		// with only read grants publishes nowhere.
+		snap.CanInvite = a.s.MayInvite(ctx, tok)
 		snap.CanSilence = tok.MaySilence("")
 		for _, t := range snap.Topics {
 			snap.CanSilence = snap.CanSilence || t.Silence

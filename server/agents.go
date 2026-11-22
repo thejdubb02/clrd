@@ -53,6 +53,10 @@ func (s *Server) mayInvite(ctx context.Context, tok *Token) error {
 	return err
 }
 
+// MayInvite says whether tok may make an agent invite, so the web inbox
+// offers the form only where it works (#456).
+func (s *Server) MayInvite(ctx context.Context, tok *Token) bool { return s.mayInvite(ctx, tok) == nil }
+
 // inviteGrants turns the topics asked for into the agent's grants: each gets
 // the read and publish tok holds there, never more. Only a full admin may
 // name a pattern.
