@@ -16,6 +16,11 @@ ok "plain http off localhost and user:password URLs are refused"
 # gets no answer.
 out=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | CLAUDE_PLUGIN_OPTION_SERVER_URL=http://example.com "$H" mcp 2>/dev/null) && fail "mcp ran against http"
 [ "$out" = '{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"clrd: server URL must be https (or http on localhost)"}}' ] || fail "mcp did not refuse http: $out"
+# The id is read at the top level only (#414): spaces and escapes count, an
+# "id" in a notification's params does not.
+out=$(printf '%s\n' '{"jsonrpc":"2.0", "id" : "a\"b", "method":"ping"}' '{"jsonrpc":"2.0","method":"notifications/x","params":{"id":5}}' |
+  CLAUDE_PLUGIN_OPTION_SERVER_URL=http://example.com "$H" mcp 2>/dev/null) && fail "mcp ran against http"
+jq -se 'map(.id) == ["a\"b"]' <<<"$out" >/dev/null || fail "mcp id parsing: $out"
 out=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"send","arguments":{"topic":"agents","title":"via the plugin MCP","message":"hi"}},"id":"s"}' |
   http_proxy=http://127.0.0.1:9 HTTP_PROXY=http://127.0.0.1:9 ALL_PROXY=http://127.0.0.1:9 "$H" mcp) # a proxy never sees localhost traffic

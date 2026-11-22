@@ -166,6 +166,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Claude Code plugin: the MCP bridge reads a request's id at the top level
+  only, so spaces or escapes around the id still get an answer, an `id` inside
+  a notification's params no longer gets an error back, and a stuck request
+  can no longer hold up other answers (#414).
 - Server: in the format check by sender, messages with no known sender now
   group under `sender_id` `"unknown"`, so a finding there can be dismissed for
   that group alone instead of for every sender on the topic (#391).
