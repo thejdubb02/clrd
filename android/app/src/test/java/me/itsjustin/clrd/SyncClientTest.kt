@@ -56,6 +56,9 @@ class SyncClientTest {
                         val n = wsSince.size
                         wsResponse() ?: MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) { serverSockets += webSocket; onConnect(n, webSocket) }
+                            // Answer the client's close as a real server does. A socket still opening when
+                            // tearDown runs is not in serverSockets, and unanswered it held shutdown for 5 s (#421).
+                            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
                         })
                     }
                     path.startsWith("/api/v1/notifications?state=open") -> {
