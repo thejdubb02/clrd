@@ -350,6 +350,15 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add tokens user_id column: %w", err)
 	}
+	// Agents (#454): kind is person or agent; owner is the top token whose
+	// invite made an agent, so it shows in that person's device list.
+	for _, c := range []string{`kind TEXT NOT NULL DEFAULT 'person'`, `owner TEXT NOT NULL DEFAULT ''`} {
+		if _, err := db.Exec(`ALTER TABLE people ADD COLUMN ` + c); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("add people column: %w", err)
+		}
+	}
 	// Rows the CLRD_CONFIG file made (#155): only these does a start remove.
 	for _, t := range []string{"tokens", "people"} {
 		if _, err := db.Exec(`ALTER TABLE ` + t + ` ADD COLUMN config INTEGER NOT NULL DEFAULT 0`); err != nil &&

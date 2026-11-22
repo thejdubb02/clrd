@@ -11,6 +11,26 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Security
 
+- Server: a page on clrd's own host now counts as clrd's own only when its
+  scheme matches too, so an https page cannot act on a plain http endpoint
+  (or the reverse) when clrd knows the request's scheme. Behind a proxy that
+  rewrites the host or drops the port, a page from `CLRD_BASE_URL` now passes
+  instead of getting 403 (#430).
+- Server: the https form of an agent invite is now `<server>/agent#<code>`.
+  The code sits after `#`, which is never sent, so it no longer lands in a
+  proxy's access log. The page is the same for every invite and tells the
+  agent to claim with the part after `#` (#463).
+
+- Server: a grant now allows a topic only in the grant's own case. A grant for
+  `home` used to also allow `HOME` and `Home`, which are different topics, so
+  a token or agent invite could reach more than it named. A match in another
+  case now never allows, so a deny on `secret` still blocks `SECRET`. An ntfy
+  import whose rules differ in case from the topics it names now gives less
+  access; rewrite those rules in the topic's own case (#458).
+- Server: a user in the config file (`CLRD_CONFIG`) named like an agent no
+  longer takes the agent over and hands it the file's grants. The start stops
+  with a message to rename the user, and the file never removes an agent
+  (#458).
 - Server: the ntfy and Gotify routes no longer answer every web site. A page
   on another site gets 403 (requests, preflight and WebSocket) unless an admin
   adds its origin with `PUT /api/v1/ntfy/origins` or the `set_ntfy_origins`
@@ -156,6 +176,13 @@ Fixed, Removed, Security), as one line a user can understand.
 ### Added
 
 - Marks: anyone who can read a topic, a person or an agent with its own token, can mark a notification seen, or actioned with a note and a link. A mark never clears or hides it; everyone on the topic sees who marked it on the card in the web inbox and the Android app, for example "stew actioned: filed relay#512". API `POST`/`DELETE /api/v1/notifications/{id}/mark`, MCP `mark`, and `mark`/`unmark` in the Go, JS and Python SDKs.
+- Web: an "Add agent" button in Settings. Give the agent a name and its topics, pick how long the invite lasts (15 minutes by default) and copy the one-use invite it shows. The agent then shows in Linked devices as an agent, where you can unlink it (#456).
+
+- Android: an "Add agent" button under Linked devices makes an agent invite
+  (name, topics, 5 min, 15 min or 1 hour) to copy or share; the agent then
+  shows in the list as an agent with Unlink (#457).
+
+- Server: agent invites. A signed-in person or an admin token makes one short single-use string (`clrd://agent?...` or an https link, 15 minutes by default) with a name and topics; the agent claims it once and gets its own user and token, held to those topics, with approvals denied, plus a guide to the publish, reply and MCP addresses. It shows in the device and user lists and unlinking it cuts it off at once. API `POST /api/v1/agents/invite`, MCP `create_agent_invite`, CLI `clrd agent invite`. The web and Android buttons are listed above (#454).
 
 - Server: ntfy's `http` and `broadcast` action buttons. An admin turns them on per topic with `device_actions` (API and MCP `set_topic`, off by default); the server stores them and passes them to ntfy apps. clrd's own app and web inbox do not run them yet (#401).
 

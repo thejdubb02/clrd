@@ -105,3 +105,20 @@ func TestConfigFile(t *testing.T) {
 		t.Fatalf("a bad file changed the server: %d", c)
 	}
 }
+
+// #458: a file user never takes over an agent of the same name.
+func TestConfigSparesAgent(t *testing.T) {
+	s, ts, admin := newTest(t)
+	_, iv := call(t, ts, "POST", "/api/v1/agents/invite", admin, map[string]any{"name": "bot", "topics": []string{"home"}})
+	_, cl := call(t, ts, "POST", "/api/v1/agents/claim", "", map[string]string{"code": iv["code"].(string)})
+	agent, _ := cl["token"].(string)
+	f := filepath.Join(t.TempDir(), "clrd.json")
+	s.opt.Config = f
+	os.WriteFile(f, []byte(`{"users": [{"name": "bot", "grants": [{"topic": "*", "scopes": ["read", "publish"]}]}]}`), 0o600)
+	if err := s.applyConfig(context.Background()); err == nil || !strings.Contains(err.Error(), "an agent has this name") {
+		t.Fatalf("file took over an agent: %v", err)
+	}
+	if c, _ := call(t, ts, "POST", "/api/v1/notifications", agent, map[string]any{"topic": "work", "message": "x"}); c != 403 {
+		t.Fatalf("agent got the file's grants: %d", c)
+	}
+}

@@ -84,7 +84,7 @@ func (s *Server) linkRoutes() {
 
 // ownLinkLocked is the live link for code if tok made it. Call with pairMu held.
 func (s *Server) ownLinkLocked(code string, tok *Token) *pairing {
-	if p := s.pairingLocked(code, true); p != nil && p.owner.ID == tok.ID {
+	if p := s.pairingLocked(code, kindLink); p != nil && p.owner.ID == tok.ID {
 		return p
 	}
 	return nil
@@ -105,7 +105,7 @@ func (s *Server) handleLinkClaim(w http.ResponseWriter, r *http.Request) error {
 		return errf(400, "bad_request", "secret must be at least 32 characters")
 	}
 	s.pairMu.Lock()
-	p := s.pairingLocked(in.Code, true)
+	p := s.pairingLocked(in.Code, kindLink)
 	if p != nil && p.secret == "" {
 		p.secret, p.name = in.Secret, deviceName(in.Name, "")
 	}
@@ -157,7 +157,7 @@ func (s *Server) rootOf(ctx context.Context, id string) (string, error) {
 func (s *Server) handleLinkPage(w http.ResponseWriter, r *http.Request) error {
 	code := r.URL.Query().Get("c")
 	s.pairMu.Lock()
-	p := s.pairingLocked(code, true)
+	p := s.pairingLocked(code, kindLink)
 	live := p != nil && p.secret == ""
 	s.pairMu.Unlock()
 	data := map[string]any{"Title": "Link a phone"}

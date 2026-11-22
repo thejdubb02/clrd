@@ -5296,6 +5296,68 @@
      }
     }
    }
+  },
+  "/agent": {
+   "get": {
+    "summary": "Agent invite guide, as plain text",
+    "tags": [
+     "auth"
+    ],
+    "description": "No auth. The invite link is /agent#<code>: the code after # is never sent, so this page is the same for every invite. For an agent that can only fetch a URL: how to claim with its code, publish, ask, wait and MCP addresses, and limits. Spends nothing and holds no token.",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "Plain text guide"
+     }
+    }
+   }
+  },
+  "/api/v1/agents/invite": {
+   "post": {
+    "summary": "Invite an agent",
+    "tags": [
+     "auth"
+    ],
+    "description": "Body {\"name\", \"topics\": [...], \"expires_in\": \"15m\"} (1m to 1h, default 15m). From a browser or phone of a person, or a full admin token; an agent's own token or devices get 403. Each topic gets the read and publish the caller holds there; a topic the caller may not use is 403, and only a full admin may name a pattern. 201 {\"code\", \"invite\": \"clrd://agent?server=...&code=...\", \"url\": \"<server>/agent#<code>\", \"expires_at\", \"name\", \"grants\"}. Single use; 429 busy when too many wait; 409 when the name is taken.",
+    "responses": {
+     "201": {
+      "description": "The invite"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/agents/claim": {
+   "post": {
+    "summary": "Claim an agent invite",
+    "tags": [
+     "auth"
+    ],
+    "description": "No auth. Body {\"code\"}. Spends the code and makes a user of kind agent with its own token: scopes read and publish on the invite's topics only, approve denied. 200 {\"token\" (shown once), \"user\", \"name\", \"guide\"}; the guide holds server, grants, publish, notification, events, mcp, approve_request, approve and limits. 410 when expired, used or unknown; 409 when a user took the name since (the code is spent).",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "token, user, name, guide"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "410": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -90,8 +91,13 @@ func applyConfigTx(ctx context.Context, tx *sql.Tx, c *Config) (gone []string, e
 			return nil, fmt.Errorf("user %q: %w", name, err)
 		}
 		id := randomString(12)
-		if err := tx.QueryRowContext(ctx, `INSERT INTO people (id, name, grants, created_at, config) VALUES (?,?,?,?,1)
-		  ON CONFLICT (name) DO UPDATE SET grants = excluded.grants, config = 1 RETURNING id`, id, name, stored, ms(now())).Scan(&id); err != nil {
+		// Never an agent's row: taking it over would give the agent the file's grants.
+		err = tx.QueryRowContext(ctx, `INSERT INTO people (id, name, grants, created_at, config) VALUES (?,?,?,?,1)
+		  ON CONFLICT (name) DO UPDATE SET grants = excluded.grants, config = 1 WHERE kind != 'agent' RETURNING id`, id, name, stored, ms(now())).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user %q: an agent has this name; rename the user in the file", name)
+		}
+		if err != nil {
 			return nil, err
 		}
 		users[name] = id
@@ -159,7 +165,7 @@ func applyConfigTx(ctx context.Context, tx *sql.Tx, c *Config) (gone []string, e
 		names = append(names, n)
 	}
 	marks = strings.TrimSuffix(strings.Repeat("?,", len(names)), ",")
-	if _, err := tx.ExecContext(ctx, `DELETE FROM people WHERE config = 1 AND name NOT IN (`+marks+`)`, names...); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM people WHERE config = 1 AND kind != 'agent' AND name NOT IN (`+marks+`)`, names...); err != nil {
 		if strings.Contains(err.Error(), "FOREIGN KEY") {
 			return nil, fmt.Errorf("a user dropped from the file still has tokens made on the API: detach them first")
 		}

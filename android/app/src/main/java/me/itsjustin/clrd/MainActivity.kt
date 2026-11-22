@@ -781,6 +781,7 @@ private fun deviceLine(ctx: Context, d: org.json.JSONObject): String = listOfNot
     when (d.optString("kind")) {
         "phone" -> ctx.getString(R.string.kind_phone)
         "browser" -> ctx.getString(R.string.kind_browser)
+        "agent" -> ctx.getString(R.string.kind_agent)
         else -> ctx.getString(R.string.kind_token)
     },
     d.optString("via").takeIf { it.isNotEmpty() }?.let { ctx.getString(R.string.device_via, it) },
@@ -865,6 +866,9 @@ private fun DeviceSettings(app: App, resumes: Int) {
             if (d.optBoolean("can_unlink")) TextButton(onClick = { unlink = d }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
         }
     }
+    val hold = androidx.lifecycle.ViewModelProvider(ctx as ComponentActivity)[AgentHold::class.java]
+    TextButton(onClick = { hold.open.value = true }) { Text(stringResource(R.string.agent_add), color = b.ink) }
+    if (hold.open.value) AgentInvite(app, hold) { hold.open.value = false; hold.made.value = null; reload++ }
     error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
     if (log.isNotEmpty()) TextButton(onClick = { showLog = !showLog }) {
         Text(stringResource(if (showLog) R.string.device_log_hide else R.string.device_log_show), color = b.ink)
@@ -904,6 +908,91 @@ private fun DeviceSettings(app: App, resumes: Int) {
             dismissButton = { TextButton(onClick = { unlink = null }) { Text(stringResource(R.string.link_cancel)) } },
         )
     }
+}
+
+/** The topics typed in the Add agent form, split on commas and spaces. */
+internal fun agentTopics(s: String): List<String> = s.split(',', ' ').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+/** The body of POST /api/v1/agents/invite (docs/integrations/agent-invite.md), or null while the form is not filled. */
+internal fun agentInviteBody(name: String, topics: String, minutes: Int): org.json.JSONObject? {
+    val t = agentTopics(topics)
+    if (name.isBlank() || t.isEmpty()) return null
+    return org.json.JSONObject().put("name", name.trim()).put("topics", org.json.JSONArray(t)).put("expires_in", "${minutes}m")
+}
+
+/**
+ * Add agent (#457): a name, its topics and how long the invite lasts, then the invite to copy or share.
+ * The invite is never logged or saved: it lives in [AgentHold], so a rotation keeps it and leaving the screen drops it.
+ */
+class AgentHold : androidx.lifecycle.ViewModel() {
+    val open = mutableStateOf(false)
+    val made = mutableStateOf<org.json.JSONObject?>(null)
+}
+
+@Composable
+private fun AgentInvite(app: App, hold: AgentHold, close: () -> Unit) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    var name by remember { mutableStateOf("") }
+    var topics by remember { mutableStateOf("") }
+    var minutes by remember { mutableStateOf(15) }
+    var sending by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    var made by hold.made
+    val body = agentInviteBody(name, topics, minutes)
+    val done = made
+    AlertDialog(
+        // Once asked for, only Done closes it, so a stray tap cannot lose an invite the server already made.
+        onDismissRequest = { if (done == null && !sending) close() },
+        title = { Text(stringResource(R.string.agent_add)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (done == null) {
+                    OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.agent_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(topics, { topics = it }, label = { Text(stringResource(R.string.agent_topics)) }, supportingText = { Text(stringResource(R.string.agent_topics_hint)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.agent_lasts), color = b.slate, fontSize = 13.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(5 to R.string.agent_5m, 15 to R.string.agent_15m, 60 to R.string.agent_1h).forEach { (m, label) ->
+                            FilterChip(selected = minutes == m, onClick = { minutes = m }, label = { Text(stringResource(label)) })
+                        }
+                    }
+                    Text(stringResource(R.string.agent_denied), color = b.slate, fontSize = 13.sp)
+                } else {
+                    val url = done.optString("url")
+                    Text(url, style = Mono, color = b.ink, fontSize = 13.sp)
+                    val until = millisOf(done.optString("expires_at"))?.let { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) }.orEmpty()
+                    Text(stringResource(R.string.agent_once, until), color = b.slate, fontSize = 13.sp)
+                    Text(stringResource(R.string.agent_denied), color = b.slate, fontSize = 13.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            val clip = ClipData.newPlainText(done.optString("name"), url)
+                            clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) } // kept out of the clipboard preview
+                            ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+                        }) { Text(stringResource(R.string.agent_copy), color = b.ink) }
+                        TextButton(onClick = {
+                            runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), null)) }
+                        }) { Text(stringResource(R.string.agent_share), color = b.ink) }
+                    }
+                }
+                err?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+            }
+        },
+        confirmButton = {
+            if (done != null) TextButton(onClick = close) { Text(stringResource(R.string.agent_done)) }
+            else TextButton(enabled = body != null && !sending, onClick = {
+                sending = true
+                err = null
+                val api = app.api()
+                app.io.execute {
+                    runCatching { org.json.JSONObject(api.post("/api/v1/agents/invite", body.toString())) }
+                        .onSuccess { made = it }
+                        .onFailure { err = ctx.getString(R.string.agent_failed, it.message) }
+                    sending = false
+                }
+            }) { Text(stringResource(R.string.agent_make)) }
+        },
+        dismissButton = { if (done == null) TextButton(enabled = !sending, onClick = close) { Text(stringResource(R.string.link_cancel)) } },
+    )
 }
 
 @Composable

@@ -636,6 +636,11 @@
     if (!b) return;
     try { await copyText(b.closest('[data-format-topic]').querySelector('[data-format-prompt]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
   });
+  // Settings, add an agent (#456): copy the invite string pair.js shows.
+  document.addEventListener('click', async e => {
+    if (!e.target.closest('[data-agent-copy]')) return;
+    try { await copyText(document.querySelector('[data-agent-invite]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
+  });
 
   // Empty-inbox tip card (#244): previous and next, a slow rotation that pauses
   // on hover or focus, and none at all under reduced motion.

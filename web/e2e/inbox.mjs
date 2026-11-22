@@ -774,6 +774,50 @@ try {
     console.log('ok: link a phone from Settings by approving it by name');
   }
 
+  // Add an agent (#456): Settings makes a one-use invite, the agent claims it,
+  // shows in Linked devices as an agent and can be unlinked there.
+  {
+    const ag = await page.context().newPage(); // page no longer hears live events (above)
+    await ag.goto(base + '/app/settings');
+    const at = ag.url();
+    await ag.locator('.is-live').waitFor({ timeout: 5000 }); // the stream is up, so the new agent shows without a reload
+    await ag.getByRole('button', { name: 'Add agent' }).click();
+    await ag.getByLabel('Agent name').fill('build-bot');
+    await ag.locator('[data-agent-form] [name=more]').fill('builds, deploys');
+    assert.equal(await ag.getByLabel('Invite works for').inputValue(), '15m', 'default 15 minutes');
+    const [made] = await Promise.all([
+      ag.waitForResponse(r => r.url().endsWith('/api/v1/agents/invite')),
+      ag.getByRole('button', { name: 'Make invite' }).click(),
+    ]);
+    assert.equal(made.status(), 201, 'invite made');
+    const inv = await made.json();
+    assert.deepEqual(JSON.parse(made.request().postData()).topics, ['builds', 'deploys'], 'topics from the box');
+    await ag.getByText('It works once, until').waitFor();
+    assert.equal(await ag.locator('[data-agent-invite]').textContent(), inv.url, 'shows the invite');
+    assert.equal(ag.url(), at, 'the code is never in the address');
+    assert.ok(await ag.evaluate(() => document.activeElement === document.querySelector('[data-agent-invite]').parentElement), 'focus moves to the invite');
+    assert.match(await ag.locator('[data-agent-done]').textContent(), /May approve starts at Denied/, 'says approvals start denied');
+    const claim = await fetch(base + '/api/v1/agents/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: inv.code }) });
+    assert.equal(claim.status, 200, 'agent claims');
+    const { token: bot } = await claim.json();
+    const row = ag.locator('tr', { hasText: 'build-bot' });
+    await row.waitFor({ timeout: 5000 });
+    assert.match(await row.textContent(), /Agent/, 'row says agent');
+    // A second agent of the same name: the server's reason shows in the form.
+    await ag.getByRole('button', { name: 'Add another agent' }).click();
+    await ag.getByLabel('Agent name').fill('build-bot');
+    await ag.locator('[data-agent-form] [name=more]').fill('builds');
+    await ag.getByRole('button', { name: 'Make invite' }).click();
+    await ag.locator('[data-agent-status]', { hasText: 'exists' }).waitFor();
+    await row.getByRole('button', { name: 'Unlink' }).click();
+    await ag.getByRole('dialog').getByRole('button', { name: 'Unlink' }).click();
+    await row.waitFor({ state: 'detached' });
+    const after = await fetch(base + '/api/v1/notifications', { headers: { Authorization: `Bearer ${bot}` } });
+    assert.equal(after.status, 401, 'unlinked agent is signed out');
+    await ag.close();
+    console.log('ok: add an agent from Settings, see it as an agent, unlink it');
+  }
+
   // Unlink (#246): browser a unlinks browser b from Settings; b's open inbox
   // goes straight to sign-in with a plain message, and the log says who did it.
   {

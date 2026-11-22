@@ -162,7 +162,16 @@ func (s *Server) baseFor(r *http.Request) string {
 	if o, err := url.Parse(r.Header.Get("Origin")); err == nil && o.Host == r.Host && (o.Scheme == "https" || o.Scheme == "http") {
 		return o.Scheme + "://" + r.Host
 	}
-	// A GET page has no Origin: trust the proxy's X-Forwarded-Proto (#254).
+	if p := s.reqScheme(r); p != "" {
+		return p + "://" + r.Host
+	}
+	return "http://" + r.Host
+}
+
+// reqScheme is the scheme the client used, when clrd can know it: a trusted
+// proxy's X-Forwarded-Proto (#254), else TLS on this connection. Empty means
+// unknown: plain http here, perhaps behind a TLS proxy that does not say.
+func (s *Server) reqScheme(r *http.Request) string {
 	// The rightmost hop is the one our proxy added, as for X-Forwarded-For.
 	var p string
 	if xfp := r.Header.Values("X-Forwarded-Proto"); len(xfp) > 0 {
@@ -172,13 +181,13 @@ func (s *Server) baseFor(r *http.Request) string {
 	if p == "https" || p == "http" {
 		host, _, _ := net.SplitHostPort(r.RemoteAddr)
 		if ip := net.ParseIP(host); ip != nil && isTrustedProxy(ip, s.opt.TrustedProxies) {
-			return p + "://" + r.Host
+			return p
 		}
 	}
 	if r.TLS != nil {
-		return "https://" + r.Host
+		return "https"
 	}
-	return "http://" + r.Host
+	return ""
 }
 
 // Server is the clrd server. Create it with New, add pages with Mount, then Run.
@@ -612,6 +621,7 @@ func (s *Server) routesSetup() {
 	s.route("DELETE /api/v1/session", s.handleSignOut)
 	s.pairRoutes()
 	s.linkRoutes()
+	s.agentRoutes()
 	s.deviceRoutes()
 	s.userRoutes()
 	s.soundRoutes()
