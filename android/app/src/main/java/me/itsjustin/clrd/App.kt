@@ -360,7 +360,7 @@ class RoomStore(private val app: App) : Store {
         // #500: a live repeat Room dropped (our own mark's answer got in first) still rings the newer row, if that one shows unacked.
         // Only when the newer row differs by marks alone (#504): after a Clear and Undo it is a new state, and an Undo stays quiet.
         val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } }.mapNotNull { n ->
-            dao.get(n.id)?.takeIf { it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt) == n }
+            dao.get(n.id)?.takeIf { it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt, silenced = n.silenced) == n }
         }
         val muted = app.muted
         val waiting = waiting()
