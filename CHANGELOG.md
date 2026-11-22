@@ -11,6 +11,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: sender rules in Settings (#545, #119 part 2). Open a sender to pause,
+  mute, cap its priority or reroute its topics, and see and undo each change,
+  as on the web.
 - Web: sender rules on each sender's page (#119, part 2). An admin can pause, mute,
   cap the priority or reroute one sender, and see and undo each change. Nothing
   changes until a rule is set.

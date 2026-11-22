@@ -824,8 +824,8 @@ sender, its rules and its log.
 The web inbox shows the list at `/app/senders` and one sender at
 `/app/senders/{id}`, where a form sets every rule above and each change
 has an Undo button, for the same admins only; anyone
-else gets 403. The Android app lists them in Settings, read only, for the
-same admins; for anyone else the section stays hidden.
+else gets 403. The Android app lists them in Settings with the same rules,
+change log and Undo, for the same admins; for anyone else the section stays hidden.
 
 The silence alarm comes in a later part of #119 and is not served yet.
 
