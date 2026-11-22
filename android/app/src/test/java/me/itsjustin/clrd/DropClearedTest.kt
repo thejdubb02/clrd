@@ -9,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
 
 /** "Remove cleared items" (#151): a cleared row leaves the phone at once, an open one never does. */
 @RunWith(RobolectricTestRunner::class)
@@ -20,7 +21,9 @@ class DropClearedTest {
 
     @After fun tearDown() { app.dropCleared = false }
 
-    @Test fun offKeepsRecentHistoryOnKeepsNone() {
+    private fun onIo(f: () -> Unit) { app.io.submit { f() }.get(10, TimeUnit.SECONDS) } // Room refuses the main thread
+
+    @Test fun offKeepsRecentHistoryOnKeepsNone() = onIo {
         val now = System.currentTimeMillis()
         dao.putMeta(Meta("seq", 3))
         listOf(row("a", Notif.DISMISSED, now), row("b", Notif.RESOLVED, now + 60_000), row("c", Notif.ACTIVE, now)).forEach(dao::put)
@@ -33,7 +36,7 @@ class DropClearedTest {
         assertEquals(Notif.ACTIVE, dao.get("c")?.state)
     }
 
-    @Test fun keptUntilSafeToForget() {
+    @Test fun keptUntilSafeToForget() = onIo {
         val now = System.currentTimeMillis()
         app.dropCleared = true
         dao.putMeta(Meta("seq", 3))
