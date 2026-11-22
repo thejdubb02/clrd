@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: choose the buttons each swipe on a card reveals, in Settings, up
+  to 3 per side (#161). The choice is saved on your server, so every phone
+  follows it; offline the app keeps the last one it saw. A token that may not
+  change settings sees the choice read-only.
 - Server: settings `swipe_start` and `swipe_end` choose the buttons a swipe
   on a card reveals (#161). Defaults match today's app (Clear and Snooze to
   the left, Ack to the right); set them with the API or the MCP `settings`

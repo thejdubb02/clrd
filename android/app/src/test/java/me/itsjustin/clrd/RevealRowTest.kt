@@ -41,12 +41,18 @@ class RevealRowTest {
     private var cleared = 0
     private var scrolled: androidx.compose.foundation.ScrollState? = null
 
-    private fun show(fast: Boolean = false, scroll: Boolean = false, rtl: Boolean = false) = rule.setContent {
+    private fun act(tag: String) = RevealAction(tag, Icons.Filled.Check, Color.Green, tag) { cleared++ }
+
+    private fun show(
+        fast: Boolean = false, scroll: Boolean = false, rtl: Boolean = false,
+        start: List<RevealAction> = listOf(RevealAction("Clear", Icons.Filled.Check, Color.Green, "reveal_clear") { cleared++ }),
+        end: List<RevealAction> = emptyList(),
+    ) = rule.setContent {
         val s = rememberScrollState().also { scrolled = it }
         val col = if (scroll) Modifier.verticalScroll(s) else Modifier
         CompositionLocalProvider(LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr) { Box(Modifier.width(360.dp)) {
             Column(Modifier.height(400.dp).then(col)) {
-                RevealRow(listOf(RevealAction("Clear", Icons.Filled.Check, Color.Green, "reveal_clear") { cleared++ }), emptyList(), fast) {
+                RevealRow(start, end, fast) {
                     Text("card", Modifier.fillMaxWidth().height(96.dp).testTag("card"))
                 }
                 if (scroll) Box(Modifier.height(2000.dp)) // room to scroll
@@ -101,5 +107,28 @@ class RevealRowTest {
         assertEquals(0, cleared)
         rule.onNodeWithTag("reveal_clear").assertDoesNotExist()
         assertTrue("the list scrolled", scrolled!!.value > 0) // not swallowed by the row
+    }
+
+    private fun left(tag: String) = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.left
+
+    @Test fun eachSidesFirstButtonSitsNearestItsEdge() { // docs/SPEC.md, swipe_start and swipe_end (#161)
+        show(start = listOf(act("s1"), act("s2"), act("s3")), end = listOf(act("e1"), act("e2")))
+        swipeAcross()
+        rule.waitForIdle()
+        assertTrue("start side: first at the right edge", left("s1") > left("s2") && left("s2") > left("s3"))
+        rule.onNodeWithTag("card").performTouchInput { swipeRight(left + 1, right - 1) } // back to closed
+        rule.onNodeWithTag("card").performTouchInput { swipeRight(left + 1, right - 1) }
+        rule.waitForIdle()
+        assertTrue("end side: first at the left edge", left("e1") < left("e2"))
+        assertEquals(0, cleared)
+    }
+
+    @Test fun aSideWithNoButtonsDoesNotOpen() {
+        show(fast = true, start = emptyList(), end = listOf(act("e1")))
+        swipeAcross()
+        rule.waitForIdle()
+        assertEquals(0, cleared) // fast is on, yet an empty side runs nothing
+        assertEquals(0f, rule.onNodeWithTag("card").fetchSemanticsNode().boundsInRoot.left)
+        rule.onNodeWithTag("e1").assertDoesNotExist()
     }
 }

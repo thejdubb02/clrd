@@ -1091,7 +1091,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   clearing happens in the app, the web or the API (#265). A new alert for a hidden item shows it
   again. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR are deliberate taps and do sync.
 - Incoming `dismissed`/`resolved` event -> `NotificationManager.cancel(tag)`. That is the headline feature.
-- Inbox screen per the brand board: filter pills by topic, a swipe that reveals round buttons (by default Clear and Snooze to the left, Ack to the right; the settings `swipe_start` and `swipe_end` in section 2.1 choose them) and changes nothing until one is tapped (#161; a "Full swipe acts" setting, off by default, lets a swipe all the way across run the first button), tabs Inbox, Snoozed, Cleared, Settings.
+- Inbox screen per the brand board: filter pills by topic, a swipe that reveals round buttons (by default Clear and Snooze to the left, Ack to the right; the settings `swipe_start` and `swipe_end` in section 2.1 choose them, and Settings sets them on the server, read-only for a token that gets 403; a card skips a button it cannot take, like Ack on an acknowledged card or Resolve, which the app has no button for yet) and changes nothing until one is tapped (#161; a "Full swipe acts" setting, off by default, lets a swipe all the way across run the first button, the one nearest the edge), tabs Inbox, Snoozed, Cleared, Settings.
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.
 - `fastlane/metadata/android/` for F-Droid. Reproducible build, no proprietary deps.
 - UnifiedPush distributor support is a later issue, not v0.
