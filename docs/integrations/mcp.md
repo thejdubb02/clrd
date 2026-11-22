@@ -65,7 +65,7 @@ Tools:
 | `ntfy_ignored` | none | ntfy publish options senders used that clrd accepts but ignores, with counts. Admin. |
 | `senders` | none | Every service or token that has published, last heard first: kind, webhook template, User-Agent and address, first and last seen, count per topic. Found on its first message. Admin with no topic limit. |
 | `sender` | `id` | One sender from `senders`, with its recent notifications still stored. Admin with no topic limit. |
-| `set_sender` | `id`, `paused`, `muted`, `priority_min`, `priority_max`, `routes` | Pause, mute, clamp the priority of, or reroute one sender's publishes (`routes` like `{"up": ["infra", "ops"]}`). Changes only the fields given; logged. Admin with no topic limit. |
+| `set_sender` | `id`, `paused`, `muted`, `priority_min`, `priority_max`, `routes`, `expect`, `alert_topic` | Pause, mute, clamp the priority of, or reroute one sender's publishes (`routes` like `{"up": ["infra", "ops"]}`), or get an urgent alarm when it sends nothing for `expect` (like `"25h"`). Changes only the fields given; logged. Admin with no topic limit. |
 | `sender_changes` | `id` | Every rule change on one sender, newest first, with who made it. Admin with no topic limit. |
 | `undo_sender_change` | `id`, `seq` | Put a sender's rules back as they were before that change. Admin with no topic limit. |
 

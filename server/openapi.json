@@ -5861,6 +5861,10 @@
      "rules": {
       "$ref": "#/components/schemas/SenderRules"
      },
+     "alarm": {
+      "type": "string",
+      "description": "The topic of the sender's last quiet alarm, until its next publish or a change to expect or alert_topic; absent when there is none."
+     },
      "recent": {
       "type": "array",
       "description": "Only on GET /api/v1/senders/{id}.",
@@ -5893,6 +5897,14 @@
       "minimum": 0,
       "maximum": 5,
       "description": "Lower a higher priority to this; 0 for none."
+     },
+     "expect": {
+      "type": "string",
+      "description": "A duration, 1m to 8784h (like 25h): when the sender sends nothing for this long the server raises an urgent alarm with external_id clrd-quiet-{id}, and its next publish resolves it. Empty or absent is off."
+     },
+     "alert_topic": {
+      "type": "string",
+      "description": "The topic for the quiet alarm. Empty: the first topic the sender's last topic routes to, or that topic itself."
      },
      "routes": {
       "type": "object",
