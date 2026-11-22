@@ -77,12 +77,15 @@ func (t *Token) may(scope, topic string) bool {
 	if len(t.Grants) > 0 {
 		// A grant matches in any case, as ntfy's rules do, so a deny on
 		// "secret" also holds for "SECRET". But topics are case-sensitive, so
-		// a match only in another case can only deny, never allow (#458).
+		// a match only in another case can only deny, never allow: one that
+		// would allow is skipped, so a later grant in the topic's case decides (#458).
 		lt := strings.ToLower(topic)
 		for _, g := range t.Grants {
 			if ok, _ := path.Match(strings.ToLower(g.Topic), lt); ok {
-				exact, _ := path.Match(g.Topic, topic)
-				return exact && slices.Contains(g.Scopes, scope)
+				has := slices.Contains(g.Scopes, scope)
+				if exact, _ := path.Match(g.Topic, topic); exact || !has {
+					return exact && has
+				}
 			}
 		}
 		return false

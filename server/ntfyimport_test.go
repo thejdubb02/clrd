@@ -335,10 +335,10 @@ func TestGrantCase(t *testing.T) {
 		{Topic: "home", Scopes: []string{ScopeRead, ScopePublish}},
 		{Topic: "secret", Scopes: []string{}},
 		{Topic: "ops-*", Scopes: []string{ScopePublish}},
-		{Topic: "*", Scopes: []string{ScopeRead, ScopePublish}},
+		{Topic: "HOME", Scopes: []string{ScopeRead, ScopePublish}},
 	}}
-	for topic, want := range map[string]bool{"home": true, "HOME": false, "Home": false,
-		"secret": false, "SECRET": false, "ops-a": true, "OPS-a": false, "other": true} {
+	for topic, want := range map[string]bool{"home": true, "HOME": true, "Home": false,
+		"secret": false, "SECRET": false, "ops-a": true, "OPS-a": false, "other": false} {
 		if got := tok.may(ScopePublish, topic); got != want {
 			t.Errorf("publish %s: %v, want %v", topic, got, want)
 		}
