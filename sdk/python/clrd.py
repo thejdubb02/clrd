@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 
 __version__ = "0.1.0"
-__all__ = ["Client", "ClrdError", "send", "resolve", "ack", "snooze", "dismiss", "list", "get"]
+__all__ = ["Client", "ClrdError", "send", "resolve", "ack", "snooze", "dismiss", "mark", "unmark", "list", "get"]
 
 _q = urllib.parse.quote
 
@@ -92,6 +92,13 @@ class Client:
     def snooze(self, id, duration="1h"):
         return self._req("POST", f"/api/v1/notifications/{_q(id, safe='')}/snooze", {"for": duration})
 
+    def mark(self, id, mark, note="", link=""):
+        """Your mark, "seen" or "actioned". Everyone who reads the topic sees it; it clears nothing."""
+        return self._req("POST", f"/api/v1/notifications/{_q(id, safe='')}/mark", {"mark": mark, "note": note, "link": link})
+
+    def unmark(self, id):
+        return self._req("DELETE", f"/api/v1/notifications/{_q(id, safe='')}/mark")
+
     def get(self, id):
         return self._req("GET", f"/api/v1/notifications/{_q(id, safe='')}")
 
@@ -122,6 +129,8 @@ def resolve(*a, **kw): return _client().resolve(*a, **kw)
 def ack(*a, **kw): return _client().ack(*a, **kw)
 def dismiss(*a, **kw): return _client().dismiss(*a, **kw)
 def snooze(*a, **kw): return _client().snooze(*a, **kw)
+def mark(*a, **kw): return _client().mark(*a, **kw)
+def unmark(*a, **kw): return _client().unmark(*a, **kw)
 def get(*a, **kw): return _client().get(*a, **kw)
 def list(*a, **kw): return _client().list(*a, **kw)  # noqa: A001 (shadows builtin by design: clrd.list)
 
@@ -144,6 +153,11 @@ def main(argv=None):
     z = sub.add_parser("snooze", help="snooze by server id")
     z.add_argument("id")
     z.add_argument("duration", nargs="?", default="1h")
+    m = sub.add_parser("mark", help="mark by server id: seen or actioned, or none to remove yours")
+    m.add_argument("id")
+    m.add_argument("mark", choices=("seen", "actioned", "none"))
+    m.add_argument("--note", default="")
+    m.add_argument("--link", default="")
     ls = sub.add_parser("list", help="list notifications")
     ls.add_argument("topic", nargs="?")
     ls.add_argument("--state", default="open")
@@ -158,6 +172,8 @@ def main(argv=None):
             out = c.dismiss(a.id)
         elif a.cmd == "snooze":
             out = c.snooze(a.id, a.duration)
+        elif a.cmd == "mark":
+            out = c.unmark(a.id) if a.mark == "none" else c.mark(a.id, a.mark, a.note, a.link)
         else:
             out = c.list(a.topic, a.state)
     except (ClrdError, urllib.error.URLError) as e:

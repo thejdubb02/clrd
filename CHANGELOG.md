@@ -155,6 +155,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Marks: anyone who can read a topic, a person or an agent with its own token, can mark a notification seen, or actioned with a note and a link. A mark never clears or hides it; everyone on the topic sees who marked it on the card in the web inbox and the Android app, for example "stew actioned: filed relay#512". API `POST`/`DELETE /api/v1/notifications/{id}/mark`, MCP `mark`, and `mark`/`unmark` in the Go, JS and Python SDKs.
+
 - Server: ntfy's `http` and `broadcast` action buttons. An admin turns them on per topic with `device_actions` (API and MCP `set_topic`, off by default); the server stores them and passes them to ntfy apps. clrd's own app and web inbox do not run them yet (#401).
 
 - Server: live-only messages. ntfy's `Cache: no`, or `"live": true` on the API and MCP `send`, goes to the ntfy streams open now and is stored nowhere (#400).

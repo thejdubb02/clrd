@@ -568,6 +568,120 @@
     ]
    }
   },
+  "/api/v1/notifications/{id}/mark": {
+   "post": {
+    "summary": "Mark seen or actioned",
+    "tags": [
+     "notifications"
+    ],
+    "description": "Sets the caller's mark, so everyone who reads the topic sees who saw or dealt with it. Needs read scope on the topic. It changes no state and clears nothing. One mark per author (the person a token belongs to, else the token): setting it again replaces it. No alert, and not sent to ntfy clients.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "mark"
+        ],
+        "properties": {
+         "mark": {
+          "type": "string",
+          "enum": [
+           "seen",
+           "actioned"
+          ]
+         },
+         "note": {
+          "type": "string",
+          "maxLength": 200,
+          "example": "filed relay#512"
+         },
+         "link": {
+          "type": "string",
+          "description": "http(s) URL, at most 2048 characters"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "summary": "Remove your mark",
+    "tags": [
+     "notifications"
+    ],
+    "description": "Removes only the caller's own mark. Needs read scope on the topic.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/notifications/{id}/reply": {
    "post": {
     "summary": "Answer with a reply action",
@@ -5463,6 +5577,38 @@
          "null"
         ],
         "format": "date-time"
+       }
+      }
+     },
+     "marks": {
+      "type": "array",
+      "description": "Who saw or acted on it, one per author. Never changes the state. Always present, [] for none.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "by": {
+         "type": "string"
+        },
+        "by_id": {
+         "type": "string"
+        },
+        "mark": {
+         "type": "string",
+         "enum": [
+          "seen",
+          "actioned"
+         ]
+        },
+        "note": {
+         "type": "string"
+        },
+        "link": {
+         "type": "string"
+        },
+        "at": {
+         "type": "string",
+         "format": "date-time"
+        }
        }
       }
      },

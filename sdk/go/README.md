@@ -16,6 +16,7 @@ c.Resolve(ctx, "infra", "disk-build") // clears it on every device
 n, _ := c.Send(ctx, clrd.Message{Topic: "deploys", Message: "Ship v2?"})
 c.AckID(ctx, n.ID)
 c.Snooze(ctx, n.ID, "1h")
+c.Mark(ctx, n.ID, "actioned", "filed #5", "") // others see it; it clears nothing
 c.List(ctx, "infra", "open")
 ```
 

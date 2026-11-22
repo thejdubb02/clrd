@@ -652,6 +652,7 @@ private fun meta(ctx: Context, n: Notif): String {
         Notif.DISMISSED -> parts += ctx.getString(R.string.cleared_on, by)
         Notif.RESOLVED -> parts += ctx.getString(R.string.state_resolved)
     }
+    parts += n.markLines
     return parts.joinToString("  ·  ")
 }
 

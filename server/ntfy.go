@@ -684,6 +684,9 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				if !e.Notification.Live { // a live one is not in the log: a retry must not skip from it
 					since = seq
 				}
+				if e.Type == EventMark { // ntfy has no marks; sending it again would alert again
+					return nil
+				}
 				if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
 					return nil
 				}

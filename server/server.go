@@ -712,6 +712,29 @@ func (s *Server) routesSetup() {
 		writeJSON(w, code, n)
 		return nil
 	})
+	s.api("POST /api/v1/notifications/{id}/mark", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		var in struct{ Mark, Note, Link string }
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if in.Mark == "" {
+			return errf(400, "bad_request", "mark must be seen or actioned")
+		}
+		n, err := s.SetMark(r.Context(), tok, r.PathValue("id"), in.Mark, in.Note, in.Link)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, n)
+		return nil
+	})
+	s.api("DELETE /api/v1/notifications/{id}/mark", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		n, err := s.SetMark(r.Context(), tok, r.PathValue("id"), "", "", "")
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, n)
+		return nil
+	})
 	s.api("POST /api/v1/notifications/clear", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
 			Topic string   `json:"topic"`

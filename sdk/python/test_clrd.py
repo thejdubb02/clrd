@@ -32,7 +32,7 @@ class Fake(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(out).encode())
 
-    do_GET = do_POST = _do
+    do_GET = do_POST = do_DELETE = _do
 
     def log_message(self, *_):
         pass
@@ -77,6 +77,12 @@ class T(unittest.TestCase):
         self.assertEqual(clrd.list("infra"), {"notifications": [{"id": "01J", "state": "active"}]})
         self.assertEqual(self.last()[:2], ("GET", "/api/v1/notifications?state=open&topic=infra"))
 
+    def test_mark_unmark(self):
+        clrd.mark("01J", "actioned", note="filed #5")
+        self.assertEqual(self.last()[:3], ("POST", "/api/v1/notifications/01J/mark", {"mark": "actioned", "note": "filed #5", "link": ""}))
+        clrd.unmark("01J")
+        self.assertEqual(self.last()[:2], ("DELETE", "/api/v1/notifications/01J/mark"))
+
     def test_no_default_server(self):
         with unittest.mock.patch.dict("os.environ", {"CLRD_URL": ""}), \
                 self.assertRaisesRegex(clrd.ClrdError, "set CLRD_URL"):
@@ -105,6 +111,12 @@ class T(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             clrd.main(["resolve", "infra", "k"])
         self.assertEqual(self.last()[:2], ("POST", "/infra/k/resolve"))
+        with contextlib.redirect_stdout(io.StringIO()):
+            clrd.main(["mark", "01J", "actioned", "--note", "filed #5"])
+        self.assertEqual(self.last()[:3], ("POST", "/api/v1/notifications/01J/mark", {"mark": "actioned", "note": "filed #5", "link": ""}))
+        with contextlib.redirect_stdout(io.StringIO()):
+            clrd.main(["mark", "01J", "none"])
+        self.assertEqual(self.last()[:2], ("DELETE", "/api/v1/notifications/01J/mark"))
         os.environ["CLRD_URL"] = self.url + "/missing"
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(clrd.main(["resolve", "infra", "k"]), 1)

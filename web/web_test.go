@@ -296,6 +296,24 @@ func TestHostileNotification(t *testing.T) {
 	}
 }
 
+// A card shows who marked it, and a mark never hides it (card marks).
+func TestMarks(t *testing.T) {
+	n := Notification{ID: "m1", Topic: "triage", Title: "disk", State: "active", CreatedAt: time.Now(), Marks: []Mark{
+		{By: "stew", Mark: "actioned", Note: "filed relay#512", Link: "https://github.com/x/relay/issues/512"},
+		{By: "Ann", Mark: "seen"},
+		{By: "eve", Mark: "actioned", Link: "javascript:alert(1)"},
+	}}
+	_, body := get(t, Handler(one{n: n}, ""), "/app")
+	for _, want := range []string{`data-mark="actioned">stew actioned: filed relay#512 <a class="underline" href="https://github.com/x/relay/issues/512"`, `data-mark="seen">Ann seen</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `href="javascript:`) {
+		t.Error("a mark link rendered a script URL")
+	}
+}
+
 type formatted struct{ one }
 
 func (f formatted) Snapshot(r *http.Request, q Query) (Snapshot, error) {

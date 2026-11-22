@@ -73,9 +73,19 @@ type Notification struct {
 	Reply       string      `json:"reply"` // the reply action tapped, "" until someone answers
 	SnoozeUntil *time.Time  `json:"snooze_until"`
 	Repeat      *Repeat     `json:"repeat"` // re-alert until answered (docs/repeat.md), or nil
+	Marks       []Mark      `json:"marks"`  // who saw or dealt with it (docs/SPEC.md section 2)
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Seq         int64       `json:"seq"`
+}
+
+// Mark is one reader's note that they saw or actioned a notification. It
+// never changes the state.
+type Mark struct {
+	By   string `json:"by"`
+	Mark string `json:"mark"` // seen or actioned
+	Note string `json:"note"`
+	Link string `json:"link"`
 }
 
 // Repeat is how often a notification has alerted again, and when it will

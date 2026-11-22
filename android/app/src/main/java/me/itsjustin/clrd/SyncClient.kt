@@ -183,6 +183,19 @@ class SyncClient(
                     store.apply(listOf(n), seq, again = o.optString("type") == "repeat") // a missed repeat in a replay does not ring
                 }
             }
+            "mark" -> { // someone saw or actioned it: the card updates quietly and a card hidden on this phone stays hidden
+                val n = Notif.fromJson(o.getJSONObject("notification"))
+                val seq = o.optLong("seq", n.seq)
+                if (replaying && n.id in buffer) {
+                    buffer[n.id] = n // the earlier event in this replay still decides whether it rings
+                    bufferSeq = maxOf(bufferSeq, seq)
+                } else if (replaying) {
+                    store.apply(listOf(n), 0, quiet = true) // 0: the cursor moves with the buffer, not past it
+                    bufferSeq = maxOf(bufferSeq, seq)
+                } else {
+                    store.apply(listOf(n), seq, quiet = true)
+                }
+            }
             "ready" -> {
                 // Checked before anything replayed is trusted: another epoch means the seq numbers
                 // belong to another database, which is handled exactly like `reset`.

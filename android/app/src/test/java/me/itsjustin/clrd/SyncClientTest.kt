@@ -162,6 +162,22 @@ class SyncClientTest {
         assertEquals(listOf(false, true), store.again.toList()) // only the repeat rings while it is showing
     }
 
+    @Test fun aMarkUpdatesTheCardQuietly() { // card marks: someone else saw or actioned it, nothing rings
+        val mark = """"marks":[{"by":"stew","mark":"actioned","note":"filed relay#512"}],"seq":6}"""
+        onConnect = { _, ws ->
+            ws.send(ev(5, "z", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":5}}", "$mark}")) // only a mark in the replay
+            ws.send("""{"type":"ready","seq":6}""")
+            ws.send(ev(7, "y", "active"))
+            ws.send(ev(8, "y", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":8}}", mark.replace(":6", ":8") + "}"))
+        }
+        start()
+        await { store.rows["y"]?.seq == 8L }
+        assertEquals(listOf("stew actioned: filed relay#512"), store.rows["z"]!!.markLines)
+        assertEquals(listOf("stew actioned: filed relay#512"), store.rows["y"]!!.markLines)
+        assertEquals(listOf(true, false, false, true), store.quiet.toList()) // mark z, the empty replay save, y created, mark y
+        assertEquals(8L, store.lastSeq())
+    }
+
     @Test fun reconnectAsksForEventsSinceLastSeq() {
         onConnect = { n, ws ->
             if (n == 1) {

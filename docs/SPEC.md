@@ -56,9 +56,23 @@ A **notification**:
   "updated_at": "2026-11-19T05:00:00Z",
   "seq": 48211,                // seq of the last event that touched it
   "silenced": false,           // a silence matched when that event was written: show, do not alert
-  "repeat": null               // or {"every": "5m", "left": 8, "count": 2, "next": "<RFC3339>" or null}
+  "repeat": null,              // or {"every": "5m", "left": 8, "count": 2, "next": "<RFC3339>" or null}
+  "marks": []                  // who saw or actioned it, below; never null
 }
 ```
+
+**Marks:** anyone who may read a topic (a person, or an agent with its own
+token) can mark one of its notifications `seen`, or `actioned` with an
+optional `note` (at most 200 characters) and `link` (http or https), with
+`POST /api/v1/notifications/{id}/mark`. Each mark is
+`{"by":"stew","by_id":"...","mark":"actioned","note":"filed relay#512","link":"https://...","at":"<RFC3339>"}`.
+A mark never changes the state, so it clears and hides nothing for anyone;
+everyone who reads the topic sees it on the card. There is one mark per
+author: a token attached to a person marks as that person (`by_id` is the
+person's id), any other token as the token its device tree starts from.
+Setting it again replaces it; only the author changes or removes it. A mark
+writes a `mark` event (section 3) and moves `updated_at`. A publish that
+updates the row by `external_id` keeps its marks.
 
 **Emoji (#306):** `title` and `message` are sent with common GitHub and
 Slack shortcodes shown as the emoji (`:warning:` becomes ⚠️), and a tag that
@@ -312,8 +326,9 @@ the row change):
 {"seq": 48212, "type": "state", "notification": { ...full notification... }}
 ```
 
-`type` is `created`, `updated`, `state` or `repeat` (section 2). Clients
-ignore types they do not know. A `state` event also carries `"via"`, how
+`type` is `created`, `updated`, `state`, `repeat` or `mark` (section 2).
+A `mark` event never alerts: clients update the card quietly, and the ntfy
+stream and hooks leave it out. Clients ignore types they do not know. A `state` event also carries `"via"`, how
 the change was made (section 5), when the server knows it. Clients only
 need the full
 notification in the event; they never merge diffs.
@@ -560,6 +575,8 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
 | POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`: answer with one of its reply actions (section 2). 400 if not one of them, 409 if already answered or final, 403 `approve_denied` from a device not allowed to approve, 403 `own_request` from the token tree that sent it, 202 with a confirm prompt from an ask device (section 4). |
 | POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. |
+| POST | `/api/v1/notifications/{id}/mark` | Body `{"mark":"seen"\|"actioned","note"?,"link"?}`: set your mark (section 2). Scope read on its topic. Changes no state. |
+| DELETE | `/api/v1/notifications/{id}/mark` | Remove your own mark. |
 | POST | `/api/v1/notifications/{id}/dismiss` | User clears it. |
 | POST | `/api/v1/notifications/{id}/resolve` | Sender clears it. |
 | POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). |
@@ -746,6 +763,7 @@ Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, a
 check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
+`mark(id, mark?, note?, link?)` (no `mark` removes yours),
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,
 dismissed or an action is tapped; returns which, so an agent can ask a human
 "yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one

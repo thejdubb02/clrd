@@ -365,6 +365,15 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		return h.api(r, "PATCH", "/api/v1/notifications/"+id, map[string]any{"message": str(a, "message")})
+	case "mark":
+		if err := need("id"); err != nil {
+			return nil, err
+		}
+		if str(a, "mark") == "" {
+			return h.api(r, "DELETE", "/api/v1/notifications/"+id+"/mark", nil)
+		}
+		return h.api(r, "POST", "/api/v1/notifications/"+id+"/mark",
+			map[string]any{"mark": str(a, "mark"), "note": str(a, "note"), "link": str(a, "link")})
 	case "ack":
 		if err := need("id"); err != nil {
 			return nil, err
@@ -543,6 +552,9 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
 	{"name": "update", "description": "Replace the message of an open notification, keeping its id and state. Use it for progress (step 3 of 10) instead of sending a new one each time.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "message": p("string", "New body text")}, "id", "message")},
+	{"name": "mark", "description": "Mark a notification seen, or actioned with a short note and link, so everyone who reads the topic sees you already dealt with it. It does not clear or change it for anyone. Marking again replaces your mark; no mark removes it.",
+		"inputSchema": schema(map[string]any{"id": p("string", "Server id"), "mark": p("string", "seen or actioned; leave out to remove your mark"),
+			"note": p("string", "Optional, at most 200 characters, e.g. filed relay#512"), "link": p("string", "Optional http(s) URL, e.g. the issue you filed")}, "id")},
 	{"name": "ack", "description": "Acknowledge a notification by its server id.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
 	{"name": "resolve", "description": "Resolve (sender clears) a notification by server id, or by topic plus external_id. Clears it from every device.",

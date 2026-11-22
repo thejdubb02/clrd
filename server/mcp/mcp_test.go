@@ -154,7 +154,7 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,request_approve,"+
+	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,mark,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,preview_template,"+
 		"hooks,set_hook,delete_hook,hook_deliveries,tokens,create_token,revoke_token,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,ntfy_ignored" {
 		t.Fatalf("tools: %v", names)
@@ -186,6 +186,8 @@ func TestTools(t *testing.T) {
 			"POST /api/v1/notifications", map[string]any{"attachment": map[string]any{"name": "r.pdf", "url": "https://x.test/r.pdf"}, "icon": "https://x.test/i.png", "message": "m", "reopen": true, "topic": "infra"}},
 		{"list", map[string]any{"topic": "infra"}, "GET /api/v1/notifications?state=open&topic=infra", nil},
 		{"list", map[string]any{"state": "all"}, "GET /api/v1/notifications?state=all", nil},
+		{"mark", map[string]any{"id": "01J", "mark": "actioned", "note": "filed relay#512"}, "POST /api/v1/notifications/01J/mark", map[string]any{"link": "", "mark": "actioned", "note": "filed relay#512"}},
+		{"mark", map[string]any{"id": "01J"}, "DELETE /api/v1/notifications/01J/mark", nil},
 		{"ack", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/ack", map[string]any{"via": "mcp"}},
 		{"resolve", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/resolve", map[string]any{"via": "mcp"}},
 		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", map[string]any{"via": "mcp"}},
@@ -234,7 +236,7 @@ func TestTools(t *testing.T) {
 func TestMissingArgsAreToolErrors(t *testing.T) {
 	h := New(&fakeAPI{})
 	for tool, args := range map[string]map[string]any{
-		"send": {"topic": "infra"}, "ack": {}, "resolve": {"topic": "infra"}, "snooze": {"id": "01J"}, "wait_for_reply": {}, "unlink": {}, "bogus": {},
+		"send": {"topic": "infra"}, "ack": {}, "mark": {"mark": "seen"}, "resolve": {"topic": "infra"}, "snooze": {"id": "01J"}, "wait_for_reply": {}, "unlink": {}, "bogus": {},
 	} {
 		if _, isErr := callTool(t, h, tool, args); !isErr {
 			t.Errorf("%s: want isError", tool)
