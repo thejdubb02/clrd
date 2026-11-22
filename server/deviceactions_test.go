@@ -132,6 +132,19 @@ func TestNtfyShortActions(t *testing.T) {
 	if len(as) != 1 || as[0].Label != "Close door" || as[0].HTTP.URL != "https://example.com/c" || as[0].HTTP.Body != "a,b" {
 		t.Fatalf("named then positional: %+v", as)
 	}
+	// #446: \" inside quotes is a quote, and quoted spaces stay; unquoted ones go.
+	as, _ = ntfyActions(`http, " Open " , https://example.com/o, body="a\",b" , headers.X = ' v ', method= POST `)
+	if h := as[0].HTTP; len(as) != 1 || as[0].Label != " Open " || h.Body != `a",b` || h.Headers["X"] != " v " || h.Method != "POST" {
+		t.Fatalf("escaped quote and quoted spaces: %+v %+v", as, as[0].HTTP)
+	}
+	if as, _ = ntfyActions(`view, 'it\'s', https://example.com, clear=\x`); as[0].Label != "it's" {
+		t.Fatalf("escaped single quote: %+v", as)
+	}
+	// Only the first "=" is the key's; a value or label may hold more.
+	as, _ = ntfyActions(`http, "Show x=y", https://example.com/q?a=b, body=t= v`)
+	if len(as) != 1 || as[0].Label != "Show x=y" || as[0].HTTP.URL != "https://example.com/q?a=b" || as[0].HTTP.Body != "t= v" {
+		t.Fatalf("= inside values: %+v", as)
+	}
 	if _, err := ntfyActions(`http, X, https://example.com, body='open`); err == nil {
 		t.Fatal("unclosed quote: want an error")
 	}

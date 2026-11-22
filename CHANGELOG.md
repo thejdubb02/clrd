@@ -69,6 +69,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- ntfy: the short form of `X-Actions` reads `\"` inside a quoted value as a
+  quote, and keeps spaces inside quotes, as ntfy does. Before, `body="a\",b"`
+  split at the comma and `' a '` lost its spaces (#446).
 - Android: Undo after Clear puts a snoozed message back in Snoozed until its
   old time, instead of in the Inbox. Offline, an Ack queued before a stack's
   Clear no longer splits that Clear into one request per message (#425).

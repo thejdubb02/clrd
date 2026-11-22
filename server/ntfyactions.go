@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"strings"
+	"unicode"
 )
 
 // ntfy's action buttons (#401): view, http and broadcast map onto Action;
@@ -86,24 +87,37 @@ func ntfyActions(v string) ([]Action, error) {
 
 // ntfySplitActions splits the short form into actions (";") of fields (",").
 // A quote opens only at the start of a field or right after "=", so a label
-// like Don't stays as written.
+// like Don't stays as written. Inside quotes, spaces stay and \" (or \')
+// is the quote itself (#446); outside, spaces around a value are dropped.
 func ntfySplitActions(v string) ([][]string, error) {
 	var acts [][]string
 	var fields []string
 	var b strings.Builder
 	var q rune
-	field := func() { fields = append(fields, strings.TrimSpace(b.String())); b.Reset() }
-	for _, c := range v {
-		switch cur := b.String(); {
+	keep := 0 // b up to here ends in quoted text, whose spaces stay
+	field := func() {
+		s := b.String()
+		fields = append(fields, s[:keep]+strings.TrimRightFunc(s[keep:], unicode.IsSpace))
+		b.Reset()
+		keep = 0
+	}
+	rs := []rune(v)
+	for i := 0; i < len(rs); i++ {
+		c := rs[i]
+		cur := b.String()
+		key := strings.Count(cur, "=") == 1 && strings.HasSuffix(strings.TrimSpace(cur), "=") // just past key=
+		switch {
+		case q != 0 && c == '\\' && i+1 < len(rs) && rs[i+1] == q:
+			b.WriteRune(q)
+			i++
 		case q != 0 && c == q:
-			q = 0
+			q, keep = 0, b.Len()
 		case q != 0:
 			b.WriteRune(c)
-		case (c == '\'' || c == '"') && (strings.TrimSpace(cur) == "" || strings.HasSuffix(strings.TrimSpace(cur), "=")):
+		case unicode.IsSpace(c) && (keep > 0 && b.Len() == keep || cur == "" || key && strings.HasSuffix(cur, "=")):
+			// before a value or after a closing quote
+		case (c == '\'' || c == '"') && (cur == "" || key):
 			q = c
-			if strings.TrimSpace(cur) == "" {
-				b.Reset()
-			}
 		case c == ',':
 			field()
 		case c == ';':
@@ -128,7 +142,7 @@ func ntfyShortAction(fields []string) ntfyAction {
 	keys := map[string]*string{"action": &a.Action, "label": &a.Label, "url": &a.URL, "method": &a.Method, "body": &a.Body, "intent": &a.Intent}
 	for i, f := range fields {
 		rawK, v, eq := strings.Cut(f, "=")
-		rawK, v = strings.TrimSpace(rawK), strings.TrimSpace(v)
+		rawK = strings.TrimSpace(rawK) // the splitter trimmed v, but not inside quotes
 		k := strings.ToLower(rawK)
 		switch {
 		case eq && keys[k] != nil:
@@ -139,7 +153,8 @@ func ntfyShortAction(fields []string) ntfyAction {
 			a.Headers = setKey(a.Headers, rawK[len("headers."):], v)
 		case eq && strings.HasPrefix(k, "extras.") && len(k) > len("extras."):
 			a.Extras = setKey(a.Extras, rawK[len("extras."):], v)
-		case !eq && i < len(pos):
+		case i < len(pos): // no key, or not one ntfy knows: "Show x=y", https://x?a=b
+
 			*pos[i] = f
 		}
 	}
