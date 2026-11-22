@@ -114,9 +114,13 @@ func TestGotifyImport(t *testing.T) {
 		t.Fatalf("signed key: %d", code)
 	}
 	fresh := sign(time.Now().Unix())
+	// Change a character inside the signature, where all 6 bits count, to a
+	// different one; the last ones carry pad bits, so editing them can be a no-op (#445).
+	i := len(fresh) - 10
+	mangled := fresh[:i] + map[bool]string{true: "B", false: "A"}[fresh[i] == 'A'] + fresh[i+1:]
 	// The stored form is not a key, nor is a mangled, stale or forged one.
 	for _, k := range []string{gotifyStored3, gotifyKey3 + "x", "gtfya." + strings.Repeat("A", 43) + ".x", "gtfy",
-		sign(time.Now().Unix() - 20*60), fresh[:len(fresh)-2] + "AA", strings.Replace(fresh, ".", ".1", 2)} {
+		sign(time.Now().Unix() - 20*60), mangled, strings.Replace(fresh, ".", ".1", 2)} {
 		if code, _ := post(k); code != 401 {
 			t.Fatalf("key %q: %d", k, code)
 		}
