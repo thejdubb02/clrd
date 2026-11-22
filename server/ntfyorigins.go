@@ -119,11 +119,16 @@ func (s *Server) ntfyOriginRoutes() {
 			}
 		}
 		raw, _ := json.Marshal(list)
-		if _, err := s.db.ExecContext(r.Context(), `INSERT INTO settings (key, value) VALUES ('ntfy_origins', ?)
-			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(raw)); err != nil {
+		s.mu.Lock() // two saves must store in the order they wrote
+		_, err := s.db.ExecContext(r.Context(), `INSERT INTO settings (key, value) VALUES ('ntfy_origins', ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(raw))
+		if err == nil {
+			s.origins.Store(&list)
+		}
+		s.mu.Unlock()
+		if err != nil {
 			return err
 		}
-		s.origins.Store(&list)
 		return get(w, r)
 	})
 }
