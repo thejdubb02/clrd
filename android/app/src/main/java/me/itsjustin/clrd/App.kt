@@ -189,7 +189,7 @@ class App : Application() {
         val topics = k.optJSONObject("topics") ?: org.json.JSONObject()
         val own = topics.keys().asSequence().toList()
         val dao = db.dao()
-        if (dropCleared) return dao.prune(Long.MAX_VALUE, emptyList()) // every cleared row, whatever its time or topic
+        if (dropCleared) return dao.dropCleared()
         dao.prune(before(k.optInt("days", KEEP_DAYS)), own)
         own.forEach { dao.pruneTopic(it, before(topics.optInt(it, KEEP_DAYS))) }
     }

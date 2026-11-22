@@ -469,7 +469,8 @@ private fun ServerCleared(app: App, here: Int, newest: String?) {
         app.io.execute { runCatching { org.json.JSONObject(api.get("/api/v1/counts")).getInt("cleared") }.getOrNull()?.let { total = it } }
     }
     if (total > here) Text(
-        pluralStringResource(R.plurals.cleared_on_server, total, total, App.KEEP_DAYS),
+        if (app.dropCleared) pluralStringResource(R.plurals.cleared_on_server_dropped, total, total)
+        else pluralStringResource(R.plurals.cleared_on_server, total, total, App.KEEP_DAYS),
         color = b.slate, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp),
     )
 }

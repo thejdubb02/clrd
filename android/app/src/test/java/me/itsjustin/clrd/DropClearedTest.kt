@@ -16,12 +16,13 @@ import org.robolectric.annotation.Config
 class DropClearedTest {
     private val app = ApplicationProvider.getApplicationContext<App>()
     private val dao get() = app.db.dao()
-    private fun row(id: String, state: String, at: Long) = Notif(id, "t", "T", "m", 3, "", null, "[]", state, null, null, at, at, 1)
+    private fun row(id: String, state: String, at: Long, seq: Long = 1) = Notif(id, "t", "T", "m", 3, "", null, "[]", state, null, null, at, at, seq)
 
     @After fun tearDown() { app.dropCleared = false }
 
     @Test fun offKeepsRecentHistoryOnKeepsNone() {
         val now = System.currentTimeMillis()
+        dao.putMeta(Meta("seq", 3))
         listOf(row("a", Notif.DISMISSED, now), row("b", Notif.RESOLVED, now + 60_000), row("c", Notif.ACTIVE, now)).forEach(dao::put)
         app.pruneCleared(now)
         assertNotNull(dao.get("a")) // off by default: a fresh clear stays in the Cleared tab
@@ -30,5 +31,23 @@ class DropClearedTest {
         assertNull(dao.get("a"))
         assertNull(dao.get("b")) // even one stamped ahead of this phone's clock
         assertEquals(Notif.ACTIVE, dao.get("c")?.state)
+    }
+
+    @Test fun keptUntilSafeToForget() {
+        val now = System.currentTimeMillis()
+        app.dropCleared = true
+        dao.putMeta(Meta("seq", 3))
+        dao.put(row("ahead", Notif.DISMISSED, now, seq = 5)) // a clear the stream has not caught up to: its seq still guards it
+        app.pruneCleared(now)
+        assertNotNull(dao.get("ahead"))
+        dao.put(row("queued", Notif.DISMISSED, now))
+        dao.addPending(Pending(notifId = "queued", action = "dismiss")) // offline: an Undo must still find it
+        app.pruneCleared(now)
+        assertNotNull(dao.get("queued"))
+        dao.clearPending()
+        dao.putMeta(Meta("seq", 5))
+        app.pruneCleared(now)
+        assertNull(dao.get("queued"))
+        assertNull(dao.get("ahead"))
     }
 }
