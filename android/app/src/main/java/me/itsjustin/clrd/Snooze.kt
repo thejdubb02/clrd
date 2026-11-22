@@ -45,6 +45,22 @@ fun goMillis(v: String): Long? {
     return part.findAll(v).sumOf { it.groupValues[1].toDouble() * unit.getValue(it.groupValues[2]) }.toLong()
 }
 
+/** Phone-clock end of a queued snooze, kept in its body and never sent (#508). */
+const val ENDS = "ends_local"
+
+/**
+ * A queued snooze as sent: "for" is what is left of it now (#508), so one sent late ends when the phone
+ * showed. Relative, so a phone clock that is off cannot make the server refuse it. One that ran out
+ * while offline still goes as 1s, so it stops a repeating alert as the tap did.
+ */
+fun snoozeWire(body: String, now: Long = System.currentTimeMillis()): String {
+    val o = runCatching { JSONObject(body) }.getOrNull() ?: return body
+    if (!o.has(ENDS)) return body
+    val left = (o.optLong(ENDS) - now).coerceAtLeast(1000)
+    o.remove(ENDS)
+    return o.put("for", "${left}ms").toString()
+}
+
 /** When a snooze or reopen action body ends, in epoch ms, or null when it has no future time this reads (#473). */
 fun snoozeEnd(body: JSONObject, now: Long = System.currentTimeMillis()): Long? {
     val t = body.optString("until").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }

@@ -275,8 +275,8 @@ class App : Application() {
     private fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
         val json = JSONObject(rawBody)
         val until = if (action == "snooze" || action == "reopen") snoozeEnd(json) else null
-        // #508: a snooze is sent as the time shown here, so one sent late (offline) ends when this phone and its Undo say
-        if (action == "snooze" && until != null) json.remove("for")?.let { json.put("until", java.time.Instant.ofEpochMilli(until).toString()) }
+        // #508: a snooze sent late (offline) ends when this phone and its Undo say; see snoozeWire
+        if (action == "snooze" && until != null) json.put(ENDS, until)
         val body = json.put("via", via).toString()
         val gen = configGen // read now, not when the save runs
         acts.execute {

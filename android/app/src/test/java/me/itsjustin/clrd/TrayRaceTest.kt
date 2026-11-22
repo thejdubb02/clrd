@@ -74,9 +74,12 @@ class TrayRaceTest {
         val got = bg { dao.get("a") }!!
         assertEquals(Notif.SNOOZED, got.state)
         assertTrue(got.snoozeUntil!! in before + 5_400_000..System.currentTimeMillis() + 5_400_000)
-        val sent = JSONObject(bg { dao.pending() }.single().body) // #508: a late send ends at the time shown, not later
-        assertEquals(java.time.Instant.ofEpochMilli(got.snoozeUntil!!).toString(), sent.getString("until"))
-        assertTrue(!sent.has("for"))
+        val queued = bg { dao.pending() }.single().body // #508: a late send ends at the time shown, not later
+        val late = got.snoozeUntil!! - 600_000 // sent 80 minutes after the tap
+        val sent = JSONObject(snoozeWire(queued, late))
+        assertEquals("600000ms", sent.getString("for"))
+        assertTrue(!sent.has(ENDS)) // the server never sees the phone's clock
+        assertEquals("1000ms", JSONObject(snoozeWire(queued, got.snoozeUntil!! + 1)).getString("for")) // ran out offline: still stops a repeat
     }
 
     @Test fun anyServerDurationShowsItsTime() { // #508: not only whole h, m and s

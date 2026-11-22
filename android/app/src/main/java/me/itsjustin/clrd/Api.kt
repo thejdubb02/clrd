@@ -40,7 +40,7 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
 
     fun delete(path: String): String = call(req(path).delete())
 
-    fun action(p: Pending) = post("/api/v1/notifications/${p.notifId}/${p.action}", p.body)
+    fun action(p: Pending) = post("/api/v1/notifications/${p.notifId}/${p.action}", snoozeWire(p.body))
 
     /**
      * Every open row plus the seq to resume the WebSocket from (docs/SPEC.md section 5).
