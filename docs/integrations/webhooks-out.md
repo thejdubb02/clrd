@@ -79,6 +79,19 @@ delivery log shows why; fix the template and the waiting retries use it. The
 signature covers the body as sent. Leave `body` empty to send the event.
 The web inbox form has no body field yet; saving there keeps the saved one.
 
+Try a template before saving it. This sends nothing and returns what a
+delivery would POST as a string, exactly as sent, or the error it would log:
+
+```sh
+curl -X POST https://clrd.example.com/api/v1/topics/alerts/hooks/preview \
+  -H "Authorization: Bearer clrd_..." -H "Content-Type: application/json" \
+  -d '{"body": "{\"text\": {{json .notification.title}}}"}'
+```
+
+Without `event` it uses a sample resolved notification on the topic; pass an
+event shaped like the one above to try your own. Agents use the MCP tool
+`preview_hook`.
+
 ## Retries and turning off
 
 Any 2xx answer is a success. Anything else, a redirect or no answer within 10

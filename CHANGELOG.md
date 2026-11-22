@@ -213,6 +213,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: try an outgoing webhook body template before saving it. The API
+  and the MCP `preview_hook` tool return the JSON a delivery would send, or
+  its error, and send nothing (#241).
 - Server: an outgoing webhook can have its own body template, so Slack,
   Discord and other receivers get the JSON shape they want; agents set it
   through the API or the MCP `set_hook` tool (#239).

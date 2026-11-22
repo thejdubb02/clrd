@@ -454,6 +454,38 @@ func (s *Server) hookOutRoutes() {
 		writeJSON(w, 200, map[string]bool{"deleted": true})
 		return nil
 	})
+	// preview: what a body template renders for an event, sent nowhere (#241).
+	s.api("POST /api/v1/topics/{topic}/hooks/preview", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		topic := r.PathValue("topic")
+		if err := hookOwner(tok, topic, ""); err != nil {
+			return err
+		}
+		var in struct {
+			Body  string          `json:"body"`
+			Event json.RawMessage `json:"event"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if in.Body == "" {
+			return errf(400, "bad_request", "body is required: the template to try")
+		}
+		ev := string(in.Event)
+		if ev == "" {
+			now := time.Now().UTC()
+			b, _ := json.Marshal(Event{Seq: 1, Type: "state", Notification: &Notification{
+				ID: "01JD3K8W2Q6V9X0YB4N5M7P1RS", Topic: topic, ExternalID: "issue-42", Title: "Disk full",
+				Message: "Disk full on backup", Format: FormatText, Priority: 3, Tags: []string{}, Actions: []Action{},
+				State: "resolved", StateBy: "pixel-9", CreatedAt: now, UpdatedAt: now, Seq: 1}})
+			ev = string(b)
+		}
+		out, err := renderHookBody(in.Body, ev)
+		if err != nil {
+			return errf(400, "bad_request", "%v", err)
+		}
+		writeJSON(w, 200, map[string]string{"body": out}) // a string: the exact bytes sent
+		return nil
+	})
 	s.api("GET /api/v1/topics/{topic}/hooks/{name}/deliveries", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		topic, name := r.PathValue("topic"), r.PathValue("name")
 		if err := validTopic(topic); err != nil {

@@ -140,6 +140,7 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 
 	ok("set_hook", map[string]any{"topic": "ops", "name": "audit", "url": "https://example.com/h", "events": []string{"acknowledged"}, "secret": "s"}, `"has_secret":true`)
 	ok("hooks", map[string]any{"topic": "ops"}, `"name":"audit"`)
+	ok("preview_hook", map[string]any{"topic": "ops", "body": `{"t": {{json .notification.topic}}}`}, `"body":"{\"t\": \"ops\"}"`)
 	ok("hook_deliveries", map[string]any{"topic": "ops", "name": "audit"}, `"deliveries"`)
 	ok("delete_hook", map[string]any{"topic": "ops", "name": "audit"}, `"deleted":true`)
 
