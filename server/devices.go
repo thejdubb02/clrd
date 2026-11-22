@@ -23,7 +23,7 @@ import (
 type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
-	Kind       string     `json:"kind"`             // token, browser or phone
+	Kind       string     `json:"kind"`             // token, browser, phone or agent
 	Via        string     `json:"via,omitempty"`    // the token or device it hangs under: revoking that one signs this one out too
 	ViaID      string     `json:"via_id,omitempty"` // its id, since names can repeat
 	LinkedAt   time.Time  `json:"linked_at"`
@@ -179,10 +179,12 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 	if err != nil {
 		return nil, err
 	}
+	// The agents my invites made (#454) are mine too, with what hangs under them.
 	rows, err := q.QueryContext(ctx, `WITH RECURSIVE `+topsSQL+`, k(id) AS
-	  (SELECT id FROM tops UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve
-	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id
+	  (SELECT id FROM tops UNION SELECT t.id FROM tokens t JOIN people u ON u.id = t.user_id WHERE u.kind = 'agent' AND u.owner IN tops
+	   UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
+	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve, COALESCE(u.kind, '')
+	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id LEFT JOIN people u ON u.id = t.user_id
 	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, tok.ID, all)
 	if err != nil {
 		return nil, err
@@ -195,10 +197,11 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 		var seen sql.NullInt64
 		var phone sql.NullBool
 		var via, viaID sql.NullString
-		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via, &viaID, &d.Approve); err != nil {
+		var kind string
+		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via, &viaID, &d.Approve, &kind); err != nil {
 			return nil, err
 		}
-		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid
+		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid || kind == "agent"
 		d.Sound = soundOf(sounds, d.ID)
 		d.Connected, d.CaughtUp, d.SyncedSeq = s.hub.status(d.ID)
 		if seen.Valid {
@@ -206,7 +209,9 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 			d.LastSeenAt = &v
 		}
 		d.Kind = "token"
-		if phone.Valid {
+		if kind == "agent" {
+			d.Kind = "agent"
+		} else if phone.Valid {
 			d.Kind = "browser"
 			if phone.Bool {
 				d.Kind = "phone"
@@ -234,11 +239,20 @@ func (s *Server) Unlink(ctx context.Context, tok *Token, id string) error {
 		}
 		ctx = context.WithoutCancel(ctx)
 		top, err := s.topOf(ctx, id) // before the delete, which drops the sessions rows
+		var user string
+		if err == nil && d.Kind == "agent" { // logged where it was linked, and its user goes with it
+			err = s.db.QueryRowContext(ctx, `SELECT p.owner, p.id FROM tokens t JOIN people p ON p.id = t.user_id WHERE t.id = ?`, id).Scan(&top, &user)
+		}
 		if err != nil {
 			return err
 		}
 		if err := s.DeleteToken(ctx, id); err != nil {
 			return err
+		}
+		if user != "" {
+			if _, err := s.db.ExecContext(ctx, `DELETE FROM people WHERE id = ? AND NOT EXISTS (SELECT 1 FROM tokens WHERE user_id = ?)`, user, user); err != nil {
+				s.log.Warn("drop agent user", "err", err)
+			}
 		}
 		s.logDevice(ctx, top, "unlinked", d.Name, id, tok.Name)
 		return nil

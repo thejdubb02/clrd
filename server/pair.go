@@ -36,17 +36,44 @@ type pairing struct {
 	// Pair and link codes share this map and its cap, never each other's routes.
 	owner    *Token
 	approved bool
+	// invite is set on an agent invite (agents.go): its own kind.
+	invite *invite
+	ttl    time.Duration // 0 is pairTTL
 }
 
-// pairingLocked returns the live pair (link false) or link (link true)
-// request for code, dropping expired ones. Call with pairMu held.
-func (s *Server) pairingLocked(code string, link bool) *pairing {
+// Kinds of code in s.pairs: each answers only its own routes, capped apart.
+const (
+	kindPair = iota
+	kindLink
+	kindAgent
+)
+
+func (p *pairing) kind() int {
+	switch {
+	case p.invite != nil:
+		return kindAgent
+	case p.owner != nil:
+		return kindLink
+	}
+	return kindPair
+}
+
+func (p *pairing) expires() time.Time {
+	if p.ttl == 0 {
+		return p.created.Add(pairTTL)
+	}
+	return p.created.Add(p.ttl)
+}
+
+// pairingLocked returns the live request of kind for code, dropping
+// expired ones. Call with pairMu held.
+func (s *Server) pairingLocked(code string, kind int) *pairing {
 	for c, p := range s.pairs {
-		if time.Since(p.created) > pairTTL {
+		if time.Now().After(p.expires()) {
 			delete(s.pairs, c)
 		}
 	}
-	if p := s.pairs[code]; p != nil && (p.owner != nil) == link {
+	if p := s.pairs[code]; p != nil && p.kind() == kind {
 		return p
 	}
 	return nil
@@ -57,13 +84,13 @@ func (s *Server) addPairing(p *pairing) (string, error) {
 	code := randomString(22) // 22 base62 chars is 130 bits
 	s.pairMu.Lock()
 	defer s.pairMu.Unlock()
-	s.pairingLocked("", false)
+	s.pairingLocked("", kindPair)
 	if s.pairs == nil {
 		s.pairs = map[string]*pairing{}
 	}
-	n := 0 // pair and link codes are capped apart, so public sign-in codes cannot crowd out a signed-in user's link
+	n := 0 // each kind is capped apart, so public sign-in codes cannot crowd out a signed-in user's link
 	for _, q := range s.pairs {
-		if (q.owner != nil) == (p.owner != nil) {
+		if q.kind() == p.kind() {
 			n++
 		}
 	}
@@ -98,7 +125,7 @@ func (s *Server) pairRoutes() {
 	s.route("GET /pair", s.handlePairPage)
 	s.api("GET /api/v1/pair/{code}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		s.pairMu.Lock()
-		p := s.pairingLocked(r.PathValue("code"), false)
+		p := s.pairingLocked(r.PathValue("code"), kindPair)
 		var name string
 		var created time.Time
 		ok := p != nil && p.approver == nil && !p.denied
@@ -155,7 +182,7 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) error {
 		return errf(410, "gone", "no sign-in waiting in this browser")
 	}
 	s.pairMu.Lock()
-	p := s.pairingLocked(in.Code, false)
+	p := s.pairingLocked(in.Code, kindPair)
 	if p == nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(p.secret)) != 1 {
 		s.pairMu.Unlock()
 		return errf(410, "gone", "that code expired or was already used")
@@ -181,7 +208,7 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) decidePair(w http.ResponseWriter, r *http.Request, tok *Token, approve bool) error {
 	code := r.PathValue("code")
 	s.pairMu.Lock()
-	p := s.pairingLocked(code, false)
+	p := s.pairingLocked(code, kindPair)
 	ok := p != nil && p.approver == nil && !p.denied
 	name := ""
 	if ok {
@@ -219,7 +246,7 @@ func (s *Server) decidePair(w http.ResponseWriter, r *http.Request, tok *Token, 
 func (s *Server) handlePairPage(w http.ResponseWriter, r *http.Request) error {
 	code := r.URL.Query().Get("c")
 	s.pairMu.Lock()
-	p := s.pairingLocked(code, false)
+	p := s.pairingLocked(code, kindPair)
 	name := ""
 	if p != nil && p.approver == nil && !p.denied {
 		name = p.name

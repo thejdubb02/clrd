@@ -155,6 +155,8 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Server: agent invites. A signed-in person or an admin token makes one short single-use string (`clrd://agent?...` or an https link, 15 minutes by default) with a name and topics; the agent claims it once and gets its own user and token, held to those topics, with approvals denied, plus a guide to the publish, reply and MCP addresses. It shows in the device and user lists and unlinking it cuts it off at once. API `POST /api/v1/agents/invite`, MCP `create_agent_invite`, CLI `clrd agent invite`. Web and app buttons come later (#454).
+
 - Server: ntfy's `http` and `broadcast` action buttons. An admin turns them on per topic with `device_actions` (API and MCP `set_topic`, off by default); the server stores them and passes them to ntfy apps. clrd's own app and web inbox do not run them yet (#401).
 
 - Server: live-only messages. ntfy's `Cache: no`, or `"live": true` on the API and MCP `send`, goes to the ntfy streams open now and is stored nowhere (#400).

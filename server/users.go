@@ -20,7 +20,10 @@ type User struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Grants    *[]Grant  `json:"grants"`
+	Kind      string    `json:"kind"` // person, or agent made from an invite (#454)
 	CreatedAt time.Time `json:"created_at"`
+	// LastSeenAt is the newest of its typed-in tokens, nil for never.
+	LastSeenAt *time.Time `json:"last_seen_at"`
 }
 
 // withUser applies the user of t's top token to t. A token holding admin
@@ -130,7 +133,8 @@ func (s *Server) userRoutes() {
 		}
 	}
 	s.api("GET /api/v1/users", admin(func(w http.ResponseWriter, r *http.Request) error {
-		rows, err := s.db.QueryContext(r.Context(), `SELECT id, name, grants, created_at FROM people ORDER BY created_at, rowid`)
+		rows, err := s.db.QueryContext(r.Context(), `SELECT id, name, grants, created_at, kind,
+		  (SELECT MAX(last_seen_at) FROM tokens WHERE user_id = people.id) FROM people ORDER BY created_at, rowid`)
 		if err != nil {
 			return err
 		}
@@ -140,8 +144,13 @@ func (s *Server) userRoutes() {
 			var u User
 			var grants string
 			var created int64
-			if err := rows.Scan(&u.ID, &u.Name, &grants, &created); err != nil {
+			var seen sql.NullInt64
+			if err := rows.Scan(&u.ID, &u.Name, &grants, &created, &u.Kind, &seen); err != nil {
 				return err
+			}
+			if seen.Valid {
+				v := fromMS(seen.Int64)
+				u.LastSeenAt = &v
 			}
 			if grants != "" {
 				u.Grants = &[]Grant{}
@@ -164,7 +173,7 @@ func (s *Server) userRoutes() {
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		u := User{ID: randomString(12), Name: strings.TrimSpace(in.Name), CreatedAt: now()}
+		u := User{ID: randomString(12), Name: strings.TrimSpace(in.Name), Kind: "person", CreatedAt: now()}
 		if u.Name == "" || len(u.Name) > 64 {
 			return errf(400, "bad_request", "name required, at most 64 characters")
 		}
@@ -200,7 +209,7 @@ func (s *Server) userRoutes() {
 		id := r.PathValue("id")
 		var u User
 		var created int64
-		err = s.db.QueryRowContext(r.Context(), `UPDATE people SET grants = ? WHERE id = ? RETURNING id, name, created_at`, stored, id).Scan(&u.ID, &u.Name, &created)
+		err = s.db.QueryRowContext(r.Context(), `UPDATE people SET grants = ? WHERE id = ? RETURNING id, name, kind, created_at`, stored, id).Scan(&u.ID, &u.Name, &u.Kind, &created)
 		if err == sql.ErrNoRows {
 			return errf(404, "not_found", "user not found")
 		}

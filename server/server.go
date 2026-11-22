@@ -612,6 +612,7 @@ func (s *Server) routesSetup() {
 	s.route("DELETE /api/v1/session", s.handleSignOut)
 	s.pairRoutes()
 	s.linkRoutes()
+	s.agentRoutes()
 	s.deviceRoutes()
 	s.userRoutes()
 	s.soundRoutes()
