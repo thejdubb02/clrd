@@ -2580,6 +2580,152 @@
       "$ref": "#/components/responses/Error"
      }
     }
+   },
+   "put": {
+    "summary": "Set a sender's rules",
+    "description": "Admin with no topic limit. Only the fields sent change; routes, when sent, replaces every route. id is a listed sender or a top-level token that has not published yet. Each change is kept in /changes and can be undone.",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SenderRules"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The sender with its new rules.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Sender"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/senders/{id}/changes": {
+   "get": {
+    "summary": "A sender's rule changes, newest first",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The changes.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "changes": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/SenderChange"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/senders/{id}/changes/{seq}/undo": {
+   "post": {
+    "summary": "Undo one rule change",
+    "description": "Puts back the rules from before change seq, recorded as a new change.",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "seq",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The sender with its rules as they were.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Sender"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
    }
   },
   "/api/v1/ws": {
@@ -5712,12 +5858,76 @@
        "type": "integer"
       }
      },
+     "rules": {
+      "$ref": "#/components/schemas/SenderRules"
+     },
      "recent": {
       "type": "array",
       "description": "Only on GET /api/v1/senders/{id}.",
       "items": {
        "$ref": "#/components/schemas/Notification"
       }
+     }
+    }
+   },
+   "SenderRules": {
+    "type": "object",
+    "description": "What an admin set on a sender. All zero (the default) changes nothing.",
+    "properties": {
+     "paused": {
+      "type": "boolean",
+      "description": "Accept every publish with a 2xx and store nothing."
+     },
+     "muted": {
+      "type": "boolean",
+      "description": "Store and show its notifications, listed silenced: they never alert."
+     },
+     "priority_min": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "Raise a lower priority to this; 0 for none."
+     },
+     "priority_max": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "Lower a higher priority to this; 0 for none."
+     },
+     "routes": {
+      "type": "object",
+      "description": "The topic it names, or * for any, to the topics it goes to instead. The exact topic wins over *; no match keeps the topic; an empty list drops the publish.",
+      "additionalProperties": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   },
+   "SenderChange": {
+    "type": "object",
+    "properties": {
+     "seq": {
+      "type": "integer"
+     },
+     "before": {
+      "$ref": "#/components/schemas/SenderRules"
+     },
+     "after": {
+      "$ref": "#/components/schemas/SenderRules"
+     },
+     "by": {
+      "type": "string",
+      "description": "Name of the token that made the change."
+     },
+     "by_id": {
+      "type": "string"
+     },
+     "at": {
+      "type": "string",
+      "format": "date-time"
      }
     }
    },
@@ -5946,6 +6156,10 @@
         "format": "date-time"
        }
       }
+     },
+     "requested_topic": {
+      "type": "string",
+      "description": "The topic the sender named when its rules routed it here. Absent when it was not routed."
      },
      "devices": {
       "type": "array",

@@ -59,7 +59,8 @@ A **notification**:
   "silenced": false,           // a silence matched when that event was written: show, do not alert
   "repeat": null,              // or {"every": "5m", "left": 8, "count": 2, "next": "<RFC3339>" or null}
   "marks": [],                 // who saw or actioned it, below; never null
-  "devices": []                // token ids it alerts on, [] for every device; never null. Missing in old events = []
+  "devices": [],               // token ids it alerts on, [] for every device; never null. Missing in old events = []
+  "requested_topic": "up"      // only when a sender route moved it: the topic it was sent to (section 5.1)
 }
 ```
 
@@ -105,7 +106,8 @@ as emoji but leave the tag emoji out, since ntfy apps add those themselves.
 **Silences:** a silence mutes a topic, a tag, or a tag within a topic until a
 set time (`POST /api/v1/silences`). Notifications still arrive, sync and show;
 the server sets `silenced: true` on every event it writes while a silence
-matches (publish, update, snooze wake, check-in), and clients must show those
+matches (publish, update, snooze wake, check-in), and on every publish from a
+muted sender (section 5.1), and clients must show those
 without sound or vibration (the web inbox and the Android app do). A silence mutes every priority, 5 included. It
 ends by itself; `DELETE` ends it early. Events logged before a server upgrade
 may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
@@ -740,6 +742,9 @@ resolved`) and `ntfy_import`.
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. It starts denied for approval requests (section 4); `approve` other than `denied` is 400. |
 | GET | `/api/v1/senders` | Every sender, most recently heard first (section 5.1). Admin with no topic limit. |
 | GET | `/api/v1/senders/{id}` | One sender with `recent`, its last notifications still stored (section 5.1). 404 for an unknown id. |
+| PUT | `/api/v1/senders/{id}` | Change a sender's `rules` (section 5.1). Returns the Sender. |
+| GET | `/api/v1/senders/{id}/changes` | `{changes:[SenderChange]}`, newest first (section 5.1). |
+| POST | `/api/v1/senders/{id}/changes/{seq}/undo` | Put the rules back as they were before that change (section 5.1). Returns the Sender. |
 | GET | `/api/v1/server` | Admin. The section 7 settings in effect, defaults filled in: `{"env":{"CLRD_LISTEN":":8080",...}}`, each written the way its variable takes it (`CLRD_BASE_URL` empty when unset, a password in it shown as `xxxxx`; `0` for a rate limit that is off). Read only; no secrets. |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
 | POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |
@@ -784,8 +789,37 @@ and its address) returns `{senders:[Sender]}`, last heard first:
 10 notifications, newest first, that are still stored (full notifications,
 section 2). A row updated again by `external_id` shows once. 404 for an unknown id.
 
-Routing, pause, mute, priority limits, change history and the silence alarm
-come in later parts of #119 and are not served yet.
+Every Sender also carries `rules`, `{}` until someone sets one:
+
+| Rule | Effect on its publishes |
+|---|---|
+| `paused` | Accepted with the usual 2xx and dropped: nothing stored, no file kept, still counted in `count` and `last_seen`. Pause covers publishing only; acks and other changes it makes still apply |
+| `muted` | Stored and synced, but `silenced` (section 2), so no sound or tray alert |
+| `priority_min`, `priority_max` | Priority clamped into the range, 1 to 5; `0` means no limit. Min above max is 400 |
+| `routes` | `{topic: [topics]}`: a publish to the key topic lands in each listed topic instead. Key `*` matches any topic with no route of its own. An empty list drops the publish like `paused` |
+
+A routed notification keeps the topic it was sent to as `requested_topic`
+(section 2), and the sender is counted once, under that topic. Each target
+gets its own copy, and its own copy of any file. The publisher's answer is the
+first target's notification. A route is applied by the server on the
+sender's behalf, so its targets need no grant on the sender's token; an error
+on a later target is logged and skipped. The routes apply to `status:
+resolved` too, so a resolve follows the alert to its targets. One gap: change
+a route while an alert is open and its resolve goes to the new targets and
+finds nothing in the old one.
+
+`PUT /api/v1/senders/{id}` (admin with no topic limit) takes any of the rule
+fields and changes only those; `routes`, when present, replaces the whole map.
+A bad topic is 400, an unknown id 404. Rules can be set on a token that has
+not published yet (its id from `/api/v1/tokens`); it then shows with `count`
+0 and a zero `first_seen`. Each change is logged: `GET
+/api/v1/senders/{id}/changes` returns `{changes:[{seq, before, after, by,
+by_id, at}]}`, newest first, with `before` and `after` the full rules. `POST
+/api/v1/senders/{id}/changes/{seq}/undo` sets the rules back to that change's
+`before`, and is logged as a change itself. Revoking the token removes the
+sender, its rules and its log.
+
+The silence alarm comes in a later part of #119 and is not served yet.
 
 ### ntfy compatibility (must pass ntfy's own client behaviour)
 

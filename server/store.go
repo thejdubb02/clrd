@@ -74,7 +74,9 @@ CREATE TABLE IF NOT EXISTS notifications (
   repeat TEXT NOT NULL DEFAULT '',
   marks TEXT NOT NULL DEFAULT '',
   devices TEXT NOT NULL DEFAULT '',
-  reply_text TEXT NOT NULL DEFAULT ''
+  reply_text TEXT NOT NULL DEFAULT '',
+  requested_topic TEXT NOT NULL DEFAULT '',
+  muted INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -191,7 +193,18 @@ CREATE TABLE IF NOT EXISTS senders (
   last_seen INTEGER NOT NULL,
   count INTEGER NOT NULL,
   topics TEXT NOT NULL,
-  recent TEXT NOT NULL
+  recent TEXT NOT NULL,
+  rules TEXT NOT NULL DEFAULT '{}'
+);
+-- Every change to a sender's rules, so an admin can see who changed what and undo it.
+CREATE TABLE IF NOT EXISTS sender_changes (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  sender TEXT NOT NULL REFERENCES senders(id) ON DELETE CASCADE,
+  before TEXT NOT NULL,
+  after TEXT NOT NULL,
+  by_name TEXT NOT NULL,
+  by_id TEXT NOT NULL,
+  at INTEGER NOT NULL
 );
 -- Silences (issue #81): topic "" matches every topic, tag "" every tag.
 CREATE TABLE IF NOT EXISTS silences (
@@ -234,6 +247,7 @@ type Notification struct {
 	Attachment  *Attachment `json:"attachment"`
 	file        string      // uploaded file id, "" for none or external
 	sender      string      // top token of the last sender's tree: it may not answer it (#187)
+	muted       bool        // its sender is muted (#119): stored and shown, never alerts
 	confirm     string      // a confirm prompt: its confirmLink as JSON, "" for any other (#187)
 	Reply       string      `json:"reply"`      // the reply action tapped, "" until one is
 	ReplyText   string      `json:"reply_text"` // what was typed with a text reply action, "" for none (#153)
@@ -250,6 +264,9 @@ type Notification struct {
 	Repeat      *Repeat     `json:"repeat"`         // re-alert until answered, or null
 	Marks       Marks       `json:"marks"`          // who saw or acted on it (marks.go); never changes the state
 	Devices     []string    `json:"devices"`        // token ids it alerts on, [] for every device; the rest get it silenced (#82)
+
+	// RequestedTopic is the topic the sender named when a route sent it elsewhere (#119).
+	RequestedTopic string `json:"requested_topic,omitempty"`
 }
 
 // Attachment is a file on a notification: uploaded (URL is /api/v1/files/<id>)
@@ -320,11 +337,17 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text", "requested_topic"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
 			return nil, fmt.Errorf("add %s column: %w", col, err)
+		}
+	}
+	for _, add := range []string{`notifications ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`, `senders ADD COLUMN rules TEXT NOT NULL DEFAULT '{}'`} {
+		if _, err := db.Exec(`ALTER TABLE ` + add); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("alter %s: %w", add, err)
 		}
 	}
 	// Rows from before formats were rendered as Markdown, the default.
@@ -448,7 +471,8 @@ func nullMS(t *time.Time) any {
 }
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
-  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks, devices, reply_text`
+  state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks, devices, reply_text,
+  requested_topic, muted`
 
 type scanner interface{ Scan(...any) error }
 
@@ -459,7 +483,8 @@ func scanNotification(r scanner) (*Notification, error) {
 	var created, updated int64
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
-		&n.Silenced, &rep, &n.sender, &n.confirm, &marks, &devs, &n.ReplyText)
+		&n.Silenced, &rep, &n.sender, &n.confirm, &marks, &devs, &n.ReplyText,
+		&n.RequestedTopic, &n.muted)
 	if err != nil {
 		return nil, err
 	}
@@ -524,15 +549,16 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 	} else {
 		n.Devices = []string{} // every event says [] for everyone, never null
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(29)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(31)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
-		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm, marks=excluded.marks, devices=excluded.devices, reply_text=excluded.reply_text`,
+		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm, marks=excluded.marks, devices=excluded.devices, reply_text=excluded.reply_text,
+		requested_topic=excluded.requested_topic, muted=excluded.muted`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText)
+		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText, n.RequestedTopic, n.muted)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -576,7 +602,7 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 	}
 	for i := range evs {
 		e := &evs[i]
-		e.Notification.Silenced = silenced(sils, e.Notification)
+		e.Notification.Silenced = silenced(sils, e.Notification) || e.Notification.muted
 		res, err := tx.Exec(`INSERT INTO events (type, topic, data, created_at) VALUES (?, ?, '', ?)`,
 			e.Type, e.Notification.Topic, ms(t))
 		if err != nil {
@@ -676,11 +702,17 @@ type PublishInput struct {
 	// Devices limits who alerts (#82): device names or token ids, each a
 	// device that may read the topic. The rest list it silenced. Empty is everyone.
 	Devices []string `json:"devices,omitempty"`
+
+	// Set by the sender's rules (#119): the topic it named, before routing.
+	requested        string
+	counted          bool // the sender already counted (a second route target)
+	muted            bool
+	prioMin, prioMax int
 }
 
-// Publish creates a notification, or updates the open one with the same
-// external_id in the topic.
-func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Notification, error) {
+// publishTo creates a notification, or updates the open one with the same
+// external_id in the topic. Publish applies the sender's rules first.
+func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*Notification, error) {
 	if err := validTopic(in.Topic); err != nil {
 		return nil, err
 	}
@@ -690,7 +722,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 	if err := s.gateDeviceActions(ctx, s.db, &in); err != nil {
 		return nil, err
 	}
-	if in.file == "" { // PublishFile already spent it, before the upload
+	if in.file == "" && !in.counted { // PublishFile or the first route target already spent it
 		if err := s.publishLimit(tok, in.Topic); err != nil {
 			return nil, err
 		}
@@ -786,7 +818,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
 				n.ReplyText = ""
 				replaced, n.Attachment, n.file, n.ExpiresAt, n.Repeat, n.sender = n.file, in.Attachment, in.file, expires, repeat, sender
-				n.Devices = in.Devices
+				n.Devices, n.muted, n.RequestedTopic = in.Devices, in.muted, in.requested
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -799,7 +831,7 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 				if n.State == Acknowledged || (n.State == Snoozed && !n.SnoozeUntil.Equal(from)) {
 					n.stopRepeat() // someone already answered this row
 				}
-				if err := seeSender(ctx, tx, sender, in.Topic, in.template, n.ID); err != nil {
+				if err := in.see(ctx, tx, sender, n.ID); err != nil {
 					return nil, err
 				}
 				return append([]Event{{Type: EventUpdated, Notification: n}}, extra...), nil
@@ -812,12 +844,12 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
 			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions,
 			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires,
-			Repeat: repeat, sender: sender, Devices: in.Devices}
+			Repeat: repeat, sender: sender, Devices: in.Devices, muted: in.muted, RequestedTopic: in.requested}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
 		}
-		if err := seeSender(ctx, tx, sender, in.Topic, in.template, n.ID); err != nil {
+		if err := in.see(ctx, tx, sender, n.ID); err != nil {
 			return nil, err
 		}
 		return append([]Event{{Type: EventCreated, Notification: n}}, extra...), nil
@@ -1774,6 +1806,12 @@ func (in *PublishInput) fill() error {
 	}
 	if in.Priority < 1 || in.Priority > 5 {
 		return errf(400, "bad_request", "priority must be 1 to 5")
+	}
+	if in.prioMin > 0 { // the sender's floor and cap (#119), after the default
+		in.Priority = max(in.Priority, in.prioMin)
+	}
+	if in.prioMax > 0 {
+		in.Priority = min(in.Priority, in.prioMax)
 	}
 	if len(in.ExternalID) > 256 {
 		return errf(400, "bad_request", "external_id longer than 256")
