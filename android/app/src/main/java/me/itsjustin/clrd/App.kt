@@ -161,6 +161,7 @@ class App : Application() {
         swipes.value = next
         return try {
             api.put("/api/v1/settings", next.json())
+            prefs.edit().putString("swipes", next.json()).apply() // the server has it: a restart before its echo keeps it
             null
         } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
             swipes.value = Swipes.parse(prefs.getString("swipes", null)) // back to what the server last said

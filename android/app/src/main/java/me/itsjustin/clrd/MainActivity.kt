@@ -1502,9 +1502,8 @@ private fun SwipeSettings(app: App) {
                 FilterChip(
                     selected = at >= 0, enabled = !locked,
                     onClick = {
-                        val next = s.toggle(name, toStart)
-                        if (next == null) result = full
-                        else { result = null; app.io.execute { result = app.saveSwipes(next) } }
+                        // From the latest value on io, not this frame's: two quick taps both count.
+                        app.io.execute { val next = app.swipes.value.toggle(name, toStart); result = if (next == null) full else app.saveSwipes(next) }
                     },
                     label = { Text(if (at >= 0) stringResource(R.string.swipe_place, at + 1, label) else label) },
                 )

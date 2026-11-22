@@ -81,6 +81,7 @@ class SwipesTest {
         assertEquals("""["snooze"]""", body.getJSONArray("swipe_start").toString())
         assertEquals("""["ack","clear"]""", body.getJSONArray("swipe_end").toString())
         assertEquals(next, app.swipes.value)
+        assertEquals(next, Swipes.parse(app.prefs.getString("swipes", null))) // kept for a restart before the echo
     }
 
     @Test fun aLimitedTokenSeesThemReadOnly() {
@@ -95,9 +96,9 @@ class SwipesTest {
     }
 
     @Test fun aRefusedSaveSaysWhyAndGoesBack() {
-        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"bad_request","message":"swipe_end: bad"}"""))
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"swipe_end: bad"}"""))
         val err = onIo { app.saveSwipes(Swipes(emptyList(), listOf("ack", "clear"))) }
-        assertNotNull(err)
+        assertEquals("HTTP 400: swipe_end: bad", err) // the server's reason, not "no connection"
         assertFalse(app.swipesLocked.value)
         assertEquals(Swipes(), app.swipes.value)
     }
