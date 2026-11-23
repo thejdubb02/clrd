@@ -30,7 +30,7 @@ main { max-width: 26rem; margin: 0 auto; padding: 1.5rem 1rem; }
 h1 { color: var(--ink); font-size: 1.25rem; margin: 0 0 .5rem; }
 b { color: var(--ink); overflow-wrap: anywhere; }
 #error { color: var(--signal); }
-#error:empty { display: none; }
+#error:empty, #offer:empty { display: none; }
 #check { color: var(--ink); font-size: 2rem; font-weight: 600; letter-spacing: .1em; margin: 0 0 1rem; }
 label { display: block; color: var(--ink); }
 input {

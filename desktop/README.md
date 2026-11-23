@@ -20,7 +20,14 @@ is not released yet: there is nothing to install from here today.
   computer": paste a link from Settings > Devices on the server, confirm the
   check code there, and unlink later.
 
-Still to come, each in its own change: the Windows installer and opening `clrd://link` addresses straight from the browser.
+With the package installed, "Open in the clrd app" on the server's link page
+opens this app with the link already in the box. A web page can send such an
+address too, so the app never acts on one by itself: it names the server and
+waits for you to press Link this computer, and the check code step follows as
+usual. A build run from the source tree is not registered for `clrd://`
+addresses; paste the link there.
+
+Still to come, each in its own change: the Windows installer, and `clrd://link` addresses on Windows.
 
 ## How the window is kept apart from the token
 

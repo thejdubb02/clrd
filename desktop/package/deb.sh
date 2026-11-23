@@ -27,7 +27,8 @@ install -D -m 0644 "$here/../app/icons/icon.png" "$root/usr/share/icons/hicolor/
 # Starts with the desktop session, as a tray icon with no window. A file in
 # /etc, so turning it off (or removing it) survives an upgrade.
 mkdir -p "$root/etc/xdg/autostart"
-sed 's/^Exec=.*/Exec=clrd-desktop --hidden/' "$here/clrd.desktop" > "$root/etc/xdg/autostart/clrd.desktop"
+# Only the menu entry opens clrd:// addresses.
+sed -e 's/^Exec=.*/Exec=clrd-desktop --hidden/' -e '/^MimeType=/d' "$here/clrd.desktop" > "$root/etc/xdg/autostart/clrd.desktop"
 
 # The libraries the binary links to, with the versions this build needs,
 # worked out by dpkg from the binary itself. It wants a debian/control to
@@ -81,9 +82,17 @@ has -rw-r--r-- usr/share/icons/hicolor/64x64/apps/clrd.png
 has -rw-r--r-- etc/xdg/autostart/clrd.desktop
 [ "$(dpkg-deb --ctrl-tarfile "$deb" | tar -xO ./conffiles)" = /etc/xdg/autostart/clrd.desktop ] ||
   fail "the autostart entry is not a conffile"
-dpkg-deb --fsys-tarfile "$deb" | tar -xO ./etc/xdg/autostart/clrd.desktop |
-  grep -qx 'Exec=clrd-desktop --hidden' || fail "autostart does not start hidden"
-dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/share/applications/clrd.desktop |
-  grep -qx 'Exec=clrd-desktop' || fail "the menu entry does not open the window"
+entry() {
+  dpkg-deb --fsys-tarfile "$deb" | tar -xO "./$1"
+}
+entry etc/xdg/autostart/clrd.desktop | grep -qx 'Exec=clrd-desktop --hidden' ||
+  fail "autostart does not start hidden"
+entry etc/xdg/autostart/clrd.desktop | grep -q '^MimeType=' &&
+  fail "the autostart entry claims clrd:// addresses"
+# The address a browser hands over has to reach the app (#626).
+entry usr/share/applications/clrd.desktop | grep -qx 'Exec=clrd-desktop %u' ||
+  fail "the menu entry does not pass an address on"
+entry usr/share/applications/clrd.desktop | grep -qx 'MimeType=x-scheme-handler/clrd;' ||
+  fail "the menu entry does not open clrd:// addresses"
 
 echo "$deb"
