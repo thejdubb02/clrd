@@ -168,6 +168,9 @@ type SubscriptionList struct {
 	Filtered  bool       `json:"filtered"`
 	NewTopics *bool      `json:"new_topics,omitempty"`
 	Topics    []SubTopic `json:"topics"`
+	// RequestID is the request_id the set's last change was sent with, so
+	// a client can tell its own change from another device's (#702).
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // Subscriptions is tok's owner's set over every topic tok can read.
@@ -181,6 +184,10 @@ func (s *Server) Subscriptions(ctx context.Context, tok *Token) (SubscriptionLis
 		return out, err
 	}
 	out.Filtered, out.NewTopics = true, &tok.view.newTopics
+	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(json_extract(data, '$.request_id'), '') FROM events WHERE seq = ?`, tok.view.seq).Scan(&out.RequestID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) { // no row: no change yet, or pruned
+		return out, err
+	}
 	ts, err := s.Topics(ctx, tok)
 	for _, t := range ts {
 		out.Topics = append(out.Topics, SubTopic{t.Topic, t.Subscribed, t.Open, t.LastAt, t.Approvals})
@@ -193,7 +200,7 @@ func (s *Server) Subscriptions(ctx context.Context, tok *Token) (SubscriptionLis
 // status): 400 for no change asked, too many or a bad name, 403 for a topic
 // tok cannot read, 409 for a token no set belongs to. Nothing changes
 // when any of them fails.
-func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bool, topics map[string]bool) (SubscriptionList, error) {
+func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bool, topics map[string]bool, rid string) (SubscriptionList, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return SubscriptionList{}, err
 	}
@@ -210,6 +217,9 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 	if len(topics) > 500 {
 		return SubscriptionList{}, errf(400, "bad_request", "topics: at most 500 in one call")
 	}
+	if len(rid) > 64 || strings.Trim(rid, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" {
+		return SubscriptionList{}, errf(400, "bad_request", "request_id: at most 64 letters, digits, - or _")
+	}
 	names := slices.Sorted(maps.Keys(topics))
 	for _, t := range names {
 		if err := validTopic(t); err != nil {
@@ -225,7 +235,7 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 			return SubscriptionList{}, err
 		}
 	}
-	err = s.changeSubs(ctx, owner, newTopics, false, func(tx *sql.Tx, cur bool) error {
+	err = s.changeSubs(ctx, owner, newTopics, false, rid, func(tx *sql.Tx, cur bool) error {
 		if readers != nil && cur { // turning new_topics off keeps every topic seen so far as it is
 			rows, err := tx.QueryContext(ctx, `SELECT topic FROM notifications UNION SELECT topic FROM topics
 			  EXCEPT SELECT topic FROM subscriptions WHERE owner = ?`, owner)
@@ -261,11 +271,12 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 }
 
 // changeSubs runs fn (if set) with the owner's current new_topics, stores
-// newTopics (if set) and appends the owner's subscriptions event, in one
+// newTopics (if set) and appends the owner's subscriptions event (with rid
+// as its request_id when set), in one
 // transaction under s.mu as write does, so seq order stays delivery order.
 // moved marks an attach or detach. The event goes to the hub only: no Web
 // Push, no webhook.
-func (s *Server) changeSubs(ctx context.Context, owner string, newTopics *bool, moved bool, fn func(tx *sql.Tx, cur bool) error) error {
+func (s *Server) changeSubs(ctx context.Context, owner string, newTopics *bool, moved bool, rid string, fn func(tx *sql.Tx, cur bool) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -292,6 +303,9 @@ func (s *Server) changeSubs(ctx context.Context, owner string, newTopics *bool, 
 	}
 	e.Seq, _ = res.LastInsertId()
 	e.Raw = fmt.Appendf(nil, `{"seq":%d,"type":%q}`, e.Seq, e.Type)
+	if rid != "" { // checked to need no escaping; lets the client that sent it find its own change (#702)
+		e.Raw = fmt.Appendf(nil, `{"seq":%d,"type":%q,"request_id":%q}`, e.Seq, e.Type, rid)
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE events SET data = ? WHERE seq = ?`, string(e.Raw), e.Seq); err != nil {
 		return err
 	}
@@ -390,6 +404,7 @@ func (s *Server) subsRoutes() {
 		var in struct {
 			NewTopics *bool            `json:"new_topics"`
 			Topics    map[string]*bool `json:"topics"`
+			RequestID string           `json:"request_id"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
@@ -408,7 +423,7 @@ func (s *Server) subsRoutes() {
 		if err != nil {
 			return err
 		}
-		out, err := s.SetSubscriptions(r.Context(), t, in.NewTopics, topics)
+		out, err := s.SetSubscriptions(r.Context(), t, in.NewTopics, topics, in.RequestID)
 		if err != nil {
 			return err
 		}

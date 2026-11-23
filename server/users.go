@@ -253,7 +253,7 @@ func (s *Server) userRoutes() {
 		if *in.User != "" {
 			owner = "u:" + *in.User
 		}
-		err := s.changeSubs(r.Context(), owner, nil, true, func(tx *sql.Tx, _ bool) error {
+		err := s.changeSubs(r.Context(), owner, nil, true, "", func(tx *sql.Tx, _ bool) error {
 			// Only a typed-in token: a browser or phone follows the token it came from.
 			res, err := tx.ExecContext(r.Context(), `UPDATE tokens SET user_id = NULLIF(?, '') WHERE id = ?
 			  AND id NOT IN (SELECT token_id FROM sessions) AND id NOT LIKE 'pushover-%' AND id NOT IN (SELECT token_id FROM gotify_apps)
