@@ -748,7 +748,7 @@ try {
     // Each refresh rebuilds the stack node, so a locator's evaluate can land on
     // the old, detached copy: look it up and check it in one step (#675).
     const onStack = (sel, cls) => sp.evaluate(([sel, cls]) => { const s = document.querySelector('[data-stack="ci-stack"]'), e = s && (sel ? s.querySelector(sel) : s); return !!e && e === document.activeElement && (!cls || s.classList.contains(cls)); }, [sel, cls]);
-    assert.equal(await onStack('[data-stack-toggle]'), true, 'focus lost from the stack on refresh');
+    assert.equal(await onStack('[data-stack-toggle][aria-expanded="true"]'), true, 'focus lost from the stack on refresh'); // still open: Hide, not Show all
     // Clear all on the stack clears all four on the server, and Undo reopens them.
     await stack.getByRole('button', { name: 'Clear all' }).click();
     await sp.locator('[data-toast]').filter({ hasText: 'Cleared 4 notifications.' }).waitFor();
