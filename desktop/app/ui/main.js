@@ -65,10 +65,12 @@ $('plain-no').addEventListener('click', () => { $('plain').hidden = true; });
 $('cancel').addEventListener('click', () => run('cancel'));
 $('retry').addEventListener('click', () => run('retry'));
 // A change that could not be saved is said, and the switch goes back to
-// what is kept.
+// what is kept. One change at a time, so the last click is the one kept.
 $('close-clears').addEventListener('change', async (e) => {
+  e.target.disabled = true;
   $('setting-error').textContent = await invoke('set_close_clears', { on: e.target.checked }).then(() => '', String);
-  refresh();
+  await refresh();
+  e.target.disabled = false;
 });
 $('unlink').addEventListener('click', () => { $('sure').hidden = false; });
 $('sure-no').addEventListener('click', () => { $('sure').hidden = true; });

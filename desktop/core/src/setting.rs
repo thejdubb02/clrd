@@ -4,18 +4,24 @@
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// On while its file is there: nothing to parse, and a fresh install is off.
 pub struct CloseClears {
     path: PathBuf,
     on: Arc<AtomicBool>,
+    /// One change at a time, so the file and the flag never disagree.
+    saving: Mutex<()>,
 }
 
 impl CloseClears {
     pub fn open(path: PathBuf) -> Self {
         let on = Arc::new(AtomicBool::new(path.exists()));
-        CloseClears { path, on }
+        CloseClears {
+            path,
+            on,
+            saving: Mutex::new(()),
+        }
     }
 
     /// What the notifier reads at each close, so a change counts at once.
@@ -30,6 +36,7 @@ impl CloseClears {
     /// Kept first, then used: a change that cannot be kept is not made, so
     /// what the switch shows is what the next start does.
     pub fn set(&self, on: bool) -> io::Result<()> {
+        let _one = self.saving.lock().unwrap();
         let kept = if on {
             std::fs::write(&self.path, "")
         } else {
