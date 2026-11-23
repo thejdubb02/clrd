@@ -297,7 +297,7 @@
         <div class="flex items-center gap-3"><button class="btn" data-variant="outline">Save</button><span class="meta" role="status" data-snooze-status></span></div>
       </form>
     </section>
-    <section id="keep-cleared" data-setting data-keywords="delete, keep, retention, history, days" class="js-only grid gap-3">
+    {{if .Snap.CanKeep}}<section id="keep-cleared" data-setting data-keywords="delete, keep, retention, history, days" class="js-only grid gap-3">
       <h3 id="keep-h" class="text-base font-semibold">Cleared messages</h3>
       <p class="text-body text-sm/relaxed">Dismissed and resolved messages are deleted this long after they were cleared. Open and snoozed messages are never deleted. This applies to every device, and a topic can have its own period below; changing either needs an admin sign-in.</p>
       {{$k := .Snap.KeepClearedDays}}{{$preset := eq $k 0 1 5 7 30 90}}<form class="grid max-w-md gap-3" data-keep-settings>
@@ -311,7 +311,7 @@
         {{range .Snap.KeepTopics}}{{$v := $.Snap.TopicKeep .}}<div class="flex items-center gap-3"><label class="meta min-w-0 flex-1 [overflow-wrap:anywhere]" for="tk-{{.}}">{{.}}</label>
           <select id="tk-{{.}}" class="input w-auto" data-topic="{{.}}"><option value=""{{if eq $v -1}} selected{{end}}>Default</option><option value="1"{{if eq $v 1}} selected{{end}}>1 day</option><option value="5"{{if eq $v 5}} selected{{end}}>5 days</option><option value="7"{{if eq $v 7}} selected{{end}}>7 days</option><option value="30"{{if eq $v 30}} selected{{end}}>30 days</option><option value="90"{{if eq $v 90}} selected{{end}}>90 days</option><option value="0"{{if eq $v 0}} selected{{end}}>Forever</option>{{if not (eq $v -1 0 1 5 7 30 90)}}<option value="{{$v}}" selected>{{$v}} days</option>{{end}}</select></div>
         {{end}}</fieldset><span class="meta" role="status" data-topic-keep-status></span></form>{{end}}
-    </section>
+    </section>{{end}}
   </section>
   <section class="grid gap-8" aria-labelledby="g-display" data-settings-group>
     <h2 id="g-display" class="border-b pb-2 text-lg font-semibold tracking-tight">Display</h2>

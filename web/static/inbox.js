@@ -183,7 +183,7 @@
   // description or its keywords; hide the rest. Enter goes to the first match.
   const sq = $('[data-settings-q]');
   if (sq) {
-    const sets = [...document.querySelectorAll('[data-setting]')].map(s => [s, `${s.querySelector('h3').textContent} ${s.querySelector('p')?.textContent || ''} ${s.dataset.keywords}`.toLowerCase()]);
+    const sets = [...document.querySelectorAll('[data-setting]')].map(s => [s, `${s.querySelector('h3').textContent} ${[...s.querySelectorAll(':scope > p')].map(p => p.textContent).join(' ')} ${s.dataset.keywords}`.toLowerCase()]);
     const none = $('[data-settings-none]'), said = $('[data-settings-n]');
     const shown = s => s.style.display !== 'none' && !s.hidden; // hidden: not on this device
     const filter = () => {
@@ -197,7 +197,7 @@
     };
     sq.addEventListener('input', filter);
     sq.addEventListener('keydown', e => {
-      if (e.key !== 'Enter') return;
+      if (e.key !== 'Enter' || e.isComposing) return;
       e.preventDefault();
       const hit = sets.find(([s]) => shown(s))?.[0];
       if (!hit) return;
@@ -206,6 +206,7 @@
       hit.focus();
     });
     $('[data-settings-clear]').addEventListener('click', () => { sq.value = ''; filter(); sq.focus(); });
+    addEventListener('hashchange', () => { if (sq.value) { sq.value = ''; filter(); } }); // a link to a setting the search hid
   }
 
   // Sound for a new notification while the page is open (#282, SPEC 2.2).

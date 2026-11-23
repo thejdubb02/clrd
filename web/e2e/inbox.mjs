@@ -1306,6 +1306,7 @@ try {
     await rp.goto(base + '/app/settings');
     await rp.locator('#templates').waitFor();
     assert.equal(await rp.locator('#webhooks').count(), 0, 'Webhooks shown to a device that cannot open them');
+    assert.equal(await rp.locator('#keep-cleared').count(), 0, 'Cleared messages shown to a device that cannot change it');
     assert.ok(!(await rp.content()).includes('ops2.example.invalid'), 'a hook URL shown to a non-admin');
     const refused = await rctx.request.post(base + '/app/hooks', { form: { topic: 'hooked', name: 'evil', url: 'https://x.example.invalid/' }, headers: { Origin: base }, maxRedirects: 0 });
     assert.equal(refused.status(), 400, `non-admin hook save: ${refused.status()}`);
@@ -1878,6 +1879,12 @@ try {
     await sp.locator('#silences').waitFor({ state: 'hidden' });
     assert.deepEqual(await sets(), ['Appearance'], 'a keyword in Display found the wrong settings');
     assert.deepEqual(await groups(), ['Display'], 'only the matching section shows');
+    await q.fill('confirm first'); // in Linked devices' second paragraph
+    await sp.locator('#appearance').waitFor({ state: 'hidden' });
+    assert.ok((await sets()).includes('Linked devices'), 'search missed a later paragraph');
+    await sp.evaluate(() => { location.hash = '#dev-h'; }); // a link to a setting, while searching
+    await sp.locator('#sound').waitFor();
+    assert.equal(await q.inputValue(), '', 'a link to a setting left the search on');
     await q.fill('nothing like this');
     await sp.locator('[data-settings-none]').waitFor();
     assert.equal(await sp.locator('[data-settings-term]').textContent(), 'nothing like this', 'empty state names the search');
