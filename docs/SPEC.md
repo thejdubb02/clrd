@@ -776,6 +776,7 @@ resolved`) and `ntfy_import`.
 | PUT | `/api/v1/senders/{id}` | Change a sender's `rules` (section 5.1). Returns the Sender. |
 | GET | `/api/v1/senders/{id}/changes` | `{changes:[SenderChange]}`, newest first (section 5.1). |
 | POST | `/api/v1/senders/{id}/changes/{seq}/undo` | Put the rules back as they were before that change (section 5.1). Returns the Sender. |
+| GET | `/api/v1/version` | No token. Version, build commit and date, and the recent history (section 5.2). |
 | GET | `/api/v1/server` | Admin. The section 7 settings in effect, defaults filled in: `{"env":{"CLRD_LISTEN":":8080",...}}`, each written the way its variable takes it (`CLRD_BASE_URL` empty when unset, a password in it shown as `xxxxx`; `0` for a rate limit that is off). Read only; no secrets. |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
 | POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |
@@ -882,6 +883,54 @@ publishes or the rule changes, and the next can only come a full `expect`
 after that. Publishers cannot create a notification with an external_id
 starting `clrd-quiet-` (400). The alarm counts as a message in its topic, so
 it resets that topic's own check-in.
+
+### 5.2 Version and history (#580)
+
+One project version for the server, web, Android and desktop apps: the
+newest dated heading in `CHANGELOG.md` (`## 0.1.0 - 2026-11-23`). It is
+`0.0.0` until the first version is cut. Cut one with
+`go run ./server/cmd/cutversion 0.1.0` (date defaults to today, UTC): it
+moves everything under `## Unreleased` into a new dated section and leaves
+`## Unreleased` in place, empty, for the next entry. With
+`-summary-file F` (before the version), the short hand-written text in `F`
+(`###` sections with `-` items, like Unreleased) becomes the version's
+section, and the full entries go to `CHANGELOG-archive.md` under the same
+heading. A version is cut with each deploy batch, so Unreleased stays small.
+
+The binary embeds `CHANGELOG.md`, so it carries the recent history and the
+repo carries all of it. A test fails when the embedded file is over 96,000
+bytes. When a cut leaves it over 90,000 bytes, the script moves the oldest
+versions into `CHANGELOG-archive.md` at the repo root (not embedded), keeping
+the newest 10 when they fit under 96,000 and always the newest one.
+
+`GET /api/v1/version` needs no token, on public and private servers alike,
+and answers only from the binary (nothing about the server, its config or
+its data):
+
+```json
+{"version":"0.1.0","commit":"<git commit, 40 hex>","date":"2026-11-23T10:00:00Z",
+ "history":[{"version":"Unreleased","date":"","changes":[{"section":"Added","items":["Server: ..."]}]},
+            {"version":"0.1.0","date":"2026-11-23","changes":[...]}],
+ "full_history":"https://github.com/thejdubb02/clrd/blob/main/CHANGELOG.md"}
+```
+
+- `commit` and `date` (RFC 3339, UTC) are when the binary was built, set at
+  build time (`docs/self-host.md`); a `go build` inside a git checkout fills
+  them from the commit. A build with neither has `""` for both.
+- `history` is newest first. `Unreleased` comes first only when it has
+  entries (what this binary has beyond the last version); a version's `date`
+  is `YYYY-MM-DD`. Each version lists its sections (`Added`, `Changed`,
+  `Fixed`, `Removed`, `Security`) in the order they first appear, a section
+  repeated under one version merged into the first. Every field is always
+  present; arrays are `[]`, never `null`.
+- Each item is one line of inline Markdown (code spans, links), wrapped lines
+  joined with a space.
+- Views of the history (the web, apps, `/docs/changelog`) end with a link to
+  `full_history`, where older versions are.
+
+`/docs/changelog` renders the same file; a private server hides it with the
+rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
+and `initialize` reports `version` as `serverInfo.version`.
 
 ### ntfy compatibility (must pass ntfy's own client behaviour)
 
@@ -1028,7 +1077,7 @@ only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?, body?)`,
 `preview_hook(topic, body, event?)`, `hook_allow()`, `set_hook_allow(networks, ports)`, `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
 `create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
-`server_env()` (`GET /api/v1/server`), `ntfy_ignored()`, `senders()` and
+`server_env()` (`GET /api/v1/server`), `version()` (`GET /api/v1/version`, section 5.2, any token), `ntfy_ignored()`, `senders()` and
 `sender(id)` (section 5.1).
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex

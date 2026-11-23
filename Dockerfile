@@ -5,7 +5,12 @@ ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -trimpath -ldflags="-s -w" -o /out/clrd ./server/cmd/clrd \
+# The build context has no .git, so the commit shown at /api/v1/version
+# comes in as a build arg (docs/self-host.md); empty is fine. The build date
+# defaults to now.
+ARG CLRD_COMMIT=
+ARG CLRD_DATE=
+RUN go build -trimpath -ldflags="-s -w -X github.com/thejdubb02/clrd.Commit=${CLRD_COMMIT} -X github.com/thejdubb02/clrd.Built=${CLRD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" -o /out/clrd ./server/cmd/clrd \
  && mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot

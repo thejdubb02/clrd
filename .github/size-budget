@@ -3,5 +3,6 @@
 # one-line change: say in the PR what grew and why it is worth it.
 # Measured 2026-11-20: server 15,593,656, apk 1,945,004.
 # Measured 2026-11-22: server 16,531,640 with Web Push (#164, +45,056).
-server 16600000
+# Measured 2026-11-23: server 16,625,848 with version history (#580), after cutting 0.1.0 with a short summary.
+server 16660000
 apk 2100000
