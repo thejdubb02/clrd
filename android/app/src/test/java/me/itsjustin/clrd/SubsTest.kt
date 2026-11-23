@@ -43,8 +43,9 @@ class SubsTest {
     private val lists = Collections.synchronizedList(mutableListOf<String>())
     private val list = """{"filtered":true,"new_topics":true,"topics":[
         {"topic":"agents","subscribed":true,"open":1,"last_at":"2026-11-20T10:00:00Z"},
-        {"topic":"chat","subscribed":true,"open":3,"last_at":"2026-11-20T10:00:00Z"},
-        {"topic":"deploys","subscribed":false,"open":0,"last_at":null}]}"""
+        {"topic":"chat","subscribed":true,"open":3,"last_at":"2026-11-20T10:00:00Z","approvals":false},
+        {"topic":"deploys","subscribed":false,"open":0,"last_at":null},
+        {"topic":"ops","subscribed":true,"open":0,"last_at":null,"approvals":true}]}""" // agents has no flag: an older server
 
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
@@ -81,8 +82,16 @@ class SubsTest {
         assertFalse(s.subscribed("never-seen")) // follows new_topics
         assertFalse(Subs.of(JSONObject("""{"filtered":false}"""))!!.filtered)
         val l = SubsList.from(JSONObject(list))
-        assertEquals(listOf("agents", "chat", "deploys"), l.topics.map { it.topic })
+        assertEquals(listOf("agents", "chat", "deploys", "ops"), l.topics.map { it.topic })
         assertNull(l.topics[2].lastAt)
+        // #623: the server's flag decides; without it, or without the list, only the agents name asks
+        assertTrue(asksFirst("ops", l))
+        assertFalse(asksFirst("chat", l))
+        assertTrue(asksFirst("agents", l))
+        assertFalse(asksFirst("deploys", l))
+        assertTrue(asksFirst("agents", null))
+        assertFalse(asksFirst("ops", null))
+        assertFalse(asksFirst("agents", SubsList.from(JSONObject("""{"topics":[{"topic":"agents","approvals":false}]}"""))))
         assertEquals("""{"topics":{"chat":false}}""", topicBody("chat", false).toString())
     }
 
@@ -172,6 +181,21 @@ class SubsTest {
         rule.onNodeWithText(app.getString(R.string.unsubscribe)).performClick()
         rule.waitUntil(5000) { puts.isNotEmpty() }
         assertEquals("""{"topics":{"agents":false}}""", puts.single())
+    }
+
+    @Test fun aTopicTheServerFlagsAsksFirst() { // #623
+        settings("""{"filtered":true}""")
+        show()
+        search("subscribe")
+        waitFor("sub-ops")
+        rule.onAllNodesWithText(app.getString(R.string.subs_agents_note)).assertCountEquals(2) // agents by name, ops by flag; not chat
+        rule.onNodeWithTag("sub-ops").performScrollTo().performClick()
+        rule.onNodeWithText(app.getString(R.string.subs_agents_title, "ops")).assertExists()
+        Thread.sleep(300)
+        assertTrue(puts.isEmpty())
+        rule.onNodeWithText(app.getString(R.string.unsubscribe)).performClick()
+        rule.waitUntil(5000) { puts.isNotEmpty() }
+        assertEquals("""{"topics":{"ops":false}}""", puts.single())
     }
 
     @Test fun notFoundHidesThePage() {
