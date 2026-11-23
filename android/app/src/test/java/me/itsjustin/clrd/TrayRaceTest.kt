@@ -273,8 +273,8 @@ class TrayRaceTest {
 
     @Test fun pruneKeepsAnOldClearStillQueued() { // #34 review: a refused Clear must find its row, or its refetch is dropped
         bg {
-            dao.put(row("a", Notif.DISMISSED, 1)) // the phone's guess, last changed long ago
-            dao.put(row("b", Notif.DISMISSED, 1))
+            dao.put(row("a", Notif.DISMISSED, 1).copy(updatedAt = 1)) // the phone's guess, last changed long ago
+            dao.put(row("b", Notif.DISMISSED, 1).copy(updatedAt = 1)) // not now: within one millisecond prune would keep it
             dao.addPending(Pending(notifId = "a", action = "dismiss", body = "{}"))
             dao.prune(System.currentTimeMillis(), emptyList())
             dao.pruneTopic("t", System.currentTimeMillis())

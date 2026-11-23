@@ -11,6 +11,15 @@
 
     <!-- Inbox -->
     <string name="cleared_everywhere">Cleared everywhere</string>
+    <!-- Why a card is leaving the list, shown for a moment as it goes (#598). -->
+    <string name="gone_resolved">Resolved</string>
+    <string name="gone_acknowledged">Acknowledged</string>
+    <string name="gone_back">Back in the inbox</string>
+    <string name="gone_moved">Moved</string>
+    <!-- %1$s is one of the above, %2$s the device that did it. -->
+    <string name="gone_on">%1$s on %2$s</string>
+    <!-- %1$s is Resolved, %2$s the sender that resolved it. -->
+    <string name="gone_by">%1$s by %2$s</string>
     <string name="undo">Undo</string>
     <string name="restore">Restore</string>
     <string name="tap_to_answer">Tap to read it all and answer</string>

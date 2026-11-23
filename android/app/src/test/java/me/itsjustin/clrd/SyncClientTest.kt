@@ -155,6 +155,22 @@ class SyncClientTest {
         assertEquals(9L, store.lastSeq())
     }
 
+    @Test fun onlyLiveEventsMayMoveACard() { // #598: a replay is a catch-up, it never animates
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send(ev(1, "old", "active"))
+                ws.send("""{"type":"ready","seq":1}""")
+                ws.send(ev(2, "new", "active"))
+                ws.send(ev(3, "new", "dismissed"))
+                ws.send(ev(4, "new", "active").replace("\"created\"", "\"repeat\""))
+                ws.send(ev(5, "z", "active").replace("\"created\"", "\"state\"").replace("\"seq\":5,", "\"seq\":5,\"via\":\"snooze_end\","))
+            }
+        }
+        start()
+        await { store.lastSeq() == 5L }
+        assertEquals(listOf("new:true", "new:false", "new:true", "z:true"), store.lives.toList())
+    }
+
     @Test fun aRepeatEventAlertsAgain() {
         onConnect = { _, ws ->
             ws.send("""{"type":"ready","seq":0}""")
@@ -623,6 +639,8 @@ class SyncClientTest {
         @Volatile private var seq = 0L
 
         override fun lastSeq() = seq
+        val lives = CopyOnWriteArrayList<String>()
+        override fun live(notifs: Collection<Notif>, arrive: Boolean) { notifs.forEach { lives += "${it.id}:$arrive" } }
         val again = CopyOnWriteArrayList<Boolean>()
         val answers = CopyOnWriteArrayList<Boolean>()
         @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) {

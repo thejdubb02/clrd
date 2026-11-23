@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.os.SystemClock
 import android.media.RingtoneManager
 import android.provider.Settings
 import android.widget.Toast
@@ -46,6 +47,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -90,6 +92,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
@@ -125,6 +128,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -173,6 +177,12 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         battery.value = batteryPrompt(this)
         resumes.value++
+        App.of(this).front = true
+    }
+
+    override fun onPause() {
+        App.of(this).front = false // a change made while away never moves a card (#598)
+        super.onPause()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -464,7 +474,9 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                 Tab.Settings -> SettingsScreen(app, battery, resumes, scan)
                 else -> {
                     val flow = when (tab) { Tab.Inbox -> dao.inbox(); Tab.Snoozed -> dao.snoozed(); else -> dao.cleared() }
-                    val rows by remember(tab) { flow }.collectAsState(emptyList())
+                    // tagged with its tab: collectAsState keeps the old tab's list until the new one loads (#598)
+                    val loaded by remember(tab) { flow.map { tab to it } }.collectAsState(null)
+                    val rows = loaded?.takeIf { it.first == tab }?.second.orEmpty()
                     val counts = topicCounts(rows)
                     val topics = counts.keys.sorted()
                     val picked = topic?.takeIf { it in topics }
@@ -473,34 +485,62 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                     val shown = rows.filter { picked == null || it.topic == picked }
                     // Stack by topic also folds the list here, as on the web; not when one topic is picked (#231).
                     val entries = if (app.stack && picked == null) stacked(shown, unfolded) else shown.map(::One)
-                    if (shown.isEmpty()) Empty(tab) else LazyColumn(
+                    // Cards that leave or come while you look move as on the web (#598).
+                    val ms = remember(tab) { MotionState() }
+                    val toward = remember { HashMap<String, Pair<Int, Long>>() } // the way a card was swiped, +1 for inline end
+                    var swept by remember { mutableIntStateOf(0) }
+                    swept // read, so a card that is done leaving redraws the list
+                    val still = remember(resumes) { stillMotion(ctx) }
+                    val now = SystemClock.uptimeMillis()
+                    val list = remember(tab) { LazyListState() }
+                    val top by remember(list) { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0 } }
+                    val wiggled = ms.wiggle
+                    if (loaded?.first == tab) ms.step(entries, now, app.moved::get) { id -> toward[id]?.takeIf { now - it.second <= FRESH_MS }?.first ?: 1 }
+                    // at the top, a new card shows there; the list would otherwise hold the old first card in place
+                    if (top && ms.wiggle != wiggled) list.requestScrollToItem(0)
+                    if (shown.isEmpty() && ms.ghosts.isEmpty()) Empty(tab) else LazyColumn(
+                        state = list,
                         // Room under the last card for the Send button on the inbox.
                         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, if (tab == Tab.Inbox) 88.dp else 16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(entries, key = { it.key }) { e ->
+                        items(ms.shown(entries), key = { if (it is Ghost) "gone\u0000" + it.entry.key else (it as Entry).key }) { e ->
+                          Box {
+                            if (e is Ghost) {
+                                Gone(e, still, { ms.ghosts.remove(e); swept++ }) { why ->
+                                    when (val g = e.entry) { is Stack -> StackCard(g, false, null, {}, gone = why) {}; is One -> Card(g.n) { why() } }
+                                }
+                                return@Box
+                            }
+                            val came = ms.arrived[(e as Entry).key]?.takeIf { SystemClock.uptimeMillis() - it < 500 } != null // off screen, it simply shows when scrolled to
+                            Arrive(came && !still, { e.key == ms.wiggle }) {
                             if (e is Stack) {
                                 val open = e.topic in unfolded
                                 StackCard(e, open, if (tab == Tab.Cleared) null else ({ clearAll(e.rows) }), { topicMenu(e.topic) }) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
-                                return@items
+                                return@Arrive
                             }
                             val n = (e as One).n
                             if (tab == Tab.Cleared) Card(n, { topicMenu(n.topic) }) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text(stringResource(R.string.restore), color = b.ink) } }
                             else {
                                 // The buttons the shared setting names, minus any this card cannot take (#161).
-                                val snoozeTimes = snooze.times.map { t -> snoozeLabel(t) to { app.act(n.id, "snooze", Snooze.body(t)) } }
-                                val reveal = { names: List<String> ->
+                                val reveal = { names: List<String>, dir: Int ->
+                                    val swiped = { // it slides away the way it went
+                                        val t = SystemClock.uptimeMillis()
+                                        toward.values.removeIf { t - it.second > FRESH_MS }
+                                        toward[n.id] = dir to t
+                                    }
+                                    val snoozeTimes = snooze.times.map { t -> snoozeLabel(t) to { swiped(); app.act(n.id, "snooze", Snooze.body(t)) } }
                                     Swipes.shown(names, n.state == Notif.ACTIVE, tab == Tab.Inbox).map { name ->
                                         when (name) {
-                                            "clear" -> RevealAction(clearLabel, Icons.Filled.Check, b.clear, "reveal_clear") { clear(n) }
+                                            "clear" -> RevealAction(clearLabel, Icons.Filled.Check, b.clear, "reveal_clear") { swiped(); clear(n) }
                                             "snooze" -> RevealAction(snoozeLabelText, Icons.Filled.DateRange, b.snooze, "reveal_snooze", snoozeTimes) {
-                                                app.act(n.id, "snooze", Snooze.body(snooze.default))
+                                                swiped(); app.act(n.id, "snooze", Snooze.body(snooze.default))
                                             }
                                             else -> RevealAction(ackLabel, Icons.Filled.ThumbUp, b.ink, "reveal_ack") { app.act(n.id, "ack") }
                                         }
                                     }
                                 }
-                                RevealRow(reveal(swipes.start), reveal(swipes.end), app.fastSwipe) {
+                                RevealRow(reveal(swipes.start, -1), reveal(swipes.end, 1), app.fastSwipe) {
                                     Card(n, { topicMenu(n.topic) }) {
                                         if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text(ackLabel, color = b.ink) }
                                         if (tab == Tab.Inbox) SnoozeButton(app, n.id)
@@ -508,6 +548,8 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                                     }
                                 }
                             }
+                            }
+                          }
                         }
                     }
                 }
@@ -824,7 +866,11 @@ internal fun stacked(rows: List<Notif>, open: Set<String>): List<Entry> = rows.g
 }
 
 @Composable
-private fun StackCard(s: Stack, open: Boolean, onClear: (() -> Unit)?, menu: @Composable () -> Unit, onToggle: () -> Unit) {
+private fun StackCard(
+    s: Stack, open: Boolean, onClear: (() -> Unit)?, menu: @Composable () -> Unit,
+    gone: (@Composable () -> Unit)? = null, // a leaving stack shows why in place of its buttons (#598)
+    onToggle: () -> Unit,
+) {
     val b = LocalBrand.current
     val top = s.rows.maxOf { it.priority }
     Surface(
@@ -840,6 +886,7 @@ private fun StackCard(s: Stack, open: Boolean, onClear: (() -> Unit)?, menu: @Co
                 Text(s.rows[0].title.ifEmpty { s.rows[0].message }, color = b.body, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(pluralStringResource(R.plurals.tray_stack, s.rows.size, s.rows.size), style = Mono, color = b.slate)
             }
+            if (gone != null) { gone(); return@Row }
             menu()
             if (onClear != null) TextButton(onClick = onClear) { Text(stringResource(R.string.clear), color = b.ink) }
             TextButton(onClick = onToggle) { Text(stringResource(if (open) R.string.stack_hide else R.string.stack_show), color = b.ink) }
