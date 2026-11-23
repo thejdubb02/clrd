@@ -29,6 +29,13 @@ waits for you to press Link this computer, and the check code step follows as
 usual. A build run from the source tree is not registered for `clrd://`
 addresses; paste the link there.
 
+One copy runs per sign-in, on Linux and on Windows: starting clrd again
+opens the window of the one already running. (A Windows computer that lets
+one account sign in twice at once runs one copy in each.) The window follows the
+system's light or dark setting on both. Neither has run on a Windows
+computer yet: the one-copy check has passed under Wine, and the light or dark
+part on Windows is the window library's own and has not been seen.
+
 Still to come, each in its own change: Windows system notifications, and
 `clrd://link` addresses on Windows.
 

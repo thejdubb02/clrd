@@ -33,9 +33,19 @@ minisign-verify = "0.2"
 base64 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
-# Credential Manager, where the token is kept. Bindings only, no code of its
-# own, and already in the tree for the OS TLS.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
+# Credential Manager, where the token is kept, and the named pipe that keeps
+# it to one running app. Bindings only, no code of its own, and already in
+# the tree for the OS TLS.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Credentials",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # D-Bus, for desktop notifications (org.freedesktop.Notifications). Pure Rust,

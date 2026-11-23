@@ -1358,8 +1358,12 @@ rules. Its token lives in the OS keychain and is sent only as an
 - Unlinking ends the window session (`DELETE /api/v1/session`), revokes the
   device on the server and removes the token from the
   keychain.
-- One copy runs per user. Starting it again opens the window of the one
-  already running (Linux; Windows is still to come).
+- One copy runs per sign-in session. Starting it again opens the window of
+  the one already running, and hands it the `clrd://` link it was started
+  with. On Linux the lock is a name on the session bus. On Windows it is a
+  named pipe whose name carries the sign-in session's number; a later start
+  writes its link only to a pipe served from its own session. If the lock
+  cannot be taken or reached, the app starts anyway.
 - Each open notification = one system notification.
 - Closing a system notification (its close button, or the desktop's own
   clear) only hides it on that computer and sends nothing, the same rule as
@@ -1376,7 +1380,8 @@ rules. Its token lives in the OS keychain and is sent only as an
 - The window follows the desktop's light or dark setting, at start and at
   each change, so the inbox's System appearance is the desktop's. On Linux
   that is the settings portal's `color-scheme`; a desktop with no portal
-  keeps the GTK theme's answer.
+  keeps the GTK theme's answer. On Windows it is the "app mode" colour
+  setting, which the window library reads and follows by itself.
 - An incoming `dismissed` or `resolved` event from any device always closes
   the system notification.
 - Updates (Windows, #719). The update address and a minisign public key are

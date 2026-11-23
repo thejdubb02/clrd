@@ -16,6 +16,9 @@ pub mod device;
 pub mod engine;
 #[cfg(target_os = "linux")]
 pub mod instance;
+#[cfg(windows)]
+#[path = "instance_windows.rs"]
+pub mod instance;
 #[cfg(any(target_os = "linux", windows))]
 pub mod keychain;
 pub mod link;
