@@ -29,8 +29,8 @@ waits for you to press Link this computer, and the check code step follows as
 usual. A build run from the source tree is not registered for `clrd://`
 addresses; paste the link there.
 
-Still to come, each in its own change: automatic updates on Windows, Windows
-system notifications, and `clrd://link` addresses on Windows.
+Still to come, each in its own change: Windows system notifications, and
+`clrd://link` addresses on Windows.
 
 ## How the window is kept apart from the token
 
@@ -120,6 +120,63 @@ and 11; where it is missing the installer downloads it from Microsoft.
 It is not code signed. Windows SmartScreen will usually say "Windows
 protected your PC" when the installer is opened; More info, then Run anyway,
 starts it. A computer managed by an organisation may block it outright.
+
+## Updates on Windows
+
+There is no update address yet, so a build from this tree never asks anywhere
+and shows no update settings. Like the installer, the update step has not been
+run on a Windows computer yet; the checks below are proven by tests on Linux.
+
+A build is given two things when it is compiled, and both are needed:
+
+```sh
+CLRD_UPDATE_URL=https://example.com/clrd/latest.json \
+CLRD_UPDATE_PUBKEY="$(cat clrd.key.pub)" \
+cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc
+```
+
+The address serves a small JSON feed in the shape Tauri's updater uses, so
+`cargo tauri signer generate` makes the key and
+`cargo tauri signer sign --app-version 0.2.0 clrd_0.2.0_x64-setup.exe` signs
+each installer. The version has to be given: a signature without one is
+refused.
+
+```json
+{
+  "version": "0.2.0",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "<the contents of clrd_0.2.0_x64-setup.exe.sig>",
+      "url": "https://example.com/clrd/clrd_0.2.0_x64-setup.exe"
+    }
+  }
+}
+```
+
+- The app asks at start and every six hours. A newer installer is kept and
+  run only when its signature verifies against the key in the build and was
+  made for the very version the feed names, so a feed cannot pass an old
+  installer off as new. Anything else is dropped and the running version
+  carries on. The installer checks once more: run with no questions, it
+  stops when a newer clrd is already installed.
+- The installer runs with no questions, and clrd starts again in the tray
+  when it has succeeded. A version whose installer was started once is not
+  tried again by itself, so a failing install cannot restart the app in a
+  loop. Not proven yet: what an installer that fails half way leaves behind.
+  The app has quit by then, so it stays closed until it is opened again.
+- Use an `https` address. The feed is not signed, so on plain `http` someone
+  on the network could hold the app on an old version (an `https` address is
+  never followed to plain `http`). They still could not
+  make it run anything the key did not sign.
+- "Update automatically" on the This computer page is on at first. Off, the
+  app never asks, downloads or installs by itself; Check for updates still
+  works. A setup script turns it off by making an empty file named
+  `no-auto-update` in `%APPDATA%\org.clrd.desktop`, before or after the first
+  start.
+- The update requests carry no sign-in: the token and the window's session
+  never go to the update address.
+- The private key signs every update a user will run. It never belongs in
+  this repository, a build log or an issue.
 
 ## Dependencies
 

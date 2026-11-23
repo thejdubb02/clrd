@@ -44,6 +44,13 @@
   </section>
 
   <button id="retry" type="button" hidden>Try again</button>
+
+  <section id="updates" hidden>
+    <label class="switch"><input id="auto-update" type="checkbox"> Update automatically</label>
+    <p>On: clrd looks for a new version a few times a day and installs it by itself. Off: it never looks unless you press the button. This is version <span id="version"></span>.</p>
+    <button id="check-update" type="button">Check for updates</button>
+    <p id="update-note" role="status"></p>
+  </section>
 </main>
 <script src="main.js"></script>
 </html>
