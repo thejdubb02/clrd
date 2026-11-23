@@ -306,18 +306,32 @@ fn make_main(app: &AppHandle, base: &str, set_cookie: String) -> Result<(), Stri
 }
 
 /// Shows nothing: system notifications on this system come in a later step.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 struct Quiet;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 impl clrd_core::Sink for Quiet {
     fn show(&mut self, _: &clrd_core::Notification, _: bool) {}
     fn close(&mut self, _: &str) {}
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn sink(_: &AppHandle, _: Arc<Server>) -> Result<Quiet, String> {
     Ok(Quiet)
+}
+
+/// System notifications, under the id the installer put on the Start menu
+/// shortcut: Windows shows them for an installed app only.
+#[cfg(windows)]
+fn sink(app: &AppHandle, server: Arc<Server>) -> Result<clrd_core::notify::Notifier, String> {
+    let close_clears = close_clears(app)?.flag();
+    let (id, app) = (app.config().identifier.clone(), app.clone());
+    Ok(clrd_core::notify::Notifier::new(
+        &id,
+        server,
+        close_clears,
+        move |_| open_main(&app),
+    ))
 }
 
 /// System notifications, on a bus connection of their own.
