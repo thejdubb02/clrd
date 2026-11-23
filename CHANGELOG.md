@@ -101,6 +101,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web: a subscriptions change from another device no longer drops a half-typed answer, and Undo shows only for an Unsubscribe that went through (#649).
 - Web: a Settings search typed while the page is still loading now finds
   Link a phone once it appears (#591).
 - Server: `color_rules: null` in a settings change is now refused with a

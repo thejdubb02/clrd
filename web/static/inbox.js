@@ -646,7 +646,7 @@
   }
   // Topic subscriptions (SPEC 2.3). A change reloads the page, so Undo
   // rides in sessionStorage, written before the PUT so a reply that lands
-  // mid-reload still offers it.
+  // mid-reload still offers it. The new page checks the change landed (#649).
   const subsPut = body => fetch('/api/v1/subscriptions', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
   const subsWhy = async r => r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   const approvalsOff = t => confirm(`Agents send their approval requests to ${t}. Unsubscribe, and those requests stop reaching you. Unsubscribe anyway?`);
@@ -655,12 +655,23 @@
   try { unsubDone = sessionStorage.getItem('clrd-unsub'); } catch { /* as above */ }
   if (unsubDone) {
     store('clrd-unsub', null);
-    say(`Unsubscribed from ${unsubDone}`, async () => {
-      const r = await subsPut({ topics: { [unsubDone]: true } });
-      if (r && r.ok) return location.reload();
-      say(await subsWhy(r));
-    });
+    fetch('/api/v1/subscriptions', { credentials: 'same-origin' }).then(r => r.json()).then(s => {
+      if (!(s.topics || []).some(x => x.topic === unsubDone && !x.subscribed)) return; // the PUT never landed
+      say(`Unsubscribed from ${unsubDone}`, async () => {
+        const r = await subsPut({ topics: { [unsubDone]: true } });
+        if (r && r.ok) return location.reload();
+        say(await subsWhy(r));
+      });
+    }, () => {});
   }
+  // A reload (a subscriptions change on another device, a reset) keeps a
+  // half-typed answer, as a live update does (#153, #649).
+  addEventListener('pagehide', () => {
+    const d = [...document.querySelectorAll('[data-text-reply] [name=text]')].filter(b => b.value).map(b => [b.closest('[data-id]').dataset.id, b.value]);
+    store('clrd-drafts', d.length ? JSON.stringify(d) : null);
+  });
+  try { for (const [id, v] of JSON.parse(sessionStorage.getItem('clrd-drafts')) || []) { const b = card(id)?.querySelector('[data-text-reply] [name=text]'); if (b) b.value = v; } } catch { /* as above */ }
+  store('clrd-drafts', null);
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-unsub], [data-subscribe]');
     if (!b) return;

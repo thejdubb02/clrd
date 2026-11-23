@@ -1525,6 +1525,36 @@ try {
     console.log('ok: a topic that got a question warns on Unsubscribe from any of its cards');
   }
 
+  // Subscriptions follow-ups (#649): a change from another device reloads the
+  // page and keeps a half-typed answer; Undo shows only for an Unsubscribe
+  // that landed.
+  {
+    const q = await api(phone, '/api/v1/notifications', { topic: 'drafts', title: 'Name it?', actions: [{ label: 'Say', reply: 'say', text: true }] });
+    await api(phone, '/api/v1/notifications', { topic: 'drafts2', title: 'Leave me' });
+    const sign = async name => { const c = await browser.newContext(); assert.ok((await c.request.post(base + '/api/v1/session', { data: { token: laptop, name } })).ok(), name + ' sign-in'); return c; };
+    const ctx = await sign('drafts'), other = await sign('drafts-other');
+    const dp = await ctx.newPage();
+    await dp.goto(base + '/app');
+    await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).fill('half typed');
+    const put = (c, topics) => c.request.put(base + '/api/v1/subscriptions', { data: { topics }, headers: { Origin: base } });
+    const [, r1] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: false })]);
+    assert.ok(r1.ok(), 'unsubscribe from another device');
+    assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'the reload dropped the half-typed answer');
+    assert.ok((await put(other, { drafts2: true })).ok(), 'subscribe again');
+    await dp.waitForEvent('load');
+    // A marker whose Unsubscribe never landed: no toast, no Undo.
+    await dp.evaluate(() => sessionStorage.setItem('clrd-unsub', 'drafts'));
+    await dp.reload();
+    await dp.waitForTimeout(500);
+    assert.equal(await dp.locator('[data-toast]', { hasText: 'Unsubscribed from' }).count(), 0, 'Undo offered for an Unsubscribe that never landed');
+    // One that did land still offers it.
+    await dp.locator('article.card', { hasText: 'Leave me' }).locator('[data-unsub]').dispatchEvent('click');
+    await dp.locator('[data-toast]', { hasText: 'Unsubscribed from drafts2' }).waitFor();
+    assert.ok((await put(other, { drafts2: true })).ok(), 'subscribe again');
+    await ctx.close(); await other.close();
+    console.log('ok: a subscriptions change keeps a half-typed answer, and Undo shows only for an Unsubscribe that landed');
+  }
+
   // Format check in Settings (#320, #618): one card per topic with a group per
   // sender, dismiss for one sender from a row's menu, leave the topic out and
   // check it again, undo. A read-only device sees the findings but no buttons.
