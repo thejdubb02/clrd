@@ -402,7 +402,7 @@
     document.title = doc.title; // the open count in the tab
     document.querySelectorAll('[data-live]').forEach(cur => {
       const next = doc.querySelector(`[data-live="${cur.dataset.live}"]`);
-      if (next && !cur.contains(document.activeElement)) cur.replaceWith(document.adoptNode(next));
+      if (next && !cur.contains(document.activeElement) && !next.isEqualNode(cur)) cur.replaceWith(document.adoptNode(next)); // same colors: no reload flash
     });
     const nextList = doc.querySelector('[data-list]');
     if (!list || !nextList) return tidy();
@@ -410,7 +410,7 @@
     let typing = null;
     const keep = stackOrder([...nextList.children].map(n => {
       const old = card(n.dataset.id);
-      if (old && old.dataset.seq === n.dataset.seq) return old;
+      if (old && old.dataset.seq === n.dataset.seq && old.dataset.look === n.dataset.look) return old; // or its color rule changed (#165)
       const fresh = document.adoptNode(n);
       // A live change to a still-open question keeps a half-typed answer (#153).
       const was = old && old.querySelector('[data-text-reply] [name=text]'), box = fresh.querySelector('[data-text-reply] [name=text]');
@@ -1247,6 +1247,7 @@
         // Snooze times or formatting changed on another device: the cards are stale.
         // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
         const st = m.settings || {};
+        if (st.color_rules) refresh(); // recolor the cards (#165)
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
         const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
