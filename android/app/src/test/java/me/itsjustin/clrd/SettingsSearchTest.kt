@@ -32,11 +32,12 @@ class SettingsSearchTest {
     private val app = ApplicationProvider.getApplicationContext<App>()
     private val server = MockWebServer()
     private var admin = false
+    @Volatile private var sendersAsked = false
 
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
-            override fun dispatch(request: RecordedRequest) = when {
-                request.path == "/api/v1/senders" && !admin -> MockResponse().setResponseCode(403).setBody("""{"error":"forbidden"}""")
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.path == "/api/v1/senders" && !admin -> { sendersAsked = true; MockResponse().setResponseCode(403).setBody("""{"error":"forbidden"}""") }
                 request.path == "/api/v1/senders" -> MockResponse().setBody("""{"senders":[]}""")
                 else -> MockResponse().setBody("{}")
             }
@@ -89,9 +90,11 @@ class SettingsSearchTest {
 
     @Test fun sendersOnlyForAFullAdmin() {
         show()
-        rule.waitUntil(5000) { server.requestCount > 0 }
         search("sender")
-        rule.waitForIdle()
+        rule.waitUntil(5000) { sendersAsked }
+        // Give the 403 time to land; the section must never appear.
+        val appeared = runCatching { rule.waitUntil(2000) { rule.onAllNodesWithText("INTEGRATIONS").fetchSemanticsNodes().isNotEmpty() } }.isSuccess
+        assertFalse(appeared)
         rule.onNodeWithText("No settings match \"sender\"").assertExists() // left out, not greyed
     }
 

@@ -235,6 +235,8 @@
     <!-- Linking this phone from a signed-in browser (QR code or clrd://link) -->
     <string name="scan_qr">Scan QR code</string>
     <string name="link_phone">Link a phone</string>
+    <string name="server_explain">The clrd server this phone syncs with, and the token it signs in with.</string>
+    <string name="devices_explain">Every phone and browser signed in to your server.</string>
     <string name="link_phone_explain">Signed in on a browser already? Its Settings page shows a code that sets this phone up.</string>
     <string name="battery">Battery</string>
     <string name="section_notifications">Notifications</string>

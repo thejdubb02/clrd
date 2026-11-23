@@ -1039,6 +1039,7 @@ private fun DeviceSettings(app: App, resumes: Int) {
     }
     Spacer(Modifier.height(8.dp))
     Text(stringResource(R.string.devices_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(R.string.devices_explain), color = b.slate, fontSize = 13.sp)
     list.forEach { d ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
@@ -1525,11 +1526,11 @@ private fun SnoozeSettings(app: App) {
     val ctx = LocalContext.current
     val s by app.snooze.collectAsState()
     val server by app.saved.collectAsState() // a switch to another server drops unsaved edits
-    var times by remember(server) { mutableStateOf(s.times.joinToString(", ")) }
-    var def by remember(server) { mutableStateOf(s.default) }
+    var times by rememberSaveable(server) { mutableStateOf(s.times.joinToString(", ")) }
+    var def by rememberSaveable(server) { mutableStateOf(s.default) }
     var result by remember { mutableStateOf<String?>(null) }
     // Unsaved edits win over a settings message from another device; after a save the server's answer shows.
-    var edited by remember(server) { mutableStateOf(false) }
+    var edited by rememberSaveable(server) { mutableStateOf(false) }
     LaunchedEffect(s, edited) {
         if (!edited) {
             times = s.times.joinToString(", ")
@@ -1674,6 +1675,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
         when (id) {
             "server" -> {
                 Title(R.string.server)
+                Explain(R.string.server_explain)
                 OutlinedTextField(
                     url, { url = pastedUrl(it) }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -1752,6 +1754,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
         }
     }
 
+    val keep = androidx.compose.runtime.saveable.rememberSaveableStateHolder() // a setting hidden by search keeps its unsaved edits
     val scroll = rememberScrollState()
     // Scroll up so the signed-out line is seen even if Settings was scrolled down.
     LaunchedEffect(status) { if (status == SyncClient.Status.AUTH_FAILED) scroll.animateScrollTo(0) }
@@ -1770,7 +1773,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             Spacer(Modifier.height(8.dp))
             Text(stringResource(section).uppercase(), style = Mono, color = b.slate, fontSize = 13.sp)
             items.forEach {
-                Column(Modifier.fillMaxWidth().testTag("setting-${it.id}"), verticalArrangement = Arrangement.spacedBy(12.dp)) { Block(it.id) }
+                Column(Modifier.fillMaxWidth().testTag("setting-${it.id}"), verticalArrangement = Arrangement.spacedBy(12.dp)) { keep.SaveableStateProvider(it.id) { Block(it.id) } }
             }
         }
         Spacer(Modifier.height(8.dp))

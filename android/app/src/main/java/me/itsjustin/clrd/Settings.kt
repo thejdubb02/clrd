@@ -16,8 +16,8 @@ internal val SETTINGS = listOf(
     Setting(R.string.section_inbox, "full-swipe", R.string.fast_swipe, R.string.fast_swipe_explain, listOf("swipe", "fast", "gesture", "one move")),
     Setting(R.string.section_inbox, "snooze", R.string.snooze_settings, R.string.snooze_explain, listOf("later", "remind", "postpone", "default time")),
     Setting(R.string.section_inbox, "drop-cleared", R.string.drop_cleared, R.string.drop_cleared_explain, listOf("hide", "cleared tab", "remove")),
-    Setting(R.string.section_devices, "server", R.string.server, null, listOf("server", "address", "url", "token", "sign in", "log in")),
-    Setting(R.string.section_devices, "devices", R.string.devices_title, null, listOf("phone", "browser", "unlink", "sign out", "approve", "may approve", "activity")),
+    Setting(R.string.section_devices, "server", R.string.server, R.string.server_explain, listOf("server", "address", "url", "token", "sign in", "log in")),
+    Setting(R.string.section_devices, "devices", R.string.devices_title, R.string.devices_explain, listOf("phone", "browser", "unlink", "sign out", "approve", "may approve", "activity")),
     Setting(R.string.section_devices, "link-phone", R.string.link_phone, R.string.link_phone_explain, listOf("qr", "scan", "pair", "code", "add phone")),
     Setting(R.string.section_integrations, "senders", R.string.senders_title, R.string.senders_explain, listOf("sender", "rules", "bot", "agent", "allow")),
 )
