@@ -66,10 +66,11 @@
   article.card { @apply isolate relative has-[details[open]]:z-10 gap-0 overflow-visible py-0 ring-0; }
   /* Color rules (#165, SPEC 2.1): --cc and its readable text color --cc-ink
      come from /card-colors.css. Selection and clearing still draw over them. */
-  article.card.cs-bar { border-inline-start: 4px solid var(--cc); }
+  article.card.cs-bar { box-shadow: inset 4px 0 0 var(--cc); } /* not a border: the card's border utility layer would win */
+  article.card.cs-bar:dir(rtl) { box-shadow: inset -4px 0 0 var(--cc); }
   article.card.cs-tint { background: color-mix(in oklab, var(--cc) 14%, var(--card)); }
   article.card.cs-gradient { background: linear-gradient(to right, color-mix(in oklab, var(--cc) 35%, var(--card)), var(--card) 75%); }
-  article.card.cs-solid { --color-foreground: var(--cc-ink); --color-card-foreground: var(--cc-ink); --color-muted-foreground: color-mix(in oklab, var(--cc-ink) 80%, var(--cc)); background: var(--cc); border-color: var(--cc); color: var(--cc-ink); }
+  article.card.cs-solid { --color-foreground: var(--cc-ink); --color-card-foreground: var(--cc-ink); --color-body: var(--cc-ink); --color-muted-foreground: color-mix(in oklab, var(--cc-ink) 80%, var(--cc)); background: var(--cc); border-color: var(--cc); color: var(--cc-ink); }
   article.card.is-selected { @apply border-foreground/45; }
 
   /* The cleared moment, the one signature motion (Android plays the same):
