@@ -40,6 +40,12 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   the main button, instead of one block of text and buttons (#618). With more
   than three topics the cards start closed.
 
+### Fixed
+
+- Web and Android: the sender's Alarm topic hint now says an empty topic
+  means where its last message went after any route, which is what the
+  server does (#585).
+
 ## 0.1.0 - 2026-11-23
 
 ### Added
