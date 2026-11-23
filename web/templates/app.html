@@ -742,7 +742,7 @@
     <div class="field"{{if .FieldErr "alert_topic"}} data-invalid="true"{{end}}><label for="r-alert">Alarm topic</label>
       <input id="r-alert" name="alert_topic" type="text" autocomplete="off" spellcheck="false" placeholder="ops" value="{{$r.AlertTopic}}" aria-describedby="r-alert-hint{{if .FieldErr "alert_topic"}} r-alert-err{{end}}"{{if .FieldErr "alert_topic"}} aria-invalid="true"{{end}}>
       {{with .FieldErr "alert_topic"}}<p id="r-alert-err" role="alert">Not saved: {{.}}.</p>{{end}}
-      <p id="r-alert-hint">Where the alarm goes. Empty means the topic it last sent to.</p></div>
+      <p id="r-alert-hint">Where the alarm goes. Empty means the first topic its last topic routes to, or that topic when it has no route.</p></div>
     <div><button class="btn" data-variant="outline">Save rules</button></div>
   </form>
   <h2 class="mt-4 text-base font-semibold">Changes</h2>

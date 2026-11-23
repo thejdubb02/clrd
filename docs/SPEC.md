@@ -561,6 +561,23 @@ Clients store the highest `seq` they applied. On (re)connect they ask for
 everything after it. That is the whole sync model: no client clocks, no
 conflict resolution, last write on the server wins.
 
+**Alerts on catch-up (#589).** A client may keep only the last event per
+notification while it replays, so a phone that was offline does not buzz for
+things already cleared elsewhere. It must still remember, per notification,
+whether any replayed event hid it (`snoozed`, `dismissed` or `resolved`). When
+the last one shows it again (a snooze that ended, a reopen), that is a fresh
+show and alerts as it did on the devices that were online, even if the card
+was showing on this device before it went offline. The client keeps the
+sequence of the event that showed it again, so it can tell a reopen made
+elsewhere from this device's own action (an Undo it sent, matched against its
+pending actions and the answers it got back), which stays quiet. A replayed
+`repeat` or `mark` may carry an earlier show forward but never makes one: on
+its own it never alerts, and it never brings back a card this phone's tray hid
+by a swipe. A replay the client saves quietly (too long, or no `ready` in
+time) stays quiet. This applies to clients that alert
+on events (the Android and desktop trays); the web inbox plays nothing on
+catch-up (section 10.1).
+
 ### WebSocket `GET /api/v1/ws?since=<seq>&topics=a,b`
 
 1. Server sends every event with `seq > since` (replay), then the display
@@ -1296,6 +1313,20 @@ and is a linked device like any other, under the same Allowed, Ask and Denied
 rules. Its token lives in the OS keychain and is sent only as an
 `Authorization` header.
 
+- The window is signed in without the token: the core asks
+  `POST /api/v1/session` for a session and the app puts that cookie into the
+  web view's cookie store itself, for the server's host only, HttpOnly, and
+  with no expiry so the web view keeps it in memory and never writes it to
+  disk. The token never reaches the page, a URL or a file.
+- The server's page gets no native commands. Only the app's own bundled
+  "This computer" page (link, unlink, status) may call the core. The window
+  stays on the server's origin; any other address opens in the system
+  browser.
+- Unlinking ends the window session (`DELETE /api/v1/session`), revokes the
+  device on the server and removes the token from the
+  keychain.
+- One copy runs per user. Starting it again opens the window of the one
+  already running (Linux; Windows is still to come).
 - Each open notification = one system notification.
 - Closing a system notification (its close button, or the desktop's own
   clear) only hides it on that computer and sends nothing, the same rule as

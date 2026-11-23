@@ -8,3 +8,5 @@
 # Measured 2026-11-23: server 16,711,864 with topic subscriptions (#617).
 server 16720000
 apk 2100000
+# Measured 2026-11-23: desktop 4,687,664 (Linux x86_64 release binary, tray and window, #162).
+desktop 4800000

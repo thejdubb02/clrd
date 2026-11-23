@@ -29,7 +29,15 @@ struct Inner {
     live: Vec<mpsc::Sender<String>>,
     conns: Vec<TcpStream>,
     requests: Vec<String>, // every request line, to prove what was and was not sent
+    heads: Vec<String>,    // the same requests with their headers
     dismissed: Vec<(String, String)>, // (id, via) of every dismiss call
+    version: Option<String>, // None: a server from before /api/v1/version
+    minted: u32,
+    sessions: Vec<String>, // window sessions that still work, as `name=value`
+    refuse_unlink: bool,   // the device list answers 403 (#609)
+    unlinked: bool,        // the device removed itself: its token is dead
+    page: String,          // what /app serves to a signed-in window
+    reports: Vec<String>,  // what that page posted to /report
 }
 
 impl Inner {
@@ -147,10 +155,106 @@ impl Fake {
     pub fn dismissed(&self) -> Vec<(String, String)> {
         self.inner.lock().unwrap().dismissed.clone()
     }
+
+    /// Every request so far, headers included.
+    pub fn heads(&self) -> Vec<String> {
+        self.inner.lock().unwrap().heads.clone()
+    }
+
+    /// What `/api/v1/version` says. Unset, the fake is an older server
+    /// without that endpoint.
+    pub fn set_version(&self, version: &str) {
+        self.inner.lock().unwrap().version = Some(version.into());
+    }
+
+    /// The window sessions that still work, as `clrd_session=value`.
+    pub fn sessions(&self) -> Vec<String> {
+        self.inner.lock().unwrap().sessions.clone()
+    }
+
+    /// The device list answers 403 from now on, as it does for a token
+    /// without the read scope.
+    pub fn refuse_unlink(&self) {
+        self.inner.lock().unwrap().refuse_unlink = true;
+    }
+
+    /// True once the device removed itself.
+    pub fn unlinked(&self) -> bool {
+        self.inner.lock().unwrap().unlinked
+    }
+
+    /// The page `/app` serves to a signed-in window.
+    pub fn set_page(&self, html: &str) {
+        self.inner.lock().unwrap().page = html.into();
+    }
+
+    /// What that page posted to `/report`.
+    pub fn reports(&self) -> Vec<String> {
+        self.inner.lock().unwrap().reports.clone()
+    }
+}
+
+fn send(conn: &mut TcpStream, status: &str, headers: &str, body: &str) {
+    let _ = write!(
+        conn,
+        "HTTP/1.1 {status}\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
 }
 
 fn respond(conn: &mut TcpStream, status: &str, body: &str) {
-    let _ = write!(conn, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+    send(conn, status, "Content-Type: application/json\r\n", body);
+}
+
+/// The routes a real server answers without the device's token: the version,
+/// the window's session and the pages a window loads.
+fn open_routes(
+    conn: &mut TcpStream,
+    i: &mut Inner,
+    method: &str,
+    path: &str,
+    cookie: Option<&str>,
+    body: &[u8],
+) -> bool {
+    const HTML: &str = "Content-Type: text/html; charset=utf-8\r\n";
+    let signed_in = cookie.is_some_and(|c| i.sessions.iter().any(|s| s == c));
+    match (method, path) {
+        ("GET", "/api/v1/version") => match &i.version {
+            Some(v) => respond(conn, "200 OK", &json!({"version": v}).to_string()),
+            None => respond(conn, "404 Not Found", r#"{"error":"not_found"}"#),
+        },
+        ("POST", "/api/v1/session") => {
+            let token = serde_json::from_slice::<Value>(body)
+                .ok()
+                .and_then(|v| v["token"].as_str().map(String::from));
+            if i.unlinked || token.as_deref() != Some(TOKEN) {
+                respond(conn, "401 Unauthorized", r#"{"error":"unauthorized"}"#);
+                return true;
+            }
+            i.sessions.retain(|s| Some(s.as_str()) != cookie);
+            i.minted += 1;
+            let pair = format!("clrd_session=clrd_fakesession{:020}", i.minted);
+            i.sessions.push(pair.clone());
+            let headers = format!(
+                "Content-Type: application/json\r\nSet-Cookie: {pair}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax\r\n"
+            );
+            send(conn, "200 OK", &headers, "{}");
+        }
+        ("DELETE", "/api/v1/session") => {
+            i.sessions.retain(|s| Some(s.as_str()) != cookie);
+            respond(conn, "200 OK", "{}");
+        }
+        ("GET", "/app") if signed_in => send(conn, "200 OK", HTML, &i.page.clone()),
+        // Signed out, the real server answers the same address with its
+        // sign-in page.
+        ("GET", "/app") => send(conn, "200 OK", HTML, "<title>sign in</title>"),
+        ("POST", "/report") => {
+            i.reports.push(String::from_utf8_lossy(body).to_string());
+            respond(conn, "200 OK", "{}");
+        }
+        _ => return false,
+    }
+    true
 }
 
 fn serve(mut conn: TcpStream, inner: Arc<Mutex<Inner>>) {
@@ -175,13 +279,39 @@ fn serve(mut conn: TcpStream, inner: Arc<Mutex<Inner>>) {
                 .map(|(_, v)| v.trim().to_string())
         })
     };
-    inner.lock().unwrap().requests.push(line.clone());
-    if header("authorization").as_deref() != Some(&format!("Bearer {TOKEN}")) {
-        return respond(&mut conn, "401 Unauthorized", r#"{"error":"unauthorized"}"#);
+    {
+        let mut i = inner.lock().unwrap();
+        i.requests.push(line.clone());
+        i.heads.push(head.clone());
     }
     let mut parts = line.split(' ');
     let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let mut body = vec![
+        0u8;
+        header("content-length")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    ];
+    if conn.read_exact(&mut body).is_err() {
+        return;
+    }
+    let cookie = header("cookie");
+    if open_routes(
+        &mut conn,
+        &mut inner.lock().unwrap(),
+        method,
+        path,
+        cookie.as_deref(),
+        &body,
+    ) {
+        return;
+    }
+    if inner.lock().unwrap().unlinked
+        || header("authorization").as_deref() != Some(&format!("Bearer {TOKEN}"))
+    {
+        return respond(&mut conn, "401 Unauthorized", r#"{"error":"unauthorized"}"#);
+    }
 
     if path == "/api/v1/ws" {
         let since: u64 = query
@@ -224,16 +354,24 @@ fn serve(mut conn: TcpStream, inner: Arc<Mutex<Inner>>) {
         return;
     }
 
-    let mut body = vec![
-        0u8;
-        header("content-length")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0)
-    ];
-    if conn.read_exact(&mut body).is_err() {
-        return;
-    }
     let mut i = inner.lock().unwrap();
+    if path == "/api/v1/devices" && method == "GET" {
+        if i.refuse_unlink {
+            return respond(&mut conn, "403 Forbidden", r#"{"error":"forbidden"}"#);
+        }
+        return respond(
+            &mut conn,
+            "200 OK",
+            r#"{"devices":[{"id":"other"},{"id":"d1","this":true}]}"#,
+        );
+    }
+    if path == "/api/v1/devices/d1" && method == "DELETE" {
+        // The token dies, and every window session under it.
+        i.unlinked = true;
+        i.sessions.clear();
+        i.drop_conns();
+        return respond(&mut conn, "200 OK", "{}");
+    }
     if method == "GET" && path == "/api/v1/notifications" {
         let open: Vec<&Value> = i
             .rows
@@ -348,6 +486,76 @@ impl Drop for Bus {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+/// A child process that ends with the test.
+pub struct Kill(pub std::process::Child);
+
+impl Drop for Kill {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// True when any file under `dir` holds `needle` as plain bytes.
+pub fn on_disk(dir: &std::path::Path, needle: &[u8]) -> bool {
+    std::fs::read_dir(dir).unwrap().any(|e| {
+        let path = e.unwrap().path();
+        if path.is_dir() {
+            return on_disk(&path, needle);
+        }
+        // Sockets hold nothing; a file that cannot be read fails the test.
+        path.is_file()
+            && std::fs::read(&path)
+                .unwrap()
+                .windows(needle.len())
+                .any(|w| w == needle)
+    })
+}
+
+/// A GNOME Keyring on `bus` keeping its files under `home`, unlocked with
+/// the password the login screen would hand it.
+#[cfg(target_os = "linux")]
+pub fn keyring(bus: &Bus, home: &std::path::Path) -> Kill {
+    use std::process::Stdio;
+    let mut daemon = std::process::Command::new("gnome-keyring-daemon")
+        .args(["--foreground", "--unlock", "--components=secrets"])
+        .env("DBUS_SESSION_BUS_ADDRESS", &bus.1)
+        .env("HOME", home)
+        .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_RUNTIME_DIR", home.join("run"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("gnome-keyring is needed for this test");
+    daemon
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"test-password")
+        .unwrap();
+    Kill(daemon)
+}
+
+/// A keyring of its own that already holds the link to `fake`, and the home
+/// directory it keeps its files under.
+#[cfg(target_os = "linux")]
+pub fn linked(fake: &Fake) -> (Bus, Kill, clrd_core::keychain::Keychain, PathBuf) {
+    use clrd_core::keychain::{Keychain, Linked};
+    let home = state_path().with_file_name("home");
+    std::fs::create_dir_all(home.join("run")).unwrap();
+    let bus = Bus::start();
+    let daemon = keyring(&bus, &home);
+    let keys = Keychain::new(bus.connect());
+    wait("keyring up", || keys.load().is_ok());
+    keys.save(&Linked {
+        base: fake.base.clone(),
+        token: TOKEN.into(),
+        session: String::new(),
+    })
+    .unwrap();
+    (bus, daemon, keys, home)
 }
 
 /// A sync client running on its own thread, as the app runs it.

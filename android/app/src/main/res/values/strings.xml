@@ -311,7 +311,7 @@
     <string name="rules_expect_hint">One urgent alarm when it sends nothing for this long, like 25h or 30m. Its next notification clears the alarm. Empty is off.</string>
     <string name="rules_save_expect">Save quiet alarm</string>
     <string name="rules_alert_topic">Alarm topic</string>
-    <string name="rules_alert_topic_hint">Where the alarm goes. Empty means the topic it last sent to.</string>
+    <string name="rules_alert_topic_hint">Where the alarm goes. Empty means the first topic its last topic routes to, or that topic when it has no route.</string>
     <string name="rules_save_alert_topic">Save alarm topic</string>
     <string name="rules_alarm_open">Quiet alarm open in %1$s</string>
     <string name="rules_quiet">alarm if quiet for %1$s</string>

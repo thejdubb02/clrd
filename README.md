@@ -29,6 +29,12 @@ Small on purpose. Measured 2026-11-20: the server is one 15.6 MB binary
   <img src=".github/images/inbox-light.png" alt="The clrd web inbox: an urgent backup failure, a disk warning, an alert acknowledged on a phone and an agent asking to merge a pull request" width="760">
   <img src=".github/images/inbox-phone-dark.png" alt="The same inbox on a phone in dark mode" width="200">
 </p>
+<p align="center">
+  <img src=".github/images/settings-search-light.png" alt="Settings with a search for sound: only the matching settings show" width="760">
+</p>
+
+The pictures are made by `web/e2e/screens.mjs` with `SET=readme` against the
+real server and fixed demo data, so they show the inbox as it is on `main`.
 
 > **Status: early, no tagged release yet.** The server, web inbox, Android app
 > and SDKs have tests that run in CI, and so do the integration guides (see the
