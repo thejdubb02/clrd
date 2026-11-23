@@ -529,7 +529,10 @@ digits, `-` or `_`) tags the change: GET and PUT answers carry the
 `request_id` of the set's last change, left out when it had none or its
 event has been pruned from the log, so a tab
 that reloads mid-request can tell its own change from another device's
-before offering Undo (#702). Any token of the owner may change the owner's set,
+before offering Undo (#702). An optional `"if_request_id"` (same form)
+applies the change only while the set's last change is still that request;
+otherwise it is a 409 and nothing changes, so an Undo cannot reverse a
+change another device made in between (#716). Any token of the owner may change the owner's set,
 and a full admin may add `?for=<user id or token id>` to read or set another
 owner's set (an invited agent is its own user, so this is how an admin agent
 sets a person's topics). A user id, or the id of any typed-in token,

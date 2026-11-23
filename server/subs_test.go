@@ -77,7 +77,7 @@ func subsSetup(t *testing.T) (*Server, *httptest.Server, string, func(string), f
 	}
 	set := func(topic string, on bool) {
 		t.Helper()
-		if _, err := s.SetSubscriptions(context.Background(), bt, nil, map[string]bool{topic: on}, ""); err != nil {
+		if _, err := s.SetSubscriptions(context.Background(), bt, nil, map[string]bool{topic: on}, "", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -190,6 +190,39 @@ func TestSubsRequestID(t *testing.T) {
 	put("") // another device, no id
 	if _, out := call(t, ts, "GET", "/api/v1/subscriptions", browser, nil); out["request_id"] != nil {
 		t.Fatalf("after another change: %v", out)
+	}
+}
+
+// #716: if_request_id applies a change only while the set's last change is
+// still that request, so an Undo never reverses another device's change.
+func TestSubsIfRequestID(t *testing.T) {
+	s, ts, _ := newTest(t)
+	browser := childOf(t, s, mkToken(t, s, "script", []string{ScopeRead}, nil))
+	put := func(on bool, rid, ifRID string) int {
+		code, _ := call(t, ts, "PUT", "/api/v1/subscriptions", browser, map[string]any{"topics": map[string]bool{"infra": on}, "request_id": rid, "if_request_id": ifRID})
+		return code
+	}
+	last := func() any { // the request_id of the set's last change
+		_, out := call(t, ts, "GET", "/api/v1/subscriptions", browser, nil)
+		return out["request_id"]
+	}
+	if code := put(true, "", "first"); code != 409 { // no change yet
+		t.Fatalf("no change yet: %d", code)
+	}
+	if code := put(true, "", `a"b`); code != 400 {
+		t.Fatalf("bad if_request_id: %d", code)
+	}
+	put(false, "tab-1", "")
+	if code := put(true, "undo-1", "tab-1"); code != 200 || last() != "undo-1" {
+		t.Fatalf("own change: %d %v", code, last())
+	}
+	put(false, "other", "") // another device unsubscribes again
+	if code := put(true, "undo-2", "undo-1"); code != 409 || last() != "other" {
+		t.Fatalf("another device's change was reversed: %d %v", code, last())
+	}
+	put(true, "", "") // a change with no id
+	if code := put(true, "undo-3", "other"); code != 409 {
+		t.Fatalf("after a change with no id: %d", code)
 	}
 }
 

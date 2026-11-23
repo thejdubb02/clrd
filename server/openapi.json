@@ -1557,7 +1557,8 @@
     "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {
      "new_topics": {"type": "boolean"},
      "topics": {"type": "object", "additionalProperties": {"type": "boolean"}, "maxProperties": 500},
-     "request_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{0,64}$", "description": "Optional id the client picks for this change; GET returns it while this is the set's last change (#702)."}
+     "request_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{0,64}$", "description": "Optional id the client picks for this change; GET returns it while this is the set's last change (#702)."},
+     "if_request_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{0,64}$", "description": "Optional: apply only while the set's last change is still this request_id; otherwise 409 and nothing changes (#716)."}
     }}}}},
     "responses": {
      "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Subscriptions"}}}},

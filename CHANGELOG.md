@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Server: a subscriptions change can carry `if_request_id`, so it applies only while the set's last change is still that request; otherwise it is refused with 409 and nothing changes, so an Undo never reverses another device's change (#716).
 - Server: a subscriptions change can carry a `request_id`, and the subscriptions list says which request made the last change, so the web can offer Undo only for its own Unsubscribe (#702).
 - Server: the answer to ack, snooze, dismiss, resolve or reopen says `"changed": false` when it changed nothing (the notification already had that state), so an app retrying an action does not mistake it for its own change (#693).
 - Web: a Stats page for admins, with notifications per hour or day, priorities, top topics and senders, how fast each gets cleared, and repeat alerts, over 24 hours, 7, 30 or 90 days (#120).
