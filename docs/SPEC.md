@@ -550,6 +550,18 @@ Clients store the highest `seq` they applied. On (re)connect they ask for
 everything after it. That is the whole sync model: no client clocks, no
 conflict resolution, last write on the server wins.
 
+**Alerts on catch-up (#589).** A client may keep only the last event per
+notification while it replays, so a phone that was offline does not buzz for
+things already cleared elsewhere. It must still remember, per notification,
+whether any replayed event hid it (`snoozed`, `dismissed` or `resolved`). When
+the last one shows it again (a snooze that ended, a reopen), that is a fresh
+show and alerts as it did on the devices that were online, even if the card
+was showing on this device before it went offline. A replayed `repeat` or
+`mark` alone still never alerts, and a replay the client saves quietly (too
+long, or no `ready` in time) stays quiet. This applies to clients that alert
+on events (the Android and desktop trays); the web inbox plays nothing on
+catch-up (section 10.1).
+
 ### WebSocket `GET /api/v1/ws?since=<seq>&topics=a,b`
 
 1. Server sends every event with `seq > since` (replay), then the display
