@@ -251,6 +251,16 @@ class SyncClientTest {
         assertEquals("50", wsSince[1]) // seq from the first page, read by the server before its query
     }
 
+    /** #588: a list row silenced for this device stays silenced after a reset, so the tray shows it without an alert. */
+    @Test fun aResetKeepsTheListsSilence() {
+        open = { """{"notifications":[${notifJson("q", "active", 4).replace("\"seq\":4", "\"silenced\":true,\"seq\":4")},${notifJson("loud", "active", 5)}],"seq":5}""" }
+        onConnect = { n, ws -> if (n == 1) ws.send("""{"type":"reset"}""") else ws.send("""{"type":"ready","seq":5}""") }
+        start()
+        await { wsSince.size >= 2 }
+        assertTrue(store.rows["q"]!!.silenced)
+        assertTrue(!store.rows["loud"]!!.silenced)
+    }
+
     @Test fun aNewEpochIsHandledLikeAReset() {
         store.epoch = "old"
         store.apply(listOf(notif("stale", "active", 90)), 90) // a cursor from the old database

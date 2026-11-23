@@ -18,6 +18,11 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Android: Settings is now in the same sections as the web (Notifications,
+  Inbox, Devices, Integrations) with a search box at the top (#575). It
+  matches a setting's name, its description or keywords such as "qr", and
+  says so when nothing matches. Settings also links to the source code and
+  to the issue tracker for reporting a problem (#586).
 - Color rules on the server: color cards by topic, tag, priority or title text, as a bar, tint, solid fill or gradient, set through the settings API or an agent over MCP. Senders can give a message its own color. The web and Android screens for them come next.
 - Web: a cleared card now slides away and the cards below close the gap, on
   every kind of clear, and Clear all goes top to bottom (#598). A card that

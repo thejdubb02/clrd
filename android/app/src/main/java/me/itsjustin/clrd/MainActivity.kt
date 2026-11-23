@@ -1039,6 +1039,7 @@ private fun DeviceSettings(app: App, resumes: Int) {
     }
     Spacer(Modifier.height(8.dp))
     Text(stringResource(R.string.devices_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(R.string.devices_explain), color = b.slate, fontSize = 13.sp)
     list.forEach { d ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
@@ -1138,17 +1139,13 @@ internal fun senderEmpty(s: org.json.JSONObject) = when {
  * Only a full admin may list them; for any other token the server says no and this stays hidden.
  */
 @Composable
-private fun SenderSettings(app: App, resumes: Int) {
+private fun SenderSettings(app: App, resumes: Int, state: androidx.compose.runtime.MutableState<List<org.json.JSONObject>?>) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val server by app.saved.collectAsState()
-    var senders by remember(server) { mutableStateOf<List<org.json.JSONObject>?>(null) }
+    var senders by state // fetched by SettingsScreen, which hides the Integrations section while it is null
     var open by remember(server) { mutableStateOf<String?>(null) }
     var detail by remember(server) { mutableStateOf<org.json.JSONObject?>(null) }
-    LaunchedEffect(server, resumes) {
-        val api = app.api()
-        app.io.execute { senders = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull() }
-    }
     var reload by remember { mutableStateOf(0) }
     LaunchedEffect(open, resumes, reload) {
         val id = open ?: return@LaunchedEffect
@@ -1529,11 +1526,11 @@ private fun SnoozeSettings(app: App) {
     val ctx = LocalContext.current
     val s by app.snooze.collectAsState()
     val server by app.saved.collectAsState() // a switch to another server drops unsaved edits
-    var times by remember(server) { mutableStateOf(s.times.joinToString(", ")) }
-    var def by remember(server) { mutableStateOf(s.default) }
+    var times by rememberSaveable(server) { mutableStateOf(s.times.joinToString(", ")) }
+    var def by rememberSaveable(server) { mutableStateOf(s.default) }
     var result by remember { mutableStateOf<String?>(null) }
     // Unsaved edits win over a settings message from another device; after a save the server's answer shows.
-    var edited by remember(server) { mutableStateOf(false) }
+    var edited by rememberSaveable(server) { mutableStateOf(false) }
     LaunchedEffect(s, edited) {
         if (!edited) {
             times = s.times.joinToString(", ")
@@ -1634,8 +1631,9 @@ private fun soundLabel(name: String) = when (name) {
     else -> R.string.sound_soft
 }
 
+/** Settings in the sections of docs/SPEC.md section 9.1, with search at the top (#575). */
 @Composable
-private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
+internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val saved by app.saved.collectAsState() // a linked phone's new server and token show here at once
@@ -1644,112 +1642,146 @@ private fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () ->
     var result by remember { mutableStateOf<String?>(null) }
     var muted by remember { mutableStateOf(app.muted) }
     var stack by remember { mutableStateOf(app.stack) }
+    var drop by remember { mutableStateOf(app.dropCleared) }
+    var fast by remember { mutableStateOf(app.fastSwipe) }
+    var query by rememberSaveable { mutableStateOf("") }
     val topics by app.db.dao().topics().collectAsState(emptyList())
     val status by app.status.collectAsState()
+    // Only a full admin may list senders; for any other token this stays null and the setting is left out.
+    val senders = remember(saved) { mutableStateOf<List<org.json.JSONObject>?>(null) }
+    LaunchedEffect(saved, resumes) {
+        if (!app.configured) return@LaunchedEffect
+        val api = app.api()
+        app.io.execute { senders.value = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull() }
+    }
+    val open = mapOf(
+        "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
+        "swipe" to app.configured, "snooze" to app.configured, "devices" to app.configured,
+        "senders" to (app.configured && senders.value != null),
+    )
+    val shown = SETTINGS.filter {
+        open[it.id] != false && settingMatches(query, ctx.getString(it.label), it.desc?.let(ctx::getString), it.keywords)
+    }
 
+    @Composable fun Title(label: Int) = Text(stringResource(label), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    @Composable fun Explain(text: Int) = Text(stringResource(text), color = b.slate, fontSize = 13.sp)
+    @Composable fun Toggle(label: Int, explain: Int, on: Boolean, set: (Boolean) -> Unit) =
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) { Title(label); Explain(explain) }
+            Switch(checked = on, onCheckedChange = set)
+        }
+
+    @Composable fun Block(id: String) {
+        when (id) {
+            "server" -> {
+                Title(R.string.server)
+                Explain(R.string.server_explain)
+                OutlinedTextField(
+                    url, { url = pastedUrl(it) }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                )
+                if (url.trim().startsWith("http://", ignoreCase = true)) Text(stringResource(R.string.plain_http_warning), color = b.signal, fontSize = 13.sp)
+                OutlinedTextField(
+                    token, { token = it }, label = { Text(stringResource(R.string.token)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                Button(
+                    onClick = {
+                        result = ctx.getString(R.string.testing)
+                        val newUrl = serverAddress(url)
+                        url = newUrl
+                        val newToken = token.trim()
+                        app.io.execute {
+                            app.saveServer(newUrl, newToken)
+                            // /api/v1/topics needs the read scope, so this checks the URL and the token together.
+                            result = try {
+                                app.api().get("/api/v1/topics")
+                                SyncService.start(ctx, restart = true)
+                                ctx.getString(R.string.test_ok)
+                            } catch (e: HttpError) {
+                                if (e.isAuth) ctx.getString(R.string.test_token_rejected) else ctx.getString(R.string.test_http_error, e.code)
+                            } catch (e: Exception) {
+                                ctx.getString(R.string.test_unreachable, e.message)
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),
+                ) { Text(stringResource(R.string.save_and_test)) }
+                result?.let { Text(it, color = b.body, fontSize = 14.sp) }
+            }
+            "link-phone" -> {
+                Title(R.string.link_phone)
+                Explain(R.string.link_phone_explain)
+                TextButton(onClick = scan) { Text(stringResource(R.string.scan_qr), color = b.ink) }
+            }
+            "battery" -> battery?.let { prompt ->
+                Title(R.string.battery)
+                Explain(R.string.battery_explain)
+                TextButton(onClick = { openBattery(ctx, prompt) }) { Text(stringResource(R.string.battery_button), color = b.ink) }
+            }
+            "muted-topics" -> {
+                Title(R.string.topics)
+                Explain(R.string.topics_explain)
+                topics.forEach { t ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text(t, color = b.ink, modifier = Modifier.weight(1f))
+                        Text(stringResource(if (t in muted) R.string.topic_muted else R.string.topic_on), style = Mono, color = b.slate)
+                        Spacer(Modifier.width(8.dp))
+                        Switch(checked = t !in muted, onCheckedChange = { on ->
+                            muted = if (on) muted - t else muted + t
+                            app.muted = muted
+                            app.io.execute { RoomStore(app).reconcile() }
+                        })
+                    }
+                }
+            }
+            "stack" -> Toggle(R.string.stack, R.string.stack_explain, stack) { on ->
+                stack = on
+                app.stack = on
+                app.io.execute { RoomStore(app).reconcile() } // reposts every row in or out of its stack
+            }
+            "drop-cleared" -> Toggle(R.string.drop_cleared, R.string.drop_cleared_explain, drop) { on ->
+                drop = on
+                app.dropCleared = on
+                app.io.execute { app.pruneCleared() }
+            }
+            "full-swipe" -> Toggle(R.string.fast_swipe, R.string.fast_swipe_explain, fast) { on -> fast = on; app.fastSwipe = on }
+            "swipe" -> SwipeSettings(app)
+            "sound" -> SoundSettings(app, resumes)
+            "snooze" -> SnoozeSettings(app)
+            "devices" -> DeviceSettings(app, resumes)
+            "senders" -> SenderSettings(app, resumes, senders)
+        }
+    }
+
+    val keep = androidx.compose.runtime.saveable.rememberSaveableStateHolder() // a setting hidden by search keeps its unsaved edits
     val scroll = rememberScrollState()
     // Scroll up so the signed-out line is seen even if Settings was scrolled down.
     LaunchedEffect(status) { if (status == SyncClient.Status.AUTH_FAILED) scroll.animateScrollTo(0) }
     Column(Modifier.verticalScroll(scroll).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Unlinked from another device, revoked, or mistyped: this is where the phone signs in again (#264).
         if (app.configured && status == SyncClient.Status.AUTH_FAILED) Text(stringResource(R.string.signed_out), color = b.signal, fontSize = 14.sp)
-        Text(stringResource(R.string.server), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
-            url, { url = pastedUrl(it) }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            query, { query = it }, label = { Text(stringResource(R.string.settings_search)) }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("settings-search"),
         )
-        if (url.trim().startsWith("http://", ignoreCase = true)) Text(stringResource(R.string.plain_http_warning), color = b.signal, fontSize = 13.sp)
-        OutlinedTextField(
-            token, { token = it }, label = { Text(stringResource(R.string.token)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-            visualTransformation = PasswordVisualTransformation(),
-        )
-        Button(
-            onClick = {
-                result = ctx.getString(R.string.testing)
-                val newUrl = serverAddress(url)
-                url = newUrl
-                val newToken = token.trim()
-                app.io.execute {
-                    app.saveServer(newUrl, newToken)
-                    // /api/v1/topics needs the read scope, so this checks the URL and the token together.
-                    result = try {
-                        app.api().get("/api/v1/topics")
-                        SyncService.start(ctx, restart = true)
-                        ctx.getString(R.string.test_ok)
-                    } catch (e: HttpError) {
-                        if (e.isAuth) ctx.getString(R.string.test_token_rejected) else ctx.getString(R.string.test_http_error, e.code)
-                    } catch (e: Exception) {
-                        ctx.getString(R.string.test_unreachable, e.message)
-                    }
-                }
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),
-        ) { Text(stringResource(R.string.save_and_test)) }
-        // Signed in on a browser already? Its Settings page shows a code that sets this phone up.
-        TextButton(onClick = scan) { Text(stringResource(R.string.scan_qr), color = b.ink) }
-        result?.let { Text(it, color = b.body, fontSize = 14.sp) }
-        battery?.takeIf { app.configured }?.let { prompt ->
-            Text(stringResource(R.string.battery_explain), color = b.slate, fontSize = 13.sp)
-            TextButton(onClick = { openBattery(ctx, prompt) }) { Text(stringResource(R.string.battery_button), color = b.ink) }
+        if (shown.isEmpty()) {
+            Text(stringResource(R.string.settings_none, query.trim()), color = b.slate, fontSize = 14.sp)
+            TextButton(onClick = { query = "" }) { Text(stringResource(R.string.settings_clear), color = b.ink) }
         }
-
-        if (topics.isNotEmpty()) {
+        shown.groupBy { it.section }.forEach { (section, items) ->
             Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.topics), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            Text(stringResource(R.string.topics_explain), color = b.slate, fontSize = 13.sp)
-            topics.forEach { t ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text(t, color = b.ink, modifier = Modifier.weight(1f))
-                    Text(stringResource(if (t in muted) R.string.topic_muted else R.string.topic_on), style = Mono, color = b.slate)
-                    Spacer(Modifier.width(8.dp))
-                    Switch(checked = t !in muted, onCheckedChange = { on ->
-                        muted = if (on) muted - t else muted + t
-                        app.muted = muted
-                        app.io.execute { RoomStore(app).reconcile() }
-                    })
-                }
+            Text(stringResource(section).uppercase(), style = Mono, color = b.slate, fontSize = 13.sp)
+            items.forEach {
+                Column(Modifier.fillMaxWidth().testTag("setting-${it.id}"), verticalArrangement = Arrangement.spacedBy(12.dp)) { keep.SaveableStateProvider(it.id) { Block(it.id) } }
             }
         }
         Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.stack), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                Text(stringResource(R.string.stack_explain), color = b.slate, fontSize = 13.sp)
-            }
-            Switch(checked = stack, onCheckedChange = { on ->
-                stack = on
-                app.stack = on
-                app.io.execute { RoomStore(app).reconcile() } // reposts every row in or out of its stack
-            })
-        }
-        var drop by remember { mutableStateOf(app.dropCleared) }
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.drop_cleared), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                Text(stringResource(R.string.drop_cleared_explain), color = b.slate, fontSize = 13.sp)
-            }
-            Switch(checked = drop, onCheckedChange = { on ->
-                drop = on
-                app.dropCleared = on
-                app.io.execute { app.pruneCleared() }
-            })
-        }
-        var fast by remember { mutableStateOf(app.fastSwipe) }
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.fast_swipe), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                Text(stringResource(R.string.fast_swipe_explain), color = b.slate, fontSize = 13.sp)
-            }
-            Switch(checked = fast, onCheckedChange = { on -> fast = on; app.fastSwipe = on })
-        }
-        if (app.configured) SwipeSettings(app)
-        SoundSettings(app, resumes)
-        if (app.configured) SnoozeSettings(app)
-        if (app.configured) DeviceSettings(app, resumes)
-        if (app.configured) SenderSettings(app, resumes)
-        Spacer(Modifier.height(8.dp))
+        val uri = androidx.compose.ui.platform.LocalUriHandler.current
+        TextButton(onClick = { runCatching { uri.openUri(REPO) } }) { Text(stringResource(R.string.source_code), color = b.ink) }
+        TextButton(onClick = { runCatching { uri.openUri("$REPO/issues") } }) { Text(stringResource(R.string.report_problem), color = b.ink) }
         Text(stringResource(R.string.about, BuildConfig.VERSION_NAME), style = Mono, color = b.slate)
     }
 }
+
+internal const val REPO = "https://github.com/thejdubb02/clrd"
