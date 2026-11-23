@@ -85,10 +85,12 @@ pub struct Engine<S: Sink> {
     // A replay is held back until `ready`, where the epoch is checked: only
     // then is it known to come from the database the cursor belongs to. One
     // copy per id, so a notification made and cleared while this computer
-    // was offline never pops up.
+    // was offline never pops up. The flag says an event in this replay hid
+    // it (a snooze, a dismissal): if the last one shows it again, that is a
+    // fresh show and alerts as it did on the computers that were online.
     // ponytail: the whole replay sits in memory; the server's retention
     // bounds it. Apply in batches if that ever gets large.
-    buffer: BTreeMap<String, Notification>,
+    buffer: BTreeMap<String, (Notification, bool)>,
     buffer_seq: u64,
 }
 
@@ -145,7 +147,8 @@ impl<S: Sink> Engine<S> {
                 let seq = m.seq.max(n.seq);
                 if self.replaying {
                     self.buffer_seq = self.buffer_seq.max(seq);
-                    self.buffer.insert(n.id.clone(), n);
+                    let hid = !n.shows() || self.buffer.get(&n.id).is_some_and(|b| b.1);
+                    self.buffer.insert(n.id.clone(), (n, hid));
                 } else {
                     // Only a live repeat rings again; one missed while
                     // offline is old news.
@@ -175,8 +178,8 @@ impl<S: Sink> Engine<S> {
                 if !m.epoch.is_empty() {
                     self.state.epoch = m.epoch;
                 }
-                for (_, n) in std::mem::take(&mut self.buffer) {
-                    self.apply(n, false);
+                for (_, (n, hid)) in std::mem::take(&mut self.buffer) {
+                    self.apply(n, hid);
                 }
                 // Events this token may not see still move the cursor, or a
                 // limited token would fall behind retention.
@@ -216,7 +219,9 @@ impl<S: Sink> Engine<S> {
         self.save()
     }
 
-    fn apply(&mut self, n: Notification, repeat: bool) {
+    /// `again` is a live repeat, or a show that follows a hide in a replay:
+    /// it alerts even over a card that was already showing as active.
+    fn apply(&mut self, n: Notification, again: bool) {
         let old = self.state.open.remove(&n.id);
         if !n.shows() {
             if old.is_some() {
@@ -225,7 +230,7 @@ impl<S: Sink> Engine<S> {
             return;
         }
         let was_active = old.is_some_and(|o| o.state == "active");
-        self.sink.show(&n, n.may_alert() && (!was_active || repeat));
+        self.sink.show(&n, n.may_alert() && (!was_active || again));
         self.state.open.insert(n.id.clone(), n);
     }
 
