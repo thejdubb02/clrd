@@ -698,6 +698,7 @@ func (s *Server) routesSetup() {
 	s.pushRoutes()
 	s.userRoutes()
 	s.soundRoutes()
+	s.subsRoutes()
 	s.approveRoutes()
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -721,7 +722,7 @@ func (s *Server) routesSetup() {
 		seq := s.CurrentSeq() // before the query, so a ws?since=seq misses nothing
 		limit, _ := strconv.Atoi(q.Get("limit"))
 		ns, err := s.List(r.Context(), tok, ListQuery{Topics: splitList(q.Get("topic")), State: q.Get("state"),
-			Q: q.Get("q"), Before: q.Get("before"), Limit: limit})
+			Q: q.Get("q"), Before: q.Get("before"), Limit: limit, All: subscribedAll(r)})
 		if err != nil {
 			return err
 		}
@@ -838,6 +839,10 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("GET /api/v1/topics", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		tok, err := s.viewed(r.Context(), tok, subscribedAll(r))
+		if err != nil {
+			return err
+		}
 		ts, err := s.Topics(r.Context(), tok)
 		if err != nil {
 			return err
@@ -878,6 +883,10 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("GET /api/v1/counts", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		tok, err := s.viewed(r.Context(), tok, subscribedAll(r))
+		if err != nil {
+			return err
+		}
 		c, err := s.Counts(r.Context(), tok)
 		if err != nil {
 			return err

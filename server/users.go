@@ -246,18 +246,31 @@ func (s *Server) userRoutes() {
 			return errf(400, "bad_request", `user required: a user id, or "" to detach`)
 		}
 		id := r.PathValue("id")
-		// Only a typed-in token: a browser or phone follows the token it came from.
-		res, err := s.db.ExecContext(r.Context(), `UPDATE tokens SET user_id = NULLIF(?, '') WHERE id = ?
-		  AND id NOT IN (SELECT token_id FROM sessions) AND id NOT LIKE 'pushover-%' AND id NOT IN (SELECT token_id FROM gotify_apps)
-		  AND NOT `+anonymousWhere, *in.User, id)
-		if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
-			return errf(400, "bad_request", "no user %q", *in.User)
+		// Its devices now follow the new owner's set: a change of that set, in
+		// the same transaction, so each catches up with a reset (#617). The old
+		// owner's rows stay.
+		owner := "t:" + id
+		if *in.User != "" {
+			owner = "u:" + *in.User
 		}
+		err := s.changeSubs(r.Context(), owner, nil, func(tx *sql.Tx, _ bool) error {
+			// Only a typed-in token: a browser or phone follows the token it came from.
+			res, err := tx.ExecContext(r.Context(), `UPDATE tokens SET user_id = NULLIF(?, '') WHERE id = ?
+			  AND id NOT IN (SELECT token_id FROM sessions) AND id NOT LIKE 'pushover-%' AND id NOT IN (SELECT token_id FROM gotify_apps)
+			  AND NOT `+anonymousWhere, *in.User, id)
+			if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+				return errf(400, "bad_request", "no user %q", *in.User)
+			}
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				return errf(404, "not_found", "no such typed-in token (a browser or phone follows the token it came from, and a Gotify or Pushover app keeps its one topic)")
+			}
+			return nil
+		})
 		if err != nil {
 			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errf(404, "not_found", "no such typed-in token (a browser or phone follows the token it came from, and a Gotify or Pushover app keeps its one topic)")
 		}
 		s.dropStreams(context.WithoutCancel(r.Context()), `id = ?`, id)
 		writeJSON(w, 200, map[string]string{"id": id, "user": *in.User})
