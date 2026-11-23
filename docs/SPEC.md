@@ -1328,7 +1328,7 @@ only what the screen shows.
 | Hold, so the reason can be read | 1400ms from the start |
 | Slide away, toward the swipe (inline end when not swiped), fading out | 100% of the card width, 200ms, ease in out |
 | Cards below close the gap | 200ms, ease in out |
-| Clear all: each card starts a little after the one above it | 40ms per card, at most 8 steps (320ms) |
+| Clear all: each card's slide starts a little after the one above it | 40ms per card, at most 8 steps (320ms) |
 
 **Arriving.** A new card slides in from just above its place and fades in, then
 gives one small wiggle.

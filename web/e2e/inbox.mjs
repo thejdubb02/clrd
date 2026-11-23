@@ -1941,7 +1941,7 @@ try {
           const entry = { name, title: c.querySelector('.card-title')?.textContent.trim(), at: e.timeStamp };
           window.moves.push(entry);
           // A card sliding out past the list's edge must not widen the page.
-          if (name === 'transform') requestAnimationFrame(() => { entry.wide = document.documentElement.scrollWidth > document.documentElement.clientWidth; });
+          if (name === 'transform') setTimeout(() => { entry.wide = document.documentElement.scrollWidth > document.documentElement.clientWidth; }, 150); // mid-slide, past the edge
         };
         addEventListener('animationstart', rec, true);
         addEventListener('transitionrun', rec, true);

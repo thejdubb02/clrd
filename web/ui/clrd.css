@@ -67,9 +67,9 @@
   article.card.is-selected { @apply border-foreground/45; }
 
   /* The cleared moment, the one signature motion (Android plays the same):
-     green washes across the card from the left, a check draws in with the
+     green washes across the card from the start of the line, a check draws in with the
      reason, then the card folds away. inbox.js runs the fold. */
-  article.card::before { @apply bg-clear/8 pointer-events-none absolute inset-0 -z-10 origin-left scale-x-0 rounded-[inherit] content-['']; }
+  article.card::before { @apply bg-clear/8 pointer-events-none absolute inset-0 -z-10 origin-left rtl:origin-right scale-x-0 rounded-[inherit] content-['']; }
   article.card .gone { @apply hidden; }
   article.card.is-leaving { @apply border-clear; }
   article.card.is-leaving::before { @apply scale-x-100; }

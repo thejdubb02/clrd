@@ -337,7 +337,8 @@
     announce.textContent = `${c.querySelector('.card-title').textContent.trim()}: ${why}`;
     // It slides the way it was swiped, or toward the inline end (SPEC 10.1).
     const rtl = getComputedStyle(c).direction === 'rtl';
-    c.style.setProperty('--out', c.x ? (c.x > 0) === rtl ? 1 : -1 : rtl ? -1 : 1);
+    const x = c.x || c.out; delete c.out;
+    c.style.setProperty('--out', x ? (x > 0) === rtl ? 1 : -1 : rtl ? -1 : 1);
     const gone = () => { c.remove(); tidy(); };
     setTimeout(() => {
       if (still.matches) return gone();
@@ -358,6 +359,7 @@
 
   // Re-fetch this page and patch it in: cards keyed by id and seq, plus the sidebar.
   let pending, gen = 0, arrived = [];
+  const unarrive = c => c.classList.remove('is-arriving', 'is-newest');
   // A change makes any page already on its way stale: drop it, or it puts back
   // what the change just took off the screen (#402).
   const refresh = () => { gen++; clearTimeout(pending); pending = setTimeout(patch, 250); };
@@ -405,10 +407,10 @@
       previews(fresh);
       return fresh;
     }));
-    // Moving a card restarts its animation, so last patch's arrivals stop here.
-    list.querySelectorAll('.is-arriving').forEach(c => c.classList.remove('is-arriving', 'is-newest'));
     const now = [...list.children].filter(c => !c.matches('[data-stack]'));
     if (keep.some(c => c.contains(document.activeElement)) || keep.length !== now.length || keep.some((c, i) => c !== now[i])) {
+      // Moving a card restarts its animation, so last patch's arrivals stop here.
+      list.querySelectorAll('.is-arriving').forEach(unarrive);
       const had = list.contains(document.activeElement) && !document.activeElement.closest('[data-stack]') && document.activeElement;
       list.replaceChildren(...keep);
       if (typing) typing.focus();
@@ -417,13 +419,15 @@
     }
     restack(sf);
     // Only cards still in sight: not folded into a stack, not off screen.
-    const inn = arrived.map(card).filter(c => {
+    const inn = document.visibilityState === 'visible' ? arrived.map(card).filter(c => {
       const r = c && !c.hidden && c.getBoundingClientRect();
       return r && r.bottom > 0 && r.top < innerHeight;
-    });
+    }) : [];
     arrived = [];
     inn.forEach(c => c.classList.add('is-arriving'));
     inn.at(-1)?.classList.add('is-newest'); // a burst wiggles only the newest
+    // Done after 500ms, so reopening a stack later never plays it again.
+    setTimeout(() => inn.forEach(unarrive), 520);
     const s = selected();
     if (s) select(s, false); else selId = null;
     tidy();
@@ -562,7 +566,7 @@
         const b = document.createElement('button');
         Object.assign(b, { type: 'button', className: 'btn shrink-0', textContent: swipeFor[a][1] });
         b.dataset.variant = a === 'clear' ? 'clear' : 'outline';
-        b.addEventListener('click', () => { shut(card); t.click(); });
+        b.addEventListener('click', () => { const x = card.x; shut(card); card.out = x; t.click(); }); // leave() slides it the way it was swiped
         return b;
       });
     if (!bs.length) return null;
