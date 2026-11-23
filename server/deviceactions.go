@@ -131,7 +131,7 @@ func (s *Server) SetTopicDeviceActions(ctx context.Context, tok *Token, topic st
 	s.mu.Lock() // in order with publishes, which read it under s.mu
 	defer s.mu.Unlock()
 	if !on { // drop a row that held only this switch
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ? AND icon = '' AND checkin_ms IS NULL`, topic); err != nil {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ? AND icon = '' AND checkin_ms IS NULL AND approvals = 0`, topic); err != nil {
 			return err
 		}
 		_, err := s.db.ExecContext(ctx, `UPDATE topics SET device_actions = 0 WHERE topic = ?`, topic)

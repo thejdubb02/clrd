@@ -514,7 +514,7 @@ filtered, so only an attach or detach resets it, never its browsers
 changing the set.
 
 **API and MCP.** `GET /api/v1/subscriptions` returns
-`{"filtered":true,"new_topics":true,"topics":[{"topic":"chat","subscribed":false,"open":2,"last_at":"RFC3339"|null}]}`,
+`{"filtered":true,"new_topics":true,"topics":[{"topic":"chat","subscribed":false,"open":2,"last_at":"RFC3339"|null,"approvals":false}]}`,
 every topic the token can read, subscribed or not, sorted by name. With
 `"filtered":false` (a typed-in token with no user) `topics` is empty,
 `new_topics` is left out and a PUT answers 409 `conflict`: the token has no
@@ -532,6 +532,11 @@ itself, which is not filtered, so to set the set its browsers and phones
 share, name one of them. The MCP tool is `subscriptions(topics?,
 new_topics?, for?)`: no arguments reads, arguments change those fields.
 `GET /api/v1/topics` also gains `subscribed` and `last_at` on each topic.
+Both also carry `approvals` on each topic (#623): true once any message
+that waits for an answer (a reply action, as `/mcp/approve` sends, or a
+confirm prompt) has been sent to it, and it stays true after that message
+is gone. Clients warn before unsubscribing from a topic with `approvals`
+(or `agents`), since an agent's request there would go unseen.
 
 **Clients.** The web and Android apps add a Topics page (a switch per topic,
 last message time, open count, search), Unsubscribe in a card's menu and on
@@ -896,7 +901,7 @@ resolved`) and `ntfy_import`.
 | Method | Path | Does |
 |---|---|---|
 | GET | `/api/v1/counts` | Exact counts of what the token can read: `{"active":3,"acknowledged":1,"snoozed":2,"dismissed":640,"resolved":12,"inbox":4,"cleared":652}`. `inbox` is active plus acknowledged, `cleared` is dismissed plus resolved. |
-| GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
+| GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":"","approvals":false}]}`. `approvals` marks a topic that has carried a message waiting for an answer (section 2.3). |
 | GET/PUT | `/api/v1/subscriptions` | Which topics reach this owner's devices (section 2.3). GET lists every readable topic with `subscribed`, `open` and `last_at`, plus `filtered` and `new_topics`; PUT takes `{"new_topics"?,"topics"?:{"chat":false}}`. Scope read; `?for=` is full admin only. |
 | GET | `/api/v1/format-check?topic=&by=` | Format check (#308), advice only. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). `by=sender` (#320) groups by topic and sending token (the top of its token tree, as kept for #187), adding `sender_id` (`"unknown"` for messages with no known sending token, #391) and `sender` (the token name) to each group and naming the token in the prompt; only a full admin, or the token the sender belongs to (as in Linked devices, #245), gets `sender` and the prompt, anyone else gets both blank (#406); the default `by=topic` leaves both out. Returns `{"checked":N,"problems":N,"topics":[{"topic","sender_id"?,"sender"?,"checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}],"off":["topic"],"dismissed":[{"topic","rule","sender_id"}]}`, only groups with findings, in topic then sender_id order; topics in `off` are not checked or counted, and a dismissed rule does not count for that topic and sender (`sender_id` "" means every sender); `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters, with anything that looks like a secret (a value after `password=`, `token:`, `Bearer` and the like, the password in `user:pass@host`, a run of 20+ letters and digits) shown as `[hidden]`; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
 | POST | `/api/v1/format-check/dismiss` | Body `{"topic","rule","sender_id"?,"dismissed"?}` (#320): stop `rule` counting in `topic` for that sending token (`"unknown"` for the group with no known sender), or every sender without `sender_id`. `"dismissed":false` undoes it. Unknown rule is a 400. Scope publish on the topic. Nothing is dismissed until set. |
@@ -924,6 +929,7 @@ resolved`) and `ntfy_import`.
 | POST | `/api/v1/devices/approve-request` | Body `{"approve":"allowed"}` or `ask`, `topic` optional (default `agents`, needs publish there): the calling device asks to raise its own setting (section 4). 202 with a confirm prompt on that topic; a repeat returns the same open prompt; 400 unless it is a raise. |
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. It starts denied for approval requests (section 4); `approve` other than `denied` is 400. |
+| GET | `/api/v1/stats` | Traffic numbers for notifications created in `[from, to)` (unix ms; `to` defaults to now, `from` to `days` back, default 7, at most 366): `total`, `answered`, count per `priorities`, count per UTC hour in `hours`, and the top 50 `topics`, `senders` (top token id) and `cleared_by` (who cleared), each with `open`, `cleared` and the median and p90 time from publish to first clear in ms, plus `flappers` (an external id that fired more than once). Read from stored rows, so cleared messages past the keep-cleared setting are not counted. Admin with no topic limit (#120). |
 | GET | `/api/v1/senders` | Every sender, most recently heard first (section 5.1). Admin with no topic limit. |
 | GET | `/api/v1/senders/{id}` | One sender with `recent`, its last notifications still stored (section 5.1). 404 for an unknown id. |
 | PUT | `/api/v1/senders/{id}` | Change a sender's `rules` (section 5.1). Returns the Sender. |

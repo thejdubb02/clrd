@@ -1511,6 +1511,10 @@
               "type": ["string", "null"],
               "format": "date-time",
               "description": "When the newest notification on the topic arrived, null for none."
+             },
+             "approvals": {
+              "type": "boolean",
+              "description": "Whether a message that waits for an answer (a reply action or a confirm prompt) has ever been sent here, so clients warn before unsubscribing (#623). It stays true after the message is gone."
              }
             }
            }
@@ -2649,6 +2653,53 @@
         }
        }
       }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/stats": {
+   "get": {
+    "summary": "Traffic numbers",
+    "description": "Admin with no topic limit. Counts the notifications created in [from, to), read from what is stored: cleared messages past the keep-cleared setting are gone. Lists hold the top 50 by count.",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {"name": "to", "in": "query", "description": "End, unix ms. Default now.", "schema": {"type": "integer"}},
+     {"name": "days", "in": "query", "description": "Days back from to when from is not given. Default 7.", "schema": {"type": "integer", "minimum": 1}},
+     {"name": "from", "in": "query", "description": "Start, unix ms. At most 366 days before to.", "schema": {"type": "integer"}}
+    ],
+    "responses": {
+     "200": {
+      "description": "Stats.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "from": {"type": "integer"},
+          "to": {"type": "integer"},
+          "total": {"type": "integer"},
+          "answered": {"type": "integer", "description": "A reply action was tapped."},
+          "priorities": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Count per priority, keyed \"1\" to \"5\"."},
+          "hours": {"type": "array", "description": "Count per UTC hour that had any, oldest first.", "items": {"type": "object", "properties": {"at": {"type": "integer"}, "count": {"type": "integer"}}}},
+          "topics": {"type": "array", "items": {"$ref": "#/components/schemas/StatsGroup"}},
+          "senders": {"type": "array", "description": "Keyed by the top token id of the sending tree, \"\" for clrd's own alerts.", "items": {"$ref": "#/components/schemas/StatsGroup"}},
+          "cleared_by": {"type": "array", "description": "Cleared messages keyed by the name of who cleared them.", "items": {"$ref": "#/components/schemas/StatsGroup"}},
+          "flappers": {"type": "array", "description": "An external id that fired more than once.", "items": {"type": "object", "properties": {"topic": {"type": "string"}, "external_id": {"type": "string"}, "count": {"type": "integer"}}}}
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
      },
      "401": {
       "$ref": "#/components/responses/Error"
@@ -5959,6 +6010,17 @@
      }
     }
    },
+   "StatsGroup": {
+    "type": "object",
+    "properties": {
+     "key": {"type": "string"},
+     "count": {"type": "integer"},
+     "open": {"type": "integer", "description": "Not cleared yet."},
+     "cleared": {"type": "integer"},
+     "clear_median_ms": {"type": "integer", "description": "Median time from publish to first dismiss or resolve; 0 when none cleared."},
+     "clear_p90_ms": {"type": "integer"}
+    }
+   },
    "Sender": {
     "type": "object",
     "properties": {
@@ -6823,7 +6885,8 @@
       "topic": {"type": "string"},
       "subscribed": {"type": "boolean"},
       "open": {"type": "integer"},
-      "last_at": {"type": ["string", "null"], "format": "date-time"}
+      "last_at": {"type": ["string", "null"], "format": "date-time"},
+      "approvals": {"type": "boolean", "description": "As on GET /api/v1/topics (#623)."}
      }}}
     }
    },

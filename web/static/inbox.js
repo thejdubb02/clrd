@@ -653,7 +653,7 @@
     if (!b) return;
     e.preventDefault();
     const t = b.dataset.unsub ?? b.dataset.subscribe, on = 'subscribe' in b.dataset;
-    if (!on && 'approvals' in b.dataset && !approvalsOff(t)) return;
+    if (!on && document.querySelector(`[data-unsub="${CSS.escape(t)}"][data-approvals]`) && !approvalsOff(t)) return;
     if (!on) store('clrd-unsub', t);
     const r = await subsPut({ topics: { [t]: on } });
     if (r && r.ok) return location.reload();
@@ -1234,8 +1234,9 @@
         // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
         if (ready && m.notification.state === 'active' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')) alertSound(m.notification);
         // A card that comes in live while this tab is in front slides in (SPEC 10.1).
+        // Its old copy may still be leaving (a snooze that ended at once): that one does not count (#611).
         if (ready && document.visibilityState === 'visible' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')
-          && show.includes(m.notification.state) && !card(m.notification.id)) arrived.push(m.notification.id);
+          && show.includes(m.notification.state) && !cards().some(c => c.dataset.id === m.notification.id)) arrived.push(m.notification.id);
         onEvent(m);
       }
     };

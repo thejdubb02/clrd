@@ -74,6 +74,28 @@ func TestPages(t *testing.T) {
 	}
 }
 
+// The landing page's sample inbox (#592) is the real card template with the
+// demo data, inside a disabled, inert fieldset so no button on it posts and
+// no link or menu in it opens or takes focus.
+func TestLandingDemo(t *testing.T) {
+	_, body := get(t, Handler(NewFake(), ""), "/")
+	i := strings.Index(body, `<fieldset class="grid min-w-0 gap-2" disabled inert aria-label="Sample inbox">`)
+	j := strings.Index(body, "</fieldset>")
+	if i < 0 || j < i {
+		t.Fatal("no disabled sample inbox on the landing page")
+	}
+	demo := body[i:j]
+	for _, s := range []string{`data-id="demo-backup"`, ">Urgent</span>", "<strong>nas-1</strong>", `>Open logs`, `data-act="reply">Approve</button>`,
+		"Acknowledged on pixel-9", "ops-agent actioned: pruned old images, now 71%", `data-act="dismiss"`} {
+		if !strings.Contains(demo, s) {
+			t.Errorf("sample inbox: missing %q", s)
+		}
+	}
+	if n := strings.Count(body, "<form"); n == 0 || n != strings.Count(demo, "<form") {
+		t.Errorf("%d forms on the landing page, all must sit in the disabled sample inbox", n)
+	}
+}
+
 // Every internal link on every page resolves, relative ones from the page they
 // are on, and every #fragment names an id on the target page.
 func TestLinks(t *testing.T) {
@@ -628,6 +650,26 @@ func TestTimeLeft(t *testing.T) {
 		if got := timeLeft(time.Now().Add(d)); got != want {
 			t.Errorf("timeLeft(+%v) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+// Any topic the server marks as carrying approval requests (#623) warns
+// before unsubscribing, on the card, in Settings and on a plain form post.
+func TestApprovalsFlag(t *testing.T) {
+	f := NewFake()
+	f.put(Notification{Topic: "deploys", Title: "Ship it?", State: "active", CreatedAt: time.Now(), Actions: []Action{{Label: "Yes", Reply: "yes"}}})
+	h := Handler(f, "")
+	if _, b := get(t, h, "/app"); !strings.Contains(b, `data-unsub="deploys" data-approvals`) || strings.Contains(b, `data-unsub="home" data-approvals`) {
+		t.Fatal("the card does not warn on deploys, or warns on home")
+	}
+	if _, b := get(t, h, "/app/settings"); !strings.Contains(b, `value="deploys" checked data-approvals`) || strings.Contains(b, `value="home" checked data-approvals`) {
+		t.Fatal("Settings does not warn on deploys, or warns on home")
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/app/subscriptions", strings.NewReader("topic=deploys&subscribe=0"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if h.ServeHTTP(w, r); w.Header().Get("Location") != "/app/settings#topics" || !f.subscribed("deploys") {
+		t.Fatal("unsubscribing from deploys did not stop at the warning first")
 	}
 }
 

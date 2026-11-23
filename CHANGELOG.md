@@ -18,6 +18,13 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Server: traffic stats for admins at `GET /api/v1/stats` and the MCP
+  `stats` tool: volume per hour, top topics and senders, how long alerts
+  stay open before someone clears them (median and p90), who clears them,
+  and alerts that keep firing (#120).
+- Site: the landing page shows a sample web inbox, drawn by the real card
+  template with fixed demo data, so it always matches the inbox and needs
+  no pictures or JavaScript (#592).
 - Web: subscribe and unsubscribe to topics, per user (#617). A card's
   snooze menu has Unsubscribe from the topic, with Undo; Settings, Topics
   lists every topic with a switch and a switch for new topics. An
@@ -25,6 +32,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   from its link, with a Subscribe button. Unsubscribing from agents warns
   first, since approval requests go there.
 
+- Server: the topics and subscriptions lists mark each topic that has
+  carried an approval request or another message waiting for an answer
+  (`approvals`), so apps can warn before you unsubscribe from it (#623).
 - Web: the foot of Settings links to the source code and to the issue tracker
   for reporting a problem, like the Android app (#586).
 - Topic subscriptions on the server (#617): unsubscribe from a topic and
@@ -57,6 +67,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Changed
 
+- Web: Unsubscribe warns on any topic that has had an approval request or
+  question, not only `agents` (#623).
+
 - Web: the Message format check in Settings is one card per topic with a
   count of its findings, a Dismiss menu on each finding and Copy fix prompt as
   the main button, instead of one block of text and buttons (#618). With more
@@ -64,6 +77,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web: a snooze that ends while its card is still leaving now brings the card back with its slide in and wiggle.
 - Web and Android: the sender's Alarm topic hint now says an empty topic
   means the first topic its last topic routes to, or that topic when it has
   no route, which is what the server does (#585).
