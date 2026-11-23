@@ -317,6 +317,30 @@ try {
   assert.equal(await sp.getByLabel('Times').inputValue(), '1h, soon', 'unsaved snooze edit dropped');
   await sp.reload();
   await sp.locator('[data-snooze="1h,1h,4h"]').waitFor({ state: 'attached' });
+  // Appearance (#583): a saved choice beats the device, at once and on every page, before
+  // first paint; System follows the device again.
+  const dark = () => sp.evaluate(() => document.documentElement.classList.contains('dark'));
+  await sp.emulateMedia({ colorScheme: 'light' });
+  await sp.getByLabel('Theme').selectOption('dark');
+  assert.ok(await dark(), 'Dark did not apply at once');
+  assert.equal(await sp.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(15, 17, 20)', 'Dark set the class but not the colors');
+  await sp.addInitScript(() => new MutationObserver((_, o) => {
+    if (document.body) { window.darkAtBody = document.documentElement.classList.contains('dark'); o.disconnect(); }
+  }).observe(document, { childList: true, subtree: true }));
+  for (const path of ['/', '/docs/spec', '/app/settings']) {
+    await sp.goto(base + path);
+    assert.equal(await sp.evaluate(() => window.darkAtBody), true, `${path} painted light before going dark`);
+  }
+  assert.equal(await sp.getByLabel('Theme').inputValue(), 'dark', 'the saved choice did not show');
+  await sp.emulateMedia({ colorScheme: 'dark' });
+  await sp.getByLabel('Theme').selectOption('light');
+  assert.equal(await dark(), false, 'Light lost to a dark device');
+  await sp.getByLabel('Theme').selectOption('');
+  assert.ok(await dark(), 'System did not follow a dark device');
+  await sp.emulateMedia({ colorScheme: 'light' });
+  // The device change arrives as an event, so give it a moment.
+  await sp.waitForFunction(() => !document.documentElement.classList.contains('dark'), null, { timeout: 3000 })
+    .catch(() => assert.fail('System did not follow the device changing'));
   await sp.close();
   console.log('ok: snooze default, long press, right click and Settings');
 
@@ -1956,7 +1980,7 @@ try {
     assert.equal(await np.getByLabel('Search settings').isVisible(), false, 'search box shown without script');
     assert.ok(await np.locator('#silences').isVisible(), 'Silences hidden without script');
     await nctx.close();
-    console.log('ok: settings sit in five sections, search finds by keyword, goes to the match, shows an empty state and clears; without script all sections show');
+    console.log('ok: settings sit in six sections, search finds by keyword, goes to the match, shows an empty state and clears; without script all sections show');
   }
 
   // Motion (#598, SPEC 10.1), on its own server so no other card is in the way.

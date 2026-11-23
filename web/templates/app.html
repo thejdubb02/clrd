@@ -395,9 +395,11 @@
         </ul>
       </div>{{end}}
     </section>{{end}}
-    <section id="appearance" data-setting data-keywords="theme, dark mode, light mode, colors" class="grid gap-3">
+    <section id="appearance" data-setting data-keywords="theme, dark mode, light mode, colors, system" class="grid gap-3">
       <h3 id="look-h" class="text-base font-semibold">Appearance</h3>
-      <p class="text-body text-sm/relaxed">The inbox follows your system's light or dark setting.</p>
+      <p class="text-body text-sm/relaxed">System follows this device's light or dark setting. Each browser and phone keeps its own choice.</p>
+      <div class="js-only flex flex-wrap items-center gap-2"><label for="theme-pick" class="label">Theme</label>
+        <select id="theme-pick" class="input w-auto" data-theme-setting><option value="">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
     </section>
   </section>
   <section class="grid gap-8" aria-labelledby="g-devices" data-settings-group>

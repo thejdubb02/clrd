@@ -1441,7 +1441,7 @@ JavaScript off the web page shows every section and no search box.
 | Display | `formatting` | Message text | markdown, formatting, links, preview, site icons | web |
 | Display | `topic-icons` | Topic icons | icon, image, avatar, picture | web |
 | Display | `format` | Message format check | format, markdown check, broken, warning | web, only with findings |
-| Display | `appearance` | Appearance | theme, dark mode, light mode, colors | web |
+| Display | `appearance` | Appearance | theme, dark mode, light mode, colors, system | web: System, Light or Dark, kept per browser |
 | Devices | `server` | Server | server, address, url, token, sign in, log in | Android |
 | Devices | `devices` | Linked devices | phone, browser, unlink, sign out, approve, may approve, activity | both |
 | Devices | `link-phone` | Link a phone | qr, scan, pair, code, add phone | web shows the code, Android scans it |
@@ -1476,7 +1476,7 @@ State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
 
 Rules: no gradients, flat fills, 1px hairlines, radius 6 (chips, inputs), 8
 (buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. A user's color rules (section 2.1) color their own cards, gradient included; clrd's own chrome keeps these rules. Dark
-mode swaps paper and ink, and accents use the lighter dark mode values above where given. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
+mode swaps paper and ink, and accents use the lighter dark mode values above where given. Each app offers System (the default, follows the device), Light and Dark in Display, Appearance. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
 
 Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every surface uses one file). The three lines end on one circle around the disc, so every gap to the disc is the same:
 
