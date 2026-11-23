@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -91,6 +92,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
@@ -126,6 +128,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -471,7 +474,9 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                 Tab.Settings -> SettingsScreen(app, battery, resumes, scan)
                 else -> {
                     val flow = when (tab) { Tab.Inbox -> dao.inbox(); Tab.Snoozed -> dao.snoozed(); else -> dao.cleared() }
-                    val rows by remember(tab) { flow }.collectAsState(emptyList())
+                    // tagged with its tab: collectAsState keeps the old tab's list until the new one loads (#598)
+                    val loaded by remember(tab) { flow.map { tab to it } }.collectAsState(null)
+                    val rows = loaded?.takeIf { it.first == tab }?.second.orEmpty()
                     val counts = topicCounts(rows)
                     val topics = counts.keys.sorted()
                     val picked = topic?.takeIf { it in topics }
@@ -487,8 +492,14 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                     swept // read, so a card that is done leaving redraws the list
                     val still = remember(resumes) { stillMotion(ctx) }
                     val now = SystemClock.uptimeMillis()
-                    ms.step(entries, now, app.moved::get) { id -> toward[id]?.takeIf { now - it.second <= FRESH_MS }?.first ?: 1 }
+                    val list = remember(tab) { LazyListState() }
+                    val top by remember(list) { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0 } }
+                    val wiggled = ms.wiggle
+                    if (loaded?.first == tab) ms.step(entries, now, app.moved::get) { id -> toward[id]?.takeIf { now - it.second <= FRESH_MS }?.first ?: 1 }
+                    // at the top, a new card shows there; the list would otherwise hold the old first card in place
+                    if (top && ms.wiggle != wiggled) list.requestScrollToItem(0)
                     if (shown.isEmpty() && ms.ghosts.isEmpty()) Empty(tab) else LazyColumn(
+                        state = list,
                         // Room under the last card for the Send button on the inbox.
                         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, if (tab == Tab.Inbox) 88.dp else 16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -501,8 +512,8 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                                 }
                                 return@Box
                             }
-                            val came = ms.arrived[(e as Entry).key]?.takeIf { now - it < 500 } != null // off screen, it simply shows when scrolled to
-                            Arrive(came && !still, e.key == ms.wiggle) {
+                            val came = ms.arrived[(e as Entry).key]?.takeIf { SystemClock.uptimeMillis() - it < 500 } != null // off screen, it simply shows when scrolled to
+                            Arrive(came && !still, { e.key == ms.wiggle }) {
                             if (e is Stack) {
                                 val open = e.topic in unfolded
                                 StackCard(e, open, if (tab == Tab.Cleared) null else ({ clearAll(e.rows) }), { topicMenu(e.topic) }) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
@@ -513,7 +524,11 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                             else {
                                 // The buttons the shared setting names, minus any this card cannot take (#161).
                                 val reveal = { names: List<String>, dir: Int ->
-                                    val swiped = { toward[n.id] = dir to SystemClock.uptimeMillis() } // it slides away the way it went
+                                    val swiped = { // it slides away the way it went
+                                        val t = SystemClock.uptimeMillis()
+                                        toward.values.removeIf { t - it.second > FRESH_MS }
+                                        toward[n.id] = dir to t
+                                    }
                                     val snoozeTimes = snooze.times.map { t -> snoozeLabel(t) to { swiped(); app.act(n.id, "snooze", Snooze.body(t)) } }
                                     Swipes.shown(names, n.state == Notif.ACTIVE, tab == Tab.Inbox).map { name ->
                                         when (name) {

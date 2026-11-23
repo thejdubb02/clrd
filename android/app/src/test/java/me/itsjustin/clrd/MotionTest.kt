@@ -1,5 +1,6 @@
 package me.itsjustin.clrd
 
+import android.os.SystemClock
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
@@ -68,6 +69,20 @@ class MotionTest {
         assertTrue(s.ghosts.isEmpty())
     }
 
+    @Test fun anArrivalMarkDoesNotMoveACardOut() { // a replayed clear right after a live arrival
+        assertTrue(motion(ones("a", "b"), ones("a"), 1500, { mark(arrive = true, state = Notif.ACTIVE) }, right).gone.isEmpty())
+    }
+
+    @Test fun twoLeavingAtOnceKeepTheirOrderAndAnUnseenOneIsDropped() {
+        val s = MotionState()
+        s.step(ones("a", "b", "c"), 1000, { null }, right)
+        s.step(ones("b", "c"), 1100, { mark() }, right)
+        s.step(ones("c"), 1200, { mark() }, right)
+        assertEquals(listOf("a", "b", "c"), s.shown(ones("c")).map { if (it is Ghost) it.entry.key else (it as Entry).key })
+        s.step(ones("c"), 1200 + HOLD_MS + SLIDE_MS + GAP_MS + 1001, { null }, right) // never drawn, so never done
+        assertTrue(s.ghosts.isEmpty())
+    }
+
     @Test fun nothingIsMarkedWhileTheAppIsAway() {
         val app = ApplicationProvider.getApplicationContext<App>()
         app.front = false
@@ -83,7 +98,7 @@ class MotionTest {
     @Test fun aLeavingCardSaysWhyThenGoes() {
         var done = 0L
         rule.mainClock.autoAdvance = false
-        rule.setContent { Gone(Ghost(One(n("a")), 0, 0, mark(), 1), false, { done = rule.mainClock.currentTime }) { why -> why() } }
+        rule.setContent { Gone(Ghost(One(n("a")), 0, 0, mark(), 1, SystemClock.uptimeMillis()), false, { done = rule.mainClock.currentTime }) { why -> why() } }
         val start = rule.mainClock.currentTime
         rule.mainClock.advanceTimeBy(1000)
         rule.onNodeWithText("Cleared").assertExists()
@@ -95,7 +110,7 @@ class MotionTest {
     @Test fun withRemoveAnimationsItStillHoldsButDoesNotSlide() {
         var done = 0L
         rule.mainClock.autoAdvance = false
-        rule.setContent { Gone(Ghost(One(n("a")), 0, 0, Moved(0, false, Notif.RESOLVED, "Ops"), 1), true, { done = rule.mainClock.currentTime }) { why -> why() } }
+        rule.setContent { Gone(Ghost(One(n("a")), 0, 0, Moved(0, false, Notif.RESOLVED, "Ops"), 1, SystemClock.uptimeMillis()), true, { done = rule.mainClock.currentTime }) { why -> why() } }
         val start = rule.mainClock.currentTime
         rule.mainClock.advanceTimeBy(500)
         rule.onNodeWithText("Resolved by Ops").assertExists()

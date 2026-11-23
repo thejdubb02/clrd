@@ -1,6 +1,7 @@
 package me.itsjustin.clrd
 
 import android.content.Context
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -49,10 +50,13 @@ data class Moved(val at: Long, val arrive: Boolean, val state: String, val by: S
 /** How long a mark may wait for the list to show its change. Older marks move nothing. */
 const val FRESH_MS = 2000L
 
-internal val Entry.ids get() = when (this) { is One -> listOf(n.id); is Stack -> rows.map { it.id } }
+internal val Entry.notifs get() = when (this) { is One -> listOf(n); is Stack -> rows }
+internal val Entry.ids get() = notifs.map { it.id }
 
-/** A card that left the list, drawn at its old place while it says why and slides away. [toward] is +1 for inline end. */
-internal data class Ghost(val entry: Entry, val index: Int, val wait: Int, val moved: Moved, val toward: Int)
+/** A card that left the list at [born] (uptime ms), drawn at its old place while it says why and slides away. [toward] is +1 for inline end. */
+internal data class Ghost(val entry: Entry, val index: Int, val wait: Int, val moved: Moved, val toward: Int, val born: Long) {
+    val life get() = wait + HOLD_MS + SLIDE_MS + GAP_MS
+}
 
 internal class Moves(val gone: List<Ghost>, val arrive: List<String>)
 
@@ -64,13 +68,15 @@ internal class Moves(val gone: List<Ghost>, val arrive: List<String>)
  */
 internal fun motion(prev: List<Entry>, next: List<Entry>, now: Long, moved: (String) -> Moved?, toward: (String) -> Int): Moves {
     fun fresh(id: String) = moved(id)?.takeIf { now - it.at in 0..FRESH_MS }
+    // only a mark that changed the row moves it out, not an older one such as its arrival
+    fun left(n: Notif) = fresh(n.id)?.takeIf { it.state != n.state }
     val nextKeys = next.mapTo(HashSet()) { it.key }
     val nextIds = next.flatMapTo(HashSet()) { it.ids }
     var rank = 0
     val gone = prev.withIndex().mapNotNull { (i, e) ->
         if (e.key in nextKeys || e.ids.any { it in nextIds }) return@mapNotNull null
-        val marks = e.ids.map(::fresh)
-        if (marks.any { it == null }) null else Ghost(e, i, minOf(rank++, 8) * 40, marks[0]!!, toward(e.ids[0]))
+        val marks = e.notifs.map(::left)
+        if (marks.any { it == null }) null else Ghost(e, i, minOf(rank++, 8) * 40, marks[0]!!, toward(e.ids[0]), now)
     }
     val prevKeys = prev.mapTo(HashSet()) { it.key }
     val prevIds = prev.flatMapTo(HashSet()) { it.ids }
@@ -86,6 +92,7 @@ internal class MotionState {
     var wiggle: String? = null
 
     fun step(next: List<Entry>, now: Long, moved: (String) -> Moved?, toward: (String) -> Int) {
+        ghosts.removeAll { now - it.born > it.life + 1000 } // one that left off screen never ran
         val p = prev
         if (p == next) return
         prev = next
@@ -93,7 +100,8 @@ internal class MotionState {
         val keys = next.mapTo(HashSet()) { it.key }
         ghosts.removeAll { it.entry.key in keys } // an Undo during the hold brings the card back at once
         val m = motion(p, next, now, moved, toward)
-        ghosts += m.gone
+        // count the cards still leaving above, so two leaving at once keep their order
+        m.gone.forEach { g -> ghosts += g.copy(index = g.index + ghosts.count { it.index <= g.index }) }
         arrived.values.removeIf { now - it > FRESH_MS }
         m.arrive.forEach { arrived[it] = now }
         m.arrive.firstOrNull()?.let { wiggle = it }
@@ -146,6 +154,8 @@ internal fun Gone(g: Ghost, still: Boolean, done: () -> Unit, card: @Composable 
     val shut = remember { Animatable(0f) }
     val finish by rememberUpdatedState(done)
     LaunchedEffect(Unit) {
+        // scrolled to after it was done, or back after its hold was cut short: it is simply gone
+        if (SystemClock.uptimeMillis() - g.born > g.wait + HOLD_MS) return@LaunchedEffect finish()
         delay(g.wait.toLong())
         if (!still) {
             launch { wash.animateTo(1f, tween(420, easing = EaseOut)) }
@@ -180,14 +190,14 @@ internal fun Gone(g: Ghost, still: Boolean, done: () -> Unit, card: @Composable 
 
 /** A card that just came: it drops in 8 dp and fades in (180 ms), then the newest wiggles 1 degree each way (320 ms). */
 @Composable
-internal fun Arrive(arrive: Boolean, wiggle: Boolean, content: @Composable () -> Unit) {
+internal fun Arrive(arrive: Boolean, wiggle: () -> Boolean, content: @Composable () -> Unit) {
     val drop = remember { Animatable(if (arrive) 0f else 1f) }
     val turn = remember { Animatable(0f) }
     val px = with(LocalDensity.current) { 8.dp.toPx() }
     LaunchedEffect(Unit) {
         if (!arrive) return@LaunchedEffect
         drop.animateTo(1f, tween(180, easing = EaseOut))
-        if (wiggle) {
+        if (wiggle()) { // asked once it has dropped in, so only the newest of a burst wiggles
             turn.animateTo(1f, tween(80, easing = EaseInOut))
             turn.animateTo(-1f, tween(160, easing = EaseInOut))
             turn.animateTo(0f, tween(80, easing = EaseInOut))
