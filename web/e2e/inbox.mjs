@@ -1540,12 +1540,12 @@ try {
     const [, r1] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: false })]);
     assert.ok(r1.ok(), 'unsubscribe from another device');
     assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'the reload dropped the half-typed answer');
-    assert.ok((await put(other, { drafts2: true })).ok(), 'subscribe again');
-    await dp.waitForEvent('load');
+    const [, r2] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: true })]);
+    assert.ok(r2.ok(), 'subscribe again');
     // A marker whose Unsubscribe never landed: no toast, no Undo.
     await dp.evaluate(() => sessionStorage.setItem('clrd-unsub', 'drafts'));
-    await dp.reload();
-    await dp.waitForTimeout(500);
+    await Promise.all([dp.waitForResponse(r => r.url().endsWith('/api/v1/subscriptions') && r.request().method() === 'GET'), dp.reload()]);
+    await dp.waitForTimeout(300); // the check has answered; give a wrong toast time to show
     assert.equal(await dp.locator('[data-toast]', { hasText: 'Unsubscribed from' }).count(), 0, 'Undo offered for an Unsubscribe that never landed');
     // One that did land still offers it.
     await dp.locator('article.card', { hasText: 'Leave me' }).locator('[data-unsub]').dispatchEvent('click');
