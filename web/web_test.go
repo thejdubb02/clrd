@@ -356,6 +356,54 @@ func TestHostileNotification(t *testing.T) {
 	}
 }
 
+// The shared color rule fixture every client runs (#165, SPEC Color rules).
+func TestColorRules(t *testing.T) {
+	b, err := os.ReadFile("../server/testdata/colorrules.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fx struct {
+		Rules []ColorRule
+		Cases []struct {
+			N            Notification
+			Color, Style string
+		}
+	}
+	if err := json.Unmarshal(b, &fx); err != nil || len(fx.Cases) == 0 {
+		t.Fatal(err, len(fx.Cases))
+	}
+	s := Snapshot{ColorRules: fx.Rules}
+	for i, c := range fx.Cases {
+		color, style := s.look(c.N)
+		if want := strings.ToUpper(strings.TrimPrefix(c.Color, "#")); color != want || style != c.Style {
+			t.Errorf("case %d: got %q %q, want %q %q", i, color, style, want, c.Style)
+		}
+	}
+	if _, style := (Snapshot{ColorRules: []ColorRule{{Color: "#123456", Style: "neon"}}}).look(Notification{}); style != "bar" {
+		t.Errorf("unknown style drew as %q, want bar", style)
+	}
+}
+
+// The stylesheet takes only 6-digit hex and picks readable text for each color.
+func TestCardColorsCSS(t *testing.T) {
+	_, body := get(t, Handler(NewFake(), ""), "/card-colors.css?c=FDE047.1E3A8A.zz-x.12345.fde047")
+	for _, want := range []string{".cc-FDE047{--cc:#FDE047;--cc-ink:#0F1114}", ".cc-1E3A8A{--cc:#1E3A8A;--cc-ink:#FFFFFF}"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in %q", want, body)
+		}
+	}
+	if strings.Count(body, ".cc-") != 2 {
+		t.Errorf("bad input let through: %q", body)
+	}
+	// A sender's own color draws as a bar, and the page links its stylesheet.
+	_, body = get(t, Handler(one{n: Notification{ID: "c1", Topic: "t", Title: "x", Color: "#0ea5e9", State: "active", CreatedAt: time.Now()}}, ""), "/app")
+	for _, want := range []string{"cc-0EA5E9 cs-bar", "card-colors.css?c=0EA5E9"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("colored card: missing %q", want)
+		}
+	}
+}
+
 // A card shows who marked it, and a mark never hides it (card marks).
 func TestMarks(t *testing.T) {
 	n := Notification{ID: "m1", Topic: "triage", Title: "disk", State: "active", CreatedAt: time.Now(), Marks: []Mark{

@@ -48,6 +48,7 @@
     </header>
     <div data-live="unsub">{{if .Snap.Unsubscribed}}<div class="alert mb-4" role="status" data-unsub-banner>{{template "i-circle-alert"}}<h2>Not subscribed to {{.Topic}}</h2><section>New notifications here skip your inbox and devices.
       <form class="mt-2" method="post" action="{{base}}/app/subscriptions"><input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="next" value="{{.Here}}"><button class="btn" data-variant="outline" name="subscribe" value="1" data-subscribe="{{.Topic}}">Subscribe</button></form></section></div>{{end}}</div>
+    <div hidden data-live="colors">{{with cardColors .Snap}}<link rel="stylesheet" href="{{base}}/card-colors.css?c={{.}}">{{end}}</div>
     <div class="grid grid-cols-[minmax(0,1fr)] gap-2" data-list>
       {{range .Snap.Items}}{{template "card" (card . $.View $.Here $.Snap)}}{{end}}
     </div>
@@ -143,7 +144,7 @@
 {{end}}
 
 {{define "card"}}{{$n := .N}}
-<article class="card border px-4" tabindex="-1" data-id="{{$n.ID}}" data-seq="{{$n.Seq}}" data-state="{{$n.State}}" data-topic="{{$n.Topic}}" data-priority="{{$n.Priority}}" aria-labelledby="t-{{$n.ID}}">
+<article class="card border px-4{{with .Color}} cc-{{.}} cs-{{$.Style}}{{end}}" tabindex="-1" data-id="{{$n.ID}}" data-seq="{{$n.Seq}}" data-look="{{.Color}}{{.Style}}" data-state="{{$n.State}}" data-topic="{{$n.Topic}}" data-priority="{{$n.Priority}}" aria-labelledby="t-{{$n.ID}}">
   <div class="grid min-w-0 grid-cols-[0.5rem_minmax(0,1fr)] gap-x-3 py-3.5">
     <span class="mt-2 size-2 rounded-full {{if ge $n.Priority 5}}bg-destructive{{else if eq $n.Priority 4}}bg-foreground{{else}}bg-border{{end}}" aria-hidden="true"></span>
     <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">

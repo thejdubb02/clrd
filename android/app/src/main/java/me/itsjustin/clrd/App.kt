@@ -165,7 +165,8 @@ class App : Application() {
             prefs.edit().putString("swipes", next.json()).apply() // the server has it: a restart before its echo keeps it
             null
         } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
-            swipes.value = Swipes.parse(prefs.getString("swipes", null)) // back to what the server last said
+            // Back to what the server last said. Under the lock a settings message cannot land between the read and the write (#568).
+            synchronized(configLock) { swipes.value = Swipes.parse(prefs.getString("swipes", null)) }
             if (e is HttpError && e.code == 403) { swipesLocked.value = true; null } else (e as? HttpError)?.message ?: getString(R.string.sound_no_connection)
         }
     }
@@ -213,7 +214,7 @@ class App : Application() {
         }
     }
 
-    /** Keeps the snooze part of a server `settings` message. */
+    /** Keeps a server `settings` message. The sync client calls it through [RoomStore.settings], so an old server's message is dropped. */
     fun saveSettings(o: org.json.JSONObject) {
         if (o.has("sound")) serverSound(o.optString("sound"))
         if (o.has("keep_cleared_days")) { // the server's keep for cleared rows (#261): drop what it deleted
@@ -459,6 +460,8 @@ class RoomStore(private val app: App) : Store {
 
     override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here
     override fun saveEpoch(epoch: String) = ifMine { app.epoch = epoch }
+    /** A settings message, kept only while this is still the server in Settings: one already in hand at a switch would undo the reset (#568). */
+    fun settings(o: org.json.JSONObject) = ifMine { app.saveSettings(o) }
     override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { app.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one

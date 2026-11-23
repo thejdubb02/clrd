@@ -29,8 +29,9 @@ body {
 main { max-width: 26rem; margin: 0 auto; padding: 1.5rem 1rem; }
 h1 { color: var(--ink); font-size: 1.25rem; margin: 0 0 .5rem; }
 b { color: var(--ink); overflow-wrap: anywhere; }
-#error { color: var(--signal); }
-#error:empty, #offer:empty { display: none; }
+#error, #setting-error { color: var(--signal); }
+#error:empty, #offer:empty, #setting-error:empty { display: none; }
+.switch input { width: auto; margin: 0 .4rem 0 0; accent-color: var(--clear); }
 #check { color: var(--ink); font-size: 2rem; font-weight: 600; letter-spacing: .1em; margin: 0 0 1rem; }
 label { display: block; color: var(--ink); }
 input {

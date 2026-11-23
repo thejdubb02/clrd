@@ -18,7 +18,9 @@ is not released yet: there is nothing to install from here today.
   window shows the server's own `/app` in the system's web view, so there is
   no bundled browser. `app/ui/` is the one page the app brings itself, "This
   computer": paste a link from Settings > Devices on the server, confirm the
-  check code there, and unlink later.
+  check code there, and unlink later. It also has the "Closing clears
+  everywhere" switch: off at first, so closing a system notification only
+  hides it on this computer; on, a close clears it on every device.
 
 With the package installed, "Open in the clrd app" on the server's link page
 opens this app with the link already in the box. A web page can send such an

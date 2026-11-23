@@ -1360,6 +1360,9 @@ rules. Its token lives in the OS keychain and is sent only as an
   sync: it dismisses with `via: "desktop_button"`.
 - "Closing clears everywhere" is a setting on that computer, off by default.
   With it on, a close by the user dismisses with `via: "desktop_close"`.
+  The switch is on the app's This computer page. It belongs to the computer,
+  not the link: it is kept across restarts and across Unlink, and counts from
+  the next close on.
 - An incoming `dismissed` or `resolved` event from any device always closes
   the system notification.
 

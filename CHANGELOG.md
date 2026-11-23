@@ -61,7 +61,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   matches a setting's name, its description or keywords such as "qr", and
   says so when nothing matches. Settings also links to the source code and
   to the issue tracker for reporting a problem (#586).
-- Color rules on the server: color cards by topic, tag, priority or title text, as a bar, tint, solid fill or gradient, set through the settings API or an agent over MCP. Senders can give a message its own color. The web and Android screens for them come next.
+- Color rules on the server: color cards by topic, tag, priority or title text, as a bar, tint, solid fill or gradient, set through the settings API or an agent over MCP. Senders can give a message its own color. The web inbox draws them on its cards and recolors live when the rules change; the Android screen comes next.
 - Web: a cleared card now slides away and the cards below close the gap, on
   every kind of clear, and Clear all goes top to bottom (#598). A card that
   arrives while you are looking slides in with one small wiggle; nothing
@@ -78,6 +78,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   link page opens the app with the link filled in (#626). The app names the
   server and waits for you to press Link this computer; it never links from
   an address by itself, since any web page can send one.
+- Desktop (Linux, build from source): the This computer page has a
+  "Closing clears everywhere" switch (#627). It is off at first, so closing
+  a notification on the computer only hides it there; turn it on and a close
+  clears it on all your devices. The choice is kept across restarts.
 
 - Server: outgoing webhooks can post to Discord (#166). A hook with
   `"kind": "discord"` posts each new notification to a Discord webhook URL and
@@ -111,6 +115,15 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Android: a late repeat of a notification you just cleared, acknowledged or
   snoozed on the phone stays quiet even when the app restarted in between, and
   the phone forgets these marks once the notification is gone (#561).
+- Android: in a right-to-left language, Settings names the swipe sides the
+  way the gestures go there. A settings message from the old server that
+  arrives just as you switch servers no longer brings back its swipe or
+  snooze choices, and a failed swipe save no longer shows an older choice
+  when another device changed it meanwhile (#568).
+- Web: a subscriptions change from another device no longer drops a half-typed answer, and Undo shows only for an Unsubscribe that went through (#649).
+- Web: a card reopened for later on another device that wakes while a Clear all is still waiting for its reply now comes back with its slide in and wiggle (#656).
+- Docs: the self-host build command strips debug data, so the binary it
+  makes is about 7.5 MB smaller, the same size as the release builds (#683).
 - Web: a Settings search typed while the page is still loading now finds
   Link a phone once it appears (#591).
 - Server: `color_rules: null` in a settings change is now refused with a

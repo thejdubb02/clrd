@@ -38,7 +38,7 @@ class SyncService : Service() {
         if (intent?.action == ACTION_RESTART) app.sync?.stop()?.also { app.sync = null }
         if (app.sync == null) {
             app.io.execute { store.reconcile() } // the tray is empty after a reboot; refill it quietly
-            app.sync = SyncClient(app.http, api, store, onStatus = ::status, onSettings = app::saveSettings, onDevices = { app.devicesChanged.value++ }).also { it.start() }
+            app.sync = SyncClient(app.http, api, store, onStatus = ::status, onSettings = store::settings, onDevices = { app.devicesChanged.value++ }).also { it.start() }
         }
         if (netCallback == null) {
             netCallback = object : ConnectivityManager.NetworkCallback() {

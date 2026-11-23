@@ -402,7 +402,7 @@
     document.title = doc.title; // the open count in the tab
     document.querySelectorAll('[data-live]').forEach(cur => {
       const next = doc.querySelector(`[data-live="${cur.dataset.live}"]`);
-      if (next && !cur.contains(document.activeElement)) cur.replaceWith(document.adoptNode(next));
+      if (next && !cur.contains(document.activeElement) && !next.isEqualNode(cur)) cur.replaceWith(document.adoptNode(next)); // same colors: no reload flash
     });
     const nextList = doc.querySelector('[data-list]');
     if (!list || !nextList) return tidy();
@@ -410,7 +410,7 @@
     let typing = null;
     const keep = stackOrder([...nextList.children].map(n => {
       const old = card(n.dataset.id);
-      if (old && old.dataset.seq === n.dataset.seq) return old;
+      if (old && old.dataset.seq === n.dataset.seq && old.dataset.look === n.dataset.look) return old; // or its color rule changed (#165)
       const fresh = document.adoptNode(n);
       // A live change to a still-open question keeps a half-typed answer (#153).
       const was = old && old.querySelector('[data-text-reply] [name=text]'), box = fresh.querySelector('[data-text-reply] [name=text]');
@@ -646,7 +646,7 @@
   }
   // Topic subscriptions (SPEC 2.3). A change reloads the page, so Undo
   // rides in sessionStorage, written before the PUT so a reply that lands
-  // mid-reload still offers it.
+  // mid-reload still offers it. The new page checks the change landed (#649).
   const subsPut = body => fetch('/api/v1/subscriptions', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
   const subsWhy = async r => r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   const approvalsOff = t => confirm(`Agents send their approval requests to ${t}. Unsubscribe, and those requests stop reaching you. Unsubscribe anyway?`);
@@ -655,12 +655,23 @@
   try { unsubDone = sessionStorage.getItem('clrd-unsub'); } catch { /* as above */ }
   if (unsubDone) {
     store('clrd-unsub', null);
-    say(`Unsubscribed from ${unsubDone}`, async () => {
-      const r = await subsPut({ topics: { [unsubDone]: true } });
-      if (r && r.ok) return location.reload();
-      say(await subsWhy(r));
-    });
+    fetch('/api/v1/subscriptions', { credentials: 'same-origin' }).then(r => r.json()).then(s => {
+      if (!(s.topics || []).some(x => x.topic === unsubDone && !x.subscribed)) return; // the PUT never landed
+      say(`Unsubscribed from ${unsubDone}`, async () => {
+        const r = await subsPut({ topics: { [unsubDone]: true } });
+        if (r && r.ok) return location.reload();
+        say(await subsWhy(r));
+      });
+    }, () => {});
   }
+  // A reload (a subscriptions change on another device, a reset) keeps a
+  // half-typed answer, as a live update does (#153, #649).
+  addEventListener('pagehide', () => {
+    const d = [...document.querySelectorAll('[data-text-reply] [name=text]')].filter(b => b.value).map(b => [b.closest('[data-id]').dataset.id, b.value]);
+    store('clrd-drafts', d.length ? JSON.stringify(d) : null);
+  });
+  try { for (const [id, v] of JSON.parse(sessionStorage.getItem('clrd-drafts')) || []) { const b = card(id)?.querySelector('[data-text-reply] [name=text]'); if (b) b.value = v; } } catch { /* as above */ }
+  store('clrd-drafts', null);
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-unsub], [data-subscribe]');
     if (!b) return;
@@ -1010,7 +1021,7 @@
       const r = ids.length && await post('/api/v1/notifications/clear', { ids, via: 'web_bulk' });
       b.disabled = false;
       const done = () => ids.forEach(id => clearing.delete(id));
-      if (!r) { done(); return; }
+      if (!r) { done(); arrived = arrived.filter(id => !ids.includes(id)); return; } // they never left, so nothing slides in (#656)
       const n = (await r.json().catch(() => ({}))).cleared;
       // Clear all takes every stack with it, so none shrinks card by card.
       // Each one goes a little after the one above it (SPEC 10.1).
@@ -1236,6 +1247,7 @@
         // Snooze times or formatting changed on another device: the cards are stale.
         // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
         const st = m.settings || {};
+        if (st.color_rules) refresh(); // recolor the cards (#165)
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
         const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
@@ -1247,9 +1259,10 @@
         // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
         if (ready && m.notification.state === 'active' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')) alertSound(m.notification);
         // A card that comes in live while this tab is in front slides in (SPEC 10.1).
-        // Its old copy may still be leaving (a snooze that ended at once): that one does not count (#611).
+        // Its old copy may still be leaving (a snooze that ended at once), or
+        // be about to with a Clear all's reply: that one does not count (#611, #656).
         if (ready && document.visibilityState === 'visible' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')
-          && show.includes(m.notification.state) && !cards().some(c => c.dataset.id === m.notification.id)) arrived.push(m.notification.id);
+          && show.includes(m.notification.state) && (clearing.has(m.notification.id) || !cards().some(c => c.dataset.id === m.notification.id))) arrived.push(m.notification.id);
         onEvent(m);
       }
     };

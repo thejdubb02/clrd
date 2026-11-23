@@ -67,6 +67,7 @@ type Notification struct {
 	Tags        []string    `json:"tags"`
 	Click       string      `json:"click,omitempty"`
 	Icon        string      `json:"icon,omitempty"`   // http(s) image URL
+	Color       string      `json:"color"`            // the sender's own #RRGGBB, "" for none
 	Format      string      `json:"format,omitempty"` // "markdown" (also when empty) or "text"
 	Attachment  *Attachment `json:"attachment,omitempty"`
 	Actions     []Action    `json:"actions,omitempty"`
@@ -617,6 +618,49 @@ type Snapshot struct {
 	Senders                           []Sender   // the Senders page only
 	Sender                            *Sender    // a sender's own page only
 	Stats                             *Stats     // the Stats page only (#120)
+	ColorRules                        []ColorRule
+}
+
+// ColorRule colors matching cards (docs/SPEC.md section 2.1, Color rules).
+type ColorRule struct {
+	Topic, Tag, Title, Color, Style string
+	PriorityMin                     int `json:"priority_min"`
+	PriorityMax                     int `json:"priority_max"`
+}
+
+// look is a card's color, RRGGBB in capitals, and style: the first rule
+// whose set fields all match, else the sender's color as a bar, else none.
+// The color becomes a class name, so anything but six hex digits is none.
+func (s Snapshot) look(n Notification) (string, string) {
+	color, style := n.Color, "bar"
+	for _, r := range s.ColorRules {
+		if (r.Topic == "" || r.Topic == n.Topic) && (r.Tag == "" || slices.Contains(n.Tags, r.Tag)) &&
+			(r.PriorityMin == 0 || n.Priority >= r.PriorityMin) && (r.PriorityMax == 0 || n.Priority <= r.PriorityMax) &&
+			strings.Contains(strings.ToLower(n.Title), strings.ToLower(r.Title)) {
+			color, style = r.Color, r.Style
+			break
+		}
+	}
+	if !slices.Contains([]string{"tint", "solid", "gradient"}, style) {
+		style = "bar" // a style this client does not know
+	}
+	if color = strings.ToUpper(strings.TrimPrefix(color, "#")); !hex6(color) {
+		return "", ""
+	}
+	return color, style
+}
+
+func hex6(c string) bool { return len(c) == 6 && strings.Trim(c, "0123456789ABCDEF") == "" }
+
+// cardColors is the card-colors.css query for the colors on a page.
+func cardColors(s Snapshot) string {
+	var cs []string
+	for _, n := range s.Items {
+		if c, _ := s.look(n); c != "" && !slices.Contains(cs, c) {
+			cs = append(cs, c)
+		}
+	}
+	return strings.Join(cs, ".")
 }
 
 // Template is a saved webhook template on one topic
@@ -875,9 +919,11 @@ func templates(base string) *template.Template {
 				Mine          *Mark // the reader's own mark, which it may change or remove
 				Unsub         bool  // offer Unsubscribe from the topic (SPEC 2.3)
 				Approvals     bool  // the topic carries approval prompts, so Unsubscribe warns first
+				Color, Style  string
 			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic),
 				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence }), nil,
-				snap.Filtered && !snap.Unsubscribed, snap.approvals(n.Topic)}
+				snap.Filtered && !snap.Unsubscribed, snap.approvals(n.Topic), "", ""}
+			c.Color, c.Style = snap.look(n)
 			for i, m := range n.Marks {
 				if snap.MarkID != "" && m.ByID == snap.MarkID {
 					c.Mine = &n.Marks[i]
@@ -894,6 +940,7 @@ func templates(base string) *template.Template {
 			}{demoInbox, Snapshot{Formatting: true, SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}}
 		},
 		"about":       about,
+		"cardColors":  cardColors,
 		"snoozeLabel": snoozeLabel,
 		"left":        timeLeft,
 		"hookEvents":  func() any { return HookEvents },
@@ -1248,6 +1295,21 @@ func Handler(api API, baseURL string) http.Handler {
 		statics.ServeHTTP(w, r)
 	})
 	mux.Handle("GET /assets/", cached("/assets/", assets))
+	// Card colors (#165): the CSP allows no inline styles, so each color on a
+	// page is a class from here, with the text color that reads on it.
+	mux.HandleFunc("GET /card-colors.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		for _, c := range strings.Split(r.URL.Query().Get("c"), ".") {
+			if v, err := strconv.ParseUint(c, 16, 32); err == nil && hex6(c) {
+				ink := "#FFFFFF"
+				if (v>>16)*299+(v>>8&255)*587+(v&255)*114 >= 128000 {
+					ink = "#0F1114"
+				}
+				fmt.Fprintf(w, ".cc-%s{--cc:#%s;--cc-ink:%s}\n", c, c, ink)
+			}
+		}
+	})
 	// Root icon paths that browsers, wrappers and home screens ask for by
 	// name. The manifest's relative URLs resolve under a sub-path base.
 	for p, f := range map[string][2]string{
