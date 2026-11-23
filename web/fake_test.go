@@ -103,10 +103,12 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	s := Snapshot{Seq: f.seq, CanKeep: true, Counts: map[string]int{}, Items: []Notification{}, Me: "web", MeID: "tok-web", MarkID: "me", SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h", TopicKeepClearedDays: map[string]int{"home": 14, "gone": 3}} // gone has no notifications left (#336)
 	topics := map[string]int{}
 	last := map[string]time.Time{}
+	asks := map[string]bool{} // topics a question was sent to, as the server marks them (#623)
 	needle := strings.ToLower(q.Q)
 	s.Filtered, s.NewTopics = !f.Unfiltered, !f.NoNewTopics
 	s.Unsubscribed = q.Topic != "" && !f.subscribed(q.Topic)
 	for _, n := range f.items {
+		asks[n.Topic] = asks[n.Topic] || slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply != "" })
 		if n.CreatedAt.After(last[n.Topic]) {
 			last[n.Topic] = n.CreatedAt
 		}
@@ -131,7 +133,7 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	}
 	sort.Slice(s.Items, func(i, j int) bool { return s.Items[i].CreatedAt.After(s.Items[j].CreatedAt) })
 	for name, open := range topics {
-		s.Topics = append(s.Topics, Topic{Name: name, Open: open})
+		s.Topics = append(s.Topics, Topic{Name: name, Open: open, Approvals: asks[name]})
 	}
 	sort.Slice(s.Topics, func(i, j int) bool { return s.Topics[i].Name < s.Topics[j].Name })
 	if q.Devices && s.Filtered {
@@ -142,7 +144,7 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 					open++
 				}
 			}
-			s.SubTopics = append(s.SubTopics, SubTopic{Topic: name, Subscribed: f.subscribed(name), Open: open, LastAt: &at})
+			s.SubTopics = append(s.SubTopics, SubTopic{Topic: name, Subscribed: f.subscribed(name), Open: open, LastAt: &at, Approvals: asks[name]})
 		}
 		sort.Slice(s.SubTopics, func(i, j int) bool { return s.SubTopics[i].Topic < s.SubTopics[j].Topic })
 	}

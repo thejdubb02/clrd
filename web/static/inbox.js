@@ -653,7 +653,7 @@
     if (!b) return;
     e.preventDefault();
     const t = b.dataset.unsub ?? b.dataset.subscribe, on = 'subscribe' in b.dataset;
-    if (!on && 'approvals' in b.dataset && !approvalsOff(t)) return;
+    if (!on && document.querySelector(`[data-unsub="${CSS.escape(t)}"][data-approvals]`) && !approvalsOff(t)) return;
     if (!on) store('clrd-unsub', t);
     const r = await subsPut({ topics: { [t]: on } });
     if (r && r.ok) return location.reload();

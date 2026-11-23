@@ -228,6 +228,8 @@ type Topic struct {
 	Open    int    `json:"open"`
 	Icon    string `json:"icon"` // image URL new notifications in the topic get, "" for none
 	Silence bool   `json:"-"`    // this token may silence the topic (#326)
+	// Approvals: an approval request or question was sent here (#623).
+	Approvals bool `json:"approvals"`
 }
 
 // SubTopic is one row of Settings, Topics: a topic the reader can read, as
@@ -237,12 +239,25 @@ type SubTopic struct {
 	Subscribed bool       `json:"subscribed"`
 	Open       int        `json:"open"`
 	LastAt     *time.Time `json:"last_at"`
+	Approvals  bool       `json:"approvals"` // as on Topic (#623)
 }
 
 // ApprovalTopic is where approval prompts go unless an agent names another
-// (server/approve.go); unsubscribing from it hides them. ponytail: one
-// name, a server flag per topic when #623 lands.
+// (server/approve.go). Unsubscribing from it always warns, even before the
+// first request, as does any topic the server marks with Approvals (#623).
 const ApprovalTopic = "agents"
+
+// approvals says whether unsubscribing from topic should warn first.
+func (s Snapshot) approvals(topic string) bool {
+	return topic == ApprovalTopic || slices.ContainsFunc(s.Topics, func(t Topic) bool { return t.Name == topic && t.Approvals })
+}
+
+// topicApprovals asks the server whether topic carries approval requests,
+// for a plain form post that has no snapshot. An error warns, to be safe.
+func topicApprovals(api API, r *http.Request, topic string) bool {
+	snap, err := api.Snapshot(r, Query{States: []string{}})
+	return err != nil || snap.approvals(topic)
+}
 
 // LinkedDevice is one row of the Settings device list (issue #246), as
 // GET /api/v1/devices?all=1 returns it.
@@ -857,7 +872,7 @@ func templates(base string) *template.Template {
 				Approvals     bool  // the topic carries approval prompts, so Unsubscribe warns first
 			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic),
 				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence }), nil,
-				snap.Filtered && !snap.Unsubscribed, n.Topic == ApprovalTopic}
+				snap.Filtered && !snap.Unsubscribed, snap.approvals(n.Topic)}
 			for i, m := range n.Marks {
 				if snap.MarkID != "" && m.ByID == snap.MarkID {
 					c.Mine = &n.Marks[i]
@@ -1490,7 +1505,7 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 		} else {
 			t, on := f.Get("topic"), f.Get("subscribe") == "1"
-			if !on && t == ApprovalTopic && f.Get("sure") == "" {
+			if !on && f.Get("sure") == "" && (t == ApprovalTopic || topicApprovals(api, r, t)) {
 				// Not a silent no-op: Settings says what this hides, next to its switch.
 				http.Redirect(w, r, "/app/settings#topics", http.StatusSeeOther)
 				return

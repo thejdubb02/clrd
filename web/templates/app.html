@@ -251,9 +251,9 @@
             <thead><tr><th scope="col">Topic</th><th scope="col">Last</th><th scope="col"><span class="sr-only">Subscribed</span></th></tr></thead>
             <tbody>
               {{range .Snap.SubTopics}}<tr data-sub="{{.Topic}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><a class="underline-offset-2 hover:underline" href="{{base}}/app?topic={{.Topic}}">{{.Topic}}</a>{{with .Open}} <span class="meta">{{.}} open</span>{{end}}
-                {{if eq .Topic approvalTopic}}<div class="meta" data-approval-warn>Agents ask for approval here. Off, those requests stop reaching you.</div>{{end}}</td>
+                {{if or .Approvals (eq .Topic approvalTopic)}}<div class="meta" data-approval-warn>Agents ask for approval here. Off, those requests stop reaching you.</div>{{end}}</td>
                 <td class="meta">{{with .LastAt}}<time class="whitespace-nowrap" datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time>{{end}}</td>
-                <td class="text-right"><input type="hidden" name="was" value="{{if .Subscribed}}1{{else}}0{{end}}:{{.Topic}}"><label class="label justify-end"><input type="checkbox" role="switch" class="input" name="on" value="{{.Topic}}"{{if .Subscribed}} checked{{end}}{{if eq .Topic approvalTopic}} data-approvals{{end}}><span class="sr-only">Subscribed to {{.Topic}}</span></label></td></tr>
+                <td class="text-right"><input type="hidden" name="was" value="{{if .Subscribed}}1{{else}}0{{end}}:{{.Topic}}"><label class="label justify-end"><input type="checkbox" role="switch" class="input" name="on" value="{{.Topic}}"{{if .Subscribed}} checked{{end}}{{if or .Approvals (eq .Topic approvalTopic)}} data-approvals{{end}}><span class="sr-only">Subscribed to {{.Topic}}</span></label></td></tr>
               {{end}}
             </tbody>
           </table>

@@ -596,6 +596,11 @@ func TestSubscriptionsOnRealServer(t *testing.T) {
 	if body := get("/app/settings"); !strings.Contains(body, `value="0:work"`) || !strings.Contains(body, `value="1:home"`) {
 		t.Error("settings: want work off and home on")
 	}
+	// A question marks its topic (#623): its card warns before Unsubscribe.
+	publish(t, ts, raw, "deploys", `ship?","actions":[{"label":"Yes","reply":"yes"}],"title":"Ship`)
+	if body := get("/app"); !strings.Contains(body, `data-unsub="deploys" data-approvals`) || strings.Contains(body, `data-unsub="home" data-approvals`) {
+		t.Error("inbox: want the warning on deploys only")
+	}
 	// The Settings list sends only what changed: home stays on.
 	post(url.Values{"was": {"1:home", "0:work"}, "on": {"home", "work"}})
 	if body := get("/app"); !strings.Contains(body, "deploy done") {
