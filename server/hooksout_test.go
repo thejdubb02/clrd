@@ -476,8 +476,12 @@ func TestHooksOutDiscord(t *testing.T) {
 		switch {
 		case r.Method == "POST":
 			fmt.Fprintf(w, `{"id":"m%d"}`, n)
+		case strings.HasPrefix(r.URL.Path, "/gone/"):
+			w.WriteHeader(404) // the webhook itself was deleted
+			w.Write([]byte(`{"message": "Unknown Webhook", "code": 10015}`))
 		case strings.HasSuffix(r.URL.Path, "/m2"):
 			w.WriteHeader(404) // someone deleted it in Discord
+			w.Write([]byte(`{"message": "Unknown Message", "code": 10008}`))
 		}
 	})
 	path := "/api/v1/topics/ops/hooks/dc"
@@ -516,6 +520,27 @@ func TestHooksOutDiscord(t *testing.T) {
 			t.Fatalf("delivery: %+v", d)
 		}
 	}
+
+	// A new URL forgets the old message ids.
+	call(t, ts, "PUT", path, admin, map[string]any{"url": dc.URL + "/api/webhooks/2/tok", "kind": "discord"})
+	var kept int
+	s.db.QueryRow(`SELECT count(*) FROM hook_posts WHERE name = 'dc'`).Scan(&kept)
+	if kept != 0 {
+		t.Fatalf("%d message ids kept for another channel", kept)
+	}
+	call(t, ts, "DELETE", path, admin, nil)
+
+	// A deleted webhook is a failure to retry, not a deleted message.
+	call(t, ts, "PUT", "/api/v1/topics/ops/hooks/gone", admin, map[string]any{"url": dc.URL + "/gone/1/tok", "kind": "discord"})
+	_, g := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "g"})
+	s.deliverHooks(ctx)
+	call(t, ts, "POST", "/api/v1/notifications/"+g["id"].(string)+"/dismiss", admin, nil)
+	s.deliverHooks(ctx)
+	ds, _ = s.HookDeliveries(ctx, serverToken, "ops", "gone", 10)
+	if len(ds) != 2 || ds[0].Status != "pending" || ds[0].Code != 404 {
+		t.Fatalf("gone: %+v", ds)
+	}
+	call(t, ts, "DELETE", "/api/v1/topics/ops/hooks/gone", admin, nil)
 
 	// A dead receiver's error leaves out the URL and its token.
 	call(t, ts, "PUT", "/api/v1/topics/ops/hooks/dead", admin, map[string]any{"url": "http://127.0.0.1:1/api/webhooks/1/sekrit", "kind": "discord"})

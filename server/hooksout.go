@@ -193,6 +193,9 @@ func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
 	if j.kind == "discord" {
 		return s.sendDiscord(ctx, j)
 	}
+	if j.event == "posted" {
+		return 204, nil // queued while the hook was discord: a plain hook gets state changes only
+	}
 	if j.tmpl != "" {
 		body, err := renderHookBody(j.tmpl, j.body)
 		if err != nil {
@@ -226,7 +229,13 @@ func (s *Server) hookDo(ctx context.Context, req *http.Request) (int, []byte, er
 	}
 	resp, err := s.hookHTTP.Load().Do(req)
 	if ue := (*url.Error)(nil); errors.As(err, &ue) {
-		return 0, nil, fmt.Errorf("%s: %w", ue.Op, ue.Err)
+		msg := ue.Err.Error() // a redirect's Location can repeat the path
+		for _, part := range []string{req.URL.EscapedPath(), req.URL.Path, req.URL.RawQuery} {
+			if len(part) > 1 {
+				msg = strings.ReplaceAll(msg, part, "[hidden]")
+			}
+		}
+		return 0, nil, fmt.Errorf("%s: %s", ue.Op, msg)
 	} else if err != nil {
 		return 0, nil, err
 	}
@@ -275,8 +284,8 @@ func (s *Server) sendDiscord(ctx context.Context, j hookJob) (int, error) {
 	req.Header.Set("User-Agent", "clrd")
 	code, resp, err := s.hookDo(ctx, req)
 	if err != nil || code < 200 || code > 299 {
-		if method == "PATCH" && code == 404 {
-			return 204, nil // someone deleted the message: nothing to edit
+		if method == "PATCH" && code == 404 && strings.Contains(string(resp), "10008") {
+			return 204, nil // Unknown Message: someone deleted it, nothing to edit
 		}
 		return code, err
 	}
@@ -320,7 +329,8 @@ func discordText(n *Notification, event string) string {
 		text = append(text[:1897], []rune("...")...)
 	}
 	if status != "" {
-		return string(text) + "\n-# " + status
+		st := []rune(status)
+		return string(text) + "\n-# " + string(st[:min(len(st), 90)])
 	}
 	return string(text)
 }
@@ -464,6 +474,11 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 		return errf(400, "bad_request", "a %s webhook takes no body or secret: it sends its own message", h.Kind)
 	}
 	events, _ := json.Marshal(h.Events)
+	// A new URL is another channel: the old message ids mean nothing there.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?
+		AND NOT EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ?)`, topic, name, topic, name, h.URL); err != nil {
+		return err
+	}
 	// Saving again turns a hook back on and starts a fresh failure streak.
 	_, err := s.db.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret, body, kind) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(topic, name) DO UPDATE SET url = excluded.url, events = excluded.events, kind = excluded.kind,
