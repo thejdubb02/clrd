@@ -298,7 +298,7 @@ fetch('/report', { method: 'POST', body: 'open' });
 </script>"#,
     );
     let (bus, _daemon, keys, home) = linked(&fake);
-    let app_one = Group(
+    let mut app_one = Group(
         app(&bus, &home, &[])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -364,10 +364,8 @@ fetch('/report', { method: 'POST', body: 'open' });
         keys.load().unwrap().is_none()
     });
     settle();
-    assert!(
-        Path::new(&format!("/proc/{}", app_one.0.id())).exists(),
-        "the app keeps running"
-    );
+    // `xvfb-run` ends when the app does.
+    assert_eq!(app_one.0.try_wait().unwrap(), None, "the app keeps running");
 }
 
 /// A settings portal on the test bus that answers with `scheme`.
