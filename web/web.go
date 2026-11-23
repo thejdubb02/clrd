@@ -17,6 +17,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -1306,8 +1307,16 @@ func Handler(api API, baseURL string) http.Handler {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		for _, c := range strings.Split(r.URL.Query().Get("c"), ".") {
 			if v, err := strconv.ParseUint(c, 16, 32); err == nil && hex6(c) {
-				ink := "#FFFFFF"
-				if (v>>16)*299+(v>>8&255)*587+(v&255)*114 >= 128000 {
+				// WCAG relative luminance: dark text when it out-contrasts white (#696).
+				lin := func(x uint64) float64 {
+					s := float64(x&255) / 255
+					if s <= 0.04045 {
+						return s / 12.92
+					}
+					return math.Pow((s+0.055)/1.055, 2.4)
+				}
+				l, ink := 0.2126*lin(v>>16)+0.7152*lin(v>>8)+0.0722*lin(v)+0.05, "#FFFFFF"
+				if l/0.0555 >= 1.05/l { // 0.0555 is #0F1114's luminance plus 0.05
 					ink = "#0F1114"
 				}
 				fmt.Fprintf(w, ".cc-%s{--cc:#%s;--cc-ink:%s}\n", c, c, ink)

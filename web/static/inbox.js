@@ -410,7 +410,11 @@
     let typing = null;
     const keep = stackOrder([...nextList.children].map(n => {
       const old = card(n.dataset.id);
-      if (old && old.dataset.seq === n.dataset.seq && old.dataset.look === n.dataset.look) return old; // or its color rule changed (#165)
+      if (old && old.dataset.seq === n.dataset.seq) { // a color rule change recolors in place, so an open menu and its draft stay (#696)
+        const look = el => [...el.classList].filter(c => /^c[cs]-/.test(c));
+        old.classList.remove(...look(old)); old.classList.add(...look(n)); old.dataset.look = n.dataset.look;
+        return old;
+      }
       const fresh = document.adoptNode(n);
       // A live change to a still-open question keeps a half-typed answer (#153).
       const was = old && old.querySelector('[data-text-reply] [name=text]'), box = fresh.querySelector('[data-text-reply] [name=text]');

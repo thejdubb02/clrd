@@ -390,13 +390,14 @@ func TestColorRules(t *testing.T) {
 
 // The stylesheet takes only 6-digit hex and picks readable text for each color.
 func TestCardColorsCSS(t *testing.T) {
-	_, body := get(t, Handler(NewFake(), ""), "/card-colors.css?c=FDE047.1E3A8A.zz-x.12345.fde047")
-	for _, want := range []string{".cc-FDE047{--cc:#FDE047;--cc-ink:#0F1114}", ".cc-1E3A8A{--cc:#1E3A8A;--cc-ink:#FFFFFF}"} {
+	_, body := get(t, Handler(NewFake(), ""), "/card-colors.css?c=FDE047.1E3A8A.FF00FF.zz-x.12345.fde047")
+	for _, want := range []string{".cc-FDE047{--cc:#FDE047;--cc-ink:#0F1114}", ".cc-1E3A8A{--cc:#1E3A8A;--cc-ink:#FFFFFF}",
+		".cc-FF00FF{--cc:#FF00FF;--cc-ink:#0F1114}"} { // magenta: white text would be 3.1:1 (#696)
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in %q", want, body)
 		}
 	}
-	if strings.Count(body, ".cc-") != 2 {
+	if strings.Count(body, ".cc-") != 3 {
 		t.Errorf("bad input let through: %q", body)
 	}
 	// A sender's own color draws as a bar, and the page links its stylesheet.
