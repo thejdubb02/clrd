@@ -1305,6 +1305,49 @@ Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every su
 </svg>
 ```
 
+### 10.1 Motion
+
+One set of values for every client, so a clear or an arrival looks the same on
+the web, Android and the desktop. Two curves only, nothing that overshoots or
+bounces:
+
+- Ease out `cubic-bezier(.2, .7, .2, 1)`: things coming in (the green wash, an
+  arriving card).
+- Ease in out `cubic-bezier(.4, 0, .2, 1)`: things going away (the slide, the
+  gap closing).
+
+**Clearing.** Every way a card leaves plays the same steps: a swipe, the Clear
+button, Clear all, a clear or other change from another device, and a snooze or
+resolve that takes it out of the view. The clear is sent at once; the motion is
+only what the screen shows.
+
+| Step | Value |
+|---|---|
+| Green wash across the card, from the inline start | 420ms, ease out |
+| Check mark draws in, with the reason | 260ms, starts 180ms in |
+| Hold, so the reason can be read | 1400ms from the start |
+| Slide away, toward the swipe (inline end when not swiped), fading out | 100% of the card width, 200ms, ease in out |
+| Cards below close the gap | 200ms, ease in out |
+| Clear all: each card starts a little after the one above it | 40ms per card, at most 8 steps (320ms) |
+
+**Arriving.** A new card slides in from just above its place and fades in, then
+gives one small wiggle.
+
+| Step | Value |
+|---|---|
+| Slide in and fade in | 8px, 180ms, ease out |
+| Wiggle, once | rotate to 1deg, then -1deg, then rest, 320ms, ease in out, starts when the slide ends |
+
+It plays only for a card that arrives live (a new message, a repeat, or a
+snooze ending) while the page or app is in front and the card is on screen.
+Nothing plays on first load, on catch-up after a reconnect, or for cards that
+arrived while the person was away. In a burst every new card slides in and
+only the newest wiggles.
+
+**Reduced motion.** With the system's reduce motion setting on, none of this
+plays: a cleared card shows its reason for the same hold, then goes, and a new
+card simply appears.
+
 ## 11. Rules for every thread
 
 - Public repo: no secrets, no internal hostnames or IPs, no em dashes, en dashes or the ellipsis character in anything committed.

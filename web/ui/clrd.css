@@ -75,9 +75,17 @@
   article.card.is-leaving::before { @apply scale-x-100; }
   article.card.is-leaving .gone { @apply text-clear col-span-full flex items-center gap-2 pb-3 text-sm font-medium; }
   article.card.is-folding { @apply overflow-hidden; }
+  /* Then it slides away toward the swipe (--out is 1 or -1), and a new card
+     slides in and wiggles once (SPEC section 10.1). The list clips only while
+     a card is out past its edge, so focus rings are never cut off. */
+  [data-list]:has(.is-sliding) { overflow-x: clip; }
   @media (prefers-reduced-motion: no-preference) {
     article.card::before { transition: transform 420ms cubic-bezier(.2, .7, .2, 1); }
     article.card.is-leaving .gone path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: clrd-draw 260ms 180ms ease-out forwards; }
+    article.card.is-leaving { transition: transform 200ms cubic-bezier(.4, 0, .2, 1), opacity 200ms cubic-bezier(.4, 0, .2, 1); }
+    article.card.is-sliding { transform: translateX(calc(var(--out, 1) * 100%)); opacity: 0; }
+    article.card.is-arriving { animation: clrd-in 180ms cubic-bezier(.2, .7, .2, 1); }
+    article.card.is-arriving.is-newest { animation: clrd-in 180ms cubic-bezier(.2, .7, .2, 1), clrd-wiggle 320ms 180ms cubic-bezier(.4, 0, .2, 1); }
   }
 
   /* Undo and error notices only; never one per action. */
@@ -132,6 +140,8 @@
 
 @keyframes clrd-draw { to { stroke-dashoffset: 0; } }
 @keyframes clrd-up { from { opacity: 0; transform: translateY(8px); } }
+@keyframes clrd-in { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes clrd-wiggle { 33% { transform: rotate(1deg); } 67% { transform: rotate(-1deg); } }
 @keyframes clrd-swipe { 0%, 18% { transform: none; opacity: 1; } 26% { transform: translateX(120%); opacity: 0; } 88% { transform: translateX(120%); opacity: 0; } 89% { transform: none; opacity: 0; } 96%, 100% { opacity: 1; } }
 @keyframes clrd-follow { 0%, 27% { opacity: 1; border-color: var(--border); } 30% { border-color: var(--clear); opacity: 1; } 36% { opacity: 0; transform: scale(.97); } 88% { opacity: 0; transform: none; } 96%, 100% { opacity: 1; } }
 @keyframes clrd-cleared { 0%, 32% { opacity: 0; } 38%, 78% { opacity: 1; } 86%, 100% { opacity: 0; } }
