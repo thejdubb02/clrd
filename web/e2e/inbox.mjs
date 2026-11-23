@@ -1955,6 +1955,22 @@ try {
       });
       const mp = await ctx.newPage();
       await mp.setViewportSize({ width: 390, height: 800 });
+      // Live sync runs through here, so a step can drop it (down) or hold what
+      // the server sends (held) and then let it all through at once.
+      let sock, down = false, held = null;
+      await mp.routeWebSocket(/\/api\/v1\/ws/, ws => {
+        if (down) return ws.close();
+        const srv = ws.connectToServer();
+        srv.onMessage(m => held ? held.push(m) : ws.send(m));
+        sock = { ws, srv };
+      });
+      const heldNotes = () => (held || []).map(m => JSON.parse(m).notification).filter(Boolean);
+      const hold = async (ok, what) => {
+        for (let i = 0; i < 200 && !ok(heldNotes()); i++) await mp.waitForTimeout(100);
+        assert.ok(ok(heldNotes()), `live sync never sent ${what}`);
+        const all = held; held = null;
+        all.forEach(m => sock.ws.send(m));
+      };
       await mp.goto(`${b3}/app?auth=${Buffer.from(`Bearer ${tok}`).toString('base64url')}`);
       await mp.locator('.is-live').waitFor({ timeout: 5000 });
       const mc = t => mp.locator('article.card', { hasText: t });
@@ -1968,9 +1984,12 @@ try {
       await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Just arrived'));
       assert.ok(await moved('clrd-in', 'Just arrived'), 'a live card did not slide in');
 
-      // A burst: all slide in, only the newest wiggles.
-      await Promise.all(['Burst one', 'Burst two'].map(send));
-      await send('Burst three');
+      // A burst: all slide in, only the newest wiggles. Held and let through
+      // together, so the burst lands in one refresh even on a slow machine (#612).
+      held = [];
+      for (const t of ['Burst one', 'Burst two', 'Burst three']) await send(t);
+      await hold(ns => ns.length >= 3, 'the burst');
+      for (const t of ['Burst one', 'Burst two', 'Burst three']) await mc(t).waitFor();
       await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Burst three'));
       const burst = await mp.evaluate(() => window.moves.filter(m => m.title.startsWith('Burst')).map(m => `${m.name}:${m.title}`));
       assert.ok(burst.includes('clrd-in:Burst one') && burst.includes('clrd-in:Burst two'), `a burst card did not slide in: ${burst}`);
@@ -1984,6 +2003,18 @@ try {
       assert.equal(await moved('clrd-in', 'Came while away'), false, 'a card that came while the tab was hidden slid in');
       await mp.evaluate(() => delete document.visibilityState);
 
+      // Live sync drops and a card is sent meanwhile: it comes in with the
+      // catch-up on reconnect, so it just appears (#614).
+      down = true;
+      sock.ws.close(); sock.srv.close();
+      await mp.locator('.is-live').waitFor({ state: 'detached' });
+      await send('Sent while offline');
+      down = false;
+      await mc('Sent while offline').waitFor({ timeout: 20000 });
+      await mp.locator('.is-live').waitFor();
+      await mp.waitForTimeout(400);
+      assert.equal(await moved('clrd-in', 'Sent while offline'), false, 'a card from the catch-up after a reconnect slid in');
+
       // Cleared on another device: the reason shows, then it slides away, without widening the page.
       await post3(`/api/v1/notifications/${old.id}/dismiss`);
       await until(mp, () => window.moves.some(m => m.name === 'transform' && m.title === 'Was here first'));
@@ -1992,22 +2023,40 @@ try {
 
       // Clear all: each card starts its slide a little after the one above it.
       const top = (await mp.locator('article.card .card-title').allTextContents()).map(t => t.trim());
-      assert.equal(top.length, 5, `cards before Clear all: ${top}`);
+      assert.equal(top.length, 6, `cards before Clear all: ${top}`);
       await mp.getByRole('button', { name: 'Clear all' }).first().click();
-      await until(mp, () => window.moves.filter(m => m.name === 'transform').length >= 6);
-      const order = await mp.evaluate(() => window.moves.filter(m => m.name === 'transform' && m.title !== 'Was here first').map(m => [m.title, m.at]));
-      assert.deepEqual(order.map(o => o[0]), top, `Clear all slid out of order: ${order}`);
-      // 40ms a card, so 160ms from first to last; a busy machine can only fire the first one late.
+      await until(mp, () => window.moves.filter(m => m.name === 'transform').length >= 7);
+      const at = Object.fromEntries(await mp.evaluate(() => window.moves.filter(m => m.name === 'transform' && m.title !== 'Was here first').map(m => [m.title, m.at])));
+      // Start times in on-screen order: two whose delays both passed before a
+      // frame start in the same frame, so only a later card starting earlier is wrong (#632).
+      const order = top.map(t => [t, at[t]]);
+      assert.ok(order.every(([, t], i) => i === 0 || t >= order[i - 1][1]), `Clear all slid out of order: ${order}`);
+      // 40ms a card, so 200ms from first to last; a busy machine can only fire the first one late.
       assert.ok(order.at(-1)[1] - order[0][1] >= 80, `Clear all did not stagger: ${order}`);
 
       // Reduce motion: a live card just appears and a cleared one just goes.
+      await mp.locator('article.card').first().waitFor({ state: 'detached' }); // Clear all done folding
       await mp.emulateMedia({ reducedMotion: 'reduce' });
-      await mp.evaluate(() => { window.moves = []; });
+      // Every frame looks at document.getAnimations(), so Element.animate and
+      // the check mark's path are seen too, not only the card's own CSS (#613).
+      await mp.evaluate(() => {
+        window.moves = []; window.anims = [];
+        const look = () => {
+          for (const a of document.getAnimations()) {
+            const t = a.effect?.target;
+            // A button fading as it is disabled is not motion: opacity alone is left out, as above.
+            if (t?.closest?.('[data-list]') && a.transitionProperty !== 'opacity') window.anims.push(`${a.animationName || a.transitionProperty || 'animate'} on ${t.tagName}`);
+          }
+          window.looking = requestAnimationFrame(look);
+        };
+        look();
+      });
       const still = await send('Quiet arrival');
       await mc('Quiet arrival').waitFor();
       await post3(`/api/v1/notifications/${still.id}/dismiss`);
       await mc('Quiet arrival').waitFor({ state: 'detached' });
       assert.deepEqual(await mp.evaluate(() => window.moves), [], 'something moved with reduce motion on');
+      assert.deepEqual(await mp.evaluate(() => { cancelAnimationFrame(window.looking); return [...new Set(window.anims)]; }), [], 'something animated with reduce motion on');
       await ctx.close();
       console.log('ok: a live card slides in and wiggles, only the newest in a burst, none on load or while hidden; clears slide away and Clear all staggers; reduce motion plays nothing');
     } finally { srv3.kill(); }
