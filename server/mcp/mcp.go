@@ -324,7 +324,7 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		body := map[string]any{"topic": str(a, "topic"), "message": str(a, "message")}
-		for _, k := range []string{"title", "format", "icon"} {
+		for _, k := range []string{"title", "format", "icon", "color"} {
 			if v := str(a, k); v != "" {
 				body[k] = v
 			}
@@ -568,6 +568,7 @@ var tools = []map[string]any{
 			"title":        p("string", "Optional title"),
 			"format":       map[string]any{"type": "string", "enum": []string{"markdown", "text"}, "description": "markdown (default) or text, which is shown exactly as sent"},
 			"icon":         p("string", "Optional http(s) image URL shown with the notification; the topic's icon when omitted"),
+			"color":        p("string", "Optional card color as #RRGGBB, shown as a bar; the user's color_rules (settings) win over it"),
 			"attachment":   schema(map[string]any{"url": p("string", "http(s) URL of the file"), "name": p("string", "Optional file name")}, "url"),
 			"priority":     map[string]any{"type": "integer", "minimum": 1, "maximum": 5, "description": "1..5, 5 = urgent"},
 			"repeat":       p("string", "Optional: alert again every this long (1m to 24h, e.g. 5m) until someone acknowledges, snoozes, dismisses or resolves it"),
@@ -611,6 +612,12 @@ var tools = []map[string]any{
 			"snooze_default":          p("string", "The snooze time a plain tap uses, one of snooze_intervals"),
 			"swipe_start":             map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"clear", "snooze", "ack", "resolve"}}, "maxItems": 3, "description": "Buttons a swipe toward the start of the line (to the left) reveals on a card, first nearest the edge. Default [clear, snooze]. Each action at most once across swipe_start and swipe_end"},
 			"swipe_end":               map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"clear", "snooze", "ack", "resolve"}}, "maxItems": 3, "description": "Buttons the opposite swipe (to the right) reveals. Default [ack]"},
+			"color_rules": map[string]any{"type": "array", "maxItems": 50, "description": "Card colors, first match wins, on every device. Replaces the whole list: read settings first and send every rule to keep. A rule matches when all its set fields match. Severity preset: [{\"priority_min\":5,\"color\":\"#DC2626\",\"style\":\"bar\"},{\"priority_min\":4,\"priority_max\":4,\"color\":\"#EA580C\",\"style\":\"bar\"},{\"priority_min\":3,\"priority_max\":3,\"color\":\"#CA8A04\",\"style\":\"bar\"}]",
+				"items": schema(map[string]any{"topic": p("string", "Topic it landed in; leave out for any"), "tag": p("string", "One of its tags; leave out for any"),
+					"priority_min": map[string]any{"type": "integer", "minimum": 0, "maximum": 5, "description": "Lowest priority, inclusive; 0 = no limit"},
+					"priority_max": map[string]any{"type": "integer", "minimum": 0, "maximum": 5, "description": "Highest priority, inclusive; 0 = no limit"},
+					"title":        p("string", "Text in the title, any case"), "color": p("string", "#RRGGBB"),
+					"style": map[string]any{"type": "string", "enum": []string{"bar", "tint", "solid", "gradient"}}}, "color", "style")},
 		})},
 	{"name": "get", "description": "Get one notification by its server id, with its current state.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},

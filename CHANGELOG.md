@@ -16,6 +16,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ## Unreleased
 
+### Added
+
+- Color rules on the server: color cards by topic, tag, priority or title text, as a bar, tint, solid fill or gradient, set through the settings API or an agent over MCP. Senders can give a message its own color. The web and Android screens for them come next.
+
 ## 0.1.0 - 2026-11-23
 
 ### Added

@@ -1146,6 +1146,14 @@
          },
          "swipe_end": {
           "$ref": "#/components/schemas/SwipeButtons"
+         },
+         "color_rules": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+           "$ref": "#/components/schemas/ColorRule"
+          },
+          "description": "Replaces the whole list; [] clears it. Needs a token with no topic list."
          }
         }
        }
@@ -6190,6 +6198,10 @@
       "type": "string",
       "description": "http(s) image URL; the topic's icon when the sender gave none. Empty if unset. Events logged before a server upgrade may omit it: treat missing as empty."
      },
+     "color": {
+      "type": "string",
+      "description": "The sender's card color, #RRGGBB, or empty. The user's color_rules (settings) win over it. Missing in old events: treat as empty."
+     },
      "actions": {
       "type": "array",
       "items": {
@@ -6370,6 +6382,10 @@
      "icon": {
       "type": "string",
       "description": "http(s) image URL, at most 2048 characters, or empty for none."
+     },
+     "color": {
+      "type": "string",
+      "description": "Card color as #RRGGBB, or empty for none. Anything else is a 400."
      },
      "actions": {
       "type": "array",
@@ -6799,6 +6815,13 @@
      "swipe_end": {
       "$ref": "#/components/schemas/SwipeButtons",
       "description": "Buttons the opposite swipe reveals. Default [\"ack\"]."
+     },
+     "color_rules": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ColorRule"
+      },
+      "description": "Card colors, first match wins (spec section 2.1). Default []. A token limited to some topics sees only rules with no topic or one of its topics."
      }
     },
     "required": [
@@ -6807,6 +6830,51 @@
      "favicons",
      "link_previews",
      "topic_previews"
+    ]
+   },
+   "ColorRule": {
+    "type": "object",
+    "description": "Colors a card when every set field matches; empty or 0 matches anything.",
+    "properties": {
+     "topic": {
+      "type": "string"
+     },
+     "tag": {
+      "type": "string",
+      "maxLength": 64
+     },
+     "priority_min": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+     },
+     "priority_max": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+     },
+     "title": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "Text anywhere in the title, any case."
+     },
+     "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+     },
+     "style": {
+      "type": "string",
+      "enum": [
+       "bar",
+       "tint",
+       "solid",
+       "gradient"
+      ]
+     }
+    },
+    "required": [
+     "color",
+     "style"
     ]
    },
    "Preview": {
