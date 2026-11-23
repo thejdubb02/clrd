@@ -62,7 +62,8 @@ A **notification**:
   "repeat": null,              // or {"every": "5m", "left": 8, "count": 2, "next": "<RFC3339>" or null}
   "marks": [],                 // who saw or actioned it, below; never null
   "devices": [],               // token ids it alerts on, [] for every device; never null. Missing in old events = []
-  "requested_topic": "up"      // only when a sender route moved it: the topic it was sent to (section 5.1)
+  "requested_topic": "up",     // only when a sender route moved it: the topic it was sent to (section 5.1)
+  "changed": true              // only in the answer to ack, snooze, dismiss, resolve or reopen: false when it already had that state (#693)
 }
 ```
 
@@ -845,7 +846,8 @@ Notifications always carry every field: `""` for unset strings, `[]` for
 `before=<last id>`; `limit` defaults to 100, max 500. Fetch the list, then open
 the WebSocket with `since=<seq>` from that response. Setting the state a
 notification already has returns it unchanged with no new event (two phones
-dismissing at once is normal). Reopening a dismissed row whose `external_id`
+dismissing at once is normal), with `"changed": false` so a client retrying an
+action does not take the row's seq as its own change (#693). Reopening a dismissed row whose `external_id`
 has since been reused returns 409.
 
 Topic names: `[A-Za-z0-9_-]{1,64}`. Reserved (the server and mounted pages

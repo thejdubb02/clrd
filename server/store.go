@@ -295,6 +295,9 @@ type Notification struct {
 
 	// RequestedTopic is the topic the sender named when a route sent it elsewhere (#119).
 	RequestedTopic string `json:"requested_topic,omitempty"`
+	// Changed is set on the answer to a state change only: false when the row
+	// already had that state, so a retried action is not taken as new (#693).
+	Changed *bool `json:"changed,omitempty"`
 }
 
 // asks: it waits for an answer, a confirm prompt or a reply button (#623).
@@ -1167,6 +1170,7 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 		target = Snoozed
 	}
 	var out *Notification
+	changed := false
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		n, err := getNotification(ctx, tx, where, args...)
 		if err != nil {
@@ -1183,12 +1187,15 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 		if err != nil || ev == nil {
 			return nil, err
 		}
+		changed = true
 		return []Event{*ev}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return senderView(tok, out, false), nil
+	v := *senderView(tok, out, false)
+	v.Changed = &changed
+	return &v, nil
 }
 
 // maxReplyText caps a typed answer (#153), in characters.
