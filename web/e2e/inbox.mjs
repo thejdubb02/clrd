@@ -745,7 +745,10 @@ try {
     await stack.getByRole('button', { name: 'Hide' }).focus();
     const odd = (await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' })).id;
     await item('Odd topic name').waitFor();
-    assert.equal(await stack.getByRole('button', { name: 'Hide' }).evaluate(b => b === document.activeElement), true, 'focus lost from the stack on refresh');
+    // Each refresh rebuilds the stack node, so a locator's evaluate can land on
+    // the old, detached copy: look it up and check it in one step (#675).
+    const onStack = (sel, cls) => sp.evaluate(([sel, cls]) => { const s = document.querySelector('[data-stack="ci-stack"]'), e = s && (sel ? s.querySelector(sel) : s); return !!e && e === document.activeElement && (!cls || s.classList.contains(cls)); }, [sel, cls]);
+    assert.equal(await onStack('[data-stack-toggle]'), true, 'focus lost from the stack on refresh');
     // Clear all on the stack clears all four on the server, and Undo reopens them.
     await stack.getByRole('button', { name: 'Clear all' }).click();
     await sp.locator('[data-toast]').filter({ hasText: 'Cleared 4 notifications.' }).waitFor();
@@ -756,8 +759,8 @@ try {
     // J lands on the closed stack and Enter opens it (#227).
     await sp.reload(); // nothing selected, so J starts from the top
     await stack.waitFor();
-    for (let i = 0; i < 200 && !(await stack.evaluate(s => s.classList.contains('is-selected'))); i++) await sp.keyboard.press('j');
-    assert.equal(await stack.evaluate(s => s === document.activeElement && s.classList.contains('is-selected')), true, 'J skipped the closed stack');
+    for (let i = 0; i < 200 && !(await sp.evaluate(() => document.querySelector('[data-stack="ci-stack"]')?.classList.contains('is-selected'))); i++) await sp.keyboard.press('j');
+    assert.equal(await onStack(null, 'is-selected'), true, 'J skipped the closed stack');
     await sp.keyboard.press('c');
     await until(sp, () => document.querySelector('[data-announce]').textContent === 'Open the stack to act on one notification.');
     for (const id of ids) assert.equal((await get(laptop, id)).state, 'active', 'C on a stack cleared a card');
