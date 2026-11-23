@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"html"
+	"html/template"
 	"io"
 	"io/fs"
 	"net/http"
@@ -56,6 +57,31 @@ func TestPages(t *testing.T) {
 				t.Errorf("%s: missing %q", path, s)
 			}
 		}
+	}
+	// About (#580): the running version, and its history with inline Markdown.
+	_, body := get(t, h, "/app/settings")
+	want := []string{`data-version>This server runs clrd ` + clrd.Version(), `id="about"`, `<summary class="cursor-pointer font-medium">What's new</summary>`, `href="` + clrd.FullHistory + `"`}
+	for _, r := range clrd.ParseChangelog(clrd.Changelog) {
+		if r.Date != "" {
+			want = append(want, `>`+r.Version+` <span class="meta">`+r.Date+`</span></h4>`)
+		}
+	}
+	for _, s := range want {
+		if !strings.Contains(body, s) {
+			t.Errorf("settings About: missing %q", s)
+		}
+	}
+	for in, out := range map[string]template.HTML{
+		"Run `clrd import ntfy`, see [docs](https://x.example)": `Run <code>clrd import ntfy</code>, see <a href="https://x.example">docs</a>`,
+		"1. Reconnect automatically":                            "1. Reconnect automatically",
+		"# Not a heading":                                       "# Not a heading",
+	} {
+		if got := inlineMD(in); got != out {
+			t.Errorf("inlineMD(%q) = %q, want %q", in, got, out)
+		}
+	}
+	if got := inlineMD("<b>bold</b> & co"); strings.Contains(string(got), "<b>") {
+		t.Errorf("inlineMD kept raw HTML: %q", got)
 	}
 	if _, body := get(t, h, "/app/settings"); strings.Contains(body, `data-unlink="tok-web"`) || strings.Contains(body, `data-unlink="tok-laptop"`) {
 		t.Error("unlink offered on this browser or a typed-in token")

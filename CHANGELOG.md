@@ -18,6 +18,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Web: Settings has an About section with the version this server runs and
+  a What's new list of what changed in each version, read from the
+  changelog built into the binary (#580).
 - Android: a Topics page in Settings lists every topic with its open count
   and last message, and turns each one on or off for your account on every
   device, plus whether new topics start subscribed (#617). A card or a
