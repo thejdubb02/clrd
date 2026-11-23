@@ -556,6 +556,32 @@ fn main() {
                 );
             }
             start_sync(app);
+            // The windows and their pages go dark when the desktop does. A
+            // desktop that is not dark, or says nothing, is left as it was:
+            // only a dark this app set itself is taken back.
+            #[cfg(target_os = "linux")]
+            {
+                let (app, set) = (app.clone(), AtomicBool::new(false));
+                clrd_core::theme::follow(move |scheme| match scheme {
+                    1 | 2 => {
+                        set.store(true, Ordering::Relaxed);
+                        let dark = scheme == 1;
+                        app.set_theme(Some(if dark {
+                            tauri::Theme::Dark
+                        } else {
+                            tauri::Theme::Light
+                        }));
+                    }
+                    // No preference: GTK's own choice stands. Setting none
+                    // here would turn GTK's dark off, so it is only done to
+                    // take back a choice made above.
+                    _ => {
+                        if set.swap(false, Ordering::Relaxed) {
+                            app.set_theme(None);
+                        }
+                    }
+                });
+            }
             // Started by hand, or with no tray to reach it by: show a window.
             if !link.is_empty() {
                 asked(app, &link);

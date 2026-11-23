@@ -160,6 +160,142 @@ fn closing_clears_everywhere_when_the_kept_setting_is_on() {
     );
 }
 
+/// The desktop's settings portal: answers with the colour scheme it holds
+/// (1 is dark, 2 is light, 0 is no preference).
+struct Portal(std::sync::Arc<std::sync::atomic::AtomicU32>);
+
+#[zbus::interface(name = "org.freedesktop.portal.Settings")]
+impl Portal {
+    fn read(&self, _namespace: String, _key: String) -> zbus::Variant<'static> {
+        let scheme = self.0.load(std::sync::atomic::Ordering::Relaxed);
+        zbus::Variant::Variant(Box::new(zbus::Variant::U32(scheme)))
+    }
+}
+
+/// Dark mode on the desktop is dark mode in the window, at start and when it
+/// changes while the app runs. The page says what it sees each time.
+#[test]
+fn the_window_follows_the_desktops_light_or_dark() {
+    const PATH: &str = "/org/freedesktop/portal/desktop";
+    const SEES: &str = r#"<!doctype html><title>theme</title><script>
+const dark = matchMedia('(prefers-color-scheme: dark)');
+const say = () => fetch('/report', { method: 'POST', body: String(dark.matches) });
+dark.addEventListener('change', say);
+say();
+</script>"#;
+
+    let fake = Fake::start();
+    fake.set_page(SEES);
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let scheme = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(1));
+    let portal = portal(&bus, scheme.clone());
+    let change = |to: u32| {
+        scheme.store(to, std::sync::atomic::Ordering::Relaxed);
+        zbus::block_on(portal.emit_signal(
+            None::<&str>,
+            PATH,
+            "org.freedesktop.portal.Settings",
+            "SettingChanged",
+            &(
+                "org.freedesktop.appearance",
+                "color-scheme",
+                zbus::Variant::U32(to),
+            ),
+        ))
+        .unwrap();
+    };
+
+    let _app = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    wait_long("the page says what it sees", || !fake.reports().is_empty());
+    assert_eq!(fake.reports(), ["true"], "dark at start");
+    change(2);
+    wait_long("the window goes light", || fake.reports().len() == 2);
+    // Something else changing is not a change of theme. A wrong app would
+    // go dark here, so it is given a second to.
+    zbus::block_on(portal.emit_signal(
+        None::<&str>,
+        PATH,
+        "org.freedesktop.portal.Settings",
+        "SettingChanged",
+        &(
+            "org.freedesktop.appearance",
+            "contrast",
+            zbus::Variant::U32(1),
+        ),
+    ))
+    .unwrap();
+    // Nor is the word of some other program on the bus.
+    let stranger =
+        zbus::block_on(zbus::connection::Builder::address(bus.1.as_str()).build()).unwrap();
+    zbus::block_on(stranger.emit_signal(
+        None::<&str>,
+        PATH,
+        "org.freedesktop.portal.Settings",
+        "SettingChanged",
+        &(
+            "org.freedesktop.appearance",
+            "color-scheme",
+            zbus::Variant::U32(1),
+        ),
+    ))
+    .unwrap();
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(fake.reports().len(), 2, "only the portal's theme counts");
+    change(1);
+    wait_long("the window goes dark again", || fake.reports().len() == 3);
+    assert_eq!(fake.reports(), ["true", "false", "true"]);
+    // No preference any more: the app takes its own choice back.
+    change(0);
+    wait_long("the app's dark is taken back", || fake.reports().len() == 4);
+    assert_eq!(fake.reports()[3], "false");
+}
+
+/// A desktop that states no preference leaves a dark GTK setup dark.
+#[test]
+fn the_window_keeps_gtks_dark_when_the_desktop_has_no_preference() {
+    let fake = Fake::start();
+    fake.set_page(
+        r#"<!doctype html><title>theme</title><script>
+fetch('/report', { method: 'POST', body: String(matchMedia('(prefers-color-scheme: dark)').matches) });
+</script>"#,
+    );
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let gtk = home.join("config/gtk-3.0");
+    std::fs::create_dir_all(&gtk).unwrap();
+    std::fs::write(
+        gtk.join("settings.ini"),
+        "[Settings]\ngtk-application-prefer-dark-theme=1\n",
+    )
+    .unwrap();
+    let _portal = portal(&bus, Default::default());
+    let _app = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    wait_long("the page says what it sees", || !fake.reports().is_empty());
+    assert_eq!(fake.reports(), ["true"]);
+}
+
+/// A settings portal on the test bus that answers with `scheme`.
+fn portal(bus: &Bus, scheme: std::sync::Arc<std::sync::atomic::AtomicU32>) -> zbus::Connection {
+    zbus::block_on(
+        zbus::connection::Builder::address(bus.1.as_str())
+            .name("org.freedesktop.portal.Desktop")
+            .serve_at("/org/freedesktop/portal/desktop", Portal(scheme))
+            .build(),
+    )
+    .unwrap()
+}
+
 #[test]
 fn the_servers_page_gets_a_session_and_nothing_else() {
     use std::os::unix::fs::PermissionsExt;

@@ -1363,6 +1363,10 @@ rules. Its token lives in the OS keychain and is sent only as an
   The switch is on the app's This computer page. It belongs to the computer,
   not the link: it is kept across restarts and across Unlink, and counts from
   the next close on.
+- The window follows the desktop's light or dark setting, at start and at
+  each change, so the inbox's System appearance is the desktop's. On Linux
+  that is the settings portal's `color-scheme`; a desktop with no portal
+  keeps the GTK theme's answer.
 - An incoming `dismissed` or `resolved` event from any device always closes
   the system notification.
 
