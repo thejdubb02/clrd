@@ -18,6 +18,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Web: the foot of Settings links to the source code and to the issue tracker
+  for reporting a problem, like the Android app (#586).
 - Android: Settings is now in the same sections as the web (Notifications,
   Inbox, Devices, Integrations) with a search box at the top (#575). It
   matches a setting's name, its description or keywords such as "qr", and
