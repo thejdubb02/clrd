@@ -21,6 +21,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Web: Settings has an About section with the version this server runs and
   a What's new list of what changed in each version, read from the
   changelog built into the binary (#580).
+- Server: traffic stats for admins at `GET /api/v1/stats` and the MCP
+  `stats` tool: volume per hour, top topics and senders, how long alerts
+  stay open before someone clears them (median and p90), who clears them,
+  and alerts that keep firing (#120).
 - Site: the landing page shows a sample web inbox, drawn by the real card
   template with fixed demo data, so it always matches the inbox and needs
   no pictures or JavaScript (#592).

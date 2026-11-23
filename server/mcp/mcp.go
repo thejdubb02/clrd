@@ -375,6 +375,8 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		return h.api(r, "GET", "/api/v1/topics", nil)
 	case "counts":
 		return h.api(r, "GET", "/api/v1/counts?"+query(a, "keep_cleared_days", "topic"), nil)
+	case "stats":
+		return h.api(r, "GET", "/api/v1/stats?"+query(a, "days"), nil)
 	case "format_check":
 		return h.api(r, "GET", "/api/v1/format-check?"+query(a, "topic", "by"), nil)
 	case "devices":
@@ -765,6 +767,8 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{})},
 	{"name": "senders", "description": "Every service or token that has published, most recently heard first: name, kind, webhook template, User-Agent and address hints, first and last seen, message count per topic. Found on its first message, no setup. Needs an admin token without a topic list.",
 		"inputSchema": schema(map[string]any{})},
+	{"name": "stats", "description": "Traffic numbers for the last days (default 7): total, answered questions, count per priority, count per UTC hour, top topics, senders (top token id) and clearers with how many are still open and the median and p90 time to clear in ms, and flappers (an external id that fired more than once). Answers questions like which services were noisiest this week or which alerts nobody clears. Needs an admin token without a topic list.",
+		"inputSchema": schema(map[string]any{"days": p("integer", "How many days back from now, 1 to 366")})},
 	{"name": "sender", "description": "One sender from senders, by its id, with its recent notifications that are still stored.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Sender id")}, "id")},
 	{"name": "set_sender", "description": "Set a sender's rules: pause (accept and drop), mute (store, never alert), a priority floor and cap, routes from the topic it names to other topics, and an alarm when it goes quiet. Only the fields given change; routes, when given, replace them all. Each change is kept and can be undone. Needs an admin token without a topic list.",
