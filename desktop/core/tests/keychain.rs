@@ -132,6 +132,6 @@ fn an_entry_removed_under_a_read_is_nothing() {
 #[test]
 fn an_entry_that_stays_and_cannot_be_read_is_an_error() {
     let bus = Bus::start();
-    let _service = ghost(&bus, u32::MAX);
+    let _service = ghost(&bus, 2);
     assert!(Keychain::new(bus.connect()).load().is_err());
 }
