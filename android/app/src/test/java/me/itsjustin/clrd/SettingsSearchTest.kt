@@ -33,10 +33,14 @@ class SettingsSearchTest {
     private val server = MockWebServer()
     private var admin = false
     @Volatile private var sendersAsked = false
+    private var reads = true
+    @Volatile private var settingsAsked = false
 
     @Before fun setUp() {
+        app.status.value = SyncClient.Status.OFFLINE
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.path == "/api/v1/settings" && !reads -> { settingsAsked = true; MockResponse().setResponseCode(403).setBody("""{"error":"forbidden"}""") }
                 request.path == "/api/v1/senders" && !admin -> { sendersAsked = true; MockResponse().setResponseCode(403).setBody("""{"error":"forbidden"}""") }
                 request.path == "/api/v1/senders" -> MockResponse().setBody("""{"senders":[]}""")
                 else -> MockResponse().setBody("{}")
@@ -104,5 +108,45 @@ class SettingsSearchTest {
         search("sender")
         rule.waitUntil(5000) { rule.onAllNodesWithText("INTEGRATIONS").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("Senders").assertExists()
+    }
+
+    @Test fun snoozeAndDevicesWaitForATokenThatReads() { // #604: a publish-only token
+        reads = false
+        show()
+        search("postpone") // a keyword of Snooze times only
+        rule.waitUntil(5000) { settingsAsked }
+        val appeared = runCatching { rule.waitUntil(2000) { rule.onAllNodesWithText("Snooze times").fetchSemanticsNodes().isNotEmpty() } }.isSuccess
+        assertFalse(appeared)
+        search("unlink") // a keyword of Linked devices only
+        rule.onNodeWithText("No settings match \"unlink\"").assertExists()
+    }
+
+    @Test fun snoozeShowsOnceTheServerTakesTheToken() {
+        show()
+        search("postpone")
+        rule.waitUntil(5000) { rule.onAllNodesWithText("Snooze times").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test fun aRejectedTokenHidesSendersAtOnce() { // #604: not only after the next fetch
+        admin = true
+        show()
+        search("sender")
+        rule.waitUntil(5000) { rule.onAllNodesWithText("Senders").fetchSemanticsNodes().isNotEmpty() }
+        app.status.value = SyncClient.Status.AUTH_FAILED
+        rule.waitForIdle()
+        rule.onAllNodesWithText("Senders").assertCountEquals(0)
+    }
+
+    @Test fun aLiveStreamShowsSnoozeAfterAnOfflineStart() { // #604 review: the probe failed, the stream came back
+        server.shutdown() // the probe cannot reach the server
+        show()
+        search("postpone")
+        rule.waitForIdle()
+        rule.onAllNodesWithText("Snooze times").assertCountEquals(0)
+        app.status.value = SyncClient.Status.CONNECTED
+        rule.waitUntil(5000) { rule.onAllNodesWithText("Snooze times").fetchSemanticsNodes().isNotEmpty() }
+        app.status.value = SyncClient.Status.AUTH_FAILED
+        rule.waitForIdle()
+        rule.onAllNodesWithText("Snooze times").assertCountEquals(0)
     }
 }

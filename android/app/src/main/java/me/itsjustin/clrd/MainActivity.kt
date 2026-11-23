@@ -1818,18 +1818,27 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     val status by app.status.collectAsState()
     // Only a full admin may list senders; for any other token this stays null and the setting is left out.
     val senders = remember(saved) { mutableStateOf<List<org.json.JSONObject>?>(null) }
-    LaunchedEffect(saved, resumes) {
-        if (!app.configured) return@LaunchedEffect
+    // Snooze times and linked devices need a token the server takes for reads; a rejected or publish-only one hides them (#604).
+    var reads by remember(saved) { mutableStateOf(false) }
+    val rejected = status == SyncClient.Status.AUTH_FAILED
+    LaunchedEffect(saved, resumes, rejected) {
+        if (rejected) { senders.value = null; reads = false } // nothing fetched with the old answer stays on screen
+        if (rejected || !app.configured) return@LaunchedEffect
         val api = app.api()
-        app.io.execute { senders.value = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull() }
+        app.io.execute {
+            runCatching { api.get("/api/v1/settings") }.onSuccess { reads = true }.onFailure { if ((it as? HttpError)?.isAuth == true) reads = false }
+            senders.value = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull()
+        }
     }
+    // A live stream needs scope read too, so it proves the same after an offline start; a late probe answer never beats a rejection.
+    val canRead = !rejected && (reads || status == SyncClient.Status.CONNECTED)
     val subs by app.subs.collectAsState()
     var subsGone by remember(saved) { mutableStateOf(false) }
     val open = mapOf(
         "subscriptions" to (app.configured && subs != null && !subsGone),
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
-        "swipe" to app.configured, "snooze" to app.configured, "devices" to app.configured,
-        "senders" to (app.configured && senders.value != null),
+        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && canRead),
+        "senders" to (app.configured && !rejected && senders.value != null),
     )
     val shown = SETTINGS.filter {
         open[it.id] != false && settingMatches(query, ctx.getString(it.label), it.desc?.let(ctx::getString), it.keywords)
