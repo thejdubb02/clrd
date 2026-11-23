@@ -413,6 +413,7 @@
       if (old && old.dataset.seq === n.dataset.seq) { // a color rule change recolors in place, so an open menu and its draft stay (#696)
         const look = el => [...el.classList].filter(c => /^c[cs]-/.test(c));
         old.classList.remove(...look(old)); old.classList.add(...look(n)); old.dataset.look = n.dataset.look;
+        old.querySelector('[data-unsub]')?.toggleAttribute('data-approvals', !!n.querySelector('[data-unsub][data-approvals]')); // a topic flagged since (#700)
         return old;
       }
       const fresh = document.adoptNode(n);
