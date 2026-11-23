@@ -1830,12 +1830,14 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             senders.value = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull()
         }
     }
+    // A live stream needs scope read too, so it proves the same after an offline start; a late probe answer never beats a rejection.
+    val canRead = !rejected && (reads || status == SyncClient.Status.CONNECTED)
     val subs by app.subs.collectAsState()
     var subsGone by remember(saved) { mutableStateOf(false) }
     val open = mapOf(
         "subscriptions" to (app.configured && subs != null && !subsGone),
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
-        "swipe" to app.configured, "snooze" to (app.configured && reads), "devices" to (app.configured && reads),
+        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && canRead),
         "senders" to (app.configured && !rejected && senders.value != null),
     )
     val shown = SETTINGS.filter {

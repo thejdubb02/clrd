@@ -136,4 +136,17 @@ class SettingsSearchTest {
         rule.waitForIdle()
         rule.onAllNodesWithText("Senders").assertCountEquals(0)
     }
+
+    @Test fun aLiveStreamShowsSnoozeAfterAnOfflineStart() { // #604 review: the probe failed, the stream came back
+        server.shutdown() // the probe cannot reach the server
+        show()
+        search("postpone")
+        rule.waitForIdle()
+        rule.onAllNodesWithText("Snooze times").assertCountEquals(0)
+        app.status.value = SyncClient.Status.CONNECTED
+        rule.waitUntil(5000) { rule.onAllNodesWithText("Snooze times").fetchSemanticsNodes().isNotEmpty() }
+        app.status.value = SyncClient.Status.AUTH_FAILED
+        rule.waitForIdle()
+        rule.onAllNodesWithText("Snooze times").assertCountEquals(0)
+    }
 }
