@@ -198,9 +198,10 @@ func (s *Server) Subscriptions(ctx context.Context, tok *Token) (SubscriptionLis
 // SetSubscriptions changes tok's owner's set: newTopics if not nil, and
 // each topic in topics. Errors are apiErrors (PublicError gives the
 // status): 400 for no change asked, too many or a bad name, 403 for a topic
-// tok cannot read, 409 for a token no set belongs to. Nothing changes
+// tok cannot read, 409 for a token no set belongs to, or when ifRID is set
+// and the set's last change was not sent with it (#716). Nothing changes
 // when any of them fails.
-func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bool, topics map[string]bool, rid string) (SubscriptionList, error) {
+func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bool, topics map[string]bool, rid, ifRID string) (SubscriptionList, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return SubscriptionList{}, err
 	}
@@ -217,8 +218,10 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 	if len(topics) > 500 {
 		return SubscriptionList{}, errf(400, "bad_request", "topics: at most 500 in one call")
 	}
-	if len(rid) > 64 || strings.Trim(rid, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" {
-		return SubscriptionList{}, errf(400, "bad_request", "request_id: at most 64 letters, digits, - or _")
+	for i, v := range []string{rid, ifRID} {
+		if len(v) > 64 || strings.Trim(v, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" {
+			return SubscriptionList{}, errf(400, "bad_request", "%s: at most 64 letters, digits, - or _", []string{"request_id", "if_request_id"}[i])
+		}
 	}
 	names := slices.Sorted(maps.Keys(topics))
 	for _, t := range names {
@@ -236,6 +239,16 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 		}
 	}
 	err = s.changeSubs(ctx, owner, newTopics, false, rid, func(tx *sql.Tx, cur bool) error {
+		if ifRID != "" { // checked in the change's own transaction, so no other change slips in between
+			var last string
+			err := tx.QueryRowContext(ctx, `SELECT COALESCE(json_extract(e.data, '$.request_id'), '') FROM sub_owners o JOIN events e ON e.seq = o.seq WHERE o.owner = ?`, owner).Scan(&last)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if last != ifRID {
+				return errf(409, "conflict", "the topic choices changed since request %s: reload them", ifRID)
+			}
+		}
 		if readers != nil && cur { // turning new_topics off keeps every topic seen so far as it is
 			rows, err := tx.QueryContext(ctx, `SELECT topic FROM notifications UNION SELECT topic FROM topics
 			  EXCEPT SELECT topic FROM subscriptions WHERE owner = ?`, owner)
@@ -405,6 +418,7 @@ func (s *Server) subsRoutes() {
 			NewTopics *bool            `json:"new_topics"`
 			Topics    map[string]*bool `json:"topics"`
 			RequestID string           `json:"request_id"`
+			IfRequest string           `json:"if_request_id"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
@@ -423,7 +437,7 @@ func (s *Server) subsRoutes() {
 		if err != nil {
 			return err
 		}
-		out, err := s.SetSubscriptions(r.Context(), t, in.NewTopics, topics, in.RequestID)
+		out, err := s.SetSubscriptions(r.Context(), t, in.NewTopics, topics, in.RequestID, in.IfRequest)
 		if err != nil {
 			return err
 		}
