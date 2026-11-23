@@ -287,7 +287,8 @@ func TestSubscriptions(t *testing.T) {
 			t.Fatalf("other owner's stream got %v", m)
 		}
 	}
-	for _, tok := range []string{other, admin} {
+	// script shares the browser's owner but is not filtered: no reset (#635).
+	for _, tok := range []string{other, admin, script} {
 		code, ev := call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d", before), tok, nil)
 		if code != 200 || ev["seq"].(float64) < float64(before+2) || strings.Contains(fmt.Sprint(ev["events"]), EventSubscriptions) {
 			t.Fatalf("events for another owner: %d %v", code, ev)
