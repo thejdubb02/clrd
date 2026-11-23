@@ -222,12 +222,32 @@ class TrayRaceTest {
         assertEquals(listOf("b"), bg { dao.openNow().map { it.id } })
     }
 
+    @Test fun resetWithoutATopicDropsItsCardAndTrayEntry() { // #617: an unsubscribe elsewhere comes as a reset
+        val store = RoomStore(app)
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 2)), 2) }
+        assertNotNull(tray("a"))
+        bg { store.replaceAll(listOf(row("b", Notif.ACTIVE, 2)), 3) } // a's topic is no longer in the list
+        assertNull(tray("a"))
+        assertEquals(listOf("b"), bg { dao.openNow().map { it.id } })
+    }
+
+    @Test fun anAnswerFromAnUnsubscribedTopicStaysOut() { // #617: a queued Restore lands after another device unsubscribed
+        app.saveSettings(org.json.JSONObject("""{"subscriptions":{"filtered":true,"topics":{"t":false}}}"""))
+        val store = RoomStore(app)
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4)), 0, answer = true) }
+        assertNull(tray("a"))
+        assertTrue(bg { dao.openNow() }.isEmpty())
+        app.saveSettings(org.json.JSONObject("{}")) // a server without subscriptions keeps every row
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4)), 0, answer = true) }
+        assertNotNull(tray("a"))
+    }
+
     @Test fun resetAfterAServerRestoreKeepsNothingOld() {
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.DISMISSED, 100)), 100) }
         bg { store.replaceAll(listOf(row("a", Notif.ACTIVE, 3)), 4) } // the server's seq went back to 4
         assertEquals(Notif.ACTIVE, bg { dao.openNow().single().state })
-        assertTrue(tray("a") != null)
+        assertNotNull(tray("a"))
     }
 
     @Test fun resetOnAnotherEpochKeepsNothingOld() {
@@ -255,7 +275,7 @@ class TrayRaceTest {
         }
         assertNull(tray("a")) // still hidden while our dismiss is queued
         bg { store.removePending(dao.pending().single()) }
-        assertTrue(tray("a") != null)
+        assertNotNull(tray("a"))
     }
 
     @Test fun aReopenFromTheInboxDoesNotBuzz() {

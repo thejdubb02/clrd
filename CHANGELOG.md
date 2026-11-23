@@ -18,6 +18,12 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Android: a Topics page in Settings lists every topic with its open count
+  and last message, and turns each one on or off for your account on every
+  device, plus whether new topics start subscribed (#617). A card or a
+  stack's menu unsubscribes from its topic with Undo, and the "agents" topic
+  asks first since it carries approval prompts. Muted topics stay a separate,
+  this phone only setting.
 - Server: traffic stats for admins at `GET /api/v1/stats` and the MCP
   `stats` tool: volume per hour, top topics and senders, how long alerts
   stay open before someone clears them (median and p90), who clears them,
