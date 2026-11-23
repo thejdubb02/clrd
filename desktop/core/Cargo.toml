@@ -47,6 +47,11 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+# Toast notifications. They are a WinRT API, which windows-sys does not
+# cover. Already in the tree (the window and tray use it); these features
+# add the bindings for toasts and their XML, and no code of its own.
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "UI_Notifications"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # D-Bus, for desktop notifications (org.freedesktop.Notifications). Pure Rust,
 # so no libdbus to install or ship. Only the client half is compiled in.

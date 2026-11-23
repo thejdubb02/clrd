@@ -1369,7 +1369,19 @@ rules. Its token lives in the OS keychain and is sent only as an
   clear) only hides it on that computer and sends nothing, the same rule as
   the Android tray (#265). On Linux only `NotificationClosed` with reason 2
   (closed by the user) counts as a close; reason 1 (expired) and reason 3
-  (closed by the app itself) never send anything, in any setting.
+  (closed by the app itself) never send anything, in any setting. On Windows
+  only a toast's `Dismissed` event with reason `UserCanceled` counts;
+  `TimedOut` leaves the toast in the notification centre, still open, and
+  `ApplicationHidden` is the app's own close.
+- On Windows a notification is a toast, shown under the app id on the Start
+  menu shortcut the installer makes (`org.clrd.desktop`), with the clrd id as
+  its tag. A build with no such shortcut shows none and still syncs. A toast
+  holds text only: the sender's `click` address is never put in it, and a
+  click only opens the window. A clear from elsewhere removes it from the
+  notification centre too. Not handled: a click on a toast while the app is
+  not running (a start removes the toasts an earlier run left). Not yet seen
+  on a Windows computer: any of this, and whether a click, the Clear button
+  or a close on a toast in the notification centre is reported at all.
 - The Clear button on a system notification is a deliberate click and does
   sync: it dismisses with `via: "desktop_button"`.
 - "Closing clears everywhere" is a setting on that computer, off by default.

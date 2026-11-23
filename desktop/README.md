@@ -11,8 +11,8 @@ is not released yet: there is nothing to install from here today.
   the open list when the server sends `reset` or its epoch changes. The
   device token is sent only as an `Authorization` header, never in a URL.
 
-  It also holds everything else that touches the OS or the server: Linux
-  system notifications, the device link flow, the token in the OS keychain
+  It also holds everything else that touches the OS or the server: system
+  notifications, the device link flow, the token in the OS keychain
   and the window's sign-in.
 - `app/`: the tray icon and the window, in Tauri 2, around that core. The
   window shows the server's own `/app` in the system's web view, so there is
@@ -36,8 +36,20 @@ system's light or dark setting on both. Neither has run on a Windows
 computer yet: the one-copy check has passed under Wine, and the light or dark
 part on Windows is the window library's own and has not been seen.
 
-Still to come, each in its own change: Windows system notifications, and
-`clrd://link` addresses on Windows.
+On Windows, notifications are toasts, with the same rules as on Linux: the
+Clear button clears everywhere, closing one only hides it on this computer
+unless the switch is on, and one cleared elsewhere leaves the screen and the
+notification centre. Windows shows them for an installed app only, so a
+build run from the source tree syncs without them. A click opens the clrd
+window; the address a sender attached is never opened from a toast. Clicking
+a toast left over after clrd has quit does nothing, and the next start takes
+those away. Windows may also not pass on a click or the Clear button once a
+toast has moved into the notification centre: if so, clear it in the window.
+None of this has been seen on a Windows computer yet: the code
+is built for Windows, its text handling is tested on Linux, and under Wine,
+which has no toasts, only the refusal was seen: showing one fails cleanly.
+
+Still to come: `clrd://link` addresses on Windows.
 
 ## How the window is kept apart from the token
 

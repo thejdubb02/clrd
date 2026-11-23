@@ -350,6 +350,7 @@ dependencies = [
  "serde_json",
  "tungstenite",
  "ureq",
+ "windows",
  "windows-sys 0.61.2",
  "zbus",
 ]
