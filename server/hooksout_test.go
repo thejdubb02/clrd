@@ -453,3 +453,76 @@ func TestHooksOutPreview(t *testing.T) {
 		t.Fatalf("no body: %d %v", code, out)
 	}
 }
+
+// A discord hook posts each new notification and edits that message when its
+// state changes, in order, with the token in its URL kept out of errors (#166).
+func TestHooksOutDiscord(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	type hit struct {
+		method, path, query string
+		body                map[string]any
+	}
+	var mu sync.Mutex
+	var hits []hit
+	dc, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		h := hit{method: r.Method, path: r.URL.Path, query: r.URL.RawQuery}
+		json.NewDecoder(r.Body).Decode(&h.body)
+		mu.Lock()
+		hits = append(hits, h)
+		n := len(hits)
+		mu.Unlock()
+		switch {
+		case r.Method == "POST":
+			fmt.Fprintf(w, `{"id":"m%d"}`, n)
+		case strings.HasSuffix(r.URL.Path, "/m2"):
+			w.WriteHeader(404) // someone deleted it in Discord
+		}
+	})
+	path := "/api/v1/topics/ops/hooks/dc"
+	for _, bad := range []map[string]any{{"url": dc.URL, "kind": "slack"}, {"url": dc.URL, "kind": "discord", "body": `{}`}} {
+		if code, _ := call(t, ts, "PUT", path, admin, bad); code != 400 {
+			t.Fatalf("saved %v: %d", bad, code)
+		}
+	}
+	if code, h := call(t, ts, "PUT", path, admin, map[string]any{"url": dc.URL + "/api/webhooks/1/tok?thread_id=9", "kind": "discord"}); code != 200 || h["kind"] != "discord" {
+		t.Fatalf("save: %d %v", code, h)
+	}
+	_, a := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Disk full", "message": "@everyone look"})
+	_, b := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "b"})
+	call(t, ts, "POST", "/api/v1/notifications/"+a["id"].(string)+"/dismiss", admin, nil)
+	call(t, ts, "POST", "/api/v1/notifications/"+b["id"].(string)+"/resolve", admin, nil)
+	for range 4 { // one per tick: post a, post b, edit a, edit b
+		if err := s.deliverHooks(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(hits) != 4 {
+		t.Fatalf("want 4 calls in order, got %+v", hits)
+	}
+	p, e := hits[0], hits[2]
+	if p.method != "POST" || p.path != "/api/webhooks/1/tok" || p.query != "thread_id=9&wait=true" || p.body["content"] != "**Disk full**\n@everyone look" ||
+		fmt.Sprint(p.body["allowed_mentions"]) != "map[parse:[]]" {
+		t.Fatalf("post: %+v", p)
+	}
+	if e.method != "PATCH" || e.path != "/api/webhooks/1/tok/messages/m1" || e.query != "thread_id=9" ||
+		!strings.HasPrefix(e.body["content"].(string), "~~**Disk full**~~\n@everyone look\n-# Cleared by ") {
+		t.Fatalf("edit: %+v", e)
+	}
+	ds, _ := s.HookDeliveries(ctx, serverToken, "ops", "dc", 10)
+	for _, d := range ds {
+		if d.Status != "ok" { // the edit of the deleted message is done, not retried
+			t.Fatalf("delivery: %+v", d)
+		}
+	}
+
+	// A dead receiver's error leaves out the URL and its token.
+	call(t, ts, "PUT", "/api/v1/topics/ops/hooks/dead", admin, map[string]any{"url": "http://127.0.0.1:1/api/webhooks/1/sekrit", "kind": "discord"})
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "c"})
+	s.deliverHooks(ctx)
+	ds, _ = s.HookDeliveries(ctx, serverToken, "ops", "dead", 10)
+	if len(ds) != 1 || ds[0].Error == "" || strings.Contains(ds[0].Error, "sekrit") {
+		t.Fatalf("dead: %+v", ds)
+	}
+}

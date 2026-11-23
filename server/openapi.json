@@ -5163,6 +5163,11 @@
          "body": {
           "type": "string",
           "description": "Optional template for the POST body, rendered against the sync stream event at each try, with the incoming template functions plus json (quotes a value). Must render valid JSON, at most 16 KB. Empty sends the event."
+         },
+         "kind": {
+          "type": "string",
+          "enum": ["", "discord"],
+          "description": "discord: url is a Discord webhook URL. Each new notification is posted there, and a state change in events edits that message (a status line, the title struck through once cleared or resolved). Takes no body or secret."
          }
         }
        }
@@ -6214,6 +6219,9 @@
       "nullable": true
      },
      "body": {
+      "type": "string"
+     },
+     "kind": {
       "type": "string"
      }
     }

@@ -171,7 +171,16 @@ CREATE TABLE IF NOT EXISTS hooks_out (
   enabled INTEGER NOT NULL DEFAULT 1,
   failing_since INTEGER, -- first failure since the last 2xx
   body TEXT NOT NULL DEFAULT '', -- a template for the POST body; '' sends the event (#239)
+  kind TEXT NOT NULL DEFAULT '', -- '' or discord (#166)
   PRIMARY KEY (topic, name)
+);
+-- The message a discord hook posted for a notification, to edit it (#166).
+CREATE TABLE IF NOT EXISTS hook_posts (
+  topic TEXT NOT NULL,
+  name TEXT NOT NULL,
+  id TEXT NOT NULL, -- the notification
+  remote_id TEXT NOT NULL,
+  PRIMARY KEY (topic, name, id)
 );
 -- One row per event per hook, written in the event's own transaction.
 CREATE TABLE IF NOT EXISTS hook_deliveries (
@@ -489,10 +498,12 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add cleared_at column: %w", err)
 	}
-	if _, err := db.Exec(`ALTER TABLE hooks_out ADD COLUMN body TEXT NOT NULL DEFAULT ''`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
-		db.Close()
-		return nil, fmt.Errorf("add hooks_out body column: %w", err)
+	for _, c := range []string{"body", "kind"} {
+		if _, err := db.Exec(`ALTER TABLE hooks_out ADD COLUMN ` + c + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("add hooks_out %s column: %w", c, err)
+		}
 	}
 	if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN phone INTEGER NOT NULL DEFAULT 0`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
@@ -1498,6 +1509,9 @@ func (s *Server) prune(ctx context.Context) error {
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM hook_posts WHERE id NOT IN (SELECT id FROM notifications)`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM silences WHERE until_ms < ?`, ms(time.Now())); err != nil {

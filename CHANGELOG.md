@@ -74,6 +74,13 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   server and waits for you to press Link this computer; it never links from
   an address by itself, since any web page can send one.
 
+- Server: outgoing webhooks can post to Discord (#166). A hook with
+  `"kind": "discord"` posts each new notification to a Discord webhook URL and
+  edits that message when it is cleared, acknowledged, resolved, snoozed or
+  answered, so the channel shows what happened without anyone clearing it
+  twice. Set it up through the API or an agent over MCP. Delivery errors no
+  longer show a webhook's URL.
+
 ### Changed
 
 - Web: Unsubscribe warns on any topic that has had an approval request or
