@@ -1475,6 +1475,28 @@ try {
     console.log('ok: webhook templates are added, edited, previewed and deleted in Settings; a read-only device gets no forms');
   }
 
+  // A topic's first question flags it for approvals (#623): an older card in
+  // that topic, kept as it was by the live update, still warns on Unsubscribe.
+  {
+    await api(phone, '/api/v1/notifications', { topic: 'qflag', title: 'Plain one' });
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'qflag' } })).ok(), 'qflag sign-in');
+    const qp = await ctx.newPage();
+    await qp.goto(base + '/app');
+    const old = qp.locator('article.card', { hasText: 'Plain one' }).locator('[data-unsub]');
+    await old.waitFor({ state: 'attached' });
+    await api(phone, '/api/v1/notifications', { topic: 'qflag', title: 'Ship it?', actions: [{ label: 'Yes', reply: 'yes' }] });
+    await qp.locator('article.card', { hasText: 'Ship it?' }).waitFor();
+    assert.equal(await old.getAttribute('data-approvals'), null, 'the older card was redrawn, so this does not test the live case');
+    let msg = '';
+    qp.once('dialog', d => { msg = d.message(); d.dismiss(); });
+    await old.dispatchEvent('click');
+    await qp.waitForTimeout(300);
+    assert.match(msg, /Unsubscribe anyway/, 'no warning from the older card');
+    await ctx.close();
+    console.log('ok: a topic that got a question warns on Unsubscribe from any of its cards');
+  }
+
   // Format check in Settings (#320, #618): one card per topic with a group per
   // sender, dismiss for one sender from a row's menu, leave the topic out and
   // check it again, undo. A read-only device sees the findings but no buttons.
