@@ -159,7 +159,7 @@ func TestInitializeAndList(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,mark,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,subscriptions,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,preview_template,"+
-		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,version,ntfy_ignored,senders,sender,set_sender,sender_changes,undo_sender_change" {
+		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,version,ntfy_ignored,senders,stats,sender,set_sender,sender_changes,undo_sender_change" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
@@ -195,6 +195,7 @@ func TestTools(t *testing.T) {
 		{"resolve", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/resolve", map[string]any{"via": "mcp"}},
 		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", map[string]any{"via": "mcp"}},
 		{"snooze", map[string]any{"id": "01J", "for": "1h"}, "POST /api/v1/notifications/01J/snooze", map[string]any{"for": "1h", "via": "mcp"}},
+		{"stats", map[string]any{"days": 30}, "GET /api/v1/stats?days=30", nil},
 		{"counts", map[string]any{"keep_cleared_days": 5}, "GET /api/v1/counts?keep_cleared_days=5", nil},
 		{"counts", map[string]any{"keep_cleared_days": 5, "topic": "infra"}, "GET /api/v1/counts?keep_cleared_days=5&topic=infra", nil},
 		{"counts", map[string]any{"keep_cleared_days": "default", "topic": "infra"}, "GET /api/v1/counts?keep_cleared_days=default&topic=infra", nil},

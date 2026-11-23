@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   devices TEXT NOT NULL DEFAULT '',
   reply_text TEXT NOT NULL DEFAULT '',
   requested_topic TEXT NOT NULL DEFAULT '',
-  muted INTEGER NOT NULL DEFAULT 0
+  muted INTEGER NOT NULL DEFAULT 0,
+  cleared_at INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -466,6 +467,28 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add qseq column: %w", err)
 	}
+	// cleared_at: when the row was dismissed or resolved, for time to clear
+	// (#120). Rows cleared before it existed take their last change.
+	if err := func() error { // one transaction, so a crash never leaves the column unfilled
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`ALTER TABLE notifications ADD COLUMN cleared_at INTEGER`); err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				return nil
+			}
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE notifications SET cleared_at = updated_at WHERE state IN (?, ?)`, Dismissed, Resolved); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("add cleared_at column: %w", err)
+	}
 	if _, err := db.Exec(`ALTER TABLE hooks_out ADD COLUMN body TEXT NOT NULL DEFAULT ''`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
@@ -630,6 +653,10 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 	}
 	if err == nil && typ != EventMark && typ != EventRepeat { // the question changed (#452)
 		_, err = tx.Exec(`UPDATE notifications SET qseq = ? WHERE id = ?`, n.Seq, n.ID)
+	}
+	if err == nil { // the first time it is cleared; a reopen starts over (#120)
+		_, err = tx.Exec(`UPDATE notifications SET cleared_at = CASE WHEN state IN (?, ?) THEN COALESCE(cleared_at, updated_at) END WHERE id = ?`,
+			Dismissed, Resolved, n.ID)
 	}
 	if err == nil && (n.confirm != "" || slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply != "" })) {
 		// The topic has carried a question, so clients warn before leaving it (#623).
