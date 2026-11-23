@@ -74,6 +74,27 @@ func TestPages(t *testing.T) {
 	}
 }
 
+// The landing page's sample inbox (#592) is the real card template with the
+// demo data, inside a disabled fieldset so no button on it posts.
+func TestLandingDemo(t *testing.T) {
+	_, body := get(t, Handler(NewFake(), ""), "/")
+	i := strings.Index(body, `<fieldset class="grid min-w-0 gap-2" disabled aria-label="Sample inbox">`)
+	j := strings.Index(body, "</fieldset>")
+	if i < 0 || j < i {
+		t.Fatal("no disabled sample inbox on the landing page")
+	}
+	demo := body[i:j]
+	for _, s := range []string{`data-id="demo-backup"`, ">Urgent</span>", "<strong>nas-1</strong>", `>Open logs`, `data-act="reply">Approve</button>`,
+		"Acknowledged on pixel-9", "ops-agent actioned: pruned old images, now 71%", `data-act="dismiss"`} {
+		if !strings.Contains(demo, s) {
+			t.Errorf("sample inbox: missing %q", s)
+		}
+	}
+	if n := strings.Count(body, "<form"); n == 0 || n != strings.Count(demo, "<form") {
+		t.Errorf("%d forms on the landing page, all must sit in the disabled sample inbox", n)
+	}
+}
+
 // Every internal link on every page resolves, relative ones from the page they
 // are on, and every #fragment names an id on the target page.
 func TestLinks(t *testing.T) {

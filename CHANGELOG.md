@@ -18,6 +18,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Site: the landing page shows a sample web inbox, drawn by the real card
+  template with fixed demo data, so it always matches the inbox and needs
+  no pictures or JavaScript (#592).
 - Web: subscribe and unsubscribe to topics, per user (#617). A card's
   snooze menu has Unsubscribe from the topic, with Undo; Settings, Topics
   lists every topic with a switch and a switch for new topics. An

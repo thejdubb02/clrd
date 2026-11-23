@@ -865,6 +865,14 @@ func templates(base string) *template.Template {
 			}
 			return c
 		},
+		// demo is the landing page's sample inbox (#592): fixed data drawn by
+		// the real card template, so the page always shows the inbox as it is.
+		"demo": func() any {
+			return struct {
+				Items []Notification
+				Snap  Snapshot
+			}{demoInbox, Snapshot{Formatting: true, SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}}
+		},
 		"snoozeLabel": snoozeLabel,
 		"left":        timeLeft,
 		"hookEvents":  func() any { return HookEvents },
@@ -975,6 +983,25 @@ func (m meta) URL() string { return m.Base + m.Path }
 // with this server's own address in it; Link is a path under the inbox.
 // Icon names an i-<name> icon in icons.html (#292).
 type Tip struct{ Icon, Title, Text, Copy, Link, LinkText string }
+
+// demoInbox is the landing page's sample inbox (#592). Fixed data, so the
+// page and its test never change with the clock; every claim in it works on
+// main: an urgent alert with a link, an agent's question with answer
+// buttons, and an alert someone took and an agent marked.
+var demoInbox = func() []Notification {
+	at := time.Date(2026, 11, 20, 9, 12, 0, 0, time.UTC)
+	return []Notification{
+		{ID: "demo-backup", Topic: "backups", Title: "Nightly backup failed", Priority: 5, State: "active", Tags: []string{"restic"},
+			Message: "restic exited 1 after 4m 12s on **nas-1**.", CreatedAt: at,
+			Actions: []Action{{Label: "Open logs", URL: "https://grafana.example.com/d/backups"}}},
+		{ID: "demo-deploy", Topic: "deploys", Title: "Deploy web-2 to production?", Priority: 4, State: "active",
+			Message: "Tests passed on 4f2c1a9. The agent waits for your answer.", CreatedAt: at.Add(-3 * time.Minute),
+			Actions: []Action{{Label: "Approve", Reply: "approve"}, {Label: "Deny", Reply: "deny"}}},
+		{ID: "demo-disk", Topic: "infra", Title: "Disk full", Priority: 3, State: "acknowledged", StateBy: "pixel-9",
+			Message: "web-1 at 95%.", CreatedAt: at.Add(-18 * time.Minute),
+			Marks: []Mark{{By: "ops-agent", Mark: "actioned", Note: "pruned old images, now 71%"}}},
+	}
+}()
 
 // topicName matches a topic the server accepts (server validTopic).
 var topicName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
