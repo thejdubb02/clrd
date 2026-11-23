@@ -116,7 +116,7 @@ try {
   const shots = [
     ['inbox-light', 'light', 'desktop', '/app'],
     ['inbox-phone-dark', 'dark', 'phone', '/app'],
-    ['settings-search-light', 'light', 'desktop', '/app/settings', p => p.locator('[data-settings-q]').fill('sound')],
+    ['settings-search-light', 'light', 'desktop', '/app/settings', async p => { await p.locator('[data-settings-q]').fill('sound'); await p.locator('[data-settings-q]').blur(); }],
     ['link-phone-dark', 'dark', 'phone', '/app/settings', async p => {
       await p.locator('[data-pair-start]').click();
       await p.locator('[data-pair-qr]').waitFor();
@@ -131,7 +131,7 @@ try {
     await page.goto(main.base + path, { waitUntil: 'networkidle' });
     await page.evaluate(() => document.fonts.ready);
     if (act) await act(page);
-    await page.screenshot({ path: join(out, `${name}.png`), mask: mask ? [page.locator(mask)] : [] });
+    await page.screenshot({ path: join(out, `${name}.png`), mask: mask ? [page.locator(mask)] : [], animations: 'disabled' });
     await ctx.close();
   }
 
