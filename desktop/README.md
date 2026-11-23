@@ -43,7 +43,9 @@ notification centre. Windows shows them for an installed app only, so a
 build run from the source tree syncs without them. A click opens the clrd
 window; the address a sender attached is never opened from a toast. Clicking
 a toast left over after clrd has quit does nothing, and the next start takes
-those away. None of this has been seen on a Windows computer yet: the code
+those away. Windows may also not pass on a click or the Clear button once a
+toast has moved into the notification centre: if so, clear it in the window.
+None of this has been seen on a Windows computer yet: the code
 is built for Windows, its text handling is tested on Linux, and under Wine,
 which has no toasts, only the refusal was seen: showing one fails cleanly.
 

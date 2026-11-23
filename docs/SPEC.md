@@ -1380,8 +1380,8 @@ rules. Its token lives in the OS keychain and is sent only as an
   click only opens the window. A clear from elsewhere removes it from the
   notification centre too. Not handled: a click on a toast while the app is
   not running (a start removes the toasts an earlier run left). Not yet seen
-  on a Windows computer: any of this, and whether clearing a toast in the
-  notification centre reports a close at all.
+  on a Windows computer: any of this, and whether a click, the Clear button
+  or a close on a toast in the notification centre is reported at all.
 - The Clear button on a system notification is a deliberate click and does
   sync: it dismisses with `via: "desktop_button"`.
 - "Closing clears everywhere" is a setting on that computer, off by default.

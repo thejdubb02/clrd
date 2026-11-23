@@ -76,12 +76,14 @@ impl Os {
                     // Closed here means gone here: Windows may keep a closed
                     // toast in the notification centre, where nothing of
                     // ours would ever take it down.
-                    let gone = toasts
-                        .upgrade()
-                        .and_then(|t| t.lock().unwrap().remove(&os_id));
-                    if let Some((tag, _)) = gone {
-                        let _ = ToastNotificationManager::History()
-                            .and_then(|h| h.RemoveGroupedTagWithId(&tag, GROUP, &app_id));
+                    // The lock is held to the end: a newer toast with the
+                    // same tag is shown under it, so it is never the one
+                    // removed here.
+                    if let Some(toasts) = toasts.upgrade() {
+                        if let Some((tag, _)) = toasts.lock().unwrap().remove(&os_id) {
+                            let _ = ToastNotificationManager::History()
+                                .and_then(|h| h.RemoveGroupedTagWithId(&tag, GROUP, &app_id));
+                        }
                     }
                     // The setting as it is now, as the close arrives (#685).
                     let _ = tx.send(Signal::Closed(os_id, clears.load(Ordering::Relaxed)));
@@ -105,8 +107,10 @@ impl Os {
             },
         ))?;
 
-        ToastNotificationManager::CreateToastNotifierWithId(&self.app_id)?.Show(&toast)?;
+        // Locked before it shows, so a close of this toast, or of the one it
+        // replaces, is handled wholly before or wholly after.
         let mut toasts = self.toasts.lock().unwrap();
+        ToastNotificationManager::CreateToastNotifierWithId(&self.app_id)?.Show(&toast)?;
         toasts.remove(&replaces);
         toasts.insert(os_id, (tag, toast));
         Ok(os_id)
@@ -114,16 +118,20 @@ impl Os {
 
     /// Takes the toast off the screen and out of the notification centre.
     pub fn close(&self, os_id: u32) {
-        let Some((tag, _)) = self.toasts.lock().unwrap().remove(&os_id) else {
+        let Some((tag, toast)) = self.toasts.lock().unwrap().remove(&os_id) else {
             return;
         };
+        // Hide is for one still on screen, the history for one that left it.
+        let _ = ToastNotificationManager::CreateToastNotifierWithId(&self.app_id)
+            .and_then(|n| n.Hide(&toast));
         let _ = ToastNotificationManager::History()
             .and_then(|h| h.RemoveGroupedTagWithId(&tag, GROUP, &self.app_id));
     }
 
     /// Takes down everything of ours.
-    // ponytail: a toast clicked while the app is not running does nothing.
-    // Opening the app from it needs a COM activator registered by the
+    // ponytail: a toast clicked while the app is not running does nothing,
+    // and Windows may not report a click on one in the notification centre
+    // even while it runs. Both need a COM activator registered by the
     // installer; a start clears the old ones instead.
     pub fn stop(&self) {
         self.toasts.lock().unwrap().clear();
