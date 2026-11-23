@@ -357,7 +357,7 @@ the first rule whose set fields all match wins; with no match a card with a
 sender `color` (section 2) shows it as `bar`; otherwise it has no color. A
 client that does not know a style draws `bar`. `server/testdata/colorrules.json`
 holds cases every client's matcher must pass. A PUT replaces the whole list
-(read first, send every rule to keep; `[]` clears it); a bad rule is a 400
+(read first, send every rule to keep; `[]` clears it, `null` is a 400); a bad rule, or a field of the wrong type, is a 400
 naming its index and field and changes nothing. Only a token with no topic
 list and no per-topic grants may change it (403 otherwise); a limited token reads only rules with no
 topic or a topic it may read or publish to. Presets are client shortcuts that write

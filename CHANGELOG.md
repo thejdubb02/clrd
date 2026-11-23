@@ -75,6 +75,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 - Web: a Settings search typed while the page is still loading now finds
   Link a phone once it appears (#591).
+- Server: `color_rules: null` in a settings change is now refused with a
+  400 like the swipe keys, instead of quietly changing nothing, and a rule
+  field of the wrong type names the rule it is in (#615).
 - Web: a snooze that ends while its card is still leaving now brings the card back with its slide in and wiggle.
 - Web and Android: the sender's Alarm topic hint now says an empty topic
   means the first topic its last topic routes to, or that topic when it has

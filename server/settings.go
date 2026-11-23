@@ -222,7 +222,7 @@ type SettingsPatch struct {
 	SwipeEnd         json.RawMessage  `json:"swipe_end"`
 	KeepClearedDays  *int             `json:"keep_cleared_days"`
 	TopicKeep        map[string]*int  `json:"topic_keep_cleared_days"`
-	ColorRules       *[]ColorRule     `json:"color_rules"` // replaces the whole list
+	ColorRules       json.RawMessage  `json:"color_rules"` // replaces the whole list; raw so null is refused
 	Sound            *string          `json:"sound"`       // this device's own sound
 }
 
@@ -345,11 +345,10 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 			return Settings{}, errf(403, "forbidden", "token may not use topic %q", t)
 		}
 	}
+	var colorRules []ColorRule
 	if p.ColorRules != nil {
-		if *p.ColorRules == nil {
-			*p.ColorRules = []ColorRule{}
-		}
-		if err := checkColorRules(*p.ColorRules); err != nil {
+		var err error
+		if colorRules, err = colorRuleList(p.ColorRules); err != nil {
 			return Settings{}, err
 		}
 	}
@@ -405,7 +404,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 			st.KeepClearedDays = p.KeepClearedDays
 		}
 		if p.ColorRules != nil {
-			st.ColorRules = *p.ColorRules
+			st.ColorRules = colorRules
 		}
 		for t, v := range p.TopicKeep {
 			if v == nil {
