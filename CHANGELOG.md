@@ -15,8 +15,6 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 96,000 bytes, so the archive holds the rest of the history.
 
 ## Unreleased
-
-## 0.1.0 - 2026-11-23
 ### Added
 
 - Web: a cleared card now slides away and the cards below close the gap, on
@@ -25,6 +23,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   plays on load, after a reconnect or for cards that came while the tab was
   in the background, and nothing moves with reduce motion on. The timings are
   in SPEC section 10.1 so every app matches.
+
+## 0.1.0 - 2026-11-23
+### Added
+
 - Android: set a sender's quiet alarm in Settings, how long it may stay
   silent and which topic the alarm goes to, like the web (#119). Each field
   saves on its own, a refused value shows the server's reason, and an open
