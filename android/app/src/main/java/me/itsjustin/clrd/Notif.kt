@@ -127,3 +127,11 @@ data class Pending(
 /** One-row table: the highest event seq applied. Kept in the same database so it commits with the rows it covers. */
 @Entity(tableName = "meta")
 data class Meta(@PrimaryKey val k: String, val v: Long)
+
+/**
+ * Per notification, the seq of the row the server sent back after this phone's own state change (Clear, Undo, Ack,
+ * Snooze, reply). A repeat older than that was sent before the change and never rings it again (#550). In Room, so a
+ * restart between the answer and a late repeat keeps it (#561); dropped with its notification.
+ */
+@Entity(tableName = "answer")
+data class Answer(@PrimaryKey val id: String, val seq: Long)

@@ -108,6 +108,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: a late repeat of a notification you just cleared, acknowledged or
+  snoozed on the phone stays quiet even when the app restarted in between, and
+  the phone forgets these marks once the notification is gone (#561).
 - Web: a Settings search typed while the page is still loading now finds
   Link a phone once it appears (#591).
 - Server: `color_rules: null` in a settings change is now refused with a

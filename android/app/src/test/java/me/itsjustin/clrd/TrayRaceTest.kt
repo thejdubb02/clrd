@@ -172,6 +172,20 @@ class TrayRaceTest {
         assertTrue(!once("a"))
     }
 
+    @Test fun theOwnChangeGuardOutlivesARestartAndGoesWithItsRow() { // #561
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        val a = row("a", Notif.ACTIVE, 6).copy(createdAt = 1, stateBy = "phone")
+        bg { store.apply(listOf(a), 6, quiet = true) }
+        bg { dao.answered("a", 6); dao.answered("a", 2) } // what the process before the restart saved; it never goes back
+        assertEquals(6L, bg { dao.answerOf("a") })
+        bg { store.apply(listOf(a.copy(seq = 4)), 4, again = true) } // a late repeat, sent before that change
+        assertTrue(once("a"))
+        bg { store.apply(listOf(a.copy(state = Notif.DISMISSED, seq = 7)), 7) }
+        bg { app.pruneCleared(System.currentTimeMillis() + 400L * 24 * 3600_000) }
+        assertNull(bg { dao.answerOf("a") }) // dropped with the row, so the table never only grows
+    }
+
     @Test fun reconcileWaitsForSyncWrites() {
         bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
         val store = RoomStore(app)
