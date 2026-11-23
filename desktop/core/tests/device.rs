@@ -101,9 +101,11 @@ fn a_link_from_outside_is_offered_once_and_asks_the_server_nothing() {
     assert_eq!(device.take_offer(), Some((link.clone(), fake.base.clone())));
     assert_eq!(device.take_offer(), None, "offered once");
 
-    // Not a link, or far too long to be one: said, and not offered.
+    // Not a link, a server name dressed up as another, or far too long to
+    // be one: said, and not offered.
     for bad in [
         "clrd://pair?server=https%3A%2F%2Fclrd.example.com&code=abc123".to_string(),
+        "clrd://link?server=https%3A%2F%2Fclrd.example.com%40evil.example&code=abc123".to_string(),
         format!("{link}&{}", "x".repeat(2048)),
     ] {
         device.offer(&link);
