@@ -18,6 +18,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Server: traffic stats for admins at `GET /api/v1/stats` and the MCP
+  `stats` tool: volume per hour, top topics and senders, how long alerts
+  stay open before someone clears them (median and p90), who clears them,
+  and alerts that keep firing (#120).
 - Site: the landing page shows a sample web inbox, drawn by the real card
   template with fixed demo data, so it always matches the inbox and needs
   no pictures or JavaScript (#592).
@@ -69,6 +73,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web: a Settings search typed while the page is still loading now finds
+  Link a phone once it appears (#591).
 - Web: a snooze that ends while its card is still leaving now brings the card back with its slide in and wiggle.
 - Web and Android: the sender's Alarm topic hint now says an empty topic
   means the first topic its last topic routes to, or that topic when it has

@@ -1929,6 +1929,22 @@ try {
     assert.deepEqual(await groups(), order, 'Clear did not bring every section back');
     await ctx.close();
 
+    // #591: a search typed while pair.js still loads finds Link a phone once pair.js shows it.
+    const lctx = await browser.newContext();
+    assert.ok((await lctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search-late' } })).ok(), 'late sign-in');
+    const lp = await lctx.newPage();
+    let letPair;
+    const pairHeld = new Promise(r => { letPair = r; });
+    await lp.route('**/pair.js*', async r => { await pairHeld; await r.continue(); });
+    await lp.goto(base + '/app/settings', { waitUntil: 'commit' });
+    await lp.getByLabel('Search settings').fill('qr');
+    await lp.locator('[data-settings-none]').waitFor(); // inbox.js ran; Link a phone is not shown yet
+    letPair();
+    await lp.locator('#link-phone').waitFor();
+    assert.equal(await lp.locator('[data-settings-none]').isVisible(), false, 'empty state stayed after Link a phone appeared');
+    assert.equal(await lp.locator('[data-settings-n]').textContent(), '1 setting matches. Press Enter to go to the first.', 'match count missed Link a phone');
+    await lctx.close();
+
     const nctx = await browser.newContext({ javaScriptEnabled: false });
     assert.ok((await nctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search-nojs' } })).ok(), 'no-js sign-in');
     const np = await nctx.newPage();
