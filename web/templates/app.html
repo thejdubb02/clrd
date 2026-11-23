@@ -786,7 +786,7 @@
   <h1 class="me-auto truncate text-xl font-semibold tracking-tight">Stats</h1>
   {{with .Snap.Stats}}<nav class="flex gap-1" aria-label="Range">{{$d := .Days}}{{range .Ranges}}<a class="btn" data-size="sm" data-variant="{{if eq . $d}}secondary{{else}}ghost{{end}}" href="{{base}}/app/stats?days={{.}}"{{if eq . $d}} aria-current="page"{{end}}>{{if eq . 1}}24 hours{{else}}{{.}} days{{end}}</a>{{end}}</nav>{{end}}
 </header>
-<div class="grid max-w-3xl gap-4" data-stats>
+<div class="grid max-w-3xl gap-4" data-stats data-live="stats">
   {{if not .Snap.CanSenders}}<p class="text-body text-sm">Only an admin token for every topic can see stats.</p>
   {{else}}{{with .Snap.Stats}}
   <p class="text-body text-sm/relaxed"><strong class="tabular-nums" data-total>{{.Total}}</strong> notifications, {{.Answered}} answered with a reply button. Times are UTC.</p>
@@ -805,7 +805,7 @@
     <h2 id="st-flap" class="px-4 pt-4 text-sm font-medium">Repeat alerts</h2>
     <p class="text-body px-4 pt-1 text-sm">The same alert id sent more than once. These may want a quieter route.</p>
     {{if .Flappers}}<table class="table"><thead><tr><th scope="col">Topic</th><th scope="col">Alert id</th><th scope="col">Times</th></tr></thead>
-      <tbody>{{range .Flappers}}<tr><td>{{.Topic}}</td><td class="whitespace-normal [overflow-wrap:anywhere]">{{.ExternalID}}</td><td class="tabular-nums">{{.Count}}</td></tr>{{end}}</tbody></table>
+      <tbody>{{range .Flappers}}<tr><td class="whitespace-normal [overflow-wrap:anywhere]">{{.Topic}}</td><td class="whitespace-normal [overflow-wrap:anywhere]">{{.ExternalID}}</td><td class="tabular-nums">{{.Count}}</td></tr>{{end}}</tbody></table>
     {{else}}<p class="text-body px-4 pb-4 text-sm">None in this range.</p>{{end}}
   </section>
   {{else}}<p class="text-body text-sm">Nothing arrived in this range.</p>{{end}}
@@ -813,12 +813,12 @@
 </div>
 {{end}}
 
-{{define "stats-groups"}}{{$rows := .Rows}}
+{{define "stats-groups"}}{{$rows := .Rows}}{{$c := .Clears}}
 <section class="bg-card rounded-xl border" aria-label="{{.Title}}">
   <h2 class="px-4 pt-4 text-sm font-medium">{{.Title}}</h2>
   {{if $rows}}<table class="table">
-    <thead><tr><th scope="col">{{.Col}}</th><th scope="col">Sent</th><th scope="col">Open</th><th scope="col" title="Half are cleared faster than this">Median clear</th><th scope="col" class="max-sm:hidden" title="Nine in ten are cleared faster than this">90% clear</th></tr></thead>
-    <tbody>{{range $rows}}<tr><td class="whitespace-normal [overflow-wrap:anywhere]">{{.Label}}</td><td class="tabular-nums">{{.Count}}</td><td class="tabular-nums">{{.Open}}</td>
+    <thead><tr><th scope="col">{{.Col}}</th><th scope="col">{{if $c}}Cleared{{else}}Sent{{end}}</th>{{if not $c}}<th scope="col">Open</th>{{end}}<th scope="col" title="Half are cleared faster than this">Median clear</th><th scope="col" class="max-sm:hidden" title="Nine in ten are cleared faster than this">90% clear</th></tr></thead>
+    <tbody>{{range $rows}}<tr><td class="whitespace-normal [overflow-wrap:anywhere]">{{.Label}}</td><td class="tabular-nums">{{.Count}}</td>{{if not $c}}<td class="tabular-nums">{{.Open}}</td>{{end}}
       <td class="tabular-nums">{{if .Cleared}}{{took .ClearMedianMS}}{{else}}-{{end}}</td><td class="tabular-nums max-sm:hidden">{{if .Cleared}}{{took .ClearP90MS}}{{else}}-{{end}}</td></tr>{{end}}</tbody>
   </table>{{else}}<p class="text-body px-4 pb-4 text-sm">None in this range.</p>{{end}}
 </section>

@@ -60,10 +60,11 @@ func (s Stats) Ranges() []int { return StatsRanges }
 type StatsTable struct {
 	Title, Col string
 	Rows       []StatsGroup
+	Clears     bool // the who clears table: Count is clears and nothing is open
 }
 
 func (s Stats) Tables() []StatsTable {
-	return []StatsTable{{"Top topics", "Topic", s.Topics}, {"Top senders", "Sender", s.Senders}, {"Who clears", "Cleared by", s.ClearedBy}}
+	return []StatsTable{{"Top topics", "Topic", s.Topics, false}, {"Top senders", "Sender", s.Senders, false}, {"Who clears", "Cleared by", s.ClearedBy, true}}
 }
 
 // Label is the group's name for people: the sender's name, else its key.

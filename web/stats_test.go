@@ -26,6 +26,7 @@ func (s statsAPI) Snapshot(_ *http.Request, q Query) (Snapshot, error) {
 			Hours:      []StatsBucket{{At: from - from%hour, Count: 2}, {At: from - from%hour + 3*hour, Count: 1}},
 			Topics:     []StatsGroup{{Key: "home", Count: 3, Open: 1, Cleared: 2, ClearMedianMS: 45000, ClearP90MS: 3*3600000 + 5*60000}},
 			Senders:    []StatsGroup{{Key: "", Count: 2, Open: 2}, {Key: "tok-1", Name: "nas", Count: 1, Cleared: 1}},
+			ClearedBy:  []StatsGroup{{Key: "web", Count: 2, Cleared: 2, ClearMedianMS: 60000}},
 			Flappers:   []StatsFlapper{{Topic: "home", ExternalID: "disk-full", Count: 2}}}
 	}
 	return snap, nil
@@ -44,6 +45,7 @@ func TestStatsPage(t *testing.T) {
 		"Volume per hour", "<title>Jan 2, 00:00 UTC: 2</title>", "<title>Jan 2, 01:00 UTC: 0</title>",
 		"<td>Urgent</td><td class=\"tabular-nums\">2</td>",
 		">Anonymous</td>", ">nas</td>", ">45s</td>", ">3h 5m</td>", "disk-full",
+		`data-live="stats"`, `<th scope="col">Cleared</th>`, ">1m</td>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("stats page has no %q", want)
@@ -51,6 +53,9 @@ func TestStatsPage(t *testing.T) {
 	}
 	if n := strings.Count(body, " UTC: "); n != 25 {
 		t.Errorf("%d bars for a day that spans 25 hours, want 25 (empty hours kept)", n)
+	}
+	if n := strings.Count(body, `scope="col">Open</th>`); n != 2 {
+		t.Errorf("%d Open columns, want 2 (none on who clears)", n)
 	}
 	if get(t, h, "/app/stats?days=5"); days != 7 {
 		t.Errorf("days=5 asked for %d days, want the 7 day default", days)
