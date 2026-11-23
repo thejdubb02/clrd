@@ -22,8 +22,8 @@ const PROBE: &str = r#"<!doctype html><title>probe</title><script>(async () => {
 const bridge = window.__TAURI_INTERNALS__;
 const invoke = bridge ? bridge.invoke : () => Promise.reject('no bridge');
 const r = { cookie: document.cookie, href: location.href, calls: {} };
-for (const c of ['state', 'start', 'cancel', 'retry', 'unlink', 'plugin:app|version']) {
-  try { r.calls[c] = 'ran: ' + JSON.stringify(await invoke(c, { link: 'x', plainOk: true })); }
+for (const c of ['state', 'start', 'cancel', 'retry', 'unlink', 'set_close_clears', 'plugin:app|version']) {
+  try { r.calls[c] = 'ran: ' + JSON.stringify(await invoke(c, { link: 'x', plainOk: true, on: true })); }
   catch (e) { r.calls[c] = 'refused: ' + e; }
 }
 try { window.ipc.postMessage(JSON.stringify({ cmd: 'unlink', callback: 1, error: 2, payload: {}, options: {} })); } catch (e) {}
@@ -79,6 +79,87 @@ fn app(bus: &Bus, home: &Path, args: &[&str]) -> Command {
     cmd
 }
 
+/// The desktop's notification service: counts what it is asked to show.
+struct Shown(std::sync::Arc<std::sync::atomic::AtomicU32>);
+
+#[zbus::interface(name = "org.freedesktop.Notifications")]
+impl Shown {
+    fn get_capabilities(&self) -> Vec<String> {
+        vec!["actions".into(), "body".into()]
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn notify(
+        &self,
+        _app: String,
+        _replaces: u32,
+        _icon: String,
+        _summary: String,
+        _body: String,
+        _actions: Vec<String>,
+        _hints: std::collections::HashMap<String, zbus::OwnedVariant>,
+        _timeout: i32,
+    ) -> u32 {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+    }
+
+    fn close_notification(&self, _id: u32) {}
+}
+
+/// The switch as the app itself reads it: kept on from an earlier run, a
+/// notification the user closes is cleared everywhere.
+#[test]
+fn closing_clears_everywhere_when_the_kept_setting_is_on() {
+    const NAME: &str = "org.freedesktop.Notifications";
+    const PATH: &str = "/org/freedesktop/Notifications";
+
+    let fake = Fake::start();
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let shown = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let service = zbus::block_on(
+        zbus::connection::Builder::address(bus.1.as_str())
+            .name(NAME)
+            .serve_at(PATH, Shown(shown.clone()))
+            .build(),
+    )
+    .unwrap();
+    let data = home.join("data/org.clrd.desktop");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join("close-clears"), "").unwrap();
+
+    let _app = Group(
+        app(&bus, &home, &["--hidden"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    wait_long("the app follows the server", || {
+        fake.requests().iter().any(|r| r.contains("/api/v1/ws"))
+    });
+    settle();
+    fake.publish("a", serde_json::json!({}));
+    wait_long("the notification shows", || {
+        shown.load(std::sync::atomic::Ordering::Relaxed) == 1
+    });
+    // Reason 2: closed by the user.
+    zbus::block_on(service.emit_signal(
+        None::<&str>,
+        PATH,
+        NAME,
+        "NotificationClosed",
+        &(1u32, 2u32),
+    ))
+    .unwrap();
+    wait_long("the clear reaches the server", || {
+        !fake.dismissed().is_empty()
+    });
+    assert_eq!(
+        fake.dismissed(),
+        [("a".to_string(), "desktop_close".to_string())]
+    );
+}
+
 #[test]
 fn the_servers_page_gets_a_session_and_nothing_else() {
     use std::os::unix::fs::PermissionsExt;
@@ -123,7 +204,7 @@ fn the_servers_page_gets_a_session_and_nothing_else() {
     assert_eq!(report["href"], format!("{}/app", fake.base));
     assert_eq!(report["cookie"], "", "the page cannot read the session");
     let calls = report["calls"].as_object().unwrap();
-    assert_eq!(calls.len(), 6);
+    assert_eq!(calls.len(), 7);
     for (command, result) in calls {
         let result = result.as_str().unwrap();
         assert!(result.starts_with("refused"), "{command}: {result}");
@@ -151,6 +232,12 @@ fn the_servers_page_gets_a_session_and_nothing_else() {
 
     // Nothing the page tried had any effect.
     assert!(!fake.unlinked());
+    let data = home.join("data/org.clrd.desktop");
+    assert!(data.join("state.json").exists(), "the app's folder is here");
+    assert!(
+        !data.join("close-clears").exists(),
+        "the server's page turned on closing clears everywhere"
+    );
     let sessions = fake.sessions();
     assert_eq!(sessions.len(), 1, "one window session: {sessions:?}");
     assert_eq!(keys.load().unwrap().unwrap().token, TOKEN);

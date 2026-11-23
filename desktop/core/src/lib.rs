@@ -5,7 +5,8 @@
 //! socket and the REST calls and feeds it; `notify` puts the result on the
 //! Linux desktop. [`link`] makes this computer a linked device,
 //! [`keychain`] keeps its token, and `device` is the two as the one state
-//! the app's screens show. `instance` keeps it to one running app.
+//! the app's screens show. `instance` keeps it to one running app, and
+//! [`setting`] is the one switch this computer keeps for itself.
 
 pub mod client;
 #[cfg(any(target_os = "linux", windows))]
@@ -18,6 +19,7 @@ pub mod keychain;
 pub mod link;
 #[cfg(target_os = "linux")]
 pub mod notify;
+pub mod setting;
 
 pub use client::{run, Error, Server, Status};
 pub use engine::{Engine, Next, Notification, Sink};

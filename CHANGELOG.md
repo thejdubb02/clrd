@@ -73,6 +73,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   link page opens the app with the link filled in (#626). The app names the
   server and waits for you to press Link this computer; it never links from
   an address by itself, since any web page can send one.
+- Desktop (Linux, build from source): the This computer page has a
+  "Closing clears everywhere" switch (#627). It is off at first, so closing
+  a notification on the computer only hides it there; turn it on and a close
+  clears it on all your devices. The choice is kept across restarts.
 
 ### Changed
 
