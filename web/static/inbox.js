@@ -196,6 +196,9 @@
       said.textContent = !t ? '' : n ? `${n} ${n === 1 ? 'setting matches' : 'settings match'}. Press Enter to go to the first.` : 'No settings match';
     };
     sq.addEventListener('input', filter);
+    // A setting another script reveals later (pair.js: Link a phone) joins a search already typed (#591).
+    const seen = new MutationObserver(filter);
+    for (const [s] of sets) seen.observe(s, { attributeFilter: ['hidden'] });
     sq.addEventListener('keydown', e => {
       if (e.key !== 'Enter' || e.isComposing) return;
       e.preventDefault();
