@@ -253,7 +253,8 @@ type Notification struct {
 	Priority    int         `json:"priority"`
 	Tags        []string    `json:"tags"`
 	Click       string      `json:"click"`
-	Icon        string      `json:"icon"` // http(s) image URL; the topic's icon when the sender gave none
+	Icon        string      `json:"icon"`  // http(s) image URL; the topic's icon when the sender gave none
+	Color       string      `json:"color"` // the sender's #RRGGBB, "" for none; color rules win over it (#165)
 	Actions     []Action    `json:"actions"`
 	Attachment  *Attachment `json:"attachment"`
 	file        string      // uploaded file id, "" for none or external
@@ -348,7 +349,7 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text", "requested_topic"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text", "requested_topic", "color"} {
 		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -485,7 +486,7 @@ func nullMS(t *time.Time) any {
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
   state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks, devices, reply_text,
-  requested_topic, muted`
+  requested_topic, muted, color`
 
 type scanner interface{ Scan(...any) error }
 
@@ -497,7 +498,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
 		&n.Silenced, &rep, &n.sender, &n.confirm, &marks, &devs, &n.ReplyText,
-		&n.RequestedTopic, &n.muted)
+		&n.RequestedTopic, &n.muted, &n.Color)
 	if err != nil {
 		return nil, err
 	}
@@ -562,16 +563,16 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 	} else {
 		n.Devices = []string{} // every event says [] for everyone, never null
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(31)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(32)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
 		reply=excluded.reply, state=excluded.state, state_by=excluded.state_by, state_by_id=excluded.state_by_id, snooze_until=excluded.snooze_until,
 		updated_at=excluded.updated_at, seq=excluded.seq, expires_at=excluded.expires_at, silenced=excluded.silenced, repeat=excluded.repeat, sender=excluded.sender, confirm=excluded.confirm, marks=excluded.marks, devices=excluded.devices, reply_text=excluded.reply_text,
-		requested_topic=excluded.requested_topic, muted=excluded.muted`,
+		requested_topic=excluded.requested_topic, muted=excluded.muted, color=excluded.color`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText, n.RequestedTopic, n.muted)
+		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText, n.RequestedTopic, n.muted, n.Color)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -693,7 +694,8 @@ type PublishInput struct {
 	Priority    int         `json:"priority"`
 	Tags        []string    `json:"tags"`
 	Click       string      `json:"click"`
-	Icon        string      `json:"icon"` // http(s) image URL; the topic's icon when the sender gave none
+	Icon        string      `json:"icon"`  // http(s) image URL; the topic's icon when the sender gave none
+	Color       string      `json:"color"` // the sender's #RRGGBB, "" for none; color rules win over it (#165)
 	Actions     []Action    `json:"actions"`
 	Attachment  *Attachment `json:"attachment"` // external only: {"url","name"}; uploads go through PublishFile
 	file        string
@@ -848,7 +850,7 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
 				n.ReplyText = ""
 				replaced, n.Attachment, n.file, n.ExpiresAt, n.Repeat, n.sender = n.file, in.Attachment, in.file, expires, repeat, sender
-				n.Devices, n.muted, n.RequestedTopic = in.Devices, in.muted, in.requested
+				n.Devices, n.muted, n.RequestedTopic, n.Color = in.Devices, in.muted, in.requested, in.Color
 				if in.Reopen && n.State == Acknowledged {
 					n.State = Active
 					n.setBy(tok)
@@ -873,7 +875,7 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 		}
 		t := now()
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
-			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions,
+			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Color: in.Color, Actions: in.Actions,
 			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires,
 			Repeat: repeat, sender: sender, Devices: in.Devices, muted: in.muted, RequestedTopic: in.requested}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
@@ -1860,6 +1862,9 @@ func (in *PublishInput) fill() error {
 	}
 	if in.ExternalID == "." || in.ExternalID == ".." { // a URL path would drop it
 		return errf(400, "bad_request", "external_id cannot be . or ..")
+	}
+	if in.Color != "" && !hexColor(in.Color) {
+		return errf(400, "bad_request", "color must be #RRGGBB")
 	}
 	if in.Title == "" && in.Message == "" {
 		in.Message = "triggered" // what ntfy sends for an empty body

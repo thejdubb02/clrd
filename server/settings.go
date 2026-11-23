@@ -70,6 +70,8 @@ type Settings struct {
 	KeepClearedDays *int `json:"keep_cleared_days"`
 	// TopicKeepClearedDays overrides KeepClearedDays for one topic (#262).
 	TopicKeepClearedDays map[string]int `json:"topic_keep_cleared_days"`
+	// ColorRules color matching cards, first match wins (#165, colors.go).
+	ColorRules []ColorRule `json:"color_rules"`
 	// Sound is the asking device's own sound (#282), filled on reads and
 	// set with PUT /api/v1/devices/{id}.
 	Sound string `json:"sound,omitempty"`
@@ -200,7 +202,7 @@ func checkSwipe(start, end []string) error {
 func defaultSettings() Settings {
 	return Settings{RenderFormatting: true, Autolink: true, Favicons: true, TopicPreviews: map[string]bool{},
 		TopicKeepClearedDays: map[string]int{}, SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h",
-		SwipeStart: []string{"clear", "snooze"}, SwipeEnd: []string{"ack"}}
+		SwipeStart: []string{"clear", "snooze"}, SwipeEnd: []string{"ack"}, ColorRules: []ColorRule{}}
 }
 
 // SettingsPatch is a PUT body: only the fields given change. A topic
@@ -217,7 +219,8 @@ type SettingsPatch struct {
 	SwipeEnd         json.RawMessage  `json:"swipe_end"`
 	KeepClearedDays  *int             `json:"keep_cleared_days"`
 	TopicKeep        map[string]*int  `json:"topic_keep_cleared_days"`
-	Sound            *string          `json:"sound"` // this device's own sound
+	ColorRules       *[]ColorRule     `json:"color_rules"` // replaces the whole list
+	Sound            *string          `json:"sound"`       // this device's own sound
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -240,6 +243,7 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 			delete(st.TopicKeepClearedDays, t)
 		}
 	}
+	st.ColorRules = slices.DeleteFunc(st.ColorRules, func(r ColorRule) bool { return r.Topic != "" && !tok.Allows(r.Topic) })
 	if st.KeepClearedDays == nil { // filled on reads only, so a save never pins CLRD_RETENTION
 		d := int((s.opt.Retention + 24*time.Hour - 1) / (24 * time.Hour))
 		st.KeepClearedDays = &d
@@ -270,6 +274,9 @@ func (s *Server) loadSettings(ctx context.Context, q interface {
 	if st.TopicKeepClearedDays == nil {
 		st.TopicKeepClearedDays = map[string]int{}
 	}
+	if st.ColorRules == nil {
+		st.ColorRules = []ColorRule{}
+	}
 	return st, nil
 }
 
@@ -282,7 +289,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
 		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil ||
-		p.SwipeStart != nil || p.SwipeEnd != nil
+		p.SwipeStart != nil || p.SwipeEnd != nil || p.ColorRules != nil
 	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews and topic_keep_cleared_days")
 	}
@@ -330,6 +337,14 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 		if !tok.Allows(t) {
 			return Settings{}, errf(403, "forbidden", "token may not use topic %q", t)
+		}
+	}
+	if p.ColorRules != nil {
+		if *p.ColorRules == nil {
+			*p.ColorRules = []ColorRule{}
+		}
+		if err := checkColorRules(*p.ColorRules); err != nil {
+			return Settings{}, err
 		}
 	}
 	if p.Sound != nil && !slices.Contains(soundNames, *p.Sound) { // checked now, set once the rest is saved
@@ -382,6 +397,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 		if p.KeepClearedDays != nil {
 			st.KeepClearedDays = p.KeepClearedDays
+		}
+		if p.ColorRules != nil {
+			st.ColorRules = *p.ColorRules
 		}
 		for t, v := range p.TopicKeep {
 			if v == nil {

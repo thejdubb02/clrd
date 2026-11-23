@@ -56,7 +56,7 @@ func (s *Server) publishLive(ctx context.Context, tok *Token, in PublishInput, f
 		return nil, err
 	}
 	n := &Notification{Topic: in.Topic, Title: in.Title, Message: in.Message, Format: format, Priority: in.Priority,
-		Tags: in.Tags, Click: in.Click, Icon: in.Icon, Actions: in.Actions, Attachment: in.Attachment, State: Active,
+		Tags: in.Tags, Click: in.Click, Icon: in.Icon, Color: in.Color, Actions: in.Actions, Attachment: in.Attachment, State: Active,
 		StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, UpdatedAt: t, Live: true, Devices: in.Devices, RequestedTopic: in.requested}
 	n.Silenced = silenced(sils, n) || in.muted
 	s.mu.Lock() // so the seq it carries is in order with stored writes
