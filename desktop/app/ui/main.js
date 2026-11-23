@@ -3,7 +3,7 @@
 const invoke = window.__TAURI_INTERNALS__.invoke;
 const $ = (id) => document.getElementById(id);
 
-function show([view, status]) {
+function show([view, status, noted]) {
   const waiting = view.check !== '';
   const linked = view.server !== '';
   $('status').textContent = status;
@@ -15,7 +15,7 @@ function show([view, status]) {
   $('server').textContent = view.server;
   $('name').textContent = view.name;
   $('refused').hidden = !view.refused;
-  $('retry').hidden = !view.refused && (view.error === '' || waiting);
+  $('retry').hidden = !view.refused && !noted && (view.error === '' || waiting);
 }
 
 // Asking for the state is also what moves a waiting link forward.

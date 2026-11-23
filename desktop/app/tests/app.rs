@@ -115,7 +115,10 @@ fn the_servers_page_gets_a_session_and_nothing_else() {
 
     // The page only loads for a signed-in window, so a report at all means
     // the session cookie reached the web view.
-    wait_long("the page reports", || !fake.reports().is_empty());
+    wait_long("the page reports", || {
+        !fake.reports().is_empty() || fake.unlinked()
+    });
+    assert!(!fake.unlinked(), "the server's page unlinked this computer");
     let report: Value = serde_json::from_str(&fake.reports()[0]).unwrap();
     assert_eq!(report["href"], format!("{}/app", fake.base));
     assert_eq!(report["cookie"], "", "the page cannot read the session");

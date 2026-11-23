@@ -27,6 +27,8 @@ const SOURCE: &str = "https://github.com/thejdubb02/clrd";
 
 /// The running app, for a second start that asks this one to open.
 static APP: OnceLock<AppHandle> = OnceLock::new();
+/// A second start asked for the window before `APP` was set.
+static ASKED: AtomicBool = AtomicBool::new(false);
 
 struct Shell {
     device: Device,
@@ -37,7 +39,9 @@ struct Shell {
     version: Mutex<Option<String>>,
     /// Why the window could not open, for the This computer page.
     note: Mutex<String>,
-    /// Held while the main window is being made, so two clicks make one.
+    /// Held while the main window is being made, so two clicks make one, and
+    /// by Unlink and Retry from start to end: a window or a sync thread that
+    /// one of them did not know about cannot appear while it works.
     opening: Mutex<()>,
 }
 
@@ -353,13 +357,16 @@ fn stop_sync(app: &AppHandle) {
 /// What the This computer page shows. Asking is also what moves a waiting
 /// link forward: the moment it is approved, sync starts and the window opens.
 #[tauri::command(async)]
-fn state(app: AppHandle) -> (View, String) {
+fn state(app: AppHandle) -> (View, String, bool) {
     let shell = app.state::<Shell>();
     if shell.device.poll().is_some() {
         start_sync(&app);
         open_main(&app);
     }
-    (shell.device.view(), status_line(&shell))
+    // The last says something went wrong in the app itself, so the page
+    // offers Retry for that too.
+    let noted = !shell.note.lock().unwrap().is_empty();
+    (shell.device.view(), status_line(&shell), noted)
 }
 
 #[tauri::command(async)]
@@ -373,8 +380,9 @@ fn cancel(app: AppHandle) {
 }
 
 #[tauri::command(async)]
-fn unlink(app: AppHandle) {
+fn unlink(app: AppHandle, page: tauri::WebviewWindow) {
     let shell = app.state::<Shell>();
+    let _one = shell.opening.lock().unwrap();
     let base = shell.device.linked().map(|l| l.base);
     stop_sync(&app);
     shell.device.unlink();
@@ -384,14 +392,17 @@ fn unlink(app: AppHandle) {
         }
     }
     // The session is ended on the server by now; this takes its cookie out
-    // of the web view too.
+    // of the web view too. Asked of the page that called, which is open: a
+    // window that was just destroyed never answers.
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.destroy();
     }
-    let url = base.and_then(|b| b.parse::<Url>().ok());
-    if let (Some(url), Some(any)) = (url, app.webview_windows().into_values().next()) {
-        for cookie in any.cookies_for_url(url).unwrap_or_default() {
-            let _ = any.delete_cookie(cookie);
+    if let Some(url) = base.and_then(|b| b.parse::<Url>().ok()) {
+        // Only ours: a proxy in front of the server may keep its own.
+        for cookie in page.cookies_for_url(url).unwrap_or_default() {
+            if cookie.name() == "clrd_session" {
+                let _ = page.delete_cookie(cookie);
+            }
         }
     }
     *shell.version.lock().unwrap() = None;
@@ -403,6 +414,7 @@ fn unlink(app: AppHandle) {
 #[tauri::command(async)]
 fn retry(app: AppHandle) {
     let shell = app.state::<Shell>();
+    let _one = shell.opening.lock().unwrap();
     stop_sync(&app);
     shell.note.lock().unwrap().clear();
     shell.device.reload();
@@ -431,10 +443,10 @@ fn main() {
     #[cfg(target_os = "linux")]
     let keys = match clrd_core::instance::session_bus() {
         Ok(conn) => {
-            let open = || {
-                if let Some(app) = APP.get() {
-                    open_main(app);
-                }
+            // Asked before this app is up: remembered, and done at setup.
+            let open = || match APP.get() {
+                Some(app) => open_main(app),
+                None => ASKED.store(true, Ordering::Relaxed),
             };
             if let Ok(false) = clrd_core::instance::claim(&conn, open) {
                 return;
@@ -469,7 +481,7 @@ fn main() {
             let tray = build_tray(app);
             start_sync(app);
             // Started by hand, or with no tray to reach it by: show a window.
-            if !hidden || tray.is_err() {
+            if !hidden || tray.is_err() || ASKED.load(Ordering::Relaxed) {
                 open_main(app);
             }
             Ok(())
