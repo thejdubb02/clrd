@@ -86,8 +86,18 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   twice. Set it up through the API or an agent over MCP. Delivery errors no
   longer show a webhook's URL.
 
+- Server: outgoing webhooks can open GitHub issues (#168). A hook with
+  `"kind": "github"` opens an issue in a repo for each new notification,
+  comments when it is acknowledged, answered or snoozed, and closes it when
+  it is cleared or resolved, so a coding agent that works from issues can
+  pick up an alert. Never for anonymous senders or questions, and at most 10
+  issues an hour per hook. Set it up through the API or an agent over MCP.
+
 ### Changed
 
+- Android: unsubscribing asks first for any topic the server marks as
+  carrying approval requests, from the Topics page or a card's menu, not
+  only for "agents" (#623). With an older server, "agents" still asks.
 - Web: Unsubscribe warns on any topic that has had an approval request or
   question, not only `agents` (#623).
 

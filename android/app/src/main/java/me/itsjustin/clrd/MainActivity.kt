@@ -420,7 +420,15 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     }
     ConfirmUnsubscribe(asking, { asking = null }, unsubscribeNow)
     // Only a token that follows subscriptions may change them; any other sees every topic anyway.
-    val topicMenu: @Composable (String) -> Unit = { t -> if (subs?.filtered == true) TopicMenu(t) { if (it == APPROVAL_TOPIC) asking = it else unsubscribeNow(it) } }
+    // The server says whether the topic carries approvals (#623).
+    val unsubscribe: (String) -> Unit = { t ->
+        val api = app.api()
+        app.io.execute {
+            val warn = asksFirst(t, runCatching { app.loadSubs(api) }.getOrNull())
+            scope.launch { if (warn) asking = t else unsubscribeNow(t) }
+        }
+    }
+    val topicMenu: @Composable (String) -> Unit = { t -> if (subs?.filtered == true) TopicMenu(t, unsubscribe) }
 
     Scaffold(
         containerColor = b.paper,
@@ -852,7 +860,7 @@ private fun TopicMenu(topic: String, unsubscribe: (String) -> Unit) {
     }
 }
 
-/** Unsubscribing from [topic], the approval topic, also hides approval prompts (SPEC 2.3), so it asks first. Null shows nothing. */
+/** Unsubscribing from [topic], which carries approvals, also hides approval prompts (SPEC 2.3), so it asks first. Null shows nothing. */
 @Composable
 private fun ConfirmUnsubscribe(topic: String?, dismiss: () -> Unit, go: (String) -> Unit) {
     topic ?: return
@@ -925,11 +933,11 @@ private fun SubscriptionSettings(app: App, resumes: Int, gone: () -> Unit) {
                 Text(t.topic, color = b.ink)
                 val last = t.lastAt?.let(::millisOf)?.let { ago(ctx, it) } ?: stringResource(R.string.subs_never)
                 Text(stringResource(R.string.subs_open, t.open) + "  ·  " + last, style = Mono, color = b.slate)
-                if (t.topic == APPROVAL_TOPIC) Text(stringResource(R.string.subs_agents_note), color = b.signal, fontSize = 13.sp)
+                if (t.approvals) Text(stringResource(R.string.subs_agents_note), color = b.signal, fontSize = 13.sp)
             }
             if (!t.subscribed) TextButton({ reading = t.topic }, Modifier.testTag("read-${t.topic}")) { Text(stringResource(R.string.subs_read), color = b.ink) }
             Switch(checked = t.subscribed, modifier = Modifier.testTag("sub-${t.topic}"), onCheckedChange = { on ->
-                if (!on && t.topic == APPROVAL_TOPIC) asking = t.topic else put(topicBody(t.topic, on))
+                if (!on && t.approvals) asking = t.topic else put(topicBody(t.topic, on))
             })
         }
     }

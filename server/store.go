@@ -297,6 +297,11 @@ type Notification struct {
 	RequestedTopic string `json:"requested_topic,omitempty"`
 }
 
+// asks: it waits for an answer, a confirm prompt or a reply button (#623).
+func (n *Notification) asks() bool {
+	return n.confirm != "" || slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply != "" })
+}
+
 // Attachment is a file on a notification: uploaded (URL is /api/v1/files/<id>)
 // or external (an http(s) URL the server never fetches; Type "" and Size 0).
 type Attachment struct {
@@ -669,7 +674,7 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 		_, err = tx.Exec(`UPDATE notifications SET cleared_at = CASE WHEN state IN (?, ?) THEN COALESCE(cleared_at, updated_at) END WHERE id = ?`,
 			Dismissed, Resolved, n.ID)
 	}
-	if err == nil && (n.confirm != "" || slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply != "" })) {
+	if err == nil && n.asks() {
 		// The topic has carried a question, so clients warn before leaving it (#623).
 		_, err = tx.Exec(`INSERT INTO topics (topic, approvals) VALUES (?, 1) ON CONFLICT (topic) DO UPDATE SET approvals = 1`, n.Topic)
 	}
