@@ -674,6 +674,10 @@ func TestSubscriptions(t *testing.T) {
 	if !f.subscribed("home") || f.subscribed("infra") || f.subscribed("backups") || f.NoNewTopics {
 		t.Fatalf("the list sent rows it did not change: %v, new topics off %v", f.subs, f.NoNewTopics)
 	}
+	// A server with no topics yet: the list has no rows, only the new-topics switch.
+	if w := post(url.Values{"new_topics_was": {"1"}}); w.Code != 303 || !f.NoNewTopics {
+		t.Fatalf("turning new topics off with no rows: %d, off %v, %v", w.Code, f.NoNewTopics, f.subs)
+	}
 	f.Unfiltered = true
 	if _, b := get(t, h, "/app/settings"); !strings.Contains(b, "Not available here") || strings.Contains(b, "data-subs-form") {
 		t.Fatal("a token with no user is offered a list it may not change")

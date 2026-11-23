@@ -1451,7 +1451,7 @@ func Handler(api API, baseURL string) http.Handler {
 		next := inboxNext(f.Get("next"), "/app/settings#topics")
 		var newTopics *bool
 		topics := map[string]bool{}
-		if f.Has("was") {
+		if f.Has("was") || f.Has("new_topics_was") { // the Settings list, maybe with no rows yet
 			for _, v := range f["was"] { // "1:name" or "0:name", as drawn
 				was, t, _ := strings.Cut(v, ":")
 				if on := slices.Contains(f["on"], t); on != (was == "1") {
