@@ -10,7 +10,7 @@
     "shortDescription": "clrd desktop",
     "windows": {
       "allowDowngrades": false,
-      "nsis": { "installMode": "currentUser" }
+      "nsis": { "installMode": "currentUser", "installerHooks": "./installer.nsh" }
     }
   },
   "app": {
