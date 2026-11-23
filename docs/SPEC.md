@@ -15,6 +15,7 @@ own server. There is no public instance and no default server.
 | `server/` | server | Go package `github.com/thejdubb02/clrd/server`, binary in `server/cmd/clrd`. |
 | `web/` | web | Inbox app and landing/docs pages, embedded in the binary via `embed`. |
 | `android/` | android | Kotlin app, Gradle, F-Droid ready. |
+| `desktop/` | desktop | Tray app for Windows and Linux (#162): Rust, Tauri 2. Section 8.1. |
 | `sdk/python`, `sdk/js`, `sdk/go` | integrations | Thin clients over the REST API. |
 | `server/mcp/` | integrations | MCP server mounted at `/mcp`. |
 | `plugins/`, `.claude-plugin/` | integrations | Agent plugins: `plugins/claude-code`, listed by the repo's Claude Code marketplace. |
@@ -725,6 +726,8 @@ and via. Values clients send today:
 | `web` | The web inbox, one notification |
 | `web_bulk` | The web inbox's Clear all or a stack's Clear |
 | `app_bulk` | The Android app's Clear on a stack |
+| `desktop_button` | The Clear button on a desktop system notification (section 8.1) |
+| `desktop_close` | Closing a desktop system notification, only with "closing clears everywhere" on (section 8.1) |
 | `web_form` | The web inbox's buttons with scripts off |
 | `mcp` | An agent through the MCP endpoint |
 | `ntfy` | An ntfy-compatible clear or delete |
@@ -1097,6 +1100,28 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.
 - `fastlane/metadata/android/` for F-Droid. Reproducible build, no proprietary deps.
 - UnifiedPush distributor support is a later issue, not v0.
+
+## 8.1 Desktop
+
+The tray app for Windows and Linux (#162), in `desktop/`. A Rust core holds
+the WebSocket and follows section 3 like any other client; the window loads
+the server's own `/app`. It links through the device link flow in section 4
+and is a linked device like any other, under the same Allowed, Ask and Denied
+rules. Its token lives in the OS keychain and is sent only as an
+`Authorization` header.
+
+- Each open notification = one system notification.
+- Closing a system notification (its close button, or the desktop's own
+  clear) only hides it on that computer and sends nothing, the same rule as
+  the Android tray (#265). On Linux only `NotificationClosed` with reason 2
+  (closed by the user) counts as a close; reason 1 (expired) and reason 3
+  (closed by the app itself) never send anything, in any setting.
+- The Clear button on a system notification is a deliberate click and does
+  sync: it dismisses with `via: "desktop_button"`.
+- "Closing clears everywhere" is a setting on that computer, off by default.
+  With it on, a close by the user dismisses with `via: "desktop_close"`.
+- An incoming `dismissed` or `resolved` event from any device always closes
+  the system notification.
 
 ## 9. Web
 
