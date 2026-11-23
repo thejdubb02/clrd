@@ -166,8 +166,8 @@ func (s *Server) statsRoutes() {
 		back := 7
 		if v := q.Get("days"); v != "" {
 			n, err := strconv.Atoi(v)
-			if err != nil || n < 1 {
-				return errf(400, "bad_request", "days must be a whole number of days, 1 or more")
+			if err != nil || n < 1 || n > 366 {
+				return errf(400, "bad_request", "days must be a whole number from 1 to 366")
 			}
 			back = n
 		}

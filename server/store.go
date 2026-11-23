@@ -469,12 +469,23 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	// cleared_at: when the row was dismissed or resolved, for time to clear
 	// (#120). Rows cleared before it existed take their last change.
-	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN cleared_at INTEGER`); err == nil {
-		if _, err := db.Exec(`UPDATE notifications SET cleared_at = updated_at WHERE state IN (?, ?)`, Dismissed, Resolved); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("fill cleared_at: %w", err)
+	if err := func() error { // one transaction, so a crash never leaves the column unfilled
+		tx, err := db.Begin()
+		if err != nil {
+			return err
 		}
-	} else if !strings.Contains(err.Error(), "duplicate column") {
+		defer tx.Rollback()
+		if _, err := tx.Exec(`ALTER TABLE notifications ADD COLUMN cleared_at INTEGER`); err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				return nil
+			}
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE notifications SET cleared_at = updated_at WHERE state IN (?, ?)`, Dismissed, Resolved); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("add cleared_at column: %w", err)
 	}

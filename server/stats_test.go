@@ -65,7 +65,7 @@ func TestStats(t *testing.T) {
 			t.Fatalf("token: %d, want %d", c, want)
 		}
 	}
-	for _, bad := range []string{"?days=0", "?days=400", fmt.Sprintf("?from=%d&to=%d", base, base), "?to=soon"} {
+	for _, bad := range []string{"?days=0", "?days=400", "?days=281474976710663", fmt.Sprintf("?from=%d&to=%d", base, base), "?to=soon"} {
 		if c, _ := call(t, ts, "GET", "/api/v1/stats"+bad, admin, nil); c != 400 {
 			t.Fatalf("%s: %d", bad, c)
 		}
