@@ -457,3 +457,56 @@ func TestSubscriptionsSkipWebPush(t *testing.T) {
 		t.Fatalf("subscribed topic pushes: %d", n)
 	}
 }
+
+// A topic that carried a reply action stays marked in topics and
+// subscriptions, past an icon cleared; a plain topic is not (#623).
+func TestTopicApprovals(t *testing.T) {
+	s, ts, admin := newTest(t)
+	browser := childOf(t, s, mkToken(t, s, "script", []string{ScopeRead}, nil))
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "plain", "message": "m"})
+	code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "custom", "message": "merge?",
+		"actions": []map[string]any{{"label": "Allow", "reply": "allow"}}})
+	for _, icon := range []string{"https://example.com/i.png", ""} {
+		if c, _ := call(t, ts, "PUT", "/api/v1/topics/custom", admin, map[string]any{"icon": icon}); c != 200 || code != 200 {
+			t.Fatalf("setup: %d %d", code, c)
+		}
+	}
+	marks := func(path, raw string) map[string]any {
+		t.Helper()
+		_, out := call(t, ts, "GET", path, raw, nil)
+		got := map[string]any{}
+		for _, x := range out["topics"].([]any) {
+			m := x.(map[string]any)
+			got[m["topic"].(string)] = m["approvals"]
+		}
+		return got
+	}
+	for _, g := range []map[string]any{marks("/api/v1/topics", admin), marks("/api/v1/subscriptions", browser)} {
+		if g["custom"] != true || g["plain"] != false {
+			t.Fatalf("approvals: %v", g)
+		}
+	}
+}
+
+// An upgrade marks the topics whose stored messages already ask (#623).
+func TestTopicApprovalsUpgrade(t *testing.T) {
+	open := reopener(t)
+	s := open()
+	raw := mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
+	tok := s.lookupToken(context.Background(), raw)
+	for _, in := range []PublishInput{{Topic: "asks", Message: "m", Actions: []Action{{Label: "Allow", Reply: "allow"}}}, {Topic: "plain", Message: "m"}} {
+		if _, err := s.Publish(context.Background(), tok, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.Exec(`ALTER TABLE topics DROP COLUMN approvals`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s = open()
+	defer s.Close()
+	ts, err := s.Topics(context.Background(), s.lookupToken(context.Background(), raw))
+	if err != nil || len(ts) != 2 || !ts[0].Approvals || ts[1].Approvals {
+		t.Fatalf("after upgrade: %v %+v", err, ts)
+	}
+}

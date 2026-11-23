@@ -1511,6 +1511,10 @@
               "type": ["string", "null"],
               "format": "date-time",
               "description": "When the newest notification on the topic arrived, null for none."
+             },
+             "approvals": {
+              "type": "boolean",
+              "description": "Whether a message that waits for an answer (a reply action or a confirm prompt) has ever been sent here, so clients warn before unsubscribing (#623). It stays true after the message is gone."
              }
             }
            }
@@ -6823,7 +6827,8 @@
       "topic": {"type": "string"},
       "subscribed": {"type": "boolean"},
       "open": {"type": "integer"},
-      "last_at": {"type": ["string", "null"], "format": "date-time"}
+      "last_at": {"type": ["string", "null"], "format": "date-time"},
+      "approvals": {"type": "boolean", "description": "As on GET /api/v1/topics (#623)."}
      }}}
     }
    },

@@ -28,6 +28,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   from its link, with a Subscribe button. Unsubscribing from agents warns
   first, since approval requests go there.
 
+- Server: the topics and subscriptions lists mark each topic that has
+  carried an approval request or another message waiting for an answer
+  (`approvals`), so apps can warn before you unsubscribe from it (#623).
 - Web: the foot of Settings links to the source code and to the issue tracker
   for reporting a problem, like the Android app (#586).
 - Topic subscriptions on the server (#617): unsubscribe from a topic and
