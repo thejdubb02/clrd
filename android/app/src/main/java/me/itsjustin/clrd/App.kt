@@ -422,7 +422,10 @@ class RoomStore(private val app: App) : Store {
 
     override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
-        val saved = dao.applyAll(notifs, seq)
+        // A row fetched outside the stream (seq 0, such as a queued action's answer) is not filtered by the server:
+        // one from a topic unsubscribed meanwhile must not come back after the reset dropped it (#617).
+        val subs = app.subs.value
+        val saved = dao.applyAll(if (seq == 0L && subs?.filtered == true) notifs.filter { subs.subscribed(it.topic) } else notifs, seq)
         if (answer) saved.forEach { app.ownAnswers.merge(it.id, it.seq, ::maxOf) }
         // #500: a live repeat Room dropped (our own mark's answer got in first) still rings the newer row, if that one shows unacked.
         // Only when the newer row differs by marks alone (#504): after a Clear and Undo it is a new state, and an Undo stays quiet.

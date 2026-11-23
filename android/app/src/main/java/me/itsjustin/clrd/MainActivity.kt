@@ -887,9 +887,19 @@ private fun SubscriptionSettings(app: App, resumes: Int, gone: () -> Unit) {
             try { app.loadSubs(api)?.let { list = it; error = null } ?: gone() } catch (e: Exception) { error = why(e) }
         }
     }
+    val sending = remember { java.util.concurrent.atomic.AtomicInteger() }
     val put = { body: org.json.JSONObject ->
+        // The switch flips at once, so a second tap on a slow connection sends the other value.
+        val t = body.optJSONObject("topics")
+        list = list?.let { l -> l.copy(newTopics = body.optBoolean("new_topics", l.newTopics), topics = l.topics.map { s -> if (t?.has(s.topic) == true) s.copy(subscribed = t.getBoolean(s.topic)) else s }) }
         val api = app.api()
-        app.io.execute { try { list = app.putSubs(body, api); error = null } catch (e: Exception) { error = why(e) } }
+        sending.incrementAndGet()
+        app.io.execute { // one thread, so changes reach the server in tap order; only the last answer shows
+            try { app.putSubs(body, api).let { if (sending.decrementAndGet() == 0) list = it }; error = null } catch (e: Exception) {
+                error = why(e)
+                if (sending.decrementAndGet() == 0) runCatching { app.loadSubs(api) }.getOrNull()?.let { list = it } // nothing changed on the server
+            }
+        }
     }
     if (!filtered) return Text(stringResource(R.string.subs_unfiltered), color = b.slate, fontSize = 13.sp)
     error?.let { Text(stringResource(R.string.subs_failed, it), color = b.signal, fontSize = 13.sp) }

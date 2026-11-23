@@ -38,6 +38,7 @@ class SubsTest {
     private val app = ApplicationProvider.getApplicationContext<App>()
     private val server = MockWebServer()
     private var listCode = 200
+    @Volatile private var slow = false
     private val puts = Collections.synchronizedList(mutableListOf<String>())
     private val list = """{"filtered":true,"new_topics":true,"topics":[
         {"topic":"agents","subscribed":true,"open":1,"last_at":"2026-11-20T10:00:00Z"},
@@ -48,7 +49,7 @@ class SubsTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
                 request.path == "/api/v1/subscriptions" && request.method == "PUT" -> {
-                    puts += request.body.readUtf8(); MockResponse().setBody(list)
+                    puts += request.body.readUtf8(); MockResponse().setBody(list).apply { if (slow) setBodyDelay(1, java.util.concurrent.TimeUnit.SECONDS) }
                 }
                 request.path == "/api/v1/subscriptions" -> MockResponse().setResponseCode(listCode).setBody(if (listCode == 200) list else """{"error":"not found"}""")
                 else -> MockResponse().setBody("{}")
@@ -111,6 +112,19 @@ class SubsTest {
         rule.onNodeWithTag("sub-chat").performScrollTo().assertIsOn().performClick()
         rule.waitUntil(5000) { puts.isNotEmpty() }
         assertEquals(listOf("""{"topics":{"chat":false}}"""), puts.toList())
+    }
+
+    @Test fun secondTapOnASlowConnectionSendsTheOtherValue() {
+        slow = true
+        settings("""{"filtered":true}""")
+        show()
+        search("subscribe")
+        waitFor("sub-chat")
+        rule.onNodeWithTag("sub-chat").performScrollTo().performClick()
+        rule.onNodeWithTag("sub-chat").assertIsOff() // before the server answers
+        rule.onNodeWithTag("sub-chat").performClick()
+        rule.waitUntil(10000) { puts.size == 2 }
+        assertEquals(listOf("""{"topics":{"chat":false}}""", """{"topics":{"chat":true}}"""), puts.toList())
     }
 
     @Test fun agentsAsksFirst() {
