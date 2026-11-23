@@ -14,6 +14,7 @@
       <a class="side-link" href="{{base}}/app/snoozed"{{if eq .View "snoozed"}} aria-current="page"{{end}}>{{template "i-clock"}}Snoozed <span class="count">{{.Snoozed}}</span></a>
       <a class="side-link" href="{{base}}/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>{{template "i-check-check"}}Cleared <span class="count">{{.Cleared}}</span></a>
       {{if .Snap.CanSenders}}<a class="side-link" href="{{base}}/app/senders"{{if eq .View "senders" "sender"}} aria-current="page"{{end}}>{{template "i-bot"}}Senders</a>{{end}}
+      {{if .Snap.CanSenders}}<a class="side-link" href="{{base}}/app/stats"{{if eq .View "stats"}} aria-current="page"{{end}}>{{template "i-layers"}}Stats</a>{{end}}
       <a class="side-link" href="{{base}}/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>{{template "i-settings"}}Settings</a>
     </nav>
     <nav class="order-3 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-labelledby="topics-h" data-live="topics"{{if not .Snap.Topics}} hidden{{end}}>
@@ -31,7 +32,7 @@
 
   <main id="main" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
     <div class="alert mb-4" data-variant="destructive" role="alert" data-offline hidden>{{template "i-wifi-off"}}<h2>Lost the live connection</h2><section>This page may be out of date. Still trying. <a href="" class="underline">Reload</a></section></div>
-    {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else}}
+    {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else if eq .View "stats"}}{{template "stats" .}}{{else}}
     <header class="mb-4 flex flex-wrap items-center gap-2 md:min-h-9 md:flex-nowrap">
       <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{.Heading}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
       {{if eq .View "inbox"}}<button type="button" class="btn js-only" data-variant="outline" data-send-open title="Send a notification">{{template "i-send"}}<span class="max-md:sr-only">Send</span></button>{{end}}
@@ -778,4 +779,47 @@
   {{else}}<p class="text-body text-sm">No changes yet.</p>{{end}}
 </section>
 {{end}}{{end}}
+{{end}}
+
+{{define "stats"}}
+<header class="mb-6 flex min-h-9 flex-wrap items-center gap-2">
+  <h1 class="me-auto truncate text-xl font-semibold tracking-tight">Stats</h1>
+  {{with .Snap.Stats}}<nav class="flex gap-1" aria-label="Range">{{$d := .Days}}{{range .Ranges}}<a class="btn" data-size="sm" data-variant="{{if eq . $d}}secondary{{else}}ghost{{end}}" href="{{base}}/app/stats?days={{.}}"{{if eq . $d}} aria-current="page"{{end}}>{{if eq . 1}}24 hours{{else}}{{.}} days{{end}}</a>{{end}}</nav>{{end}}
+</header>
+<div class="grid max-w-3xl gap-4" data-stats>
+  {{if not .Snap.CanSenders}}<p class="text-body text-sm">Only an admin token for every topic can see stats.</p>
+  {{else}}{{with .Snap.Stats}}
+  <p class="text-body text-sm/relaxed"><strong class="tabular-nums" data-total>{{.Total}}</strong> notifications, {{.Answered}} answered with a reply button. Times are UTC.</p>
+  {{if .Total}}<section class="bg-card grid gap-2 rounded-xl border p-4" aria-labelledby="st-vol">
+    <h2 id="st-vol" class="text-sm font-medium">Volume {{if eq .Days 1}}per hour{{else}}per day{{end}}</h2>
+    <svg viewBox="0 0 600 100" preserveAspectRatio="none" class="h-28 w-full" role="img" aria-label="Notifications {{if eq .Days 1}}per hour{{else}}per day{{end}}">
+      {{range .Bars}}<rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="1" class="fill-primary"><title>{{.Label}}: {{.Count}}</title></rect>{{end}}
+    </svg>
+  </section>
+  <section class="bg-card rounded-xl border" aria-labelledby="st-prio">
+    <h2 id="st-prio" class="px-4 pt-4 text-sm font-medium">Priority</h2>
+    <table class="table"><tbody>{{range .PriorityRows}}<tr><td>{{.Name}}</td><td class="tabular-nums">{{.Count}}</td></tr>{{end}}</tbody></table>
+  </section>
+  {{range .Tables}}{{template "stats-groups" .}}{{end}}
+  <section class="bg-card rounded-xl border" aria-labelledby="st-flap">
+    <h2 id="st-flap" class="px-4 pt-4 text-sm font-medium">Repeat alerts</h2>
+    <p class="text-body px-4 pt-1 text-sm">The same alert id sent more than once. These may want a quieter route.</p>
+    {{if .Flappers}}<table class="table"><thead><tr><th scope="col">Topic</th><th scope="col">Alert id</th><th scope="col">Times</th></tr></thead>
+      <tbody>{{range .Flappers}}<tr><td>{{.Topic}}</td><td class="whitespace-normal [overflow-wrap:anywhere]">{{.ExternalID}}</td><td class="tabular-nums">{{.Count}}</td></tr>{{end}}</tbody></table>
+    {{else}}<p class="text-body px-4 pb-4 text-sm">None in this range.</p>{{end}}
+  </section>
+  {{else}}<p class="text-body text-sm">Nothing arrived in this range.</p>{{end}}
+  {{end}}{{end}}
+</div>
+{{end}}
+
+{{define "stats-groups"}}{{$rows := .Rows}}
+<section class="bg-card rounded-xl border" aria-label="{{.Title}}">
+  <h2 class="px-4 pt-4 text-sm font-medium">{{.Title}}</h2>
+  {{if $rows}}<table class="table">
+    <thead><tr><th scope="col">{{.Col}}</th><th scope="col">Sent</th><th scope="col">Open</th><th scope="col" title="Half are cleared faster than this">Median clear</th><th scope="col" class="max-sm:hidden" title="Nine in ten are cleared faster than this">90% clear</th></tr></thead>
+    <tbody>{{range $rows}}<tr><td class="whitespace-normal [overflow-wrap:anywhere]">{{.Label}}</td><td class="tabular-nums">{{.Count}}</td><td class="tabular-nums">{{.Open}}</td>
+      <td class="tabular-nums">{{if .Cleared}}{{took .ClearMedianMS}}{{else}}-{{end}}</td><td class="tabular-nums max-sm:hidden">{{if .Cleared}}{{took .ClearP90MS}}{{else}}-{{end}}</td></tr>{{end}}</tbody>
+  </table>{{else}}<p class="text-body px-4 pb-4 text-sm">None in this range.</p>{{end}}
+</section>
 {{end}}
