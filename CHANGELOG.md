@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: set a sender's quiet alarm in Settings, how long it may stay
+  silent and which topic the alarm goes to, like the web (#119). Each field
+  saves on its own, a refused value shows the server's reason, and an open
+  alarm shows on the sender.
 - Web: Settings is now one page in five sections (Notifications, Inbox,
   Display, Devices, Integrations) with a search box (#575). It matches a
   setting's name, its description or keywords such as "do not disturb",

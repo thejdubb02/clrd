@@ -293,6 +293,15 @@
     <string name="rules_routes_hint">One a line: topic: target, target. Use * for any other topic. Nothing after the colon drops it.</string>
     <string name="rules_routes_bad">Each route needs a topic, a colon, then its targets, and each topic once.</string>
     <string name="rules_save_routes">Save routes</string>
+    <string name="rules_expect">Alarm if quiet for</string>
+    <string name="rules_expect_hint">One urgent alarm when it sends nothing for this long, like 25h or 30m. Its next notification clears the alarm. Empty is off.</string>
+    <string name="rules_save_expect">Save quiet alarm</string>
+    <string name="rules_alert_topic">Alarm topic</string>
+    <string name="rules_alert_topic_hint">Where the alarm goes. Empty means the topic it last sent to.</string>
+    <string name="rules_save_alert_topic">Save alarm topic</string>
+    <string name="rules_alarm_open">Quiet alarm open in %1$s</string>
+    <string name="rules_quiet">alarm if quiet for %1$s</string>
+    <string name="rules_alarm_to">alarm to %1$s</string>
     <string name="rules_failed">Could not change it: %1$s</string>
     <string name="rules_changes">Change log</string>
     <string name="rules_no_changes">No changes yet. An anonymous sender\'s log can age out.</string>

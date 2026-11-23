@@ -1209,6 +1209,8 @@ internal fun rulesSummary(ctx: Context, r: org.json.JSONObject?): String {
         p += ctx.getString(R.string.rules_route, if (k == "*") ctx.getString(R.string.rules_any_topic) else k,
             to.joinToString(", ").ifEmpty { ctx.getString(R.string.rules_nowhere) })
     }
+    r.optString("expect").takeIf { it.isNotEmpty() }?.let { p += ctx.getString(R.string.rules_quiet, it) }
+    r.optString("alert_topic").takeIf { it.isNotEmpty() }?.let { p += ctx.getString(R.string.rules_alarm_to, it) }
     return p.joinToString(", ").ifEmpty { ctx.getString(R.string.rules_none) }
 }
 
@@ -1233,11 +1235,11 @@ internal fun parseRoutes(text: String): org.json.JSONObject? {
 }
 
 /**
- * Pause, mute, priority range and routes for one sender, and its change log with Undo (#119, docs/SPEC.md 5.1).
+ * Pause, mute, priority range, routes and the quiet alarm for one sender, and its change log with Undo (#119, docs/SPEC.md 5.1).
  * Each control sends only its own field, so a screen loaded before someone else's change never undoes theirs.
  */
 @Composable
-private fun SenderRules(app: App, d: org.json.JSONObject, changed: () -> Unit) {
+internal fun SenderRules(app: App, d: org.json.JSONObject, changed: () -> Unit) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val rules = d.optJSONObject("rules") ?: org.json.JSONObject()
@@ -1278,13 +1280,21 @@ private fun SenderRules(app: App, d: org.json.JSONObject, changed: () -> Unit) {
             }
         }
     }
-    val saved = routeLines(rules)
-    var routes by remember(d.optString("id"), saved) { mutableStateOf(saved) } // kept while typing; a new saved value replaces it
-    OutlinedTextField(routes, { routes = it }, enabled = !busy, label = { Text(stringResource(R.string.rules_routes)) }, minLines = 2, textStyle = Mono, modifier = Modifier.fillMaxWidth())
-    Text(stringResource(R.string.rules_routes_hint), color = b.slate, fontSize = 12.sp)
-    TextButton(enabled = !busy && routes != saved, onClick = {
-        parseRoutes(routes)?.let { put(org.json.JSONObject().put("routes", it)) } ?: run { error = ctx.getString(R.string.rules_routes_bad) }
-    }) { Text(stringResource(R.string.rules_save_routes), color = b.ink) }
+    // Typed text is kept while editing and after a refusal; a new saved value replaces it.
+    @Composable fun Field(key: String, saved: String, label: Int, hint: Int, save: Int, lines: Int, value: (String) -> Any?) {
+        var text by remember(d.optString("id"), saved) { mutableStateOf(saved) }
+        OutlinedTextField(text, { text = it }, enabled = !busy, label = { Text(stringResource(label)) }, minLines = lines, singleLine = lines == 1,
+            textStyle = Mono, modifier = Modifier.fillMaxWidth().testTag("rule-$key"))
+        Text(stringResource(hint), color = b.slate, fontSize = 12.sp)
+        TextButton(enabled = !busy && text != saved, onClick = {
+            value(text)?.let { put(org.json.JSONObject().put(key, it)) } ?: run { error = ctx.getString(R.string.rules_routes_bad) }
+        }) { Text(stringResource(save), color = b.ink) }
+    }
+    Field("routes", routeLines(rules), R.string.rules_routes, R.string.rules_routes_hint, R.string.rules_save_routes, 2, ::parseRoutes)
+    // The quiet alarm (#119 part 3): off until set, an emptied field turns it off; the server checks the value.
+    Field("expect", rules.optString("expect"), R.string.rules_expect, R.string.rules_expect_hint, R.string.rules_save_expect, 1) { it.trim() }
+    Field("alert_topic", rules.optString("alert_topic"), R.string.rules_alert_topic, R.string.rules_alert_topic_hint, R.string.rules_save_alert_topic, 1) { it.trim() }
+    d.optString("alarm").takeIf { it.isNotEmpty() }?.let { Text(stringResource(R.string.rules_alarm_open, it), color = b.signal, fontSize = 13.sp) }
     error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
     Text(stringResource(R.string.rules_changes), color = b.ink, fontWeight = FontWeight.SemiBold)
     val log = objects(d, "log")
