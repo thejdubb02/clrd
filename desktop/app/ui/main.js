@@ -3,7 +3,8 @@
 const invoke = window.__TAURI_INTERNALS__.invoke;
 const $ = (id) => document.getElementById(id);
 
-function show([view, status, noted, offer]) {
+function show([view, status, noted, offer, closing]) {
+  $('close-clears').checked = closing;
   const waiting = view.check !== '';
   const linked = view.server !== '';
   // A link the browser handed over. Any page can send one, so it only goes
@@ -63,6 +64,14 @@ $('plain-yes').addEventListener('click', () => start(true));
 $('plain-no').addEventListener('click', () => { $('plain').hidden = true; });
 $('cancel').addEventListener('click', () => run('cancel'));
 $('retry').addEventListener('click', () => run('retry'));
+// A change that could not be saved is said, and the switch goes back to
+// what is kept. One change at a time, so the last click is the one kept.
+$('close-clears').addEventListener('change', async (e) => {
+  e.target.disabled = true;
+  $('setting-error').textContent = await invoke('set_close_clears', { on: e.target.checked }).then(() => '', String);
+  await refresh();
+  e.target.disabled = false;
+});
 $('unlink').addEventListener('click', () => { $('sure').hidden = false; });
 $('sure-no').addEventListener('click', () => { $('sure').hidden = true; });
 $('sure-yes').addEventListener('click', () => {

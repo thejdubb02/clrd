@@ -13,6 +13,7 @@
 
 use clrd_core::device::{Device, View};
 use clrd_core::keychain::Keychain;
+use clrd_core::setting::CloseClears;
 use clrd_core::{Engine, Error, Server, Status};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -56,6 +57,14 @@ struct Shell {
     /// by Unlink and Retry from start to end: a window or a sync thread that
     /// one of them did not know about cannot appear while it works.
     opening: Mutex<()>,
+    /// "Closing clears everywhere", read once the app knows its folder.
+    close_clears: OnceLock<CloseClears>,
+}
+
+fn close_clears(app: &AppHandle) -> Result<&CloseClears, String> {
+    let path = state_file(app)?.with_file_name("close-clears");
+    let shell = app.state::<Shell>().inner();
+    Ok(shell.close_clears.get_or_init(|| CloseClears::open(path)))
 }
 
 /// One line on where things stand, for the tray and the This computer page.
@@ -313,12 +322,10 @@ fn sink(_: &AppHandle, _: Arc<Server>) -> Result<Quiet, String> {
 /// System notifications, on a bus connection of their own.
 #[cfg(target_os = "linux")]
 fn sink(app: &AppHandle, server: Arc<Server>) -> Result<clrd_core::notify::Notifier, String> {
+    let close_clears = close_clears(app)?.flag();
     let app = app.clone();
     clrd_core::instance::session_bus()
         .and_then(|conn| {
-            // "Closing clears everywhere" stays off until there is a
-            // settings screen to turn it on.
-            let close_clears = Arc::new(AtomicBool::new(false));
             clrd_core::notify::Notifier::new(conn, server, close_clears, move |_| open_main(&app))
         })
         .map_err(|e| format!("Notifications cannot be shown: {e}"))
@@ -384,7 +391,7 @@ fn stop_sync(app: &AppHandle) {
 /// What the This computer page shows. Asking is also what moves a waiting
 /// link forward: the moment it is approved, sync starts and the window opens.
 #[tauri::command(async)]
-fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>) {
+fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>, bool) {
     let shell = app.state::<Shell>();
     if shell.device.poll().is_some() {
         start_sync(&app);
@@ -392,10 +399,26 @@ fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>) {
     }
     // The third says something went wrong in the app itself, so the page
     // offers Retry for that too. The last is a link the browser handed
-    // over and the server it names, for the page to put in the box.
+    // over and the server it names, for the page to put in the box. Then
+    // the "Closing clears everywhere" switch.
     let noted = !shell.note.lock().unwrap().is_empty();
     let offer = shell.device.take_offer();
-    (shell.device.view(), status_line(&shell), noted, offer)
+    let closing = close_clears(&app).is_ok_and(CloseClears::get);
+    (
+        shell.device.view(),
+        status_line(&shell),
+        noted,
+        offer,
+        closing,
+    )
+}
+
+/// The switch on the This computer page. Counts from the next close on.
+#[tauri::command(async)]
+fn set_close_clears(app: AppHandle, on: bool) -> Result<(), String> {
+    close_clears(&app)?
+        .set(on)
+        .map_err(|e| format!("The setting could not be saved: {e}"))
 }
 
 #[tauri::command(async)]
@@ -513,9 +536,15 @@ fn main() {
             version: Mutex::default(),
             note: Mutex::default(),
             opening: Mutex::default(),
+            close_clears: OnceLock::new(),
         })
         .invoke_handler(tauri::generate_handler![
-            state, start, cancel, unlink, retry
+            state,
+            start,
+            cancel,
+            unlink,
+            retry,
+            set_close_clears
         ])
         .setup(move |app| {
             let app = app.handle();
