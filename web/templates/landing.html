@@ -30,6 +30,17 @@
   </figure>
 </section>
 
+<section class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 pb-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:pb-18" aria-labelledby="inbox">
+  <div>
+    <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="inbox">The web inbox</h2>
+    <p class="mt-2 max-w-[60ch] text-lg">Every alert is a card you can act on. Clear it, acknowledge it, snooze it, answer an agent's question, or mark that you dealt with it so the rest of the team knows.</p>
+    <p class="text-muted-foreground mt-3 text-sm">This sample is drawn by the same template as the real inbox, so it always matches it. The buttons do nothing here.</p>
+  </div>
+  {{with demo}}{{$d := .}}<fieldset class="grid min-w-0 gap-2" disabled inert aria-label="Sample inbox">
+    {{range .Items}}{{template "card" (card . "demo" "" $d.Snap)}}{{end}}
+  </fieldset>{{end}}
+</section>
+
 <section class="bg-card border-y" aria-labelledby="how">
   <div class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-18">
     <div>
