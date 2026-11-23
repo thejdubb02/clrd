@@ -1907,6 +1907,105 @@ try {
     console.log('ok: settings sit in five sections, search finds by keyword, goes to the match, shows an empty state and clears; without script all sections show');
   }
 
+  // Motion (#598, SPEC 10.1), on its own server so no other card is in the way.
+  // A recorder in the page logs each card animation and slide as it starts,
+  // so a 200ms step is never missed on a busy machine.
+  {
+    const p3 = await new Promise(ok => { const s = createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+    const b3 = `http://127.0.0.1:${p3}`;
+    const env3 = { ...process.env, CLRD_DB: join(mkdtempSync(join(tmpdir(), 'clrd-motion-')), 'clrd.db'), CLRD_LISTEN: `127.0.0.1:${p3}`, CLRD_BASE_URL: b3 + '/' };
+    const mk = name => execFileSync(bin, ['token', 'create', '--name', name, '--scope', 'admin', '--approve', 'allowed'], { env: env3, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const tok = mk('motion'), other = mk('other-phone');
+    const srv3 = spawn(bin, [], { env: env3, stdio: 'inherit' });
+    const post3 = async (path, body) => {
+      const r = await fetch(b3 + path, { method: 'POST', headers: { Authorization: `Bearer ${other}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      assert.equal(r.status, 200, `${path}: ${r.status}`);
+      return r.json();
+    };
+    const send = title => post3('/api/v1/notifications', { topic: 'motion', title });
+    try {
+      for (let i = 0; ; i++) {
+        try { if ((await fetch(b3 + '/healthz')).ok) break; } catch {}
+        if (i > 50) throw new Error('motion server did not start');
+        await new Promise(r => setTimeout(r, 100));
+      }
+      const old = await send('Was here first');
+      const ctx = await browser.newContext();
+      await ctx.addInitScript(() => {
+        window.moves = [];
+        const rec = e => {
+          const c = e.target;
+          if (e.pseudoElement || !c.matches || !c.matches('article.card')) return;
+          const name = e.type === 'animationstart' ? e.animationName : e.propertyName;
+          if (name === 'opacity') return;
+          const entry = { name, title: c.querySelector('.card-title')?.textContent.trim(), at: e.timeStamp };
+          window.moves.push(entry);
+          // A card sliding out past the list's edge must not widen the page.
+          if (name === 'transform') setTimeout(() => { entry.wide = document.documentElement.scrollWidth > document.documentElement.clientWidth; }, 150); // mid-slide, past the edge
+        };
+        addEventListener('animationstart', rec, true);
+        addEventListener('transitionrun', rec, true);
+      });
+      const mp = await ctx.newPage();
+      await mp.setViewportSize({ width: 390, height: 800 });
+      await mp.goto(`${b3}/app?auth=${Buffer.from(`Bearer ${tok}`).toString('base64url')}`);
+      await mp.locator('.is-live').waitFor({ timeout: 5000 });
+      const mc = t => mp.locator('article.card', { hasText: t });
+      const moved = (name, title) => mp.evaluate(([n, t]) => window.moves.some(m => m.name === n && m.title === t), [name, title]);
+      await mc('Was here first').waitFor();
+      await mp.waitForTimeout(400);
+      assert.equal(await moved('clrd-in', 'Was here first'), false, 'a card already there on first load slid in');
+
+      // Live, tab in front: it slides in and wiggles once.
+      await send('Just arrived');
+      await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Just arrived'));
+      assert.ok(await moved('clrd-in', 'Just arrived'), 'a live card did not slide in');
+
+      // A burst: all slide in, only the newest wiggles.
+      await Promise.all(['Burst one', 'Burst two'].map(send));
+      await send('Burst three');
+      await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Burst three'));
+      const burst = await mp.evaluate(() => window.moves.filter(m => m.title.startsWith('Burst')).map(m => `${m.name}:${m.title}`));
+      assert.ok(burst.includes('clrd-in:Burst one') && burst.includes('clrd-in:Burst two'), `a burst card did not slide in: ${burst}`);
+      assert.ok(!burst.includes('clrd-wiggle:Burst one') && !burst.includes('clrd-wiggle:Burst two'), `an older card in a burst wiggled: ${burst}`);
+
+      // Tab in the background: the card is there when the person comes back, with no motion.
+      await mp.evaluate(() => Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }));
+      await send('Came while away');
+      await mc('Came while away').waitFor();
+      await mp.waitForTimeout(400);
+      assert.equal(await moved('clrd-in', 'Came while away'), false, 'a card that came while the tab was hidden slid in');
+      await mp.evaluate(() => delete document.visibilityState);
+
+      // Cleared on another device: the reason shows, then it slides away, without widening the page.
+      await post3(`/api/v1/notifications/${old.id}/dismiss`);
+      await until(mp, () => window.moves.some(m => m.name === 'transform' && m.title === 'Was here first'));
+      await mc('Was here first').waitFor({ state: 'detached' });
+      assert.equal(await mp.evaluate(() => window.moves.find(m => m.name === 'transform' && m.title === 'Was here first').wide), false, 'a sliding card widened the page');
+
+      // Clear all: each card starts its slide a little after the one above it.
+      const top = (await mp.locator('article.card .card-title').allTextContents()).map(t => t.trim());
+      assert.equal(top.length, 5, `cards before Clear all: ${top}`);
+      await mp.getByRole('button', { name: 'Clear all' }).first().click();
+      await until(mp, () => window.moves.filter(m => m.name === 'transform').length >= 6);
+      const order = await mp.evaluate(() => window.moves.filter(m => m.name === 'transform' && m.title !== 'Was here first').map(m => [m.title, m.at]));
+      assert.deepEqual(order.map(o => o[0]), top, `Clear all slid out of order: ${order}`);
+      // 40ms a card, so 160ms from first to last; a busy machine can only fire the first one late.
+      assert.ok(order.at(-1)[1] - order[0][1] >= 80, `Clear all did not stagger: ${order}`);
+
+      // Reduce motion: a live card just appears and a cleared one just goes.
+      await mp.emulateMedia({ reducedMotion: 'reduce' });
+      await mp.evaluate(() => { window.moves = []; });
+      const still = await send('Quiet arrival');
+      await mc('Quiet arrival').waitFor();
+      await post3(`/api/v1/notifications/${still.id}/dismiss`);
+      await mc('Quiet arrival').waitFor({ state: 'detached' });
+      assert.deepEqual(await mp.evaluate(() => window.moves), [], 'something moved with reduce motion on');
+      await ctx.close();
+      console.log('ok: a live card slides in and wiggles, only the newest in a burst, none on load or while hidden; clears slide away and Clear all staggers; reduce motion plays nothing');
+    } finally { srv3.kill(); }
+  }
+
   // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
   // scripts send every request inside it, and a setting saved from the page
   // reaches the server.
