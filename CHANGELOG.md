@@ -11,6 +11,10 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: set a sender's quiet alarm in Settings, how long it may stay
+  silent and which topic the alarm goes to, like the web (#119). Each field
+  saves on its own, a refused value shows the server's reason, and an open
+  alarm shows on the sender.
 - Android: choose the buttons each swipe on a card reveals, in Settings, up
   to 3 per side (#161). The choice is saved on your server, so every phone
   follows it; offline the app keeps the last one it saw. A token that may not

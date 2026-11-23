@@ -855,9 +855,9 @@ refuses comes back with its message by that field) and each change
 has an Undo button, for the same admins only; anyone
 else gets 403. The form sends `base_seq`, so saving a page drawn before a
 newer change is refused rather than undoing that change. The Android app
-lists them in Settings with the same rules, change log and Undo, for the same
-admins, and sends one field per change; for anyone else the section stays
-hidden.
+lists them in Settings with the same rules (the silence alarm's `expect` and
+`alert_topic` below included), change log and Undo, for the same admins, and
+sends one field per change; for anyone else the section stays hidden.
 
 The silence alarm: `expect` (a duration, 1m to 8784h, like `"25h"`; `""`
 for off) makes the server watch the sender. When it has sent nothing,
