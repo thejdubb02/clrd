@@ -804,9 +804,12 @@ try {
     assert.ok(release, 'no page fetch after a change');
     // Another device clears one inside the closed stack: the count and newest
     // title change at once, not after the hidden card's exit timer (about 1.7 s).
+    // The exit path marks the card leaving first: watch for that, not the clock (#714).
+    await sp.evaluate(id => { const c = document.querySelector(`.card[data-id="${id}"][hidden]`); window.hiddenLeft = !c;
+      if (c) new MutationObserver(() => { if (c.classList.contains('is-leaving')) window.hiddenLeft = true; }).observe(c, { attributes: true }); }, ids[3]);
     await api(phone, `/api/v1/notifications/${ids[3]}/dismiss`);
-    // 1.5 s: room for a slow runner, still short of that exit timer (#714).
-    await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor({ timeout: 1500 });
+    await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor();
+    assert.equal(await sp.evaluate(() => window.hiddenLeft), false, 'the hidden card was missing or took the exit timer');
     await sp.evaluate(() => { window.backAgain = false; new MutationObserver(() => { if (document.querySelector('[data-stack="ci-stack"] [data-stack-count]')?.textContent === '4 notifications') window.backAgain = true; }).observe(document.querySelector('[data-list]'), { childList: true, subtree: true, characterData: true }); });
     release();
     await sp.waitForTimeout(1000);
