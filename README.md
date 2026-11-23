@@ -98,7 +98,9 @@ offline catches up the moment it reconnects.
   notifications through Web Push even with the tab closed (off until you
   turn them on in Settings; needs HTTPS), silences
   started and ended from Settings, a dot for each linked device (up to six)
-  showing which are connected, dark mode, phone width.
+  showing which are connected, dark mode, phone width. Settings sit in five
+  sections with a search box that also finds a setting by keywords such as
+  "do not disturb".
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, notifications stacked by
   topic if you turn it on (off by default), Share and Copy, Markdown formatting and tappable links, a Send

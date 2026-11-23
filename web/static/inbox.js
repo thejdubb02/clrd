@@ -179,6 +179,36 @@
   }
   addEventListener('storage', e => { if (e.key === 'clrd.stack') { stacking = e.newValue === '1'; restack(); tidy(); } });
 
+  // Settings search (#575): match the typed text in a setting's label, its
+  // description or its keywords; hide the rest. Enter goes to the first match.
+  const sq = $('[data-settings-q]');
+  if (sq) {
+    const sets = [...document.querySelectorAll('[data-setting]')].map(s => [s, `${s.querySelector('h3').textContent} ${[...s.querySelectorAll(':scope > p')].map(p => p.textContent).join(' ')} ${s.dataset.keywords}`.toLowerCase()]);
+    const none = $('[data-settings-none]'), said = $('[data-settings-n]');
+    const shown = s => s.style.display !== 'none' && !s.hidden; // hidden: not on this device
+    const filter = () => {
+      const t = sq.value.trim().toLowerCase();
+      for (const [s, text] of sets) s.style.display = text.includes(t) ? '' : 'none';
+      for (const g of document.querySelectorAll('[data-settings-group]')) g.style.display = !t || sets.some(([s]) => g.contains(s) && shown(s)) ? '' : 'none';
+      const n = sets.filter(([s]) => shown(s)).length;
+      none.hidden = !t || n > 0;
+      $('[data-settings-term]').textContent = sq.value.trim();
+      said.textContent = !t ? '' : n ? `${n} ${n === 1 ? 'setting matches' : 'settings match'}. Press Enter to go to the first.` : 'No settings match';
+    };
+    sq.addEventListener('input', filter);
+    sq.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      e.preventDefault();
+      const hit = sets.find(([s]) => shown(s))?.[0];
+      if (!hit) return;
+      history.replaceState(null, '', '#' + hit.id);
+      hit.tabIndex = -1;
+      hit.focus();
+    });
+    $('[data-settings-clear]').addEventListener('click', () => { sq.value = ''; filter(); sq.focus(); });
+    addEventListener('hashchange', () => { if (sq.value) { sq.value = ''; filter(); } }); // a link to a setting the search hid
+  }
+
   // Sound for a new notification while the page is open (#282, SPEC 2.2).
   // The server keeps each device's choice, so an agent can set it too (#297).
   // A choice the server refused (a token limited to some topics, no
