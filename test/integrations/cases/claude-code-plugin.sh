@@ -97,6 +97,41 @@ done
 [ "$state" = resolved ] || fail "the phone's prompt is still $state after an on-screen answer"
 ok "a prompt answered on screen leaves the phone"
 
+# #420: the hook removes its own pending file however it ends, so a later
+# sweep never stops a reused pid, and stopping the hook (Claude Code on Deny)
+# still clears the phone.
+ask() {
+  echo "{\"session_id\":\"s-420\",\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$1\"}}" |
+    "$H" approve >"$WORK/decision3" &
+  hook=$! id=
+  for _ in $(seq 40); do
+    id=$(api "/api/v1/notifications?topic=agents" | jq -r --arg m "$1" '[.notifications[] | select(.message == $m)][0].id // empty')
+    [ -n "$id" ] && break
+    sleep 0.5
+  done
+  [ -n "$id" ] || fail "no approval notification for $1"
+}
+nofiles() { [ -z "$(ls -A "$CLAUDE_PLUGIN_DATA/pending")" ] || fail "$1 left a pending file: $(ls "$CLAUDE_PLUGIN_DATA/pending")"; }
+nofiles "a sweep"
+ask "touch phone420"
+[ -n "$(ls -A "$CLAUDE_PLUGIN_DATA/pending")" ] || fail "a waiting hook has no pending file"
+[ "$(reply "$CLRD_PHONE")" = 200 ] || fail "the phone could not answer"
+wait $hook || fail "approve hook failed after a phone answer"
+check "$(cat "$WORK/decision3")" '.hookSpecificOutput.decision.behavior == "allow"' "decision after a phone answer"
+nofiles "a phone answer"
+ask "touch deny420"
+kill -TERM $hook
+wait $hook && fail "a stopped approve hook exited 0"
+[ ! -s "$WORK/decision3" ] || fail "a stopped approve hook printed a decision: $(cat "$WORK/decision3")"
+nofiles "a stopped hook"
+for _ in $(seq 20); do
+  state=$(api "/api/v1/notifications/$id" | jq -r .state)
+  [ "$state" = resolved ] && break
+  sleep 0.5
+done
+[ "$state" = resolved ] || fail "the phone's prompt is still $state after the hook was stopped"
+ok "the approve hook cleans up its pending file, and stopping it clears the phone"
+
 cmd="npm i -g --silent --no-fund --no-audit @anthropic-ai/claude-code@2.1.329 >/dev/null && claude plugin validate /repo && claude plugin validate /repo/plugins/claude-code"
 out=$(dock -v "$ROOT:/repo:ro" -e HOME=/tmp -e npm_config_prefix=/tmp/npm -e PATH=/tmp/npm/bin:/usr/local/bin:/usr/bin:/bin -e DISABLE_AUTOUPDATER=1 node:22-slim sh -ec "$cmd" 2>&1) || fail "claude plugin validate: $out"
 ok "claude plugin validate passes for the marketplace and the plugin"
