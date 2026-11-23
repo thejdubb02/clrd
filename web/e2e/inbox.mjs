@@ -1369,20 +1369,24 @@ try {
     await (await settled).finished(); // the whole body, which the redraw reads before it swaps
     const sel = bp.locator('select[data-name="asker"]');
     assert.deepEqual(await sel.locator('option').allTextContents(), ['Denied', 'Ask', 'Allowed'], 'menu for another tree');
+    // Wait on the saved setting, not the toast: a toast can come and go
+    // before a busy runner looks for it (#599).
+    const devices = async () => (await (await fetch(base + '/api/v1/devices?all=1', { headers: { Authorization: `Bearer ${laptop}` } })).json()).devices;
+    const saved = async (name, want, msg) => {
+      for (let i = 0; (await devices()).find(d => d.name === name).approve !== want; i++) { assert.ok(i < 40, msg); await new Promise(r => setTimeout(r, 250)); }
+    };
     await sel.selectOption('denied');
-    await bp.locator('[data-toast]').filter({ hasText: 'asker may approve: Denied.' }).waitFor({ state: 'attached' });
-    const list = await (await fetch(base + '/api/v1/devices?all=1', { headers: { Authorization: `Bearer ${laptop}` } })).json();
-    assert.equal(list.devices.find(d => d.name === 'asker').approve, 'denied', 'the menu did not save');
+    await saved('asker', 'denied', 'the menu did not save');
 
     // Its own row lowers after a confirm, and then the menus are gone: nothing raises it back here.
     const own = bp.locator('select[data-name="boss-web"]');
     assert.ok(await own.evaluate(s => s.hasAttribute('data-own')), 'own row not marked');
     bp.once('dialog', d => { assert.match(d.message(), /Lower boss-web to Ask\?/); d.accept(); });
     await own.selectOption('ask');
-    await bp.locator('[data-toast]').filter({ hasText: 'boss-web may approve: Ask.' }).waitFor({ state: 'attached' });
+    await saved('boss-web', 'ask', 'boss-web did not lower itself to Ask');
     await bp.reload();
     assert.equal(await bp.locator('[data-approve]').count(), 0, 'a device that lowered itself to Ask can still change settings');
-    const up = await bctx.request.put(base + '/api/v1/devices/' + list.devices.find(d => d.name === 'boss-web').id + '/approve', { data: { approve: 'allowed' }, headers: { Origin: base } });
+    const up = await bctx.request.put(base + '/api/v1/devices/' + (await devices()).find(d => d.name === 'boss-web').id + '/approve', { data: { approve: 'allowed' }, headers: { Origin: base } });
     assert.equal(up.status(), 403, `an Ask browser raised itself: ${up.status()}`);
     await actx.close();
     await bctx.close();
