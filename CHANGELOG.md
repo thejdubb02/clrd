@@ -19,6 +19,12 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Added
 
 - Color rules on the server: color cards by topic, tag, priority or title text, as a bar, tint, solid fill or gradient, set through the settings API or an agent over MCP. Senders can give a message its own color. The web and Android screens for them come next.
+- Web: a cleared card now slides away and the cards below close the gap, on
+  every kind of clear, and Clear all goes top to bottom (#598). A card that
+  arrives while you are looking slides in with one small wiggle; nothing
+  plays on load, after a reconnect or for cards that came while the tab was
+  in the background, and nothing moves with reduce motion on. The timings are
+  in SPEC section 10.1 so every app matches.
 
 ## 0.1.0 - 2026-11-23
 
