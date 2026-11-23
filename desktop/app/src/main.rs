@@ -135,6 +135,20 @@ fn on_menu(app: &AppHandle, id: &str) {
     }
 }
 
+/// Whether a tray icon can be made. On Linux the tray crate loads its
+/// library at run time and ends the whole app when it is missing, so this
+/// asks first, for the same two names (libappindicator-sys 0.9).
+fn tray_library() -> bool {
+    #[cfg(target_os = "linux")]
+    return ["libayatana-appindicator3.so.1", "libappindicator3.so.1"]
+        .iter()
+        // Loading a system library runs its start-up code, which is what
+        // the tray crate is about to do with the same file anyway.
+        .any(|name| unsafe { libloading::Library::new(name) }.is_ok());
+    #[cfg(not(target_os = "linux"))]
+    true
+}
+
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let mut tray = TrayIconBuilder::with_id("tray")
         .menu(&menu(app)?)
@@ -478,10 +492,16 @@ fn main() {
         .setup(move |app| {
             let app = app.handle();
             let _ = APP.set(app.clone());
-            let tray = build_tray(app);
+            let tray = tray_library() && build_tray(app).is_ok();
+            if !tray {
+                eprintln!(
+                    "clrd: no tray icon. On Linux it needs libayatana-appindicator3-1. \
+                     Start clrd again to bring its window back."
+                );
+            }
             start_sync(app);
             // Started by hand, or with no tray to reach it by: show a window.
-            if !hidden || tray.is_err() || ASKED.load(Ordering::Relaxed) {
+            if !hidden || !tray || ASKED.load(Ordering::Relaxed) {
                 open_main(app);
             }
             Ok(())

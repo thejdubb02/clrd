@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=clrd
+Comment=Notifications that clear on every device
+Exec=clrd-desktop
+Icon=clrd
+Terminal=false
+Categories=Network;

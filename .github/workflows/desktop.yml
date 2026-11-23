@@ -39,7 +39,7 @@ jobs:
         # the real keychain the token tests store into, on that same bus.
         # The app links the system's web view and tray libraries, and its
         # test runs the real binary on a virtual screen (xvfb, with xauth).
-        run: sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev dbus-daemon gnome-keyring libwebkit2gtk-4.1-dev libayatana-appindicator3-dev xvfb xauth
+        run: sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev dbus-daemon gnome-keyring libwebkit2gtk-4.1-dev libayatana-appindicator3-dev xvfb xauth desktop-file-utils
       - name: rust toolchain
         # rustup itself is pinned by checksum; the compiler version comes
         # from desktop/rust-toolchain.toml, which cargo installs on first use.
@@ -72,3 +72,15 @@ jobs:
         run: |
           cargo build --locked --release -p clrd-desktop
           ../.github/size-check.sh desktop "$CARGO_TARGET_DIR/release/clrd-desktop"
+      - name: package (.deb)
+        # Built and checked on every run so it cannot rot. Not published
+        # anywhere: it stays a workflow file for a few days.
+        run: |
+          deb=$(package/deb.sh "$CARGO_TARGET_DIR/release/clrd-desktop" "$RUNNER_TEMP/deb")
+          ../.github/size-check.sh desktop-deb "$deb"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clrd-desktop-deb
+          path: ${{ runner.temp }}/deb/*.deb
+          retention-days: 7
+          if-no-files-found: error

@@ -357,6 +357,7 @@ name = "clrd-desktop"
 version = "0.1.0"
 dependencies = [
  "clrd-core",
+ "libloading",
  "serde_json",
  "tauri",
  "tauri-build",

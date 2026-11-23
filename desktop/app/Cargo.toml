@@ -15,6 +15,12 @@ clrd-core = { path = "../core" }
 # tray, and serving the one bundled page from inside the binary.
 tauri = { version = "2.12", default-features = false, features = ["wry", "x11", "tray-icon", "custom-protocol"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Asks whether the tray library is installed before the tray crate does: the
+# tray crate ends the whole app when it is missing. Already in the build (the
+# tray crate loads the library with it), so it adds nothing to the binary.
+libloading = "0.7"
+
 [build-dependencies]
 # Compiles the page, the icon and the command allow list into the binary.
 tauri-build = "2"

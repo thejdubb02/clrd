@@ -10,3 +10,5 @@ server 16720000
 apk 2100000
 # Measured 2026-11-23: desktop 4,687,664 (Linux x86_64 release binary, tray and window, #162).
 desktop 4800000
+# Measured 2026-11-23: desktop-deb 1,488,512 (the Linux .deb, xz, #625).
+desktop-deb 1560000
