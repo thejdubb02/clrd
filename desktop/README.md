@@ -111,14 +111,15 @@ cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc
 ```
 
 The installer lands in
-`target/x86_64-pc-windows-msvc/release/bundle/nsis/`. It installs for the
+`desktop/target/x86_64-pc-windows-msvc/release/bundle/nsis/`. It installs for the
 current user with no administrator prompt, adds clrd to the Start menu and to
 Installed apps in Windows Settings (where it can be removed), and upgrades an
 older install in place. The app uses the WebView2 that comes with Windows 10
 and 11; where it is missing the installer downloads it from Microsoft.
 
-It is not code signed. Windows SmartScreen will say "Windows protected your
-PC" when the installer is opened; More info, then Run anyway, starts it.
+It is not code signed. Windows SmartScreen will usually say "Windows
+protected your PC" when the installer is opened; More info, then Run anyway,
+starts it. A computer managed by an organisation may block it outright.
 
 ## Dependencies
 

@@ -98,6 +98,9 @@ jobs:
           export XWIN_CACHE_DIR="${GITHUB_WORKSPACE%/*}/xwin"
           win=x86_64-pc-windows-msvc
           cargo xwin clippy --locked --all-targets --target $win -- -D warnings
+          # The build folder outlives a run: an installer left from an older
+          # version would be a second match for the size check below.
+          rm -rf "$CARGO_TARGET_DIR/$win/release/bundle"
           (cd app && cargo tauri build --runner cargo-xwin --target $win -- --locked)
           ../.github/size-check.sh desktop-windows "$CARGO_TARGET_DIR/$win/release/clrd-desktop.exe"
           ../.github/size-check.sh desktop-windows-setup "$CARGO_TARGET_DIR/$win/release/bundle/nsis/"clrd_*_x64-setup.exe
