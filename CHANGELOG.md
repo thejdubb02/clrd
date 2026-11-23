@@ -15,6 +15,11 @@ Fixed, Removed, Security), as one line a user can understand.
   silent and which topic the alarm goes to, like the web (#119). Each field
   saves on its own, a refused value shows the server's reason, and an open
   alarm shows on the sender.
+- Android: Settings is now in the same sections as the web (Notifications,
+  Inbox, Devices, Integrations) with a search box at the top (#575). It
+  matches a setting's name, its description or keywords such as "qr", and
+  says so when nothing matches. Settings also links to the source code and
+  to the issue tracker for reporting a problem (#586).
 - Web: Settings is now one page in five sections (Notifications, Inbox,
   Display, Devices, Integrations) with a search box (#575). It matches a
   setting's name, its description or keywords such as "do not disturb",
