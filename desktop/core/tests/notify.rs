@@ -446,10 +446,9 @@ fn a_close_waiting_behind_a_slow_clear_keeps_the_setting_it_arrived_with() {
     settle(); // the second close has arrived, and waits behind the first
     d.close_clears.store(false, Ordering::Relaxed);
     d.server.hold_dismiss(false);
-    wait("the first clear is answered", || {
-        !d.server.dismissed().is_empty()
+    wait("the second close clears too", || {
+        d.server.dismissed().len() == 2
     });
-    settle();
     assert_eq!(
         d.server.dismissed(),
         [
