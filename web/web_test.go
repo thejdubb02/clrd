@@ -35,6 +35,7 @@ func TestPages(t *testing.T) {
 		"/":                          {">Dismiss once. Gone everywhere.</h1>", `og:image" content="https://clrd.example.com/assets/og.png`, "Uptime Kuma", "Alertmanager", "F-Droid", "github.com/thejdubb02/clrd"},
 		"/docs/":                     {"<h1>Docs</h1>", `href="/docs/spec"`},
 		"/docs/spec":                 {"clrd spec", `aria-current="page">clrd spec`},
+		"/docs/changelog":            {"<h2 id=\"unreleased\">Unreleased</h2>", `full history on GitHub</a>`},
 		"/docs/integrations/":        {`href="/docs/integrations/curl"`, `href="/docs/integrations/mcp"`},
 		"/docs/integrations/grafana": {`href="/docs/integrations/alertmanager"`},
 		"/app":                       {`data-view="inbox"`, "Nightly backup failed", "Urgent", "Acknowledged on pixel-9", "In sync on 2 devices", `aria-label="pixel-9: connected"`, `aria-label="tablet: offline"`, `href="/app/settings#dev-h"`, `data-act="dismiss"`},

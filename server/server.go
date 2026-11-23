@@ -31,6 +31,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/thejdubb02/clrd"
 )
 
 //go:embed openapi.json
@@ -675,6 +677,12 @@ func (s *Server) routesSetup() {
 	s.route("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
 		_, err := w.Write(openapiJSON)
+		return err
+	})
+	// Public: only what the binary carries, which is all in the repo (#580).
+	s.route("GET /api/v1/version", func(w http.ResponseWriter, r *http.Request) error {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write(clrd.VersionJSON())
 		return err
 	})
 	s.route("GET /setup", s.handleSetup)
