@@ -408,12 +408,35 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("expires index: %w", err)
 	}
-	for _, col := range []string{"checkin_ms INTEGER", "checkin_at INTEGER", "checkin_late INTEGER NOT NULL DEFAULT 0", "device_actions INTEGER NOT NULL DEFAULT 0", "approvals INTEGER NOT NULL DEFAULT 0"} {
+	for _, col := range []string{"checkin_ms INTEGER", "checkin_at INTEGER", "checkin_late INTEGER NOT NULL DEFAULT 0", "device_actions INTEGER NOT NULL DEFAULT 0"} {
 		if _, err := db.Exec(`ALTER TABLE topics ADD COLUMN ` + col); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
 			return nil, fmt.Errorf("add topics %s: %w", col, err)
 		}
+	}
+	// approvals (#623) starts from the questions already stored, in one
+	// transaction so a crash cannot leave the column without them.
+	if err := func() error {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`ALTER TABLE topics ADD COLUMN approvals INTEGER NOT NULL DEFAULT 0`); err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				return nil
+			}
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO topics (topic, approvals) SELECT DISTINCT topic, 1 FROM notifications
+			WHERE confirm != '' OR actions LIKE '%"reply":%' ON CONFLICT (topic) DO UPDATE SET approvals = 1`); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("add topics approvals: %w", err)
 	}
 	if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN grants TEXT NOT NULL DEFAULT ''`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {

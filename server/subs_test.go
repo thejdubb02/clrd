@@ -487,3 +487,26 @@ func TestTopicApprovals(t *testing.T) {
 		}
 	}
 }
+
+// An upgrade marks the topics whose stored messages already ask (#623).
+func TestTopicApprovalsUpgrade(t *testing.T) {
+	open := reopener(t)
+	s := open()
+	raw := mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
+	tok := s.lookupToken(context.Background(), raw)
+	for _, in := range []PublishInput{{Topic: "asks", Message: "m", Actions: []Action{{Label: "Allow", Reply: "allow"}}}, {Topic: "plain", Message: "m"}} {
+		if _, err := s.Publish(context.Background(), tok, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.Exec(`ALTER TABLE topics DROP COLUMN approvals`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s = open()
+	defer s.Close()
+	ts, err := s.Topics(context.Background(), s.lookupToken(context.Background(), raw))
+	if err != nil || len(ts) != 2 || !ts[0].Approvals || ts[1].Approvals {
+		t.Fatalf("after upgrade: %v %+v", err, ts)
+	}
+}
