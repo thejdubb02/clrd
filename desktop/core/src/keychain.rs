@@ -7,19 +7,45 @@
 //! One entry holds the server address and the token together, so a token
 //! can never be read back and sent to another server.
 
-/// The server address and the token, as one keychain secret.
-fn pack(base: &str, token: &str) -> Vec<u8> {
-    format!("{base}\n{token}").into_bytes()
+/// What the keychain holds for a linked computer.
+#[derive(Clone, Default, PartialEq)]
+pub struct Linked {
+    /// The server's address.
+    pub base: String,
+    /// This device's token.
+    pub token: String,
+    /// The window's session, as the `Set-Cookie` header the server sent, or
+    /// empty. Kept so a restart can replace that session on the server
+    /// instead of leaving it behind. A secret like the token: the web view's
+    /// own cookie store never gets to write it to disk.
+    pub session: String,
 }
 
-fn unpack(secret: &[u8]) -> Option<(String, String)> {
-    let (base, token) = std::str::from_utf8(secret).ok()?.split_once('\n')?;
-    Some((base.to_string(), token.to_string()))
+// Written by hand so neither secret can reach a log through `{:?}`.
+impl std::fmt::Debug for Linked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Linked({})", self.base)
+    }
+}
+
+/// All of it as one keychain secret, a line each.
+fn pack(l: &Linked) -> Vec<u8> {
+    format!("{}\n{}\n{}", l.base, l.token, l.session).into_bytes()
+}
+
+/// An entry from before the session was kept has two lines.
+fn unpack(secret: &[u8]) -> Option<Linked> {
+    let mut lines = std::str::from_utf8(secret).ok()?.split('\n');
+    Some(Linked {
+        base: lines.next()?.to_string(),
+        token: lines.next()?.to_string(),
+        session: lines.next().unwrap_or_default().to_string(),
+    })
 }
 
 #[cfg(target_os = "linux")]
 mod os {
-    use super::{pack, unpack};
+    use super::{pack, unpack, Linked};
     use std::collections::HashMap;
     use std::pin::Pin;
     use zbus::export::futures_core::Stream;
@@ -118,7 +144,7 @@ mod os {
             )
         }
 
-        pub fn save(&self, base: &str, token: &str) -> Result<(), String> {
+        pub fn save(&self, linked: &Linked) -> Result<(), String> {
             let session = self.open()?;
             let mut props: HashMap<&str, Variant<'_>> = HashMap::new();
             props.insert("org.freedesktop.Secret.Item.Label", "clrd".into());
@@ -126,14 +152,14 @@ mod os {
                 "org.freedesktop.Secret.Item.Attributes",
                 HashMap::from([("application", "clrd")]).into(),
             );
-            let secret: Secret = (session, vec![], pack(base, token), "text/plain".into());
+            let secret: Secret = (session, vec![], pack(linked), "text/plain".into());
             let (_, prompt): (OwnedObjectPath, OwnedObjectPath) =
                 self.call(DEFAULT, COLLECTION, "CreateItem", &(props, secret, true))?;
             self.prompt(&prompt)
         }
 
         /// `None` when this computer is not linked.
-        pub fn load(&self) -> Result<Option<(String, String)>, String> {
+        pub fn load(&self) -> Result<Option<Linked>, String> {
             let session = self.open()?;
             let Some(item) = self.items()?.into_iter().next() else {
                 return Ok(None);
@@ -155,7 +181,7 @@ mod os {
 
 #[cfg(windows)]
 mod os {
-    use super::{pack, unpack};
+    use super::{pack, unpack, Linked};
     use windows_sys::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
     use windows_sys::Win32::Security::Credentials::{
         CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
@@ -178,8 +204,8 @@ mod os {
             Self
         }
 
-        pub fn save(&self, base: &str, token: &str) -> Result<(), String> {
-            let (mut name, mut blob) = (target(), pack(base, token));
+        pub fn save(&self, linked: &Linked) -> Result<(), String> {
+            let (mut name, mut blob) = (target(), pack(linked));
             // SAFETY: CREDENTIALW is plain data, and zero is valid for every
             // field left unset.
             let mut cred: CREDENTIALW = unsafe { std::mem::zeroed() };
@@ -196,7 +222,7 @@ mod os {
         }
 
         /// `None` when this computer is not linked.
-        pub fn load(&self) -> Result<Option<(String, String)>, String> {
+        pub fn load(&self) -> Result<Option<Linked>, String> {
             let mut cred: *mut CREDENTIALW = std::ptr::null_mut();
             // SAFETY: on success `cred` is a credential Windows allocated,
             // read here and then freed with CredFree.
@@ -237,6 +263,7 @@ mod os {
     }
 }
 
+#[cfg(any(target_os = "linux", windows))]
 pub use os::Keychain;
 
 #[cfg(test)]
@@ -245,11 +272,17 @@ mod tests {
 
     #[test]
     fn a_secret_round_trips_and_a_broken_one_is_nothing() {
-        let packed = pack("https://clrd.example.com", "clrd_abc");
-        assert_eq!(
-            unpack(&packed),
-            Some(("https://clrd.example.com".into(), "clrd_abc".into()))
-        );
+        let linked = Linked {
+            base: "https://clrd.example.com".into(),
+            token: "clrd_abc".into(),
+            session: "clrd_session=s; Path=/; HttpOnly".into(),
+        };
+        assert!(unpack(&pack(&linked)) == Some(linked.clone()));
+        // An entry saved before the session was kept still loads.
+        let old = unpack(b"https://clrd.example.com\nclrd_abc").unwrap();
+        assert!(old.token == "clrd_abc" && old.session.is_empty());
+        // Neither secret prints.
+        assert_eq!(format!("{linked:?}"), "Linked(https://clrd.example.com)");
         assert_eq!(unpack(b"no newline"), None);
         assert_eq!(unpack(&[0xff, b'\n', 0xff]), None);
     }
