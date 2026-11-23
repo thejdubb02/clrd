@@ -368,27 +368,30 @@
     </section>{{end}}
     {{if or .Snap.Format .Snap.FormatOff .Snap.FormatDismissed}}<section id="format" data-setting data-keywords="format, markdown check, broken, warning" class="grid gap-3" data-format-check>
       <h3 id="fmt-h" class="text-base font-semibold">Message format check</h3>
-      {{with .Snap.Format}}<p class="text-body text-sm/relaxed">Some senders send messages that are hard to read. Copy the prompt into the agent or script that sends them, and it fixes the sender. Dismiss what you are happy with.</p>{{end}}
-      {{range .Snap.Format}}{{$g := .}}<div class="grid gap-2" data-format-topic="{{.Topic}}/{{.Sender}}">
-        <h4 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Topic}} <span class="meta font-normal">from {{if and .SenderID (ne .SenderID "unknown")}}{{or .Sender "another device"}}{{else}}a sender clrd does not know{{end}}, {{.Problems}} of the last {{.Checked}} messages</span></h4>
-        <ul class="text-body grid gap-2 text-sm">{{range .Findings}}<li class="flex flex-wrap items-center gap-2"><span class="flex-1">{{.Label}}: {{.Count}}</span>
-          {{if $g.CanFix}}<form method="post" action="{{base}}/app/format" class="flex flex-wrap gap-2"><input type="hidden" name="topic" value="{{$g.Topic}}"><input type="hidden" name="rule" value="{{.Rule}}">
-            {{if $g.SenderID}}<button class="btn" data-variant="outline" data-size="sm" name="sender_id" value="{{$g.SenderID}}" data-format-dismiss="sender">Dismiss for this sender</button>{{end}}
-            <button class="btn" data-variant="outline" data-size="sm" data-format-dismiss="topic">Dismiss for all of {{$g.Topic}}</button></form>{{end}}</li>{{end}}</ul>
-        {{if .Prompt}}<details class="text-sm">
-          <summary class="cursor-pointer font-medium">Fix prompt</summary>
-          <pre tabindex="0" class="bg-muted/50 mt-2 w-full border-transparent whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-format-prompt>{{.Prompt}}</code></pre>
-        </details>{{else}}<p class="meta">Sent by a device this one cannot see, so there is no fix prompt here.</p>{{end}}
-        <div class="flex flex-wrap gap-2">{{if .Prompt}}<span class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="outline" data-size="sm" data-format-copy>{{template "i-copy"}}Copy fix prompt</button></span>{{end}}
-          {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><button class="btn" data-variant="outline" data-size="sm" data-format-off>Stop checking {{.Topic}}</button></form>{{end}}</div>
-      </div>{{end}}
+      {{with .Snap.FormatCards}}{{$open := le (len .) 3}}<p class="text-body text-sm/relaxed">Senders whose messages are hard to read. Nothing here is urgent. Copy the fix prompt into the agent or script that sends them, or dismiss what you are happy with.</p>
+      {{range .}}<details class="group bg-card rounded-xl border" data-format-card="{{.Topic}}"{{if $open}} open{{end}}>
+        <summary class="flex cursor-pointer items-center gap-2 px-4 py-3"><span class="min-w-0 flex-1 font-semibold [overflow-wrap:anywhere]">{{.Topic}}</span><span class="badge" data-variant="secondary">{{.Findings}} {{if eq .Findings 1}}finding{{else}}findings{{end}}</span><span class="text-muted-foreground transition-transform group-open:rotate-180">{{template "i-chevron-down"}}</span></summary>
+        {{range .Groups}}{{$g := .}}<div class="grid gap-2 border-t px-4 py-3" data-format-topic="{{.Topic}}/{{.Sender}}">
+          <h4 class="text-sm font-normal [overflow-wrap:anywhere]"><span class="font-medium">{{if and .SenderID (ne .SenderID "unknown")}}{{or .Sender "Another device"}}{{else}}Unknown sender{{end}}</span><span class="text-muted-foreground">, {{.Problems}} of the last {{.Checked}} messages</span></h4>
+          <ul class="text-body grid gap-1 text-sm">{{range .Findings}}<li class="flex min-h-8 items-center gap-2"><span class="min-w-0 flex-1">{{.Label}}</span><span class="badge" data-variant="outline">{{.Count}}</span>
+            {{if $g.CanFix}}<details class="popover" data-format-menu><summary class="btn" data-variant="ghost" data-size="sm" aria-label="Dismiss {{.Label}}">Dismiss{{template "i-chevron-down"}}</summary>
+              <form method="post" action="{{base}}/app/format" data-popover data-align="end" class="top-full mt-1 grid w-64 max-w-[calc(100vw-2rem)] gap-0.5 p-1"><input type="hidden" name="topic" value="{{$g.Topic}}"><input type="hidden" name="rule" value="{{.Rule}}">
+                {{if $g.SenderID}}<button class="btn justify-start" data-variant="ghost" data-size="sm" name="sender_id" value="{{$g.SenderID}}" data-format-dismiss="sender">Dismiss for this sender</button>{{end}}
+                <button class="btn justify-start" data-variant="ghost" data-size="sm" data-format-dismiss="topic">Dismiss for the whole topic</button></form></details>{{end}}</li>{{end}}</ul>
+          {{if .Prompt}}<div class="flex flex-wrap items-center gap-x-3 gap-y-2"><span class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-size="sm" data-format-copy>{{template "i-copy"}}Copy fix prompt</button></span>
+            <details class="text-sm open:basis-full"><summary class="text-muted-foreground cursor-pointer underline-offset-4 hover:underline">Show the prompt</summary>
+              <pre tabindex="0" class="bg-muted/50 mt-2 w-full border-transparent whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-format-prompt>{{.Prompt}}</code></pre>
+            </details></div>{{else}}<p class="text-muted-foreground text-sm">Sent by a device this one cannot see, so there is no fix prompt here.</p>{{end}}
+        </div>{{end}}
+        {{if .CanFix}}<form method="post" action="{{base}}/app/format" class="border-t px-2 py-1"><input type="hidden" name="topic" value="{{.Topic}}"><button class="btn text-muted-foreground" data-variant="ghost" data-size="sm" data-format-off>Stop checking {{.Topic}}</button></form>{{end}}
+      </details>{{end}}{{end}}
       {{if or .Snap.FormatOff .Snap.FormatDismissed}}<div class="grid gap-2" data-format-ignored>
         <h4 class="text-sm font-semibold">Dismissed and not checked</h4>
-        <ul class="text-body grid gap-2 text-sm">
-          {{range .Snap.FormatOff}}<li class="flex flex-wrap items-center gap-2" data-format-off-item="{{.Topic}}"><span class="flex-1 [overflow-wrap:anywhere]">{{.Topic}}: not checked</span>
-            {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><button class="btn" data-variant="outline" data-size="sm" name="undo" value="1">Check again</button></form>{{end}}</li>{{end}}
-          {{range .Snap.FormatDismissed}}<li class="flex flex-wrap items-center gap-2" data-format-dismissed-item="{{.Topic}}/{{.Rule}}/{{.Sender}}"><span class="flex-1 [overflow-wrap:anywhere]">{{.Topic}}: {{.Label}}, {{if eq .SenderID "unknown"}}from a sender clrd does not know{{else if .SenderID}}from {{or .Sender "another device"}}{{else}}every sender{{end}}</span>
-            {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="rule" value="{{.Rule}}"><input type="hidden" name="sender_id" value="{{.SenderID}}"><button class="btn" data-variant="outline" data-size="sm" name="undo" value="1">Undo</button></form>{{end}}</li>{{end}}
+        <ul class="text-body bg-card divide-y rounded-xl border text-sm">
+          {{range .Snap.FormatOff}}<li class="flex min-h-11 items-center gap-2 px-4 py-1.5" data-format-off-item="{{.Topic}}"><span class="min-w-0 flex-1 [overflow-wrap:anywhere]">{{.Topic}}: not checked</span>
+            {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><button class="btn" data-variant="ghost" data-size="sm" name="undo" value="1">Check again</button></form>{{end}}</li>{{end}}
+          {{range .Snap.FormatDismissed}}<li class="flex min-h-11 items-center gap-2 px-4 py-1.5" data-format-dismissed-item="{{.Topic}}/{{.Rule}}/{{.Sender}}"><span class="min-w-0 flex-1 [overflow-wrap:anywhere]">{{.Topic}}: {{.Label}}, {{if eq .SenderID "unknown"}}from an unknown sender{{else if .SenderID}}from {{or .Sender "another device"}}{{else}}every sender{{end}}</span>
+            {{if .CanFix}}<form method="post" action="{{base}}/app/format"><input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="rule" value="{{.Rule}}"><input type="hidden" name="sender_id" value="{{.SenderID}}"><button class="btn" data-variant="ghost" data-size="sm" name="undo" value="1">Undo</button></form>{{end}}</li>{{end}}
         </ul>
       </div>{{end}}
     </section>{{end}}

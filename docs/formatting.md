@@ -74,11 +74,13 @@ shows anything that looks like a password or key as `[hidden]`. Read it
 before you paste: a short secret with no label can still slip through. The check only gives
 advice: it never changes or blocks a message.
 
-In the web inbox, Settings shows the results under Message format, one group
-per topic and sender, with a Copy button for each prompt. A device that may
-publish to the topic can dismiss a finding for that sender or the whole
-topic, or stop checking the topic, and undo any of these from the list below
-the results. The section only appears when there is something to fix or
+In the web inbox, Settings shows the results under Message format check, one
+card per topic with a count of its findings, and inside it one group per
+sender with a Copy fix prompt button. With more than three topics the cards
+start closed. A device that may publish to the topic can dismiss a finding
+for that sender or the whole topic from its Dismiss menu, or stop checking the
+topic from the card's footer, and undo any of these from the list below the
+results. The section only appears when there is something to fix or
 something dismissed.
 
 ```sh
