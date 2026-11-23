@@ -118,6 +118,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: Settings shows Snooze times and Linked devices only once the
+  server accepts the token for reading, and hides Senders as soon as the
+  token is rejected, instead of after the next refresh (#604).
 - Android: a notification cleared on another device no longer comes back on
   the phone when a refused tap's late answer arrives after the phone caught
   up (#34).
