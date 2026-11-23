@@ -30,8 +30,7 @@ Small on purpose. Measured 2026-11-20: the server is one 15.6 MB binary
   <img src=".github/images/inbox-phone-dark.png" alt="The same inbox on a phone in dark mode" width="200">
 </p>
 <p align="center">
-  <img src=".github/images/settings-search-light.png" alt="Settings with a search for sound, showing only the notification sound settings" width="760">
-  <img src=".github/images/link-phone-dark.png" alt="Linking a phone from Settings in dark mode: a QR code to scan with the app" width="200">
+  <img src=".github/images/settings-search-light.png" alt="Settings with a search for sound: only the matching settings show" width="760">
 </p>
 
 The pictures are made by `web/e2e/screens.mjs` with `SET=readme` against the

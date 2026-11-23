@@ -110,20 +110,15 @@ try {
 
   // SET=readme: only the pictures README shows (#592), the same on every run.
   // The browser clock stands two minutes after the sends, so every card reads
-  // the same age; the QR code and its number change each time, so they are masked.
+  // the same age.
   const readme = process.env.SET === 'readme';
   const now = Date.now() + 120000;
   const shots = [
     ['inbox-light', 'light', 'desktop', '/app'],
     ['inbox-phone-dark', 'dark', 'phone', '/app'],
     ['settings-search-light', 'light', 'desktop', '/app/settings', async p => { await p.locator('[data-settings-q]').fill('sound'); await p.locator('[data-settings-q]').blur(); }],
-    ['link-phone-dark', 'dark', 'phone', '/app/settings', async p => {
-      await p.locator('[data-pair-start]').click();
-      await p.locator('[data-pair-qr]').waitFor();
-      await p.locator('#link-h').scrollIntoViewIfNeeded();
-    }, '[data-pair-qr], [data-pair-msg]'],
   ];
-  for (const [name, scheme, size, path, act, mask] of readme ? shots : []) {
+  for (const [name, scheme, size, path, act] of readme ? shots : []) {
     const ctx = await browser.newContext({ viewport: sizes[size], colorScheme: scheme, reducedMotion: 'reduce', timezoneId: 'America/Chicago', locale: 'en-US' });
     const page = await ctx.newPage();
     await page.clock.setFixedTime(now);
@@ -131,7 +126,7 @@ try {
     await page.goto(main.base + path, { waitUntil: 'networkidle' });
     await page.evaluate(() => document.fonts.ready);
     if (act) await act(page);
-    await page.screenshot({ path: join(out, `${name}.png`), mask: mask ? [page.locator(mask)] : [], animations: 'disabled' });
+    await page.screenshot({ path: join(out, `${name}.png`), animations: 'disabled' });
     await ctx.close();
   }
 
