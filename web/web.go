@@ -669,6 +669,32 @@ type FormatTopic struct {
 	Prompt   string          `json:"prompt"`
 }
 
+// FormatCard is one topic in the format check, drawn as one card in
+// Settings with a group per sender (#618).
+type FormatCard struct {
+	Topic    string
+	Findings int  // finding rows across its senders
+	CanFix   bool // this token may leave the topic out
+	Groups   []FormatTopic
+}
+
+// FormatCards groups Format by topic, in the order topics first appear.
+func (s Snapshot) FormatCards() (cards []FormatCard) {
+	at := map[string]int{}
+	for _, g := range s.Format {
+		i, ok := at[g.Topic]
+		if !ok {
+			i, at[g.Topic] = len(cards), len(cards)
+			cards = append(cards, FormatCard{Topic: g.Topic})
+		}
+		c := &cards[i]
+		c.Findings += len(g.Findings)
+		c.CanFix = c.CanFix || g.CanFix
+		c.Groups = append(c.Groups, g)
+	}
+	return cards
+}
+
 // FormatOff is a topic left out of the format check (#320).
 type FormatOff struct {
 	Topic  string

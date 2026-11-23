@@ -1475,9 +1475,9 @@ try {
     console.log('ok: webhook templates are added, edited, previewed and deleted in Settings; a read-only device gets no forms');
   }
 
-  // Format check in Settings (#320): one group per sender, dismiss for one
-  // sender, leave the topic out and check it again, undo. A read-only device
-  // sees the findings but no buttons.
+  // Format check in Settings (#320, #618): one card per topic with a group per
+  // sender, dismiss for one sender from a row's menu, leave the topic out and
+  // check it again, undo. A read-only device sees the findings but no buttons.
   {
     const bot = execFileSync(bin, ['token', 'create', '--name', 'fmt-bot', '--scope', 'publish', '--topics', 'fmtchk'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     await api(laptop, '/api/v1/notifications', { topic: 'fmtchk', message: 'untitled from laptop' });
@@ -1487,25 +1487,32 @@ try {
     const sp = await ctx.newPage();
     await sp.goto(base + '/app/settings');
     const botG = sp.locator('[data-format-topic="fmtchk/fmt-bot"]'), lapG = sp.locator('[data-format-topic="fmtchk/laptop"]');
-    await botG.getByText('fmtchk from fmt-bot').waitFor();
-    await lapG.waitFor();
+    // Other tests leave many topics with findings, so cards start collapsed.
+    const card = sp.locator('[data-format-card="fmtchk"]'), open = () => card.evaluate(d => { d.open = true; });
+    await open();
+    await botG.locator('p', { hasText: /^fmt-bot, \d+ of the last \d+ messages$/ }).waitFor();
+    assert.equal(await card.locator('[data-format-topic]').count(), 2, 'both senders in one fmtchk card');
+    await card.locator('summary', { hasText: '2 findings' }).first().waitFor();
+    await lapG.waitFor({ state: 'attached' });
     const click = b => Promise.all([sp.waitForEvent('load'), b.click()]);
-    await click(botG.locator('li', { hasText: 'No title' }).getByRole('button', { name: 'Dismiss for this sender' }));
+    const dismiss = async g => { await open(); const li = g.locator('li', { hasText: 'No title' }); await li.locator('summary').click(); await click(li.getByRole('button', { name: 'Dismiss for this sender' })); };
+    await dismiss(botG);
     assert.equal(await botG.count(), 0, 'dismissed for the bot, its group still shows');
     assert.equal(await lapG.count(), 1, 'dismissing for the bot hid the laptop too');
     const dis = sp.locator('[data-format-dismissed-item="fmtchk/no_title/fmt-bot"]');
     await dis.getByText('fmtchk: No title, from fmt-bot').waitFor();
-    await click(lapG.getByRole('button', { name: 'Stop checking fmtchk' }));
+    await open();
+    await click(card.getByRole('button', { name: 'Stop checking fmtchk' }));
     assert.equal(await lapG.count(), 0, 'a topic left out still shows');
     const off = (await (await fetch(base + '/api/v1/format-check', { headers: { Authorization: `Bearer ${laptop}` } })).json()).off;
     assert.deepEqual(off, ['fmtchk'], 'Stop checking did not reach the server');
     await click(sp.locator('[data-format-off-item="fmtchk"]').getByRole('button', { name: 'Check again' }));
-    await lapG.waitFor();
+    await lapG.waitFor({ state: 'attached' });
     await click(dis.getByRole('button', { name: 'Undo' }));
-    await botG.waitFor();
+    await botG.waitFor({ state: 'attached' });
     assert.equal(await sp.locator('[data-format-dismissed-item^="fmtchk/"]').count(), 0, 'Undo left the dismissal listed');
     // Dismissed again so the read-only page below also lists a dismissal by the bot.
-    await click(botG.locator('li', { hasText: 'No title' }).getByRole('button', { name: 'Dismiss for this sender' }));
+    await dismiss(botG);
     await dis.waitFor();
 
     const ro = execFileSync(bin, ['token', 'create', '--name', 'fmt-ro', '--scope', 'read', '--topics', 'fmtchk'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
@@ -1514,7 +1521,7 @@ try {
     const rp = await rctx.newPage();
     await rp.goto(base + '/app/settings');
     // Not an admin, so other people's devices are not named (#245).
-    await rp.locator('[data-format-topic="fmtchk/"]', { hasText: 'fmtchk from another device' }).first().waitFor();
+    await rp.locator('[data-format-topic="fmtchk/"]', { hasText: 'Another device, ' }).first().waitFor({ state: 'attached' });
     await rp.locator('[data-format-dismissed-item="fmtchk/no_title/"]', { hasText: 'from another device' }).waitFor();
     assert.ok(!(await rp.locator('[data-format-check]').innerHTML()).includes('fmt-bot'), 'a read-only device sees the bot\'s name, in text or markup');
     assert.equal(await rp.locator('[data-format-dismiss], [data-format-off]').count(), 0, 'a read-only device got dismiss buttons');
