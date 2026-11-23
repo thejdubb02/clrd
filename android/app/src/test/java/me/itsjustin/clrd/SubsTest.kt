@@ -40,6 +40,7 @@ class SubsTest {
     private var listCode = 200
     @Volatile private var slow = false
     private val puts = Collections.synchronizedList(mutableListOf<String>())
+    private val lists = Collections.synchronizedList(mutableListOf<String>())
     private val list = """{"filtered":true,"new_topics":true,"topics":[
         {"topic":"agents","subscribed":true,"open":1,"last_at":"2026-11-20T10:00:00Z"},
         {"topic":"chat","subscribed":true,"open":3,"last_at":"2026-11-20T10:00:00Z","approvals":false},
@@ -53,6 +54,10 @@ class SubsTest {
                     puts += request.body.readUtf8(); MockResponse().setBody(list).apply { if (slow) setBodyDelay(1, java.util.concurrent.TimeUnit.SECONDS) }
                 }
                 request.path == "/api/v1/subscriptions" -> MockResponse().setResponseCode(listCode).setBody(if (listCode == 200) list else """{"error":"not found"}""")
+                request.path!!.startsWith("/api/v1/notifications?") -> {
+                    lists += request.path!!
+                    MockResponse().setBody("""{"seq":9,"epoch":"e","notifications":[{"id":"d1","topic":"deploys","title":"Deploy done","message":"web 4.2","seq":7}]}""")
+                }
                 else -> MockResponse().setBody("{}")
             }
         }
@@ -134,6 +139,34 @@ class SubsTest {
         rule.onNodeWithTag("sub-chat").performClick()
         rule.waitUntil(10000) { puts.size == 2 }
         assertEquals(listOf("""{"topics":{"chat":false}}""", """{"topics":{"chat":true}}"""), puts.toList())
+    }
+
+    @Test fun readAnUnsubscribedTopicWithoutKeepingIt() { // #624
+        settings("""{"filtered":true,"topics":{"deploys":false}}""")
+        show()
+        search("subscribe")
+        waitFor("read-deploys")
+        rule.onAllNodesWithTag("read-chat").assertCountEquals(0) // only an unsubscribed topic has Read
+        rule.onNodeWithTag("read-deploys").performScrollTo().performClick()
+        rule.waitUntil(5000) { rule.onAllNodesWithText("Deploy done").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(lists.single(), lists.single().contains("&subscribed=all&topic=deploys"))
+        val db = app.db.dao()
+        assertTrue(app.io.submit<List<Notif>> { db.openNow() }.get().isEmpty()) // nothing saved, so nothing in the tray
+        assertNull(org.robolectric.Shadows.shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).getNotification("d1", 0))
+        rule.onNodeWithTag("reader-subscribe").performClick()
+        rule.waitUntil(5000) { puts.isNotEmpty() }
+        assertEquals("""{"topics":{"deploys":true}}""", puts.single())
+    }
+
+    @Test fun readerClosesWhenAnotherDeviceSubscribes() { // #624 review
+        settings("""{"filtered":true,"topics":{"deploys":false}}""")
+        show()
+        search("subscribe")
+        waitFor("read-deploys")
+        rule.onNodeWithTag("read-deploys").performScrollTo().performClick()
+        waitFor("reader")
+        rule.runOnIdle { settings("""{"filtered":true,"topics":{"deploys":true}}""") } // the settings message from that change
+        rule.waitUntil(5000) { rule.onAllNodesWithTag("reader").fetchSemanticsNodes().isEmpty() }
     }
 
     @Test fun agentsAsksFirst() {

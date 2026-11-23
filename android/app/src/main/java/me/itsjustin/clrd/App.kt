@@ -267,6 +267,9 @@ class App : Application() {
     /** Bumped when the stream sends the device list again, so Settings reads it fresh (#345). */
     val devicesChanged = MutableStateFlow(0)
 
+    /** Bumped on a reset and when an action's answer is for a topic this phone does not keep, so a topic read without subscribing reloads (#624). */
+    val outside = MutableStateFlow(0)
+
     /** Saves the server and token from Settings or a scanned link. Call on [io]. */
     fun saveServer(newUrl: String, newToken: String) {
         if (newUrl != serverUrl || newToken != token) {
@@ -425,7 +428,9 @@ class RoomStore(private val app: App) : Store {
         // A row fetched outside the stream (seq 0, such as a queued action's answer) is not filtered by the server:
         // one from a topic unsubscribed meanwhile must not come back after the reset dropped it (#617).
         val subs = app.subs.value
-        val saved = dao.applyAll(if (seq == 0L && subs?.filtered == true) notifs.filter { subs.subscribed(it.topic) } else notifs, seq)
+        val (keep, out) = if (seq == 0L && subs?.filtered == true) notifs.partition { subs.subscribed(it.topic) } else notifs.toList() to emptyList<Notif>()
+        if (out.isNotEmpty()) app.outside.value++
+        val saved = dao.applyAll(keep, seq)
         if (answer) saved.forEach { app.ownAnswers.merge(it.id, it.seq, ::maxOf) }
         // #500: a live repeat Room dropped (our own mark's answer got in first) still rings the newer row, if that one shows unacked.
         // Only when the newer row differs by marks alone (#504): after a Clear and Undo it is a new state, and an Undo stays quiet.
@@ -454,6 +459,7 @@ class RoomStore(private val app: App) : Store {
         val sameDb = epoch.isEmpty() || app.epoch.isEmpty() || epoch == app.epoch
         app.tray.reconcile(dao.replaceAll(open, seq, sameDb).filter { it.id !in waiting }, app.muted)
         if (epoch.isNotEmpty()) app.epoch = epoch
+        app.outside.value++
     }
 
     override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here

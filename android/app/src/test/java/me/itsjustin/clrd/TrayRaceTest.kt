@@ -234,7 +234,9 @@ class TrayRaceTest {
     @Test fun anAnswerFromAnUnsubscribedTopicStaysOut() { // #617: a queued Restore lands after another device unsubscribed
         app.saveSettings(org.json.JSONObject("""{"subscriptions":{"filtered":true,"topics":{"t":false}}}"""))
         val store = RoomStore(app)
+        val before = app.outside.value
         bg { store.apply(listOf(row("a", Notif.ACTIVE, 4)), 0, answer = true) }
+        assertEquals(before + 1, app.outside.value) // a topic read without subscribing reloads to show the answer (#624)
         assertNull(tray("a"))
         assertTrue(bg { dao.openNow() }.isEmpty())
         app.saveSettings(org.json.JSONObject("{}")) // a server without subscriptions keeps every row

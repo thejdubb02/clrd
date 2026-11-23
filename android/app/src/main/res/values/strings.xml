@@ -93,6 +93,11 @@
     <string name="subs_agents_title">Unsubscribe from %1$s?</string>
     <string name="subs_agents_text">Approval prompts from agents come in this topic. They will stop reaching all your devices, and an agent waiting on an answer keeps waiting.</string>
     <string name="subs_failed">Could not change topics: %1$s</string>
+    <string name="subs_read">Read</string>
+    <string name="subs_reading">Not subscribed. Reading here adds nothing to your inbox and never rings.</string>
+    <string name="subs_read_empty">Nothing open in this topic.</string>
+    <string name="subs_subscribe">Subscribe</string>
+    <string name="subs_close">Close</string>
     <string name="unsubscribe">Unsubscribe</string>
     <string name="unsubscribe_from">Unsubscribe from %1$s</string>
     <string name="unsubscribed">Unsubscribed from %1$s on every device</string>
