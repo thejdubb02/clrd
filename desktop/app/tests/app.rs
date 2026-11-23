@@ -2,9 +2,9 @@
 //! server: what the server's page can reach, where the token and the session
 //! go, and where the window may navigate.
 //!
-//! Needs `xvfb-run`, `dbus-daemon` and `gnome-keyring-daemon`. The This
-//! computer page's buttons are not pressed here; what they call is tested in
-//! the core (`core/tests/device.rs`).
+//! Needs `xvfb-run`, `xdotool`, `dbus-daemon` and `gnome-keyring-daemon`. Of
+//! the This computer page's buttons only Unlink is pressed here; what they
+//! all call is tested in the core (`core/tests/device.rs`).
 #![cfg(target_os = "linux")]
 
 #[path = "../../core/tests/common/mod.rs"]
@@ -26,8 +26,6 @@ for (const c of ['state', 'start', 'cancel', 'retry', 'unlink', 'set_close_clear
   try { r.calls[c] = 'ran: ' + JSON.stringify(await invoke(c, { link: 'x', plainOk: true, on: true })); }
   catch (e) { r.calls[c] = 'refused: ' + e; }
 }
-try { window.ipc.postMessage(JSON.stringify({ cmd: 'unlink', callback: 1, error: 2, payload: {}, options: {} })); } catch (e) {}
-await new Promise((done) => setTimeout(done, 500));
 await fetch('/report', { method: 'POST', body: JSON.stringify(r) });
 location.href = 'ELSEWHERE';
 })()</script>"#;
@@ -60,7 +58,10 @@ fn app(bus: &Bus, home: &Path, args: &[&str]) -> Command {
     let path = std::env::var("PATH").unwrap();
     let mut cmd = Command::new("xvfb-run");
     cmd.process_group(0)
-        .arg("-a")
+        // The screen is picked here, so it is written down for a test that
+        // presses keys on it. The first start's line is the app's screen.
+        .args(["-a", "sh", "-c"])
+        .arg(r#"echo "$DISPLAY $XAUTHORITY" >> "$HOME/screen"; exec "$0" "$@""#)
         .arg(env!("CARGO_BIN_EXE_clrd-desktop"))
         .args(args)
         .env("DBUS_SESSION_BUS_ADDRESS", &bus.1)
@@ -283,6 +284,88 @@ fetch('/report', { method: 'POST', body: String(matchMedia('(prefers-color-schem
     );
     wait_long("the page says what it sees", || !fake.reports().is_empty());
     assert_eq!(fake.reports(), ["true"]);
+}
+
+/// Unlink, pressed on the This computer page itself with the inbox window
+/// open beside it: the server is told, the command finishes, and the app is
+/// still there after.
+#[test]
+fn unlink_pressed_on_the_page_unlinks_and_the_app_stays() {
+    let fake = Fake::start();
+    fake.set_page(
+        r#"<!doctype html><title>inbox</title><script>
+fetch('/report', { method: 'POST', body: 'open' });
+</script>"#,
+    );
+    let (bus, _daemon, keys, home) = linked(&fake);
+    let mut app_one = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    wait_long("the inbox window opens", || !fake.reports().is_empty());
+    // A second start with a link is how the page comes up from outside.
+    assert!(app(&bus, &home, &["clrd://x"])
+        .output()
+        .unwrap()
+        .status
+        .success());
+
+    let screen = std::fs::read_to_string(home.join("screen")).unwrap();
+    let (display, authority) = screen.lines().next().unwrap().split_once(' ').unwrap();
+    // The page is the window on top, at the screen's corner. A click on its
+    // edge starts the focus at the top. Return never flips the switch or
+    // sends an empty link, so presses are safe to repeat until they land.
+    let press = |keys: &[&str]| {
+        Command::new("xdotool")
+            .env("DISPLAY", display)
+            .env("XAUTHORITY", authority)
+            .args(["mousemove", "3", "3", "click", "1", "key", "--delay", "200"])
+            .args(keys)
+            .status()
+            .expect("xdotool is needed for this test");
+    };
+    // Past the switch to Unlink, Return, on to the Unlink that asks "sure".
+    let unlink = ["Tab", "Tab", "Return", "Tab", "Return"];
+
+    // First against a server that refuses the removal: the page then offers
+    // Try again, which only works once Unlink has finished and let go.
+    fake.refuse_unlink(true);
+    wait_long("the keychain forgets the link", || {
+        press(&unlink);
+        keys.load().unwrap().is_none()
+    });
+    assert!(fake.sessions().is_empty(), "the window's session is ended");
+    keys.save(&clrd_core::keychain::Linked {
+        base: fake.base.clone(),
+        token: TOKEN.into(),
+        session: String::new(),
+    })
+    .unwrap();
+    fake.refuse_unlink(false);
+    let live = || {
+        let all = fake.requests();
+        all.iter().filter(|r| r.contains("/api/v1/ws")).count()
+    };
+    let before = live();
+    wait_long("Try again links this computer again", || {
+        // Past the link box and its button to Try again.
+        press(&["Tab", "Tab", "Tab", "Return"]);
+        live() > before
+    });
+
+    wait_long("the server is told of the unlink", || {
+        press(&unlink);
+        fake.unlinked()
+    });
+    wait_long("the keychain forgets the link again", || {
+        keys.load().unwrap().is_none()
+    });
+    settle();
+    // `xvfb-run` ends when the app does.
+    assert_eq!(app_one.0.try_wait().unwrap(), None, "the app keeps running");
 }
 
 /// A settings portal on the test bus that answers with `scheme`.
