@@ -509,7 +509,9 @@ notification already shown stays until it is closed, as it does today
 after a clear. A filtered device that connects with a `since` older than
 the seq of its owner's last `subscriptions` event gets `reset` (and
 `GET /api/v1/events` a 410 `reset`), so a device that was offline during
-the change catches up the same way.
+the change catches up the same way. A typed-in token with no user is not
+filtered, so only an attach or detach resets it, never its browsers
+changing the set.
 
 **API and MCP.** `GET /api/v1/subscriptions` returns
 `{"filtered":true,"new_topics":true,"topics":[{"topic":"chat","subscribed":false,"open":2,"last_at":"RFC3339"|null}]}`,

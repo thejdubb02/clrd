@@ -230,8 +230,9 @@ CREATE TABLE IF NOT EXISTS silences (
 -- Topic subscriptions (#617, subs.go): owner is "u:<user id>" or "t:<top token id>".
 -- A topic with no row follows the owner's new_topics; no sub_owners row is new_topics on.
 CREATE TABLE IF NOT EXISTS subscriptions (owner TEXT NOT NULL, topic TEXT NOT NULL, subscribed INTEGER NOT NULL, PRIMARY KEY (owner, topic));
--- seq is the owner's last subscriptions event, so a device behind it gets reset.
-CREATE TABLE IF NOT EXISTS sub_owners (owner TEXT PRIMARY KEY, new_topics INTEGER NOT NULL, seq INTEGER NOT NULL);
+-- seq is the owner's last subscriptions event, so a device behind it gets reset;
+-- moved is the last attach or detach only, all an unfiltered token resets on (#635).
+CREATE TABLE IF NOT EXISTS sub_owners (owner TEXT PRIMARY KEY, new_topics INTEGER NOT NULL, seq INTEGER NOT NULL, moved INTEGER NOT NULL DEFAULT 0);
 `
 
 // Action is a button on a notification: a link (URL), an answer (Reply)
@@ -374,6 +375,29 @@ func openDB(path string) (*sql.DB, error) {
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
 		return nil, fmt.Errorf("add format column: %w", err)
+	}
+	// A table from before moved: every past change counts as a move, so a
+	// detach before the upgrade still resets. One transaction, so a stop in
+	// between never leaves the column without the fill.
+	if err := func() error {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`ALTER TABLE sub_owners ADD COLUMN moved INTEGER NOT NULL DEFAULT 0`); err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				return nil
+			}
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE sub_owners SET moved = seq`); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("add moved column: %w", err)
 	}
 	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN expires_at INTEGER`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {

@@ -170,6 +170,25 @@ func TestSubsDetachResets(t *testing.T) {
 	}
 }
 
+// A table from before moved (#635) fills it from seq, so an earlier detach
+// still resets.
+func TestSubsMovedUpgrade(t *testing.T) {
+	open := reopener(t)
+	s := open()
+	for _, q := range []string{`ALTER TABLE sub_owners DROP COLUMN moved`, `INSERT INTO sub_owners (owner, new_topics, seq) VALUES ('t:x', 1, 7)`} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+	s = open()
+	defer s.Close()
+	var moved int64
+	if err := s.db.QueryRow(`SELECT moved FROM sub_owners WHERE owner = 't:x'`).Scan(&moved); err != nil || moved != 7 {
+		t.Fatalf("moved %d, %v", moved, err)
+	}
+}
+
 // ?for=<user> reads with what any of the user's tokens may read (review 6),
 // and a null choice is refused, not read as false (review 8).
 func TestSubsForUserAndNull(t *testing.T) {
@@ -287,7 +306,8 @@ func TestSubscriptions(t *testing.T) {
 			t.Fatalf("other owner's stream got %v", m)
 		}
 	}
-	for _, tok := range []string{other, admin} {
+	// script shares the browser's owner but is not filtered: no reset (#635).
+	for _, tok := range []string{other, admin, script} {
 		code, ev := call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d", before), tok, nil)
 		if code != 200 || ev["seq"].(float64) < float64(before+2) || strings.Contains(fmt.Sprint(ev["events"]), EventSubscriptions) {
 			t.Fatalf("events for another owner: %d %v", code, ev)
