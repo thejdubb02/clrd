@@ -22,12 +22,16 @@ is not released yet: there is nothing to install from here today.
   everywhere" switch: off at first, so closing a system notification only
   hides it on this computer; on, a close clears it on every device.
 
-With the package installed, "Open in the clrd app" on the server's link page
-opens this app with the link already in the box. A web page can send such an
-address too, so the app never acts on one by itself: it names the server and
-waits for you to press Link this computer, and the check code step follows as
-usual. A build run from the source tree is not registered for `clrd://`
-addresses; paste the link there.
+With the package or the Windows installer installed, "Open in the clrd app"
+on the server's link page opens this app with the link already in the box. A
+web page can send such an address too, so the app never acts on one by
+itself: it names the server and waits for you to press Link this computer,
+and the check code step follows as usual. A build run from the source tree is
+not registered for `clrd://` addresses; paste the link there. On Windows the
+installer registers the address for the current user and removing clrd takes
+it away. Under Wine the entry was seen written, kept by an update and removed
+with the app; Windows opening clrd from such an address has not been seen
+yet.
 
 One copy runs per sign-in, on Linux and on Windows: starting clrd again
 opens the window of the one already running. (A Windows computer that lets
@@ -48,8 +52,6 @@ toast has moved into the notification centre: if so, clear it in the window.
 None of this has been seen on a Windows computer yet: the code
 is built for Windows, its text handling is tested on Linux, and under Wine,
 which has no toasts, only the refusal was seen: showing one fails cleanly.
-
-Still to come: `clrd://link` addresses on Windows.
 
 ## How the window is kept apart from the token
 

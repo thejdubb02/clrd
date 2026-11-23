@@ -13,4 +13,18 @@
   ${AndIfNot} ${FileExists} "$APPDATA\${BUNDLEID}\no-autostart"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCTNAME}" '"$INSTDIR\${MAINBINARYNAME}.exe" --hidden'
   ${EndIf}
+
+  ; clrd:// addresses open clrd: "Open in the clrd app" on the server's link
+  ; page. The app takes the address as one argument and acts on nothing in it
+  ; until the user presses Link this computer. Written on every run, updates
+  ; too, so a build from before this gets it.
+  WriteRegStr HKCU "Software\Classes\clrd" "" "URL:clrd"
+  WriteRegStr HKCU "Software\Classes\clrd" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\clrd\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+!macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  ${If} $UpdateMode <> 1
+    DeleteRegKey HKCU "Software\Classes\clrd"
+  ${EndIf}
 !macroend

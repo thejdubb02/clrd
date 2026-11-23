@@ -88,6 +88,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Desktop (Linux, build from source): the window follows the desktop's light
   or dark setting, at start and when you change it (#628). Before, it only
   followed the GTK theme, so a dark desktop could show a light inbox.
+- Desktop (Windows, build from source): the installer registers `clrd://` addresses, so "Open in the clrd app" on the server's link page opens the installed app with the link filled in (#162). Nothing is linked until you press Link this computer. Not yet tried on a Windows computer.
 - Desktop (Windows, build from source): the installed app starts when you sign in to Windows, as a tray icon with no window (#162). Turn it off in Windows Settings > Apps > Startup; removing clrd removes the entry. Run under Wine only, not on a Windows computer yet.
 - Desktop (Windows, build from source): the installed app shows each open notification as a Windows toast, with a Clear button that clears it everywhere (#162). Closing one only hides it on that computer unless "Closing clears everywhere" is on, and one cleared on another device leaves the screen and the notification centre. Built for Windows only: not seen on a Windows computer yet.
 - Desktop (Windows, build from source): only one clrd runs per sign-in (#627). Starting it again opens the window of the one already running instead of a second app with a second tray icon. Run under Wine only, not on a Windows computer yet.
