@@ -84,6 +84,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Changed
 
+- Android: unsubscribing asks first for any topic the server marks as
+  carrying approval requests, from the Topics page or a card's menu, not
+  only for "agents" (#623). With an older server, "agents" still asks.
 - Web: Unsubscribe warns on any topic that has had an approval request or
   question, not only `agents` (#623).
 
