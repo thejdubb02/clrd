@@ -9,6 +9,7 @@ on:
       - "docs/**"
       - "assets/**"
       - "*.go"
+      - "internal/**"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/web-e2e.yml"
@@ -19,6 +20,7 @@ on:
       - "docs/**"
       - "assets/**"
       - "*.go"
+      - "internal/**"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/web-e2e.yml"
@@ -50,7 +52,8 @@ jobs:
           path: ${{ runner.temp }}/app-css
           if-no-files-found: ignore
       - name: build
-        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
+        # The packed build, as it ships (#690).
+        run: go run ./server/cmd/pack && CGO_ENABLED=0 go build -tags packed -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
       - name: inbox in Chromium
         run: |
           docker run --rm --network host --init \

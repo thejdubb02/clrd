@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,10 +32,8 @@ import (
 	"time"
 
 	"github.com/thejdubb02/clrd"
+	"github.com/thejdubb02/clrd/internal/gzfs"
 )
-
-//go:embed openapi.json
-var openapiJSON []byte
 
 // Options configure a Server. ConfigFromEnv fills them from CLRD_* variables.
 type Options struct {
@@ -676,8 +673,11 @@ func (s *Server) routesSetup() {
 	})
 	s.route("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write(openapiJSON)
-		return err
+		w.Header().Add("Vary", "Accept-Encoding")
+		if !gzfs.Serve(w, r, apiDoc, "openapi.json") {
+			http.ServeFileFS(w, r, apiDoc, "openapi.json")
+		}
+		return nil
 	})
 	// Public: only what the binary carries, which is all in the repo (#580).
 	s.route("GET /api/v1/version", func(w http.ResponseWriter, r *http.Request) error {

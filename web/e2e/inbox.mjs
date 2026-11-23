@@ -532,6 +532,23 @@ try {
   assert.deepEqual(mn.marks.map(m => m.by), ['pixel-9'], 'Remove took the wrong mark');
   console.log('ok: mark a card seen or actioned and remove your own mark');
 
+  // A color rule change recolors a card in place: its open mark menu and draft note stay (#696).
+  {
+    const cp = await page.context().newPage(); // page no longer hears live events (above)
+    await cp.goto(page.url());
+    await cp.locator('.is-live').waitFor();
+    const rc = cp.locator('article.card', { hasText: 'Rollback 214?' });
+    await rc.locator('[data-mark-menu] summary').click();
+    await rc.getByLabel('Note').fill('half typed');
+    await putSettings({ color_rules: [{ title: 'rollback', color: '#DC2626', style: 'solid' }] });
+    await until(cp, () => document.querySelector('article.cc-DC2626.cs-solid [data-mark-menu][open]'));
+    assert.equal(await rc.getByLabel('Note').inputValue(), 'half typed', 'recolor lost the draft note');
+    await putSettings({ color_rules: [] });
+    await until(cp, () => !document.querySelector('article.cs-solid'));
+    await cp.close();
+  }
+  console.log('ok: a color rule change keeps an open menu and its draft');
+
   // Share and Copy hand over the title, the message and the link; the icon and attachments show on the card.
   const sharePage = await page.context().newPage();
   await sharePage.addInitScript(() => {
@@ -1545,6 +1562,11 @@ try {
     assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'the reload dropped the half-typed answer');
     const [, r2] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: true })]);
     assert.ok(r2.ok(), 'subscribe again');
+    // Its own topic unsubscribed elsewhere: the card leaves, and resubscribing brings the answer back (#687).
+    await Promise.all([dp.waitForEvent('load'), put(other, { drafts: false })]);
+    assert.equal(await dp.locator(`[data-id="${q.id}"]`).count(), 0, 'card still shown after its topic was unsubscribed');
+    await Promise.all([dp.waitForEvent('load'), put(other, { drafts: true })]);
+    assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'resubscribing lost the half-typed answer');
     // A marker whose Unsubscribe never landed: no toast, no Undo.
     await dp.evaluate(() => sessionStorage.setItem('clrd-unsub', 'drafts'));
     await Promise.all([dp.waitForResponse(r => r.url().endsWith('/api/v1/subscriptions') && r.request().method() === 'GET'), dp.reload()]);

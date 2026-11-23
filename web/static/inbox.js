@@ -410,11 +410,17 @@
     let typing = null;
     const keep = stackOrder([...nextList.children].map(n => {
       const old = card(n.dataset.id);
-      if (old && old.dataset.seq === n.dataset.seq && old.dataset.look === n.dataset.look) return old; // or its color rule changed (#165)
+      if (old && old.dataset.seq === n.dataset.seq) { // a color rule change recolors in place, so an open menu and its draft stay (#696)
+        const look = el => [...el.classList].filter(c => /^c[cs]-/.test(c));
+        old.classList.remove(...look(old)); old.classList.add(...look(n)); old.dataset.look = n.dataset.look;
+        return old;
+      }
       const fresh = document.adoptNode(n);
       // A live change to a still-open question keeps a half-typed answer (#153).
       const was = old && old.querySelector('[data-text-reply] [name=text]'), box = fresh.querySelector('[data-text-reply] [name=text]');
       if (was && box && was.value) box.value = was.value;
+      const k = !was && box ? kept.findIndex(([id]) => id === n.dataset.id) : -1; // a draft kept from a reload, its card back live (#687)
+      if (k >= 0) box.value = kept.splice(k, 1)[0][1];
       if (was && box && was === document.activeElement) typing = box;
       localize(fresh);
       previews(fresh);
@@ -665,13 +671,15 @@
     }, () => {});
   }
   // A reload (a subscriptions change on another device, a reset) keeps a
-  // half-typed answer, as a live update does (#153, #649).
+  // half-typed answer, as a live update does (#153, #649). A draft whose card
+  // is not on this page (its topic unsubscribed) is kept for the tab's life (#687).
+  const reply = id => card(id)?.querySelector('[data-text-reply] [name=text]');
+  let kept = [];
+  try { kept = (JSON.parse(sessionStorage.getItem('clrd-drafts')) || []).filter(([id, v]) => { const b = reply(id); if (b) b.value = v; return !b; }); } catch { /* as above */ }
   addEventListener('pagehide', () => {
-    const d = [...document.querySelectorAll('[data-text-reply] [name=text]')].filter(b => b.value).map(b => [b.closest('[data-id]').dataset.id, b.value]);
+    const d = [...kept.filter(([id]) => !reply(id)), ...[...document.querySelectorAll('[data-text-reply] [name=text]')].filter(b => b.value).map(b => [b.closest('[data-id]').dataset.id, b.value])];
     store('clrd-drafts', d.length ? JSON.stringify(d) : null);
   });
-  try { for (const [id, v] of JSON.parse(sessionStorage.getItem('clrd-drafts')) || []) { const b = card(id)?.querySelector('[data-text-reply] [name=text]'); if (b) b.value = v; } } catch { /* as above */ }
-  store('clrd-drafts', null);
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-unsub], [data-subscribe]');
     if (!b) return;

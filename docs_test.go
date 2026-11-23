@@ -36,3 +36,28 @@ func TestReadmeListsDocs(t *testing.T) {
 		}
 	}
 }
+
+// Files reads every doc as it is on disk in both builds, the packed one
+// included (#690), and nothing more.
+func TestFilesDocsMatchDisk(t *testing.T) {
+	var disk, embedded []string
+	fs.WalkDir(os.DirFS("."), "docs", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			disk = append(disk, p)
+			want, _ := os.ReadFile(p)
+			if got, err := fs.ReadFile(Files, p); err != nil || string(got) != string(want) {
+				t.Errorf("%s differs from disk: %v", p, err)
+			}
+		}
+		return err
+	})
+	fs.WalkDir(Files, "docs", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			embedded = append(embedded, p)
+		}
+		return err
+	})
+	if len(disk) < 10 || strings.Join(disk, " ") != strings.Join(embedded, " ") {
+		t.Errorf("docs on disk %v, in Files %v", disk, embedded)
+	}
+}

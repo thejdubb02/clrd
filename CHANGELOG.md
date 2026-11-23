@@ -61,7 +61,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   matches a setting's name, its description or keywords such as "qr", and
   says so when nothing matches. Settings also links to the source code and
   to the issue tracker for reporting a problem (#586).
-- Color rules on the server: color cards by topic, tag, priority or title text, as a bar, tint, solid fill or gradient, set through the settings API or an agent over MCP. Senders can give a message its own color. The web inbox draws them on its cards and recolors live when the rules change; the Android screen comes next.
+- Color rules on the server: color cards by topic, tag, priority or title text, as a bar, tint, solid fill or gradient, set through the settings API or an agent over MCP. Senders can give a message its own color. The web inbox draws them on its cards, picks dark or white text on a solid fill by contrast, and recolors live when the rules change without closing an open menu; the Android screen comes next.
 - Web: a cleared card now slides away and the cards below close the gap, on
   every kind of clear, and Clear all goes top to bottom (#598). A card that
   arrives while you are looking slides in with one small wiggle; nothing
@@ -99,6 +99,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Changed
 
+- Server: the release binary stores its docs, web files and API description gzipped, so it is about 500 KB smaller, and browsers get the web app's scripts, its stylesheet and the API description compressed (#690). Building from source: run `go run ./server/cmd/pack`, then build with `-tags packed`.
 - Android: unsubscribing asks first for any topic the server marks as
   carrying approval requests, from the Topics page or a card's menu, not
   only for "agents" (#623). With an older server, "agents" still asks.
@@ -121,6 +122,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   snooze choices, and a failed swipe save no longer shows an older choice
   when another device changed it meanwhile (#568).
 - Web: a subscriptions change from another device no longer drops a half-typed answer, and Undo shows only for an Unsubscribe that went through (#649).
+- Web: a half-typed answer on a card whose topic was unsubscribed on another device comes back when the topic is subscribed again in the same tab (#687).
 - Web: a card reopened for later on another device that wakes while a Clear all is still waiting for its reply now comes back with its slide in and wiggle (#656).
 - Docs: the self-host build command strips debug data, so the binary it
   makes is about 7.5 MB smaller, the same size as the release builds (#683).
