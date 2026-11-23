@@ -50,6 +50,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   adds clrd to the applications menu and starts it with your desktop
   session. There is still no download. Without the tray library the app no
   longer stops at start: it opens its window instead.
+- Desktop (Linux, with the package installed): "Open in the clrd app" on the
+  link page opens the app with the link filled in (#626). The app names the
+  server and waits for you to press Link this computer; it never links from
+  an address by itself, since any web page can send one.
 
 ### Changed
 

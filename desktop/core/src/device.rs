@@ -25,7 +25,11 @@ struct Inner {
     pending: Option<Pending>,
     refused: bool,
     error: String,
+    offered: Option<(String, String)>,
 }
+
+/// The longest link taken from outside the app. A real one is far shorter.
+const OFFER_MAX: usize = 2048;
 
 /// What the "This computer" screen shows.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
@@ -124,6 +128,39 @@ impl Device {
     /// since a server that is being set up again answers the same way.
     pub fn set_refused(&self) {
         self.inner.lock().unwrap().refused = true;
+    }
+
+    /// A link that came from outside the app: the browser opened a
+    /// `clrd://link` address, and any page can make it do that. So it is
+    /// only kept for the screen to put in the box. Nothing is sent to the
+    /// server it names until the user presses Link, and then it goes through
+    /// [`Device::start`] like a pasted one. It never replaces a link that is
+    /// set up or waiting.
+    pub fn offer(&self, text: &str) {
+        let mut i = self.inner.lock().unwrap();
+        i.offered = None;
+        i.error = if i.linked.is_some() {
+            "This computer is already linked. Unlink it first.".into()
+        } else if i.pending.is_some() {
+            "A link is already waiting. Cancel it first.".into()
+        } else if let Some(target) = link::parse(text).filter(|_| text.len() <= OFFER_MAX) {
+            // ponytail: one offer at a time; a later one replaces an earlier
+            // one the screen has not shown yet.
+            i.offered = Some((text.to_string(), target.base));
+            // What was wrong before (no keychain, say) is still wrong.
+            return;
+        } else {
+            "That is not a clrd device link. Copy the link from Settings, Devices, Add a device."
+                .into()
+        };
+    }
+
+    /// The offered link and the server it names, once. Gone if this computer
+    /// was linked, or started linking, in the meantime.
+    pub fn take_offer(&self) -> Option<(String, String)> {
+        let mut i = self.inner.lock().unwrap();
+        let offer = i.offered.take();
+        offer.filter(|_| i.linked.is_none() && i.pending.is_none())
     }
 
     /// Starts linking from a pasted link. `Ok(false)` means nothing was

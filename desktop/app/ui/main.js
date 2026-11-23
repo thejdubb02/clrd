@@ -3,9 +3,17 @@
 const invoke = window.__TAURI_INTERNALS__.invoke;
 const $ = (id) => document.getElementById(id);
 
-function show([view, status, noted]) {
+function show([view, status, noted, offer]) {
   const waiting = view.check !== '';
   const linked = view.server !== '';
+  // A link the browser handed over. Any page can send one, so it only goes
+  // in the box, with the server it names said plainly: the user presses the
+  // button, or does not.
+  if (offer) {
+    $('url').value = offer[0];
+    $('offer').textContent = `Your browser opened a link to ${offer[1]}. If that is your clrd server and you asked for this, press Link this computer.`;
+    $('plain').hidden = true;
+  }
   $('status').textContent = status;
   $('error').textContent = view.error;
   $('unlinked').hidden = linked || waiting;
@@ -39,6 +47,7 @@ async function run(command, args) {
 
 async function start(plainOk) {
   $('plain').hidden = true;
+  $('offer').textContent = '';
   if ((await run('start', { link: $('url').value, plainOk })) === false) {
     $('plain').hidden = false;
   }

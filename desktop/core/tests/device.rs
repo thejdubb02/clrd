@@ -85,6 +85,52 @@ fn a_refused_token_is_said_and_kept() {
     assert_eq!(keys.load(), Ok(Some(stale)));
 }
 
+/// A link the browser handed over (#626) only fills the box. Any page can
+/// make the browser do that, so nothing goes to the server it names.
+#[test]
+fn a_link_from_outside_is_offered_once_and_asks_the_server_nothing() {
+    let fake = Fake::start();
+    let link = format!(
+        "clrd://link?server={}&code=abc123",
+        fake.base.replace(':', "%3A").replace('/', "%2F")
+    );
+    let device = Device::new(Err("no keychain here".into()), "test desktop");
+
+    device.offer(&link);
+    assert_eq!(device.view().error, "no keychain here", "still said");
+    assert_eq!(device.take_offer(), Some((link.clone(), fake.base.clone())));
+    assert_eq!(device.take_offer(), None, "offered once");
+
+    // Not a link, or far too long to be one: said, and not offered.
+    for bad in [
+        "clrd://pair?server=https%3A%2F%2Fclrd.example.com&code=abc123".to_string(),
+        format!("{link}&{}", "x".repeat(2048)),
+    ] {
+        device.offer(&link);
+        device.offer(&bad);
+        assert!(device.view().error.contains("not a clrd device link"));
+        assert_eq!(device.take_offer(), None);
+    }
+    assert_eq!(fake.requests(), Vec::<String>::new());
+
+    // Linked while an offer waited for the screen: the offer is gone.
+    let (bus, _daemon, keys, _home) = linked(&fake);
+    let saved = keys.load().unwrap().unwrap();
+    keys.clear().unwrap();
+    let device = Device::new(Ok(Keychain::new(bus.connect())), "test desktop");
+    device.offer(&link);
+    keys.save(&saved).unwrap();
+    device.reload();
+    assert_eq!(device.take_offer(), None);
+
+    // Linked already: the link in use stays, and the offer is dropped.
+    device.offer(&link);
+    assert!(device.view().error.contains("already linked"));
+    assert_eq!(device.take_offer(), None);
+    assert_eq!(device.view().server, fake.base);
+    assert_eq!(fake.requests(), Vec::<String>::new());
+}
+
 #[test]
 fn nothing_is_asked_for_without_a_keychain_or_over_plain_http_unasked() {
     let fake = Fake::start();
