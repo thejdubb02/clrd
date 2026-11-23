@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,11 +49,22 @@ type OutHook struct {
 	Enabled      bool       `json:"enabled"`
 	FailingSince *time.Time `json:"failing_since"`
 	Body         string     `json:"body"` // a template for the POST body; "" sends the event (#239)
+	Kind         string     `json:"kind"` // "" POSTs events; "discord" posts and edits a Discord message (#166)
 }
+
+// hookKinds: "discord" posts each new notification to a Discord webhook URL
+// and edits that message when its state changes (#166).
+var hookKinds = []string{"", "discord"}
 
 // queueHooks adds a delivery for every enabled hook on the event's topic that
 // subscribes to it. Runs inside write's transaction.
 func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
+	if e.Type == EventCreated && e.Notification.State == Active { // a scheduled send posts nothing (#166)
+		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
+			SELECT topic, name, ?, 'posted', ?, ?, ? FROM hooks_out WHERE topic = ? AND enabled = 1 AND kind = 'discord'`,
+			e.Seq, string(e.Raw), ms(t), ms(t), e.Notification.Topic)
+		return err
+	}
 	if e.Type != EventState {
 		return nil
 	}
@@ -71,6 +83,7 @@ type hookJob struct {
 	id                 int64
 	topic, name, event string
 	url, secret, body  string
+	kind               string
 	tmpl               string // the hook's body template, rendered at each try
 	attempts           int
 }
@@ -124,16 +137,19 @@ func renderHookBody(src, event string) (string, error) {
 // deliverHooks sends every due delivery. Only database errors fail the job;
 // a receiver's failure is recorded on its delivery.
 func (s *Server) deliverHooks(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT d.id, d.topic, d.name, d.event, h.url, h.secret, d.body, h.body, d.attempts
+	// ponytail: a discord hook sends one delivery per tick, oldest first, so an
+	// edit never passes the post it edits; a burst of 100 takes about 200 s.
+	rows, err := s.db.QueryContext(ctx, `SELECT d.id, d.topic, d.name, d.event, h.url, h.secret, d.body, h.body, h.kind, d.attempts
 		FROM hook_deliveries d JOIN hooks_out h ON h.topic = d.topic AND h.name = d.name
-		WHERE d.status = 'pending' AND d.next_at <= ? AND h.enabled = 1 ORDER BY d.id LIMIT ?`, ms(now()), hookBatch)
+		WHERE d.status = 'pending' AND d.next_at <= ? AND h.enabled = 1 AND (h.kind = '' OR NOT EXISTS (SELECT 1 FROM hook_deliveries p
+			WHERE p.topic = d.topic AND p.name = d.name AND p.status = 'pending' AND p.id < d.id)) ORDER BY d.id LIMIT ?`, ms(now()), hookBatch)
 	if err != nil {
 		return err
 	}
 	var jobs []hookJob
 	for rows.Next() {
 		var j hookJob
-		if err := rows.Scan(&j.id, &j.topic, &j.name, &j.event, &j.url, &j.secret, &j.body, &j.tmpl, &j.attempts); err != nil {
+		if err := rows.Scan(&j.id, &j.topic, &j.name, &j.event, &j.url, &j.secret, &j.body, &j.tmpl, &j.kind, &j.attempts); err != nil {
 			rows.Close()
 			return err
 		}
@@ -174,6 +190,12 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 // otherwise, no proxy) and never follows a redirect. It returns the status code, or an error when none came back. A
 // body template that fails to render is an error too, and nothing is sent.
 func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
+	if j.kind == "discord" {
+		return s.sendDiscord(ctx, j)
+	}
+	if j.event == "posted" {
+		return 204, nil // queued while the hook was discord: a plain hook gets state changes only
+	}
 	if j.tmpl != "" {
 		body, err := renderHookBody(j.tmpl, j.body)
 		if err != nil {
@@ -194,16 +216,123 @@ func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
 		mac.Write([]byte(j.body))
 		req.Header.Set("X-Clrd-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	}
+	code, _, err := s.hookDo(ctx, req)
+	return code, err
+}
+
+// hookDo sends req through the guarded client and returns the status and up
+// to 64 KB of the body. An error leaves the URL out: it can hold a token, as
+// a Discord webhook's does, and errors go to the delivery log.
+func (s *Server) hookDo(ctx context.Context, req *http.Request) (int, []byte, error) {
 	if _, err := s.hookAllowList(ctx); err != nil { // the dial checks the list in memory
-		return 0, err
+		return 0, nil, err
 	}
 	resp, err := s.hookHTTP.Load().Do(req)
-	if err != nil {
-		return 0, err
+	if ue := (*url.Error)(nil); errors.As(err, &ue) {
+		msg := ue.Err.Error() // a redirect's Location can repeat the path
+		for _, part := range []string{req.URL.EscapedPath(), req.URL.Path, req.URL.RawQuery} {
+			if len(part) > 1 {
+				msg = strings.ReplaceAll(msg, part, "[hidden]")
+			}
+		}
+		return 0, nil, fmt.Errorf("%s: %s", ue.Op, msg)
+	} else if err != nil {
+		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-	return resp.StatusCode, nil
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	return resp.StatusCode, b, nil
+}
+
+// sendDiscord posts a new notification to a Discord webhook, keeping the
+// message id, or edits that message to show a state change (#166). Discord
+// webhooks can edit their own messages but not react, so the edit is the
+// reaction: a status line, and the title struck through once cleared.
+func (s *Server) sendDiscord(ctx context.Context, j hookJob) (int, error) {
+	var ev Event
+	if err := json.Unmarshal([]byte(j.body), &ev); err != nil || ev.Notification == nil {
+		return 0, fmt.Errorf("bad event: %v", err)
+	}
+	n := ev.Notification
+	var remote string
+	err := s.db.QueryRowContext(ctx, `SELECT remote_id FROM hook_posts WHERE topic = ? AND name = ? AND id = ?`, j.topic, j.name, n.ID).Scan(&remote)
+	switch {
+	case j.event == "posted" && err == nil:
+		return 200, nil // posted on an earlier try
+	case j.event != "posted" && err == sql.ErrNoRows:
+		return 204, nil // never posted (it failed for good, or came before the hook): nothing to edit
+	case err != nil && err != sql.ErrNoRows:
+		return 0, err
+	}
+	u, err := url.Parse(j.url)
+	if err != nil {
+		return 0, errors.New("bad url")
+	}
+	method, q := "POST", u.Query()
+	if j.event == "posted" {
+		q.Set("wait", "true") // answers with the message, so its id
+	} else {
+		method, u.Path = "PATCH", strings.TrimSuffix(u.Path, "/")+"/messages/"+url.PathEscape(remote)
+	}
+	u.RawQuery = q.Encode()
+	body, _ := json.Marshal(map[string]any{"content": discordText(n, j.event), "allowed_mentions": map[string]any{"parse": []string{}}})
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), strings.NewReader(string(body)))
+	if err != nil {
+		return 0, errors.New("bad url")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "clrd")
+	code, resp, err := s.hookDo(ctx, req)
+	if err != nil || code < 200 || code > 299 {
+		if method == "PATCH" && code == 404 && strings.Contains(string(resp), "10008") {
+			return 204, nil // Unknown Message: someone deleted it, nothing to edit
+		}
+		return code, err
+	}
+	if method == "POST" {
+		var m struct{ ID string }
+		if json.Unmarshal(resp, &m) != nil || m.ID == "" {
+			return 0, errors.New("no message id in the reply: is this a Discord webhook URL?")
+		}
+		_, err = s.db.ExecContext(context.WithoutCancel(ctx), `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id) VALUES (?, ?, ?, ?)`, j.topic, j.name, n.ID, m.ID)
+	}
+	return code, err
+}
+
+// discordText is the message: bold title, the text, and after a state change
+// a small status line. Discord allows 2000 characters.
+func discordText(n *Notification, event string) string {
+	head := n.Title
+	if head == "" {
+		head = n.Topic
+	}
+	head = "**" + head + "**"
+	by := ""
+	if n.StateBy != "" {
+		by = " by " + n.StateBy
+	}
+	status := ""
+	switch event {
+	case Dismissed:
+		head, status = "~~"+head+"~~", "Cleared"+by
+	case Resolved:
+		head, status = "~~"+head+"~~", "Resolved"+by
+	case Acknowledged:
+		status = "Acknowledged" + by
+	case Snoozed:
+		status = "Snoozed" + by
+	case "action":
+		status = "Answered" + by + ": " + n.Reply
+	}
+	text := []rune(head + "\n" + n.Message)
+	if len(text) > 1900 {
+		text = append(text[:1897], []rune("...")...)
+	}
+	if status != "" {
+		st := []rune(status)
+		return string(text) + "\n-# " + string(st[:min(len(st), 90)])
+	}
+	return string(text)
 }
 
 // recordHook stores a send's outcome: 2xx clears the hook's failure streak;
@@ -290,7 +419,7 @@ func (s *Server) OutHooks(ctx context.Context, tok *Token, topic string) ([]Topi
 	if err := hookOwner(tok, topic, ""); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, name, url, events, secret != '', enabled, failing_since, body
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, name, url, events, secret != '', enabled, failing_since, body, kind
 		FROM hooks_out WHERE ? = '' OR topic = ? ORDER BY topic, name`, topic, topic)
 	if err != nil {
 		return nil, err
@@ -301,7 +430,7 @@ func (s *Server) OutHooks(ctx context.Context, tok *Token, topic string) ([]Topi
 		var h TopicHook
 		var events string
 		var since sql.NullInt64
-		if err := rows.Scan(&h.Topic, &h.Name, &h.URL, &events, &h.HasSecret, &h.Enabled, &since, &h.Body); err != nil {
+		if err := rows.Scan(&h.Topic, &h.Name, &h.URL, &events, &h.HasSecret, &h.Enabled, &since, &h.Body, &h.Kind); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(events), &h.Events)
@@ -338,13 +467,24 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	if _, err := parseHookBody(h.Body); err != nil {
 		return err
 	}
+	if !slices.Contains(hookKinds, h.Kind) {
+		return errf(400, "bad_request", "kind must be \"\" or discord")
+	}
+	if h.Kind != "" && (h.Body != "" || h.Secret != "") {
+		return errf(400, "bad_request", "a %s webhook takes no body or secret: it sends its own message", h.Kind)
+	}
 	events, _ := json.Marshal(h.Events)
+	// A new URL is another channel: the old message ids mean nothing there.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?
+		AND NOT EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ?)`, topic, name, topic, name, h.URL); err != nil {
+		return err
+	}
 	// Saving again turns a hook back on and starts a fresh failure streak.
-	_, err := s.db.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret, body) VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(topic, name) DO UPDATE SET url = excluded.url, events = excluded.events,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret, body, kind) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(topic, name) DO UPDATE SET url = excluded.url, events = excluded.events, kind = excluded.kind,
 		secret = CASE WHEN ? AND excluded.secret = '' THEN hooks_out.secret ELSE excluded.secret END,
 		body = CASE WHEN ? AND excluded.body = '' THEN hooks_out.body ELSE excluded.body END, enabled = 1, failing_since = NULL`,
-		topic, name, h.URL, string(events), h.Secret, h.Body, keepSecret, keepBody)
+		topic, name, h.URL, string(events), h.Secret, h.Body, h.Kind, keepSecret, keepBody)
 	return err
 }
 
@@ -365,8 +505,10 @@ func (s *Server) DeleteHook(ctx context.Context, tok *Token, topic, name string)
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errf(404, "not_found", "no webhook %q on topic %q", name, topic)
 	}
-	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE topic = ? AND name = ?`, topic, name); err != nil {
-		return err
+	for _, t := range []string{"hook_deliveries", "hook_posts"} {
+		if _, err := tx.Exec(`DELETE FROM `+t+` WHERE topic = ? AND name = ?`, topic, name); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

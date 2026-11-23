@@ -380,6 +380,12 @@ func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []stri
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
+	hooks, _ := a.s.OutHooks(r.Context(), tok, topic) // the form has no kind: keep the saved one (#166)
+	for _, o := range hooks {
+		if o.Name == name {
+			h.Kind = o.Kind
+		}
+	}
 	return webError(a.s.SaveHook(r.Context(), tok, topic, name, h, !clearSecret, body == nil))
 }
 
