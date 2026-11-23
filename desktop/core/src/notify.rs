@@ -19,7 +19,7 @@ use crate::engine::{Notification, Sink};
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{mpsc, Arc, Mutex};
 use zbus::export::futures_core::Stream;
 use zbus::{block_on, Connection, MessageStream, Variant};
 
@@ -44,7 +44,6 @@ struct Shown {
 struct Inner {
     conn: Connection,
     server: Arc<Server>,
-    close_clears: Arc<AtomicBool>,
     on_open: Box<dyn Fn(&Notification) + Send + Sync>,
     shown: Mutex<Shown>,
 }
@@ -55,8 +54,9 @@ pub struct Notifier(Arc<Inner>);
 impl Notifier {
     /// `conn` is the session bus; the notifier owns it and closes it when
     /// dropped. Build it with a method timeout, or a notification service
-    /// that stops answering holds the sync thread. `close_clears` is the "closing clears everywhere" setting,
-    /// read every time. `on_open` runs when a notification is clicked.
+    /// that stops answering holds the sync thread. `close_clears` is the
+    /// "closing clears everywhere" setting, read as each close arrives.
+    /// `on_open` runs when a notification is clicked.
     pub fn new(
         conn: Connection,
         server: Arc<Server>,
@@ -72,49 +72,66 @@ impl Notifier {
                 .interface(NAME)
                 .path(PATH)
                 .build()?;
-            // ponytail: `put` holds the lock while it waits for its reply,
-            // and the signal thread waits for that lock, so a full queue
-            // here would stall the connection. A long queue keeps that out
-            // of reach; a lock-free hand-off if it is ever seen.
+            // A full queue here would stall the connection. The listener
+            // only hands signals on, so it never falls far behind; the long
+            // queue is spare room.
             MessageStream::for_match_rule(rule, &conn, std::num::NonZero::new(4096)).await
         })?;
         let inner = Arc::new(Inner {
             conn,
             server,
-            close_clears,
             on_open: Box::new(on_open),
             shown: Mutex::default(),
         });
         let weak = Arc::downgrade(&inner);
-        std::thread::spawn(move || listen(stream, weak));
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || listen(stream, close_clears, tx));
+        // One thread handles the signals in the order they came. It ends
+        // when the notifier is gone or the listener stops.
+        // ponytail: a slow server holds up the next click for as long as the
+        // dismiss call takes (30 s at most). More workers if that shows.
+        std::thread::spawn(move || {
+            for signal in rx {
+                let Some(inner) = weak.upgrade() else { return };
+                match signal {
+                    Signal::Closed(id, reason, clears) => inner.closed(id, reason, clears),
+                    Signal::Action(id, key) => inner.action(id, &key),
+                }
+            }
+        });
         Ok(Self(inner))
     }
 }
 
-/// Reads the service's signals until the bus connection ends.
-fn listen(mut stream: MessageStream, inner: Weak<Inner>) {
-    // Each signal is handled outside `block_on`, since the handlers make bus
-    // calls of their own.
-    // ponytail: a slow server holds up the next click for as long as the
-    // dismiss call takes (30 s at most). A queue and a worker if that shows.
+enum Signal {
+    /// The service's id, the reason, and what the "closing clears
+    /// everywhere" setting said when the close arrived.
+    Closed(u32, u32, bool),
+    Action(u32, String),
+}
+
+/// Reads the service's signals until the bus connection ends, and hands them
+/// on at once: a close is judged by the setting as it was when the user
+/// closed it, however long the ones before it take to handle (#685).
+fn listen(mut stream: MessageStream, close_clears: Arc<AtomicBool>, tx: mpsc::Sender<Signal>) {
     while let Some(Ok(msg)) = block_on(std::future::poll_fn(|cx| {
         Pin::new(&mut stream).poll_next(cx)
     })) {
-        let Some(inner) = inner.upgrade() else { return };
         let header = msg.header();
         let body = msg.body();
-        match header.member().map(|m| m.as_str()) {
-            Some("NotificationClosed") => {
-                if let Ok((id, reason)) = body.deserialize::<(u32, u32)>() {
-                    inner.closed(id, reason);
-                }
-            }
-            Some("ActionInvoked") => {
-                if let Ok((id, key)) = body.deserialize::<(u32, String)>() {
-                    inner.action(id, &key);
-                }
-            }
-            _ => {}
+        let signal = match header.member().map(|m| m.as_str()) {
+            Some("NotificationClosed") => body
+                .deserialize::<(u32, u32)>()
+                .ok()
+                .map(|(id, why)| Signal::Closed(id, why, close_clears.load(Ordering::Relaxed))),
+            Some("ActionInvoked") => body
+                .deserialize::<(u32, String)>()
+                .ok()
+                .map(|(id, key)| Signal::Action(id, key)),
+            _ => None,
+        };
+        if signal.is_some_and(|s| tx.send(s).is_err()) {
+            return;
         }
     }
 }
@@ -237,9 +254,9 @@ impl Inner {
         }
     }
 
-    fn closed(&self, os_id: u32, reason: u32) {
+    fn closed(&self, os_id: u32, reason: u32, clears: bool) {
         let Some(n) = self.take(os_id) else { return };
-        if reason == BY_USER && self.close_clears.load(Ordering::Relaxed) {
+        if reason == BY_USER && clears {
             self.clear(&n, "desktop_close");
         } else {
             self.hide(n);
