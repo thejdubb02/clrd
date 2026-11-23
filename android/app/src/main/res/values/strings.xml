@@ -112,8 +112,8 @@
     <string name="swipe_settings">Swipe buttons</string>
     <string name="swipe_explain">The buttons a swipe on a card shows, numbered from the screen edge. Tap to add or take one off. Saved on your server, so every device shows the same. This app has no Resolve button yet, so it skips that one.</string>
     <string name="swipe_locked">This token can see the swipe buttons but not change them. Change them from a device signed in with a full token.</string>
-    <string name="swipe_start">Swipe left</string>
-    <string name="swipe_end">Swipe right</string>
+    <string name="swipe_left">Swipe left</string>
+    <string name="swipe_right">Swipe right</string>
     <string name="swipe_resolve">Resolve</string>
     <string name="swipe_full">each swipe shows at most %1$d buttons</string>
     <string name="swipe_place">%1$d. %2$s</string>

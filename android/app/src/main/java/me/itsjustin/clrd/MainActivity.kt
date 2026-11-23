@@ -102,6 +102,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -119,6 +120,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.journeyapps.barcodescanner.ScanContract
@@ -1656,7 +1658,9 @@ private fun SwipeSettings(app: App) {
     Spacer(Modifier.height(8.dp))
     Text(stringResource(R.string.swipe_settings), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
     Text(stringResource(if (locked) R.string.swipe_locked else R.string.swipe_explain), color = b.slate, fontSize = 13.sp)
-    listOf(true to R.string.swipe_start, false to R.string.swipe_end).forEach { (toStart, side) ->
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl // the gestures mirror, so the words swap (#568)
+    listOf(true, false).forEach { toStart ->
+        val side = if (toStart != rtl) R.string.swipe_left else R.string.swipe_right
         val mine = if (toStart) s.start else s.end
         Text(stringResource(side), color = b.body, fontSize = 14.sp)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

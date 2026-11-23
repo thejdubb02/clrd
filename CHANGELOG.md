@@ -98,6 +98,11 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: in a right-to-left language, Settings names the swipe sides the
+  way the gestures go there. A settings message from the old server that
+  arrives just as you switch servers no longer brings back its swipe or
+  snooze choices, and a failed swipe save no longer shows an older choice
+  when another device changed it meanwhile (#568).
 - Web: a Settings search typed while the page is still loading now finds
   Link a phone once it appears (#591).
 - Server: `color_rules: null` in a settings change is now refused with a

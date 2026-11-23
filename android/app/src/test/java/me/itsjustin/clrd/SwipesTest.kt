@@ -1,5 +1,12 @@
 package me.itsjustin.clrd
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.test.core.app.ApplicationProvider
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -11,6 +18,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -21,6 +29,7 @@ import java.util.concurrent.TimeUnit
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SwipesTest {
+    @get:Rule val rule = createComposeRule()
     private val app = ApplicationProvider.getApplicationContext<App>()
     private val server = MockWebServer()
 
@@ -101,5 +110,32 @@ class SwipesTest {
         assertEquals("HTTP 400: swipe_end: bad", err) // the server's reason, not "no connection"
         assertFalse(app.swipesLocked.value)
         assertEquals(Swipes(), app.swipes.value)
+    }
+
+    @Test fun anOldServersMessageAfterASwitchIsDropped() { // #568
+        val old = RoomStore(app) // the old server's sync client, its settings message already in hand
+        onIo { app.saveServer(app.serverUrl, "other-token") }
+        onIo { old.settings(JSONObject("""{"swipe_start":["ack"],"swipe_end":[],"snooze_intervals":["7m"],"snooze_default":"7m"}""")) }
+        assertEquals(Swipes(), app.swipes.value)
+        assertNull(app.prefs.getString("swipes", null))
+        assertEquals(Snooze(), app.snooze.value) // snooze shares the path
+        onIo { RoomStore(app).settings(JSONObject("""{"swipe_start":["ack"],"swipe_end":[]}""")) } // the new server's
+        assertEquals(Swipes(listOf("ack"), emptyList()), app.swipes.value)
+    }
+
+    @Test fun aFailedSaveGoesBackToAMessageThatLandedDuringIt() { // #568
+        server.enqueue(MockResponse().setResponseCode(500).setBody("{}").setBodyDelay(1, TimeUnit.SECONDS))
+        val save = app.io.submit<String?> { app.saveSwipes(Swipes(emptyList(), listOf("clear"))) }
+        server.takeRequest(5, TimeUnit.SECONDS)
+        RoomStore(app).settings(JSONObject("""{"swipe_start":["resolve"],"swipe_end":["ack"]}""")) // another device, while the save waits
+        assertNotNull(save.get(30, TimeUnit.SECONDS))
+        assertEquals(Swipes(listOf("resolve"), listOf("ack")), app.swipes.value)
+    }
+
+    @Test fun theLabelsFollowTheGesturesInRightToLeft() { // #568: a start swipe goes right there
+        rule.setContent { CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { SettingsScreen(app, null, 0) {} } }
+        rule.onNodeWithTag("settings-search").performTextReplacement("swipe")
+        fun top(id: Int) = rule.onNodeWithText(app.getString(id)).fetchSemanticsNode().boundsInRoot.top
+        assertTrue(top(R.string.swipe_right) < top(R.string.swipe_left)) // the start side is listed first
     }
 }
