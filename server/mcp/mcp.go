@@ -557,6 +557,11 @@ func schema(props map[string]any, required ...string) map[string]any {
 
 func p(typ, desc string) map[string]any { return map[string]any{"type": typ, "description": desc} }
 
+// hexP is a #RRGGBB string property, the only color form the server takes.
+func hexP(desc string) map[string]any {
+	return map[string]any{"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": desc}
+}
+
 var userGrants = map[string]any{"type": []string{"array", "null"}, "description": "Per-topic rules, like [{\"topic\":\"family\",\"scopes\":[\"read\"]}]; read and publish only. null limits nothing, [] is no topic",
 	"items": schema(map[string]any{"topic": p("string", "Topic or pattern with *"), "scopes": strs("read and/or publish")}, "topic", "scopes")}
 
@@ -568,7 +573,7 @@ var tools = []map[string]any{
 			"title":        p("string", "Optional title"),
 			"format":       map[string]any{"type": "string", "enum": []string{"markdown", "text"}, "description": "markdown (default) or text, which is shown exactly as sent"},
 			"icon":         p("string", "Optional http(s) image URL shown with the notification; the topic's icon when omitted"),
-			"color":        p("string", "Optional card color as #RRGGBB, shown as a bar; the user's color_rules (settings) win over it"),
+			"color":        hexP("Optional card color as #RRGGBB, shown as a bar; the user's color_rules (settings) win over it"),
 			"attachment":   schema(map[string]any{"url": p("string", "http(s) URL of the file"), "name": p("string", "Optional file name")}, "url"),
 			"priority":     map[string]any{"type": "integer", "minimum": 1, "maximum": 5, "description": "1..5, 5 = urgent"},
 			"repeat":       p("string", "Optional: alert again every this long (1m to 24h, e.g. 5m) until someone acknowledges, snoozes, dismisses or resolves it"),
@@ -616,7 +621,7 @@ var tools = []map[string]any{
 				"items": schema(map[string]any{"topic": p("string", "Topic it landed in; leave out for any"), "tag": p("string", "One of its tags; leave out for any"),
 					"priority_min": map[string]any{"type": "integer", "minimum": 0, "maximum": 5, "description": "Lowest priority, inclusive; 0 = no limit"},
 					"priority_max": map[string]any{"type": "integer", "minimum": 0, "maximum": 5, "description": "Highest priority, inclusive; 0 = no limit"},
-					"title":        p("string", "Text in the title, any case"), "color": p("string", "#RRGGBB"),
+					"title":        p("string", "Text in the title, any case"), "color": hexP("#RRGGBB"),
 					"style": map[string]any{"type": "string", "enum": []string{"bar", "tint", "solid", "gradient"}}}, "color", "style")},
 		})},
 	{"name": "get", "description": "Get one notification by its server id, with its current state.",

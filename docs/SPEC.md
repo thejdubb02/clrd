@@ -359,7 +359,7 @@ client that does not know a style draws `bar`. `server/testdata/colorrules.json`
 holds cases every client's matcher must pass. A PUT replaces the whole list
 (read first, send every rule to keep; `[]` clears it); a bad rule is a 400
 naming its index and field and changes nothing. Only a token with no topic
-list may change it (403 otherwise); a limited token reads only rules with no
+list and no per-topic grants may change it (403 otherwise); a limited token reads only rules with no
 topic or a topic it may read or publish to. Presets are client shortcuts that write
 ordinary rules: Severity is priority 5 `#DC2626`, 4 `#EA580C`, 3 `#CA8A04`,
 all `bar`; By topic writes one `bar` rule per topic. Not built yet: matching
