@@ -161,11 +161,20 @@ mod os {
         /// `None` when this computer is not linked.
         pub fn load(&self) -> Result<Option<Linked>, String> {
             let session = self.open()?;
-            let Some(item) = self.items()?.into_iter().next() else {
-                return Ok(None);
-            };
-            let (secret,): (Secret,) = self.call(item.as_str(), ITEM, "GetSecret", &(session,))?;
-            Ok(unpack(&secret.2))
+            loop {
+                let Some(item) = self.items()?.into_iter().next() else {
+                    return Ok(None);
+                };
+                match self.call::<_, (Secret,)>(item.as_str(), ITEM, "GetSecret", &(&session,)) {
+                    Ok((secret,)) => return Ok(unpack(&secret.2)),
+                    // Still there, so the read itself failed.
+                    Err(e) if self.items()?.contains(&item) => return Err(e),
+                    // Removed between the search and the read (an unlink in
+                    // another process): look again. Ends, as each turn needs
+                    // one more entry to have gone.
+                    Err(_) => {}
+                }
+            }
         }
 
         pub fn clear(&self) -> Result<(), String> {

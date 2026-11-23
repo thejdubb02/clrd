@@ -350,7 +350,15 @@ fetch('/report', { method: 'POST', body: 'open' });
         all.iter().filter(|r| r.contains("/api/v1/ws")).count()
     };
     let before = live();
+    let since = Instant::now();
     wait_long("Try again links this computer again", || {
+        // This step has timed out under load with no trace of why (#737):
+        // say what the keychain and the server saw before it does.
+        if since.elapsed() > Duration::from_secs(80) {
+            let all = fake.requests();
+            let last = &all[all.len().saturating_sub(10)..];
+            eprintln!("keychain: {:?}, last requests: {last:#?}", keys.load());
+        }
         // Past the link box and its button to Try again.
         press(&["Tab", "Tab", "Tab", "Return"]);
         live() > before
