@@ -402,7 +402,7 @@ func TestCardColorsCSS(t *testing.T) {
 	}
 	// A sender's own color draws as a bar, and the page links its stylesheet.
 	_, body = get(t, Handler(one{n: Notification{ID: "c1", Topic: "t", Title: "x", Color: "#0ea5e9", State: "active", CreatedAt: time.Now()}}, ""), "/app")
-	for _, want := range []string{"cc-0EA5E9 cs-bar", "card-colors.css?c=0EA5E9"} {
+	for _, want := range []string{"cc-0EA5E9 cs-bar", "card-colors.css?v=2&c=0EA5E9"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("colored card: missing %q", want)
 		}
