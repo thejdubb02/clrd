@@ -58,6 +58,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Web and Android: the sender's Alarm topic hint now says an empty topic
   means the first topic its last topic routes to, or that topic when it has
   no route, which is what the server does (#585).
+- Server: a linked device can always unlink itself, even when it was linked
+  from a publish-only token, with `DELETE /api/v1/devices/this` (#609).
 
 ## 0.1.0 - 2026-11-23
 
