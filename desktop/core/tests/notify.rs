@@ -7,11 +7,9 @@ mod common;
 
 use clrd_core::notify::Notifier;
 use clrd_core::{Engine, Notification, Server, Sink};
-use common::{settle, state_path, wait, Fake, TOKEN};
+use common::{settle, state_path, wait, Bus, Fake, TOKEN};
 use serde_json::json;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use zbus::object_server::SignalEmitter;
@@ -19,35 +17,6 @@ use zbus::{block_on, Connection};
 
 const NAME: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
-
-/// A session bus of our own, gone when the test ends.
-struct Bus(Child, String);
-
-impl Bus {
-    fn start() -> Bus {
-        let mut child = Command::new("dbus-daemon")
-            .args(["--session", "--nofork", "--print-address"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("dbus-daemon is needed for these tests");
-        let mut address = String::new();
-        BufReader::new(child.stdout.take().unwrap())
-            .read_line(&mut address)
-            .unwrap();
-        Bus(child, address.trim().to_string())
-    }
-
-    fn connect(&self) -> Connection {
-        block_on(zbus::connection::Builder::address(self.1.as_str()).build()).unwrap()
-    }
-}
-
-impl Drop for Bus {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 
 /// The notification service, writing down what it was asked.
 struct Service {

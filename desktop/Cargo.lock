@@ -89,11 +89,13 @@ dependencies = [
 name = "clrd-core"
 version = "0.1.0"
 dependencies = [
+ "getrandom",
  "log",
  "serde",
  "serde_json",
  "tungstenite",
  "ureq",
+ "windows-sys",
  "zbus",
 ]
 

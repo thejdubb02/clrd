@@ -40,11 +40,29 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-fn retry(e: impl std::fmt::Display) -> Error {
+pub(crate) fn retry(e: impl std::fmt::Display) -> Error {
     Error::Retry(e.to_string(), None)
 }
 
-fn status_error(code: u16, retry_after: Option<&str>) -> Error {
+/// The HTTP client every call here goes through, on the OS's TLS and roots.
+pub(crate) fn agent(timeout: Duration) -> ureq::Agent {
+    use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
+    let tls = TlsConfig::builder()
+        .provider(TlsProvider::NativeTls)
+        .root_certs(RootCerts::PlatformVerifier)
+        .build();
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        // The API never redirects. Following one would turn a DELETE into a
+        // GET of some other page and report its 200 as "revoked".
+        .max_redirects(0)
+        .http_status_as_error(false) // read here, for Retry-After
+        .tls_config(tls)
+        .build()
+        .into()
+}
+
+pub(crate) fn status_error(code: u16, retry_after: Option<&str>) -> Error {
     match code {
         401 | 403 => Error::Auth,
         _ => Error::Retry(
@@ -90,22 +108,78 @@ struct List {
 impl Server {
     /// `base` is the server's address, like `https://clrd.example.com`.
     pub fn new(base: &str, token: &str) -> Self {
-        use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
-        let tls = TlsConfig::builder()
-            .provider(TlsProvider::NativeTls)
-            .root_certs(RootCerts::PlatformVerifier)
-            .build();
-        let http = ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(30)))
-            .http_status_as_error(false) // read here, for Retry-After
-            .tls_config(tls)
-            .build()
-            .into();
         Self {
             base: base.trim_end_matches('/').to_string(),
             bearer: format!("Bearer {token}"),
-            http,
+            http: agent(Duration::from_secs(30)),
         }
+    }
+
+    /// Signs the app's own window in (SPEC section 4, Session): the server
+    /// mints a separate session token under this device's and answers with
+    /// it as a `Set-Cookie` header, returned as sent. The window gets that
+    /// cookie and never this device's token. Treat the value as a secret.
+    pub fn session(&self, name: &str) -> Result<String, Error> {
+        let token = self.bearer.strip_prefix("Bearer ").unwrap_or_default();
+        let res = Self::checked(
+            self.http
+                .post(format!("{}/api/v1/session", self.base))
+                .send_json(serde_json::json!({ "token": token, "name": name })),
+        )?;
+        res.headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .find(|v| v.starts_with("clrd_session="))
+            .map(str::to_string)
+            .ok_or_else(|| retry("the server did not answer with a session"))
+    }
+
+    /// Signs that window out: revokes the session `cookie` (the header
+    /// [`Server::session`] returned) on the server.
+    pub fn end_session(&self, cookie: &str) -> Result<(), Error> {
+        let pair = cookie.split(';').next().unwrap_or_default();
+        Self::checked(
+            self.http
+                .delete(format!("{}/api/v1/session", self.base))
+                .header("Cookie", pair)
+                .call(),
+        )
+        .map(|_| ())
+    }
+
+    /// Unlinks this device on the server: its token stops working, and so
+    /// does every window session signed in with it.
+    pub fn unlink(&self) -> Result<(), Error> {
+        #[derive(Deserialize)]
+        struct Device {
+            id: String,
+            #[serde(default)]
+            this: bool,
+        }
+        #[derive(Deserialize)]
+        struct Devices {
+            devices: Vec<Device>,
+        }
+        let mut res = Self::checked(
+            self.http
+                .get(format!("{}/api/v1/devices?all=1", self.base))
+                .header("Authorization", &self.bearer)
+                .call(),
+        )?;
+        let list: Devices = res.body_mut().read_json().map_err(retry)?;
+        let me = list
+            .devices
+            .into_iter()
+            .find(|d| d.this)
+            .ok_or_else(|| retry("the server does not list this device"))?;
+        Self::checked(
+            self.http
+                .delete(format!("{}/api/v1/devices/{}", self.base, me.id))
+                .header("Authorization", &self.bearer)
+                .call(),
+        )
+        .map(|_| ())
     }
 
     fn checked(
@@ -346,4 +420,35 @@ pub fn run<S: Sink>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    #[test]
+    fn a_redirected_sign_out_is_not_reported_as_done() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            // First answer: a redirect. Anything that follows it gets a 200.
+            for (n, conn) in listener.incoming().enumerate() {
+                let mut conn = conn.unwrap();
+                let _ = conn.read(&mut [0; 2048]);
+                let head = if n == 0 {
+                    "302 Found\r\nLocation: /login"
+                } else {
+                    "200 OK"
+                };
+                let _ = write!(
+                    conn,
+                    "HTTP/1.1 {head}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+            }
+        });
+        assert!(Server::new(&base, "t")
+            .end_session("clrd_session=x")
+            .is_err());
+    }
 }

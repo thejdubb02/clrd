@@ -305,6 +305,51 @@ pub fn state_path() -> PathBuf {
     dir.join("state.json")
 }
 
+/// A session bus of our own, gone when the test ends: the process and its
+/// address.
+#[cfg(target_os = "linux")]
+pub struct Bus(pub std::process::Child, pub String);
+
+#[cfg(target_os = "linux")]
+impl Bus {
+    pub fn start() -> Bus {
+        use std::io::BufRead;
+        // A config with no service folders, so this bus never starts a
+        // program installed on the machine (a real keyring, say) by name.
+        let config = state_path().with_file_name("bus.conf");
+        std::fs::write(
+            &config,
+            r#"<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen>
+<policy context="default"><allow send_destination="*" eavesdrop="true"/>
+<allow eavesdrop="true"/><allow own="*"/></policy></busconfig>"#,
+        )
+        .unwrap();
+        let mut child = std::process::Command::new("dbus-daemon")
+            .arg(format!("--config-file={}", config.display()))
+            .args(["--nofork", "--print-address"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("dbus-daemon is needed for these tests");
+        let mut address = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut address)
+            .unwrap();
+        Bus(child, address.trim().to_string())
+    }
+
+    pub fn connect(&self) -> zbus::Connection {
+        zbus::block_on(zbus::connection::Builder::address(self.1.as_str()).build()).unwrap()
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for Bus {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// A sync client running on its own thread, as the app runs it.
 pub struct Client {
     pub log: Recorder,

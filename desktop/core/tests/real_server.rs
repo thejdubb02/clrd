@@ -8,6 +8,7 @@
 
 mod common;
 
+use clrd_core::link::{self, Claim, Link};
 use clrd_core::{Server, Status};
 use common::{state_path, wait, Client};
 use serde_json::{json, Value};
@@ -27,12 +28,11 @@ fn has(log: &[String], line: &str) -> bool {
     log.iter().any(|l| l == line)
 }
 
-#[test]
-#[ignore = "needs CLRD_BIN, the path of a built clrd server"]
-fn real_server() {
+/// A server on a free port with an empty database: the process, its address
+/// and a token made on its command line.
+fn serve() -> (Kill, String, String) {
     let bin = std::env::var("CLRD_BIN").expect("set CLRD_BIN to a built clrd server");
-    let path = state_path();
-    let db = path.with_file_name("clrd.db");
+    let db = state_path().with_file_name("clrd.db");
     let port = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -51,7 +51,7 @@ fn real_server() {
         String::from_utf8_lossy(&out.stderr)
     );
     let token = String::from_utf8(out.stdout).unwrap().trim().to_string();
-    let _server = Kill(
+    let server = Kill(
         Command::new(&bin)
             .arg("serve")
             .env("CLRD_DB", &db)
@@ -63,6 +63,14 @@ fn real_server() {
     wait("server up", || {
         TcpStream::connect(("127.0.0.1", port)).is_ok()
     });
+    (server, base, token)
+}
+
+#[test]
+#[ignore = "needs CLRD_BIN, the path of a built clrd server"]
+fn real_server() {
+    let (_server, base, token) = serve();
+    let path = state_path();
 
     let publish = |title: &str| -> String {
         let mut res = ureq::post(format!("{base}/api/v1/notifications"))
@@ -137,4 +145,79 @@ fn real_server() {
         ]
     );
     assert!(third.engine.lock().unwrap().seq() < 999_999);
+}
+
+/// Linking this computer, signing its window in, and unlinking.
+#[test]
+#[ignore = "needs CLRD_BIN, the path of a built clrd server"]
+fn link_sign_in_unlink() {
+    let (_server, base, browser) = serve();
+    // What the signed-in browser does: make a code, read the claim, approve.
+    let as_browser = |method: &str, path: &str| -> Value {
+        let req = ureq::http::Request::builder()
+            .method(method)
+            .uri(format!("{base}{path}"))
+            .header("Authorization", format!("Bearer {browser}"))
+            .body(())
+            .unwrap();
+        let mut res = ureq::run(req).unwrap();
+        res.body_mut().read_json().unwrap()
+    };
+    // What a signed-in window can do with its cookie: the status of a read.
+    let window = |cookie: &str| -> u16 {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
+        agent
+            .get(format!("{base}/api/v1/notifications"))
+            .header("Cookie", cookie.split(';').next().unwrap())
+            .call()
+            .unwrap()
+            .status()
+            .as_u16()
+    };
+
+    let made = as_browser("POST", "/api/v1/link");
+    let target = link::parse(made["url"].as_str().unwrap()).expect("the server's own link parses");
+    assert_eq!(target.base, base);
+    let code = target.code.clone();
+
+    let mine = Link::start(&target, "test desktop").unwrap();
+    assert!(matches!(mine.claim().unwrap(), Claim::Waiting));
+    // Someone who copied the link too late gets nothing.
+    let thief = Link::start(&target, "thief").unwrap();
+    assert!(matches!(thief.claim().unwrap(), Claim::Gone));
+    // The browser shows the number this app shows.
+    let seen = as_browser("GET", &format!("/api/v1/link/{code}"));
+    assert_eq!(seen["check"], mine.check());
+    assert_eq!(seen["name"], "test desktop");
+    assert!(matches!(mine.claim().unwrap(), Claim::Waiting));
+    as_browser("POST", &format!("/api/v1/link/{code}/approve"));
+    let Claim::Approved(token) = mine.claim().unwrap() else {
+        panic!("approved, so the claim hands the token over");
+    };
+    assert!(matches!(mine.claim().unwrap(), Claim::Gone), "single use");
+
+    // The token is a linked device's: it reads, and it shows as this device.
+    let device = Server::new(&base, &token);
+    device.list_open().unwrap();
+
+    // The window's session is its own token, not the device's.
+    let first = device.session("test desktop").unwrap();
+    assert!(first.starts_with("clrd_session=") && first.contains("HttpOnly"));
+    assert!(!first.contains(&token));
+    assert_eq!(window(&first), 200);
+    // Signing the window out ends that session and leaves the device linked.
+    device.end_session(&first).unwrap();
+    assert_eq!(window(&first), 401);
+    device.list_open().unwrap();
+
+    // Unlinking ends the device's token and the window session under it.
+    let second = device.session("test desktop").unwrap();
+    assert_eq!(window(&second), 200);
+    device.unlink().unwrap();
+    assert_eq!(window(&second), 401);
+    assert!(device.list_open().is_err());
+    assert!(device.session("test desktop").is_err());
 }

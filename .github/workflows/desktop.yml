@@ -34,8 +34,9 @@ jobs:
       - name: system packages
         # OpenSSL headers for the OS TLS the app links to, and a C linker.
         # dbus-daemon is for the notification tests, which start a private
-        # bus of their own and never touch a real session.
-        run: sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev dbus-daemon
+        # bus of their own and never touch a real session. gnome-keyring is
+        # the real keychain the token tests store into, on that same bus.
+        run: sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev dbus-daemon gnome-keyring
       - name: rust toolchain
         # rustup itself is pinned by checksum; the compiler version comes
         # from desktop/rust-toolchain.toml, which cargo installs on first use.
