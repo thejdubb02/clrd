@@ -58,6 +58,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -400,6 +401,25 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
         }
     }
 
+    // Unsubscribe from a card or stack menu (#617). The server's reset then takes the topic's cards and tray entries away.
+    val subs by app.subs.collectAsState()
+    var asking by remember { mutableStateOf<String?>(null) } // the approval topic waits for a yes
+    val unsubscribeNow: (String) -> Unit = { t ->
+        val api = app.api()
+        app.io.execute {
+            val err = app.subscribe(t, false, api)
+            scope.launch {
+                if (err != null) snackbar.showSnackbar(ctx.getString(R.string.subs_failed, err))
+                else if (snackbar.showSnackbar(ctx.getString(R.string.unsubscribed, t), ctx.getString(R.string.undo), duration = androidx.compose.material3.SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                    app.io.execute { app.subscribe(t, true, api)?.let { e -> scope.launch { snackbar.showSnackbar(ctx.getString(R.string.subs_failed, e)) } } }
+                }
+            }
+        }
+    }
+    ConfirmUnsubscribe(asking, { asking = null }, unsubscribeNow)
+    // Only a token that follows subscriptions may change them; any other sees every topic anyway.
+    val topicMenu: @Composable (String) -> Unit = { t -> if (subs?.filtered == true) TopicMenu(t) { if (it == APPROVAL_TOPIC) asking = it else unsubscribeNow(it) } }
+
     Scaffold(
         containerColor = b.paper,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -451,11 +471,11 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                         items(entries, key = { it.key }) { e ->
                             if (e is Stack) {
                                 val open = e.topic in unfolded
-                                StackCard(e, open, if (tab == Tab.Cleared) null else ({ clearAll(e.rows) })) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
+                                StackCard(e, open, if (tab == Tab.Cleared) null else ({ clearAll(e.rows) }), { topicMenu(e.topic) }) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
                                 return@items
                             }
                             val n = (e as One).n
-                            if (tab == Tab.Cleared) Card(n) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text(stringResource(R.string.restore), color = b.ink) } }
+                            if (tab == Tab.Cleared) Card(n, { topicMenu(n.topic) }) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text(stringResource(R.string.restore), color = b.ink) } }
                             else {
                                 // The buttons the shared setting names, minus any this card cannot take (#161).
                                 val snoozeTimes = snooze.times.map { t -> snoozeLabel(t) to { app.act(n.id, "snooze", Snooze.body(t)) } }
@@ -471,7 +491,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                                     }
                                 }
                                 RevealRow(reveal(swipes.start), reveal(swipes.end), app.fastSwipe) {
-                                    Card(n) {
+                                    Card(n, { topicMenu(n.topic) }) {
                                         if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text(ackLabel, color = b.ink) }
                                         if (tab == Tab.Inbox) SnoozeButton(app, n.id)
                                         TextButton(onClick = { clear(n) }) { Text(clearLabel, color = b.clear, fontWeight = FontWeight.SemiBold) }
@@ -636,7 +656,7 @@ private fun RevealButton(a: RevealAction, tap: () -> Unit) {
 }
 
 @Composable
-private fun Card(n: Notif, actions: @Composable () -> Unit) {
+private fun Card(n: Notif, menu: @Composable () -> Unit = {}, actions: @Composable () -> Unit) {
     val b = LocalBrand.current
     // Tap to read the whole message; tap again to fold it.
     var open by rememberSaveable(n.id) { mutableStateOf(false) }
@@ -686,6 +706,7 @@ private fun Card(n: Notif, actions: @Composable () -> Unit) {
                 IconButton(onClick = { share(ctx, n) }) { Icon(Icons.Filled.Share, stringResource(R.string.share), tint = b.slate) }
                 IconButton(onClick = { copy(ctx, n) }) { Icon(painterResource(R.drawable.ic_copy), stringResource(R.string.copy), tint = b.slate, modifier = Modifier.size(20.dp)) }
                 MarkButton(App.of(ctx), n)
+                menu()
                 Spacer(Modifier.weight(1f))
                 actions()
             }
@@ -793,7 +814,7 @@ internal fun stacked(rows: List<Notif>, open: Set<String>): List<Entry> = rows.g
 }
 
 @Composable
-private fun StackCard(s: Stack, open: Boolean, onClear: (() -> Unit)?, onToggle: () -> Unit) {
+private fun StackCard(s: Stack, open: Boolean, onClear: (() -> Unit)?, menu: @Composable () -> Unit, onToggle: () -> Unit) {
     val b = LocalBrand.current
     val top = s.rows.maxOf { it.priority }
     Surface(
@@ -809,10 +830,95 @@ private fun StackCard(s: Stack, open: Boolean, onClear: (() -> Unit)?, onToggle:
                 Text(s.rows[0].title.ifEmpty { s.rows[0].message }, color = b.body, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(pluralStringResource(R.plurals.tray_stack, s.rows.size, s.rows.size), style = Mono, color = b.slate)
             }
+            menu()
             if (onClear != null) TextButton(onClick = onClear) { Text(stringResource(R.string.clear), color = b.ink) }
             TextButton(onClick = onToggle) { Text(stringResource(if (open) R.string.stack_hide else R.string.stack_show), color = b.ink) }
         }
     }
+}
+
+/** A card's or stack's menu (#617): Unsubscribe from its topic on every device. */
+@Composable
+private fun TopicMenu(topic: String, unsubscribe: (String) -> Unit) {
+    val b = LocalBrand.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more), tint = b.slate) }
+        DropdownMenu(open, { open = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.unsubscribe_from, topic)) }, onClick = { open = false; unsubscribe(topic) })
+        }
+    }
+}
+
+/** Unsubscribing from [topic], the approval topic, also hides approval prompts (SPEC 2.3), so it asks first. Null shows nothing. */
+@Composable
+private fun ConfirmUnsubscribe(topic: String?, dismiss: () -> Unit, go: (String) -> Unit) {
+    topic ?: return
+    val b = LocalBrand.current
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.subs_agents_title, topic)) },
+        text = { Text(stringResource(R.string.subs_agents_text)) },
+        confirmButton = { TextButton(onClick = { dismiss(); go(topic) }) { Text(stringResource(R.string.unsubscribe), color = b.signal, fontWeight = FontWeight.SemiBold) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.link_cancel)) } },
+    )
+}
+
+/**
+ * The Topics setting (#617): what a new topic starts as, then a switch per topic with its open count and last
+ * message, searchable when the list is long. Every topic shows, so one turned off can always be turned on again.
+ * [gone] says the server has no subscriptions route after all.
+ */
+@Composable
+private fun SubscriptionSettings(app: App, resumes: Int, gone: () -> Unit) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    val subs by app.subs.collectAsState()
+    val filtered = subs?.filtered == true
+    var list by remember { mutableStateOf<SubsList?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var find by rememberSaveable { mutableStateOf("") }
+    var asking by remember { mutableStateOf<String?>(null) }
+    val why = { e: Exception -> (e as? HttpError)?.message ?: ctx.getString(R.string.sound_no_connection) }
+    LaunchedEffect(subs, resumes) { // a change from another device comes as a new settings message
+        if (!filtered) return@LaunchedEffect
+        val api = app.api()
+        app.io.execute {
+            try { app.loadSubs(api)?.let { list = it; error = null } ?: gone() } catch (e: Exception) { error = why(e) }
+        }
+    }
+    val put = { body: org.json.JSONObject ->
+        val api = app.api()
+        app.io.execute { try { list = app.putSubs(body, api); error = null } catch (e: Exception) { error = why(e) } }
+    }
+    if (!filtered) return Text(stringResource(R.string.subs_unfiltered), color = b.slate, fontSize = 13.sp)
+    error?.let { Text(stringResource(R.string.subs_failed, it), color = b.signal, fontSize = 13.sp) }
+    val l = list ?: return
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.subs_new), color = b.ink)
+            Text(stringResource(R.string.subs_new_explain), color = b.slate, fontSize = 13.sp)
+        }
+        Switch(checked = l.newTopics, onCheckedChange = { put(org.json.JSONObject().put("new_topics", it)) }, modifier = Modifier.testTag("subs-new"))
+    }
+    if (l.topics.size > 8) OutlinedTextField(
+        find, { find = it }, label = { Text(stringResource(R.string.subs_search)) }, singleLine = true,
+        modifier = Modifier.fillMaxWidth().testTag("subs-search"),
+    )
+    l.topics.filter { it.topic.contains(find.trim(), true) }.forEach { t ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(t.topic, color = b.ink)
+                val last = t.lastAt?.let(::millisOf)?.let { ago(ctx, it) } ?: stringResource(R.string.subs_never)
+                Text(stringResource(R.string.subs_open, t.open) + "  ·  " + last, style = Mono, color = b.slate)
+                if (t.topic == APPROVAL_TOPIC) Text(stringResource(R.string.subs_agents_note), color = b.signal, fontSize = 13.sp)
+            }
+            Switch(checked = t.subscribed, modifier = Modifier.testTag("sub-${t.topic}"), onCheckedChange = { on ->
+                if (!on && t.topic == APPROVAL_TOPIC) asking = t.topic else put(topicBody(t.topic, on))
+            })
+        }
+    }
+    ConfirmUnsubscribe(asking, { asking = null }) { put(topicBody(it, false)) }
 }
 
 @Composable
@@ -1654,7 +1760,10 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
         val api = app.api()
         app.io.execute { senders.value = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull() }
     }
+    val subs by app.subs.collectAsState()
+    var subsGone by remember(saved) { mutableStateOf(false) }
     val open = mapOf(
+        "subscriptions" to (app.configured && subs != null && !subsGone),
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
         "swipe" to app.configured, "snooze" to app.configured, "devices" to app.configured,
         "senders" to (app.configured && senders.value != null),
@@ -1718,6 +1827,11 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 Title(R.string.battery)
                 Explain(R.string.battery_explain)
                 TextButton(onClick = { openBattery(ctx, prompt) }) { Text(stringResource(R.string.battery_button), color = b.ink) }
+            }
+            "subscriptions" -> {
+                Title(R.string.subs_title)
+                Explain(R.string.subs_explain)
+                SubscriptionSettings(app, resumes) { subsGone = true }
             }
             "muted-topics" -> {
                 Title(R.string.topics)

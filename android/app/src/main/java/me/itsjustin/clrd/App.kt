@@ -176,6 +176,26 @@ class App : Application() {
         }
     }
 
+    /** This account's topic subscriptions (#617), as the server last sent them; null from a server without them. */
+    internal val subs by lazy { MutableStateFlow(Subs.of(prefs.getString("subs", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() })) }
+
+    /** `GET /api/v1/subscriptions`; null from a server without the route. Call on [io]. */
+    internal fun loadSubs(api: Api = api()): SubsList? = try {
+        SubsList.from(org.json.JSONObject(api.get("/api/v1/subscriptions")))
+    } catch (e: HttpError) { if (e.code == 404) null else throw e }
+
+    /**
+     * Sends only the fields in [body]; the reply is the new set. The server then sends every device of this
+     * account its settings and a reset, which drops or brings back the topic's cards and tray entries. Call on [io].
+     */
+    internal fun putSubs(body: org.json.JSONObject, api: Api = api()): SubsList =
+        SubsList.from(org.json.JSONObject(api.put("/api/v1/subscriptions", body.toString())))
+
+    /** Subscribes this account to [topic] or not, on every device. Null when the server took it, else why not. Call on [io]. */
+    fun subscribe(topic: String, on: Boolean, api: Api = api()): String? = try {
+        putSubs(topicBody(topic, on), api); null
+    } catch (e: Exception) { (e as? HttpError)?.message ?: getString(R.string.sound_no_connection) }
+
     /** The `by_id` this phone's marks get on the current server, "" until a `ready` says (#451). */
     val markId by lazy { MutableStateFlow(prefs.getString("mark_id", "").orEmpty()) }
 
@@ -213,6 +233,10 @@ class App : Application() {
             prefs.edit().putString("swipes", w.json()).apply()
             swipes.value = w
         }
+        // Every settings message is the whole view, so no subscriptions object means a server without them (#617).
+        val sub = o.optJSONObject("subscriptions")
+        prefs.edit().apply { if (sub == null) remove("subs") else putString("subs", sub.toString()) }.apply()
+        subs.value = Subs.of(sub)
         val s = Snooze.from(o) ?: return
         prefs.edit().putString("snooze", s.json()).apply()
         snooze.value = s
@@ -257,11 +281,12 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
                 swipes.value = Swipes()
                 swipesLocked.value = false // another token may change them
                 markId.value = ""
+                subs.value = null // the new token's own set arrives with its settings message
                 tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
                 token = newToken

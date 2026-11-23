@@ -222,6 +222,15 @@ class TrayRaceTest {
         assertEquals(listOf("b"), bg { dao.openNow().map { it.id } })
     }
 
+    @Test fun resetWithoutATopicDropsItsCardAndTrayEntry() { // #617: an unsubscribe elsewhere comes as a reset
+        val store = RoomStore(app)
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 2)), 2) }
+        assertTrue(tray("a") != null)
+        bg { store.replaceAll(listOf(row("b", Notif.ACTIVE, 2)), 3) } // a's topic is no longer in the list
+        assertNull(tray("a"))
+        assertEquals(listOf("b"), bg { dao.openNow().map { it.id } })
+    }
+
     @Test fun resetAfterAServerRestoreKeepsNothingOld() {
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.DISMISSED, 100)), 100) }

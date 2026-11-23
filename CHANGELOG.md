@@ -18,6 +18,12 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Android: a Topics page in Settings lists every topic with its open count
+  and last message, and turns each one on or off for your account on every
+  device, plus whether new topics start subscribed (#617). A card or a
+  stack's menu unsubscribes from its topic with Undo, and the "agents" topic
+  asks first since it carries approval prompts. Muted topics stay a separate,
+  this phone only setting.
 - Android: Settings is now in the same sections as the web (Notifications,
   Inbox, Devices, Integrations) with a search box at the top (#575). It
   matches a setting's name, its description or keywords such as "qr", and
