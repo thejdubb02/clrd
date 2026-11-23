@@ -345,6 +345,15 @@ class SyncClientTest {
         assertEquals(listOf("approve_denied"), store.outcomes)
     }
 
+    @Test fun aTapAlreadyToldBeforeARestartStaysQuiet() { // #383: the flag comes from the saved row, not this process
+        store.rows["denied"] = notif("denied", "acknowledged", 4)
+        store.queue += Pending(1, "denied", "reply", """{"reply":"yes","seq":4}""", told = true)
+        current = { notifJson(it, "active", 4) }
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(emptyList<Pending>(), store.queue)
+        assertEquals(emptyList<String>(), store.outcomes)
+    }
+
     @Test fun aDevicesMessageTellsTheApp() { // #345: Settings reloads the device list when one connects or drops
         onConnect = { _, ws ->
             ws.send("""{"type":"devices","devices":[]}""")
@@ -637,8 +646,8 @@ class SyncClientTest {
         val markIds = CopyOnWriteArrayList<String>()
         override fun saveMarkId(id: String) { markIds += id }
         override fun pending() = queue.toList()
-        override fun removePending(p: Pending) { queue.remove(p) }
+        override fun removePending(p: Pending) { queue.removeIf { it.key == p.key } }
         val outcomes = CopyOnWriteArrayList<String>()
-        override fun replyOutcome(p: Pending, outcome: String) { outcomes += outcome }
+        override fun replyOutcome(p: Pending, outcome: String) { outcomes += outcome; queue.replaceAll { if (it.key == p.key) it.copy(told = true) else it } }
     }
 }

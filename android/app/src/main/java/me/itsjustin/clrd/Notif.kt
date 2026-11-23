@@ -122,6 +122,8 @@ data class Pending(
     val notifId: String,
     val action: String, // ack | snooze | dismiss | reopen | reply
     val body: String = "{}",
+    /** Its outcome message has shown, so a retry, even after a restart, does not show it again (#383). */
+    @ColumnInfo(defaultValue = "0") val told: Boolean = false,
 )
 
 /** One-row table: the highest event seq applied. Kept in the same database so it commits with the rows it covers. */
