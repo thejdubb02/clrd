@@ -20,8 +20,7 @@ is not released yet: there is nothing to install from here today.
   computer": paste a link from Settings > Devices on the server, confirm the
   check code there, and unlink later.
 
-Still to come, each in its own change: the Windows installer, a Linux
-package, and opening `clrd://link` addresses straight from the browser.
+Still to come, each in its own change: the Windows installer and opening `clrd://link` addresses straight from the browser.
 
 ## How the window is kept apart from the token
 
@@ -44,8 +43,9 @@ package, and opening `clrd://link` addresses straight from the browser.
 Needs the Rust version in `rust-toolchain.toml` (rustup installs it on first
 use). On Debian and Ubuntu the core needs `libssl-dev` and `pkg-config`, and
 the app also needs `libwebkit2gtk-4.1-dev` and `libayatana-appindicator3-dev`.
-At run time the tray icon needs `libayatana-appindicator3-1`: without it the
-app stops at start.
+At run time the tray icon needs `libayatana-appindicator3-1`. Without it the
+app runs with no tray icon and opens its window instead; starting clrd again
+brings the window back.
 
 ```sh
 cd desktop
@@ -64,6 +64,26 @@ more test runs the same proof against a real server, to keep the fake honest:
 go build -o /tmp/clrd ./server/cmd/clrd   # from the repo root
 CLRD_BIN=/tmp/clrd cargo test --test real_server -- --ignored
 ```
+
+## A package for Debian and Ubuntu
+
+There is no download yet. To make a `.deb` from your own build (needs
+`dpkg-dev` and `desktop-file-utils`):
+
+```sh
+cd desktop
+cargo build --release -p clrd-desktop
+package/deb.sh target/release/clrd-desktop target/deb
+sudo apt install ./target/deb/clrd-desktop_*.deb
+```
+
+The package brings the tray library and the web view with it as
+dependencies, recommends a keychain (GNOME Keyring, unless KWallet or
+KeePassXC is already there), adds clrd to the applications menu, and starts it with your
+desktop session as a tray icon with no window. To stop that, turn it off in
+your desktop's startup settings or remove `/etc/xdg/autostart/clrd.desktop`;
+an upgrade leaves that choice alone. It is built for the system it was built
+on: a package made on a newer Ubuntu will not install on an older one.
 
 ## Dependencies
 

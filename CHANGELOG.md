@@ -44,6 +44,12 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   plays on load, after a reconnect or for cards that came while the tab was
   in the background, and nothing moves with reduce motion on. The timings are
   in SPEC section 10.1 so every app matches.
+- Desktop app for Linux, to build from source for now (there is no download yet): a tray icon and a window on your inbox. Link it with a link from Settings > Devices; its token stays in the system keychain and never reaches the page in the window (#162).
+- Desktop (Linux): a script that packs your own build into a `.deb` for
+  Debian and Ubuntu (#625). The package brings the tray library with it,
+  adds clrd to the applications menu and starts it with your desktop
+  session. There is still no download. Without the tray library the app no
+  longer stops at start: it opens its window instead.
 
 ### Changed
 
@@ -51,7 +57,6 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   count of its findings, a Dismiss menu on each finding and Copy fix prompt as
   the main button, instead of one block of text and buttons (#618). With more
   than three topics the cards start closed.
-- Desktop app for Linux, to build from source for now (there is no download yet): a tray icon and a window on your inbox. Link it with a link from Settings > Devices; its token stays in the system keychain and never reaches the page in the window (#162).
 
 ### Fixed
 
