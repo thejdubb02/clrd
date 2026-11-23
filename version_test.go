@@ -41,7 +41,7 @@ func TestParseChangelogReal(t *testing.T) {
 }
 
 func TestParseChangelog(t *testing.T) {
-	md := "# Changelog\n\n- not an item\n\n## Unreleased\n\n## 0.2.0 - 2026-12-01\n\n### Added\n\n- One,\n  wrapped.\n- Two\n\n### Fixed\n\n- Three\n\n### Added\n\n- Four\n\n## 0.1.0 - 2026-11-23\n\n### Removed\n\n- Five\n"
+	md := "# Changelog\n\n- not an item\n\n## Unreleased\n\n### Added\n\n## 0.2.0 - 2026-12-01\n\n### Added\n\n- One,\n  wrapped.\n- Two\n\n### Fixed\n\n- Three\n\n### Added\n\n- Four\n\n## 0.1.0 - 2026-11-23\n\n### Removed\n\n- Five\n\n### Security\n"
 	got := ParseChangelog(md)
 	want := []Release{
 		{"0.2.0", "2026-12-01", []Change{{"Added", []string{"One, wrapped.", "Two", "Four"}}, {"Fixed", []string{"Three"}}}},

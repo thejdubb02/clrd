@@ -20,12 +20,14 @@ func items(md string) (n int) {
 // The real file cuts cleanly: every entry lands in the new version and
 // Unreleased stays, empty, for the next one.
 func TestCutReal(t *testing.T) {
-	out, arch, err := cut(clrd.Changelog, "", "9.9.9", "2026-11-23")
+	// Seeded, so this still runs right after a real cut empties Unreleased.
+	md := strings.Replace(clrd.Changelog, "\n## Unreleased\n", "\n## Unreleased\n\n### Added\n\n- seed\n", 1)
+	out, arch, err := cut(md, "", "9.9.9", "2026-11-23")
 	if err != nil {
 		t.Fatal(err)
 	}
 	rs := clrd.ParseChangelog(out)
-	if arch != "" || rs[0].Version != "9.9.9" || rs[0].Date != "2026-11-23" || items(out) != items(clrd.Changelog) {
+	if rs[0].Version != "9.9.9" || rs[0].Date != "2026-11-23" || items(out)+items(arch) != items(md) {
 		t.Fatalf("cut: %v %d", rs[0].Version, items(out))
 	}
 	if !strings.Contains(out, "\n## Unreleased\n\n## 9.9.9 - 2026-11-23\n") || !strings.HasPrefix(out, strings.SplitN(clrd.Changelog, "\n## ", 2)[0]) {
@@ -74,5 +76,9 @@ func TestCutArchives(t *testing.T) {
 	out, newArch, _ = cut(md, "", "1.0.0", "2026-02-01")
 	if len(out) > clrd.ChangelogLimit || len(clrd.ParseChangelog(out)) >= 10 || items(out)+items(newArch) != items(md) {
 		t.Fatalf("over the limit: %d bytes", len(out))
+	}
+	// One version bigger than the limit by itself is refused, not written.
+	if _, _, err := cut("## Unreleased\n\n### Added\n\n"+strings.Repeat(big, 5), "", "1.0.0", "2026-02-01"); err == nil {
+		t.Fatal("oversize version: no error")
 	}
 }

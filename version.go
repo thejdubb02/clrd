@@ -71,6 +71,9 @@ func ParseChangelog(md string) []Release {
 			inItem = false
 		}
 	}
+	for i := range rs {
+		rs[i].Changes = slices.DeleteFunc(rs[i].Changes, func(c Change) bool { return len(c.Items) == 0 })
+	}
 	return slices.DeleteFunc(rs, func(r Release) bool { return r.Version == "Unreleased" && len(r.Changes) == 0 })
 }
 

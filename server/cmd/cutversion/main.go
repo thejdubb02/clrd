@@ -95,6 +95,9 @@ func cut(md, arch, version, date string) (string, string, error) {
 		moved = append([]string{vers[len(vers)-1]}, moved...)
 		vers = vers[:len(vers)-1]
 	}
+	if size() > clrd.ChangelogLimit {
+		return "", "", fmt.Errorf("%s alone is over %d bytes; shorten its entries", version, clrd.ChangelogLimit)
+	}
 	if len(moved) > 0 {
 		if arch == "" {
 			arch = archiveHead
