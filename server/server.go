@@ -1053,6 +1053,7 @@ func (s *Server) routesSetup() {
 	s.hookOutRoutes()
 	s.silenceRoutes()
 	s.senderRoutes()
+	s.statsRoutes()
 	s.ntfyRoutes()
 	s.gotifyAppRoutes()
 	s.pushoverRoutes()
