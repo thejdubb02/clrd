@@ -745,7 +745,10 @@ try {
     await stack.getByRole('button', { name: 'Hide' }).focus();
     const odd = (await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' })).id;
     await item('Odd topic name').waitFor();
-    assert.equal(await stack.getByRole('button', { name: 'Hide' }).evaluate(b => b === document.activeElement), true, 'focus lost from the stack on refresh');
+    // Each refresh rebuilds the stack node, so a locator's evaluate can land on
+    // the old, detached copy: look it up and check it in one step (#675).
+    const onStack = (sel, cls) => sp.evaluate(([sel, cls]) => { const s = document.querySelector('[data-stack="ci-stack"]'), e = s && (sel ? s.querySelector(sel) : s); return !!e && e === document.activeElement && (!cls || s.classList.contains(cls)); }, [sel, cls]);
+    assert.equal(await onStack('[data-stack-toggle][aria-expanded="true"]'), true, 'focus lost from the stack on refresh'); // still open: Hide, not Show all
     // Clear all on the stack clears all four on the server, and Undo reopens them.
     await stack.getByRole('button', { name: 'Clear all' }).click();
     await sp.locator('[data-toast]').filter({ hasText: 'Cleared 4 notifications.' }).waitFor();
@@ -756,8 +759,8 @@ try {
     // J lands on the closed stack and Enter opens it (#227).
     await sp.reload(); // nothing selected, so J starts from the top
     await stack.waitFor();
-    for (let i = 0; i < 200 && !(await stack.evaluate(s => s.classList.contains('is-selected'))); i++) await sp.keyboard.press('j');
-    assert.equal(await stack.evaluate(s => s === document.activeElement && s.classList.contains('is-selected')), true, 'J skipped the closed stack');
+    for (let i = 0; i < 200 && !(await sp.evaluate(() => document.querySelector('[data-stack="ci-stack"]')?.classList.contains('is-selected'))); i++) await sp.keyboard.press('j');
+    assert.equal(await onStack(null, 'is-selected'), true, 'J skipped the closed stack');
     await sp.keyboard.press('c');
     await until(sp, () => document.querySelector('[data-announce]').textContent === 'Open the stack to act on one notification.');
     for (const id of ids) assert.equal((await get(laptop, id)).state, 'active', 'C on a stack cleared a card');
@@ -1523,6 +1526,36 @@ try {
     assert.match(msg, /Unsubscribe anyway/, 'no warning from the older card');
     await ctx.close();
     console.log('ok: a topic that got a question warns on Unsubscribe from any of its cards');
+  }
+
+  // Subscriptions follow-ups (#649): a change from another device reloads the
+  // page and keeps a half-typed answer; Undo shows only for an Unsubscribe
+  // that landed.
+  {
+    const q = await api(phone, '/api/v1/notifications', { topic: 'drafts', title: 'Name it?', actions: [{ label: 'Say', reply: 'say', text: true }] });
+    await api(phone, '/api/v1/notifications', { topic: 'drafts2', title: 'Leave me' });
+    const sign = async name => { const c = await browser.newContext(); assert.ok((await c.request.post(base + '/api/v1/session', { data: { token: laptop, name } })).ok(), name + ' sign-in'); return c; };
+    const ctx = await sign('drafts'), other = await sign('drafts-other');
+    const dp = await ctx.newPage();
+    await dp.goto(base + '/app');
+    await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).fill('half typed');
+    const put = (c, topics) => c.request.put(base + '/api/v1/subscriptions', { data: { topics }, headers: { Origin: base } });
+    const [, r1] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: false })]);
+    assert.ok(r1.ok(), 'unsubscribe from another device');
+    assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'the reload dropped the half-typed answer');
+    const [, r2] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: true })]);
+    assert.ok(r2.ok(), 'subscribe again');
+    // A marker whose Unsubscribe never landed: no toast, no Undo.
+    await dp.evaluate(() => sessionStorage.setItem('clrd-unsub', 'drafts'));
+    await Promise.all([dp.waitForResponse(r => r.url().endsWith('/api/v1/subscriptions') && r.request().method() === 'GET'), dp.reload()]);
+    await dp.waitForTimeout(300); // the check has answered; give a wrong toast time to show
+    assert.equal(await dp.locator('[data-toast]', { hasText: 'Unsubscribed from' }).count(), 0, 'Undo offered for an Unsubscribe that never landed');
+    // One that did land still offers it.
+    await dp.locator('article.card', { hasText: 'Leave me' }).locator('[data-unsub]').dispatchEvent('click');
+    await dp.locator('[data-toast]', { hasText: 'Unsubscribed from drafts2' }).waitFor();
+    assert.ok((await put(other, { drafts2: true })).ok(), 'subscribe again');
+    await ctx.close(); await other.close();
+    console.log('ok: a subscriptions change keeps a half-typed answer, and Undo shows only for an Unsubscribe that landed');
   }
 
   // Format check in Settings (#320, #618): one card per topic with a group per

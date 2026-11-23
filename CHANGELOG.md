@@ -113,6 +113,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   arrives just as you switch servers no longer brings back its swipe or
   snooze choices, and a failed swipe save no longer shows an older choice
   when another device changed it meanwhile (#568).
+- Web: a subscriptions change from another device no longer drops a half-typed answer, and Undo shows only for an Unsubscribe that went through (#649).
 - Web: a Settings search typed while the page is still loading now finds
   Link a phone once it appears (#591).
 - Server: `color_rules: null` in a settings change is now refused with a
