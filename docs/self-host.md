@@ -277,4 +277,16 @@ Not supported yet: email and phone call forwarding.
 
 Pull, rebuild, restart. Take a backup first.
 
+Your server shows its version, and what changed in each one, at
+`/api/v1/version` and `/docs/changelog`. A Docker build has no git history
+to read, so to show the exact commit and build date too, pass them in:
+
+```sh
+CLRD_COMMIT=$(git rev-parse HEAD) CLRD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker compose build
+docker build --build-arg CLRD_COMMIT=$(git rev-parse HEAD) --build-arg CLRD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) -t clrd .
+```
+
+Without them both are left empty. A `go build` inside the git checkout
+fills them in from the last commit on its own.
+
 The full API is at `/openapi.json` on your server.

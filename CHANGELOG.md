@@ -1,11 +1,16 @@
 # Changelog
 
 Every change a user would notice goes here, newest first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions will
-follow [Semantic Versioning](https://semver.org/) once releases start.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions
+follow [Semantic Versioning](https://semver.org/).
 
 Add your entry under `Unreleased`, in the section that fits (Added, Changed,
 Fixed, Removed, Security), as one line a user can understand.
+
+The server binary carries this file and shows it as its version history.
+`go run ./server/cmd/cutversion X.Y.Z` cuts a version, and moves the oldest
+ones to `CHANGELOG-archive.md` in the repo when this file nears
+96,000 bytes, so the archive holds the rest of the history.
 
 ## Unreleased
 
@@ -22,6 +27,12 @@ Fixed, Removed, Security), as one line a user can understand.
   `/app/settings#sound`. Webhooks no longer show to a device that cannot
   manage them, and an admin finds a link to Senders there. Without
   JavaScript every section shows and the search box is hidden.
+- Server: version history (#580). `GET /api/v1/version`, open to anyone,
+  gives the version, the commit and date it was built from, and what changed
+  in each version, for the web, Android and desktop apps to show. The same
+  history is on the site at `/docs/changelog` and through MCP as `version()`.
+  Only what the public repo already shows: nothing about your server.
+
 - Android: choose the buttons each swipe on a card reveals, in Settings, up
   to 3 per side (#161). The choice is saved on your server, so every phone
   follows it; offline the app keeps the last one it saw. A token that may not

@@ -63,5 +63,5 @@ jobs:
       - name: static build and size budget
         # Same flags as the Dockerfile, so this is the size people download.
         run: |
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/thejdubb02/clrd.Commit=$GITHUB_SHA -X github.com/thejdubb02/clrd.Built=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
           .github/size-check.sh server "$RUNNER_TEMP/clrd"

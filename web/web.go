@@ -984,13 +984,13 @@ func loadDocs() (map[string]doc, []doc) {
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 	)
 	m := map[string]doc{}
-	err := fs.WalkDir(clrd.Files, "docs", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || path.Ext(p) != ".md" {
-			return err
-		}
+	add := func(p string) error {
 		src, err := fs.ReadFile(clrd.Files, p)
 		if err != nil {
 			return err
+		}
+		if p == "CHANGELOG.md" { // the binary carries recent versions only (#580)
+			src = append(src, "\nEvery version, older ones too: [full history on GitHub]("+clrd.FullHistory+").\n"...)
 		}
 		var b bytes.Buffer
 		if err := md.Convert(src, &b); err != nil {
@@ -1019,7 +1019,16 @@ func loadDocs() (map[string]doc, []doc) {
 		}
 		m[key] = doc{key, title, template.HTML(html)}
 		return nil
+	}
+	err := fs.WalkDir(clrd.Files, "docs", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Ext(p) != ".md" {
+			return err
+		}
+		return add(p)
 	})
+	if err == nil {
+		err = add("CHANGELOG.md") // served at /docs/changelog
+	}
 	if err != nil {
 		panic(err)
 	}

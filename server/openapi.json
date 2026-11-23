@@ -2072,6 +2072,54 @@
     }
    }
   },
+  "/api/v1/version": {
+   "get": {
+    "summary": "Version, build commit and date, and recent history (no token)",
+    "tags": [
+     "server"
+    ],
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": ["version", "commit", "date", "history", "full_history"],
+         "properties": {
+          "version": {"type": "string"},
+          "commit": {"type": "string"},
+          "date": {"type": "string"},
+          "full_history": {"type": "string"},
+          "history": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "version": {"type": "string"},
+             "date": {"type": "string"},
+             "changes": {
+              "type": "array",
+              "items": {
+               "type": "object",
+               "properties": {
+                "section": {"type": "string"},
+                "items": {"type": "array", "items": {"type": "string"}}
+               }
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/api/v1/server": {
    "get": {
     "summary": "Server settings in effect",

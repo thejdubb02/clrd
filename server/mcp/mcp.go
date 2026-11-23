@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thejdubb02/clrd"
 	"github.com/thejdubb02/clrd/server"
 )
 
@@ -120,7 +121,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeRPC(w, req.ID, map[string]any{
 			"protocolVersion": v,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "clrd", "version": "0.1.0"},
+			"serverInfo":      map[string]any{"name": "clrd", "version": clrd.Version()},
 			"instructions":    "clrd notifications. send() to alert a human, wait_for_reply() to block until they ack or dismiss it, resolve() when the problem clears.",
 		}, nil)
 	case "ping":
@@ -728,6 +729,8 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"origins": strs("Origins as scheme://host[:port], or \"*\"")}, "origins")},
 	{"name": "server_env", "description": "Every CLRD_* environment setting in effect, defaults filled in. Read only: these change by setting the variable and restarting. Needs an admin token.",
 		"inputSchema": schema(map[string]any{})},
+	{"name": "version", "description": "This server's clrd version, build commit and date, and its recent history (what changed in each version, newest first), with a link to the full history. Any token.",
+		"inputSchema": schema(map[string]any{})},
 	{"name": "ntfy_ignored", "description": "ntfy publish options senders used that clrd accepts but ignores (email, call and the like), with counts, so a migrated sender can be fixed. Needs an admin token.",
 		"inputSchema": schema(map[string]any{})},
 	{"name": "senders", "description": "Every service or token that has published, most recently heard first: name, kind, webhook template, User-Agent and address hints, first and last seen, message count per topic. Found on its first message, no setup. Needs an admin token without a topic list.",
@@ -789,6 +792,7 @@ var restTools = map[string]struct {
 	"ntfy_origins":        {"GET", "/api/v1/ntfy/origins", false},
 	"set_ntfy_origins":    {"PUT", "/api/v1/ntfy/origins", false},
 	"server_env":          {"GET", "/api/v1/server", false},
+	"version":             {"GET", "/api/v1/version", false},
 	"ntfy_ignored":        {"GET", "/api/v1/ntfy/ignored", false},
 	"senders":             {"GET", "/api/v1/senders", false},
 	"sender":              {"GET", "/api/v1/senders/{id}", false},
