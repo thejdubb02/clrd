@@ -322,7 +322,7 @@ fn a_repeat_missed_while_offline_does_not_ring() {
 #[test]
 fn a_snooze_that_ended_while_offline_alerts_on_catch_up() {
     let (mut e, log, _) = live_engine();
-    for id in ["a", "b", "c", "d"] {
+    for id in ["a", "b", "c", "d", "e"] {
         e.handle(&frame(1, "created", id, json!({}))).unwrap();
     }
     log.clear();
@@ -332,32 +332,44 @@ fn a_snooze_that_ended_while_offline_alerts_on_catch_up() {
         .unwrap();
     e.handle(&frame(3, "state", "a", json!({}))).unwrap();
     e.handle(&frame(4, "updated", "a", json!({}))).unwrap();
-    // b: dismissed and reopened, but a silence matches it now.
+    // b: dismissed and reopened under a silence, then a repeat after the
+    // silence ended. The repeat does not make the quiet reopen an alert.
     e.handle(&frame(5, "state", "b", json!({"state": "dismissed"})))
         .unwrap();
     e.handle(&frame(6, "state", "b", json!({"silenced": true})))
         .unwrap();
+    e.handle(&frame(6, "repeat", "b", json!({}))).unwrap();
     // c: only edited, never hidden.
     e.handle(&frame(7, "updated", "c", json!({}))).unwrap();
     // d: woken and snoozed again.
     e.handle(&frame(8, "state", "d", json!({}))).unwrap();
     e.handle(&frame(9, "state", "d", json!({"state": "snoozed"})))
         .unwrap();
-    e.handle(r#"{"type":"ready","seq":9,"epoch":"e1"}"#)
+    // e: dismissed and reopened.
+    e.handle(&frame(10, "state", "e", json!({"state": "dismissed"})))
+        .unwrap();
+    e.handle(&frame(11, "state", "e", json!({}))).unwrap();
+    e.handle(r#"{"type":"ready","seq":11,"epoch":"e1"}"#)
         .unwrap();
     assert_eq!(
         log.log(),
-        ["show a alert", "show b quiet", "show c quiet", "close d"]
+        [
+            "show a alert",
+            "show b quiet",
+            "show c quiet",
+            "close d",
+            "show e alert"
+        ]
     );
 
     // A replay that never reached `ready` leaves nothing behind for the next.
     log.clear();
     e.connecting();
-    e.handle(&frame(10, "state", "a", json!({"state": "snoozed"})))
+    e.handle(&frame(12, "state", "a", json!({"state": "snoozed"})))
         .unwrap();
     e.connecting();
-    e.handle(&frame(11, "updated", "a", json!({}))).unwrap();
-    e.handle(r#"{"type":"ready","seq":11,"epoch":"e1"}"#)
+    e.handle(&frame(13, "updated", "a", json!({}))).unwrap();
+    e.handle(r#"{"type":"ready","seq":13,"epoch":"e1"}"#)
         .unwrap();
     assert_eq!(log.log(), ["show a quiet"]);
 }

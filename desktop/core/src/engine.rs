@@ -85,12 +85,14 @@ pub struct Engine<S: Sink> {
     // A replay is held back until `ready`, where the epoch is checked: only
     // then is it known to come from the database the cursor belongs to. One
     // copy per id, so a notification made and cleared while this computer
-    // was offline never pops up. The flag says an event in this replay hid
-    // it (a snooze, a dismissal): if the last one shows it again, that is a
-    // fresh show and alerts as it did on the computers that were online.
+    // was offline never pops up. The flags say whether the last event hid
+    // it, and whether a show that followed a hide (a snooze that ended, a
+    // reopen) was one that alerts: that is a fresh show, as it was on the
+    // computers that were online. A later repeat or edit carries it
+    // forward but never makes one.
     // ponytail: the whole replay sits in memory; the server's retention
     // bounds it. Apply in batches if that ever gets large.
-    buffer: BTreeMap<String, (Notification, bool)>,
+    buffer: BTreeMap<String, (Notification, bool, bool)>,
     buffer_seq: u64,
 }
 
@@ -147,8 +149,13 @@ impl<S: Sink> Engine<S> {
                 let seq = m.seq.max(n.seq);
                 if self.replaying {
                     self.buffer_seq = self.buffer_seq.max(seq);
-                    let hid = !n.shows() || self.buffer.get(&n.id).is_some_and(|b| b.1);
-                    self.buffer.insert(n.id.clone(), (n, hid));
+                    let (was_hid, was_fresh) = self
+                        .buffer
+                        .get(&n.id)
+                        .map_or((false, false), |b| (b.1, b.2));
+                    let fresh = if was_hid { n.may_alert() } else { was_fresh };
+                    let hid = !n.shows();
+                    self.buffer.insert(n.id.clone(), (n, hid, fresh && !hid));
                 } else {
                     // Only a live repeat rings again; one missed while
                     // offline is old news.
@@ -178,8 +185,8 @@ impl<S: Sink> Engine<S> {
                 if !m.epoch.is_empty() {
                     self.state.epoch = m.epoch;
                 }
-                for (_, (n, hid)) in std::mem::take(&mut self.buffer) {
-                    self.apply(n, hid);
+                for (_, (n, _, fresh)) in std::mem::take(&mut self.buffer) {
+                    self.apply(n, fresh);
                 }
                 // Events this token may not see still move the cursor, or a
                 // limited token would fall behind retention.
