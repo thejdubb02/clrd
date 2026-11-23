@@ -433,6 +433,101 @@ says so when that overrides its choice). Browsers block sound until the page
 has had a click or key press; the web inbox then shows a hint instead of an
 error.
 
+## 2.3 Subscriptions (#617, not built yet)
+
+A person chooses which topics reach their devices. An unsubscribed topic
+shows no card, rings no tray or system notification and adds to no count or
+badge on any of that person's devices. It is a view filter on the server, not
+a state: unsubscribing clears, dismisses or deletes nothing, and nobody else
+sees a difference (other users, ntfy subscribers, scripts on their own
+token, outgoing webhooks, silences and the sender all work as before). Access still wins:
+subscribing to a topic you cannot read is a 403 and never shows it.
+
+**Whose.** Subscriptions belong to an owner: the user, for a token attached to
+a user (section 4), and otherwise the typed-in token at the top of the tree
+(the browsers signed in with it and the phones and desktops linked from it
+share its set). Attaching or detaching a token moves its devices to the new
+owner's set and counts as a change of that set (see Sync); the old rows stay
+with the old owner.
+
+**Who is filtered.** The filter applies to devices: browsers signed in through
+`/api/v1/session` or by a phone, phones and desktops linked by a code, and
+any token attached to a user. A typed-in token with no user is never
+filtered, because it is usually a script and is often also the token a
+browser signed in with; it can still read and change its tree's set. So a
+phone set up by pasting such a token shows every topic; link it, or attach
+the token to a user, to have it follow subscriptions. A script on a token
+attached to a user follows that user's subscriptions; give it its own token
+with no user, or have it send `subscribed=all`, to see every topic.
+
+**Defaults.** With no setup every topic is subscribed, so nothing changes for
+anyone until they unsubscribe. `new_topics` (default `true`) says what a
+topic with no row for this owner is. Setting it to `false` first writes a
+`true` row for every topic that has no row yet, has stored notifications or
+topic settings, and any of the owner's tokens can read today; existing rows
+are kept as they are, so no existing topic changes. After that, a topic
+seen for the first time, by a new publish or a new pattern grant, starts
+unsubscribed. Setting it back to `true` changes no row.
+
+**What the filter covers.** For a filtered token, these leave out unsubscribed
+topics unless the request asks for `subscribed=all`: the notification list
+and search, `GET /api/v1/counts`, `GET /api/v1/topics`, the WebSocket, SSE
+and `GET /api/v1/events` (replay and live; a WebSocket `?topics=` list is
+narrowed further, never widened), Web Push, and the server-rendered inbox
+pages. `subscribed=all` on the list, counts, topics and streams shows every
+readable topic, which is how a client browses an unsubscribed topic without
+subscribing; clients that know nothing of subscriptions never send it, so
+they get the filtered view. Getting one notification by id and every state
+route (ack, snooze, dismiss, resolve, reply, mark) work on an unsubscribed
+topic as on any other; each keeps its own scope checks, so subscriptions
+never grant a route anything. An approval request, a check-in alarm or a quiet alarm on an
+unsubscribed topic is hidden like any other message, so unsubscribing from
+the approval topic (`agents` by default) also hides approval prompts; the
+Topics page says so on that topic. Events the filter leaves out still move a
+stream's `synced_seq` and the `ready` seq, as for topics a token cannot
+read.
+
+**Sync.** The owner's set is part of the per-device settings view
+(section 2.1): `"subscriptions":{"new_topics":true,"topics":{"chat":false}}`
+in `GET /api/v1/settings` and in every `settings` stream message, with only
+the topics that have a row and that this token can read. A topic is
+subscribed when `topics[t]` is true, or it has no row and `new_topics` is
+true. Every change appends an event of type `subscriptions` that only the
+owner's filtered devices receive (it moves the seq like any event; clients
+ignore the type, as section 3 says for unknown types). Each open stream of
+those devices then gets the new `settings` message, then `{"type":"reset"}`
+and `ready` (section 3), so every client, old ones included, reloads what
+it shows: the open list, or for a view browsing an unsubscribed topic, that
+topic with `subscribed=all`. Cards of an unsubscribed topic leave that
+device and its Android tray, and the still open ones of a resubscribed
+topic come back, quietly, as after an offline catch-up. A browser system
+notification already shown stays until it is closed, as it does today
+after a clear. A filtered device that connects with a `since` older than
+the seq of its owner's last `subscriptions` event gets `reset` (and
+`GET /api/v1/events` a 410 `reset`), so a device that was offline during
+the change catches up the same way.
+
+**API and MCP.** `GET /api/v1/subscriptions` returns
+`{"new_topics":true,"topics":[{"topic":"chat","subscribed":false,"open":2,"last_at":"RFC3339"|null}]}`,
+every topic the token can read, subscribed or not, sorted by name.
+`PUT /api/v1/subscriptions` takes `{"new_topics"?:bool,"topics"?:{"chat":false,"infra":true}}`
+(at least one key, at most 500 topics in one call; a name outside the
+topic pattern is a 400 naming it, a topic the token cannot read is a 403
+naming it, and nothing is changed when any entry fails) and returns the same
+shape as GET. Scope read. Any token of the owner may change the owner's set,
+and a full admin may add `?for=<user id or token id>` to read or set another
+owner's set (an invited agent is its own user, so this is how an admin agent
+sets a person's topics). The MCP tool is `subscriptions(topics?,
+new_topics?, for?)`: no arguments reads, arguments change those fields.
+`GET /api/v1/topics` also gains `subscribed` and `last_at` on each topic.
+
+**Clients.** The web and Android apps add a Topics page (a switch per topic,
+last message time, open count, search), Unsubscribe in a card's menu and on
+a stack header, and a way to open an unsubscribed topic (`subscribed=all`
+with `topic=`) without subscribing. Android's device-only muted topics stay
+as they are: muted still shows the card and only stops the pop-up. Per-device
+overrides are a later issue.
+
 ## 3. Events and sync
 
 Every change is an append-only **event** with a global, gap-free, monotonic
@@ -443,7 +538,8 @@ the row change):
 {"seq": 48212, "type": "state", "notification": { ...full notification... }}
 ```
 
-`type` is `created`, `updated`, `state`, `repeat` or `mark` (section 2).
+`type` is `created`, `updated`, `state`, `repeat` or `mark` (section 2), or
+`subscriptions` (section 2.3, only to the devices it concerns).
 A `mark` event never alerts: clients update the card quietly, and the ntfy
 stream and hooks leave it out. Clients ignore types they do not know. A `state` event also carries `"via"`, how
 the change was made (section 5), when the server knows it. Clients only
@@ -470,7 +566,8 @@ conflict resolution, last write on the server wins.
    list once after `ready`, then apply these. Clients ignore
    message types they do not know.
 3. Server pings every 30 s; client reconnects with backoff and its last seq.
-4. If `since` is older than retention, server sends `{"type":"reset"}` and the
+4. If `since` is older than retention, or older than the owner's last
+   subscription change (section 2.3), server sends `{"type":"reset"}` and the
    client fetches `GET /api/v1/notifications?state=open` fresh.
 
 After `reset` the server sends `ready` with the current seq and carries on
@@ -770,6 +867,7 @@ resolved`) and `ntfy_import`.
 |---|---|---|
 | GET | `/api/v1/counts` | Exact counts of what the token can read: `{"active":3,"acknowledged":1,"snoozed":2,"dismissed":640,"resolved":12,"inbox":4,"cleared":652}`. `inbox` is active plus acknowledged, `cleared` is dismissed plus resolved. |
 | GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
+| GET/PUT | `/api/v1/subscriptions` | Which topics reach this owner's devices (section 2.3, not built yet). GET lists every readable topic with `subscribed`, `open` and `last_at`, plus `new_topics`; PUT takes `{"new_topics"?,"topics"?:{"chat":false}}`. Scope read; `?for=` is full admin only. |
 | GET | `/api/v1/format-check?topic=&by=` | Format check (#308), advice only. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). `by=sender` (#320) groups by topic and sending token (the top of its token tree, as kept for #187), adding `sender_id` (`"unknown"` for messages with no known sending token, #391) and `sender` (the token name) to each group and naming the token in the prompt; only a full admin, or the token the sender belongs to (as in Linked devices, #245), gets `sender` and the prompt, anyone else gets both blank (#406); the default `by=topic` leaves both out. Returns `{"checked":N,"problems":N,"topics":[{"topic","sender_id"?,"sender"?,"checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}],"off":["topic"],"dismissed":[{"topic","rule","sender_id"}]}`, only groups with findings, in topic then sender_id order; topics in `off` are not checked or counted, and a dismissed rule does not count for that topic and sender (`sender_id` "" means every sender); `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters, with anything that looks like a secret (a value after `password=`, `token:`, `Bearer` and the like, the password in `user:pass@host`, a run of 20+ letters and digits) shown as `[hidden]`; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
 | POST | `/api/v1/format-check/dismiss` | Body `{"topic","rule","sender_id"?,"dismissed"?}` (#320): stop `rule` counting in `topic` for that sending token (`"unknown"` for the group with no known sender), or every sender without `sender_id`. `"dismissed":false` undoes it. Unknown rule is a 400. Scope publish on the topic. Nothing is dismissed until set. |
 | PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. `{"format_check":false}` leaves the topic out of the format check, `true` (the default) puts it back (#320). `{"device_actions":true}` lets senders add `http` and `broadcast` actions (section 2, #401), `false` (the default) refuses them; this key needs scope admin on the topic, and a body with it and a token without admin changes nothing. A body with none of these keys is a 400. Scope publish on the topic. |
@@ -1102,7 +1200,7 @@ only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?, body?)`,
 `preview_hook(topic, body, event?)`, `hook_allow()`, `set_hook_allow(networks, ports)`, `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
 `create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
-`server_env()` (`GET /api/v1/server`), `version()` (`GET /api/v1/version`, section 5.2, any token), `ntfy_ignored()`, `senders()` and
+`subscriptions(topics?, new_topics?, for?)` (section 2.3, not built yet), `server_env()` (`GET /api/v1/server`), `version()` (`GET /api/v1/version`, section 5.2, any token), `ntfy_ignored()`, `senders()` and
 `sender(id)` (section 5.1).
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
