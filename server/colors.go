@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 )
@@ -28,6 +29,22 @@ func hexColor(c string) bool {
 		return false
 	}
 	return strings.Trim(strings.ToLower(c[1:]), "0123456789abcdef") == ""
+}
+
+// colorRuleList reads a PUT's color_rules: null is a 400, like the swipe keys,
+// and a field of the wrong type names its rule (#615).
+func colorRuleList(raw json.RawMessage) ([]ColorRule, error) {
+	var items []json.RawMessage
+	if string(raw) == "null" || json.Unmarshal(raw, &items) != nil {
+		return nil, errf(400, "bad_request", "color_rules must be a list of rules ([] clears it)")
+	}
+	rules := make([]ColorRule, len(items))
+	for i, it := range items {
+		if err := json.Unmarshal(it, &rules[i]); err != nil {
+			return nil, errf(400, "bad_request", "color_rules[%d]: %v", i, err)
+		}
+	}
+	return rules, checkColorRules(rules)
 }
 
 func checkColorRules(rules []ColorRule) error {

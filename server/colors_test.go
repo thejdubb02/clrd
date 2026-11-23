@@ -80,6 +80,19 @@ func TestColorRules(t *testing.T) {
 			t.Errorf("%v: %d %q", c.rule, code, msg)
 		}
 	}
+	for _, c := range []struct {
+		want string
+		v    any
+	}{
+		{"color_rules must be a list", nil},
+		{"color_rules must be a list", "x"},
+		{"color_rules[1]: ", []any{map[string]any{"color": "#123456", "style": "bar"}, map[string]any{"color": 123, "style": "bar"}}},
+	} {
+		code, body := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"color_rules": c.v})
+		if msg, _ := body["error"].(string); code != 400 || !strings.Contains(msg, c.want) {
+			t.Errorf("%v: %d %q", c.v, code, msg)
+		}
+	}
 	if code, _ := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"color_rules": make([]map[string]any, 51)}); code != 400 {
 		t.Errorf("51 rules: %d", code)
 	}
