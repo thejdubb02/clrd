@@ -334,6 +334,12 @@ func (a webAPI) FormatIgnore(r *http.Request, topic, rule, senderID string, on b
 	return webError(a.s.SetFormatIgnore(r.Context(), tok, topic, rule, senderID, on))
 }
 
+// SetSubscriptions: STUB until the server half of #617 lands; wired to the
+// store in this PR before it leaves draft.
+func (a webAPI) SetSubscriptions(r *http.Request, newTopics *bool, topics map[string]bool) error {
+	return errors.New("topic subscriptions are not built yet")
+}
+
 func (a webAPI) EndSilence(r *http.Request, id string) error {
 	tok := a.s.Authenticate(r)
 	if tok == nil {

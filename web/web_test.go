@@ -144,8 +144,9 @@ func (readOnly) SaveTemplate(*http.Request, Template, string, bool) error { retu
 func (readOnly) SetSenderRules(*http.Request, string, SenderRules, int64) error {
 	return ErrUnauthorized
 }
-func (readOnly) UndoSenderChange(*http.Request, string, int64) error { return ErrUnauthorized }
-func (readOnly) DeleteTemplate(*http.Request, string, string) error  { return ErrUnauthorized }
+func (readOnly) UndoSenderChange(*http.Request, string, int64) error          { return ErrUnauthorized }
+func (readOnly) DeleteTemplate(*http.Request, string, string) error           { return ErrUnauthorized }
+func (readOnly) SetSubscriptions(*http.Request, *bool, map[string]bool) error { return ErrUnauthorized }
 
 type deny struct{ readOnly }
 
@@ -627,5 +628,54 @@ func TestTimeLeft(t *testing.T) {
 		if got := timeLeft(time.Now().Add(d)); got != want {
 			t.Errorf("timeLeft(+%v) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+// Topic subscriptions (SPEC 2.3): the card menu, the not-subscribed banner
+// and the Settings list, all as plain form posts.
+func TestSubscriptions(t *testing.T) {
+	f := NewFake()
+	h := Handler(f, "")
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/app/subscriptions", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.ServeHTTP(w, r)
+		return w
+	}
+	_, inbox := get(t, h, "/app")
+	if !strings.Contains(inbox, `data-unsub="home"`) || !strings.Contains(inbox, `data-unsub="agents" data-approvals`) || strings.Contains(inbox, `data-unsub="home" data-approvals`) {
+		t.Fatal("cards offer no Unsubscribe, or warn on the wrong topic")
+	}
+	if w := post(url.Values{"topic": {"home"}, "subscribe": {"0"}, "next": {"/app"}}); w.Code != 303 || w.Header().Get("Location") != "/app" || f.subscribed("home") {
+		t.Fatalf("unsubscribe home: %d to %q", w.Code, w.Header().Get("Location"))
+	}
+	if _, b := get(t, h, "/app"); strings.Contains(b, "Front door open") || strings.Contains(b, `href="/app?topic=home"`) {
+		t.Fatal("an unsubscribed topic still shows in the inbox or the topic list")
+	}
+	_, page := get(t, h, "/app?topic=home")
+	if !strings.Contains(page, "Front door open") || !strings.Contains(page, "Not subscribed to home") || !strings.Contains(page, `data-subscribe="home"`) || strings.Contains(page, `data-unsub="home"`) {
+		t.Fatal("the topic page does not browse an unsubscribed topic with its banner")
+	}
+	if w := post(url.Values{"topic": {"agents"}, "subscribe": {"0"}}); w.Header().Get("Location") != "/app/settings#topics" || !f.subscribed("agents") {
+		t.Fatal("unsubscribing from agents did not stop at the warning first")
+	}
+	if post(url.Values{"topic": {"agents"}, "subscribe": {"0"}, "sure": {"1"}}); f.subscribed("agents") {
+		t.Fatal("a confirmed unsubscribe from agents did not save")
+	}
+	_, set := get(t, h, "/app/settings")
+	if !strings.Contains(set, `name="was" value="0:home"`) || !strings.Contains(set, `name="on" value="infra" checked`) || !strings.Contains(set, "data-approval-warn") {
+		t.Fatal("Settings has no Topics list as drawn")
+	}
+	// Another device turns infra off after the list was drawn: saving the
+	// list with infra untouched leaves it off, and only home changes.
+	f.subs["infra"] = false
+	post(url.Values{"was": {"0:home", "1:infra", "1:backups"}, "on": {"home", "infra"}, "new_topics": {"1"}, "new_topics_was": {"1"}})
+	if !f.subscribed("home") || f.subscribed("infra") || f.subscribed("backups") || f.NoNewTopics {
+		t.Fatalf("the list sent rows it did not change: %v, new topics off %v", f.subs, f.NoNewTopics)
+	}
+	f.Unfiltered = true
+	if _, b := get(t, h, "/app/settings"); !strings.Contains(b, "Not available here") || strings.Contains(b, "data-subs-form") {
+		t.Fatal("a token with no user is offered a list it may not change")
 	}
 }
