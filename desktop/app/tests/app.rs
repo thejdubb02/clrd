@@ -236,8 +236,23 @@ say();
         ),
     ))
     .unwrap();
+    // Nor is the word of some other program on the bus.
+    let stranger =
+        zbus::block_on(zbus::connection::Builder::address(bus.1.as_str()).build()).unwrap();
+    zbus::block_on(stranger.emit_signal(
+        None::<&str>,
+        PATH,
+        "org.freedesktop.portal.Settings",
+        "SettingChanged",
+        &(
+            "org.freedesktop.appearance",
+            "color-scheme",
+            zbus::Variant::U32(1),
+        ),
+    ))
+    .unwrap();
     std::thread::sleep(Duration::from_secs(1));
-    assert_eq!(fake.reports().len(), 2, "contrast is not the theme");
+    assert_eq!(fake.reports().len(), 2, "only the portal's theme counts");
     change(1);
     wait_long("the window goes dark again", || fake.reports().len() == 3);
     assert_eq!(fake.reports(), ["true", "false", "true"]);

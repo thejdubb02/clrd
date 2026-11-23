@@ -1,5 +1,5 @@
-//! Whether the desktop asks for dark: the settings portal's colour scheme
-//! (`org.freedesktop.appearance` `color-scheme`, where 1 is dark).
+//! Whether the desktop asks for light or dark: the settings portal's colour
+//! scheme (`org.freedesktop.appearance` `color-scheme`).
 
 use std::pin::Pin;
 use std::time::Duration;
@@ -11,10 +11,11 @@ const PATH: &str = "/org/freedesktop/portal/desktop";
 const SETTINGS: &str = "org.freedesktop.portal.Settings";
 const KEY: (&str, &str) = ("org.freedesktop.appearance", "color-scheme");
 
-/// Tells `on` whether the desktop asks for dark: once before this returns
-/// when the portal answers, then from a thread of its own at each change.
-/// A desktop with no portal is never heard from, and `on` is never called.
-pub fn follow(on: impl Fn(bool) + Send + 'static) {
+/// Tells `on` what the desktop asks for (1 dark, 2 light, 0 no preference):
+/// once before this returns when the portal answers, then from a thread of
+/// its own at each change. A desktop with no portal is never heard from, and
+/// `on` is never called.
+pub fn follow(on: impl Fn(u32) + Send + 'static) {
     // The first answer is waited for, so a window opens in the right colours.
     // Two seconds at most: a portal that hangs must not hold the start.
     let Ok(conn) = block_on(
@@ -26,8 +27,10 @@ pub fn follow(on: impl Fn(bool) + Send + 'static) {
     };
     // Listening starts before the first read, so no change falls between.
     let Ok(mut changes) = block_on(async {
+        // From the portal alone, not from any program on the bus.
         let rule = zbus::MatchRule::builder()
             .msg_type(zbus::message::Type::Signal)
+            .sender(NAME)
             .interface(SETTINGS)
             .member("SettingChanged")
             .path(PATH)
@@ -42,7 +45,7 @@ pub fn follow(on: impl Fn(bool) + Send + 'static) {
         let body = reply.body();
         if let Ok(Variant::Variant(scheme)) = body.deserialize::<Variant>() {
             if let Variant::U32(scheme) = *scheme {
-                on(scheme == 1);
+                on(scheme);
             }
         }
     }
@@ -55,7 +58,7 @@ pub fn follow(on: impl Fn(bool) + Send + 'static) {
                 body.deserialize::<(&str, &str, Variant)>()
             {
                 if (namespace, key) == KEY {
-                    on(scheme == 1);
+                    on(scheme);
                 }
             }
         }
