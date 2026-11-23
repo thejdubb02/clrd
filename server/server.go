@@ -635,6 +635,15 @@ func (s *Server) failStatus(w http.ResponseWriter, err error) (int, string, stri
 	return status, code, msg
 }
 
+// writeNotif is writeJSON for a notification tok acted on: a copy, silenced
+// as tok's stream gets it (forReader), so a client caching the reply keeps
+// the same answer (#588). The copy leaves the committed event untouched.
+func writeNotif(w http.ResponseWriter, status int, tok *Token, n *Notification) {
+	c := *n
+	forReader(tok, &c)
+	writeJSON(w, status, &c)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -716,7 +725,7 @@ func (s *Server) routesSetup() {
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, n)
+		writeNotif(w, 200, tok, n)
 		return nil
 	})
 	s.api("PATCH /api/v1/notifications/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -730,7 +739,7 @@ func (s *Server) routesSetup() {
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, n)
+		writeNotif(w, 200, tok, n)
 		return nil
 	})
 	for _, action := range []string{"ack", "snooze", "dismiss", "resolve", "reopen"} {
@@ -756,7 +765,7 @@ func (s *Server) routesSetup() {
 			if err != nil {
 				return err
 			}
-			writeJSON(w, 200, n)
+			writeNotif(w, 200, tok, n)
 			return nil
 		})
 	}
@@ -778,7 +787,7 @@ func (s *Server) routesSetup() {
 		if n.ID != r.PathValue("id") { // an ask device: the confirm prompt, waiting for an allowed one
 			code = 202
 		}
-		writeJSON(w, code, n)
+		writeNotif(w, code, tok, n)
 		return nil
 	})
 	s.api("POST /api/v1/notifications/{id}/mark", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -793,7 +802,7 @@ func (s *Server) routesSetup() {
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, n)
+		writeNotif(w, 200, tok, n)
 		return nil
 	})
 	s.api("DELETE /api/v1/notifications/{id}/mark", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -801,7 +810,7 @@ func (s *Server) routesSetup() {
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, n)
+		writeNotif(w, 200, tok, n)
 		return nil
 	})
 	s.api("POST /api/v1/notifications/clear", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
