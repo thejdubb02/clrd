@@ -20,6 +20,11 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 - Web: the foot of Settings links to the source code and to the issue tracker
   for reporting a problem, like the Android app (#586).
+- Topic subscriptions on the server (#617): unsubscribe from a topic and
+  it leaves your list, counts, live stream and Web Push on all your
+  devices, without clearing anything or changing what anyone else sees.
+  Everything stays subscribed until you choose otherwise. Set it through
+  the API or an agent over MCP; the web and Android screens come next.
 - Android: Settings is now in the same sections as the web (Notifications,
   Inbox, Devices, Integrations) with a search box at the top (#575). It
   matches a setting's name, its description or keywords such as "qr", and

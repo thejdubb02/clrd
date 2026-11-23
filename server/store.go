@@ -227,6 +227,11 @@ CREATE TABLE IF NOT EXISTS silences (
   created_by TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
+-- Topic subscriptions (#617, subs.go): owner is "u:<user id>" or "t:<top token id>".
+-- A topic with no row follows the owner's new_topics; no sub_owners row is new_topics on.
+CREATE TABLE IF NOT EXISTS subscriptions (owner TEXT NOT NULL, topic TEXT NOT NULL, subscribed INTEGER NOT NULL, PRIMARY KEY (owner, topic));
+-- seq is the owner's last subscriptions event, so a device behind it gets reset.
+CREATE TABLE IF NOT EXISTS sub_owners (owner TEXT PRIMARY KEY, new_topics INTEGER NOT NULL, seq INTEGER NOT NULL);
 `
 
 // Action is a button on a notification: a link (URL), an answer (Reply)
@@ -1484,6 +1489,7 @@ type ListQuery struct {
 	Q      string
 	Before string
 	Limit  int
+	All    bool // subscribed=all: every readable topic, subscribed or not (#617)
 }
 
 // List returns notifications newest first, limited to what tok may read.
@@ -1505,7 +1511,17 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 			return nil, errf(403, "forbidden", "token may not read topic %q", t)
 		}
 	}
-	if len(topics) == 0 && tok.limited() {
+	tok, err := s.viewed(ctx, tok, lq.All)
+	if err != nil {
+		return nil, err
+	}
+	hiding := tok.view.hiding()
+	if hiding && len(topics) > 0 {
+		if topics = slices.DeleteFunc(slices.Clone(topics), tok.view.hides); len(topics) == 0 {
+			return []*Notification{}, nil
+		}
+	}
+	if len(topics) == 0 && (tok.limited() || hiding) {
 		all, err := s.Topics(ctx, tok)
 		if err != nil {
 			return nil, err
@@ -1575,16 +1591,24 @@ type TopicCount struct {
 	Icon  string `json:"icon"`
 	// DeviceActions: http and broadcast actions may be published here (#401).
 	DeviceActions bool `json:"device_actions,omitempty"`
+	// Subscribed: it reaches this owner's devices (#617). LastAt is its newest notification.
+	Subscribed bool       `json:"subscribed"`
+	LastAt     *time.Time `json:"last_at"`
 }
 
-// Topics lists topics tok may read, with open counts.
+// Topics lists topics tok may read, with open counts. A filtered device
+// leaves out its unsubscribed topics (subs.go).
 func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon), MAX(da) FROM (
-		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon, 0 AS da FROM notifications
-		UNION ALL SELECT topic, 0, icon, device_actions FROM topics) GROUP BY topic ORDER BY topic`)
+	tok, err := s.viewed(ctx, tok, false)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon), MAX(da), MAX(at) FROM (
+		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon, 0 AS da, created_at AS at FROM notifications
+		UNION ALL SELECT topic, 0, icon, device_actions, NULL FROM topics) GROUP BY topic ORDER BY topic`)
 	if err != nil {
 		return nil, err
 	}
@@ -1592,10 +1616,16 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	out := []TopicCount{}
 	for rows.Next() {
 		var t TopicCount
-		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon, &t.DeviceActions); err != nil {
+		var at sql.NullInt64
+		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon, &t.DeviceActions, &at); err != nil {
 			return nil, err
 		}
-		if tok.may(ScopeRead, t.Topic) {
+		if at.Valid {
+			last := fromMS(at.Int64)
+			t.LastAt = &last
+		}
+		t.Subscribed = !tok.view.filtered || tok.view.subscribed(t.Topic)
+		if tok.may(ScopeRead, t.Topic) && !tok.view.hides(t.Topic) {
 			out = append(out, t)
 		}
 	}
@@ -1607,6 +1637,10 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 // resolved), as the inbox sidebar shows them.
 func (s *Server) Counts(ctx context.Context, tok *Token) (map[string]int, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
+		return nil, err
+	}
+	tok, err := s.viewed(ctx, tok, false)
+	if err != nil {
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT topic, state, COUNT(*) FROM notifications GROUP BY topic, state`)
@@ -1621,7 +1655,7 @@ func (s *Server) Counts(ctx context.Context, tok *Token) (map[string]int, error)
 		if err := rows.Scan(&topic, &state, &k); err != nil {
 			return nil, err
 		}
-		if tok.may(ScopeRead, topic) {
+		if tok.may(ScopeRead, topic) && !tok.view.hides(topic) {
 			out[state] += k
 		}
 	}

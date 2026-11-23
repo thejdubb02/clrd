@@ -113,7 +113,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		return nil, err
 	}
 	// Off topics are left out in the query, so they never use up the 500.
-	lq := ListQuery{State: "all", Limit: 500, Skip: off}
+	lq := ListQuery{State: "all", Limit: 500, Skip: off, All: true} // a sender's format is not a view of one owner (#617)
 	if topic != "" {
 		lq.Topics = []string{topic}
 	}
