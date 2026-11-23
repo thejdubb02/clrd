@@ -19,11 +19,42 @@ type Fake struct {
 	mu    sync.Mutex
 	seq   int64
 	items map[string]*Notification
+	// Topic subscriptions (SPEC 2.3): Unfiltered is a token with no user.
+	Unfiltered  bool
+	NoNewTopics bool
+	subs        map[string]bool
+}
+
+func (f *Fake) subscribed(t string) bool {
+	if on, ok := f.subs[t]; ok && !f.Unfiltered {
+		return on
+	}
+	return !f.NoNewTopics || f.Unfiltered
+}
+
+func (f *Fake) SetSubscriptions(r *http.Request, newTopics *bool, topics map[string]bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Unfiltered {
+		return errors.New("this token has no user")
+	}
+	for t := range topics {
+		if t == "" || strings.ContainsAny(t, " /") {
+			return errors.New("bad topic name " + t)
+		}
+	}
+	if newTopics != nil {
+		f.NoNewTopics = !*newTopics
+	}
+	for t, on := range topics {
+		f.subs[t] = on
+	}
+	return nil
 }
 
 // NewFake returns a Fake seeded with a realistic mix of notifications.
 func NewFake() *Fake {
-	f := &Fake{items: map[string]*Notification{}}
+	f := &Fake{items: map[string]*Notification{}, subs: map[string]bool{}}
 	now := time.Now().UTC().Truncate(time.Minute)
 	ago := func(m int) time.Time { return now.Add(-time.Duration(m) * time.Minute) }
 	until := now.Add(3 * time.Hour)
@@ -71,8 +102,20 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	defer f.mu.Unlock()
 	s := Snapshot{Seq: f.seq, CanKeep: true, Counts: map[string]int{}, Items: []Notification{}, Me: "web", MeID: "tok-web", MarkID: "me", SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h", TopicKeepClearedDays: map[string]int{"home": 14, "gone": 3}} // gone has no notifications left (#336)
 	topics := map[string]int{}
+	last := map[string]time.Time{}
 	needle := strings.ToLower(q.Q)
+	s.Filtered, s.NewTopics = !f.Unfiltered, !f.NoNewTopics
+	s.Unsubscribed = q.Topic != "" && !f.subscribed(q.Topic)
 	for _, n := range f.items {
+		if n.CreatedAt.After(last[n.Topic]) {
+			last[n.Topic] = n.CreatedAt
+		}
+		if !f.subscribed(n.Topic) {
+			if q.Topic == n.Topic && slices.Contains(q.States, n.State) {
+				s.Items = append(s.Items, *n) // subscribed=all browses it
+			}
+			continue
+		}
 		s.Counts[n.State]++
 		if _, ok := topics[n.Topic]; !ok {
 			topics[n.Topic] = 0
@@ -91,6 +134,18 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 		s.Topics = append(s.Topics, Topic{Name: name, Open: open})
 	}
 	sort.Slice(s.Topics, func(i, j int) bool { return s.Topics[i].Name < s.Topics[j].Name })
+	if q.Devices && s.Filtered {
+		for name, at := range last {
+			open := 0
+			for _, n := range f.items {
+				if n.Topic == name && (n.State == "active" || n.State == "acknowledged" || n.State == "snoozed") {
+					open++
+				}
+			}
+			s.SubTopics = append(s.SubTopics, SubTopic{Topic: name, Subscribed: f.subscribed(name), Open: open, LastAt: &at})
+		}
+		sort.Slice(s.SubTopics, func(i, j int) bool { return s.SubTopics[i].Topic < s.SubTopics[j].Topic })
+	}
 	now := time.Now().UTC()
 	day := now.Add(-24 * time.Hour)
 	s.Linked = []LinkedDevice{{ID: "tok-laptop", Name: "laptop", Kind: "token", LinkedAt: day, Approve: "denied"},

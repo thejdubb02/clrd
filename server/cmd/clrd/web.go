@@ -138,6 +138,22 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	for _, st := range q.States {
 		want[st] = true
 	}
+	// Topic subscriptions (SPEC 2.3): one topic's page shows it even when
+	// unsubscribed, with a banner; every other view is filtered.
+	subs, err := a.s.Subscriptions(ctx, tok)
+	if err != nil {
+		return snap, err
+	}
+	snap.Filtered = subs.Filtered
+	snap.NewTopics = subs.NewTopics == nil || *subs.NewTopics
+	for _, t := range subs.Topics {
+		snap.Unsubscribed = snap.Unsubscribed || (t.Topic == q.Topic && !t.Subscribed)
+	}
+	if q.Devices {
+		if err := convert(subs.Topics, &snap.SubTopics); err != nil {
+			return snap, err
+		}
+	}
 	var topics []string
 	if q.Topic != "" {
 		topics = []string{q.Topic}
@@ -146,7 +162,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		if !want[st] {
 			continue
 		}
-		rows, err := a.s.List(ctx, tok, server.ListQuery{State: st, Topics: topics, Q: q.Q, Limit: webLimit})
+		rows, err := a.s.List(ctx, tok, server.ListQuery{State: st, Topics: topics, Q: q.Q, Limit: webLimit, All: q.Topic != ""})
 		if err != nil {
 			return snap, err
 		}
@@ -332,6 +348,15 @@ func (a webAPI) FormatIgnore(r *http.Request, topic, rule, senderID string, on b
 		return web.ErrUnauthorized
 	}
 	return webError(a.s.SetFormatIgnore(r.Context(), tok, topic, rule, senderID, on))
+}
+
+func (a webAPI) SetSubscriptions(r *http.Request, newTopics *bool, topics map[string]bool) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.SetSubscriptions(r.Context(), tok, newTopics, topics)
+	return webError(err)
 }
 
 func (a webAPI) EndSilence(r *http.Request, id string) error {

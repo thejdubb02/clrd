@@ -230,6 +230,20 @@ type Topic struct {
 	Silence bool   `json:"-"`    // this token may silence the topic (#326)
 }
 
+// SubTopic is one row of Settings, Topics: a topic the reader can read, as
+// GET /api/v1/subscriptions returns it (docs/SPEC.md section 2.3).
+type SubTopic struct {
+	Topic      string     `json:"topic"`
+	Subscribed bool       `json:"subscribed"`
+	Open       int        `json:"open"`
+	LastAt     *time.Time `json:"last_at"`
+}
+
+// ApprovalTopic is where approval prompts go unless an agent names another
+// (server/approve.go); unsubscribing from it hides them. ponytail: one
+// name, a server flag per topic when #623 lands.
+const ApprovalTopic = "agents"
+
 // LinkedDevice is one row of the Settings device list (issue #246), as
 // GET /api/v1/devices?all=1 returns it.
 type LinkedDevice struct {
@@ -355,9 +369,9 @@ type DeviceEvent struct {
 // Query selects the cards for one inbox view.
 type Query struct {
 	States  []string // e.g. active, acknowledged
-	Topic   string   // empty = all topics
+	Topic   string   // empty = all topics; one topic shows even when not subscribed (subscribed=all, SPEC 2.3)
 	Q       string   // free-text search, empty = none
-	Devices bool     // fill Log (the Settings page)
+	Devices bool     // fill Log and SubTopics (the Settings page)
 	Senders bool     // fill Senders (the Senders page, #119)
 	Sender  string   // fill Sender with this one, or ErrNotFound
 }
@@ -566,18 +580,24 @@ type Snapshot struct {
 	FormatOff                                    []FormatOff     // topics left out of the check (#320)
 	FormatDismissed                              []FormatDismiss // findings dismissed (#320)
 	Silences                                     []Silence       // running silences (docs/silences.md), Settings only
-	CanSilence                                   bool            // the token may start a silence (it can publish)
-	Hooks                                        []Hook          // outgoing webhooks (#238), Settings and admin only
-	CanHooks                                     bool            // the token may manage webhooks (admin)
-	CanKeep                                      bool            // the token has admin, so it may set how long cleared messages are kept
-	CanApprove                                   bool            // the token may change who may approve: allowed, all topics (#329)
-	Templates                                    []Template      // saved webhook templates (#129), Settings only
-	CanTemplates                                 bool            // the token may publish, so it may save templates
-	CanInvite                                    bool            // the token may make an agent invite (#456): a person's session or a full admin
-	BuiltinTemplates                             []string        // names of the built-in webhook templates
-	CanSenders                                   bool            // a full admin: the Senders page is theirs (#119)
-	Senders                                      []Sender        // the Senders page only
-	Sender                                       *Sender         // a sender's own page only
+	// Topic subscriptions (docs/SPEC.md section 2.3). Filtered is false for a
+	// token with no user, which always sees every topic and may not change
+	// the list. Unsubscribed: Query.Topic is a topic the reader is not
+	// subscribed to, shown anyway. SubTopics is Settings only.
+	Filtered, NewTopics, Unsubscribed bool
+	SubTopics                         []SubTopic
+	CanSilence                        bool       // the token may start a silence (it can publish)
+	Hooks                             []Hook     // outgoing webhooks (#238), Settings and admin only
+	CanHooks                          bool       // the token may manage webhooks (admin)
+	CanKeep                           bool       // the token has admin, so it may set how long cleared messages are kept
+	CanApprove                        bool       // the token may change who may approve: allowed, all topics (#329)
+	Templates                         []Template // saved webhook templates (#129), Settings only
+	CanTemplates                      bool       // the token may publish, so it may save templates
+	CanInvite                         bool       // the token may make an agent invite (#456): a person's session or a full admin
+	BuiltinTemplates                  []string   // names of the built-in webhook templates
+	CanSenders                        bool       // a full admin: the Senders page is theirs (#119)
+	Senders                           []Sender   // the Senders page only
+	Sender                            *Sender    // a sender's own page only
 }
 
 // Template is a saved webhook template on one topic
@@ -749,6 +769,9 @@ type API interface {
 	// StartSilence (dur is a Go duration) and EndSilence back the Settings
 	// silence form without script. Their error text is shown on the page.
 	StartSilence(r *http.Request, topic, tag, dur, comment string) error
+	// SetSubscriptions changes the reader's topic subscriptions, all or
+	// nothing (PUT /api/v1/subscriptions); a nil newTopics keeps it.
+	SetSubscriptions(r *http.Request, newTopics *bool, topics map[string]bool) error
 	EndSilence(r *http.Request, id string) error
 	// FormatIgnore dismisses a format check rule in a topic (for one sender
 	// when senderID is set), or with rule "" leaves the topic out; on false
@@ -789,7 +812,8 @@ var views = map[string][]string{
 func templates(base string) *template.Template {
 	var t *template.Template
 	t = template.Must(template.New("").Funcs(template.FuncMap{
-		"base": func() string { return base },
+		"base":          func() string { return base },
+		"approvalTopic": func() string { return ApprovalTopic },
 		// static is the URL of a file under static/, named by its content (#410).
 		"static": func(p string) (string, error) {
 			h, ok := staticHash[p]
@@ -829,8 +853,11 @@ func templates(base string) *template.Template {
 				Preview       bool
 				Silence       bool  // offer Silence topic for 1 hour (#326)
 				Mine          *Mark // the reader's own mark, which it may change or remove
+				Unsub         bool  // offer Unsubscribe from the topic (SPEC 2.3)
+				Approvals     bool  // the topic carries approval prompts, so Unsubscribe warns first
 			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic),
-				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence }), nil}
+				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence }), nil,
+				snap.Filtered && !snap.Unsubscribed, n.Topic == ApprovalTopic}
 			for i, m := range n.Marks {
 				if snap.MarkID != "" && m.ByID == snap.MarkID {
 					c.Mine = &n.Marks[i]
@@ -1408,6 +1435,48 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		http.Redirect(w, r, inboxNext(f.Get("next"), "/app/settings"), http.StatusSeeOther)
+	})
+
+	// Topic subscriptions (SPEC 2.3) as a plain form post: one topic from a
+	// card or the not-subscribed banner, or the Settings list, which sends
+	// only the rows changed since it was drawn so it never undoes a change
+	// made on another device.
+	mux.HandleFunc("POST /app/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		next := inboxNext(f.Get("next"), "/app/settings#topics")
+		var newTopics *bool
+		topics := map[string]bool{}
+		if f.Has("was") || f.Has("new_topics_was") { // the Settings list, maybe with no rows yet
+			for _, v := range f["was"] { // "1:name" or "0:name", as drawn
+				was, t, _ := strings.Cut(v, ":")
+				if on := slices.Contains(f["on"], t); on != (was == "1") {
+					topics[t] = on
+				}
+			}
+			if on := f.Get("new_topics") == "1"; f.Has("new_topics_was") && on != (f.Get("new_topics_was") == "1") {
+				newTopics = &on
+			}
+		} else {
+			t, on := f.Get("topic"), f.Get("subscribe") == "1"
+			if !on && t == ApprovalTopic && f.Get("sure") == "" {
+				// Not a silent no-op: Settings says what this hides, next to its switch.
+				http.Redirect(w, r, "/app/settings#topics", http.StatusSeeOther)
+				return
+			}
+			topics[t] = on
+		}
+		if newTopics != nil || len(topics) > 0 {
+			if err := api.SetSubscriptions(r, newTopics, topics); err != nil && !errors.Is(err, ErrUnauthorized) {
+				http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+				return
+			}
+		}
+		http.Redirect(w, r, next, http.StatusSeeOther)
 	})
 
 	// Settings format check (#320): dismiss a finding, leave a topic out, or

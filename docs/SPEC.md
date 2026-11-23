@@ -509,7 +509,9 @@ notification already shown stays until it is closed, as it does today
 after a clear. A filtered device that connects with a `since` older than
 the seq of its owner's last `subscriptions` event gets `reset` (and
 `GET /api/v1/events` a 410 `reset`), so a device that was offline during
-the change catches up the same way.
+the change catches up the same way. A typed-in token with no user is not
+filtered, so only an attach or detach resets it, never its browsers
+changing the set.
 
 **API and MCP.** `GET /api/v1/subscriptions` returns
 `{"filtered":true,"new_topics":true,"topics":[{"topic":"chat","subscribed":false,"open":2,"last_at":"RFC3339"|null}]}`,
@@ -1412,6 +1414,7 @@ JavaScript off the web page shows every section and no search box.
 |---|---|---|---|---|
 | Notifications | `sound` | Sound | sound, chime, ring, audio, volume | both |
 | Notifications | `push` | Browser notifications | push, system notification, pop up, desktop, alert | web |
+| Notifications | `topics` | Topics | subscribe, unsubscribe, follow, hide, topic | both |
 | Notifications | `silences` | Silences | mute, quiet, quiet hours, do not disturb, pause | web |
 | Notifications | `muted-topics` | Muted topics | mute, topic, pop up, quiet | Android |
 | Notifications | `battery` | Battery | battery, background, delayed, killed, optimization | Android |

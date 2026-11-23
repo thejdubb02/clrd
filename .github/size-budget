@@ -6,7 +6,8 @@
 # Measured 2026-11-23: server 16,625,848 with version history (#580), after cutting 0.1.0 with a short summary.
 # Measured 2026-11-23: main at 16,658,616; the format check cards (#618) take it to 16,662,712. Raised by 40,000 so the Unreleased changelog, which the binary carries, has room.
 # Measured 2026-11-23: server 16,711,864 with topic subscriptions (#617).
-server 16720000
+# Measured 2026-11-23: main at 16,728,248 (already past 16,720,000 once the changelog grew); the web topic subscriptions page (#629) takes it to 16,744,632. Raised by 40,000 for both plus changelog room.
+server 16760000
 apk 2100000
 # Measured 2026-11-23: desktop 4,687,664 (Linux x86_64 release binary, tray and window, #162).
 desktop 4800000
