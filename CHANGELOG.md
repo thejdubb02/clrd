@@ -21,6 +21,12 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Web: Settings has an About section with the version this server runs and
   a What's new list of what changed in each version, read from the
   changelog built into the binary (#580).
+- Android: a Topics page in Settings lists every topic with its open count
+  and last message, and turns each one on or off for your account on every
+  device, plus whether new topics start subscribed (#617). A card or a
+  stack's menu unsubscribes from its topic with Undo, and the "agents" topic
+  asks first since it carries approval prompts. Muted topics stay a separate,
+  this phone only setting.
 - Server: traffic stats for admins at `GET /api/v1/stats` and the MCP
   `stats` tool: volume per hour, top topics and senders, how long alerts
   stay open before someone clears them (median and p90), who clears them,
@@ -63,6 +69,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   adds clrd to the applications menu and starts it with your desktop
   session. There is still no download. Without the tray library the app no
   longer stops at start: it opens its window instead.
+- Desktop (Linux, with the package installed): "Open in the clrd app" on the
+  link page opens the app with the link filled in (#626). The app names the
+  server and waits for you to press Link this computer; it never links from
+  an address by itself, since any web page can send one.
 
 ### Changed
 
@@ -76,6 +86,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web: a Settings search typed while the page is still loading now finds
+  Link a phone once it appears (#591).
 - Web: a snooze that ends while its card is still leaving now brings the card back with its slide in and wiggle.
 - Web and Android: the sender's Alarm topic hint now says an empty topic
   means the first topic its last topic routes to, or that topic when it has

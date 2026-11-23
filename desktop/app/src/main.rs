@@ -27,8 +27,21 @@ const SOURCE: &str = "https://github.com/thejdubb02/clrd";
 
 /// The running app, for a second start that asks this one to open.
 static APP: OnceLock<AppHandle> = OnceLock::new();
-/// A second start asked for the window before `APP` was set.
-static ASKED: AtomicBool = AtomicBool::new(false);
+/// A second start asked for the window before `APP` was set, with the link
+/// it was given or an empty string. `APP` is set and read under this lock.
+static ASKED: Mutex<Option<String>> = Mutex::new(None);
+
+/// What a start was asked to do: show the window, or, given a `clrd://`
+/// link, show it on the This computer page for the user to accept. The link
+/// comes from the browser, where any page can send one, so it only ever
+/// fills the box (see `Device::offer`).
+fn asked(app: &AppHandle, link: &str) {
+    if link.is_empty() {
+        return open_main(app);
+    }
+    app.state::<Shell>().device.offer(link);
+    open_device(app);
+}
 
 struct Shell {
     device: Device,
@@ -371,16 +384,18 @@ fn stop_sync(app: &AppHandle) {
 /// What the This computer page shows. Asking is also what moves a waiting
 /// link forward: the moment it is approved, sync starts and the window opens.
 #[tauri::command(async)]
-fn state(app: AppHandle) -> (View, String, bool) {
+fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>) {
     let shell = app.state::<Shell>();
     if shell.device.poll().is_some() {
         start_sync(&app);
         open_main(&app);
     }
-    // The last says something went wrong in the app itself, so the page
-    // offers Retry for that too.
+    // The third says something went wrong in the app itself, so the page
+    // offers Retry for that too. The last is a link the browser handed
+    // over and the server it names, for the page to put in the box.
     let noted = !shell.note.lock().unwrap().is_empty();
-    (shell.device.view(), status_line(&shell), noted)
+    let offer = shell.device.take_offer();
+    (shell.device.view(), status_line(&shell), noted, offer)
 }
 
 #[tauri::command(async)]
@@ -454,15 +469,28 @@ fn main() {
     // One app per session. A second start asks the first to open its window
     // and leaves, which is also how the window comes back on a desktop that
     // shows no tray icons.
+    // The browser starts the app with the address as an argument (`%u` in
+    // the menu entry).
+    let link = std::env::args()
+        .skip(1)
+        .find(|a| a.starts_with("clrd://"))
+        .unwrap_or_default();
     #[cfg(target_os = "linux")]
     let keys = match clrd_core::instance::session_bus() {
         Ok(conn) => {
             // Asked before this app is up: remembered, and done at setup.
-            let open = || match APP.get() {
-                Some(app) => open_main(app),
-                None => ASKED.store(true, Ordering::Relaxed),
+            let open = |link: String| {
+                let mut early = ASKED.lock().unwrap();
+                match APP.get() {
+                    Some(app) => asked(app, &link),
+                    // A plain start does not wipe a link that waits.
+                    None if link.is_empty() => {
+                        early.get_or_insert(link);
+                    }
+                    None => *early = Some(link),
+                }
             };
-            if let Ok(false) = clrd_core::instance::claim(&conn, open) {
+            if let Ok(false) = clrd_core::instance::claim(&conn, &link, open) {
                 return;
             }
             Ok(Keychain::new(conn))
@@ -491,7 +519,6 @@ fn main() {
         ])
         .setup(move |app| {
             let app = app.handle();
-            let _ = APP.set(app.clone());
             let tray = tray_library() && build_tray(app).is_ok();
             if !tray {
                 eprintln!(
@@ -501,9 +528,18 @@ fn main() {
             }
             start_sync(app);
             // Started by hand, or with no tray to reach it by: show a window.
-            if !hidden || !tray || ASKED.load(Ordering::Relaxed) {
+            if !link.is_empty() {
+                asked(app, &link);
+            } else if !hidden || !tray {
                 open_main(app);
             }
+            // Last, so what was asked meanwhile comes after this start's own
+            // link, and later asks go straight to the app.
+            let mut early = ASKED.lock().unwrap();
+            if let Some(link) = early.take() {
+                asked(app, &link);
+            }
+            let _ = APP.set(app.clone());
             Ok(())
         })
         .build(tauri::generate_context!())
