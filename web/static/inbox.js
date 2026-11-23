@@ -653,19 +653,22 @@
   }
   // Topic subscriptions (SPEC 2.3). A change reloads the page, so Undo
   // rides in sessionStorage, written before the PUT so a reply that lands
-  // mid-reload still offers it. The new page checks the change landed (#649).
+  // mid-reload still offers it. The new page checks the change landed (#649)
+  // and is still the owner's last one, tagged with this tab's request id (#702).
   const subsPut = body => fetch('/api/v1/subscriptions', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
   const subsWhy = async r => r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   const approvalsOff = t => confirm(`Agents send their approval requests to ${t}. Unsubscribe, and those requests stop reaching you. Unsubscribe anyway?`);
   const store = (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* private window: no Undo after the reload */ } };
   let unsubDone = null;
-  try { unsubDone = sessionStorage.getItem('clrd-unsub'); } catch { /* as above */ }
-  if (unsubDone) {
+  try { unsubDone = JSON.parse(sessionStorage.getItem('clrd-unsub')); } catch { /* as above */ }
+  if (Array.isArray(unsubDone)) {
     store('clrd-unsub', null);
+    const [t, id] = unsubDone;
     fetch('/api/v1/subscriptions', { credentials: 'same-origin' }).then(r => r.json()).then(s => {
-      if (!(s.topics || []).some(x => x.topic === unsubDone && !x.subscribed)) return; // the PUT never landed
-      say(`Unsubscribed from ${unsubDone}`, async () => {
-        const r = await subsPut({ topics: { [unsubDone]: true } });
+      // the PUT never landed, or another device changed the set since
+      if (s.request_id !== id || !(s.topics || []).some(x => x.topic === t && !x.subscribed)) return;
+      say(`Unsubscribed from ${t}`, async () => {
+        const r = await subsPut({ topics: { [t]: true } });
         if (r && r.ok) return location.reload();
         say(await subsWhy(r));
       });
@@ -687,8 +690,9 @@
     e.preventDefault();
     const t = b.dataset.unsub ?? b.dataset.subscribe, on = 'subscribe' in b.dataset;
     if (!on && document.querySelector(`[data-unsub="${CSS.escape(t)}"][data-approvals]`) && !approvalsOff(t)) return;
-    if (!on) store('clrd-unsub', t);
-    const r = await subsPut({ topics: { [t]: on } });
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    if (!on) store('clrd-unsub', JSON.stringify([t, id]));
+    const r = await subsPut({ topics: { [t]: on }, request_id: id });
     if (r && r.ok) return location.reload();
     store('clrd-unsub', null);
     if (r && r.status === 401) return location.reload();
