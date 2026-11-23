@@ -2,6 +2,7 @@ package clrd
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -37,6 +38,33 @@ func TestParseChangelogReal(t *testing.T) {
 	}
 	if want == 0 || got != want {
 		t.Fatalf("parsed %d items, file has %d", got, want)
+	}
+}
+
+// A merge that brings archived entries back into CHANGELOG.md fails here
+// with a plain message, not only on the size limit. A cut with
+// -summary-file keeps a hand-written summary, which never repeats an item.
+func TestChangelogNotArchived(t *testing.T) {
+	b, err := os.ReadFile("CHANGELOG-archive.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived := map[string]string{}
+	for _, r := range ParseChangelog(string(b)) {
+		for _, c := range r.Changes {
+			for _, it := range c.Items {
+				archived[it] = r.Version
+			}
+		}
+	}
+	for _, r := range ParseChangelog(Changelog) {
+		for _, c := range r.Changes {
+			for _, it := range c.Items {
+				if v, ok := archived[it]; ok {
+					t.Errorf("CHANGELOG.md %s repeats an entry already in CHANGELOG-archive.md under %s, likely a bad merge; delete it from CHANGELOG.md: %.80s", r.Version, v, it)
+				}
+			}
+		}
 	}
 }
 
