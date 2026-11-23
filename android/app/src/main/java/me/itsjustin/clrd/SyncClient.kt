@@ -27,6 +27,12 @@ interface Store {
     fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false, again: Boolean = false, answer: Boolean = false)
 
     /**
+     * Said just before [apply] for a live event, never for a replay (#598): the inbox may move these cards.
+     * [arrive] is a new message, a repeat or a snooze ending, as on the web.
+     */
+    fun live(notifs: Collection<Notif>, arrive: Boolean) {}
+
+    /**
      * After a `reset`: the open list from the server replaces everything known, and [epoch] is saved.
      * When [epoch] differs from the saved one the list comes from another database, so no old row is kept.
      */
@@ -187,7 +193,9 @@ class SyncClient(
                     bufferSeq = maxOf(bufferSeq, seq)
                     if (buffer.size >= 500) applyBuffer(quiet = true) // a later event in the replay may still clear these
                 } else {
-                    store.apply(listOf(n), seq, again = o.optString("type") == "repeat") // a missed repeat in a replay does not ring
+                    val type = o.optString("type")
+                    store.live(listOf(n), type == "created" || type == "repeat" || o.optString("via") == "snooze_end")
+                    store.apply(listOf(n), seq, again = type == "repeat") // a missed repeat in a replay does not ring
                 }
             }
             "mark" -> { // someone saw or actioned it: the card updates quietly and a card hidden on this phone stays hidden

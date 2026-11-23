@@ -344,6 +344,19 @@ class App : Application() {
         get() = prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
 
+    /** The app is on screen (#598): only then may a change move a card. */
+    @Volatile var front = false
+
+    /** Rows changed live while the app was in front, by id (#598). The inbox moves only these, and only while fresh. */
+    val moved = java.util.concurrent.ConcurrentHashMap<String, Moved>()
+
+    fun moving(rows: List<Pair<String, Moved>>) {
+        if (!front) return
+        val now = android.os.SystemClock.uptimeMillis()
+        moved.values.removeIf { now - it.at > FRESH_MS }
+        rows.forEach { (id, m) -> moved[id] = m.copy(at = now) }
+    }
+
     private fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
         val json = JSONObject(rawBody)
         val until = if (action == "snooze" || action == "reopen") snoozeEnd(json) else null
@@ -367,6 +380,7 @@ class App : Application() {
                     val saved = db.runInTransaction<List<String>> {
                         // A stack swipe may also fire each row's own delete intent: those rows are cleared already.
                         ids.filterNot { action == "dismiss" && dao.get(it)?.state == Notif.DISMISSED }.onEach { id ->
+                            if (local != null) moving(listOf(id to Moved(0, false, local, null))) // before Room shows it (#598)
                             dao.addPending(Pending(notifId = id, action = action, body = body))
                             if (until != null && local == Notif.SNOOZED) dao.snooze(id, until, action == "reopen")
                             else if (local != null) dao.setState(id, local)
@@ -449,6 +463,8 @@ class RoomStore(private val app: App) : Store {
         }
         app.pruneCleared()
     }
+
+    override fun live(notifs: Collection<Notif>, arrive: Boolean) = ifMine { app.moving(notifs.map { it.id to Moved(0, arrive, it.state, it.stateBy) }) }
 
     override fun replaceAll(open: List<Notif>, seq: Long, epoch: String) = ifMine {
         val waiting = waiting()
