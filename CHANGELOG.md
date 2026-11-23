@@ -40,6 +40,11 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   the main button, instead of one block of text and buttons (#618). With more
   than three topics the cards start closed.
 
+### Fixed
+
+- Server: a linked device can always unlink itself, even when it was linked
+  from a publish-only token, with `DELETE /api/v1/devices/this` (#609).
+
 ## 0.1.0 - 2026-11-23
 
 ### Added

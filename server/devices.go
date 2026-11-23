@@ -114,10 +114,16 @@ func (s *Server) deviceRoutes() {
 		return nil
 	})
 	s.api("DELETE /api/v1/devices/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		if err := tok.need(ScopeRead, ""); err != nil {
-			return err
+		id := r.PathValue("id")
+		if id == "this" { // the asker itself, whose id it may not know (#609)
+			id = tok.ID
 		}
-		if err := s.Unlink(r.Context(), tok, r.PathValue("id")); err != nil {
+		if id != tok.ID { // a device may always unlink itself, whatever its scope (#609)
+			if err := tok.need(ScopeRead, ""); err != nil {
+				return err
+			}
+		}
+		if err := s.Unlink(r.Context(), tok, id); err != nil {
 			return err
 		}
 		w.WriteHeader(http.StatusNoContent)

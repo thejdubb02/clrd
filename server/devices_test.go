@@ -11,6 +11,28 @@ import (
 	"github.com/coder/websocket"
 )
 
+// Issue #609: a device linked from a publish-only token unlinks itself with
+// DELETE /api/v1/devices/this, but still cannot unlink anyone else.
+func TestUnlinkSelfWithoutRead(t *testing.T) {
+	s, ts, _ := newTest(t)
+	typed := mkToken(t, s, "script", []string{ScopePublish}, nil)
+	phone := linkPhone(t, ts, typed)
+	other := linkPhone(t, ts, typed)
+	otherID := s.lookupToken(context.Background(), other).ID
+	if code, _ := call(t, ts, "DELETE", "/api/v1/devices/"+otherID, phone, nil); code != 403 {
+		t.Fatalf("publish-only phone unlinking another: %d, want 403", code)
+	}
+	if code, out := call(t, ts, "DELETE", "/api/v1/devices/this", phone, nil); code != 204 {
+		t.Fatalf("publish-only phone unlinking itself: %d %v", code, out)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", phone, map[string]any{"topic": "t", "message": "m"}); code != 401 {
+		t.Fatalf("unlinked phone publishing: %d, want 401", code)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", other, map[string]any{"topic": "t", "message": "m"}); code/100 != 2 {
+		t.Fatalf("other phone after the first unlinked itself: %d", code)
+	}
+}
+
 // Issue #246: the full device list, unlink from another device and the log.
 func TestUnlinkDevice(t *testing.T) {
 	s, ts, admin := newTest(t)
