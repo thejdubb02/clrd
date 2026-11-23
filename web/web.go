@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -31,13 +30,11 @@ import (
 	"time"
 
 	"github.com/thejdubb02/clrd"
+	"github.com/thejdubb02/clrd/internal/gzfs"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 )
-
-//go:embed templates static
-var files embed.FS
 
 // staticHash maps each file under static/ to a short hash of its bytes. A page
 // names its scripts and stylesheet with ?v=<hash>, so after an upgrade a
@@ -47,7 +44,7 @@ var staticHash = func() map[string]string {
 	m := map[string]string{}
 	fs.WalkDir(files, "static", func(p string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
-			b, _ := files.ReadFile(p)
+			b, _ := fs.ReadFile(files, p)
 			s := sha256.Sum256(b)
 			m[strings.TrimPrefix(p, "static/")] = hex.EncodeToString(s[:6])
 		}
@@ -1245,7 +1242,11 @@ func Handler(api API, baseURL string) http.Handler {
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
-		statics.ServeHTTP(w, r)
+		// The packed build sends its stored gzip as is when it can (#690).
+		w.Header().Add("Vary", "Accept-Encoding")
+		if !gzfs.Serve(w, r, files, "static/"+strings.TrimPrefix(r.URL.Path, "/static/")) {
+			statics.ServeHTTP(w, r)
+		}
 	})
 	mux.Handle("GET /assets/", cached("/assets/", assets))
 	// Root icon paths that browsers, wrappers and home screens ask for by

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -401,6 +404,33 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 	}
 	for r := range documented {
 		t.Errorf("openapi.json documents %q, which the server does not serve", r)
+	}
+}
+
+// openapi.json reads the same in both builds; only the packed one sends its
+// stored gzip, and only to a client that takes it (#690).
+func TestOpenAPIEncoding(t *testing.T) {
+	s, _, _ := newTest(t)
+	want, _ := os.ReadFile("openapi.json")
+	for ae, gz := range map[string]bool{"gzip": true, "deflate, gzip": true, "": false, "gzip; q=0.0": false} {
+		gz = gz && packedBuild
+		r := httptest.NewRequest("GET", "/openapi.json", nil)
+		r.Header.Set("Accept-Encoding", ae)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		body := w.Body.Bytes()
+		if gz {
+			z, err := gzip.NewReader(bytes.NewReader(body))
+			if err != nil {
+				t.Fatalf("%q: %v", ae, err)
+			}
+			body, _ = io.ReadAll(z)
+		}
+		h := w.Header()
+		if w.Code != 200 || h.Get("Content-Type") != "application/json" || h.Get("Vary") != "Accept-Encoding" ||
+			(h.Get("Content-Encoding") == "gzip") != gz || h.Get("Content-Length") != strconv.Itoa(w.Body.Len()) || !bytes.Equal(body, want) {
+			t.Errorf("%q: %d %v, body equal %v", ae, w.Code, h, bytes.Equal(body, want))
+		}
 	}
 }
 

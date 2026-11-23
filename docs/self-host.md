@@ -30,9 +30,13 @@ another machine, publish the port on a private interface instead.
 Or the binary (Go 1.24+, no C compiler needed):
 
 ```sh
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o clrd ./server/cmd/clrd
+go run ./server/cmd/pack
+CGO_ENABLED=0 go build -tags packed -trimpath -ldflags="-s -w" -o clrd ./server/cmd/clrd
 ./clrd
 ```
+
+`pack` stores the docs and web files gzipped, which makes the binary smaller.
+A plain `go build` without it and without `-tags packed` works too.
 
 No settings are needed. The first log line says where the database went.
 
