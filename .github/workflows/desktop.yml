@@ -102,6 +102,9 @@ jobs:
           # version would be a second match for the size check below.
           rm -rf "$CARGO_TARGET_DIR/$win/release/bundle"
           (cd app && cargo tauri build --runner cargo-xwin --target $win -- --locked)
+          # The start-with-Windows step is in the installer that was built.
+          # What it does was run by hand under Wine: nothing here can run it.
+          grep -q 'app/installer\.nsh' "$CARGO_TARGET_DIR/$win/release/nsis/x64/installer.nsi"
           ../.github/size-check.sh desktop-windows "$CARGO_TARGET_DIR/$win/release/clrd-desktop.exe"
           ../.github/size-check.sh desktop-windows-setup "$CARGO_TARGET_DIR/$win/release/bundle/nsis/"clrd_*_x64-setup.exe
       - uses: actions/upload-artifact@v4

@@ -140,6 +140,20 @@ It is not code signed. Windows SmartScreen will usually say "Windows
 protected your PC" when the installer is opened; More info, then Run anyway,
 starts it. A computer managed by an organisation may block it outright.
 
+Once installed, clrd starts when you sign in to Windows, as a tray icon with
+no window. To stop that, turn clrd off in Windows Settings > Apps > Startup.
+Removing clrd removes the entry. The app's own updates leave it as it is,
+there or not; running a newer installer by hand writes it again, which does
+not undo the switch in Settings. A setup script that wants no entry at all
+makes an empty file named `no-autostart` in `%APPDATA%\org.clrd.desktop`
+before it runs the installer: no installer writes the entry while that file
+is there. Or it deletes the value `clrd` under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` afterwards. Run under
+Wine only: the entry was written, kept and not brought back by an update,
+skipped with the file there and removed with the app. Windows starting clrd
+from it, and the Startup switch holding after a newer installer, have not
+been seen on a Windows computer.
+
 ## Updates on Windows
 
 There is no update address yet, so a build from this tree never asks anywhere
