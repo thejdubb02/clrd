@@ -159,6 +159,7 @@ type SubTopic struct {
 	Subscribed bool       `json:"subscribed"`
 	Open       int        `json:"open"`
 	LastAt     *time.Time `json:"last_at"`
+	Approvals  bool       `json:"approvals"`
 }
 
 // SubscriptionList is GET /api/v1/subscriptions. Filtered false is a
@@ -182,7 +183,7 @@ func (s *Server) Subscriptions(ctx context.Context, tok *Token) (SubscriptionLis
 	out.Filtered, out.NewTopics = true, &tok.view.newTopics
 	ts, err := s.Topics(ctx, tok)
 	for _, t := range ts {
-		out.Topics = append(out.Topics, SubTopic{t.Topic, t.Subscribed, t.Open, t.LastAt})
+		out.Topics = append(out.Topics, SubTopic{t.Topic, t.Subscribed, t.Open, t.LastAt, t.Approvals})
 	}
 	return out, err
 }
