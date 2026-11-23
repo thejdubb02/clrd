@@ -6,8 +6,9 @@
 //! Linux desktop. [`link`] makes this computer a linked device,
 //! [`keychain`] keeps its token, and `device` is the two as the one state
 //! the app's screens show. `instance` keeps it to one running app,
-//! [`setting`] is the one switch this computer keeps for itself, and `theme`
-//! says whether the desktop asks for dark.
+//! [`setting`] is the one switch this computer keeps for itself, `theme`
+//! says whether the desktop asks for dark, and [`update`] fetches and checks a
+//! newer installer.
 
 pub mod client;
 #[cfg(any(target_os = "linux", windows))]
@@ -23,6 +24,7 @@ pub mod notify;
 pub mod setting;
 #[cfg(target_os = "linux")]
 pub mod theme;
+pub mod update;
 
 pub use client::{run, Error, Server, Status};
 pub use engine::{Engine, Next, Notification, Sink};

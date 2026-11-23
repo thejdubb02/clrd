@@ -25,6 +25,12 @@ log = { version = "0.4", features = ["max_level_debug"] }
 # The OS random source, for the secret that claims a link code. std has no
 # public one. Already in the tree (the WebSocket key comes from it).
 getrandom = "0.4"
+# Checks the signature on an update before it is run. Verify only, pure Rust,
+# no dependencies of its own. A signature check is never written by hand.
+minisign-verify = "0.2"
+# The update's key and signature arrive as base64. Already in the tree (the
+# HTTP client uses it), so naming it adds no code.
+base64 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
 # Credential Manager, where the token is kept. Bindings only, no code of its

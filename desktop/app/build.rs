@@ -9,6 +9,9 @@ fn main() {
             "unlink",
             "retry",
             "set_close_clears",
+            "updates",
+            "set_auto_update",
+            "check_update",
         ]),
     ))
     .expect("tauri build");

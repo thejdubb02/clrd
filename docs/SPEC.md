@@ -1379,6 +1379,19 @@ rules. Its token lives in the OS keychain and is sent only as an
   keeps the GTK theme's answer.
 - An incoming `dismissed` or `resolved` event from any device always closes
   the system notification.
+- Updates (Windows, #719). The update address and a minisign public key are
+  build inputs (`CLRD_UPDATE_URL`, `CLRD_UPDATE_PUBKEY`); a build without
+  both never asks and shows no update settings. The address serves the JSON
+  feed Tauri's updater uses (`version`, and under `platforms` a
+  `windows-x86_64` entry with `url` and `signature`). An installer runs only
+  when its signature verifies against the built-in key, its signed comment
+  carries `version:` equal to the feed's version, and that version is newer
+  than the running one. The requests carry no token and no session.
+  "Update automatically" is a setting on that computer, on by default; off,
+  the app asks nothing by itself and Check for updates still works. An empty
+  file `no-auto-update` in the app's data folder is the off state, so a setup
+  script can set it. The app asks at start and every six hours, and does not
+  start the installer for the same version twice by itself.
 
 ## 9. Web
 

@@ -14,6 +14,7 @@
 use clrd_core::device::{Device, View};
 use clrd_core::keychain::Keychain;
 use clrd_core::setting::CloseClears;
+use clrd_core::update::{Update, Updater};
 use clrd_core::{Engine, Error, Server, Status};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -413,6 +414,63 @@ fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>, bool)
     )
 }
 
+/// Updates (#719). Only a Windows build that was given an address and a
+/// public key has any: `CLRD_UPDATE_URL` and `CLRD_UPDATE_PUBKEY` when it is
+/// built. A build from source has neither, asks nobody, and its page shows
+/// no update controls. On Linux the package manager updates the app.
+fn updater(app: &AppHandle) -> Option<Updater> {
+    let updater = Updater {
+        url: option_env!("CLRD_UPDATE_URL").unwrap_or_default().into(),
+        pubkey: option_env!("CLRD_UPDATE_PUBKEY").unwrap_or_default().into(),
+        running: env!("CARGO_PKG_VERSION").into(),
+        target: "windows-x86_64".into(),
+        dir: state_file(app).ok()?.parent()?.into(),
+    };
+    (cfg!(windows) && updater.enabled()).then_some(updater)
+}
+
+/// Starts the verified installer and quits, so it can replace this app. The
+/// installer starts the new version in the tray when it is done.
+fn install(app: &AppHandle, updater: &Updater, update: &Update) -> Result<(), String> {
+    updater
+        .install(update)
+        .map_err(|e| format!("The update could not be started: {e}"))?;
+    app.exit(0);
+    Ok(())
+}
+
+/// For the This computer page: the running version and the "Update
+/// automatically" switch, or nothing in a build with no updates.
+#[tauri::command(async)]
+fn updates(app: AppHandle) -> Option<(&'static str, bool)> {
+    updater(&app).map(|updater| (env!("CARGO_PKG_VERSION"), updater.auto()))
+}
+
+#[tauri::command(async)]
+fn set_auto_update(app: AppHandle, on: bool) -> Result<(), String> {
+    updater(&app)
+        .ok_or("This build has no updates.")?
+        .set_auto(on)
+        .map_err(|e| format!("The setting could not be saved: {e}"))
+}
+
+/// The Check for updates button. It asks whatever the switch says, and a
+/// newer version it finds is installed: pressing it is the go-ahead.
+#[tauri::command(async)]
+fn check_update(app: AppHandle) -> Result<String, String> {
+    let updater = updater(&app).ok_or("This build has no updates.")?;
+    Ok(match updater.check()? {
+        Some(update) => {
+            install(&app, &updater, &update)?;
+            format!(
+                "Installing version {}. clrd will start again.",
+                update.version
+            )
+        }
+        None => "clrd is up to date.".into(),
+    })
+}
+
 /// The switch on the This computer page. Counts from the next close on.
 #[tauri::command(async)]
 fn set_close_clears(app: AppHandle, on: bool) -> Result<(), String> {
@@ -544,7 +602,10 @@ fn main() {
             cancel,
             unlink,
             retry,
-            set_close_clears
+            set_close_clears,
+            updates,
+            set_auto_update,
+            check_update
         ])
         .setup(move |app| {
             let app = app.handle();
@@ -556,6 +617,19 @@ fn main() {
                 );
             }
             start_sync(app);
+            // Automatic updates: at start and a few times a day, while the
+            // switch is on. Off, each round asks nothing.
+            if let Some(updater) = updater(app) {
+                let app = app.clone();
+                std::thread::spawn(move || loop {
+                    if let Some(update) = updater.background() {
+                        if let Err(e) = install(&app, &updater, &update) {
+                            eprintln!("clrd: {e}");
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(6 * 60 * 60));
+                });
+            }
             // The windows and their pages go dark when the desktop does. A
             // desktop that is not dark, or says nothing, is left as it was:
             // only a dark this app set itself is taken back.
