@@ -39,7 +39,7 @@ jobs:
         # the real keychain the token tests store into, on that same bus.
         # The app links the system's web view and tray libraries, and its
         # test runs the real binary on a virtual screen (xvfb, with xauth).
-        run: sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev dbus-daemon gnome-keyring libwebkit2gtk-4.1-dev libayatana-appindicator3-dev xvfb xauth xdotool desktop-file-utils
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev dbus-daemon gnome-keyring libwebkit2gtk-4.1-dev libayatana-appindicator3-dev xvfb xauth xdotool desktop-file-utils
       - name: rust toolchain
         # rustup itself is pinned by checksum; the compiler version comes
         # from desktop/rust-toolchain.toml, which cargo installs on first use.
