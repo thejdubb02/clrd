@@ -1021,7 +1021,7 @@
       const r = ids.length && await post('/api/v1/notifications/clear', { ids, via: 'web_bulk' });
       b.disabled = false;
       const done = () => ids.forEach(id => clearing.delete(id));
-      if (!r) { done(); return; }
+      if (!r) { done(); arrived = arrived.filter(id => !ids.includes(id)); return; } // they never left, so nothing slides in (#656)
       const n = (await r.json().catch(() => ({}))).cleared;
       // Clear all takes every stack with it, so none shrinks card by card.
       // Each one goes a little after the one above it (SPEC 10.1).
