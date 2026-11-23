@@ -1404,10 +1404,10 @@ Fonts: Geist (UI), Geist Mono (meta, ids, code). Self-host the font files; no Go
 | paper | `#F5F3EE` | light bg |
 | surface | `#FFFFFF` | cards |
 | line | `#DEDAD1` | 1px hairlines |
-| slate | `#5B6470` | quiet text |
+| slate | `#5B6470` (dark mode `#98A1AC`) | quiet text |
 | body | `#3D444D` | body copy |
 | clear | `#0B7A55` (dark mode `#3DDC97`) | done, Clear button |
-| signal | `#C2410C` | urgent only |
+| signal | `#C2410C` (dark mode `#F97316`) | urgent only |
 | snooze | `#B7791F` | waiting |
 
 State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
@@ -1416,7 +1416,7 @@ State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
 
 Rules: no gradients, flat fills, 1px hairlines, radius 6 (chips, inputs), 8
 (buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. A user's color rules (section 2.1) color their own cards, gradient included; clrd's own chrome keeps these rules. Dark
-mode swaps paper and ink, same accents. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
+mode swaps paper and ink, and accents use the lighter dark mode values above where given. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
 
 Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every surface uses one file). The three lines end on one circle around the disc, so every gap to the disc is the same:
 
