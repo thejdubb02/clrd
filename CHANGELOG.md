@@ -116,6 +116,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: a notification cleared on another device no longer comes back on
+  the phone when a refused tap's late answer arrives after the phone caught
+  up (#34).
 - Android: a late repeat of a notification you just cleared, acknowledged or
   snoozed on the phone stays quiet even when the app restarted in between, and
   the phone forgets these marks once the notification is gone (#561).

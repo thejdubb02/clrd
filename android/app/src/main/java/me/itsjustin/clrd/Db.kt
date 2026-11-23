@@ -73,10 +73,15 @@ interface NotifDao {
     @Query("DELETE FROM pending WHERE `key` = :key")
     fun removePending(key: Long)
 
-    /** Rows only move forward: an older snapshot never overwrites a newer one. Returns the rows kept. */
+    /**
+     * Rows only move forward: an older snapshot never overwrites a newer one. Returns the rows kept.
+     * A row fetched outside the stream (seq 0) that Room no longer has and that is not newer than the cursor
+     * was dropped on purpose since the fetch (by a reset, or pruned once cleared), so it does not come back (#34).
+     */
     @Transaction
     fun applyAll(notifs: Collection<Notif>, seq: Long, answer: Boolean = false): List<Notif> {
-        val kept = notifs.filter { n -> n.seq >= (seqOf(n.id) ?: Long.MIN_VALUE) }
+        val cursor = lastSeq() ?: 0
+        val kept = notifs.filter { n -> seqOf(n.id)?.let { n.seq >= it } ?: (seq != 0L || n.seq > cursor) }
         kept.forEach { put(it) }
         // [answer]: these rows are this phone's own change. Kept even when a newer row got in first: a repeat older
         // than the change was still sent before it (#561 review).
