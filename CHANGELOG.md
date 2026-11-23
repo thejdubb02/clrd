@@ -19,6 +19,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Added
 
 - Android: cards move as on the web. A card cleared, snoozed or resolved while you look (here or on another device) shows a green wash and why, holds, then slides away and the list closes the gap; Clear all goes top to bottom. A new message drops in and the newest gives a small wiggle. Nothing moves on first load, on catch-up, or with Remove animations on (#598).
+- Server: a subscriptions change can carry `if_request_id`, so it applies only while the set's last change is still that request; otherwise it is refused with 409 and nothing changes, so an Undo never reverses another device's change (#716).
 - Server: a subscriptions change can carry a `request_id`, and the subscriptions list says which request made the last change, so the web can offer Undo only for its own Unsubscribe (#702).
 - Server: the answer to ack, snooze, dismiss, resolve or reopen says `"changed": false` when it changed nothing (the notification already had that state), so an app retrying an action does not mistake it for its own change (#693).
 - Web: a Stats page for admins, with notifications per hour or day, priorities, top topics and senders, how fast each gets cleared, and repeat alerts, over 24 hours, 7, 30 or 90 days (#120).
@@ -88,6 +89,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Desktop (Linux, build from source): the window follows the desktop's light
   or dark setting, at start and when you change it (#628). Before, it only
   followed the GTK theme, so a dark desktop could show a light inbox.
+- Desktop (Windows, build from source): the installed app shows each open notification as a Windows toast, with a Clear button that clears it everywhere (#162). Closing one only hides it on that computer unless "Closing clears everywhere" is on, and one cleared on another device leaves the screen and the notification centre. Built for Windows only: not seen on a Windows computer yet.
+- Desktop (Windows, build from source): only one clrd runs per sign-in (#627). Starting it again opens the window of the one already running instead of a second app with a second tray icon. Run under Wine only, not on a Windows computer yet.
+- Desktop (Windows, build from source): a build given an update address and a public key updates itself (#719). It runs only an installer signed with that key for the very version on offer; anything else is dropped and the running version carries on. "Update automatically" on the This computer page is on at first and can be turned off; Check for updates works either way. A build with no address never asks anywhere.
+- Desktop (Windows, build from source): the app can be built into an installer that needs no administrator rights, adds clrd to the Start menu and can be removed from Windows Settings (#719). It is built on Linux and has not been run on a Windows computer yet. There is still no download.
 
 - Server: outgoing webhooks can post to Discord (#166). A hook with
   `"kind": "discord"` posts each new notification to a Discord webhook URL and
@@ -119,6 +124,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Desktop (Linux, build from source): flipping "Closing clears everywhere" no longer changes what happens to a notification you closed just before, while the app was still busy with an earlier clear. Each close follows the setting as it was when you closed it (#685).
+- Desktop (build from source): a notification that was snoozed and woke up, or was dismissed and reopened, while the computer was offline now alerts when the app catches up, as it did on the devices that were online (#646).
 - Android: Settings shows Snooze times and Linked devices only once the
   server accepts the token for reading, and hides Senders as soon as the
   token is rejected, instead of after the next refresh (#604).

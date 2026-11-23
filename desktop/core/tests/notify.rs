@@ -429,6 +429,35 @@ fn a_click_opens_the_app_and_clears_nothing() {
     assert_eq!(d.calls(), [first("a"), "close 1".to_string()]);
 }
 
+/// The setting counts as it was when the user closed the notification, not
+/// when the app gets round to it behind a slow clear (#685).
+#[test]
+fn a_close_waiting_behind_a_slow_clear_keeps_the_setting_it_arrived_with() {
+    let mut d = Desk::start();
+    d.close_clears.store(true, Ordering::Relaxed);
+    d.show(&note("a"), true);
+    d.show(&note("b"), true);
+    d.server.hold_dismiss(true);
+    d.user_closes(1, 2);
+    wait("the first clear is on its way", || {
+        d.server.requests().iter().any(|r| r.contains("/a/dismiss"))
+    });
+    d.user_closes(2, 2);
+    settle(); // the second close has arrived, and waits behind the first
+    d.close_clears.store(false, Ordering::Relaxed);
+    d.server.hold_dismiss(false);
+    wait("the second close clears too", || {
+        d.server.dismissed().len() == 2
+    });
+    assert_eq!(
+        d.server.dismissed(),
+        [
+            ("a".to_string(), "desktop_close".to_string()),
+            ("b".to_string(), "desktop_close".to_string())
+        ]
+    );
+}
+
 #[test]
 fn a_clear_that_cannot_reach_the_server_brings_it_back() {
     let mut d = Desk::start();

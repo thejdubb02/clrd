@@ -80,5 +80,24 @@ $('sure-yes').addEventListener('click', () => {
   run('unlink');
 });
 
+// Updates: shown only in a build that has them. What went wrong is said in
+// the note, and the switch goes back to what is kept.
+async function updates(note) {
+  const has = await invoke('updates').catch(() => null);
+  $('updates').hidden = !has;
+  if (has) [$('version').textContent, $('auto-update').checked] = has;
+  $('update-note').textContent = note || '';
+}
+$('auto-update').addEventListener('change', async (e) => {
+  updates(await invoke('set_auto_update', { on: e.target.checked }).then(() => '', String));
+});
+$('check-update').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  $('update-note').textContent = 'Checking.';
+  await updates(await invoke('check_update').catch(String));
+  e.target.disabled = false;
+});
+
+updates();
 refresh();
 setInterval(refresh, 1000);

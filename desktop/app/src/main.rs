@@ -14,6 +14,7 @@
 use clrd_core::device::{Device, View};
 use clrd_core::keychain::Keychain;
 use clrd_core::setting::CloseClears;
+use clrd_core::update::{Update, Updater};
 use clrd_core::{Engine, Error, Server, Status};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -305,18 +306,32 @@ fn make_main(app: &AppHandle, base: &str, set_cookie: String) -> Result<(), Stri
 }
 
 /// Shows nothing: system notifications on this system come in a later step.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 struct Quiet;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 impl clrd_core::Sink for Quiet {
     fn show(&mut self, _: &clrd_core::Notification, _: bool) {}
     fn close(&mut self, _: &str) {}
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 fn sink(_: &AppHandle, _: Arc<Server>) -> Result<Quiet, String> {
     Ok(Quiet)
+}
+
+/// System notifications, under the id the installer put on the Start menu
+/// shortcut: Windows shows them for an installed app only.
+#[cfg(windows)]
+fn sink(app: &AppHandle, server: Arc<Server>) -> Result<clrd_core::notify::Notifier, String> {
+    let close_clears = close_clears(app)?.flag();
+    let (id, app) = (app.config().identifier.clone(), app.clone());
+    Ok(clrd_core::notify::Notifier::new(
+        &id,
+        server,
+        close_clears,
+        move |_| open_main(&app),
+    ))
 }
 
 /// System notifications, on a bus connection of their own.
@@ -413,6 +428,69 @@ fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>, bool)
     )
 }
 
+/// Updates (#719). Only a Windows build that was given an address and a
+/// public key has any: `CLRD_UPDATE_URL` and `CLRD_UPDATE_PUBKEY` when it is
+/// built. A build from source has neither, asks nobody, and its page shows
+/// no update controls. On Linux the package manager updates the app.
+fn updater(app: &AppHandle) -> Option<Updater> {
+    let updater = Updater {
+        url: option_env!("CLRD_UPDATE_URL").unwrap_or_default().into(),
+        pubkey: option_env!("CLRD_UPDATE_PUBKEY").unwrap_or_default().into(),
+        running: env!("CARGO_PKG_VERSION").into(),
+        target: "windows-x86_64".into(),
+        dir: state_file(app).ok()?.parent()?.into(),
+    };
+    (cfg!(windows) && updater.enabled()).then_some(updater)
+}
+
+/// Held from a check to the start of its installer. The timer and the button
+/// keep the installer in one file, so one must not write it between the
+/// other's signature check and its start.
+static UPDATING: Mutex<()> = Mutex::new(());
+
+/// Starts the verified installer and quits, so it can replace this app. The
+/// installer starts the new version in the tray when it is done.
+fn install(app: &AppHandle, updater: &Updater, update: &Update) -> Result<(), String> {
+    updater
+        .install(update)
+        .map_err(|e| format!("The update could not be started: {e}"))?;
+    app.exit(0);
+    Ok(())
+}
+
+/// For the This computer page: the running version and the "Update
+/// automatically" switch, or nothing in a build with no updates.
+#[tauri::command(async)]
+fn updates(app: AppHandle) -> Option<(&'static str, bool)> {
+    updater(&app).map(|updater| (env!("CARGO_PKG_VERSION"), updater.auto()))
+}
+
+#[tauri::command(async)]
+fn set_auto_update(app: AppHandle, on: bool) -> Result<(), String> {
+    updater(&app)
+        .ok_or("This build has no updates.")?
+        .set_auto(on)
+        .map_err(|e| format!("The setting could not be saved: {e}"))
+}
+
+/// The Check for updates button. It asks whatever the switch says, and a
+/// newer version it finds is installed: pressing it is the go-ahead.
+#[tauri::command(async)]
+fn check_update(app: AppHandle) -> Result<String, String> {
+    let updater = updater(&app).ok_or("This build has no updates.")?;
+    let _one = UPDATING.lock();
+    Ok(match updater.check()? {
+        Some(update) => {
+            install(&app, &updater, &update)?;
+            format!(
+                "Installing version {}. clrd will start again.",
+                update.version
+            )
+        }
+        None => "clrd is up to date.".into(),
+    })
+}
+
 /// The switch on the This computer page. Counts from the next close on.
 #[tauri::command(async)]
 fn set_close_clears(app: AppHandle, on: bool) -> Result<(), String> {
@@ -498,21 +576,21 @@ fn main() {
         .skip(1)
         .find(|a| a.starts_with("clrd://"))
         .unwrap_or_default();
+    // Asked before this app is up: remembered, and done at setup.
+    let open = |link: String| {
+        let mut early = ASKED.lock().unwrap();
+        match APP.get() {
+            Some(app) => asked(app, &link),
+            // A plain start does not wipe a link that waits.
+            None if link.is_empty() => {
+                early.get_or_insert(link);
+            }
+            None => *early = Some(link),
+        }
+    };
     #[cfg(target_os = "linux")]
     let keys = match clrd_core::instance::session_bus() {
         Ok(conn) => {
-            // Asked before this app is up: remembered, and done at setup.
-            let open = |link: String| {
-                let mut early = ASKED.lock().unwrap();
-                match APP.get() {
-                    Some(app) => asked(app, &link),
-                    // A plain start does not wipe a link that waits.
-                    None if link.is_empty() => {
-                        early.get_or_insert(link);
-                    }
-                    None => *early = Some(link),
-                }
-            };
             if let Ok(false) = clrd_core::instance::claim(&conn, &link, open) {
                 return;
             }
@@ -522,10 +600,13 @@ fn main() {
             "There is no desktop session bus, so no keychain to keep the sign-in in: {e}"
         )),
     };
-    // ponytail: no single-app check on Windows yet; a second start is a
-    // second app. A named mutex when the Windows build is tried for real.
     #[cfg(windows)]
-    let keys = Ok(Keychain::new());
+    let keys = {
+        if let Ok(false) = clrd_core::instance::claim(&link, open) {
+            return;
+        }
+        Ok(Keychain::new())
+    };
 
     let hidden = std::env::args().any(|a| a == "--hidden");
     let app = tauri::Builder::default()
@@ -544,7 +625,10 @@ fn main() {
             cancel,
             unlink,
             retry,
-            set_close_clears
+            set_close_clears,
+            updates,
+            set_auto_update,
+            check_update
         ])
         .setup(move |app| {
             let app = app.handle();
@@ -556,6 +640,23 @@ fn main() {
                 );
             }
             start_sync(app);
+            // Automatic updates: at start and a few times a day, while the
+            // switch is on. Off, each round asks nothing.
+            if let Some(updater) = updater(app) {
+                let app = app.clone();
+                std::thread::spawn(move || loop {
+                    {
+                        let _one = UPDATING.lock();
+                        // Asked again after the download: the switch may
+                        // have been turned off while it ran.
+                        let update = updater.background().filter(|_| updater.auto());
+                        if let Some(Err(e)) = update.map(|u| install(&app, &updater, &u)) {
+                            eprintln!("clrd: {e}");
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(6 * 60 * 60));
+                });
+            }
             // The windows and their pages go dark when the desktop does. A
             // desktop that is not dark, or says nothing, is left as it was:
             // only a dark this app set itself is taken back.

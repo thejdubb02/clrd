@@ -2,6 +2,17 @@
   "productName": "clrd",
   "identifier": "org.clrd.desktop",
   "build": { "frontendDist": "./ui" },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "publisher": "clrd",
+    "shortDescription": "clrd desktop",
+    "windows": {
+      "allowDowngrades": false,
+      "nsis": { "installMode": "currentUser" }
+    }
+  },
   "app": {
     "withGlobalTauri": false,
     "windows": [],

@@ -529,7 +529,10 @@ digits, `-` or `_`) tags the change: GET and PUT answers carry the
 `request_id` of the set's last change, left out when it had none or its
 event has been pruned from the log, so a tab
 that reloads mid-request can tell its own change from another device's
-before offering Undo (#702). Any token of the owner may change the owner's set,
+before offering Undo (#702). An optional `"if_request_id"` (same form)
+applies the change only while the set's last change is still that request;
+otherwise it is a 409 and nothing changes, so an Undo cannot reverse a
+change another device made in between (#716). Any token of the owner may change the owner's set,
 and a full admin may add `?for=<user id or token id>` to read or set another
 owner's set (an invited agent is its own user, so this is how an admin agent
 sets a person's topics). A user id, or the id of any typed-in token,
@@ -1358,14 +1361,30 @@ rules. Its token lives in the OS keychain and is sent only as an
 - Unlinking ends the window session (`DELETE /api/v1/session`), revokes the
   device on the server and removes the token from the
   keychain.
-- One copy runs per user. Starting it again opens the window of the one
-  already running (Linux; Windows is still to come).
+- One copy runs per sign-in session. Starting it again opens the window of
+  the one already running, and hands it the `clrd://` link it was started
+  with. On Linux the lock is a name on the session bus. On Windows it is a
+  named pipe whose name carries the sign-in session's number; a later start
+  writes its link only to a pipe served from its own session. If the lock
+  cannot be taken or reached, the app starts anyway.
 - Each open notification = one system notification.
 - Closing a system notification (its close button, or the desktop's own
   clear) only hides it on that computer and sends nothing, the same rule as
   the Android tray (#265). On Linux only `NotificationClosed` with reason 2
   (closed by the user) counts as a close; reason 1 (expired) and reason 3
-  (closed by the app itself) never send anything, in any setting.
+  (closed by the app itself) never send anything, in any setting. On Windows
+  only a toast's `Dismissed` event with reason `UserCanceled` counts;
+  `TimedOut` leaves the toast in the notification centre, still open, and
+  `ApplicationHidden` is the app's own close.
+- On Windows a notification is a toast, shown under the app id on the Start
+  menu shortcut the installer makes (`org.clrd.desktop`), with the clrd id as
+  its tag. A build with no such shortcut shows none and still syncs. A toast
+  holds text only: the sender's `click` address is never put in it, and a
+  click only opens the window. A clear from elsewhere removes it from the
+  notification centre too. Not handled: a click on a toast while the app is
+  not running (a start removes the toasts an earlier run left). Not yet seen
+  on a Windows computer: any of this, and whether a click, the Clear button
+  or a close on a toast in the notification centre is reported at all.
 - The Clear button on a system notification is a deliberate click and does
   sync: it dismisses with `via: "desktop_button"`.
 - "Closing clears everywhere" is a setting on that computer, off by default.
@@ -1376,9 +1395,23 @@ rules. Its token lives in the OS keychain and is sent only as an
 - The window follows the desktop's light or dark setting, at start and at
   each change, so the inbox's System appearance is the desktop's. On Linux
   that is the settings portal's `color-scheme`; a desktop with no portal
-  keeps the GTK theme's answer.
+  keeps the GTK theme's answer. On Windows it is the "app mode" colour
+  setting, which the window library reads and follows by itself.
 - An incoming `dismissed` or `resolved` event from any device always closes
   the system notification.
+- Updates (Windows, #719). The update address and a minisign public key are
+  build inputs (`CLRD_UPDATE_URL`, `CLRD_UPDATE_PUBKEY`); a build without
+  both never asks and shows no update settings. The address serves the JSON
+  feed Tauri's updater uses (`version`, and under `platforms` a
+  `windows-x86_64` entry with `url` and `signature`). An installer runs only
+  when its signature verifies against the built-in key, its signed comment
+  carries `version:` equal to the feed's version, and that version is newer
+  than the running one. The requests carry no token and no session.
+  "Update automatically" is a setting on that computer, on by default; off,
+  the app asks nothing by itself and Check for updates still works. An empty
+  file `no-auto-update` in the app's data folder is the off state, so a setup
+  script can set it. The app asks at start and every six hours, and does not
+  start the installer for the same version twice by itself.
 
 ## 9. Web
 

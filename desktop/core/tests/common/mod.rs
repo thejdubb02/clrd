@@ -35,6 +35,8 @@ struct Inner {
     minted: u32,
     sessions: Vec<String>, // window sessions that still work, as `name=value`
     refuse_unlink: bool,   // the device list answers 403 (#609)
+    slow_session: bool,    // a new session waits for an unlink to start
+    hold_dismiss: bool,    // a dismiss waits until this is off again
     unlinked: bool,        // the device removed itself: its token is dead
     page: String,          // what /app serves to a signed-in window
     reports: Vec<String>,  // what that page posted to /report
@@ -172,10 +174,22 @@ impl Fake {
         self.inner.lock().unwrap().sessions.clone()
     }
 
-    /// The device list answers 403 from now on, as it does for a token
-    /// without the read scope.
-    pub fn refuse_unlink(&self) {
-        self.inner.lock().unwrap().refuse_unlink = true;
+    /// Whether the device list answers 403 from now on, as it does for a
+    /// token without the read scope.
+    pub fn refuse_unlink(&self, on: bool) {
+        self.inner.lock().unwrap().refuse_unlink = on;
+    }
+
+    /// A new session is held back until an unlink starts, or for a second
+    /// when none does: the gap a session could slip through (#636).
+    pub fn slow_session(&self) {
+        self.inner.lock().unwrap().slow_session = true;
+    }
+
+    /// While on, a dismiss gets no answer (for five seconds at most): a slow
+    /// server, with the app's next signal waiting behind it (#685).
+    pub fn hold_dismiss(&self, on: bool) {
+        self.inner.lock().unwrap().hold_dismiss = on;
     }
 
     /// True once the device removed itself.
@@ -297,6 +311,23 @@ fn serve(mut conn: TcpStream, inner: Arc<Mutex<Inner>>) {
         return;
     }
     let cookie = header("cookie");
+    if (method, path) == ("POST", "/api/v1/session") && inner.lock().unwrap().slow_session {
+        let until = Instant::now() + Duration::from_secs(1);
+        let unlinking = |i: &Inner| {
+            i.requests
+                .iter()
+                .any(|r| r.starts_with("GET /api/v1/devices "))
+        };
+        while !unlinking(&inner.lock().unwrap()) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    if path.ends_with("/dismiss") {
+        let until = Instant::now() + Duration::from_secs(5);
+        while inner.lock().unwrap().hold_dismiss && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
     if open_routes(
         &mut conn,
         &mut inner.lock().unwrap(),
@@ -427,6 +458,10 @@ impl Sink for Recorder {
 impl Recorder {
     pub fn log(&self) -> Vec<String> {
         self.0.lock().unwrap().clone()
+    }
+
+    pub fn clear(&self) {
+        self.0.lock().unwrap().clear();
     }
 }
 

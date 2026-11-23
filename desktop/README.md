@@ -11,8 +11,8 @@ is not released yet: there is nothing to install from here today.
   the open list when the server sends `reset` or its epoch changes. The
   device token is sent only as an `Authorization` header, never in a URL.
 
-  It also holds everything else that touches the OS or the server: Linux
-  system notifications, the device link flow, the token in the OS keychain
+  It also holds everything else that touches the OS or the server: system
+  notifications, the device link flow, the token in the OS keychain
   and the window's sign-in.
 - `app/`: the tray icon and the window, in Tauri 2, around that core. The
   window shows the server's own `/app` in the system's web view, so there is
@@ -29,7 +29,27 @@ waits for you to press Link this computer, and the check code step follows as
 usual. A build run from the source tree is not registered for `clrd://`
 addresses; paste the link there.
 
-Still to come, each in its own change: the Windows installer, and `clrd://link` addresses on Windows.
+One copy runs per sign-in, on Linux and on Windows: starting clrd again
+opens the window of the one already running. (A Windows computer that lets
+one account sign in twice at once runs one copy in each.) The window follows the
+system's light or dark setting on both. Neither has run on a Windows
+computer yet: the one-copy check has passed under Wine, and the light or dark
+part on Windows is the window library's own and has not been seen.
+
+On Windows, notifications are toasts, with the same rules as on Linux: the
+Clear button clears everywhere, closing one only hides it on this computer
+unless the switch is on, and one cleared elsewhere leaves the screen and the
+notification centre. Windows shows them for an installed app only, so a
+build run from the source tree syncs without them. A click opens the clrd
+window; the address a sender attached is never opened from a toast. Clicking
+a toast left over after clrd has quit does nothing, and the next start takes
+those away. Windows may also not pass on a click or the Clear button once a
+toast has moved into the notification centre: if so, clear it in the window.
+None of this has been seen on a Windows computer yet: the code
+is built for Windows, its text handling is tested on Linux, and under Wine,
+which has no toasts, only the refusal was seen: showing one fails cleanly.
+
+Still to come: `clrd://link` addresses on Windows.
 
 ## How the window is kept apart from the token
 
@@ -93,6 +113,89 @@ desktop session as a tray icon with no window. To stop that, turn it off in
 your desktop's startup settings or remove `/etc/xdg/autostart/clrd.desktop`;
 an upgrade leaves that choice alone. It is built for the system it was built
 on: a package made on a newer Ubuntu will not install on an older one.
+
+## An installer for Windows
+
+There is no download yet, and the installer has not been run on a Windows
+computer yet: so far it is only proven to build. It is built on Linux (needs
+`nsis`, `lld`, `llvm` and `clang`, and fetches Microsoft's Windows SDK on
+first use, which means accepting its licence):
+
+```sh
+cd desktop
+rustup target add x86_64-pc-windows-msvc
+cargo install --locked cargo-xwin tauri-cli
+cd app
+cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc
+```
+
+The installer lands in
+`desktop/target/x86_64-pc-windows-msvc/release/bundle/nsis/`. It installs for the
+current user with no administrator prompt, adds clrd to the Start menu and to
+Installed apps in Windows Settings (where it can be removed), and upgrades an
+older install in place. The app uses the WebView2 that comes with Windows 10
+and 11; where it is missing the installer downloads it from Microsoft.
+
+It is not code signed. Windows SmartScreen will usually say "Windows
+protected your PC" when the installer is opened; More info, then Run anyway,
+starts it. A computer managed by an organisation may block it outright.
+
+## Updates on Windows
+
+There is no update address yet, so a build from this tree never asks anywhere
+and shows no update settings. Like the installer, the update step has not been
+run on a Windows computer yet; the checks below are proven by tests on Linux.
+
+A build is given two things when it is compiled, and both are needed:
+
+```sh
+CLRD_UPDATE_URL=https://example.com/clrd/latest.json \
+CLRD_UPDATE_PUBKEY="$(cat clrd.key.pub)" \
+cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc
+```
+
+The address serves a small JSON feed in the shape Tauri's updater uses, so
+`cargo tauri signer generate` makes the key and
+`cargo tauri signer sign --app-version 0.2.0 clrd_0.2.0_x64-setup.exe` signs
+each installer. The version has to be given: a signature without one is
+refused.
+
+```json
+{
+  "version": "0.2.0",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "<the contents of clrd_0.2.0_x64-setup.exe.sig>",
+      "url": "https://example.com/clrd/clrd_0.2.0_x64-setup.exe"
+    }
+  }
+}
+```
+
+- The app asks at start and every six hours. A newer installer is kept and
+  run only when its signature verifies against the key in the build and was
+  made for the very version the feed names, so a feed cannot pass an old
+  installer off as new. Anything else is dropped and the running version
+  carries on. The installer checks once more: run with no questions, it
+  stops when a newer clrd is already installed.
+- The installer runs with no questions, and clrd starts again in the tray
+  when it has succeeded. A version whose installer was started once is not
+  tried again by itself, so a failing install cannot restart the app in a
+  loop. Not proven yet: what an installer that fails half way leaves behind.
+  The app has quit by then, so it stays closed until it is opened again.
+- Use an `https` address. The feed is not signed, so on plain `http` someone
+  on the network could hold the app on an old version (an `https` address is
+  never followed to plain `http`). They still could not
+  make it run anything the key did not sign.
+- "Update automatically" on the This computer page is on at first. Off, the
+  app never asks, downloads or installs by itself; Check for updates still
+  works. A setup script turns it off by making an empty file named
+  `no-auto-update` in `%APPDATA%\org.clrd.desktop`, before or after the first
+  start.
+- The update requests carry no sign-in: the token and the window's session
+  never go to the update address.
+- The private key signs every update a user will run. It never belongs in
+  this repository, a build log or an issue.
 
 ## Dependencies
 

@@ -1,7 +1,8 @@
-//! Desktop notifications on Linux, through `org.freedesktop.Notifications`
-//! on the session bus (`docs/SPEC.md` section 8.1).
+//! Desktop notifications (`docs/SPEC.md` section 8.1). The rules live here,
+//! once; `os` is the part that talks to the system: the notification service
+//! on the session bus on Linux, toasts on Windows.
 //!
-//! The rules, in one place:
+//! The rules:
 //!
 //! - A clear from another device always closes the notification here.
 //! - The Clear button clears everywhere (`via: desktop_button`).
@@ -11,26 +12,27 @@
 //!   expired, or that we closed ourselves, never posts.
 //!
 //! Titles and messages come from whoever can publish to the server, so they
-//! are treated as untrusted text: escaped where the notification service
-//! reads markup, and never used as anything but text.
+//! are treated as untrusted text: escaped where the system reads markup, and
+//! never used as anything but text.
 
 use crate::client::Server;
 use crate::engine::{Notification, Sink};
 use std::collections::{HashMap, HashSet};
-use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Weak};
-use zbus::export::futures_core::Stream;
-use zbus::{block_on, Connection, MessageStream, Variant};
+use std::sync::atomic::AtomicBool;
+use std::sync::{mpsc, Arc, Mutex};
 
-const NAME: &str = "org.freedesktop.Notifications";
-const PATH: &str = "/org/freedesktop/Notifications";
-/// `NotificationClosed` reason 2: the user dismissed it.
-const BY_USER: u32 = 2;
+#[cfg(target_os = "linux")]
+#[path = "notify_linux.rs"]
+mod os;
+#[cfg(windows)]
+#[path = "notify_windows.rs"]
+mod os;
+
+use os::Os;
 
 #[derive(Default)]
 struct Shown {
-    /// What is on screen: clrd id to the service's id and the notification.
+    /// What is on screen: clrd id to the system's id and the notification.
     open: HashMap<String, (u32, Notification)>,
     /// What the user closed or clicked here while it is still open on the
     /// server. A quiet update does not bring these back; an alert does.
@@ -42,113 +44,155 @@ struct Shown {
 }
 
 struct Inner {
-    conn: Connection,
+    os: Os,
     server: Arc<Server>,
-    close_clears: Arc<AtomicBool>,
     on_open: Box<dyn Fn(&Notification) + Send + Sync>,
     shown: Mutex<Shown>,
 }
 
-/// Shows the engine's notifications on the Linux desktop.
+/// Shows the engine's notifications on the desktop.
 pub struct Notifier(Arc<Inner>);
+
+/// What the user did to a notification, as the system reported it.
+enum Signal {
+    /// The system's id, and whether this close clears everywhere: the user
+    /// closed it and the "closing clears everywhere" setting was on when the
+    /// close arrived.
+    Closed(u32, bool),
+    /// The system's id and the button: `clear`, or anything else for a click.
+    Action(u32, String),
+}
 
 impl Notifier {
     /// `conn` is the session bus; the notifier owns it and closes it when
     /// dropped. Build it with a method timeout, or a notification service
-    /// that stops answering holds the sync thread. `close_clears` is the "closing clears everywhere" setting,
-    /// read every time. `on_open` runs when a notification is clicked.
+    /// that stops answering holds the sync thread. `close_clears` is the
+    /// "closing clears everywhere" setting, read as each close arrives.
+    /// `on_open` runs when a notification is clicked.
+    #[cfg(target_os = "linux")]
     pub fn new(
-        conn: Connection,
+        conn: zbus::Connection,
         server: Arc<Server>,
         close_clears: Arc<AtomicBool>,
         on_open: impl Fn(&Notification) + Send + Sync + 'static,
     ) -> zbus::Result<Self> {
-        let stream = block_on(async {
-            // ponytail: any program on the user's own session bus can send
-            // these signals; the bus itself is the trust boundary. Match on
-            // the service's owner if that ever stops being enough.
-            let rule = zbus::MatchRule::builder()
-                .msg_type(zbus::message::Type::Signal)
-                .interface(NAME)
-                .path(PATH)
-                .build()?;
-            // ponytail: `put` holds the lock while it waits for its reply,
-            // and the signal thread waits for that lock, so a full queue
-            // here would stall the connection. A long queue keeps that out
-            // of reach; a lock-free hand-off if it is ever seen.
-            MessageStream::for_match_rule(rule, &conn, std::num::NonZero::new(4096)).await
-        })?;
-        let inner = Arc::new(Inner {
-            conn,
+        let (tx, rx) = mpsc::channel();
+        Ok(Self::with(
+            Os::new(conn, close_clears, tx)?,
+            rx,
             server,
-            close_clears,
+            on_open,
+        ))
+    }
+
+    /// `app_id` is the name Windows knows the installed app by: the one on
+    /// its Start menu shortcut. `close_clears` is the "closing clears
+    /// everywhere" setting, read as each close arrives. `on_open` runs when
+    /// a notification is clicked. Never fails: where Windows will not show
+    /// a notification, each one is logged and skipped.
+    #[cfg(windows)]
+    pub fn new(
+        app_id: &str,
+        server: Arc<Server>,
+        close_clears: Arc<AtomicBool>,
+        on_open: impl Fn(&Notification) + Send + Sync + 'static,
+    ) -> Self {
+        let (tx, rx) = mpsc::channel();
+        Self::with(Os::new(app_id, close_clears, tx), rx, server, on_open)
+    }
+
+    fn with(
+        os: Os,
+        rx: mpsc::Receiver<Signal>,
+        server: Arc<Server>,
+        on_open: impl Fn(&Notification) + Send + Sync + 'static,
+    ) -> Self {
+        let inner = Arc::new(Inner {
+            os,
+            server,
             on_open: Box::new(on_open),
             shown: Mutex::default(),
         });
         let weak = Arc::downgrade(&inner);
-        std::thread::spawn(move || listen(stream, weak));
-        Ok(Self(inner))
+        // One thread handles the signals in the order they came. It ends
+        // when the notifier is gone or the system side stops.
+        // ponytail: a slow server holds up the next click for as long as the
+        // dismiss call takes (30 s at most). More workers if that shows.
+        std::thread::spawn(move || {
+            for signal in rx {
+                let Some(inner) = weak.upgrade() else { return };
+                match signal {
+                    Signal::Closed(id, clears) => inner.closed(id, clears),
+                    Signal::Action(id, key) => inner.action(id, &key),
+                }
+            }
+        });
+        Self(inner)
     }
 }
 
-/// Reads the service's signals until the bus connection ends.
-fn listen(mut stream: MessageStream, inner: Weak<Inner>) {
-    // Each signal is handled outside `block_on`, since the handlers make bus
-    // calls of their own.
-    // ponytail: a slow server holds up the next click for as long as the
-    // dismiss call takes (30 s at most). A queue and a worker if that shows.
-    while let Some(Ok(msg)) = block_on(std::future::poll_fn(|cx| {
-        Pin::new(&mut stream).poll_next(cx)
-    })) {
-        let Some(inner) = inner.upgrade() else { return };
-        let header = msg.header();
-        let body = msg.body();
-        match header.member().map(|m| m.as_str()) {
-            Some("NotificationClosed") => {
-                if let Ok((id, reason)) = body.deserialize::<(u32, u32)>() {
-                    inner.closed(id, reason);
-                }
-            }
-            Some("ActionInvoked") => {
-                if let Ok((id, key)) = body.deserialize::<(u32, String)>() {
-                    inner.action(id, &key);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
+/// Text as markup shows it: nothing in it is read as a tag.
 fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
 
+/// The title line: the title, or the topic when there is none.
+fn summary(n: &Notification) -> &str {
+    if n.title.is_empty() {
+        &n.topic
+    } else {
+        &n.title
+    }
+}
+
+/// A Windows toast, as the XML Windows takes. A click opens the app's
+/// window and nothing else: the sender's `click` address is never put in,
+/// so a toast cannot start a program or open a page by itself.
+#[cfg(any(windows, test))]
+fn toast_xml(n: &Notification, alert: bool) -> String {
+    // Windows refuses a toast with a character XML does not allow, and one
+    // over about 5 KB. `most` is in bytes of the escaped text, counted as
+    // UTF-8 or UTF-16, whichever is more, so the whole toast stays under
+    // that either way. A toast shows a few lines at most, so the cut loses
+    // nothing the user would have seen.
+    let text = |s: &str, most: usize| {
+        let mut out = String::new();
+        let mut used = 0;
+        for c in s.chars().filter(|c| {
+            matches!(c, '\t' | '\n' | ' '..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..)
+        }) {
+            let piece = escape(c.encode_utf8(&mut [0; 4]));
+            used += size(&piece);
+            if used > most {
+                break;
+            }
+            out += &piece;
+        }
+        out
+    };
+    // clrd priority is 1 to 5; 1 and 2 are the quiet ones.
+    let quiet = !alert || n.silenced || matches!(n.priority, 1 | 2);
+    // ponytail: priority 5 looks like any other; scenario="urgent" would let
+    // it through Do not disturb, on Windows 11 only.
+    format!(
+        "<toast launch=\"open\"><visual><binding template=\"ToastGeneric\">\
+         <text>{}</text><text>{}</text></binding></visual>\
+         <actions><action content=\"Clear\" arguments=\"clear\"/></actions>\
+         <audio silent=\"{quiet}\"/></toast>",
+        text(summary(n), 400),
+        text(&n.message, 4000),
+    )
+}
+
+/// The bytes `s` takes as UTF-8 or as UTF-16, whichever is more.
+#[cfg(any(windows, test))]
+fn size(s: &str) -> usize {
+    s.len().max(2 * s.encode_utf16().count())
+}
+
 impl Inner {
-    fn call<B>(&self, method: &str, body: &B) -> zbus::Result<zbus::Message>
-    where
-        B: serde::Serialize + zbus::DynamicType,
-    {
-        // ponytail: no timeout of our own; a notification service that hangs
-        // holds the caller for the bus's own reply timeout.
-        block_on(
-            self.conn
-                .call_method(Some(NAME), PATH, Some(NAME), method, body),
-        )
-    }
-
-    /// Whether the service reads the body as markup. Asked every time, since
-    /// the service can be swapped for another while the app runs. No answer
-    /// counts as markup: escaping text that did not need it only shows an
-    /// `&amp;`, the other mistake lets a sender put links and images in the
-    /// body.
-    fn markup(&self) -> bool {
-        self.call("GetCapabilities", &())
-            .and_then(|reply| reply.body().deserialize::<Vec<String>>())
-            .map_or(true, |caps| caps.iter().any(|c| c == "body-markup"))
-    }
-
     fn put(&self, n: &Notification, alert: bool) {
         // Held across the call, so a signal about the new id waits until the
         // id is in the map.
@@ -158,44 +202,7 @@ impl Inner {
         }
         shown.hidden.remove(&n.id);
         let replaces = shown.open.get(&n.id).map_or(0, |e| e.0);
-        // clrd priority is 1 to 5, 5 the most urgent; 0 means not set.
-        let urgency: u8 = match n.priority {
-            _ if n.silenced => 0,
-            1 | 2 => 0,
-            5.. => 2,
-            _ => 1,
-        };
-        let mut hints: HashMap<&str, Variant<'_>> = HashMap::new();
-        hints.insert("urgency", urgency.into());
-        hints.insert("suppress-sound", (!alert).into());
-        let summary = if n.title.is_empty() {
-            &n.topic
-        } else {
-            &n.title
-        };
-        let body = if self.markup() {
-            escape(&n.message)
-        } else {
-            n.message.clone()
-        };
-        let actions = ["default", "Open", "clear", "Clear"];
-        // -1: the service decides how long it stays up.
-        let sent = self
-            .call(
-                "Notify",
-                &(
-                    "clrd",
-                    replaces,
-                    "",
-                    summary,
-                    &body,
-                    &actions[..],
-                    hints,
-                    -1i32,
-                ),
-            )
-            .and_then(|reply| reply.body().deserialize::<u32>());
-        match sent {
+        match self.os.notify(n, alert, replaces) {
             Ok(os_id) => {
                 // A restarted service starts its ids over: whatever we
                 // still hold under this id is gone from the screen.
@@ -206,9 +213,9 @@ impl Inner {
         }
     }
 
-    /// Forgets the notification the service knows as `os_id`, if it is ours.
-    /// Taken out before anything is closed, so the `NotificationClosed` that
-    /// follows our own close finds nothing, whatever reason it carries.
+    /// Forgets the notification the system knows as `os_id`, if it is ours.
+    /// Taken out before anything is closed, so the close the system reports
+    /// after our own finds nothing, whatever reason it carries.
     fn take(&self, os_id: u32) -> Option<Notification> {
         let mut shown = self.shown.lock().unwrap();
         let id = shown
@@ -237,9 +244,9 @@ impl Inner {
         }
     }
 
-    fn closed(&self, os_id: u32, reason: u32) {
+    fn closed(&self, os_id: u32, clears: bool) {
         let Some(n) = self.take(os_id) else { return };
-        if reason == BY_USER && self.close_clears.load(Ordering::Relaxed) {
+        if clears {
             self.clear(&n, "desktop_close");
         } else {
             self.hide(n);
@@ -248,8 +255,8 @@ impl Inner {
 
     fn action(&self, os_id: u32, key: &str) {
         let Some(n) = self.take(os_id) else { return };
-        // Not every service takes a notification down when a button is used.
-        let _ = self.call("CloseNotification", &os_id);
+        // Not every system takes a notification down when a button is used.
+        self.os.close(os_id);
         if key == "clear" {
             self.clear(&n, "desktop_button");
         } else {
@@ -272,7 +279,7 @@ impl Sink for Notifier {
             shown.open.remove(id).map(|e| e.0)
         };
         if let Some(os_id) = os_id {
-            let _ = self.0.call("CloseNotification", &os_id);
+            self.0.os.close(os_id);
         }
     }
 }
@@ -280,14 +287,80 @@ impl Sink for Notifier {
 impl Drop for Notifier {
     /// Takes down what is showing, so the next start does not show it twice.
     // ponytail: a crash skips this and leaves them up until the next start
-    // replaces nothing and shows them again. Saving the service's ids would
+    // replaces nothing and shows them again. Saving the system's ids would
     // fix it, if it is ever seen.
     fn drop(&mut self) {
         let open = std::mem::take(&mut self.0.shown.lock().unwrap().open);
         for (os_id, _) in open.into_values() {
-            let _ = self.0.call("CloseNotification", &os_id);
+            self.0.os.close(os_id);
         }
-        // Ends the signal thread.
-        let _ = block_on(self.0.conn.clone().close());
+        self.0.os.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn n(title: &str, message: &str, priority: u8, silenced: bool) -> Notification {
+        Notification {
+            id: "01JD0000000000000000000000".into(),
+            topic: "backups".into(),
+            title: title.into(),
+            message: message.into(),
+            priority,
+            state: "active".into(),
+            silenced,
+            click: "https://evil.example/run.exe".into(),
+            seq: 1,
+        }
+    }
+
+    #[test]
+    fn a_toast_carries_only_text_from_the_sender() {
+        let xml = toast_xml(
+            &n(
+                "a<b>&\u{0}\u{b}",
+                "</text><action arguments=\"x\"/>",
+                3,
+                false,
+            ),
+            true,
+        );
+        assert_eq!(
+            xml,
+            "<toast launch=\"open\"><visual><binding template=\"ToastGeneric\">\
+             <text>a&lt;b&gt;&amp;</text>\
+             <text>&lt;/text&gt;&lt;action arguments=\"x\"/&gt;</text></binding></visual>\
+             <actions><action content=\"Clear\" arguments=\"clear\"/></actions>\
+             <audio silent=\"false\"/></toast>"
+        );
+        // No title: the topic stands in. The click address is nowhere.
+        let xml = toast_xml(&n("", "hi", 3, false), true);
+        assert!(xml.contains("<text>backups</text><text>hi</text>"));
+        assert!(!xml.contains("evil"));
+    }
+
+    #[test]
+    fn a_toast_is_cut_to_what_windows_takes() {
+        let xml = toast_xml(&n(&"é".repeat(5000), &"&".repeat(5000), 3, false), true);
+        assert_eq!(xml.matches('é').count(), 200);
+        assert_eq!(xml.matches("&amp;").count(), 400);
+        assert!(size(&xml) < 5000, "{}", size(&xml));
+        // An emoji is text like any other, and is never cut in half.
+        let xml = toast_xml(&n("🔥 backup", &"🔥".repeat(5000), 3, false), true);
+        assert!(xml.contains("<text>🔥 backup</text>"));
+        assert_eq!(xml.matches('🔥').count(), 1001);
+        assert!(size(&xml) < 5000, "{}", size(&xml));
+    }
+
+    #[test]
+    fn a_toast_makes_a_sound_only_for_a_new_loud_one() {
+        let silent = |n: &Notification, alert| toast_xml(n, alert).contains("silent=\"true\"");
+        assert!(!silent(&n("", "", 3, false), true));
+        assert!(!silent(&n("", "", 0, false), true));
+        assert!(silent(&n("", "", 3, false), false));
+        assert!(silent(&n("", "", 3, true), true));
+        assert!(silent(&n("", "", 2, false), true));
     }
 }

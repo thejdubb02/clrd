@@ -52,7 +52,7 @@ fn a_refused_unlink_still_ends_the_session_and_forgets_the_token() {
     device.session().unwrap();
     assert_eq!(fake.sessions().len(), 1);
 
-    fake.refuse_unlink();
+    fake.refuse_unlink(true);
     device.unlink();
     assert!(fake.sessions().is_empty(), "the window session is ended");
     assert_eq!(keys.load(), Ok(None), "the keychain entry is gone");
@@ -60,6 +60,30 @@ fn a_refused_unlink_still_ends_the_session_and_forgets_the_token() {
     assert!(!fake.unlinked());
     assert!(device.view().error.contains("may still list this device"));
     assert!(device.session().is_err());
+}
+
+/// A session asked for just before an unlink does not outlive it (#636),
+/// even on a server that refuses the device's removal.
+#[test]
+fn a_session_made_while_unlinking_does_not_outlive_the_unlink() {
+    let fake = Fake::start();
+    let (bus, _daemon, keys, _home) = linked(&fake);
+    let device = Device::new(Ok(Keychain::new(bus.connect())), "test desktop");
+    fake.refuse_unlink(true);
+    fake.slow_session();
+
+    std::thread::scope(|s| {
+        s.spawn(|| device.session());
+        wait("the session is asked for", || {
+            fake.requests()
+                .iter()
+                .any(|r| r.starts_with("POST /api/v1/session "))
+        });
+        device.unlink();
+    });
+    assert_eq!(fake.sessions(), [""; 0], "no window session is left");
+    assert_eq!(keys.load(), Ok(None));
+    assert_eq!(device.linked(), None);
 }
 
 #[test]
