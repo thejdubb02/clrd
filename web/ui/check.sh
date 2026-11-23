@@ -6,9 +6,10 @@
 # - The Tailwind binary leaves the step's stdout non-blocking, so a big
 #   `git diff` after it could die with EAGAIN and lose the log. The build here
 #   writes to a file and the check compares hashes, not diff output.
-# - The pinned Tailwind sometimes emits a different, equally valid file for the
-#   same sources. On a mismatch the check builds again from a clean
-#   `git archive HEAD`; only a second mismatch fails it.
+# - The pinned Tailwind sometimes drops an @apply declaration (a broken file,
+#   #665). build.sh now keeps only a result two builds agree on; on a mismatch
+#   the check also builds again from a clean `git archive HEAD`, and only a
+#   second mismatch fails it.
 # Files that differ land in $OUT (default $RUNNER_TEMP/app-css) for the
 # workflow to upload.
 set -eu
