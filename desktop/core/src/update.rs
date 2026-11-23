@@ -150,11 +150,15 @@ impl Updater {
     pub fn install(&self, update: &Update) -> std::io::Result<()> {
         // Kept first: an installer that was started is never started by the
         // timer a second time.
-        std::fs::write(self.dir.join(TRIED), &update.version)?;
+        let tried = self.dir.join(TRIED);
+        std::fs::write(&tried, &update.version)?;
         std::process::Command::new(&update.file)
             .args(["/P", "/UPDATE", "/R", "/ARGS", "--hidden"])
             .spawn()
             .map(drop)
+            // One that never started restarts nothing, so the timer may try
+            // it again, say once a virus scanner has let the file go.
+            .inspect_err(|_| drop(std::fs::remove_file(tried)))
     }
 }
 
@@ -173,6 +177,9 @@ fn get(url: &str, max: u64) -> Result<Vec<u8>, String> {
         .config()
         // Downloads are often handed on to a file host.
         .max_redirects(5)
+        // An https address is never handed on to plain http, where someone
+        // on the network could answer "nothing new" for ever.
+        .https_only(url.starts_with("https://"))
         .build()
         .call()
         .map_err(|e| format!("the update server could not be reached: {e}"))?;

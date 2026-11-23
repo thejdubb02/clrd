@@ -157,14 +157,16 @@ refused.
   run only when its signature verifies against the key in the build and was
   made for the very version the feed names, so a feed cannot pass an old
   installer off as new. Anything else is dropped and the running version
-  carries on.
+  carries on. The installer checks once more: run with no questions, it
+  stops when a newer clrd is already installed.
 - The installer runs with no questions, and clrd starts again in the tray
   when it has succeeded. A version whose installer was started once is not
   tried again by itself, so a failing install cannot restart the app in a
   loop. Not proven yet: what an installer that fails half way leaves behind.
   The app has quit by then, so it stays closed until it is opened again.
 - Use an `https` address. The feed is not signed, so on plain `http` someone
-  on the network could hold the app on an old version. They still could not
+  on the network could hold the app on an old version (an `https` address is
+  never followed to plain `http`). They still could not
   make it run anything the key did not sign.
 - "Update automatically" on the This computer page is on at first. Off, the
   app never asks, downloads or installs by itself; Check for updates still

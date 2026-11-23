@@ -9,6 +9,7 @@
     "publisher": "clrd",
     "shortDescription": "clrd desktop",
     "windows": {
+      "allowDowngrades": false,
       "nsis": { "installMode": "currentUser" }
     }
   },

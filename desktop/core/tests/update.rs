@@ -175,8 +175,10 @@ fn switched_off_the_timer_asks_nothing_and_the_button_still_works() {
     assert!(updater.background().is_some());
 }
 
-/// The installer is marked as tried before it is started, so even one that
-/// cannot start (this file is no program) is not fetched by the timer again.
+/// An installer that could not even start (the kept file is no program)
+/// restarts nothing, so the timer may try it again. One that did start is
+/// not fetched by the timer a second time.
+#[cfg(unix)]
 #[test]
 fn an_installer_that_was_started_is_not_started_by_the_timer_again() {
     let server = Server::start();
@@ -184,8 +186,13 @@ fn an_installer_that_was_started_is_not_started_by_the_timer_again() {
     server.serve("/package", 200, GOOD);
     let updater = server.updater("loop");
 
-    let update = updater.background().expect("an update");
+    let mut update = updater.background().expect("an update");
     assert!(updater.install(&update).is_err());
+    assert!(updater.background().is_some());
+
+    // Stands in for an installer that starts.
+    update.file = "/bin/true".into();
+    updater.install(&update).unwrap();
     assert!(updater.background().is_none());
     assert!(updater.check().unwrap().is_some());
 }

@@ -429,6 +429,11 @@ fn updater(app: &AppHandle) -> Option<Updater> {
     (cfg!(windows) && updater.enabled()).then_some(updater)
 }
 
+/// Held from a check to the start of its installer. The timer and the button
+/// keep the installer in one file, so one must not write it between the
+/// other's signature check and its start.
+static UPDATING: Mutex<()> = Mutex::new(());
+
 /// Starts the verified installer and quits, so it can replace this app. The
 /// installer starts the new version in the tray when it is done.
 fn install(app: &AppHandle, updater: &Updater, update: &Update) -> Result<(), String> {
@@ -459,6 +464,7 @@ fn set_auto_update(app: AppHandle, on: bool) -> Result<(), String> {
 #[tauri::command(async)]
 fn check_update(app: AppHandle) -> Result<String, String> {
     let updater = updater(&app).ok_or("This build has no updates.")?;
+    let _one = UPDATING.lock();
     Ok(match updater.check()? {
         Some(update) => {
             install(&app, &updater, &update)?;
@@ -622,8 +628,12 @@ fn main() {
             if let Some(updater) = updater(app) {
                 let app = app.clone();
                 std::thread::spawn(move || loop {
-                    if let Some(update) = updater.background() {
-                        if let Err(e) = install(&app, &updater, &update) {
+                    {
+                        let _one = UPDATING.lock();
+                        // Asked again after the download: the switch may
+                        // have been turned off while it ran.
+                        let update = updater.background().filter(|_| updater.auto());
+                        if let Some(Err(e)) = update.map(|u| install(&app, &updater, &u)) {
                             eprintln!("clrd: {e}");
                         }
                     }
