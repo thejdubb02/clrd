@@ -2152,7 +2152,7 @@ try {
       await mc('Back soon').waitFor({ state: 'detached' });
 
       // The same while a Clear all waits for its reply (#656): the server has
-      // cleared the card, another device snoozes it and it wakes, all before
+      // cleared the card, another device reopens it for later and it wakes, all before
       // the reply. The card is not leaving yet, but the reply takes it, so its
       // return still slides in.
       const mid = await send('Mid clear');
@@ -2163,7 +2163,7 @@ try {
       await mp.getByRole('button', { name: 'Clear all' }).first().click();
       await hold(ns => ns.some(n => n.id === mid.id && n.state === 'dismissed'), 'the clear');
       held = [];
-      await post3(`/api/v1/notifications/${mid.id}/snooze`, { until: new Date(Date.now() + 3000).toISOString() });
+      await post3(`/api/v1/notifications/${mid.id}/reopen`, { until: new Date(Date.now() + 3000).toISOString() });
       await hold(ns => ns.some(n => n.id === mid.id && n.state === 'active'), 'the snooze ending');
       await mp.waitForTimeout(300); // the wake reaches the page before the reply
       go();
