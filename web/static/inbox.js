@@ -419,6 +419,8 @@
       // A live change to a still-open question keeps a half-typed answer (#153).
       const was = old && old.querySelector('[data-text-reply] [name=text]'), box = fresh.querySelector('[data-text-reply] [name=text]');
       if (was && box && was.value) box.value = was.value;
+      const k = !was && box ? kept.findIndex(([id]) => id === n.dataset.id) : -1; // a draft kept from a reload, its card back live (#687)
+      if (k >= 0) box.value = kept.splice(k, 1)[0][1];
       if (was && box && was === document.activeElement) typing = box;
       localize(fresh);
       previews(fresh);
