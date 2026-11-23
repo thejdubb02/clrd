@@ -1370,6 +1370,7 @@ JavaScript off the web page shows every section and no search box.
 |---|---|---|---|---|
 | Notifications | `sound` | Sound | sound, chime, ring, audio, volume | both |
 | Notifications | `push` | Browser notifications | push, system notification, pop up, desktop, alert | web |
+| Notifications | `topics` | Topics | subscribe, unsubscribe, follow, hide, topic | both |
 | Notifications | `silences` | Silences | mute, quiet, quiet hours, do not disturb, pause | web |
 | Notifications | `muted-topics` | Muted topics | mute, topic, pop up, quiet | Android |
 | Notifications | `battery` | Battery | battery, background, delayed, killed, optimization | Android |

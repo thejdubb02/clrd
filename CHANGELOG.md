@@ -18,6 +18,13 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Web: subscribe and unsubscribe to topics, per user (#617). A card's
+  snooze menu has Unsubscribe from the topic, with Undo; Settings, Topics
+  lists every topic with a switch and a switch for new topics. An
+  unsubscribed topic leaves the inbox, counts and devices but still opens
+  from its link, with a Subscribe button. Unsubscribing from agents warns
+  first, since approval requests go there.
+
 - Android: Settings is now in the same sections as the web (Notifications,
   Inbox, Devices, Integrations) with a search box at the top (#575). It
   matches a setting's name, its description or keywords such as "qr", and
