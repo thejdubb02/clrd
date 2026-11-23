@@ -82,6 +82,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   "Closing clears everywhere" switch (#627). It is off at first, so closing
   a notification on the computer only hides it there; turn it on and a close
   clears it on all your devices. The choice is kept across restarts.
+- Desktop (Linux, build from source): the window follows the desktop's light
+  or dark setting, at start and when you change it (#628). Before, it only
+  followed the GTK theme, so a dark desktop could show a light inbox.
 
 - Server: outgoing webhooks can post to Discord (#166). A hook with
   `"kind": "discord"` posts each new notification to a Discord webhook URL and

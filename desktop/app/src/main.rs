@@ -556,6 +556,18 @@ fn main() {
                 );
             }
             start_sync(app);
+            // The windows and their pages go dark when the desktop does. A
+            // desktop that is not dark, or says nothing, is left as it was:
+            // only a dark this app set itself is taken back.
+            #[cfg(target_os = "linux")]
+            {
+                let (app, was) = (app.clone(), AtomicBool::new(false));
+                clrd_core::theme::follow(move |dark| {
+                    if was.swap(dark, Ordering::Relaxed) != dark {
+                        app.set_theme(dark.then_some(tauri::Theme::Dark));
+                    }
+                });
+            }
             // Started by hand, or with no tray to reach it by: show a window.
             if !link.is_empty() {
                 asked(app, &link);
