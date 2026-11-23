@@ -48,7 +48,9 @@ async function run(command, args) {
 async function start(plainOk) {
   $('plain').hidden = true;
   $('offer').textContent = '';
-  if ((await run('start', { link: $('url').value, plainOk })) === false) {
+  const link = $('url').value;
+  // The warning is for this link only: not for one that came in meanwhile.
+  if ((await run('start', { link, plainOk })) === false && $('url').value === link) {
     $('plain').hidden = false;
   }
 }

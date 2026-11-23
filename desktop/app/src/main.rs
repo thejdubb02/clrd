@@ -483,6 +483,10 @@ fn main() {
                 let mut early = ASKED.lock().unwrap();
                 match APP.get() {
                     Some(app) => asked(app, &link),
+                    // A plain start does not wipe a link that waits.
+                    None if link.is_empty() => {
+                        early.get_or_insert(link);
+                    }
                     None => *early = Some(link),
                 }
             };
@@ -515,11 +519,6 @@ fn main() {
         ])
         .setup(move |app| {
             let app = app.handle();
-            let early = {
-                let mut early = ASKED.lock().unwrap();
-                let _ = APP.set(app.clone());
-                early.take()
-            };
             let tray = tray_library() && build_tray(app).is_ok();
             if !tray {
                 eprintln!(
@@ -534,9 +533,13 @@ fn main() {
             } else if !hidden || !tray {
                 open_main(app);
             }
-            if let Some(link) = early {
+            // Last, so what was asked meanwhile comes after this start's own
+            // link, and later asks go straight to the app.
+            let mut early = ASKED.lock().unwrap();
+            if let Some(link) = early.take() {
                 asked(app, &link);
             }
+            let _ = APP.set(app.clone());
             Ok(())
         })
         .build(tauri::generate_context!())
