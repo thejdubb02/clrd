@@ -1401,7 +1401,7 @@ rules. Its token lives in the OS keychain and is sent only as an
 
 ## 9.1 Settings layout (#575, web and Android)
 
-Settings is one page in five sections. Both clients use these names, in this
+Settings is one page in six sections. Both clients use these names, in this
 order. A client leaves out a setting it does not have; it never renames one or
 moves it to another section. Each setting has a plain label, a one-line
 description and the keywords below. Its id is the anchor on web
@@ -1441,6 +1441,7 @@ JavaScript off the web page shows every section and no search box.
 | Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
 | Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
 | Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
+| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version and What's new, the history in section 5.2 |
 
 The Android version line stays at the foot of the page, outside the sections.
 

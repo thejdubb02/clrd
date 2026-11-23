@@ -560,6 +560,23 @@
       {{else}}<p class="meta">This device cannot save templates: its token cannot publish.</p>{{end}}
     </section>
   </section>
+  {{with about}}<section class="grid gap-8" aria-labelledby="g-about" data-settings-group>
+    <h2 id="g-about" class="border-b pb-2 text-lg font-semibold tracking-tight">About</h2>
+    <section id="about" data-setting data-keywords="version, what's new, changelog, release, update, build" class="grid gap-3">
+      <h3 id="about-h" class="text-base font-semibold">Version</h3>
+      <p class="text-body text-sm/relaxed" data-version>This server runs clrd {{.Version}}{{with .Commit}}, build <code>{{.}}</code>{{end}}{{with .Date}} from {{.}}{{end}}.</p>
+      <details class="text-sm" data-whats-new>
+        <summary class="cursor-pointer font-medium">What's new</summary>
+        <div class="text-body mt-3 grid gap-5">{{range .History}}
+          <section class="grid gap-2"><h4 class="text-foreground font-semibold">{{if eq .Version "Unreleased"}}Not in a version yet{{else}}{{.Version}}{{with .Date}} <span class="meta">{{.}}</span>{{end}}{{end}}</h4>
+            {{range .Changes}}<h5 class="text-muted-foreground text-xs font-medium">{{.Section}}</h5>
+            <ul class="msg grid gap-1">{{range .Items}}<li>{{.}}</li>{{end}}</ul>{{end}}
+          </section>{{end}}
+          <p><a href="{{.FullHistory}}">Every version, older ones too</a></p>
+        </div>
+      </details>
+    </section>
+  </section>{{end}}
   <p class="meta flex gap-4" data-repo-links><a class="hover:text-foreground" href="https://github.com/thejdubb02/clrd">Source code</a><a class="hover:text-foreground" href="https://github.com/thejdubb02/clrd/issues">Report a problem</a></p>
 </div>
 {{end}}

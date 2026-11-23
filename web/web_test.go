@@ -57,6 +57,17 @@ func TestPages(t *testing.T) {
 			}
 		}
 	}
+	// About (#580): the running version, and its history with inline Markdown.
+	_, body := get(t, h, "/app/settings")
+	for _, s := range []string{`data-version>This server runs clrd ` + clrd.Version(), `id="about"`, `<summary class="cursor-pointer font-medium">What's new</summary>`,
+		`<code>clrd import ntfy</code>`, `<span class="meta">2026-11-23</span>`, `href="` + clrd.FullHistory + `"`} {
+		if !strings.Contains(body, s) {
+			t.Errorf("settings About: missing %q", s)
+		}
+	}
+	if strings.Contains(body, `<p>`+"First version of clrd") {
+		t.Error("history item kept its <p> wrapper")
+	}
 	if _, body := get(t, h, "/app/settings"); strings.Contains(body, `data-unlink="tok-web"`) || strings.Contains(body, `data-unlink="tok-laptop"`) {
 		t.Error("unlink offered on this browser or a typed-in token")
 	}

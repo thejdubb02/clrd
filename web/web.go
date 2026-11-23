@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -26,6 +27,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/thejdubb02/clrd"
@@ -888,6 +890,7 @@ func templates(base string) *template.Template {
 				Snap  Snapshot
 			}{demoInbox, Snapshot{Formatting: true, SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}}
 		},
+		"about":       about,
 		"snoozeLabel": snoozeLabel,
 		"left":        timeLeft,
 		"hookEvents":  func() any { return HookEvents },
@@ -912,6 +915,41 @@ func templates(base string) *template.Template {
 	}).ParseFS(files, "templates/*.html"))
 	return t
 }
+
+// About is Settings, About (#580): the version this binary runs and its
+// history, read from the same JSON as GET /api/v1/version (SPEC 5.2).
+type About struct {
+	Version, Commit, Date string
+	FullHistory           string `json:"full_history"`
+	History               []struct {
+		Version, Date string
+		Changes       []struct {
+			Section string
+			Items   []template.HTML
+		}
+	}
+}
+
+var about = sync.OnceValue(func() (a About) {
+	_ = json.Unmarshal(clrd.VersionJSON(), &a)
+	md := goldmark.New(goldmark.WithExtensions(extension.GFM)) // raw HTML stays escaped
+	for i := range a.History {
+		for _, c := range a.History[i].Changes {
+			for k, item := range c.Items {
+				var b bytes.Buffer
+				_ = md.Convert([]byte(item), &b)
+				c.Items[k] = template.HTML(strings.TrimSuffix(strings.TrimPrefix(b.String(), "<p>"), "</p>\n"))
+			}
+		}
+	}
+	if len(a.Commit) > 7 {
+		a.Commit = a.Commit[:7]
+	}
+	if len(a.Date) > 10 {
+		a.Date = a.Date[:10]
+	}
+	return a
+})
 
 // PreviewsOn says whether a topic's cards show link previews, as the server
 // decides for GET /api/v1/preview.

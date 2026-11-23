@@ -18,6 +18,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Web: Settings has an About section with the version this server runs and
+  a What's new list of what changed in each version, read from the
+  changelog built into the binary (#580).
 - Site: the landing page shows a sample web inbox, drawn by the real card
   template with fixed demo data, so it always matches the inbox and needs
   no pictures or JavaScript (#592).
