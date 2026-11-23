@@ -60,6 +60,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web: a snooze that ends while its card is still leaving now brings the card back with its slide in and wiggle.
 - Web and Android: the sender's Alarm topic hint now says an empty topic
   means the first topic its last topic routes to, or that topic when it has
   no route, which is what the server does (#585).
