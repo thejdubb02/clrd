@@ -87,6 +87,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Desktop (Linux, build from source): the window follows the desktop's light
   or dark setting, at start and when you change it (#628). Before, it only
   followed the GTK theme, so a dark desktop could show a light inbox.
+- Desktop (Windows, build from source): only one clrd runs per signed-in user (#627). Starting it again opens the window of the one already running instead of a second app with a second tray icon. Run under Wine only, not on a Windows computer yet.
 - Desktop (Windows, build from source): a build given an update address and a public key updates itself (#719). It runs only an installer signed with that key for the very version on offer; anything else is dropped and the running version carries on. "Update automatically" on the This computer page is on at first and can be turned off; Check for updates works either way. A build with no address never asks anywhere.
 - Desktop (Windows, build from source): the app can be built into an installer that needs no administrator rights, adds clrd to the Start menu and can be removed from Windows Settings (#719). It is built on Linux and has not been run on a Windows computer yet. There is still no download.
 

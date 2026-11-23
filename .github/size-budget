@@ -15,11 +15,12 @@
 # Changelog growth is never a reason to raise this: CI takes CHANGELOG.md off the size, and version_test.go caps it on its own.
 server 16275000
 apk 2100000
-# Measured 2026-11-23: desktop 4,687,664 (Linux x86_64 release binary, tray and window, #162).
-desktop 4800000
-# Measured 2026-11-23: desktop-deb 1,488,512 (the Linux .deb, xz, #625).
-desktop-deb 1560000
-# Measured 2026-11-23: desktop-windows 3,501,056 (Windows x86_64 release exe, the web view is the system's WebView2, #719).
-desktop-windows 3560000
-# Measured 2026-11-23: desktop-windows-setup 1,465,533 (the Windows installer, NSIS, lzma, #719).
-desktop-windows-setup 1500000
+# The four desktop lines are set about 2% above the measured size.
+# Measured 2026-11-23: desktop 4,416,696 (Linux x86_64 release binary, tray and window, #162).
+desktop 4505000
+# Measured 2026-11-23: desktop-deb 1,439,836 (the Linux .deb, xz, #625).
+desktop-deb 1468000
+# Measured 2026-11-23: desktop-windows 3,096,064 (Windows x86_64 release exe, the web view is the system's WebView2, #719).
+desktop-windows 3158000
+# Measured 2026-11-23: desktop-windows-setup 1,374,021 (the Windows installer, NSIS, lzma, #719).
+desktop-windows-setup 1401000

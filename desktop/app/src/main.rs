@@ -562,21 +562,21 @@ fn main() {
         .skip(1)
         .find(|a| a.starts_with("clrd://"))
         .unwrap_or_default();
+    // Asked before this app is up: remembered, and done at setup.
+    let open = |link: String| {
+        let mut early = ASKED.lock().unwrap();
+        match APP.get() {
+            Some(app) => asked(app, &link),
+            // A plain start does not wipe a link that waits.
+            None if link.is_empty() => {
+                early.get_or_insert(link);
+            }
+            None => *early = Some(link),
+        }
+    };
     #[cfg(target_os = "linux")]
     let keys = match clrd_core::instance::session_bus() {
         Ok(conn) => {
-            // Asked before this app is up: remembered, and done at setup.
-            let open = |link: String| {
-                let mut early = ASKED.lock().unwrap();
-                match APP.get() {
-                    Some(app) => asked(app, &link),
-                    // A plain start does not wipe a link that waits.
-                    None if link.is_empty() => {
-                        early.get_or_insert(link);
-                    }
-                    None => *early = Some(link),
-                }
-            };
             if let Ok(false) = clrd_core::instance::claim(&conn, &link, open) {
                 return;
             }
@@ -586,10 +586,13 @@ fn main() {
             "There is no desktop session bus, so no keychain to keep the sign-in in: {e}"
         )),
     };
-    // ponytail: no single-app check on Windows yet; a second start is a
-    // second app. A named mutex when the Windows build is tried for real.
     #[cfg(windows)]
-    let keys = Ok(Keychain::new());
+    let keys = {
+        if let Ok(false) = clrd_core::instance::claim(&link, open) {
+            return;
+        }
+        Ok(Keychain::new())
+    };
 
     let hidden = std::env::args().any(|a| a == "--hidden");
     let app = tauri::Builder::default()
