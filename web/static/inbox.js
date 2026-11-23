@@ -185,6 +185,7 @@
       try { themeSel.value ? localStorage.setItem('clrd.theme', themeSel.value) : localStorage.removeItem('clrd.theme'); } catch {}
       window.clrdTheme?.();
     });
+    addEventListener('storage', e => { if (e.key === 'clrd.theme') themeSel.value = e.newValue || ''; });
   }
   addEventListener('storage', e => { if (e.key === 'clrd.stack') { stacking = e.newValue === '1'; restack(); tidy(); } });
 
