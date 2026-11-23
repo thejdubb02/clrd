@@ -30,7 +30,7 @@ another machine, publish the port on a private interface instead.
 Or the binary (Go 1.24+, no C compiler needed):
 
 ```sh
-CGO_ENABLED=0 go build -o clrd ./server/cmd/clrd
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o clrd ./server/cmd/clrd
 ./clrd
 ```
 
