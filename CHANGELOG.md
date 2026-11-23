@@ -48,6 +48,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   devices, without clearing anything or changing what anyone else sees.
   Everything stays subscribed until you choose otherwise. Set it through
   the API or an agent over MCP; the web and Android screens come next.
+- Android: Read on an unsubscribed topic in the Topics page shows its open
+  cards without subscribing (#624). Nothing is saved on the phone and nothing
+  rings; Subscribe there turns the topic back on.
 - Android: Settings is now in the same sections as the web (Notifications,
   Inbox, Devices, Integrations) with a search box at the top (#575). It
   matches a setting's name, its description or keywords such as "qr", and

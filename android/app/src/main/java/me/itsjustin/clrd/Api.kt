@@ -46,13 +46,13 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
      * Every open row plus the seq to resume the WebSocket from (docs/SPEC.md section 5).
      * The seq comes from the first page: the server reads it before querying, so nothing is missed.
      */
-    fun listOpen(): OpenList {
+    fun listOpen(filter: String = ""): OpenList { // filter: more query, such as one topic with subscribed=all (#624)
         val rows = mutableListOf<Notif>()
         var seq = -1L
         var epoch = ""
         var before = ""
         while (true) {
-            val o = JSONObject(get("/api/v1/notifications?state=open&limit=$PAGE" + if (before.isEmpty()) "" else "&before=$before"))
+            val o = JSONObject(get("/api/v1/notifications?state=open&limit=$PAGE$filter" + if (before.isEmpty()) "" else "&before=$before"))
             if (seq < 0) { seq = o.getLong("seq"); epoch = o.optString("epoch") }
             else if (o.optString("epoch") != epoch) throw IOException("server changed between pages") // retried from page one
             val a = o.getJSONArray("notifications")

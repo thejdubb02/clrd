@@ -879,6 +879,8 @@ private fun SubscriptionSettings(app: App, resumes: Int, gone: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var find by rememberSaveable { mutableStateOf("") }
     var asking by remember { mutableStateOf<String?>(null) }
+    var reading by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(subs) { if (reading?.let { subs?.subscribed(it) } == true) reading = null } // subscribed elsewhere: the cards are in the inbox now
     val why = { e: Exception -> (e as? HttpError)?.message ?: ctx.getString(R.string.sound_no_connection) }
     LaunchedEffect(subs, resumes) { // a change from another device comes as a new settings message
         if (!filtered) return@LaunchedEffect
@@ -923,12 +925,51 @@ private fun SubscriptionSettings(app: App, resumes: Int, gone: () -> Unit) {
                 Text(stringResource(R.string.subs_open, t.open) + "  ·  " + last, style = Mono, color = b.slate)
                 if (t.topic == APPROVAL_TOPIC) Text(stringResource(R.string.subs_agents_note), color = b.signal, fontSize = 13.sp)
             }
+            if (!t.subscribed) TextButton({ reading = t.topic }, Modifier.testTag("read-${t.topic}")) { Text(stringResource(R.string.subs_read), color = b.ink) }
             Switch(checked = t.subscribed, modifier = Modifier.testTag("sub-${t.topic}"), onCheckedChange = { on ->
                 if (!on && t.topic == APPROVAL_TOPIC) asking = t.topic else put(topicBody(t.topic, on))
             })
         }
     }
     ConfirmUnsubscribe(asking, { asking = null }) { put(topicBody(it, false)) }
+    reading?.let { topic -> TopicReader(app, topic, resumes, { reading = null }) { put(topicBody(topic, true)); reading = null } }
+}
+
+/**
+ * An unsubscribed topic's open cards, read without subscribing (SPEC 2.3, #624). The rows stay out of Room
+ * and the tray. A snapshot, no stream of its own: it reloads on open, resume, a reset, and an action's answer.
+ */
+@Composable
+private fun TopicReader(app: App, topic: String, resumes: Int, close: () -> Unit, subscribe: () -> Unit) {
+    val b = LocalBrand.current
+    val ctx = LocalContext.current
+    var rows by remember { mutableStateOf<List<Notif>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val again by app.outside.collectAsState()
+    LaunchedEffect(topic, resumes, again) {
+        val api = app.api()
+        app.io.execute {
+            try { rows = api.listOpen("&subscribed=all&topic=" + android.net.Uri.encode(topic)).rows; error = null }
+            catch (e: Exception) { error = (e as? HttpError)?.message ?: ctx.getString(R.string.sound_no_connection) }
+        }
+    }
+    androidx.compose.ui.window.Dialog(close, androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(color = b.paper, modifier = Modifier.fillMaxSize().testTag("reader")) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(topic, color = b.ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.subs_reading), color = b.slate, fontSize = 13.sp)
+                    }
+                    TextButton(subscribe, Modifier.testTag("reader-subscribe")) { Text(stringResource(R.string.subs_subscribe), color = b.ink) }
+                    TextButton(close) { Text(stringResource(R.string.subs_close), color = b.slate) }
+                }
+                error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+                if (rows?.isEmpty() == true) Text(stringResource(R.string.subs_read_empty), color = b.slate)
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) { items(rows.orEmpty(), key = { it.id }) { Card(it) {} } }
+            }
+        }
+    }
 }
 
 @Composable
