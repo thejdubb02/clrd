@@ -75,6 +75,9 @@ type Settings struct {
 	// Sound is the asking device's own sound (#282), filled on reads and
 	// set with PUT /api/v1/devices/{id}.
 	Sound string `json:"sound,omitempty"`
+	// Subscriptions is the asking device's owner's topic set (#617, subs.go),
+	// filled on reads only.
+	Subscriptions *SubSettings `json:"subscriptions,omitempty"`
 }
 
 // maxKeepDays is the longest keep_cleared_days a number can ask for (100 years).
@@ -250,6 +253,9 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 	}
 	sounds, err := s.deviceSounds(ctx, s.db)
 	st.Sound = soundOf(sounds, tok.ID)
+	if err == nil {
+		st.Subscriptions, err = s.subSettings(ctx, tok)
+	}
 	return st, err
 }
 

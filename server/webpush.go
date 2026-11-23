@@ -221,6 +221,10 @@ func (s *Server) sendPushes(ctx context.Context, e Event) {
 			<-sem
 			continue
 		}
+		if tok, err = s.withView(ctx, tok, false); err != nil || tok.view.hides(n.Topic) { // unsubscribed (#617)
+			<-sem
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer func() { <-sem; wg.Done() }()
