@@ -29,7 +29,8 @@ waits for you to press Link this computer, and the check code step follows as
 usual. A build run from the source tree is not registered for `clrd://`
 addresses; paste the link there.
 
-Still to come, each in its own change: the Windows installer, and `clrd://link` addresses on Windows.
+Still to come, each in its own change: automatic updates on Windows, Windows
+system notifications, and `clrd://link` addresses on Windows.
 
 ## How the window is kept apart from the token
 
@@ -93,6 +94,31 @@ desktop session as a tray icon with no window. To stop that, turn it off in
 your desktop's startup settings or remove `/etc/xdg/autostart/clrd.desktop`;
 an upgrade leaves that choice alone. It is built for the system it was built
 on: a package made on a newer Ubuntu will not install on an older one.
+
+## An installer for Windows
+
+There is no download yet, and the installer has not been run on a Windows
+computer yet: so far it is only proven to build. It is built on Linux (needs
+`nsis`, `lld`, `llvm` and `clang`, and fetches Microsoft's Windows SDK on
+first use, which means accepting its licence):
+
+```sh
+cd desktop
+rustup target add x86_64-pc-windows-msvc
+cargo install --locked cargo-xwin tauri-cli
+cd app
+cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc
+```
+
+The installer lands in
+`target/x86_64-pc-windows-msvc/release/bundle/nsis/`. It installs for the
+current user with no administrator prompt, adds clrd to the Start menu and to
+Installed apps in Windows Settings (where it can be removed), and upgrades an
+older install in place. The app uses the WebView2 that comes with Windows 10
+and 11; where it is missing the installer downloads it from Microsoft.
+
+It is not code signed. Windows SmartScreen will say "Windows protected your
+PC" when the installer is opened; More info, then Run anyway, starts it.
 
 ## Dependencies
 

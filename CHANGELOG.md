@@ -87,6 +87,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Desktop (Linux, build from source): the window follows the desktop's light
   or dark setting, at start and when you change it (#628). Before, it only
   followed the GTK theme, so a dark desktop could show a light inbox.
+- Desktop (Windows, build from source): the app can be built into an installer that needs no administrator rights, adds clrd to the Start menu and can be removed from Windows Settings (#719). It is built on Linux and has not been run on a Windows computer yet. There is still no download.
 
 - Server: outgoing webhooks can post to Discord (#166). A hook with
   `"kind": "discord"` posts each new notification to a Discord webhook URL and

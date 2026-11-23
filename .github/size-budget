@@ -19,3 +19,7 @@ apk 2100000
 desktop 4800000
 # Measured 2026-11-23: desktop-deb 1,488,512 (the Linux .deb, xz, #625).
 desktop-deb 1560000
+# Measured 2026-11-23: desktop-windows 3,501,056 (Windows x86_64 release exe, the web view is the system's WebView2, #719).
+desktop-windows 3560000
+# Measured 2026-11-23: desktop-windows-setup 1,465,533 (the Windows installer, NSIS, lzma, #719).
+desktop-windows-setup 1500000
