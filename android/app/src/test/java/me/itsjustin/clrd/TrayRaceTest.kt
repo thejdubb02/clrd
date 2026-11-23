@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -199,6 +200,14 @@ class TrayRaceTest {
         assertTrue(once("b"))
         bg { dao.replaceAll(listOf(b.copy(seq = 2)), 2, sameDb = false) } // a restored server counts again from low seqs
         assertNull(bg { dao.answerOf("b") })
+    }
+
+    @Test fun aTapsOutcomeMessageIsMarkedInRoom() { // #383: so a resend after a restart does not say it again
+        bg { dao.addPending(Pending(notifId = "q", action = "reply", body = """{"reply":"yes"}""")) }
+        val p = bg { dao.pending() }.single()
+        assertFalse(p.told)
+        bg { RoomStore(app).replyOutcome(p, "approve_denied") }
+        assertTrue(bg { dao.pending() }.single().told)
     }
 
     @Test fun reconcileWaitsForSyncWrites() {

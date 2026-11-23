@@ -6399,6 +6399,10 @@
       "type": "string",
       "description": "The topic the sender named when its rules routed it here. Absent when it was not routed."
      },
+     "changed": {
+      "type": "boolean",
+      "description": "Only in the answer to a state change (ack, snooze, dismiss, resolve, reopen): false when the notification already had that state and no event was written."
+     },
      "devices": {
       "type": "array",
       "items": {

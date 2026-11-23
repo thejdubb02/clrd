@@ -89,6 +89,22 @@ func TestReopenWithUntilLandsSnoozed(t *testing.T) {
 	}
 }
 
+// #693: a retried action that changed nothing says so.
+func TestActionSaysChanged(t *testing.T) {
+	_, ts, admin := newTest(t)
+	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "x"})
+	if _, ok := n["changed"]; ok {
+		t.Fatalf("publish answer carries changed: %v", n)
+	}
+	u := "/api/v1/notifications/" + n["id"].(string) + "/dismiss"
+	if _, n := call(t, ts, "POST", u, admin, nil); n["changed"] != true {
+		t.Fatalf("first dismiss: %v", n)
+	}
+	if _, n := call(t, ts, "POST", u, admin, nil); n["changed"] != false || n["seq"] != 2.0 {
+		t.Fatalf("repeated dismiss: %v", n)
+	}
+}
+
 func TestPublishUpsertAndStates(t *testing.T) {
 	_, ts, admin := newTest(t)
 	code, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "external_id": "disk", "title": "Disk 91%"})

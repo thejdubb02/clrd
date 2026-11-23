@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Server: the answer to ack, snooze, dismiss, resolve or reopen says `"changed": false` when it changed nothing (the notification already had that state), so an app retrying an action does not mistake it for its own change (#693).
 - Web: a Stats page for admins, with notifications per hour or day, priorities, top topics and senders, how fast each gets cleared, and repeat alerts, over 24 hours, 7, 30 or 90 days (#120).
 - Web: Settings, Appearance picks System, Light or Dark for this browser. It applies at once on every page with no flash, and System still follows the device (#583).
 - Web: Settings has an About section with the version this server runs and
@@ -119,6 +120,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Android: a notification cleared on another device no longer comes back on
   the phone when a refused tap's late answer arrives after the phone caught
   up (#34).
+- Android: the message that says how an approval tap ended (sent to confirm,
+  denied, changed) shows once, even when the app restarted before the tap was
+  sent again (#383).
 - Android: a late repeat of a notification you just cleared, acknowledged or
   snoozed on the phone stays quiet even when the app restarted in between, and
   the phone forgets these marks once the notification is gone (#561).
