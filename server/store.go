@@ -377,14 +377,25 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("add format column: %w", err)
 	}
 	// A table from before moved: every past change counts as a move, so a
-	// detach before the upgrade still resets.
-	if _, err := db.Exec(`ALTER TABLE sub_owners ADD COLUMN moved INTEGER NOT NULL DEFAULT 0`); err == nil {
-		_, err = db.Exec(`UPDATE sub_owners SET moved = seq`)
+	// detach before the upgrade still resets. One transaction, so a stop in
+	// between never leaves the column without the fill.
+	if err := func() error {
+		tx, err := db.Begin()
 		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("fill moved: %w", err)
+			return err
 		}
-	} else if !strings.Contains(err.Error(), "duplicate column") {
+		defer tx.Rollback()
+		if _, err := tx.Exec(`ALTER TABLE sub_owners ADD COLUMN moved INTEGER NOT NULL DEFAULT 0`); err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				return nil
+			}
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE sub_owners SET moved = seq`); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("add moved column: %w", err)
 	}
