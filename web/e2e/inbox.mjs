@@ -1562,6 +1562,11 @@ try {
     assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'the reload dropped the half-typed answer');
     const [, r2] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: true })]);
     assert.ok(r2.ok(), 'subscribe again');
+    // Its own topic unsubscribed elsewhere: the card leaves, and resubscribing brings the answer back (#687).
+    await Promise.all([dp.waitForEvent('load'), put(other, { drafts: false })]);
+    assert.equal(await dp.locator(`[data-id="${q.id}"]`).count(), 0, 'card still shown after its topic was unsubscribed');
+    await Promise.all([dp.waitForEvent('load'), put(other, { drafts: true })]);
+    assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'resubscribing lost the half-typed answer');
     // A marker whose Unsubscribe never landed: no toast, no Undo.
     await dp.evaluate(() => sessionStorage.setItem('clrd-unsub', 'drafts'));
     await Promise.all([dp.waitForResponse(r => r.url().endsWith('/api/v1/subscriptions') && r.request().method() === 'GET'), dp.reload()]);
