@@ -471,6 +471,7 @@ class RoomStore(private val app: App) : Store {
      */
     /** Says it plainly, whether the tap came from the app or the tray (#330). */
     override fun replyOutcome(p: Pending, outcome: String) = ifMine {
+        dao.told(p.key) // before the message: a restart after it may cost the message, never repeat it
         val text = when (outcome) {
             "confirm" -> R.string.reply_sent_to_confirm
             "approve_denied" -> R.string.reply_approve_denied

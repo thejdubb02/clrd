@@ -45,6 +45,7 @@ interface Store {
     /**
      * How a reply tap ended when it did not simply count (#330): `confirm` (sent to an allowed device
      * to confirm), `approve_denied`, `own_request`, `conflict` (the question changed) or `bad_request` (typed text refused, #153).
+     * Marks [p] told first, so a resend, even after a restart, does not say it again (#383).
      */
     fun replyOutcome(p: Pending, outcome: String) {}
 }
@@ -279,10 +280,6 @@ class SyncClient(
 
 private val flushLock = Any()
 
-// Taps whose outcome message has shown, so a retry after a failed refetch does not show it again (#345).
-// ponytail: in memory, so a restart between the two tries shows it once more; store it on Pending if that matters.
-private val told = HashSet<Long>()
-
 /** How a queued action was made ("" for one queued before it was recorded). */
 private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via") }.getOrDefault("")
 
@@ -335,7 +332,7 @@ private fun sendOne(store: Store, api: Api, p: Pending) {
             if (!prompt) body else {
                 // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
                 store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
-                if (told.add(p.key)) store.replyOutcome(p, "confirm")
+                if (!p.told) store.replyOutcome(p, "confirm")
                 changed = false // the question waits for the confirm, so the row fetched below is not our change
                 try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
             }
@@ -344,7 +341,7 @@ private fun sendOne(store: Store, api: Api, p: Pending) {
         if (!e.isPermanent) throw e
         changed = false
         // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
-        if (p.action == "reply" && e.code in setOf(400, 403, 409)) { if (told.add(p.key)) store.replyOutcome(p, when (e.code) { 409 -> "conflict"; 400 -> "bad_request"; else -> e.reason }) }
+        if (p.action == "reply" && e.code in setOf(400, 403, 409)) { if (!p.told) store.replyOutcome(p, when (e.code) { 409 -> "conflict"; 400 -> "bad_request"; else -> e.reason }) }
         else mine = false
         // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
         // so take the server's current row instead. A fetch that may work later throws and keeps the
@@ -353,5 +350,4 @@ private fun sendOne(store: Store, api: Api, p: Pending) {
     }
     answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine, answer = changed) }
     store.removePending(p)
-    told.remove(p.key)
 }

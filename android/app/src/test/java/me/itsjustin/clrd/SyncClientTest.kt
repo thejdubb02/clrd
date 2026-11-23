@@ -637,8 +637,8 @@ class SyncClientTest {
         val markIds = CopyOnWriteArrayList<String>()
         override fun saveMarkId(id: String) { markIds += id }
         override fun pending() = queue.toList()
-        override fun removePending(p: Pending) { queue.remove(p) }
+        override fun removePending(p: Pending) { queue.removeIf { it.key == p.key } }
         val outcomes = CopyOnWriteArrayList<String>()
-        override fun replyOutcome(p: Pending, outcome: String) { outcomes += outcome }
+        override fun replyOutcome(p: Pending, outcome: String) { outcomes += outcome; queue.replaceAll { if (it.key == p.key) it.copy(told = true) else it } }
     }
 }
