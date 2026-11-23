@@ -44,8 +44,11 @@ interface NotifDao {
     @Query("DELETE FROM notif")
     fun clearAll()
 
-    /** Final rows are history only: drop those cleared before [before], outside the topics in [skip]. */
-    @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before AND topic NOT IN (:skip)")
+    /**
+     * Final rows are history only: drop those cleared before [before], outside the topics in [skip].
+     * A row with a queued action stays: a refused one must find it again, or the refetch could not bring it back (#34).
+     */
+    @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before AND topic NOT IN (:skip) AND id NOT IN (SELECT notifId FROM pending)")
     fun prune(before: Long, skip: List<String>)
 
     /**
@@ -55,7 +58,7 @@ interface NotifDao {
     @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND seq <= (SELECT v FROM meta WHERE k = 'seq') AND NOT EXISTS (SELECT 1 FROM pending)")
     fun dropCleared()
 
-    @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before AND topic = :topic")
+    @Query("DELETE FROM notif WHERE state IN ('dismissed','resolved') AND updatedAt < :before AND topic = :topic AND id NOT IN (SELECT notifId FROM pending)")
     fun pruneTopic(topic: String, before: Long)
 
     @Query("SELECT v FROM meta WHERE k = 'seq'")
