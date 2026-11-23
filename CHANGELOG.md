@@ -59,6 +59,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Changed
 
+- Web: Unsubscribe warns on any topic that has had an approval request or
+  question, not only `agents` (#623).
+
 - Web: the Message format check in Settings is one card per topic with a
   count of its findings, a Dismiss menu on each finding and Copy fix prompt as
   the main button, instead of one block of text and buttons (#618). With more

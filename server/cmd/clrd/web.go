@@ -178,7 +178,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return snap, err
 	}
 	for _, t := range tc {
-		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon, Silence: tok.MaySilence(t.Topic)})
+		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon, Silence: tok.MaySilence(t.Topic), Approvals: t.Approvals})
 	}
 	// Every page's sync indicator (#295). An admin sees every device; anyone
 	// else only their own (#245), so a reader never learns other people's devices.
