@@ -268,7 +268,7 @@ func TestClientSession(t *testing.T) {
 	if got, _ := tool(agent, "get", map[string]any{"id": id}); got["id"] != id || got["message"] != "step 2 of 3" || got["state"] != "acknowledged" {
 		t.Fatalf("get: %v", got)
 	}
-	if got, _ := tool(agent, "topics", nil); fmt.Sprint(got["topics"]) != "[map[icon: open:1 topic:build]]" {
+	if got, _ := tool(agent, "topics", nil); !strings.HasPrefix(fmt.Sprint(got["topics"]), "[map[icon: last_at:") || !strings.HasSuffix(fmt.Sprint(got["topics"]), " open:1 subscribed:true topic:build]]") {
 		t.Fatalf("topics: %v", got)
 	}
 	// The format check's fix prompt points at this server, not example.com (#308).

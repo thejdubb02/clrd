@@ -399,6 +399,20 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		return h.api(r, "POST", "/api/v1/devices/approve-request", map[string]any{"approve": str(a, "approve"), "topic": str(a, "topic")})
+	case "subscriptions":
+		path, body := "/api/v1/subscriptions", map[string]any{}
+		if f := str(a, "for"); f != "" {
+			path += "?for=" + url.QueryEscape(f)
+		}
+		for _, k := range []string{"topics", "new_topics"} {
+			if v, ok := a[k]; ok {
+				body[k] = v
+			}
+		}
+		if len(body) == 0 {
+			return h.api(r, "GET", path, nil)
+		}
+		return h.api(r, "PUT", path, body)
 	case "settings":
 		if len(a) == 0 {
 			return h.api(r, "GET", "/api/v1/settings", nil)
@@ -651,6 +665,10 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices")}, "id")},
 	{"name": "sound", "description": "Notification sounds, chosen per device. No arguments lists the valid sound names and the default; devices shows each device's current sound. With id and sound, sets that device's sound.",
 		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices"), "sound": p("string", "A name from the list, e.g. chime or none")})},
+	{"name": "subscriptions", "description": "Which topics reach this person's devices. No arguments lists every readable topic with subscribed, open and last_at; filtered false means this token has no user and sees every topic. An unsubscribed topic is hidden from their lists, counts and pushes, nothing is cleared, and nobody else sees a difference.",
+		"inputSchema": schema(map[string]any{"topics": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "boolean"}, "description": "Topics to change, like {\"chat\": false, \"infra\": true}"},
+			"new_topics": p("boolean", "Whether a topic seen for the first time starts subscribed (default true)"),
+			"for":        p("string", "Full admin only: a user id or token id whose topics to read or set")})},
 	{"name": "request_approve", "description": "Ask the user to let this token answer approval requests. devices shows its current approve setting. Posts a Confirm prompt on topic; the setting changes only when an allowed device taps Confirm. Returns the prompt: wait_for_reply on its id gives confirm or reject.",
 		"inputSchema": schema(map[string]any{"approve": p("string", "allowed, or ask (its taps then wait for an allowed device to confirm)"), "topic": p("string", "Topic for the prompt, default agents; needs publish there")}, "approve")},
 	{"name": "dismiss", "description": "Dismiss (clear) a notification by its server id. It goes away on every device; reopen undoes it.",
