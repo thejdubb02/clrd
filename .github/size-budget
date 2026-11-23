@@ -9,7 +9,8 @@
 # Measured 2026-11-23: main at 16,728,248 (already past 16,720,000 once the changelog grew); the web topic subscriptions page (#629) takes it to 16,744,632. Raised by 40,000 for both plus changelog room.
 # Measured 2026-11-23: main at 16,740,536 on cezar1; traffic stats (#120) take it to 16,773,304 (+32,768, after swapping generic sorts for sort.Slice saved 28,672). Raised by 35,000: the feature plus about 20,000 of changelog room.
 # Measured 2026-11-23: main at 16,777,400; Discord webhooks (#166) take it to 16,797,880 (+20,480). Raised by 23,000: the feature plus about 20,000 of changelog room.
-server 16818000
+# Measured 2026-11-23: main at 16,826,552 on cezar1 (already past 16,818,000 as the changelog grew); the web Stats page (#120) takes it to 16,855,224 (+28,672). Raised by 58,000: main, the page, and about 20,000 of changelog room.
+server 16876000
 apk 2100000
 # Measured 2026-11-23: desktop 4,687,664 (Linux x86_64 release binary, tray and window, #162).
 desktop 4800000
