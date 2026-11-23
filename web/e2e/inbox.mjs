@@ -261,6 +261,9 @@ try {
   const sc = t => sp.locator('article.card', { hasText: t });
   await putSettings({ snooze_intervals: ['15m', '2h', '48h'], snooze_default: '2h' });
   await sp.locator('[data-snooze="2h,15m,2h,48h"]').waitFor({ state: 'attached' }); // the open page reloaded itself
+  // The new copy can show its cards before its script runs: a press that starts
+  // then is no long press at all (#714). Live means the script is up.
+  await sp.locator('#sync.is-live').waitFor();
   await sc('Prune images').getByText('Snooze', { exact: true }).click({ delay: 700 });
   assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'long press did not open the snooze times');
   assert.deepEqual(await sc('Prune images').locator('[data-popover] [data-for]').allTextContents(), ['15 min', '2 hours', '2 days']);
@@ -338,8 +341,8 @@ try {
   await sp.getByLabel('Theme').selectOption('');
   assert.ok(await dark(), 'System did not follow a dark device');
   await sp.emulateMedia({ colorScheme: 'light' });
-  // The device change arrives as an event, so give it a moment.
-  await sp.waitForFunction(() => !document.documentElement.classList.contains('dark'), null, { timeout: 3000 })
+  // The device change arrives as an event, so poll for it (#714).
+  await until(sp, () => !document.documentElement.classList.contains('dark'))
     .catch(() => assert.fail('System did not follow the device changing'));
   await sp.close();
   console.log('ok: snooze default, long press, right click and Settings');
@@ -802,7 +805,8 @@ try {
     // Another device clears one inside the closed stack: the count and newest
     // title change at once, not after the hidden card's exit timer (about 1.7 s).
     await api(phone, `/api/v1/notifications/${ids[3]}/dismiss`);
-    await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor({ timeout: 1000 });
+    // 1.5 s: room for a slow runner, still short of that exit timer (#714).
+    await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor({ timeout: 1500 });
     await sp.evaluate(() => { window.backAgain = false; new MutationObserver(() => { if (document.querySelector('[data-stack="ci-stack"] [data-stack-count]')?.textContent === '4 notifications') window.backAgain = true; }).observe(document.querySelector('[data-list]'), { childList: true, subtree: true, characterData: true }); });
     release();
     await sp.waitForTimeout(1000);
@@ -1421,6 +1425,9 @@ try {
     };
     await sel.selectOption('denied');
     await saved('asker', 'denied', 'the menu did not save');
+    // The save redraws the table: a pick on the old menu as it is swapped out
+    // reaches no handler (#714). The redrawn menu marks Denied as saved.
+    await sel.locator('option[value="denied"][selected]').waitFor({ state: 'attached' });
 
     // Its own row lowers after a confirm, and then the menus are gone: nothing raises it back here.
     const own = bp.locator('select[data-name="boss-web"]');
