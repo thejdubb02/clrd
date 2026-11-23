@@ -62,7 +62,7 @@ func (f FS) Open(name string) (fs.File, error) {
 // decoded bytes, never of the gzip ones.
 func Serve(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) bool {
 	f, ok := fsys.(FS)
-	if !ok || !AcceptsGzip(r.Header.Get("Accept-Encoding")) {
+	if !ok || !AcceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ",")) {
 		return false
 	}
 	b, err := fs.ReadFile(f.gz, name+".gz")
@@ -79,12 +79,27 @@ func Serve(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) bool
 		h.Set("Content-Type", ct)
 	}
 	h.Set("Content-Encoding", "gzip")
-	// ServeContent leaves out the length once Content-Encoding is set, and a
-	// range of the gzip bytes is of no use to anyone: whole file, known length.
-	h.Set("Content-Length", strconv.Itoa(len(b)))
+	// A range of the gzip bytes is of no use to anyone: whole file only.
 	r.Header.Del("Range")
-	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(b))
+	http.ServeContent(gzWriter{w, len(b)}, r, name, time.Time{}, bytes.NewReader(b))
 	return true
+}
+
+// gzWriter gives a 200 the gzip length, which ServeContent leaves out once
+// Content-Encoding is set, and takes the encoding off any bodiless answer
+// such as a 412.
+type gzWriter struct {
+	http.ResponseWriter
+	n int
+}
+
+func (g gzWriter) WriteHeader(code int) {
+	if code == http.StatusOK {
+		g.Header().Set("Content-Length", strconv.Itoa(g.n))
+	} else {
+		g.Header().Del("Content-Encoding")
+	}
+	g.ResponseWriter.WriteHeader(code)
 }
 
 // AcceptsGzip reports whether an Accept-Encoding header takes gzip. A

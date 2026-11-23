@@ -1227,7 +1227,13 @@ func Handler(api API, baseURL string) http.Handler {
 		})
 	}
 
-	statics := http.StripPrefix("/static/", http.FileServerFS(static))
+	// The packed build sends its stored gzip as is when it can (#690).
+	fileServer := http.FileServerFS(static)
+	statics := http.StripPrefix("/static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !gzfs.Serve(w, r, files, "static/"+r.URL.Path) {
+			fileServer.ServeHTTP(w, r)
+		}
+	}))
 	mux := http.NewServeMux()
 	// A URL that carries the file's current hash never changes content, so it
 	// is cached for good. Any other (no ?v=, or an old one) is revalidated by
@@ -1242,11 +1248,8 @@ func Handler(api API, baseURL string) http.Handler {
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
-		// The packed build sends its stored gzip as is when it can (#690).
 		w.Header().Add("Vary", "Accept-Encoding")
-		if !gzfs.Serve(w, r, files, "static/"+strings.TrimPrefix(r.URL.Path, "/static/")) {
-			statics.ServeHTTP(w, r)
-		}
+		statics.ServeHTTP(w, r)
 	})
 	mux.Handle("GET /assets/", cached("/assets/", assets))
 	// Root icon paths that browsers, wrappers and home screens ask for by
