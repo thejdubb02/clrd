@@ -456,6 +456,7 @@
       b.textContent = 'Undo';
       b.addEventListener('click', async () => {
         toast.hidden = true;
+        if (typeof undoIds === 'function') return undoIds();
         for (const id of undoIds) await post(`/api/v1/notifications/${encodeURIComponent(id)}/reopen`);
         refresh();
       });
@@ -630,6 +631,57 @@
       snz.default.replaceChildren(...snzTyped().map(v => new Option(labels[snzValue(v)] || v, snzValue(v), false, snzValue(v) === want)));
     });
   }
+  // Topic subscriptions (SPEC 2.3). A change reloads the page, so Undo
+  // rides in sessionStorage, written before the PUT so a reply that lands
+  // mid-reload still offers it.
+  const subsPut = body => fetch('/api/v1/subscriptions', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+  const subsWhy = async r => r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
+  const approvalsOff = t => confirm(`Agents send their approval requests to ${t}. Unsubscribe, and those requests stop reaching you. Unsubscribe anyway?`);
+  const store = (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* private window: no Undo after the reload */ } };
+  let unsubDone = null;
+  try { unsubDone = sessionStorage.getItem('clrd-unsub'); } catch { /* as above */ }
+  if (unsubDone) {
+    store('clrd-unsub', null);
+    say(`Unsubscribed from ${unsubDone}`, async () => {
+      const r = await subsPut({ topics: { [unsubDone]: true } });
+      if (r && r.ok) return location.reload();
+      say(await subsWhy(r));
+    });
+  }
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-unsub], [data-subscribe]');
+    if (!b) return;
+    e.preventDefault();
+    const t = b.dataset.unsub ?? b.dataset.subscribe, on = 'subscribe' in b.dataset;
+    if (!on && 'approvals' in b.dataset && !approvalsOff(t)) return;
+    if (!on) store('clrd-unsub', t);
+    const r = await subsPut({ topics: { [t]: on } });
+    if (r && r.ok) return location.reload();
+    store('clrd-unsub', null);
+    if (r && r.status === 401) return location.reload();
+    say(await subsWhy(r));
+  });
+  const subsForm = $('[data-subs-form]');
+  if (subsForm) {
+    $('[data-subs-save]').hidden = true; // each switch saves as it changes
+    subsForm.addEventListener('change', async e => {
+      const c = e.target;
+      if (c.type !== 'checkbox') return;
+      if (c.name === 'on' && !c.checked && 'approvals' in c.dataset && !approvalsOff(c.value)) { c.checked = true; return; }
+      const body = c.name === 'new_topics' ? { new_topics: c.checked } : { topics: { [c.value]: c.checked } };
+      c.disabled = true;
+      const r = await subsPut(body);
+      if (r && r.ok) return location.reload();
+      c.disabled = false;
+      c.checked = !c.checked;
+      $('[data-subs-hint]').textContent = await subsWhy(r);
+    });
+    $('[data-subs-q]')?.addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      subsForm.querySelectorAll('tr[data-sub]').forEach(tr => { tr.hidden = !tr.dataset.sub.toLowerCase().includes(q); });
+    });
+  }
+
   // A saved setting reloads the page, so while one save runs the snooze and
   // display forms are locked: an edit made then would be lost (#214), and an
   // older save cannot land after a newer one.

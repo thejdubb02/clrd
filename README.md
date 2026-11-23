@@ -103,7 +103,8 @@ offline catches up the moment it reconnects.
   notifications (pick one in Settings, silenced ones stay quiet), system
   notifications through Web Push even with the tab closed (off until you
   turn them on in Settings; needs HTTPS), silences
-  started and ended from Settings, a dot for each linked device (up to six)
+  started and ended from Settings, subscribe and unsubscribe per topic (from
+  a card or Settings, every device you sign in to follows), a dot for each linked device (up to six)
   showing which are connected, dark mode, phone width. Settings sit in five
   sections with a search box that also finds a setting by keywords such as
   "do not disturb".

@@ -550,3 +550,55 @@ func TestHidePublicPages(t *testing.T) {
 		}
 	}
 }
+
+// Topic subscriptions (#617) through the real store: a signed-in browser
+// unsubscribes from a topic, the inbox drops it, its own page still shows it
+// with the banner, Settings lists it switched off, and Subscribe brings it back.
+func TestSubscriptionsOnRealServer(t *testing.T) {
+	_, ts, raw := realServer(t)
+	c := browser()
+	publish(t, ts, raw, "home", "disk full")
+	publish(t, ts, raw, "work", "deploy done")
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	if code, _ := submit(t, c, ts.URL, page, raw, "laptop"); code != 200 {
+		t.Fatalf("sign in: %d", code)
+	}
+	post := func(v url.Values) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", ts.URL+"/app/subscriptions", strings.NewReader(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", ts.URL)
+		res, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("post %v: %d %s", v, res.StatusCode, b)
+		}
+	}
+	get := func(path string) string {
+		t.Helper()
+		_, body, _ := fetch(t, c, ts.URL+path)
+		return body
+	}
+	post(url.Values{"topic": {"work"}, "subscribe": {"0"}, "next": {"/app"}})
+	if body := get("/app"); strings.Contains(body, "deploy done") || !strings.Contains(body, "disk full") {
+		t.Error("inbox: want home only after unsubscribing from work")
+	}
+	if body := get("/app?topic=work"); !strings.Contains(body, "deploy done") || !strings.Contains(body, "data-unsub-banner") {
+		t.Error("work page: want the card and the not-subscribed banner")
+	}
+	if body := get("/app?topic=home"); strings.Contains(body, "data-unsub-banner") {
+		t.Error("home page: banner on a subscribed topic")
+	}
+	if body := get("/app/settings"); !strings.Contains(body, `value="0:work"`) || !strings.Contains(body, `value="1:home"`) {
+		t.Error("settings: want work off and home on")
+	}
+	// The Settings list sends only what changed: home stays on.
+	post(url.Values{"was": {"1:home", "0:work"}, "on": {"home", "work"}})
+	if body := get("/app"); !strings.Contains(body, "deploy done") {
+		t.Error("inbox: work missing after subscribing again")
+	}
+}

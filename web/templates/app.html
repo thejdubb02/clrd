@@ -45,6 +45,8 @@
         <kbd class="kbd js-only max-md:hidden" data-align="inline-end">/</kbd>
       </form>
     </header>
+    <div data-live="unsub">{{if .Snap.Unsubscribed}}<div class="alert mb-4" role="status" data-unsub-banner>{{template "i-circle-alert"}}<h2>Not subscribed to {{.Topic}}</h2><section>New notifications here skip your inbox and devices.
+      <form class="mt-2" method="post" action="{{base}}/app/subscriptions"><input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="next" value="{{.Here}}"><button class="btn" data-variant="outline" name="subscribe" value="1" data-subscribe="{{.Topic}}">Subscribe</button></form></section></div>{{end}}</div>
     <div class="grid grid-cols-[minmax(0,1fr)] gap-2" data-list>
       {{range .Snap.Items}}{{template "card" (card . $.View $.Here $.Snap)}}{{end}}
     </div>
@@ -187,6 +189,7 @@
           <button type="button" class="btn js-only justify-start" data-variant="ghost" data-size="sm" data-act="snooze" data-at="tomorrow">Tomorrow <span class="meta ms-auto">09:00</span></button>
           <span class="snooze-custom js-only flex min-w-0 flex-wrap gap-1 border-t p-1 pt-2"><label class="sr-only" for="u-{{$n.ID}}">Snooze until</label><input id="u-{{$n.ID}}" class="input h-7 w-auto min-w-0 flex-auto text-xs" type="datetime-local" data-until><button type="button" class="btn" data-variant="outline" data-size="sm" data-act="snooze" data-at="custom">Set</button></span>
           {{if .Silence}}<button class="btn justify-start border-t" data-variant="ghost" data-size="sm" formaction="{{base}}/app/silence" name="for" value="1h" data-silence-quick title="Every new message in {{$n.Topic}} arrives quietly for an hour">Silence {{$n.Topic}} for 1 hour</button>{{end}}
+          {{if .Unsub}}<button class="btn justify-start border-t" data-variant="ghost" data-size="sm" formaction="{{base}}/app/subscriptions" name="subscribe" value="0" data-unsub="{{$n.Topic}}"{{if .Approvals}} data-approvals{{end}} title="Stop showing {{$n.Topic}} in the inbox and on your devices. Nothing is cleared.">Unsubscribe from {{$n.Topic}}</button>{{end}}
         </div>
       </details></span>{{end}}
       <details class="popover static" data-mark-menu>
@@ -235,6 +238,30 @@
       <p class="text-body text-sm/relaxed">Shows a system notification on this device when a new one arrives, even with clrd closed. Off until you turn it on here. Closing the system notification clears nothing; clear it in the inbox.</p>
       <div><button type="button" class="btn" data-variant="outline" data-push disabled>Turn on notifications</button></div>
       <p class="text-muted-foreground text-sm" role="status" data-push-hint></p>
+    </section>
+    <section id="topics" data-setting data-keywords="subscribe, unsubscribe, follow, hide, topic" class="grid gap-3">
+      <h3 id="topics-set-h" class="text-base font-semibold">Topics</h3>
+      {{if .Snap.Filtered}}<p class="text-body text-sm/relaxed">Turn a topic off to keep it out of your inbox, counts and devices. Nothing is cleared, and you can still open it from a link. This list is yours and applies on every device you sign in to.</p>
+      <form class="grid max-w-xl gap-3" method="post" action="{{base}}/app/subscriptions" data-subs-form>
+        <input type="hidden" name="new_topics_was" value="{{if .Snap.NewTopics}}1{{else}}0{{end}}">
+        <label class="label"><input type="checkbox" role="switch" class="input" name="new_topics" value="1"{{if .Snap.NewTopics}} checked{{end}}> Subscribe to new topics</label>
+        {{if gt (len .Snap.SubTopics) 8}}<label class="sr-only" for="subs-q">Find a topic</label><input id="subs-q" class="input js-only max-w-60" type="search" placeholder="Find a topic" autocomplete="off" data-subs-q>{{end}}
+        {{if .Snap.SubTopics}}<div class="bg-card rounded-xl border">
+          <table class="table">
+            <thead><tr><th scope="col">Topic</th><th scope="col">Last</th><th scope="col"><span class="sr-only">Subscribed</span></th></tr></thead>
+            <tbody>
+              {{range .Snap.SubTopics}}<tr data-sub="{{.Topic}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><a class="underline-offset-2 hover:underline" href="{{base}}/app?topic={{.Topic}}">{{.Topic}}</a>{{with .Open}} <span class="meta">{{.}} open</span>{{end}}
+                {{if eq .Topic approvalTopic}}<div class="meta" data-approval-warn>Agents ask for approval here. Off, those requests stop reaching you.</div>{{end}}</td>
+                <td class="meta">{{with .LastAt}}<time class="whitespace-nowrap" datetime="{{iso .}}" title="{{clock .}}">{{clock .}}</time>{{end}}</td>
+                <td class="text-right"><input type="hidden" name="was" value="{{if .Subscribed}}1{{else}}0{{end}}:{{.Topic}}"><label class="label justify-end"><input type="checkbox" role="switch" class="input" name="on" value="{{.Topic}}"{{if .Subscribed}} checked{{end}}{{if eq .Topic approvalTopic}} data-approvals{{end}}><span class="sr-only">Subscribed to {{.Topic}}</span></label></td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>{{else}}<p class="text-body text-sm">No topics yet.</p>{{end}}
+        <div><button class="btn" data-variant="outline" data-subs-save>Save</button></div>
+      </form>
+      <p class="text-muted-foreground text-sm" role="status" data-subs-hint></p>
+      {{else}}<p class="text-body text-sm/relaxed">Not available here: this browser signed in with a token that has no user, so it sees every topic.</p>{{end}}
     </section>
     <section id="silences" data-setting data-keywords="mute, quiet, quiet hours, do not disturb, pause" class="grid gap-3">
       <h3 id="sil-h" class="text-base font-semibold">Silences</h3>
