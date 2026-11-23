@@ -49,12 +49,6 @@ class App : Application() {
     /** Bumped on every server or token switch. A store made before the bump is fenced off. */
     @Volatile var configGen = 0
 
-    /**
-     * Per notification, the seq of the row the server sent back after this phone's own state change (Clear, Undo,
-     * Ack, Snooze, reply). A repeat older than that row was sent before the change and never rings it again (#550).
-     * ponytail: in memory, so a restart between the answer and a late repeat forgets it; one entry per acted id.
-     */
-    val ownAnswers = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     var serverUrl: String
         get() = prefs.getString("url", "").orEmpty()
@@ -253,9 +247,11 @@ class App : Application() {
         val topics = k.optJSONObject("topics") ?: org.json.JSONObject()
         val own = topics.keys().asSequence().toList()
         val dao = db.dao()
-        if (dropCleared) return dao.dropCleared()
-        dao.prune(before(k.optInt("days", KEEP_DAYS)), own)
-        own.forEach { dao.pruneTopic(it, before(topics.optInt(it, KEEP_DAYS))) }
+        if (dropCleared) dao.dropCleared() else {
+            dao.prune(before(k.optInt("days", KEEP_DAYS)), own)
+            own.forEach { dao.pruneTopic(it, before(topics.optInt(it, KEEP_DAYS))) }
+        }
+        dao.pruneAnswers()
     }
 
     val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
@@ -431,12 +427,11 @@ class RoomStore(private val app: App) : Store {
         val subs = app.subs.value
         val (keep, out) = if (seq == 0L && subs?.filtered == true) notifs.partition { subs.subscribed(it.topic) } else notifs.toList() to emptyList<Notif>()
         if (out.isNotEmpty()) app.outside.value++
-        val saved = dao.applyAll(keep, seq)
-        if (answer) saved.forEach { app.ownAnswers.merge(it.id, it.seq, ::maxOf) }
+        val saved = dao.applyAll(keep, seq, answer)
         // #500: a live repeat Room dropped (our own mark's answer got in first) still rings the newer row, if that one shows unacked.
         // Only when the newer row differs by marks alone (#504): after a Clear and Undo it is a new state, and an Undo stays quiet.
         // And never when the repeat is older than this phone's own state change: when it made every change the rows can match (#550).
-        val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } && n.seq >= (app.ownAnswers[n.id] ?: 0) }.mapNotNull { n ->
+        val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } && n.seq >= (dao.answerOf(n.id) ?: 0) }.mapNotNull { n ->
             dao.get(n.id)?.takeIf { it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt, silenced = n.silenced) == n }
         }
         val muted = app.muted

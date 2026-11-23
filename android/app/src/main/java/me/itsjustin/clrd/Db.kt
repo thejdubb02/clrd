@@ -75,12 +75,28 @@ interface NotifDao {
 
     /** Rows only move forward: an older snapshot never overwrites a newer one. Returns the rows kept. */
     @Transaction
-    fun applyAll(notifs: Collection<Notif>, seq: Long): List<Notif> {
+    fun applyAll(notifs: Collection<Notif>, seq: Long, answer: Boolean = false): List<Notif> {
         val kept = notifs.filter { n -> n.seq >= (seqOf(n.id) ?: Long.MIN_VALUE) }
         kept.forEach { put(it) }
+        // [answer]: these rows are this phone's own change. Kept even when a newer row got in first: a repeat older
+        // than the change was still sent before it (#561 review).
+        if (answer) notifs.forEach { answered(it.id, it.seq) }
         if (seq > (lastSeq() ?: 0)) putMeta(Meta("seq", seq))
         return kept
     }
+
+    @Query("SELECT seq FROM answer WHERE id = :id")
+    fun answerOf(id: String): Long?
+
+    @Query("INSERT OR REPLACE INTO answer (id, seq) VALUES (:id, MAX(:seq, COALESCE((SELECT seq FROM answer WHERE id = :id), 0)))")
+    fun answered(id: String, seq: Long)
+
+    @Query("DELETE FROM answer")
+    fun clearAnswers()
+
+    /** An own change is only needed while its notification is kept: a repeat for a row Room no longer has never rings again. */
+    @Query("DELETE FROM answer WHERE id NOT IN (SELECT id FROM notif)")
+    fun pruneAnswers()
 
     @Query("DELETE FROM pending")
     fun clearPending()
@@ -90,6 +106,7 @@ interface NotifDao {
     fun forget() {
         clearAll()
         clearPending()
+        clearAnswers()
         putMeta(Meta("seq", 0))
     }
 
@@ -108,13 +125,14 @@ interface NotifDao {
         val rows = open.map { n -> get(n.id)?.takeIf { keepNewer && it.seq > n.seq } ?: n }
         clearAll()
         rows.forEach { put(it) }
+        if (keepNewer) pruneAnswers() else clearAnswers() // a restored or other database counts seqs anew
         putMeta(Meta("seq", seq))
         return rows
     }
 }
 
 // Room writes each version to schemas/; AutoMigration keeps the queue and the cursor across an app update.
-@Database(entities = [Notif::class, Pending::class, Meta::class], version = 7, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7)])
+@Database(entities = [Notif::class, Pending::class, Meta::class, Answer::class], version = 8, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8)])
 abstract class Db : RoomDatabase() {
     abstract fun dao(): NotifDao
 }

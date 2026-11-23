@@ -113,6 +113,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: a late repeat of a notification you just cleared, acknowledged or
+  snoozed on the phone stays quiet even when the app restarted in between, and
+  the phone forgets these marks once the notification is gone (#561).
 - Android: in a right-to-left language, Settings names the swipe sides the
   way the gestures go there. A settings message from the old server that
   arrives just as you switch servers no longer brings back its swipe or
