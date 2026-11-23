@@ -446,6 +446,10 @@ impl Recorder {
     pub fn log(&self) -> Vec<String> {
         self.0.lock().unwrap().clone()
     }
+
+    pub fn clear(&self) {
+        self.0.lock().unwrap().clear();
+    }
 }
 
 static DIRS: AtomicU32 = AtomicU32::new(0);
