@@ -53,12 +53,12 @@ jobs:
           fi
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           # Outside the checkout, so a run reuses the last build of the crates.
-          # One per runner, never shared: cargo names a build by the path
-          # inside the workspace and trusts it while the sources are older,
-          # so a second checkout would take another branch's newer build of
-          # the core for its own. One runner has one checkout, and git gives
-          # every file it changes a new time.
-          echo "CARGO_TARGET_DIR=$HOME/.cache/clrd-desktop-targets/$RUNNER_NAME" >> "$GITHUB_ENV"
+          # Beside this runner's checkout, never shared with another: cargo
+          # names a build by the path inside the workspace and trusts it
+          # while the sources are older, so a second checkout would take
+          # another branch's newer build of the core for its own. Within one
+          # checkout git gives every file it changes a new time.
+          echo "CARGO_TARGET_DIR=${GITHUB_WORKSPACE%/*}/desktop-target" >> "$GITHUB_ENV"
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
