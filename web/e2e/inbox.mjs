@@ -1992,7 +1992,7 @@ try {
       for (const t of ['Burst one', 'Burst two', 'Burst three']) await mc(t).waitFor();
       await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Burst three'));
       const burst = await mp.evaluate(() => window.moves.filter(m => m.title.startsWith('Burst')).map(m => `${m.name}:${m.title}`));
-      assert.ok(burst.includes('clrd-in:Burst one') && burst.includes('clrd-in:Burst two'), `a burst card did not slide in: ${burst}`);
+      assert.ok(['one', 'two', 'three'].every(n => burst.includes(`clrd-in:Burst ${n}`)),`a burst card did not slide in: ${burst}`);
       assert.ok(!burst.includes('clrd-wiggle:Burst one') && !burst.includes('clrd-wiggle:Burst two'), `an older card in a burst wiggled: ${burst}`);
 
       // Tab in the background: the card is there when the person comes back, with no motion.
