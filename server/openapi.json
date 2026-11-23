@@ -1502,6 +1502,15 @@
              },
              "icon": {
               "type": "string"
+             },
+             "subscribed": {
+              "type": "boolean",
+              "description": "Whether the asking token's view includes this topic (#617). Always true for a token that is not filtered."
+             },
+             "last_at": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "description": "When the newest notification on the topic arrived, null for none."
              }
             }
            }
@@ -1520,6 +1529,38 @@
      "403": {
       "$ref": "#/components/responses/Error"
      }
+    }
+   }
+  },
+  "/api/v1/subscriptions": {
+   "get": {
+    "summary": "The asking user's topic subscriptions",
+    "tags": ["settings"],
+    "description": "Scope read (#617). Every topic the token may read, with whether its owner's view includes it. filtered is false for a typed-in token with no user: then topics is empty and new_topics is left out. A full admin may pass for=<user id or token id> to read another owner's set.",
+    "parameters": [{"name": "for", "in": "query", "schema": {"type": "string"}}],
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Subscriptions"}}}},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "put": {
+    "summary": "Subscribe or unsubscribe topics",
+    "tags": ["settings"],
+    "description": "Scope read. Only the topics given change; no data is cleared and other readers are untouched. new_topics false first subscribes every topic that exists now, so only later topics start unsubscribed. 403 for a topic the token cannot read, 409 for a token with no user to store the choices for.",
+    "parameters": [{"name": "for", "in": "query", "schema": {"type": "string"}}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {
+     "new_topics": {"type": "boolean"},
+     "topics": {"type": "object", "additionalProperties": {"type": "boolean"}, "maxProperties": 500}
+    }}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Subscriptions"}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"},
+     "409": {"$ref": "#/components/responses/Error"}
     }
    }
   },
@@ -6773,10 +6814,32 @@
      ]
     }
    },
+   "Subscriptions": {
+    "type": "object",
+    "properties": {
+     "filtered": {"type": "boolean", "description": "Whether this token's view follows its owner's subscriptions. false for a typed-in token with no user: clients show topic choices as not available."},
+     "new_topics": {"type": "boolean", "description": "Whether a topic first seen later starts subscribed. Default true. Left out when filtered is false."},
+     "topics": {"type": "array", "items": {"type": "object", "properties": {
+      "topic": {"type": "string"},
+      "subscribed": {"type": "boolean"},
+      "open": {"type": "integer"},
+      "last_at": {"type": ["string", "null"], "format": "date-time"}
+     }}}
+    }
+   },
    "Settings": {
     "type": "object",
     "description": "Display settings every device follows. One set per server.",
     "properties": {
+     "subscriptions": {
+      "type": "object",
+      "description": "Read only, change it with PUT /api/v1/subscriptions (#617). topics maps each topic the owner chose to whether it is subscribed.",
+      "properties": {
+       "filtered": {"type": "boolean"},
+       "new_topics": {"type": "boolean"},
+       "topics": {"type": "object", "additionalProperties": {"type": "boolean"}}
+      }
+     },
      "keep_cleared_days": {
       "type": "integer",
       "description": "Days dismissed and resolved notifications are kept after they were cleared; 0 keeps them forever. Until set, follows CLRD_RETENTION (30 days)."
