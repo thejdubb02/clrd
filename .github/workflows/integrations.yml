@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   guides:
-    runs-on: [self-hosted, cezar1]
+    runs-on: ubicloud-standard-4
     timeout-minutes: 30
     # This job's own container label. cezar1 runs two jobs at once, so clean
     # up must never touch the other job's tool containers (#190, #192).
