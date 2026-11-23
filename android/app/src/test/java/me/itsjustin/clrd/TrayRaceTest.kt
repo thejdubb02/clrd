@@ -186,6 +186,21 @@ class TrayRaceTest {
         assertNull(bg { dao.answerOf("a") }) // dropped with the row, so the table never only grows
     }
 
+    @Test fun theGuardHoldsWhenAMarkBeatsTheAnswerAndGoesWithAReset() { // #561 review
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        val b = row("b", Notif.ACTIVE, 1).copy(createdAt = 1, stateBy = "phone")
+        bg { store.apply(listOf(b), 1) }
+        bg { store.apply(listOf(b.copy(seq = 8, marks = "[{\"mark\":\"seen\"}]")), 8, quiet = true) } // a mark from elsewhere first
+        bg { store.apply(listOf(b.copy(state = Notif.DISMISSED, seq = 5)), 0, quiet = true, answer = true) } // then our Clear's answer
+        bg { store.apply(listOf(b.copy(seq = 6)), 0, quiet = true, answer = true) } // and our Undo's
+        assertEquals(6L, bg { dao.answerOf("b") }) // kept though Room had the newer mark
+        bg { store.apply(listOf(b.copy(seq = 4)), 4, again = true) } // sent before the Clear
+        assertTrue(once("b"))
+        bg { dao.replaceAll(listOf(b.copy(seq = 2)), 2, sameDb = false) } // a restored server counts again from low seqs
+        assertNull(bg { dao.answerOf("b") })
+    }
+
     @Test fun reconcileWaitsForSyncWrites() {
         bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
         val store = RoomStore(app)

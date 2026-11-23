@@ -78,7 +78,9 @@ interface NotifDao {
     fun applyAll(notifs: Collection<Notif>, seq: Long, answer: Boolean = false): List<Notif> {
         val kept = notifs.filter { n -> n.seq >= (seqOf(n.id) ?: Long.MIN_VALUE) }
         kept.forEach { put(it) }
-        if (answer) kept.forEach { answered(it.id, it.seq) } // [answer]: these rows are this phone's own change
+        // [answer]: these rows are this phone's own change. Kept even when a newer row got in first: a repeat older
+        // than the change was still sent before it (#561 review).
+        if (answer) notifs.forEach { answered(it.id, it.seq) }
         if (seq > (lastSeq() ?: 0)) putMeta(Meta("seq", seq))
         return kept
     }
@@ -88,6 +90,9 @@ interface NotifDao {
 
     @Query("INSERT OR REPLACE INTO answer (id, seq) VALUES (:id, MAX(:seq, COALESCE((SELECT seq FROM answer WHERE id = :id), 0)))")
     fun answered(id: String, seq: Long)
+
+    @Query("DELETE FROM answer")
+    fun clearAnswers()
 
     /** An own change is only needed while its notification is kept: a repeat for a row Room no longer has never rings again. */
     @Query("DELETE FROM answer WHERE id NOT IN (SELECT id FROM notif)")
@@ -101,7 +106,7 @@ interface NotifDao {
     fun forget() {
         clearAll()
         clearPending()
-        pruneAnswers()
+        clearAnswers()
         putMeta(Meta("seq", 0))
     }
 
@@ -120,6 +125,7 @@ interface NotifDao {
         val rows = open.map { n -> get(n.id)?.takeIf { keepNewer && it.seq > n.seq } ?: n }
         clearAll()
         rows.forEach { put(it) }
+        if (keepNewer) pruneAnswers() else clearAnswers() // a restored or other database counts seqs anew
         putMeta(Meta("seq", seq))
         return rows
     }
