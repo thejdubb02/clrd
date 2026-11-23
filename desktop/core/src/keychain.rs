@@ -208,9 +208,16 @@ mod os {
                     };
                 }
                 let c = &*cred;
-                let blob =
-                    std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize);
-                let out = unpack(blob);
+                // An empty credential may come with a null pointer, which a
+                // slice must never be built from.
+                let out = if c.CredentialBlob.is_null() {
+                    None
+                } else {
+                    unpack(std::slice::from_raw_parts(
+                        c.CredentialBlob,
+                        c.CredentialBlobSize as usize,
+                    ))
+                };
                 CredFree(cred.cast());
                 Ok(out)
             }

@@ -23,13 +23,17 @@ impl Drop for Kill {
 
 /// True when any file under `dir` holds `needle` as plain bytes.
 fn on_disk(dir: &Path, needle: &[u8]) -> bool {
-    std::fs::read_dir(dir).unwrap().flatten().any(|e| {
-        let path = e.path();
+    std::fs::read_dir(dir).unwrap().any(|e| {
+        let path = e.unwrap().path();
         if path.is_dir() {
             return on_disk(&path, needle);
         }
-        let data = std::fs::read(&path).unwrap_or_default();
-        data.windows(needle.len()).any(|w| w == needle)
+        // Sockets hold nothing; a file that cannot be read fails the test.
+        path.is_file()
+            && std::fs::read(&path)
+                .unwrap()
+                .windows(needle.len())
+                .any(|w| w == needle)
     })
 }
 

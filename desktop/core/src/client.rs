@@ -53,6 +53,9 @@ pub(crate) fn agent(timeout: Duration) -> ureq::Agent {
         .build();
     ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
+        // The API never redirects. Following one would turn a DELETE into a
+        // GET of some other page and report its 200 as "revoked".
+        .max_redirects(0)
         .http_status_as_error(false) // read here, for Retry-After
         .tls_config(tls)
         .build()
@@ -417,4 +420,35 @@ pub fn run<S: Sink>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    #[test]
+    fn a_redirected_sign_out_is_not_reported_as_done() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            // First answer: a redirect. Anything that follows it gets a 200.
+            for (n, conn) in listener.incoming().enumerate() {
+                let mut conn = conn.unwrap();
+                let _ = conn.read(&mut [0; 2048]);
+                let head = if n == 0 {
+                    "302 Found\r\nLocation: /login"
+                } else {
+                    "200 OK"
+                };
+                let _ = write!(
+                    conn,
+                    "HTTP/1.1 {head}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+            }
+        });
+        assert!(Server::new(&base, "t")
+            .end_session("clrd_session=x")
+            .is_err());
+    }
 }
