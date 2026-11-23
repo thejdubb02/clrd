@@ -76,6 +76,10 @@ func TestWebOnRealServer(t *testing.T) {
 	if _, body := get("/app/cleared"); !strings.Contains(body, "disk full") {
 		t.Fatal("cleared misses the dismissed notification")
 	}
+	// Stats (#120): the server's numbers, with the sender shown by name.
+	if code, body := get("/app/stats?days=1"); code != 200 || !strings.Contains(body, "data-total>2</strong>") || !strings.Contains(body, ">phone</td>") {
+		t.Fatalf("stats: %d, want both notifications counted and sent by phone", code)
+	}
 }
 
 // The sidebar and the API count every row, past the 500 the page lists.

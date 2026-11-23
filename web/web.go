@@ -391,6 +391,7 @@ type Query struct {
 	Devices bool     // fill Log and SubTopics (the Settings page)
 	Senders bool     // fill Senders (the Senders page, #119)
 	Sender  string   // fill Sender with this one, or ErrNotFound
+	Stats   int      // fill Stats for this many days back (the Stats page, #120); 0 = none
 }
 
 // Sender is one service or device that publishes (#119), as GET
@@ -615,6 +616,7 @@ type Snapshot struct {
 	CanSenders                        bool       // a full admin: the Senders page is theirs (#119)
 	Senders                           []Sender   // the Senders page only
 	Sender                            *Sender    // a sender's own page only
+	Stats                             *Stats     // the Stats page only (#120)
 }
 
 // Template is a saved webhook template on one topic
@@ -857,6 +859,7 @@ func templates(base string) *template.Template {
 		},
 		"iso":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		"clock": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
+		"took":  took,
 		"card": func(n Notification, view, here string, snap Snapshot) any {
 			if !snap.Formatting {
 				n.Format = "text" // the untitled headline shows as typed too
@@ -1306,6 +1309,9 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings",
 				Senders: view == "senders", Sender: r.PathValue("id")}
+			if view == "stats" {
+				q.Stats = statsDays(r.URL.Query().Get("days"))
+			}
 			snap, err := api.Snapshot(r, q)
 			status := 200
 			if errors.Is(err, ErrNotFound) {
@@ -1338,11 +1344,11 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 			w.Header().Set("Cache-Control", "no-store")
 			c := snap.Counts
-			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender"}
+			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender", "stats": "Stats"}
 			if snap.Sender != nil {
 				titles["sender"] = snap.Sender.Name
 			}
-			if (view == "senders" || view == "sender") && !snap.CanSenders {
+			if (view == "senders" || view == "sender" || view == "stats") && !snap.CanSenders {
 				status = http.StatusForbidden
 			}
 			if fm, ok := r.Context().Value(rulesFormKey{}).(*RulesForm); ok && snap.Sender != nil && status == 200 {
@@ -1375,6 +1381,7 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/cleared", app("cleared"))
 	mux.HandleFunc("GET /app/settings", app("settings"))
 	mux.HandleFunc("GET /app/senders", app("senders"))
+	mux.HandleFunc("GET /app/stats", app("stats"))
 	mux.HandleFunc("GET /app/senders/{id}", app("sender"))
 	// A sender's rules (#119): save them all, or undo one change, as a plain
 	// form post. The server checks the full admin.

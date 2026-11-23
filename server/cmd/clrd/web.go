@@ -204,6 +204,29 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			return snap, err
 		}
 	}
+	// Stats (#120): the same full admin check as GET /api/v1/stats.
+	if q.Stats > 0 && snap.CanSenders {
+		to := time.Now()
+		st, err := a.s.Stats(ctx, tok, to.Add(-time.Duration(q.Stats)*24*time.Hour), to)
+		if err != nil {
+			return snap, err
+		}
+		if err := convert(st, &snap.Stats); err != nil {
+			return snap, err
+		}
+		snap.Stats.Days = q.Stats
+		ss, err := a.s.Senders(ctx, tok) // a sender row per top token: its name
+		if err != nil {
+			return snap, err
+		}
+		names := map[string]string{}
+		for _, s := range ss {
+			names[s.TokenID] = s.Name
+		}
+		for i, g := range snap.Stats.Senders {
+			snap.Stats.Senders[i].Name = names[g.Key]
+		}
+	}
 	if q.Sender != "" && snap.CanSenders {
 		// Changes before rules: an edit landing between the two reads then
 		// makes the form's base_seq stale (refused), never its rules (#543).
