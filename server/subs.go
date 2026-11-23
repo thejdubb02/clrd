@@ -88,14 +88,16 @@ func (s *Server) withView(ctx context.Context, tok *Token, all bool) (*Token, er
 		return nil, err
 	}
 	defer tx.Rollback()
-	// seq even when not filtered: a token just detached has a marker too, so
-	// a stale since resets.
+	// Not filtered, only the last move counts: a token just detached resets
+	// on a stale since, but its browsers changing the set never resets it (#635).
 	var nt bool
-	err = tx.QueryRowContext(ctx, `SELECT new_topics, seq FROM sub_owners WHERE owner = ?`, owner).Scan(&nt, &v.seq)
+	var moved int64
+	err = tx.QueryRowContext(ctx, `SELECT new_topics, seq, moved FROM sub_owners WHERE owner = ?`, owner).Scan(&nt, &v.seq, &moved)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	if !filtered {
+		v.seq = moved
 		return &c, nil
 	}
 	if err == nil {
@@ -222,7 +224,7 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 			return SubscriptionList{}, err
 		}
 	}
-	err = s.changeSubs(ctx, owner, newTopics, func(tx *sql.Tx, cur bool) error {
+	err = s.changeSubs(ctx, owner, newTopics, false, func(tx *sql.Tx, cur bool) error {
 		if readers != nil && cur { // turning new_topics off keeps every topic seen so far as it is
 			rows, err := tx.QueryContext(ctx, `SELECT topic FROM notifications UNION SELECT topic FROM topics
 			  EXCEPT SELECT topic FROM subscriptions WHERE owner = ?`, owner)
@@ -260,8 +262,9 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 // changeSubs runs fn (if set) with the owner's current new_topics, stores
 // newTopics (if set) and appends the owner's subscriptions event, in one
 // transaction under s.mu as write does, so seq order stays delivery order.
-// The event goes to the hub only: no Web Push, no webhook.
-func (s *Server) changeSubs(ctx context.Context, owner string, newTopics *bool, fn func(tx *sql.Tx, cur bool) error) error {
+// moved marks an attach or detach. The event goes to the hub only: no Web
+// Push, no webhook.
+func (s *Server) changeSubs(ctx context.Context, owner string, newTopics *bool, moved bool, fn func(tx *sql.Tx, cur bool) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -291,8 +294,9 @@ func (s *Server) changeSubs(ctx context.Context, owner string, newTopics *bool, 
 	if _, err := tx.ExecContext(ctx, `UPDATE events SET data = ? WHERE seq = ?`, string(e.Raw), e.Seq); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO sub_owners (owner, new_topics, seq) VALUES (?, ?, ?)
-	  ON CONFLICT (owner) DO UPDATE SET new_topics = excluded.new_topics, seq = excluded.seq`, owner, cur, e.Seq); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO sub_owners (owner, new_topics, seq, moved) VALUES (?, ?, ?, CASE WHEN ? THEN ?3 ELSE 0 END)
+	  ON CONFLICT (owner) DO UPDATE SET new_topics = excluded.new_topics, seq = excluded.seq,
+	  moved = CASE WHEN ?4 THEN excluded.seq ELSE sub_owners.moved END`, owner, cur, e.Seq, moved); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
