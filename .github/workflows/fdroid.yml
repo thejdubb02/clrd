@@ -40,6 +40,12 @@ jobs:
           echo "VERSION_NAME=0.1.0-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
           echo "KEYSTORE=$RUNNER_TEMP/clrd-release.p12" >> "$GITHUB_ENV"
           echo "PAGES=$RUNNER_TEMP/gh-pages" >> "$GITHUB_ENV"
+          # Pull request builds run on this machine as the same user and
+          # share ~/.gradle. The signing build gets an empty Gradle home of
+          # its own each run, so nothing they leave there (an init script, a
+          # cached plugin) runs next to the key (#97).
+          echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-home" >> "$GITHUB_ENV"
+          rm -rf "$RUNNER_TEMP/gradle-home"
 
       - name: Decode keystore
         env:
@@ -132,5 +138,6 @@ jobs:
         if: always()
         run: |
           rm -f "$KEYSTORE" "$PAGES/fdroid/config.yml"
+          rm -rf "$GRADLE_USER_HOME"
           git worktree remove --force "$PAGES" 2>/dev/null || true
           git worktree prune
