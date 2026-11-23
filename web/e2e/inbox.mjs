@@ -532,6 +532,23 @@ try {
   assert.deepEqual(mn.marks.map(m => m.by), ['pixel-9'], 'Remove took the wrong mark');
   console.log('ok: mark a card seen or actioned and remove your own mark');
 
+  // A color rule change recolors a card in place: its open mark menu and draft note stay (#696).
+  {
+    const cp = await page.context().newPage(); // page no longer hears live events (above)
+    await cp.goto(page.url());
+    await cp.locator('.is-live').waitFor();
+    const rc = cp.locator('article.card', { hasText: 'Rollback 214?' });
+    await rc.locator('[data-mark-menu] summary').click();
+    await rc.getByLabel('Note').fill('half typed');
+    await putSettings({ color_rules: [{ title: 'rollback', color: '#DC2626', style: 'solid' }] });
+    await until(cp, () => document.querySelector('article.cc-DC2626.cs-solid [data-mark-menu][open]'));
+    assert.equal(await rc.getByLabel('Note').inputValue(), 'half typed', 'recolor lost the draft note');
+    await putSettings({ color_rules: [] });
+    await until(cp, () => !document.querySelector('article.cs-solid'));
+    await cp.close();
+  }
+  console.log('ok: a color rule change keeps an open menu and its draft');
+
   // Share and Copy hand over the title, the message and the link; the icon and attachments show on the card.
   const sharePage = await page.context().newPage();
   await sharePage.addInitScript(() => {
