@@ -44,6 +44,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   count of its findings, a Dismiss menu on each finding and Copy fix prompt as
   the main button, instead of one block of text and buttons (#618). With more
   than three topics the cards start closed.
+- Desktop app for Linux, to build from source for now (there is no download yet): a tray icon and a window on your inbox. Link it with a link from Settings > Devices; its token stays in the system keychain and never reaches the page in the window (#162).
 
 ## 0.1.0 - 2026-11-23
 

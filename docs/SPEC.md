@@ -1296,6 +1296,20 @@ and is a linked device like any other, under the same Allowed, Ask and Denied
 rules. Its token lives in the OS keychain and is sent only as an
 `Authorization` header.
 
+- The window is signed in without the token: the core asks
+  `POST /api/v1/session` for a session and the app puts that cookie into the
+  web view's cookie store itself, for the server's host only, HttpOnly, and
+  with no expiry so the web view keeps it in memory and never writes it to
+  disk. The token never reaches the page, a URL or a file.
+- The server's page gets no native commands. Only the app's own bundled
+  "This computer" page (link, unlink, status) may call the core. The window
+  stays on the server's origin; any other address opens in the system
+  browser.
+- Unlinking ends the window session (`DELETE /api/v1/session`), revokes the
+  device on the server and removes the token from the
+  keychain.
+- One copy runs per user. Starting it again opens the window of the one
+  already running (Linux; Windows is still to come).
 - Each open notification = one system notification.
 - Closing a system notification (its close button, or the desktop's own
   clear) only hides it on that computer and sends nothing, the same rule as
