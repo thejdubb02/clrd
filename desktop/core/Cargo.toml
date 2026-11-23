@@ -22,3 +22,12 @@ ureq = { version = "3", default-features = false, features = ["native-tls", "jso
 # handshake, Authorization header included, so with trace on the token could
 # reach a log file.
 log = { version = "0.4", features = ["max_level_debug"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# D-Bus, for desktop notifications (org.freedesktop.Notifications). Pure Rust,
+# so no libdbus to install or ship. Only the client half is compiled in.
+zbus = { version = "6", default-features = false, features = ["default-rt"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# The service half, for the fake notification service in the tests.
+zbus = { version = "6", default-features = false, features = ["default-rt", "service"] }
