@@ -24,7 +24,7 @@ build() { # build the tree in $1 and print the hash of its app.css
 mkdir -p "$OUT"
 got=$(build .)
 if [ "$got" = "$want" ]; then
-  rm -rf "$OUT"
+  rm -f "$OUT/build.log"; rmdir "$OUT" 2>/dev/null || true
   echo "app.css matches its source ($want)"
   exit 0
 fi
@@ -38,7 +38,7 @@ cp "$clean/web/static/app.css" "$OUT/app.css.clean"
 echo "committed $want, in-tree build $got, clean build $again"
 
 if [ "$again" = "$want" ]; then
-  git checkout -- web/static/app.css # the binary embeds the committed file
+  git checkout HEAD -- web/static/app.css # the binary embeds the committed file
   echo "::warning::app.css: the in-tree build differed but a clean build matches the committed file (#599)"
   exit 0
 fi
