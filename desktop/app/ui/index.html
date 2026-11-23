@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>clrd: this computer</title>
+<link rel="stylesheet" href="style.css">
+<main>
+  <h1>This computer</h1>
+  <p id="status"></p>
+  <p id="error" role="alert"></p>
+
+  <section id="unlinked" hidden>
+    <p>Open clrd in your browser, go to Settings, Devices, Add a device, and paste the link it shows here.</p>
+    <form id="link">
+      <label for="url">Device link</label>
+      <input id="url" required autocomplete="off" spellcheck="false">
+      <button>Link this computer</button>
+    </form>
+    <div id="plain" hidden>
+      <p>This link starts with http://, so the connection is not encrypted. Anyone on the network between this computer and the server could read what is sent, the sign-in included.</p>
+      <button id="plain-yes" type="button">Link without encryption</button>
+      <button id="plain-no" type="button">Cancel</button>
+    </div>
+  </section>
+
+  <section id="waiting" hidden>
+    <p>Check that your browser shows this number, then approve there.</p>
+    <p id="check"></p>
+    <button id="cancel" type="button">Cancel</button>
+  </section>
+
+  <section id="linked" hidden>
+    <p>Linked to <b id="server"></b> as <b id="name"></b>.</p>
+    <p id="refused" hidden>The server no longer accepts this computer. It may have been removed there under Settings, Devices. Unlink and link again, or try again if the server was being set up.</p>
+    <button id="unlink" type="button">Unlink this computer</button>
+    <div id="sure" hidden>
+      <p>Unlinking signs this computer out. Notifications stop showing here until you link again.</p>
+      <button id="sure-yes" type="button">Unlink</button>
+      <button id="sure-no" type="button">Keep linked</button>
+    </div>
+  </section>
+
+  <button id="retry" type="button" hidden>Try again</button>
+</main>
+<script src="main.js"></script>
+</html>

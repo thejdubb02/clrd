@@ -1,0 +1,13 @@
+{
+  "productName": "clrd",
+  "identifier": "org.clrd.desktop",
+  "build": { "frontendDist": "./ui" },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "capabilities": ["device"],
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  }
+}
