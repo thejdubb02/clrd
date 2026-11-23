@@ -569,6 +569,7 @@ type Snapshot struct {
 	CanSilence                                   bool            // the token may start a silence (it can publish)
 	Hooks                                        []Hook          // outgoing webhooks (#238), Settings and admin only
 	CanHooks                                     bool            // the token may manage webhooks (admin)
+	CanKeep                                      bool            // the token has admin, so it may set how long cleared messages are kept
 	CanApprove                                   bool            // the token may change who may approve: allowed, all topics (#329)
 	Templates                                    []Template      // saved webhook templates (#129), Settings only
 	CanTemplates                                 bool            // the token may publish, so it may save templates

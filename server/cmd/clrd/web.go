@@ -229,7 +229,8 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			}
 			for i, g := range snap.Format {
 				snap.Format[i].CanFix = tok.MaySilence(g.Topic) // the same publish check
-				if g.SenderID != "" && seen[g.SenderID] == "" {
+				// "unknown" has no token to name, so it keeps its prompt (#391).
+				if g.SenderID != "" && g.SenderID != "unknown" && seen[g.SenderID] == "" {
 					snap.Format[i].Sender, snap.Format[i].Prompt = "", ""
 				}
 			}
@@ -267,6 +268,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			}
 			snap.CanTemplates, snap.BuiltinTemplates = true, server.BuiltinTemplates()
 		}
+		snap.CanKeep = tok.Has(server.ScopeAdmin) // a keep deletes data, so it needs admin
 		// Webhooks are admin only (#238): anyone else gets no hook URLs at all.
 		if hooks, err := a.s.OutHooks(ctx, tok, ""); err == nil {
 			snap.CanHooks = true

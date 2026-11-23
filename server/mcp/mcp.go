@@ -597,7 +597,7 @@ var tools = []map[string]any{
 		"inputSchema": schema(map[string]any{"topic": p("string", "Check only this topic"), "by": p("string", "topic (the default) or sender")})},
 	{"name": "format_dismiss", "description": "Stop a format_check rule showing for a topic, for one sending token (sender_id from format_check by=sender) or every sender. dismissed=false shows it again. To turn the whole check off for a topic, use set_topic with format_check=false.",
 		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "rule": p("string", "Rule id, like no_title"),
-			"sender_id": p("string", "Sending token id; leave out for every sender"), "dismissed": p("boolean", "false to show it again; default true")}, "topic", "rule")},
+			"sender_id": p("string", "Sending token id, or \"unknown\" for the group with no known sender; leave out for every sender"), "dismissed": p("boolean", "false to show it again; default true")}, "topic", "rule")},
 	{"name": "settings", "description": "Read the server settings, or change them: pass only the fields to change. keep_cleared_days (0 = forever) deletes cleared messages older than that on the next hourly cleanup and needs an admin token; preview it with counts first.",
 		"inputSchema": schema(map[string]any{
 			"keep_cleared_days":       p("integer", "Days to keep dismissed and resolved messages, counted from when they were cleared; 0 = forever"),

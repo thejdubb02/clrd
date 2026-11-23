@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -467,12 +468,26 @@ func TestDeviceFamily(t *testing.T) {
 // TestFormatCheckSettings: Settings lists a topic with format problems, the
 // count per rule and its fix prompt, and shows nothing while there are none (#308).
 func TestFormatCheckSettings(t *testing.T) {
-	_, ts, raw := realServer(t)
+	s, ts, raw := realServer(t)
 	c := browser()
 	_, page, _ := fetch(t, c, ts.URL+"/app")
 	if code, _ := submit(t, c, ts.URL, page, raw, "laptop"); code != 200 {
 		t.Fatalf("sign in: %d", code)
 	}
+	defer func() { // #391: a group with no known sender keeps its label and prompt
+		db, err := sql.Open("sqlite", s.DBPath())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if _, err := db.Exec(`UPDATE notifications SET sender = '' WHERE message = 'build failed'`); err != nil {
+			t.Fatal(err)
+		}
+		_, body, _ := fetch(t, c, ts.URL+"/app/settings")
+		if !strings.Contains(body, "from a sender clrd does not know") || strings.Count(body, "data-format-prompt") != 2 {
+			t.Errorf("unknown sender group: want its label and both prompts")
+		}
+	}()
 	if code, body, _ := fetch(t, c, ts.URL+"/app/settings"); code != 200 || !strings.Contains(body, "Linked devices") || strings.Contains(body, "data-format-check") {
 		t.Errorf("settings with no messages: %d, want the page without the format section", code)
 	}

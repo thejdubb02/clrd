@@ -15,6 +15,13 @@ Fixed, Removed, Security), as one line a user can understand.
   silent and which topic the alarm goes to, like the web (#119). Each field
   saves on its own, a refused value shows the server's reason, and an open
   alarm shows on the sender.
+- Web: Settings is now one page in five sections (Notifications, Inbox,
+  Display, Devices, Integrations) with a search box (#575). It matches a
+  setting's name, its description or keywords such as "do not disturb",
+  Enter goes to the first match, and each setting has its own link such as
+  `/app/settings#sound`. Webhooks no longer show to a device that cannot
+  manage them, and an admin finds a link to Senders there. Without
+  JavaScript every section shows and the search box is hidden.
 - Android: choose the buttons each swipe on a card reveals, in Settings, up
   to 3 per side (#161). The choice is saved on your server, so every phone
   follows it; offline the app keeps the last one it saw. A token that may not
@@ -170,6 +177,21 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a notification sent to chosen devices now lists as silenced on
+  every other device too, so a phone or desktop rebuilding its inbox after a
+  reset no longer alerts for one meant for another device (#588).
+- Claude Code plugin: the approve hook removes its own record of a waiting
+  phone prompt however it ends, so a later on-screen answer can no longer
+  stop another request that reused its process id, and clearing the phone
+  after an on-screen answer no longer needs `ps -o` (missing on Git Bash)
+  (#420).
+- Claude Code plugin: the MCP bridge reads a request's id at the top level
+  only, so spaces or escapes around the id still get an answer, an `id` inside
+  a notification's params no longer gets an error back, and a stuck request
+  can no longer hold up other answers (#414).
+- Server: in the format check by sender, messages with no known sender now
+  group under `sender_id` `"unknown"`, so a finding there can be dismissed for
+  that group alone instead of for every sender on the topic (#391).
 - Server: a sender's detail still lists its older stored notifications when
   its newest ones were cleaned up (#530), and an anonymous sender with a change
   history is no longer dropped from the address list, so its changes can still

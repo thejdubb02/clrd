@@ -15,6 +15,7 @@ own server. There is no public instance and no default server.
 | `server/` | server | Go package `github.com/thejdubb02/clrd/server`, binary in `server/cmd/clrd`. |
 | `web/` | web | Inbox app and landing/docs pages, embedded in the binary via `embed`. |
 | `android/` | android | Kotlin app, Gradle, F-Droid ready. |
+| `desktop/` | desktop | Tray app for Windows and Linux (#162): Rust, Tauri 2. Section 8.1. |
 | `sdk/python`, `sdk/js`, `sdk/go` | integrations | Thin clients over the REST API. |
 | `server/mcp/` | integrations | MCP server mounted at `/mcp`. |
 | `plugins/`, `.claude-plugin/` | integrations | Agent plugins: `plugins/claude-code`, listed by the repo's Claude Code marketplace. |
@@ -122,7 +123,10 @@ everyone); a name on several devices picks them all; at most 20 entries.
 The server stores the matching token ids in `devices`. Every other reader
 still gets the notification, lists it and syncs its state as usual, but the
 copy sent to it carries `silenced: true`, so it shows without sound (ntfy
-subscribers get priority 1). Only that copy changes: the row, the event log
+subscribers get priority 1). `GET /api/v1/notifications` and
+`GET /api/v1/notifications/{id}` answer the same way for the token asking, so
+a client rebuilding from the list after a reset alerts exactly where the
+stream would have (#588). Only that copy changes: the row, the event log
 and outgoing webhooks keep the stored value. The list holds through state
 changes, and a re-alert to a device not on it is silenced like the first
 (clients already never alert on a silenced `repeat`); an update by `external_id` replaces it,
@@ -725,6 +729,8 @@ and via. Values clients send today:
 | `web` | The web inbox, one notification |
 | `web_bulk` | The web inbox's Clear all or a stack's Clear |
 | `app_bulk` | The Android app's Clear on a stack |
+| `desktop_button` | The Clear button on a desktop system notification (section 8.1) |
+| `desktop_close` | Closing a desktop system notification, only with "closing clears everywhere" on (section 8.1) |
 | `web_form` | The web inbox's buttons with scripts off |
 | `mcp` | An agent through the MCP endpoint |
 | `ntfy` | An ntfy-compatible clear or delete |
@@ -739,8 +745,8 @@ resolved`) and `ntfy_import`.
 |---|---|---|
 | GET | `/api/v1/counts` | Exact counts of what the token can read: `{"active":3,"acknowledged":1,"snoozed":2,"dismissed":640,"resolved":12,"inbox":4,"cleared":652}`. `inbox` is active plus acknowledged, `cleared` is dismissed plus resolved. |
 | GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
-| GET | `/api/v1/format-check?topic=&by=` | Format check (#308), advice only. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). `by=sender` (#320) groups by topic and sending token (the top of its token tree, as kept for #187), adding `sender_id` and `sender` (the token name) to each group and naming the token in the prompt; only a full admin, or the token the sender belongs to (as in Linked devices, #245), gets `sender` and the prompt, anyone else gets both blank (#406); the default `by=topic` leaves both out. Returns `{"checked":N,"problems":N,"topics":[{"topic","sender_id"?,"sender"?,"checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}],"off":["topic"],"dismissed":[{"topic","rule","sender_id"}]}`, only groups with findings, in topic then sender_id order; topics in `off` are not checked or counted, and a dismissed rule does not count for that topic and sender (`sender_id` "" means every sender); `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters, with anything that looks like a secret (a value after `password=`, `token:`, `Bearer` and the like, the password in `user:pass@host`, a run of 20+ letters and digits) shown as `[hidden]`; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
-| POST | `/api/v1/format-check/dismiss` | Body `{"topic","rule","sender_id"?,"dismissed"?}` (#320): stop `rule` counting in `topic` for that sending token, or every sender without `sender_id`. `"dismissed":false` undoes it. Unknown rule is a 400. Scope publish on the topic. Nothing is dismissed until set. |
+| GET | `/api/v1/format-check?topic=&by=` | Format check (#308), advice only. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). `by=sender` (#320) groups by topic and sending token (the top of its token tree, as kept for #187), adding `sender_id` (`"unknown"` for messages with no known sending token, #391) and `sender` (the token name) to each group and naming the token in the prompt; only a full admin, or the token the sender belongs to (as in Linked devices, #245), gets `sender` and the prompt, anyone else gets both blank (#406); the default `by=topic` leaves both out. Returns `{"checked":N,"problems":N,"topics":[{"topic","sender_id"?,"sender"?,"checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}],"off":["topic"],"dismissed":[{"topic","rule","sender_id"}]}`, only groups with findings, in topic then sender_id order; topics in `off` are not checked or counted, and a dismissed rule does not count for that topic and sender (`sender_id` "" means every sender); `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters, with anything that looks like a secret (a value after `password=`, `token:`, `Bearer` and the like, the password in `user:pass@host`, a run of 20+ letters and digits) shown as `[hidden]`; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
+| POST | `/api/v1/format-check/dismiss` | Body `{"topic","rule","sender_id"?,"dismissed"?}` (#320): stop `rule` counting in `topic` for that sending token (`"unknown"` for the group with no known sender), or every sender without `sender_id`. `"dismissed":false` undoes it. Unknown rule is a 400. Scope publish on the topic. Nothing is dismissed until set. |
 | PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. `{"format_check":false}` leaves the topic out of the format check, `true` (the default) puts it back (#320). `{"device_actions":true}` lets senders add `http` and `broadcast` actions (section 2, #401), `false` (the default) refuses them; this key needs scope admin on the topic, and a body with it and a token without admin changes nothing. A body with none of these keys is a 400. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
 | PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
@@ -1098,6 +1104,28 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 - `fastlane/metadata/android/` for F-Droid. Reproducible build, no proprietary deps.
 - UnifiedPush distributor support is a later issue, not v0.
 
+## 8.1 Desktop
+
+The tray app for Windows and Linux (#162), in `desktop/`. A Rust core holds
+the WebSocket and follows section 3 like any other client; the window loads
+the server's own `/app`. It links through the device link flow in section 4
+and is a linked device like any other, under the same Allowed, Ask and Denied
+rules. Its token lives in the OS keychain and is sent only as an
+`Authorization` header.
+
+- Each open notification = one system notification.
+- Closing a system notification (its close button, or the desktop's own
+  clear) only hides it on that computer and sends nothing, the same rule as
+  the Android tray (#265). On Linux only `NotificationClosed` with reason 2
+  (closed by the user) counts as a close; reason 1 (expired) and reason 3
+  (closed by the app itself) never send anything, in any setting.
+- The Clear button on a system notification is a deliberate click and does
+  sync: it dismisses with `via: "desktop_button"`.
+- "Closing clears everywhere" is a setting on that computer, off by default.
+  With it on, a close by the user dismisses with `via: "desktop_close"`.
+- An incoming `dismissed` or `resolved` event from any device always closes
+  the system notification.
+
 ## 9. Web
 
 - Served by the Go binary. Server renders the HTML (Go `html/template`);
@@ -1140,7 +1168,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   failures are logged, not retried. Push endpoints get the same guard as
   link fetches (ports 80 and 443, no private addresses), so a subscription
   cannot point the server at the local network.
-- The web inbox (Settings, Notifications) registers its worker,
+- The web inbox (Settings, Browser notifications) registers its worker,
   `static/sw.js`, only when the user turns notifications on there, and asks
   for permission only on that tap. Nothing changes for a browser that never
   opts in. A site the browser blocks, or a subscription one side lost, is
@@ -1149,6 +1177,50 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   came), and a tap opens or focuses the inbox. The system notification only
   signals: closing it changes nothing on the server. Browsers allow Web Push
   only over HTTPS (or on localhost).
+
+## 9.1 Settings layout (#575, web and Android)
+
+Settings is one page in five sections. Both clients use these names, in this
+order. A client leaves out a setting it does not have; it never renames one or
+moves it to another section. Each setting has a plain label, a one-line
+description and the keywords below. Its id is the anchor on web
+(`/app/settings#sound`) and the key Android uses to scroll to it.
+
+Search sits at the top. It matches when the typed text, trimmed and ignoring
+case, appears in the label, the description or a keyword. Matching settings
+show under their section name; a section with no match hides. Nothing
+matching shows "No settings match" with the typed text and a way to clear it.
+Search only ever lists what this device can open: a setting the signed-in
+token may not use is left out of the page, not greyed in the results. With
+JavaScript off the web page shows every section and no search box.
+
+| Section | Id | Label | Keywords | Where |
+|---|---|---|---|---|
+| Notifications | `sound` | Sound | sound, chime, ring, audio, volume | both |
+| Notifications | `push` | Browser notifications | push, system notification, pop up, desktop, alert | web |
+| Notifications | `silences` | Silences | mute, quiet, quiet hours, do not disturb, pause | web |
+| Notifications | `muted-topics` | Muted topics | mute, topic, pop up, quiet | Android |
+| Notifications | `battery` | Battery | battery, background, delayed, killed, optimization | Android |
+| Inbox | `stack` | Stack by topic | group, fold, bundle, collapse | both |
+| Inbox | `swipe` | Swipe buttons | swipe, gesture, slide, buttons | both |
+| Inbox | `full-swipe` | Full swipe acts | swipe, fast, gesture, one move | Android |
+| Inbox | `snooze` | Snooze times | later, remind, postpone, default time | both |
+| Inbox | `keep-cleared` | Cleared messages | delete, keep, retention, history, days | web |
+| Inbox | `drop-cleared` | Remove cleared items | hide, cleared tab, remove | Android |
+| Display | `formatting` | Message text | markdown, formatting, links, preview, site icons | web |
+| Display | `topic-icons` | Topic icons | icon, image, avatar, picture | web |
+| Display | `format` | Message format check | format, markdown check, broken, warning | web, only with findings |
+| Display | `appearance` | Appearance | theme, dark mode, light mode, colors | web |
+| Devices | `server` | Server | server, address, url, token, sign in, log in | Android |
+| Devices | `devices` | Linked devices | phone, browser, unlink, sign out, approve, may approve, activity | both |
+| Devices | `link-phone` | Link a phone | qr, scan, pair, code, add phone | web shows the code, Android scans it |
+| Devices | `add-agent` | Add an agent | agent, ai, bot, invite, mcp, token | web, admin only |
+| Integrations | `senders` | Senders | sender, rules, bot, agent, allow | both, only where the token may manage senders |
+| Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
+| Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
+| Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
+
+The Android version line stays at the foot of the page, outside the sections.
 
 ## 10. Brand tokens
 

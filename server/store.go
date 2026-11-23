@@ -1548,7 +1548,9 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, ` AND `)
 	}
-	return queryNotifications(s.db, q+fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, lq.Limit), args...)
+	ns, err := queryNotifications(s.db, q+fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, lq.Limit), args...)
+	forReader(tok, ns...)
+	return ns, err
 }
 
 // Get returns one notification.
@@ -1560,6 +1562,7 @@ func (s *Server) Get(ctx context.Context, tok *Token, id string) (*Notification,
 	if err := tok.need(ScopeRead, n.Topic); err != nil {
 		return nil, err
 	}
+	forReader(tok, n)
 	return n, nil
 }
 

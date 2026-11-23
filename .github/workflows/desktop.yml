@@ -1,0 +1,62 @@
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    # server/** only here, not on pull requests: a server change that breaks
+    # the desktop shows up when it lands, without slowing every server PR.
+    paths:
+      - "desktop/**"
+      - "server/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+
+# Same grouping as go.yml: a new push cancels the older run on a branch or
+# pull request, and every commit on main is its own group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: [self-hosted, cezar1]
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      # Three build jobs at most: this runner is shared with other projects.
+      CARGO_BUILD_JOBS: "3"
+    steps:
+      - uses: actions/checkout@v4
+      - name: system packages
+        # OpenSSL headers for the OS TLS the app links to, and a C linker.
+        run: sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev
+      - name: rust toolchain
+        # rustup itself is pinned by checksum; the compiler version comes
+        # from desktop/rust-toolchain.toml, which cargo installs on first use.
+        run: |
+          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            v=1.29.3
+            curl -fsSL -o "$RUNNER_TEMP/rustup-init" "https://static.rust-lang.org/rustup/archive/$v/x86_64-unknown-linux-gnu/rustup-init"
+            echo "b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55  $RUNNER_TEMP/rustup-init" | sha256sum -c -
+            chmod +x "$RUNNER_TEMP/rustup-init"
+            "$RUNNER_TEMP/rustup-init" -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          # Outside the checkout, so a run reuses the last build of the crates.
+          echo "CARGO_TARGET_DIR=$HOME/.cache/clrd-desktop-target" >> "$GITHUB_ENV"
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: against the real server
+        # The other tests use a fake server; this one keeps the fake honest.
+        run: |
+          (cd .. && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd)
+          CLRD_BIN="$RUNNER_TEMP/clrd" cargo test --locked --test real_server -- --ignored
