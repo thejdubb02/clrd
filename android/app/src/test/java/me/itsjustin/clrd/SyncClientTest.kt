@@ -345,6 +345,15 @@ class SyncClientTest {
         assertEquals(listOf("approve_denied"), store.outcomes)
     }
 
+    @Test fun aTapAlreadyToldBeforeARestartStaysQuiet() { // #383: the flag comes from the saved row, not this process
+        store.rows["denied"] = notif("denied", "acknowledged", 4)
+        store.queue += Pending(1, "denied", "reply", """{"reply":"yes","seq":4}""", told = true)
+        current = { notifJson(it, "active", 4) }
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(emptyList<Pending>(), store.queue)
+        assertEquals(emptyList<String>(), store.outcomes)
+    }
+
     @Test fun aDevicesMessageTellsTheApp() { // #345: Settings reloads the device list when one connects or drops
         onConnect = { _, ws ->
             ws.send("""{"type":"devices","devices":[]}""")
