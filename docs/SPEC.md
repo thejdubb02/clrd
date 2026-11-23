@@ -45,6 +45,7 @@ A **notification**:
   "tags": ["backup"],
   "click": "https://...",      // optional
   "icon": "https://.../disk.png", // optional http(s) image URL, max 2048; "" if none
+  "color": "#0EA5E9",          // optional sender color, #RRGGBB; "" if none (and in old events). Color rules win over it (section 2.1)
   "attachment": {"name": "report.pdf", "url": "/api/v1/files/9f2c...", "type": "application/pdf", "size": 48213}, // or null
   "actions": [{"label": "Open draft", "url": "https://..."}, {"label": "Yes", "reply": "yes"}],
   "reply": "",                 // the reply action tapped, "" until someone answers
@@ -340,6 +341,30 @@ side. Clear stays undoable from either side. Reads need scope read; a token
 limited to some topics or carrying per-topic grants cannot change them (403),
 as with the four switches. The web inbox shows them on a touch screen only (mouse and keyboard keep
 the card's own buttons) and has no Resolve control, so it skips Resolve.
+
+Color rules (#165): `color_rules` is a list of up to 50 rules that color
+cards on every client, like `{"color_rules": [{"topic": "gatus",
+"priority_min": 4, "color": "#DC2626", "style": "tint"}]}`. Default `[]`, so a
+new server shows no colors. Each rule has `topic` (the topic the card landed
+in, after any reroute), `tag` (one of its tags, exact), `priority_min` and
+`priority_max` (the stored priority, 1 to 5, inclusive; 0 means no limit),
+`title` (text found anywhere in the title, any case), `color` (`#RRGGBB`,
+nothing else, since clients put it in CSS) and `style` (`bar`, a stripe on
+the card's edge; `tint`, a light wash of the color; `solid`, a filled card
+with text in a readable contrast; `gradient`, the color fading across the
+card). An empty field matches anything. Every client runs the same match:
+the first rule whose set fields all match wins; with no match a card with a
+sender `color` (section 2) shows it as `bar`; otherwise it has no color. A
+client that does not know a style draws `bar`. `server/testdata/colorrules.json`
+holds cases every client's matcher must pass. A PUT replaces the whole list
+(read first, send every rule to keep; `[]` clears it); a bad rule is a 400
+naming its index and field and changes nothing. Only a token with no topic
+list and no per-topic grants may change it (403 otherwise); a limited token reads only rules with no
+topic or a topic it may read or publish to. Presets are client shortcuts that write
+ordinary rules: Severity is priority 5 `#DC2626`, 4 `#EA580C`, 3 `#CA8A04`,
+all `bar`; By topic writes one `bar` rule per topic. Not built yet: matching
+by sender (a notification carries no public sender field) and ntfy-style
+per-topic display defaults.
 
 Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
@@ -1292,7 +1317,7 @@ State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
 `#F7EBD3`/`#7A4D0B`, dismissed outline `#DEDAD1`/`#5B6470`.
 
 Rules: no gradients, flat fills, 1px hairlines, radius 6 (chips, inputs), 8
-(buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. Dark
+(buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. A user's color rules (section 2.1) color their own cards, gradient included; clrd's own chrome keeps these rules. Dark
 mode swaps paper and ink, same accents. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
 
 Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every surface uses one file). The three lines end on one circle around the disc, so every gap to the disc is the same:
@@ -1304,6 +1329,49 @@ Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every su
   <path d="M41 20.5l6 6l12-12" stroke="#F5F3EE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 ```
+
+### 10.1 Motion
+
+One set of values for every client, so a clear or an arrival looks the same on
+the web, Android and the desktop. Two curves only, nothing that overshoots or
+bounces:
+
+- Ease out `cubic-bezier(.2, .7, .2, 1)`: things coming in (the green wash, an
+  arriving card).
+- Ease in out `cubic-bezier(.4, 0, .2, 1)`: things going away (the slide, the
+  gap closing).
+
+**Clearing.** Every way a card leaves plays the same steps: a swipe, the Clear
+button, Clear all, a clear or other change from another device, and a snooze or
+resolve that takes it out of the view. The clear is sent at once; the motion is
+only what the screen shows.
+
+| Step | Value |
+|---|---|
+| Green wash across the card, from the inline start | 420ms, ease out |
+| Check mark draws in, with the reason | 260ms, starts 180ms in |
+| Hold, so the reason can be read | 1400ms from the start |
+| Slide away, toward the swipe (inline end when not swiped), fading out | 100% of the card width, 200ms, ease in out |
+| Cards below close the gap | 200ms, ease in out |
+| Clear all: each card's slide starts a little after the one above it | 40ms per card, at most 8 steps (320ms) |
+
+**Arriving.** A new card slides in from just above its place and fades in, then
+gives one small wiggle.
+
+| Step | Value |
+|---|---|
+| Slide in and fade in | 8px, 180ms, ease out |
+| Wiggle, once | rotate to 1deg, then -1deg, then rest, 320ms, ease in out, starts when the slide ends |
+
+It plays only for a card that arrives live (a new message, a repeat, or a
+snooze ending) while the page or app is in front and the card is on screen.
+Nothing plays on first load, on catch-up after a reconnect, or for cards that
+arrived while the person was away. In a burst every new card slides in and
+only the newest wiggles.
+
+**Reduced motion.** With the system's reduce motion setting on, none of this
+plays: a cleared card shows its reason for the same hold, then goes, and a new
+card simply appears.
 
 ## 11. Rules for every thread
 

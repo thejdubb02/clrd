@@ -300,7 +300,7 @@
   // Timers, not animation events: with reduced motion there are none.
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const check = '<svg class="size-4 shrink-0" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
-  function leave(c, why) {
+  function leave(c, why, wait = 0) {
     if (!c || c.classList.contains('is-leaving')) return;
     if (c.hidden) {
       // Folded into a closed stack: nothing to watch leave, so the stack's
@@ -335,14 +335,21 @@
     c.classList.add('is-leaving');
     c.querySelectorAll('button').forEach(b => { b.disabled = true; });
     announce.textContent = `${c.querySelector('.card-title').textContent.trim()}: ${why}`;
+    // It slides the way it was swiped, or toward the inline end (SPEC 10.1).
+    const rtl = getComputedStyle(c).direction === 'rtl';
+    const x = c.x || c.out; delete c.out;
+    c.style.setProperty('--out', x ? (x > 0) === rtl ? 1 : -1 : rtl ? -1 : 1);
+    const gone = () => { c.remove(); tidy(); };
     setTimeout(() => {
-      c.classList.add('is-folding');
-      if (!still.matches) {
-        c.animate([{ height: `${c.offsetHeight}px` }, { height: '0px', opacity: 0, marginBottom: '-0.5rem', borderWidth: 0 }],
-          { duration: 260, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
-      }
-      setTimeout(() => { c.remove(); tidy(); }, still.matches ? 0 : 260);
-    }, 1400);
+      if (still.matches) return gone();
+      c.classList.add('is-sliding');
+      setTimeout(() => {
+        c.classList.add('is-folding');
+        c.animate([{ height: `${c.offsetHeight}px` }, { height: '0px', marginBottom: '-0.5rem', borderWidth: 0 }],
+          { duration: 200, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
+        setTimeout(gone, 200);
+      }, 200);
+    }, 1400 + wait);
   }
 
   const reason = n => {
@@ -351,7 +358,8 @@
   };
 
   // Re-fetch this page and patch it in: cards keyed by id and seq, plus the sidebar.
-  let pending, gen = 0;
+  let pending, gen = 0, arrived = [];
+  const unarrive = c => c.classList.remove('is-arriving', 'is-newest');
   // A change makes any page already on its way stale: drop it, or it puts back
   // what the change just took off the screen (#402).
   const refresh = () => { gen++; clearTimeout(pending); pending = setTimeout(patch, 250); };
@@ -401,6 +409,8 @@
     }));
     const now = [...list.children].filter(c => !c.matches('[data-stack]'));
     if (keep.some(c => c.contains(document.activeElement)) || keep.length !== now.length || keep.some((c, i) => c !== now[i])) {
+      // Moving a card restarts its animation, so last patch's arrivals stop here.
+      list.querySelectorAll('.is-arriving').forEach(unarrive);
       const had = list.contains(document.activeElement) && !document.activeElement.closest('[data-stack]') && document.activeElement;
       list.replaceChildren(...keep);
       if (typing) typing.focus();
@@ -408,6 +418,16 @@
       else if (had) select(selected()); // focus was on a node the refresh replaced
     }
     restack(sf);
+    // Only cards still in sight: not folded into a stack, not off screen.
+    const inn = document.visibilityState === 'visible' ? arrived.map(card).filter(c => {
+      const r = c && !c.hidden && c.getBoundingClientRect();
+      return r && r.bottom > 0 && r.top < innerHeight;
+    }) : [];
+    arrived = [];
+    inn.forEach(c => c.classList.add('is-arriving'));
+    inn.at(-1)?.classList.add('is-newest'); // a burst wiggles only the newest
+    // Done after 500ms, so reopening a stack later never plays it again.
+    setTimeout(() => inn.forEach(unarrive), 520);
     const s = selected();
     if (s) select(s, false); else selId = null;
     tidy();
@@ -546,7 +566,7 @@
         const b = document.createElement('button');
         Object.assign(b, { type: 'button', className: 'btn shrink-0', textContent: swipeFor[a][1] });
         b.dataset.variant = a === 'clear' ? 'clear' : 'outline';
-        b.addEventListener('click', () => { shut(card); t.click(); });
+        b.addEventListener('click', () => { const x = card.x; shut(card); card.out = x; t.click(); }); // leave() slides it the way it was swiped
         return b;
       });
     if (!bs.length) return null;
@@ -928,8 +948,10 @@
       if (!r) { done(); return; }
       const n = (await r.json().catch(() => ({}))).cleared;
       // Clear all takes every stack with it, so none shrinks card by card.
-      for (const st of s ? [s] : list.querySelectorAll('[data-stack]')) { unfolded.delete(st.dataset.stack); leave(st, 'Cleared'); }
-      ids.forEach(id => leave(card(id), 'Cleared'));
+      // Each one goes a little after the one above it (SPEC 10.1).
+      const order = nav(), lag = el => Math.min(Math.max(order.indexOf(el), 0), 8) * 40;
+      for (const st of s ? [s] : list.querySelectorAll('[data-stack]')) { unfolded.delete(st.dataset.stack); leave(st, 'Cleared', lag(st)); }
+      ids.forEach(id => leave(card(id), 'Cleared', lag(card(id))));
       done();
       // Undo only when we know every id was ours to clear; otherwise it could
       // reopen something another device cleared first.
@@ -1159,6 +1181,9 @@
       else if (m.notification) {
         // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
         if (ready && m.notification.state === 'active' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')) alertSound(m.notification);
+        // A card that comes in live while this tab is in front slides in (SPEC 10.1).
+        if (ready && document.visibilityState === 'visible' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')
+          && show.includes(m.notification.state) && !card(m.notification.id)) arrived.push(m.notification.id);
         onEvent(m);
       }
     };

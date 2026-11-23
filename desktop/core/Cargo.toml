@@ -22,6 +22,14 @@ ureq = { version = "3", default-features = false, features = ["native-tls", "jso
 # handshake, Authorization header included, so with trace on the token could
 # reach a log file.
 log = { version = "0.4", features = ["max_level_debug"] }
+# The OS random source, for the secret that claims a link code. std has no
+# public one. Already in the tree (the WebSocket key comes from it).
+getrandom = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+# Credential Manager, where the token is kept. Bindings only, no code of its
+# own, and already in the tree for the OS TLS.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # D-Bus, for desktop notifications (org.freedesktop.Notifications). Pure Rust,
