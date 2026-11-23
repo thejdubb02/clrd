@@ -31,6 +31,13 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   in the background, and nothing moves with reduce motion on. The timings are
   in SPEC section 10.1 so every app matches.
 
+### Changed
+
+- Web: the Message format check in Settings is one card per topic with a
+  count of its findings, a Dismiss menu on each finding and Copy fix prompt as
+  the main button, instead of one block of text and buttons (#618). With more
+  than three topics the cards start closed.
+
 ## 0.1.0 - 2026-11-23
 
 ### Added

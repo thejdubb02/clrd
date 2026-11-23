@@ -484,8 +484,8 @@ func TestFormatCheckSettings(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, body, _ := fetch(t, c, ts.URL+"/app/settings")
-		if !strings.Contains(body, "from a sender clrd does not know") || strings.Count(body, "data-format-prompt") != 2 {
-			t.Errorf("unknown sender group: want its label and both prompts")
+		if !strings.Contains(body, "Unknown sender</span>") || strings.Count(body, "data-format-prompt") != 5 { // ci and the three topics below
+			t.Errorf("unknown sender group: want its label and a prompt per group")
 		}
 	}()
 	if code, body, _ := fetch(t, c, ts.URL+"/app/settings"); code != 200 || !strings.Contains(body, "Linked devices") || strings.Contains(body, "data-format-check") {
@@ -494,9 +494,19 @@ func TestFormatCheckSettings(t *testing.T) {
 	publish(t, ts, raw, "ci", "build failed")
 	publish(t, ts, raw, "ci", "build passed")
 	_, body, _ := fetch(t, c, ts.URL+"/app/settings")
-	for _, want := range []string{"data-format-check", "ci <span", "2 of the last 2 messages", "No title: 2</span>", `topic &#34;ci&#34;`, "Dismiss for this sender", "Stop checking ci"} {
+	for _, want := range []string{"data-format-check", `data-format-card="ci" open`, "1 finding<", "2 of the last 2 messages", ">No title</span><span class=\"badge\" data-variant=\"outline\">2</span>", `topic &#34;ci&#34;`, "Dismiss for this sender", "Stop checking ci"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings page lacks %q", want)
+		}
+	}
+	// Past three topics every card starts collapsed (#618).
+	for _, topic := range []string{"t1", "t2", "t3"} {
+		publish(t, ts, raw, topic, "x")
+	}
+	_, cards, _ := fetch(t, c, ts.URL+"/app/settings")
+	for _, topic := range []string{"ci", "t1", "t2", "t3"} {
+		if !strings.Contains(cards, `data-format-card="`+topic+`"`) || strings.Contains(cards, `data-format-card="`+topic+`" open`) {
+			t.Errorf("four topics: want card %s shown and collapsed", topic)
 		}
 	}
 }

@@ -4,5 +4,6 @@
 # Measured 2026-11-20: server 15,593,656, apk 1,945,004.
 # Measured 2026-11-22: server 16,531,640 with Web Push (#164, +45,056).
 # Measured 2026-11-23: server 16,625,848 with version history (#580), after cutting 0.1.0 with a short summary.
-server 16660000
+# Measured 2026-11-23: main at 16,658,616; the format check cards (#618) take it to 16,662,712. Raised by 40,000 so the Unreleased changelog, which the binary carries, has room.
+server 16700000
 apk 2100000
