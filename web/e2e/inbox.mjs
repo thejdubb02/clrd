@@ -338,7 +338,9 @@ try {
   await sp.getByLabel('Theme').selectOption('');
   assert.ok(await dark(), 'System did not follow a dark device');
   await sp.emulateMedia({ colorScheme: 'light' });
-  assert.equal(await dark(), false, 'System did not follow the device changing');
+  // The device change arrives as an event, so give it a moment.
+  await sp.waitForFunction(() => !document.documentElement.classList.contains('dark'), null, { timeout: 3000 })
+    .catch(() => assert.fail('System did not follow the device changing'));
   await sp.close();
   console.log('ok: snooze default, long press, right click and Settings');
 
