@@ -168,7 +168,7 @@ dismisses, acks, resolves, snoozes or replies. Setup for each, and which ones re
 - [docs/self-host.md](docs/self-host.md): run it, put HTTPS in front, tokens, backups
 - [docs/integrations/mcp.md](docs/integrations/mcp.md): MCP tools for agents, and phone approval of agent prompts
 - [docs/formatting.md](docs/formatting.md): Markdown, emoji, display settings and the format check
-- [docs/repeat.md](docs/repeat.md): alerts that ring again until someone acts
+- [docs/repeat.md](docs/repeat.md): alerts that ring again until someone acts, 10 more times by default
 - [docs/silences.md](docs/silences.md): mute a topic or tag until a set time
 - [docs/migrate-from-ntfy.md](docs/migrate-from-ntfy.md): switch from ntfy
 - [docs/migrate-from-gotify.md](docs/migrate-from-gotify.md): switch from Gotify
