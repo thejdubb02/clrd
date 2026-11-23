@@ -11,8 +11,8 @@ import (
 )
 
 // Every docs page is reachable from the repo page and the site (#592): a
-// top-level guide is linked from the README's Docs list, an integration
-// guide from the integrations index, and every page from the served /docs/
+// top-level guide or folder index is linked from the README's Docs list, a
+// guide in a folder from that folder's README, and every page from the served /docs/
 // index, so a new guide cannot go missing from either.
 func TestDocsLinked(t *testing.T) {
 	readme, err := os.ReadFile("../README.md")
@@ -24,23 +24,24 @@ func TestDocsLinked(t *testing.T) {
 		t.Fatal("README has no ## Docs section")
 	}
 	docsList, _, _ = strings.Cut(docsList, "\n## ")
-	integrations, err := fs.ReadFile(clrd.Files, "docs/integrations/README.md")
-	if err != nil {
-		t.Fatal(err)
+	code, index := get(t, Handler(NewFake(), ""), "/docs/")
+	if code != 200 {
+		t.Fatalf("/docs/: %d", code)
 	}
-	_, index := get(t, Handler(NewFake(), ""), "/docs/")
 	n := 0
 	err = fs.WalkDir(clrd.Files, "docs", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || path.Ext(p) != ".md" {
 			return err
 		}
 		n++
-		if dir, file := path.Split(p); dir == "docs/" {
+		// A page in a subfolder is linked from that folder's README, and the
+		// README itself (like any top-level page) from the repo README.
+		if dir, file := path.Split(p); dir == "docs/" || file == "README.md" {
 			if !strings.Contains(docsList, "]("+p+")") {
 				t.Errorf("README ## Docs does not link %s", p)
 			}
-		} else if dir == "docs/integrations/" && file != "README.md" && !strings.Contains(string(integrations), "]("+file+")") {
-			t.Errorf("docs/integrations/README.md does not link %s", file)
+		} else if idx, err := fs.ReadFile(clrd.Files, dir+"README.md"); err != nil || !strings.Contains(string(idx), "]("+file+")") {
+			t.Errorf("%sREADME.md does not link %s", dir, file)
 		}
 		if key := docKey(strings.TrimSuffix(strings.TrimPrefix(p, "docs/"), ".md")); !strings.Contains(index, `href="/docs/`+key+`"`) {
 			t.Errorf("/docs/ index does not link %s", p)
