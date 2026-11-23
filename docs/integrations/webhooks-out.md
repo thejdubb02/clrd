@@ -149,6 +149,38 @@ Discord, the edit is skipped. A scheduled notification is not posted.
 The webhook URL holds a token, so treat it like a password: only admins can
 see it, and delivery errors leave it out.
 
+## GitHub: open an issue, close it when cleared
+
+Give a hook `"kind": "github"`, the repo's API URL and a GitHub token that
+can write issues (a fine-grained token with Issues: Read and write on that
+one repo is enough) as `secret`. Every new notification on the topic opens
+an issue. Each state change you pick with `events` adds a comment saying
+what happened, such as "Cleared by pixel-9", and a clear or resolve closes
+the issue.
+
+```sh
+curl -X PUT https://clrd.example.com/api/v1/topics/relay-alerts/hooks/github \
+  -H "Authorization: Bearer clrd_..." -H "Content-Type: application/json" \
+  -d '{"url": "https://api.github.com/repos/OWNER/REPO", "kind": "github", "secret": "github_pat_..."}'
+```
+
+This is how an alert starts a coding agent: anything that picks up work
+from GitHub issues (GitHub's coding agent, an issue label runner, a T3 Code
+or Claude Code runner) takes it from there. Because the issue may be read by
+an agent, clrd is careful about what it opens:
+
+- Never for a notification from an anonymous sender, and never for a
+  question (a confirm prompt or reply buttons), which waits for a person.
+- At most 10 issues an hour per hook. Alerts past that stay in clrd only.
+- The sender's text goes in a fenced code block it cannot close, under a
+  line saying it is data, not instructions. An `@name` in it pings nobody.
+- clrd does not acknowledge or clear the notification itself when the issue
+  opens; it stays as it was on every device.
+
+Delete the hook to stop new issues at once. The
+token is write only: the API never shows it again. A scheduled notification
+does not open an issue.
+
 ## Retries and turning off
 
 Any 2xx answer is a success. Anything else, a redirect or no answer within 10
