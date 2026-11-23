@@ -22,7 +22,7 @@ func items(md string) (n int) {
 func TestCutReal(t *testing.T) {
 	// Seeded, so this still runs right after a real cut empties Unreleased.
 	md := strings.Replace(clrd.Changelog, "\n## Unreleased\n", "\n## Unreleased\n\n### Added\n\n- seed\n", 1)
-	out, arch, err := cut(md, "", "9.9.9", "2026-11-23")
+	out, arch, err := cut(md, "", "9.9.9", "2026-11-23", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,13 +33,33 @@ func TestCutReal(t *testing.T) {
 	if !strings.Contains(out, "\n## Unreleased\n\n## 9.9.9 - 2026-11-23\n") || !strings.HasPrefix(out, strings.SplitN(clrd.Changelog, "\n## ", 2)[0]) {
 		t.Fatal("Unreleased heading or preamble lost")
 	}
-	if _, _, err := cut(out, "", "9.9.10", "2026-11-24"); err == nil || !strings.Contains(err.Error(), "nothing") {
+	if _, _, err := cut(out, "", "9.9.10", "2026-11-24", ""); err == nil || !strings.Contains(err.Error(), "nothing") {
 		t.Fatalf("empty cut: %v", err)
 	}
 	for _, bad := range [][2]string{{"9.9.9", "2026-11-24"}, {"v1", "2026-11-24"}, {"1.0.0", "today"}} {
-		if _, _, err := cut(out+"- x\n", "", bad[0], bad[1]); err == nil {
+		if _, _, err := cut(out+"- x\n", "", bad[0], bad[1], ""); err == nil {
 			t.Fatalf("%v: no error", bad)
 		}
+	}
+}
+
+// With a summary, the summary stays and the full entries go to the archive
+// under the same heading.
+func TestCutSummary(t *testing.T) {
+	md := strings.Replace(clrd.Changelog, "\n## Unreleased\n", "\n## Unreleased\n\n### Added\n\n- seed\n", 1)
+	out, arch, err := cut(md, archiveHead, "9.9.9", "2026-11-23", "### Added\n\n- Short summary.\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, moved := clrd.ParseChangelog(out), clrd.ParseChangelog(arch)
+	if kept[0].Version != "9.9.9" || len(kept[0].Changes) != 1 || len(kept[0].Changes[0].Items) != 1 {
+		t.Fatalf("changelog: %+v", kept)
+	}
+	if moved[0].Version != "9.9.9" || moved[0].Date != "2026-11-23" || items(out)-1+items(arch) != items(md) || !strings.HasPrefix(arch, archiveHead) {
+		t.Fatalf("archive: %d items", items(arch))
+	}
+	if _, _, err := cut(md, "", "9.9.9", "2026-11-23", "just prose"); err == nil {
+		t.Fatal("summary with no items: no error")
 	}
 }
 
@@ -52,7 +72,7 @@ func TestCutArchives(t *testing.T) {
 		md += fmt.Sprintf("\n## 0.%d.0 - 2026-01-%02d\n\n### Fixed\n\n%s", v, v, entry)
 	}
 	arch := archiveHead + "\n## 0.0.1 - 2025-01-01\n\n### Added\n\n- First\n"
-	out, newArch, err := cut(md, arch, "1.0.0", "2026-02-01")
+	out, newArch, err := cut(md, arch, "1.0.0", "2026-02-01", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,12 +93,12 @@ func TestCutArchives(t *testing.T) {
 	for v := 9; v >= 1; v-- {
 		md += fmt.Sprintf("\n## 0.%d.0 - 2026-01-%02d\n\n### Fixed\n\n%s", v, v, big)
 	}
-	out, newArch, _ = cut(md, "", "1.0.0", "2026-02-01")
+	out, newArch, _ = cut(md, "", "1.0.0", "2026-02-01", "")
 	if len(out) > clrd.ChangelogLimit || len(clrd.ParseChangelog(out)) >= 10 || items(out)+items(newArch) != items(md) {
 		t.Fatalf("over the limit: %d bytes", len(out))
 	}
 	// One version bigger than the limit by itself is refused, not written.
-	if _, _, err := cut("## Unreleased\n\n### Added\n\n"+strings.Repeat(big, 5), "", "1.0.0", "2026-02-01"); err == nil {
+	if _, _, err := cut("## Unreleased\n\n### Added\n\n"+strings.Repeat(big, 5), "", "1.0.0", "2026-02-01", ""); err == nil {
 		t.Fatal("oversize version: no error")
 	}
 }

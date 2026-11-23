@@ -11,7 +11,7 @@ import (
 // version so the script moves the oldest ones to CHANGELOG-archive.md.
 func TestChangelogSize(t *testing.T) {
 	if len(Changelog) > ChangelogLimit {
-		t.Fatalf("CHANGELOG.md is %d bytes, over %d: run go run ./server/cmd/cutversion <next version>", len(Changelog), ChangelogLimit)
+		t.Fatalf("CHANGELOG.md is %d bytes, over %d: the fix is cutting a version: go run ./server/cmd/cutversion [-summary-file F] <next version> (SPEC section 5.2)", len(Changelog), ChangelogLimit)
 	}
 }
 

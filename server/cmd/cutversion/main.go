@@ -1,11 +1,16 @@
 // Command cutversion turns the Unreleased entries of CHANGELOG.md into a
 // dated version, and keeps the file the binary embeds small by moving the
 // oldest versions to CHANGELOG-archive.md (SPEC section 5.2). From the repo
-// root: go run ./server/cmd/cutversion 0.1.0 [YYYY-MM-DD]
+// root: go run ./server/cmd/cutversion [-summary-file F] 0.1.0 [YYYY-MM-DD]
+//
+// With -summary-file, the file's short hand-written text becomes the
+// version's section and the full Unreleased entries go to the archive under
+// the same heading.
 package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -26,21 +31,31 @@ const (
 const archiveHead = "# Changelog archive\n\nOlder versions, newest first, moved out of [CHANGELOG.md](CHANGELOG.md)\nso the server binary carries only the recent ones.\n"
 
 func main() {
-	if len(os.Args) < 2 || len(os.Args) > 3 {
-		fmt.Fprintln(os.Stderr, "usage: go run ./server/cmd/cutversion <X.Y.Z> [YYYY-MM-DD]")
+	sumFile := flag.String("summary-file", "", "short summary to keep in CHANGELOG.md; the full entries go to the archive")
+	flag.Parse()
+	if flag.NArg() < 1 || flag.NArg() > 2 {
+		fmt.Fprintln(os.Stderr, "usage: go run ./server/cmd/cutversion [-summary-file F] <X.Y.Z> [YYYY-MM-DD]")
 		os.Exit(2)
 	}
 	date := time.Now().UTC().Format(time.DateOnly)
-	if len(os.Args) == 3 {
-		date = os.Args[2]
+	if flag.NArg() == 2 {
+		date = flag.Arg(1)
 	}
-	if err := run(os.Args[1], date); err != nil {
+	if err := run(flag.Arg(0), date, *sumFile); err != nil {
 		fmt.Fprintln(os.Stderr, "cutversion:", err)
 		os.Exit(1)
 	}
 }
 
-func run(version, date string) error {
+func run(version, date, sumFile string) error {
+	summary := ""
+	if sumFile != "" {
+		b, err := os.ReadFile(sumFile)
+		if err != nil {
+			return err
+		}
+		summary = string(b)
+	}
 	md, err := os.ReadFile(changelog)
 	if err != nil {
 		return err
@@ -49,7 +64,7 @@ func run(version, date string) error {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	out, arch, err := cut(string(md), string(old), version, date)
+	out, arch, err := cut(string(md), string(old), version, date, summary)
 	if err != nil {
 		return err
 	}
@@ -63,8 +78,9 @@ func run(version, date string) error {
 
 var semver = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
-// cut returns the new changelog and archive.
-func cut(md, arch, version, date string) (string, string, error) {
+// cut returns the new changelog and archive. A non-empty summary replaces the
+// version's entries in the changelog; the entries go to the archive.
+func cut(md, arch, version, date, summary string) (string, string, error) {
 	if !semver.MatchString(version) {
 		return "", "", fmt.Errorf("version %q is not X.Y.Z", version)
 	}
@@ -87,14 +103,24 @@ func cut(md, arch, version, date string) (string, string, error) {
 	if !strings.Contains("\n"+body, "\n- ") {
 		return "", "", errors.New("nothing under Unreleased to cut")
 	}
-	top := head + "\n## Unreleased\n\n"
-	vers := sections("## " + version + " - " + date + "\n" + body + older)
-	size := func() int { return len(top) + len(strings.Join(vers, "")) }
+	heading := "## " + version + " - " + date + "\n"
 	var moved []string // newest first
+	if summary != "" {
+		summary = "\n" + strings.TrimSpace(summary) + "\n"
+		if !strings.Contains(summary, "\n### ") || !strings.Contains(summary, "\n- ") {
+			return "", "", errors.New("summary needs ### sections with - items, like Unreleased")
+		}
+		moved, body = sections(heading+body), summary
+	}
+	top := head + "\n## Unreleased\n\n"
+	vers := sections(heading + body + older)
+	size := func() int { return len(top) + len(strings.Join(vers, "")) }
+	var old []string // newest first
 	for size() > near && len(vers) > 1 && (len(vers) > keep || size() > clrd.ChangelogLimit) {
-		moved = append([]string{vers[len(vers)-1]}, moved...)
+		old = append([]string{vers[len(vers)-1]}, old...)
 		vers = vers[:len(vers)-1]
 	}
+	moved = append(moved, old...)
 	if size() > clrd.ChangelogLimit {
 		return "", "", fmt.Errorf("%s alone is over %d bytes; shorten its entries", version, clrd.ChangelogLimit)
 	}

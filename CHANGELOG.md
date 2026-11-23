@@ -8,7 +8,9 @@ Add your entry under `Unreleased`, in the section that fits (Added, Changed,
 Fixed, Removed, Security), as one line a user can understand.
 
 The server binary carries this file and shows it as its version history.
-`go run ./server/cmd/cutversion X.Y.Z` cuts a version, and moves the oldest
+`go run ./server/cmd/cutversion X.Y.Z` cuts a version (`-summary-file F`
+keeps a short summary here and puts the full entries in the archive), and
+moves the oldest
 ones to `CHANGELOG-archive.md` in the repo when this file nears
 96,000 bytes, so the archive holds the rest of the history.
 

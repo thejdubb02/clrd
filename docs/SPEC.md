@@ -891,7 +891,11 @@ newest dated heading in `CHANGELOG.md` (`## 0.1.0 - 2026-11-23`). It is
 `0.0.0` until the first version is cut. Cut one with
 `go run ./server/cmd/cutversion 0.1.0` (date defaults to today, UTC): it
 moves everything under `## Unreleased` into a new dated section and leaves
-`## Unreleased` in place, empty, for the next entry.
+`## Unreleased` in place, empty, for the next entry. With
+`-summary-file F` (before the version), the short hand-written text in `F`
+(`###` sections with `-` items, like Unreleased) becomes the version's
+section, and the full entries go to `CHANGELOG-archive.md` under the same
+heading. A version is cut with each deploy batch, so Unreleased stays small.
 
 The binary embeds `CHANGELOG.md`, so it carries the recent history and the
 repo carries all of it. A test fails when the embedded file is over 96,000
