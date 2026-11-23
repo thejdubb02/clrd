@@ -524,7 +524,11 @@ user to store topic choices for.
 (at least one key, at most 500 topics in one call; a name outside the
 topic pattern is a 400 naming it, a topic the token cannot read is a 403
 naming it, and nothing is changed when any entry fails) and returns the same
-shape as GET. Scope read. Any token of the owner may change the owner's set,
+shape as GET. Scope read. An optional `"request_id"` (up to 64 letters,
+digits, `-` or `_`) tags the change: GET and PUT answers carry the
+`request_id` of the set's last change, left out when it had none, so a tab
+that reloads mid-request can tell its own change from another device's
+before offering Undo (#702). Any token of the owner may change the owner's set,
 and a full admin may add `?for=<user id or token id>` to read or set another
 owner's set (an invited agent is its own user, so this is how an admin agent
 sets a person's topics). A user id, or the id of any typed-in token,

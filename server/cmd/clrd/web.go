@@ -381,7 +381,7 @@ func (a webAPI) SetSubscriptions(r *http.Request, newTopics *bool, topics map[st
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	_, err := a.s.SetSubscriptions(r.Context(), tok, newTopics, topics)
+	_, err := a.s.SetSubscriptions(r.Context(), tok, newTopics, topics, "")
 	return webError(err)
 }
 

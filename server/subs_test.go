@@ -77,7 +77,7 @@ func subsSetup(t *testing.T) (*Server, *httptest.Server, string, func(string), f
 	}
 	set := func(topic string, on bool) {
 		t.Helper()
-		if _, err := s.SetSubscriptions(context.Background(), bt, nil, map[string]bool{topic: on}); err != nil {
+		if _, err := s.SetSubscriptions(context.Background(), bt, nil, map[string]bool{topic: on}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -167,6 +167,29 @@ func TestSubsDetachResets(t *testing.T) {
 	call(t, ts, "PUT", "/api/v1/tokens/"+id+"/user", admin, map[string]any{"user": ""})
 	if code, _ := call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d", stale), laptop, nil); code != 410 {
 		t.Fatalf("stale since after detach: %d", code)
+	}
+}
+
+// #702: the subscriptions list names the request_id of the set's last
+// change, so a tab can tell its own change from another device's.
+func TestSubsRequestID(t *testing.T) {
+	s, ts, _ := newTest(t)
+	browser := childOf(t, s, mkToken(t, s, "script", []string{ScopeRead}, nil))
+	put := func(rid string) (int, map[string]any) {
+		return call(t, ts, "PUT", "/api/v1/subscriptions", browser, map[string]any{"topics": map[string]bool{"infra": false}, "request_id": rid})
+	}
+	if code, _ := put(`a"b`); code != 400 {
+		t.Fatalf("bad request_id: %d", code)
+	}
+	if _, out := put("tab-1_x"); out["request_id"] != "tab-1_x" {
+		t.Fatalf("answer: %v", out)
+	}
+	if _, out := call(t, ts, "GET", "/api/v1/subscriptions", browser, nil); out["request_id"] != "tab-1_x" {
+		t.Fatalf("list: %v", out)
+	}
+	put("") // another device, no id
+	if _, out := call(t, ts, "GET", "/api/v1/subscriptions", browser, nil); out["request_id"] != nil {
+		t.Fatalf("after another change: %v", out)
 	}
 }
 
