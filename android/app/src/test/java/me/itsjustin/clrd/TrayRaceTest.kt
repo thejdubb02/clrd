@@ -260,6 +260,29 @@ class TrayRaceTest {
         assertEquals(listOf("b"), bg { dao.openNow().map { it.id } })
     }
 
+    @Test fun aLateRefetchDoesNotBringBackARowAResetDropped() { // #34: from the #68 review
+        val store = RoomStore(app)
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 5)), 5) }
+        bg { store.replaceAll(emptyList(), 6) } // cleared elsewhere at 6: the reset no longer lists it
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 5)), 0, quiet = true) } // a refused tap's refetch, answered before that
+        assertNull(bg { dao.get("a") })
+        assertNull(tray("a"))
+        bg { store.apply(listOf(row("p", Notif.ACTIVE, 7)), 0, quiet = true) } // newer than the cursor, such as a confirm prompt: kept
+        assertNotNull(bg { dao.get("p") })
+    }
+
+    @Test fun pruneKeepsAnOldClearStillQueued() { // #34 review: a refused Clear must find its row, or its refetch is dropped
+        bg {
+            dao.put(row("a", Notif.DISMISSED, 1)) // the phone's guess, last changed long ago
+            dao.put(row("b", Notif.DISMISSED, 1))
+            dao.addPending(Pending(notifId = "a", action = "dismiss", body = "{}"))
+            dao.prune(System.currentTimeMillis(), emptyList())
+            dao.pruneTopic("t", System.currentTimeMillis())
+        }
+        assertNotNull(bg { dao.get("a") })
+        assertNull(bg { dao.get("b") })
+    }
+
     @Test fun resetWithoutATopicDropsItsCardAndTrayEntry() { // #617: an unsubscribe elsewhere comes as a reset
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 2)), 2) }

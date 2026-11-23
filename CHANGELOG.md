@@ -118,6 +118,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: a notification cleared on another device no longer comes back on
+  the phone when a refused tap's late answer arrives after the phone caught
+  up (#34).
 - Android: the message that says how an approval tap ended (sent to confirm,
   denied, changed) shows once, even when the app restarted before the tap was
   sent again (#383).
