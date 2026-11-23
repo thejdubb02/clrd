@@ -1021,7 +1021,7 @@
       const r = ids.length && await post('/api/v1/notifications/clear', { ids, via: 'web_bulk' });
       b.disabled = false;
       const done = () => ids.forEach(id => clearing.delete(id));
-      if (!r) { done(); return; }
+      if (!r) { done(); arrived = arrived.filter(id => !ids.includes(id)); return; } // they never left, so nothing slides in (#656)
       const n = (await r.json().catch(() => ({}))).cleared;
       // Clear all takes every stack with it, so none shrinks card by card.
       // Each one goes a little after the one above it (SPEC 10.1).
@@ -1258,9 +1258,10 @@
         // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
         if (ready && m.notification.state === 'active' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')) alertSound(m.notification);
         // A card that comes in live while this tab is in front slides in (SPEC 10.1).
-        // Its old copy may still be leaving (a snooze that ended at once): that one does not count (#611).
+        // Its old copy may still be leaving (a snooze that ended at once), or
+        // be about to with a Clear all's reply: that one does not count (#611, #656).
         if (ready && document.visibilityState === 'visible' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')
-          && show.includes(m.notification.state) && !cards().some(c => c.dataset.id === m.notification.id)) arrived.push(m.notification.id);
+          && show.includes(m.notification.state) && (clearing.has(m.notification.id) || !cards().some(c => c.dataset.id === m.notification.id))) arrived.push(m.notification.id);
         onEvent(m);
       }
     };

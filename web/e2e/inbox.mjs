@@ -2151,6 +2151,27 @@ try {
       await post3(`/api/v1/notifications/${back.id}/dismiss`);
       await mc('Back soon').waitFor({ state: 'detached' });
 
+      // The same while a Clear all waits for its reply (#656): the server has
+      // cleared the card, another device reopens it for later and it wakes, all before
+      // the reply. The card is not leaving yet, but the reply takes it, so its
+      // return still slides in.
+      const mid = await send('Mid clear');
+      await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Mid clear'));
+      let go; const gate = new Promise(r => { go = r; });
+      await mp.route('**/api/v1/notifications/clear', async route => { const res = await route.fetch(); await gate; await route.fulfill({ response: res }); });
+      held = [];
+      await mp.getByRole('button', { name: 'Clear all' }).first().click();
+      await hold(ns => ns.some(n => n.id === mid.id && n.state === 'dismissed'), 'the clear');
+      held = [];
+      await post3(`/api/v1/notifications/${mid.id}/reopen`, { until: new Date(Date.now() + 3000).toISOString() });
+      await hold(ns => ns.some(n => n.id === mid.id && n.state === 'active'), 'the snooze ending');
+      await mp.waitForTimeout(300); // the wake reaches the page before the reply
+      go();
+      await until(mp, () => window.moves.filter(m => m.name === 'clrd-in' && m.title === 'Mid clear').length === 2);
+      await mp.unroute('**/api/v1/notifications/clear');
+      await post3(`/api/v1/notifications/${mid.id}/dismiss`);
+      await mc('Mid clear').waitFor({ state: 'detached' });
+
       // Reduce motion: a live card just appears and a cleared one just goes.
       await mp.emulateMedia({ reducedMotion: 'reduce' });
       // Every frame looks at document.getAnimations(), so Element.animate and
