@@ -551,3 +551,105 @@ func TestHooksOutDiscord(t *testing.T) {
 		t.Fatalf("dead: %+v", ds)
 	}
 }
+
+func TestHooksOutGitHub(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	type hit struct {
+		method, path, auth string
+		body               map[string]any
+	}
+	var mu sync.Mutex
+	var hits []hit
+	gh, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		h := hit{method: r.Method, path: r.URL.Path, auth: r.Header.Get("Authorization")}
+		json.NewDecoder(r.Body).Decode(&h.body)
+		mu.Lock()
+		hits = append(hits, h)
+		mu.Unlock()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/issues"):
+			w.WriteHeader(201)
+			w.Write([]byte(`{"id": 123456789, "number": 7}`))
+		case strings.Contains(r.URL.Path, "/issues/8"):
+			w.WriteHeader(410) // someone deleted the issue
+		default:
+			w.Write([]byte(`{}`))
+		}
+	})
+	path := "/api/v1/topics/ops/hooks/gh"
+	// A pending Discord delivery was never checked for GitHub: switching kind drops it.
+	if code, _ := call(t, ts, "PUT", path, admin, map[string]any{"url": gh.URL, "kind": "discord"}); code != 200 {
+		t.Fatal("discord save")
+	}
+	s.db.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at) VALUES ('ops', 'gh', 1, 'posted', '{}', 0, 0)`)
+	// The token goes only to GitHub, even when a new url keeps the saved one.
+	for _, bad := range []map[string]any{{"url": gh.URL + "/repos/o/r", "kind": "github", "secret": "x"}, {"url": gh.URL, "kind": "github"}, {"url": gh.URL, "kind": "github", "secret": "x", "body": `{}`}} {
+		if code, _ := call(t, ts, "PUT", path, admin, bad); code != 400 {
+			t.Fatalf("saved %v: %d", bad, code)
+		}
+		githubAPI = gh.URL + "/repos/"
+	}
+	t.Cleanup(func() { githubAPI = "https://api.github.com/repos/" })
+	if code, h := call(t, ts, "PUT", path, admin, map[string]any{"url": gh.URL + "/repos/o/r/", "kind": "github", "secret": "ghtok"}); code != 200 || h["kind"] != "github" || h["secret"] != nil {
+		t.Fatalf("save: %d %v", code, h)
+	}
+	var stale int
+	if s.db.QueryRow(`SELECT count(*) FROM hook_deliveries`).Scan(&stale); stale != 0 {
+		t.Fatalf("%d Discord deliveries left for the github hook", stale)
+	}
+
+	// An anonymous sender never opens an issue.
+	tx, _ := s.db.Begin()
+	queueHooks(tx, &Event{Type: EventCreated, Raw: []byte(`{}`), Notification: &Notification{Topic: "ops", State: Active, sender: anonymousID + "-x"}}, now())
+	var queued int
+	tx.QueryRow(`SELECT count(*) FROM hook_deliveries`).Scan(&queued)
+	tx.Rollback()
+	if queued != 0 {
+		t.Fatal("an anonymous publish opened an issue")
+	}
+
+	_, a := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Disk full", "message": "@octocat ```x```"})
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "Deploy?", "actions": []map[string]any{{"label": "Yes", "reply": "yes"}}})
+	call(t, ts, "POST", "/api/v1/notifications/"+a["id"].(string)+"/dismiss", admin, nil)
+	for range 2 {
+		s.deliverHooks(ctx)
+	}
+	if len(hits) != 3 { // a question opens no issue
+		t.Fatalf("want post, close, comment; got %+v", hits)
+	}
+	p, c, m := hits[0], hits[1], hits[2]
+	if p.method != "POST" || p.path != "/repos/o/r/issues" || p.auth != "Bearer ghtok" || p.body["title"] != "Disk full" ||
+		!strings.HasSuffix(p.body["body"].(string), "\n\n````text\nDisk full\n\n@octocat ```x```\n````") {
+		t.Fatalf("post: %+v", p)
+	}
+	if c.method != "PATCH" || c.path != "/repos/o/r/issues/7" || c.body["state"] != "closed" {
+		t.Fatalf("close: %+v", c)
+	}
+	if m.method != "POST" || m.path != "/repos/o/r/issues/7/comments" || !strings.Contains(m.body["body"].(string), "```text\nCleared by ") {
+		t.Fatalf("comment: %+v", m)
+	}
+
+	// A deleted issue is done, not retried.
+	_, b := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "b"})
+	s.db.Exec(`INSERT INTO hook_posts (topic, name, id, remote_id) VALUES ('ops', 'gh', ?, '8')`, b["id"])
+	call(t, ts, "POST", "/api/v1/notifications/"+b["id"].(string)+"/resolve", admin, nil)
+	s.deliverHooks(ctx)
+	s.deliverHooks(ctx)
+	ds, _ := s.HookDeliveries(ctx, serverToken, "ops", "gh", 10)
+	for _, d := range ds {
+		if d.Status != "ok" {
+			t.Fatalf("delivery: %+v", d)
+		}
+	}
+
+	// At most githubPerHour issues an hour.
+	for i := range githubPerHour + 2 {
+		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": fmt.Sprint(i)})
+	}
+	s.db.QueryRow(`SELECT count(*) FROM hook_deliveries WHERE name = 'gh' AND event = 'posted'`).Scan(&queued)
+	if queued != githubPerHour {
+		t.Fatalf("%d issues queued in an hour", queued)
+	}
+}
