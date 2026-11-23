@@ -119,6 +119,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   snooze choices, and a failed swipe save no longer shows an older choice
   when another device changed it meanwhile (#568).
 - Web: a subscriptions change from another device no longer drops a half-typed answer, and Undo shows only for an Unsubscribe that went through (#649).
+- Web: a half-typed answer on a card whose topic was unsubscribed on another device comes back when the topic is subscribed again in the same tab (#687).
 - Web: a card reopened for later on another device that wakes while a Clear all is still waiting for its reply now comes back with its slide in and wiggle (#656).
 - Docs: the self-host build command strips debug data, so the binary it
   makes is about 7.5 MB smaller, the same size as the release builds (#683).
