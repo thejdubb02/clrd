@@ -5,4 +5,5 @@ Comment=Notifications that clear on every device
 Exec=clrd-desktop
 Icon=clrd
 Terminal=false
+StartupWMClass=clrd-desktop
 Categories=Network;

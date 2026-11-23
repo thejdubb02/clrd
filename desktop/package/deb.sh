@@ -46,7 +46,7 @@ Architecture: $arch
 Maintainer: clrd contributors <thejdubb02@users.noreply.github.com>
 Installed-Size: $(du -sk --exclude=DEBIAN "$root" | cut -f1)
 Depends: $linked, libayatana-appindicator3-1 | libappindicator3-1
-Recommends: gnome-keyring | keepassxc | kwalletmanager
+Recommends: gnome-keyring | kwallet6 | keepassxc
 Section: net
 Priority: optional
 Homepage: https://github.com/thejdubb02/clrd
