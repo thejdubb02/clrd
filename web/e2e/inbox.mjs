@@ -1490,7 +1490,7 @@ try {
     // Other tests leave many topics with findings, so cards start collapsed.
     const card = sp.locator('[data-format-card="fmtchk"]'), open = () => card.evaluate(d => { d.open = true; });
     await open();
-    await botG.locator('p', { hasText: /^fmt-bot, \d+ of the last \d+ messages$/ }).waitFor();
+    await botG.getByRole('heading', { name: /^fmt-bot, \d+ of the last \d+ messages$/ }).waitFor();
     assert.equal(await card.locator('[data-format-topic]').count(), 2, 'both senders in one fmtchk card');
     await card.locator('summary', { hasText: '2 findings' }).first().waitFor();
     await lapG.waitFor({ state: 'attached' });

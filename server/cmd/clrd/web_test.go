@@ -503,8 +503,11 @@ func TestFormatCheckSettings(t *testing.T) {
 	for _, topic := range []string{"t1", "t2", "t3"} {
 		publish(t, ts, raw, topic, "x")
 	}
-	if _, body, _ := fetch(t, c, ts.URL+"/app/settings"); !strings.Contains(body, `data-format-card="t3"`) || strings.Contains(body, `data-format-card="ci" open`) {
-		t.Error("four topics: want every card collapsed")
+	_, cards, _ := fetch(t, c, ts.URL+"/app/settings")
+	for _, topic := range []string{"ci", "t1", "t2", "t3"} {
+		if !strings.Contains(cards, `data-format-card="`+topic+`"`) || strings.Contains(cards, `data-format-card="`+topic+`" open`) {
+			t.Errorf("four topics: want card %s shown and collapsed", topic)
+		}
 	}
 }
 
