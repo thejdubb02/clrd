@@ -75,10 +75,11 @@ func TestPages(t *testing.T) {
 }
 
 // The landing page's sample inbox (#592) is the real card template with the
-// demo data, inside a disabled fieldset so no button on it posts.
+// demo data, inside a disabled, inert fieldset so no button on it posts and
+// no link or menu in it opens or takes focus.
 func TestLandingDemo(t *testing.T) {
 	_, body := get(t, Handler(NewFake(), ""), "/")
-	i := strings.Index(body, `<fieldset class="grid min-w-0 gap-2" disabled aria-label="Sample inbox">`)
+	i := strings.Index(body, `<fieldset class="grid min-w-0 gap-2" disabled inert aria-label="Sample inbox">`)
 	j := strings.Index(body, "</fieldset>")
 	if i < 0 || j < i {
 		t.Fatal("no disabled sample inbox on the landing page")

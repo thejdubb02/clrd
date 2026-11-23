@@ -36,7 +36,7 @@
     <p class="mt-2 max-w-[60ch] text-lg">Every alert is a card you can act on. Clear it, acknowledge it, snooze it, answer an agent's question, or mark that you dealt with it so the rest of the team knows.</p>
     <p class="text-muted-foreground mt-3 text-sm">This sample is drawn by the same template as the real inbox, so it always matches it. The buttons do nothing here.</p>
   </div>
-  {{with demo}}{{$d := .}}<fieldset class="grid min-w-0 gap-2" disabled aria-label="Sample inbox">
+  {{with demo}}{{$d := .}}<fieldset class="grid min-w-0 gap-2" disabled inert aria-label="Sample inbox">
     {{range .Items}}{{template "card" (card . "demo" "" $d.Snap)}}{{end}}
   </fieldset>{{end}}
 </section>
