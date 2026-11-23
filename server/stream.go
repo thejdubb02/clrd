@@ -120,11 +120,26 @@ func visible(tok *Token, topics []string, topic string) bool {
 	return tok.may(ScopeRead, topic) && (len(topics) == 0 || slices.Contains(topics, topic))
 }
 
-// rawFor is e as tok gets it. One sent to chosen devices (#82) still reaches
-// every reader, but silenced on the others, so only the chosen ones alert.
-// Only this copy changes: the row, the log and webhooks keep what was stored.
+// notChosen reports one sent to chosen devices (#82) that tok is not among.
+// It still reaches tok, but silenced, so only the chosen ones alert.
+func notChosen(tok *Token, n *Notification) bool {
+	return len(n.Devices) > 0 && !slices.Contains(n.Devices, tok.ID)
+}
+
+// forReader silences each of ns that tok was not chosen for, as the stream
+// does, so a client rebuilding from a list gets the same answer (#588).
+func forReader(tok *Token, ns ...*Notification) {
+	for _, n := range ns {
+		if notChosen(tok, n) {
+			n.Silenced = true
+		}
+	}
+}
+
+// rawFor is e as tok gets it (notChosen). Only this copy changes: the row,
+// the log and webhooks keep what was stored.
 func rawFor(tok *Token, e Event) []byte {
-	if n := e.Notification; len(n.Devices) == 0 || slices.Contains(n.Devices, tok.ID) {
+	if !notChosen(tok, e.Notification) {
 		return e.Raw
 	}
 	var c Event

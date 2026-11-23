@@ -123,7 +123,10 @@ everyone); a name on several devices picks them all; at most 20 entries.
 The server stores the matching token ids in `devices`. Every other reader
 still gets the notification, lists it and syncs its state as usual, but the
 copy sent to it carries `silenced: true`, so it shows without sound (ntfy
-subscribers get priority 1). Only that copy changes: the row, the event log
+subscribers get priority 1). `GET /api/v1/notifications` and
+`GET /api/v1/notifications/{id}` answer the same way for the token asking, so
+a client rebuilding from the list after a reset alerts exactly where the
+stream would have (#588). Only that copy changes: the row, the event log
 and outgoing webhooks keep the stored value. The list holds through state
 changes, and a re-alert to a device not on it is silenced like the first
 (clients already never alert on a silenced `repeat`); an update by `external_id` replaces it,

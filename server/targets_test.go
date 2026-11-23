@@ -49,8 +49,28 @@ func TestDevicesTarget(t *testing.T) {
 	if !silent(replay, seq) {
 		t.Fatal("replay: the tablet must not alert")
 	}
-	if _, n := call(t, ts, "GET", "/api/v1/notifications/"+id, admin, nil); n["silenced"] != false {
-		t.Fatalf("the stored row changed: %v", n)
+	// The list and a fetch, which a client rebuilds from after a reset,
+	// answer as the stream does (#588); the stored row is unchanged.
+	listed := func(tok string) (bool, bool) {
+		t.Helper()
+		_, l := call(t, ts, "GET", "/api/v1/notifications?state=open", tok, nil)
+		_, one := call(t, ts, "GET", "/api/v1/notifications/"+id, tok, nil)
+		return l["notifications"].([]any)[0].(map[string]any)["silenced"].(bool), one["silenced"].(bool)
+	}
+	if l, one := listed(rawPhone); l || one {
+		t.Fatal("list: the phone must alert")
+	}
+	if l, one := listed(rawTab); !l || !one {
+		t.Fatal("list: the tablet must not alert")
+	}
+	// So does the reply to an action, which a client caches as the row.
+	for tok, want := range map[string]bool{rawPhone: false, rawTab: true} {
+		if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/mark", tok, map[string]any{"mark": "seen"}); code != 200 || n["silenced"] != want {
+			t.Fatalf("mark reply: want silenced %v, got %d %v", want, code, n)
+		}
+	}
+	if row, err := getNotification(ctx, s.db, `id = ?`, id); err != nil || row.Silenced {
+		t.Fatalf("the stored row changed: %v %v", row, err)
 	}
 
 	// A state change loads the row back: the list stays.

@@ -166,6 +166,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Fixed
 
+- Server: a notification sent to chosen devices now lists as silenced on
+  every other device too, so a phone or desktop rebuilding its inbox after a
+  reset no longer alerts for one meant for another device (#588).
 - Claude Code plugin: the approve hook removes its own record of a waiting
   phone prompt however it ends, so a later on-screen answer can no longer
   stop another request that reused its process id, and clearing the phone
