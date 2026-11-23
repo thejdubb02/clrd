@@ -16,7 +16,7 @@ jobs:
   changelog:
     # Tests, CI and refactors no user would notice carry the no-changelog label.
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
-    runs-on: [self-hosted, cezar1]
+    runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v4
         with:

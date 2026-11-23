@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: [self-hosted, cezar1]
+    runs-on: ubicloud-standard-4
     steps:
       - uses: actions/checkout@v4
       - name: go

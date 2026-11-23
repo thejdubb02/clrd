@@ -21,7 +21,7 @@ Public open-source project: self-hosted notification server + Android app (F-Dro
   APK grows past its budget in `.github/size-budget`; raising one is a
   reviewed one-line change.
 
-- CI runs only on self-hosted cezar1 runners (`runs-on: [self-hosted, cezar1]`).
+- CI runs on Ubicloud standard runners (`runs-on: ubicloud-standard-4`), never premium ones (Justin, 2026-11-23). Android and F-Droid jobs stay on the self-hosted cezar1 runner, which has the Android SDK installed.
 - Local Android and Go builds and test runs go to cezar1, never the devbox (its CPU is throttled by the host).
 - Work tracked as GitHub issues on thejdubb02/clrd.
 - Keep the repo page and site true (Justin, 2026-11-19). Any PR a user would

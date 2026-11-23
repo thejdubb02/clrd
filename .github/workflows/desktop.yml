@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   core:
-    runs-on: [self-hosted, cezar1]
+    runs-on: ubicloud-standard-4
     defaults:
       run:
         working-directory: desktop
