@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -31,13 +30,11 @@ import (
 	"time"
 
 	"github.com/thejdubb02/clrd"
+	"github.com/thejdubb02/clrd/internal/gzfs"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 )
-
-//go:embed templates static
-var files embed.FS
 
 // staticHash maps each file under static/ to a short hash of its bytes. A page
 // names its scripts and stylesheet with ?v=<hash>, so after an upgrade a
@@ -47,7 +44,7 @@ var staticHash = func() map[string]string {
 	m := map[string]string{}
 	fs.WalkDir(files, "static", func(p string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
-			b, _ := files.ReadFile(p)
+			b, _ := fs.ReadFile(files, p)
 			s := sha256.Sum256(b)
 			m[strings.TrimPrefix(p, "static/")] = hex.EncodeToString(s[:6])
 		}
@@ -1277,7 +1274,13 @@ func Handler(api API, baseURL string) http.Handler {
 		})
 	}
 
-	statics := http.StripPrefix("/static/", http.FileServerFS(static))
+	// The packed build sends its stored gzip as is when it can (#690).
+	fileServer := http.FileServerFS(static)
+	statics := http.StripPrefix("/static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !gzfs.Serve(w, r, files, "static/"+r.URL.Path) {
+			fileServer.ServeHTTP(w, r)
+		}
+	}))
 	mux := http.NewServeMux()
 	// A URL that carries the file's current hash never changes content, so it
 	// is cached for good. Any other (no ?v=, or an old one) is revalidated by
@@ -1292,6 +1295,7 @@ func Handler(api API, baseURL string) http.Handler {
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
+		w.Header().Add("Vary", "Accept-Encoding")
 		statics.ServeHTTP(w, r)
 	})
 	mux.Handle("GET /assets/", cached("/assets/", assets))

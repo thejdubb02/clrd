@@ -20,9 +20,9 @@ settings) is optional and has a default. Server settings, topics, tokens and
 webhooks are all on the REST API (`/openapi.json` describes it), so a script or
 an AI agent can set them up without a person clicking through Settings.
 
-Small on purpose. Measured 2026-11-20: the server is one 15.6 MB binary
-(ntfy 2.38.1: 77.5 MB) and the Android app is a 1.9 MB APK (ntfy 1.25.2:
-9.3 MB). CI fails any change that grows either past its budget in
+Small on purpose. The server is one 16.3 MB binary (measured 2026-11-23;
+ntfy 2.38.1: 77.5 MB) and the Android app is a 1.9 MB APK (measured
+2026-11-20; ntfy 1.25.2: 9.3 MB). CI fails any change that grows either past its budget in
 [`.github/size-budget`](.github/size-budget).
 
 <p align="center">

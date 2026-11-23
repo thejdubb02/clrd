@@ -2,6 +2,7 @@ package clrd
 
 import (
 	"encoding/json"
+	"io/fs"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -14,7 +15,7 @@ var Commit, Built string
 
 // Changelog is the embedded CHANGELOG.md. It must stay under ChangelogLimit
 // bytes; the cut script (server/cmd/cutversion) archives older versions.
-var Changelog = func() string { b, _ := Files.ReadFile("CHANGELOG.md"); return string(b) }()
+var Changelog = func() string { b, _ := fs.ReadFile(Files, "CHANGELOG.md"); return string(b) }()
 
 const ChangelogLimit = 96000
 

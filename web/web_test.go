@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,10 +10,12 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -486,7 +490,7 @@ func TestStaticVersioned(t *testing.T) {
 	for _, p := range []string{"/", "/docs/spec", "/app", "/app/ui", "/app/settings"} {
 		_, body := get(t, h, p)
 		for _, m := range ref.FindAllStringSubmatch(body, -1) {
-			b, err := files.ReadFile("static/" + m[1])
+			b, err := fs.ReadFile(files, "static/"+m[1])
 			if err != nil {
 				t.Fatalf("%s names a missing file %s", p, m[1])
 			}
@@ -534,6 +538,80 @@ func TestStaticVersioned(t *testing.T) {
 	if res := do("/app/ui", ""); res.Header.Get("Cache-Control") != "no-cache" {
 		t.Errorf("/app/ui Cache-Control %q, want no-cache", res.Header.Get("Cache-Control"))
 	}
+}
+
+// Every static file answers the same in the plain and the packed build (#690):
+// type, ETag, caching and body from the file on disk. Only the packed build
+// sends gzip, and only to a client that takes it.
+func TestStaticEveryFile(t *testing.T) {
+	h := Handler(NewFake(), "")
+	accepts := map[string]bool{"gzip": true, "br, GZIP;q=0.5": true, "": false, "gzip;q=0": false, "deflate": false}
+	n := 0
+	err := fs.WalkDir(os.DirFS("static"), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		n++
+		want, _ := os.ReadFile("static/" + p)
+		sum := sha256.Sum256(want)
+		v := hex.EncodeToString(sum[:6])
+		ct := mime.TypeByExtension(path.Ext(p))
+		if ct == "" {
+			ct = http.DetectContentType(want)
+		}
+		for ae, gz := range accepts {
+			gz = gz && packedBuild
+			for _, method := range []string{"GET", "HEAD"} {
+				r := httptest.NewRequest(method, "/static/"+p+"?v="+v, nil)
+				r.Header.Set("Accept-Encoding", ae)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				res := w.Result()
+				body := w.Body.Bytes()
+				if gz && method == "GET" {
+					z, err := gzip.NewReader(bytes.NewReader(body))
+					if err != nil {
+						t.Fatalf("%s %q: %v", p, ae, err)
+					}
+					body, _ = io.ReadAll(z)
+				}
+				size := len(want)
+				if gz {
+					size = len(staticGz(t, p))
+				}
+				hd := res.Header
+				if res.StatusCode != 200 || hd.Get("Content-Type") != ct || hd.Get("ETag") != `"`+v+`"` ||
+					hd.Get("Cache-Control") != "public, max-age=31536000, immutable" || hd.Get("Vary") != "Accept-Encoding" ||
+					(hd.Get("Content-Encoding") == "gzip") != gz || hd.Get("Content-Length") != strconv.Itoa(size) {
+					t.Errorf("%s %s %q: %d %v", method, p, ae, res.StatusCode, hd)
+				}
+				if method == "GET" && !bytes.Equal(body, want) {
+					t.Errorf("%s %q: body differs from the file", p, ae)
+				}
+			}
+			r := httptest.NewRequest("GET", "/static/"+p, nil)
+			r.Header.Set("Accept-Encoding", ae)
+			r.Header.Set("If-None-Match", `"`+v+`"`)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != 304 || w.Header().Get("Vary") != "Accept-Encoding" || w.Header().Get("Cache-Control") != "no-cache" {
+				t.Errorf("revalidate %s %q: %d %v", p, ae, w.Code, w.Header())
+			}
+		}
+		return nil
+	})
+	if err != nil || n < 5 {
+		t.Fatalf("walked %d files: %v", n, err)
+	}
+}
+
+// staticGz is the stored gzip of a static file in the packed build.
+func staticGz(t *testing.T, p string) []byte {
+	b, err := os.ReadFile("packed/static/" + p + ".gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 func TestAssets(t *testing.T) {
