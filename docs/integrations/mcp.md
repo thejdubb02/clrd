@@ -32,6 +32,7 @@ Tools:
 | `device_log` | none | The last 200 links, sign-ins and unlinks, newest first. |
 | `unlink` | `id` | Sign out a browser or phone from `devices` at once. Unlinking a phone also signs out the browsers it approved. |
 | `sound` | `id?, sound?` | Notification sounds, one choice per device. No arguments lists the valid names and the default (`default`, the device's own sound). With `id` from `devices` and `sound`, sets that device's sound; an unknown name is refused with the list. `devices` shows each device's current sound. |
+| `subscriptions` | `topics?, new_topics?, for?` | Which topics reach your devices. No arguments lists every topic you can read and whether it is subscribed. `topics: {"chat": false}` unsubscribes chat without clearing anything; `new_topics: false` makes topics that appear later start unsubscribed. A full admin adds `for` (a user id or token id) to set someone else's. A token with no user has no choices to store and is refused. |
 | `request_approve` | `approve, topic?` | Ask the user to let this token answer approval requests (`allowed`, or `ask`). Posts a Confirm prompt on `topic` (default `agents`); the setting changes only when an allowed device taps Confirm. `wait_for_reply` on the returned id gives `confirm` or `reject`. |
 | `dismiss` | `id` | Clear it on every device. `reopen` undoes it. |
 | `reopen` | `id` | Make it active again. |

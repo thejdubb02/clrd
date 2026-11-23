@@ -119,13 +119,18 @@ impl Server {
     /// mints a separate session token under this device's and answers with
     /// it as a `Set-Cookie` header, returned as sent. The window gets that
     /// cookie and never this device's token. Treat the value as a secret.
-    pub fn session(&self, name: &str) -> Result<String, Error> {
+    ///
+    /// `old` is the header a previous call returned, if one is kept: the
+    /// server ends that session as it makes the new one, so a restart
+    /// replaces the window's session instead of piling up another.
+    pub fn session(&self, name: &str, old: Option<&str>) -> Result<String, Error> {
         let token = self.bearer.strip_prefix("Bearer ").unwrap_or_default();
-        let res = Self::checked(
-            self.http
-                .post(format!("{}/api/v1/session", self.base))
-                .send_json(serde_json::json!({ "token": token, "name": name })),
-        )?;
+        let mut req = self.http.post(format!("{}/api/v1/session", self.base));
+        if let Some(pair) = old.and_then(|c| c.split(';').next()) {
+            req = req.header("Cookie", pair);
+        }
+        let res =
+            Self::checked(req.send_json(serde_json::json!({ "token": token, "name": name })))?;
         res.headers()
             .get_all("set-cookie")
             .iter()
@@ -146,6 +151,32 @@ impl Server {
                 .call(),
         )
         .map(|_| ())
+    }
+
+    /// The address this was made with, without a trailing slash.
+    pub fn base(&self) -> &str {
+        &self.base
+    }
+
+    /// The server's version, for the About entry. `None` when it cannot be
+    /// read, which includes a server from before `/api/v1/version` existed:
+    /// the entry is then left out, and nothing else depends on this.
+    pub fn version(&self) -> Option<String> {
+        #[derive(Deserialize)]
+        struct Version {
+            version: String,
+        }
+        let mut res = Self::checked(
+            self.http
+                .get(format!("{}/api/v1/version", self.base))
+                .call(),
+        )
+        .ok()?;
+        let v: Version = res.body_mut().read_json().ok()?;
+        // It goes on a menu line, so only what a version can hold.
+        let plain = |c: char| c.is_ascii_alphanumeric() || ".-+_".contains(c);
+        (!v.version.is_empty() && v.version.len() <= 40 && v.version.chars().all(plain))
+            .then_some(v.version)
     }
 
     /// Unlinks this device on the server: its token stops working, and so

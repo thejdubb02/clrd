@@ -42,7 +42,7 @@ func TestPages(t *testing.T) {
 		"/app/snoozed":               {"TLS certificate renews in 7 days", "Snoozed until"},
 		"/app/cleared":               {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
 		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css?v=`, `data-variant="clear"`, `class="command-dialog"`},
-		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", `data-live="linked"`, `data-unlink="tok-bot"`, "build-bot</span>\n              <div class=\"meta\">Agent</div>", `data-agent hidden`, `<option value="15m" selected>15 minutes</option>`, `name="topic" value="home"`, ">Status</th>", "Offline", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications", `<option value="14" selected>14 days</option>`, `data-tkeep="gone=3;home=14;"`, `<select id="tk-gone" class="input w-auto" data-topic="gone">`, `data-approve="tok-laptop" data-name="laptop" data-own aria-label="May approve: laptop"><option value="denied" selected>Denied</option></select>`, `data-approve="tok-pixel" data-name="pixel-9" aria-label="May approve: pixel-9"><option value="denied">Denied</option><option value="ask" selected>Ask</option><option value="allowed">Allowed</option></select>`},
+		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", `data-live="linked"`, `data-unlink="tok-bot"`, "build-bot</span>\n              <div class=\"meta\">Agent</div>", `data-agent hidden`, `<option value="15m" selected>15 minutes</option>`, `name="topic" value="home"`, ">Status</th>", "Offline", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications", `<option value="14" selected>14 days</option>`, `data-tkeep="gone=3;home=14;"`, `<select id="tk-gone" class="input w-auto" data-topic="gone">`, `data-approve="tok-laptop" data-name="laptop" data-own aria-label="May approve: laptop"><option value="denied" selected>Denied</option></select>`, `href="https://github.com/thejdubb02/clrd">Source code</a>`, `href="https://github.com/thejdubb02/clrd/issues">Report a problem</a>`, `data-approve="tok-pixel" data-name="pixel-9" aria-label="May approve: pixel-9"><option value="denied">Denied</option><option value="ask" selected>Ask</option><option value="allowed">Allowed</option></select>`},
 		"/app?q=disk":                {"Disk 91% full on web-1"},
 		"/app?topic=home":            {"Front door open", `data-topic>in home</span>`},
 		"/robots.txt":                {"User-agent: GPTBot", "User-agent: ClaudeBot", "User-agent: PerplexityBot", "User-agent: OAI-SearchBot", "Sitemap: https://clrd.example.com/sitemap.xml"},
@@ -71,6 +71,28 @@ func TestPages(t *testing.T) {
 	}
 	if code, _ := get(t, h, "/docs/nope"); code != 404 {
 		t.Errorf("/docs/nope: %d, want 404", code)
+	}
+}
+
+// The landing page's sample inbox (#592) is the real card template with the
+// demo data, inside a disabled, inert fieldset so no button on it posts and
+// no link or menu in it opens or takes focus.
+func TestLandingDemo(t *testing.T) {
+	_, body := get(t, Handler(NewFake(), ""), "/")
+	i := strings.Index(body, `<fieldset class="grid min-w-0 gap-2" disabled inert aria-label="Sample inbox">`)
+	j := strings.Index(body, "</fieldset>")
+	if i < 0 || j < i {
+		t.Fatal("no disabled sample inbox on the landing page")
+	}
+	demo := body[i:j]
+	for _, s := range []string{`data-id="demo-backup"`, ">Urgent</span>", "<strong>nas-1</strong>", `>Open logs`, `data-act="reply">Approve</button>`,
+		"Acknowledged on pixel-9", "ops-agent actioned: pruned old images, now 71%", `data-act="dismiss"`} {
+		if !strings.Contains(demo, s) {
+			t.Errorf("sample inbox: missing %q", s)
+		}
+	}
+	if n := strings.Count(body, "<form"); n == 0 || n != strings.Count(demo, "<form") {
+		t.Errorf("%d forms on the landing page, all must sit in the disabled sample inbox", n)
 	}
 }
 
@@ -144,8 +166,9 @@ func (readOnly) SaveTemplate(*http.Request, Template, string, bool) error { retu
 func (readOnly) SetSenderRules(*http.Request, string, SenderRules, int64) error {
 	return ErrUnauthorized
 }
-func (readOnly) UndoSenderChange(*http.Request, string, int64) error { return ErrUnauthorized }
-func (readOnly) DeleteTemplate(*http.Request, string, string) error  { return ErrUnauthorized }
+func (readOnly) UndoSenderChange(*http.Request, string, int64) error          { return ErrUnauthorized }
+func (readOnly) DeleteTemplate(*http.Request, string, string) error           { return ErrUnauthorized }
+func (readOnly) SetSubscriptions(*http.Request, *bool, map[string]bool) error { return ErrUnauthorized }
 
 type deny struct{ readOnly }
 
@@ -627,5 +650,58 @@ func TestTimeLeft(t *testing.T) {
 		if got := timeLeft(time.Now().Add(d)); got != want {
 			t.Errorf("timeLeft(+%v) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+// Topic subscriptions (SPEC 2.3): the card menu, the not-subscribed banner
+// and the Settings list, all as plain form posts.
+func TestSubscriptions(t *testing.T) {
+	f := NewFake()
+	h := Handler(f, "")
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/app/subscriptions", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.ServeHTTP(w, r)
+		return w
+	}
+	_, inbox := get(t, h, "/app")
+	if !strings.Contains(inbox, `data-unsub="home"`) || !strings.Contains(inbox, `data-unsub="agents" data-approvals`) || strings.Contains(inbox, `data-unsub="home" data-approvals`) {
+		t.Fatal("cards offer no Unsubscribe, or warn on the wrong topic")
+	}
+	if w := post(url.Values{"topic": {"home"}, "subscribe": {"0"}, "next": {"/app"}}); w.Code != 303 || w.Header().Get("Location") != "/app" || f.subscribed("home") {
+		t.Fatalf("unsubscribe home: %d to %q", w.Code, w.Header().Get("Location"))
+	}
+	if _, b := get(t, h, "/app"); strings.Contains(b, "Front door open") || strings.Contains(b, `href="/app?topic=home"`) {
+		t.Fatal("an unsubscribed topic still shows in the inbox or the topic list")
+	}
+	_, page := get(t, h, "/app?topic=home")
+	if !strings.Contains(page, "Front door open") || !strings.Contains(page, "Not subscribed to home") || !strings.Contains(page, `data-subscribe="home"`) || strings.Contains(page, `data-unsub="home"`) {
+		t.Fatal("the topic page does not browse an unsubscribed topic with its banner")
+	}
+	if w := post(url.Values{"topic": {"agents"}, "subscribe": {"0"}}); w.Header().Get("Location") != "/app/settings#topics" || !f.subscribed("agents") {
+		t.Fatal("unsubscribing from agents did not stop at the warning first")
+	}
+	if post(url.Values{"topic": {"agents"}, "subscribe": {"0"}, "sure": {"1"}}); f.subscribed("agents") {
+		t.Fatal("a confirmed unsubscribe from agents did not save")
+	}
+	_, set := get(t, h, "/app/settings")
+	if !strings.Contains(set, `name="was" value="0:home"`) || !strings.Contains(set, `name="on" value="infra" checked`) || !strings.Contains(set, "data-approval-warn") {
+		t.Fatal("Settings has no Topics list as drawn")
+	}
+	// Another device turns infra off after the list was drawn: saving the
+	// list with infra untouched leaves it off, and only home changes.
+	f.subs["infra"] = false
+	post(url.Values{"was": {"0:home", "1:infra", "1:backups"}, "on": {"home", "infra"}, "new_topics": {"1"}, "new_topics_was": {"1"}})
+	if !f.subscribed("home") || f.subscribed("infra") || f.subscribed("backups") || f.NoNewTopics {
+		t.Fatalf("the list sent rows it did not change: %v, new topics off %v", f.subs, f.NoNewTopics)
+	}
+	// A server with no topics yet: the list has no rows, only the new-topics switch.
+	if w := post(url.Values{"new_topics_was": {"1"}}); w.Code != 303 || !f.NoNewTopics {
+		t.Fatalf("turning new topics off with no rows: %d, off %v, %v", w.Code, f.NoNewTopics, f.subs)
+	}
+	f.Unfiltered = true
+	if _, b := get(t, h, "/app/settings"); !strings.Contains(b, "Not available here") || strings.Contains(b, "data-subs-form") {
+		t.Fatal("a token with no user is offered a list it may not change")
 	}
 }

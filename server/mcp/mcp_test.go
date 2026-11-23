@@ -157,7 +157,7 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,mark,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,request_approve,"+
+	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,mark,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,subscriptions,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,preview_template,"+
 		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,version,ntfy_ignored,senders,sender,set_sender,sender_changes,undo_sender_change" {
 		t.Fatalf("tools: %v", names)
@@ -204,6 +204,8 @@ func TestTools(t *testing.T) {
 		{"format_dismiss", map[string]any{"topic": "infra", "rule": "no_title", "dismissed": false}, "POST /api/v1/format-check/dismiss", map[string]any{"topic": "infra", "rule": "no_title", "dismissed": false}},
 		{"sound", nil, "GET /api/v1/sounds", nil},
 		{"sound", map[string]any{"id": "d1", "sound": ""}, "PUT /api/v1/devices/d1", map[string]any{"sound": ""}}, // the server refuses it (#299)
+		{"subscriptions", nil, "GET /api/v1/subscriptions", nil},
+		{"subscriptions", map[string]any{"for": "u1", "topics": map[string]any{"chat": false}}, "PUT /api/v1/subscriptions?for=u1", map[string]any{"topics": map[string]any{"chat": false}}},
 		{"request_approve", map[string]any{"approve": "allowed"}, "POST /api/v1/devices/approve-request", map[string]any{"approve": "allowed", "topic": ""}},
 		{"set_sender", map[string]any{"id": "tk1", "routes": map[string]any{"*": []any{"infra"}}}, "PUT /api/v1/senders/tk1", map[string]any{"routes": map[string]any{"*": []any{"infra"}}}},
 		{"undo_sender_change", map[string]any{"id": "tk1", "seq": 3}, "POST /api/v1/senders/tk1/changes/3/undo", map[string]any{}},

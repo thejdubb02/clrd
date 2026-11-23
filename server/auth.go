@@ -60,10 +60,12 @@ type Token struct {
 	User       string     `json:"user,omitempty"`   // the person it belongs to (#143), "" for none
 	CreatedAt  time.Time  `json:"created_at"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
+	view       *view      // its subscriptions filter once loaded (subs.go); nil until then
+	union      []*Token   // set: may what any of these may (an admin's ?for=<user>, subs.go)
 }
 
 // limited reports whether the token is held to some topics.
-func (t *Token) limited() bool { return len(t.Topics) > 0 || len(t.Grants) > 0 }
+func (t *Token) limited() bool { return len(t.Topics) > 0 || len(t.Grants) > 0 || len(t.union) > 0 }
 
 // may reports whether the token may use scope on topic. Topic "" asks only
 // about the scope. Every topic check goes through here.
@@ -73,6 +75,9 @@ func (t *Token) may(scope, topic string) bool {
 	}
 	if topic == "" {
 		return true
+	}
+	if len(t.union) > 0 {
+		return slices.ContainsFunc(t.union, func(u *Token) bool { return u.may(scope, topic) })
 	}
 	if len(t.Grants) > 0 {
 		// A grant matches in any case, as ntfy's rules do, so a deny on

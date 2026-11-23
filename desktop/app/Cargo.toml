@@ -1,0 +1,35 @@
+[package]
+name = "clrd-desktop"
+description = "clrd desktop app: a tray icon and a window around the sync core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Every crate here is in the binary, so each one says why it is not std (#298).
+[dependencies]
+clrd-core = { path = "../core" }
+# The window (the system's own web view, not a bundled browser) and the tray
+# icon. No default features and no plugins: only the web view backend, the
+# tray, and serving the one bundled page from inside the binary.
+tauri = { version = "2.12", default-features = false, features = ["wry", "x11", "tray-icon", "custom-protocol"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Asks whether the tray library is installed before the tray crate does: the
+# tray crate ends the whole app when it is missing. Already in the build (the
+# tray crate loads the library with it), so it adds nothing to the binary.
+libloading = "0.7"
+
+[build-dependencies]
+# Compiles the page, the icon and the command allow list into the binary.
+tauri-build = "2"
+
+[dev-dependencies]
+# For the shared fake server in ../core/tests/common.
+serde_json = "1"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+ureq = { version = "3", default-features = false, features = ["json"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+zbus = { version = "6", default-features = false, features = ["default-rt", "service"] }

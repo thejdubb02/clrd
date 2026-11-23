@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -116,8 +117,11 @@ func msgReady(seq int64, epoch, markID string) []byte {
 	return fmt.Appendf(nil, `{"type":"ready","seq":%d,"epoch":%q,"mark_id":%q}`, seq, epoch, markID)
 }
 
+// visible reports whether tok gets an event on topic. A subscriptions event
+// is refused first, as may would pass it for a token that reads every topic.
 func visible(tok *Token, topics []string, topic string) bool {
-	return tok.may(ScopeRead, topic) && (len(topics) == 0 || slices.Contains(topics, topic))
+	return !strings.HasPrefix(topic, subMark) && tok.may(ScopeRead, topic) && !tok.view.hides(topic) &&
+		(len(topics) == 0 || slices.Contains(topics, topic))
 }
 
 // notChosen reports one sent to chosen devices (#82) that tok is not among.
@@ -166,6 +170,8 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 
 // followWith is follow; withSettings also sends a settings message just
 // before ready and again after every change (seq -1, so SSE sets no id).
+// A tok with a view follows its owner's subscriptions (#617): the view is
+// read again here, after subscribing, and on every change of that set.
 func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics []string, withSettings, live bool,
 	opened func() error, send func(msg []byte, seq int64) error, ping func() error) error {
 	sub, st := s.hub.subscribe(tok.ID, live) // first, so nothing committed during replay is missed
@@ -176,8 +182,25 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 	}()
 	// Access as it is now: a grant change between sign-in and subscribe
 	// dropped no stream of ours, and any later one drops this (#428).
+	subs := tok.view
 	if tok = s.tokenWhere(ctx, `id = ?`, tok.ID); tok == nil {
 		return errRevoked
+	}
+	// resync reads the view and returns a seq it covers: the head before the
+	// read, or the view's own change if newer. Everything up to it is in what
+	// a client reads after a reset, so the stream goes on from there, never
+	// filtering an earlier event by a later set, nor a later one by an older.
+	resync := func() (int64, error) {
+		head := s.seq.Load()
+		if subs == nil {
+			return head, nil
+		}
+		t, err := s.withView(ctx, tok, subs.all)
+		if err != nil {
+			return 0, err
+		}
+		tok = t
+		return max(head, tok.view.seq), nil
 	}
 	inner := send
 	send = func(msg []byte, seq int64) error {
@@ -210,20 +233,27 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 		err = s.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(seq) - 1, ?) FROM events`, s.seq.Load()).Scan(&oldest)
 		return min(max(since, oldest), s.seq.Load()), err
 	}
-	last := s.seq.Load()
-	if since < s.pruned.Load() || since > last {
-		var err error
+	last, err := resync() // after subscribe and opened, so a change in between is in the view
+	if err != nil {
+		return err
+	}
+	if since < s.pruned.Load() || since > last || (tok.view != nil && since < tok.view.seq) {
 		if since, err = reset(last); err != nil {
 			return err
 		}
 	}
+replay:
 	for {
 		if _, gone := s.revoked.Load(tok.ID); gone { // a long replay may send nothing visible
 			return errRevoked
 		}
 		evs, err := s.eventsAfter(ctx, since, 500)
-		if err == errReset { // pruned under us mid-replay
-			if since, err = reset(-1); err != nil {
+		if err == errReset { // pruned under us mid-replay: the view may be older than the reset too
+			head, err := resync()
+			if err != nil {
+				return err
+			}
+			if since, err = reset(head); err != nil {
 				return err
 			}
 			continue
@@ -235,6 +265,20 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 			break
 		}
 		for _, e := range evs {
+			if tok.view.changedBy(e) { // what was sent is stale: read the new set, reset past it
+				if err := send(e.Raw, -1); err != nil { // no SSE id: only ready after the reset moves it
+					return err
+				}
+				head, err := resync()
+				if err != nil {
+					return err
+				}
+				if since, err = reset(head); err != nil {
+					return err
+				}
+				st.seq.Store(since)
+				continue replay
+			}
 			if visible(tok, topics, e.Notification.Topic) {
 				if err := send(rawFor(tok, e), e.Seq); err != nil {
 					return err
@@ -330,6 +374,29 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 				continue // already sent during replay
 			}
 			last = e.Seq
+			if tok.view.changedBy(e) { // the set changed: new settings, then reset and ready (SPEC 2.3)
+				if err := send(e.Raw, -1); err != nil { // no SSE id: only ready after the reset moves it
+					return err
+				}
+				head, err := resync()
+				if err != nil {
+					return err
+				}
+				last = max(last, head) // events up to head are in the reload, never sent live
+				st.seq.Store(last)
+				if withSettings { // from the same view
+					if err := sendSettings(); err != nil {
+						return err
+					}
+				}
+				if err := send(msgReset, -1); err != nil {
+					return err
+				}
+				if err := send(msgReady(last, s.epoch, markID), last); err != nil {
+					return err
+				}
+				continue
+			}
 			if visible(tok, topics, e.Notification.Topic) {
 				if err := send(rawFor(tok, e), e.Seq); err != nil {
 					return err
@@ -359,6 +426,15 @@ func sinceParam(r *http.Request) int64 {
 	return n
 }
 
+// followsSubs asks followWith to filter tok's stream by its owner's
+// subscriptions (WebSocket and SSE; ntfy streams are never filtered).
+// followWith loads the view itself, after it subscribes.
+func followsSubs(r *http.Request, tok *Token) *Token {
+	c := *tok
+	c.view = &view{all: subscribedAll(r)}
+	return &c
+}
+
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, tok *Token) error {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return err
@@ -371,7 +447,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, tok *Token) er
 	}
 	defer c.CloseNow()
 	ctx := c.CloseRead(r.Context())
-	err = s.followWith(ctx, tok, sinceParam(r), splitList(r.URL.Query().Get("topics")), true, false, nil,
+	err = s.followWith(ctx, followsSubs(r, tok), sinceParam(r), splitList(r.URL.Query().Get("topics")), true, false, nil,
 		func(msg []byte, _ int64) error {
 			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
@@ -417,7 +493,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, tok *Token) e
 	write := func(format string, args ...any) error {
 		return flushWrite(rc, w, fmt.Appendf(nil, format, args...))
 	}
-	s.followWith(r.Context(), tok, sinceParam(r), splitList(r.URL.Query().Get("topics")), true, false, nil,
+	s.followWith(r.Context(), followsSubs(r, tok), sinceParam(r), splitList(r.URL.Query().Get("topics")), true, false, nil,
 		func(msg []byte, seq int64) error {
 			if seq >= 0 { // ready too, so EventSource drops a Last-Event-ID from before a reset
 				return write("id: %d\ndata: %s\n\n", seq, msg)
@@ -439,7 +515,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 		limit = 500
 	}
 	cur := s.CurrentSeq()
-	if since < s.pruned.Load() || since > cur {
+	tok, err := s.withView(r.Context(), tok, subscribedAll(r)) // after cur, so a change after it shows up below
+	if err != nil {
+		return err
+	}
+	if since < s.pruned.Load() || since > cur || since < tok.view.seq {
 		return errReset
 	}
 	evs, err := s.eventsAfter(r.Context(), since, limit)
@@ -450,6 +530,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 	out := []json.RawMessage{}
 	next := since
 	for _, e := range evs {
+		if tok.view.changedBy(e) { // the set changed within this page: start over
+			return errReset
+		}
 		if visible(tok, topics, e.Notification.Topic) {
 			out = append(out, rawFor(tok, e))
 		}

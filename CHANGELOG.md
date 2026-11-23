@@ -24,6 +24,26 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   stack's menu unsubscribes from its topic with Undo, and the "agents" topic
   asks first since it carries approval prompts. Muted topics stay a separate,
   this phone only setting.
+- Site: the landing page shows a sample web inbox, drawn by the real card
+  template with fixed demo data, so it always matches the inbox and needs
+  no pictures or JavaScript (#592).
+- Web: subscribe and unsubscribe to topics, per user (#617). A card's
+  snooze menu has Unsubscribe from the topic, with Undo; Settings, Topics
+  lists every topic with a switch and a switch for new topics. An
+  unsubscribed topic leaves the inbox, counts and devices but still opens
+  from its link, with a Subscribe button. Unsubscribing from agents warns
+  first, since approval requests go there.
+
+- Server: the topics and subscriptions lists mark each topic that has
+  carried an approval request or another message waiting for an answer
+  (`approvals`), so apps can warn before you unsubscribe from it (#623).
+- Web: the foot of Settings links to the source code and to the issue tracker
+  for reporting a problem, like the Android app (#586).
+- Topic subscriptions on the server (#617): unsubscribe from a topic and
+  it leaves your list, counts, live stream and Web Push on all your
+  devices, without clearing anything or changing what anyone else sees.
+  Everything stays subscribed until you choose otherwise. Set it through
+  the API or an agent over MCP; the web and Android screens come next.
 - Android: Settings is now in the same sections as the web (Notifications,
   Inbox, Devices, Integrations) with a search box at the top (#575). It
   matches a setting's name, its description or keywords such as "qr", and
@@ -36,6 +56,27 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   plays on load, after a reconnect or for cards that came while the tab was
   in the background, and nothing moves with reduce motion on. The timings are
   in SPEC section 10.1 so every app matches.
+- Desktop app for Linux, to build from source for now (there is no download yet): a tray icon and a window on your inbox. Link it with a link from Settings > Devices; its token stays in the system keychain and never reaches the page in the window (#162).
+- Desktop (Linux): a script that packs your own build into a `.deb` for
+  Debian and Ubuntu (#625). The package brings the tray library with it,
+  adds clrd to the applications menu and starts it with your desktop
+  session. There is still no download. Without the tray library the app no
+  longer stops at start: it opens its window instead.
+
+### Changed
+
+- Web: the Message format check in Settings is one card per topic with a
+  count of its findings, a Dismiss menu on each finding and Copy fix prompt as
+  the main button, instead of one block of text and buttons (#618). With more
+  than three topics the cards start closed.
+
+### Fixed
+
+- Web and Android: the sender's Alarm topic hint now says an empty topic
+  means the first topic its last topic routes to, or that topic when it has
+  no route, which is what the server does (#585).
+- Server: a linked device can always unlink itself, even when it was linked
+  from a publish-only token, with `DELETE /api/v1/devices/this` (#609).
 
 ## 0.1.0 - 2026-11-23
 

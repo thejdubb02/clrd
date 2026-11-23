@@ -187,6 +187,20 @@ fn refused_token_stops_for_good() {
     assert!(matches!(c.stop(), Err(Error::Auth)));
 }
 
+#[test]
+fn an_older_server_has_no_version_and_nothing_breaks() {
+    let fake = Fake::start();
+    let server = Server::new(&fake.base, TOKEN);
+    assert_eq!(server.version(), None);
+    fake.set_version("0.1.0");
+    assert_eq!(server.version().as_deref(), Some("0.1.0"));
+    // It goes on a menu line, so nothing that is not a version.
+    fake.set_version("<b>0.1.0</b>");
+    assert_eq!(server.version(), None);
+    // The version is public: the token is not sent to ask for it.
+    assert!(fake.heads().iter().all(|h| !h.contains(TOKEN)));
+}
+
 /// Keeps every log line at the most talkative level, as a debug build of the
 /// app with logging turned all the way up would.
 struct Lines(std::sync::Mutex<Vec<String>>);

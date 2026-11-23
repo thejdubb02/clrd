@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 -- Display settings every device follows, as one JSON document (spec, Message formatting).
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '',
-	checkin_ms INTEGER, checkin_at INTEGER, checkin_late INTEGER NOT NULL DEFAULT 0, device_actions INTEGER NOT NULL DEFAULT 0);
+	checkin_ms INTEGER, checkin_at INTEGER, checkin_late INTEGER NOT NULL DEFAULT 0, device_actions INTEGER NOT NULL DEFAULT 0, approvals INTEGER NOT NULL DEFAULT 0);
 -- Format check findings a user dismissed, by topic, rule and sending token ("" for every one); rule "" turns the check off for the topic (#320).
 CREATE TABLE IF NOT EXISTS format_ignore (topic TEXT NOT NULL, rule TEXT NOT NULL, sender TEXT NOT NULL, PRIMARY KEY (topic, rule, sender));
 -- Webhook templates a topic owner saved (webhooks.go); spec is the Webhook as JSON.
@@ -227,6 +227,12 @@ CREATE TABLE IF NOT EXISTS silences (
   created_by TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
+-- Topic subscriptions (#617, subs.go): owner is "u:<user id>" or "t:<top token id>".
+-- A topic with no row follows the owner's new_topics; no sub_owners row is new_topics on.
+CREATE TABLE IF NOT EXISTS subscriptions (owner TEXT NOT NULL, topic TEXT NOT NULL, subscribed INTEGER NOT NULL, PRIMARY KEY (owner, topic));
+-- seq is the owner's last subscriptions event, so a device behind it gets reset;
+-- moved is the last attach or detach only, all an unfiltered token resets on (#635).
+CREATE TABLE IF NOT EXISTS sub_owners (owner TEXT PRIMARY KEY, new_topics INTEGER NOT NULL, seq INTEGER NOT NULL, moved INTEGER NOT NULL DEFAULT 0);
 `
 
 // Action is a button on a notification: a link (URL), an answer (Reply)
@@ -370,6 +376,29 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add format column: %w", err)
 	}
+	// A table from before moved: every past change counts as a move, so a
+	// detach before the upgrade still resets. One transaction, so a stop in
+	// between never leaves the column without the fill.
+	if err := func() error {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`ALTER TABLE sub_owners ADD COLUMN moved INTEGER NOT NULL DEFAULT 0`); err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				return nil
+			}
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE sub_owners SET moved = seq`); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("add moved column: %w", err)
+	}
 	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN expires_at INTEGER`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
 		db.Close()
@@ -385,6 +414,29 @@ func openDB(path string) (*sql.DB, error) {
 			db.Close()
 			return nil, fmt.Errorf("add topics %s: %w", col, err)
 		}
+	}
+	// approvals (#623) starts from the questions already stored, in one
+	// transaction so a crash cannot leave the column without them.
+	if err := func() error {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`ALTER TABLE topics ADD COLUMN approvals INTEGER NOT NULL DEFAULT 0`); err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				return nil
+			}
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO topics (topic, approvals) SELECT DISTINCT topic, 1 FROM notifications
+			WHERE confirm != '' OR actions LIKE '%"reply":%' ON CONFLICT (topic) DO UPDATE SET approvals = 1`); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("add topics approvals: %w", err)
 	}
 	if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN grants TEXT NOT NULL DEFAULT ''`); err != nil &&
 		!strings.Contains(err.Error(), "duplicate column") {
@@ -578,6 +630,10 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 	}
 	if err == nil && typ != EventMark && typ != EventRepeat { // the question changed (#452)
 		_, err = tx.Exec(`UPDATE notifications SET qseq = ? WHERE id = ?`, n.Seq, n.ID)
+	}
+	if err == nil && (n.confirm != "" || slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply != "" })) {
+		// The topic has carried a question, so clients warn before leaving it (#623).
+		_, err = tx.Exec(`INSERT INTO topics (topic, approvals) VALUES (?, 1) ON CONFLICT (topic) DO UPDATE SET approvals = 1`, n.Topic)
 	}
 	return err
 }
@@ -1484,6 +1540,7 @@ type ListQuery struct {
 	Q      string
 	Before string
 	Limit  int
+	All    bool // subscribed=all: every readable topic, subscribed or not (#617)
 }
 
 // List returns notifications newest first, limited to what tok may read.
@@ -1505,7 +1562,17 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 			return nil, errf(403, "forbidden", "token may not read topic %q", t)
 		}
 	}
-	if len(topics) == 0 && tok.limited() {
+	tok, err := s.viewed(ctx, tok, lq.All)
+	if err != nil {
+		return nil, err
+	}
+	hiding := tok.view.hiding()
+	if hiding && len(topics) > 0 {
+		if topics = slices.DeleteFunc(slices.Clone(topics), tok.view.hides); len(topics) == 0 {
+			return []*Notification{}, nil
+		}
+	}
+	if len(topics) == 0 && (tok.limited() || hiding) {
 		all, err := s.Topics(ctx, tok)
 		if err != nil {
 			return nil, err
@@ -1575,16 +1642,26 @@ type TopicCount struct {
 	Icon  string `json:"icon"`
 	// DeviceActions: http and broadcast actions may be published here (#401).
 	DeviceActions bool `json:"device_actions,omitempty"`
+	// Approvals: a message here has waited for an answer (#623).
+	Approvals bool `json:"approvals"`
+	// Subscribed: it reaches this owner's devices (#617). LastAt is its newest notification.
+	Subscribed bool       `json:"subscribed"`
+	LastAt     *time.Time `json:"last_at"`
 }
 
-// Topics lists topics tok may read, with open counts.
+// Topics lists topics tok may read, with open counts. A filtered device
+// leaves out its unsubscribed topics (subs.go).
 func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon), MAX(da) FROM (
-		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon, 0 AS da FROM notifications
-		UNION ALL SELECT topic, 0, icon, device_actions FROM topics) GROUP BY topic ORDER BY topic`)
+	tok, err := s.viewed(ctx, tok, false)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon), MAX(da), MAX(ap), MAX(at) FROM (
+		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon, 0 AS da, 0 AS ap, created_at AS at FROM notifications
+		UNION ALL SELECT topic, 0, icon, device_actions, approvals, NULL FROM topics) GROUP BY topic ORDER BY topic`)
 	if err != nil {
 		return nil, err
 	}
@@ -1592,10 +1669,16 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 	out := []TopicCount{}
 	for rows.Next() {
 		var t TopicCount
-		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon, &t.DeviceActions); err != nil {
+		var at sql.NullInt64
+		if err := rows.Scan(&t.Topic, &t.Open, &t.Icon, &t.DeviceActions, &t.Approvals, &at); err != nil {
 			return nil, err
 		}
-		if tok.may(ScopeRead, t.Topic) {
+		if at.Valid {
+			last := fromMS(at.Int64)
+			t.LastAt = &last
+		}
+		t.Subscribed = !tok.view.filtered || tok.view.subscribed(t.Topic)
+		if tok.may(ScopeRead, t.Topic) && !tok.view.hides(t.Topic) {
 			out = append(out, t)
 		}
 	}
@@ -1607,6 +1690,10 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 // resolved), as the inbox sidebar shows them.
 func (s *Server) Counts(ctx context.Context, tok *Token) (map[string]int, error) {
 	if err := tok.need(ScopeRead, ""); err != nil {
+		return nil, err
+	}
+	tok, err := s.viewed(ctx, tok, false)
+	if err != nil {
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT topic, state, COUNT(*) FROM notifications GROUP BY topic, state`)
@@ -1621,7 +1708,7 @@ func (s *Server) Counts(ctx context.Context, tok *Token) (map[string]int, error)
 		if err := rows.Scan(&topic, &state, &k); err != nil {
 			return nil, err
 		}
-		if tok.may(ScopeRead, topic) {
+		if tok.may(ScopeRead, topic) && !tok.view.hides(topic) {
 			out[state] += k
 		}
 	}
@@ -1642,7 +1729,7 @@ func (s *Server) SetTopicIcon(ctx context.Context, tok *Token, topic, icon strin
 		return err
 	}
 	if icon == "" { // keep the row while it holds a check-in or the device actions switch
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ? AND checkin_ms IS NULL AND device_actions = 0`, topic); err != nil {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM topics WHERE topic = ? AND checkin_ms IS NULL AND device_actions = 0 AND approvals = 0`, topic); err != nil {
 			return err
 		}
 		_, err := s.db.ExecContext(ctx, `UPDATE topics SET icon = '' WHERE topic = ?`, topic)

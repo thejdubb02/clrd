@@ -29,6 +29,12 @@ Small on purpose. Measured 2026-11-20: the server is one 15.6 MB binary
   <img src=".github/images/inbox-light.png" alt="The clrd web inbox: an urgent backup failure, a disk warning, an alert acknowledged on a phone and an agent asking to merge a pull request" width="760">
   <img src=".github/images/inbox-phone-dark.png" alt="The same inbox on a phone in dark mode" width="200">
 </p>
+<p align="center">
+  <img src=".github/images/settings-search-light.png" alt="Settings with a search for sound: only the matching settings show" width="760">
+</p>
+
+The pictures are made by `web/e2e/screens.mjs` with `SET=readme` against the
+real server and fixed demo data, so they show the inbox as it is on `main`.
 
 > **Status: early, no tagged release yet.** The server, web inbox, Android app
 > and SDKs have tests that run in CI, and so do the integration guides (see the
@@ -97,7 +103,8 @@ offline catches up the moment it reconnects.
   notifications (pick one in Settings, silenced ones stay quiet), system
   notifications through Web Push even with the tab closed (off until you
   turn them on in Settings; needs HTTPS), silences
-  started and ended from Settings, a dot for each linked device (up to six)
+  started and ended from Settings, subscribe and unsubscribe per topic (from
+  a card or Settings, every device you sign in to follows), a dot for each linked device (up to six)
   showing which are connected, dark mode, phone width. Settings sit in five
   sections with a search box that also finds a setting by keywords such as
   "do not disturb".
@@ -168,6 +175,11 @@ dismisses, acks, resolves, snoozes or replies. Setup for each, and which ones re
 - [docs/self-host.md](docs/self-host.md): run it, put HTTPS in front, tokens, backups
 - [docs/integrations/mcp.md](docs/integrations/mcp.md): MCP tools for agents, and phone approval of agent prompts
 - [docs/formatting.md](docs/formatting.md): Markdown, emoji, display settings and the format check
+- [docs/repeat.md](docs/repeat.md): alerts that ring again until someone acts, 10 more times by default
+- [docs/silences.md](docs/silences.md): mute a topic or tag until a set time
+- [docs/migrate-from-ntfy.md](docs/migrate-from-ntfy.md): switch from ntfy
+- [docs/migrate-from-gotify.md](docs/migrate-from-gotify.md): switch from Gotify
+- [docs/integrations/README.md](docs/integrations/README.md): every integration guide and what its test runs
 - [docs/SPEC.md](docs/SPEC.md): the API, sync model, states and auth
 - [android/README.md](android/README.md): build the Android app
 - [web/README.md](web/README.md): how the web pages are served

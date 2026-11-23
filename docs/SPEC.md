@@ -433,7 +433,7 @@ says so when that overrides its choice). Browsers block sound until the page
 has had a click or key press; the web inbox then shows a hint instead of an
 error.
 
-## 2.3 Subscriptions (#617, not built yet)
+## 2.3 Subscriptions (#617)
 
 A person chooses which topics reach their devices. An unsubscribed topic
 shows no card, rings no tray or system notification and adds to no count or
@@ -454,7 +454,9 @@ with the old owner.
 `/api/v1/session` or by a phone, phones and desktops linked by a code, and
 any token attached to a user. A typed-in token with no user is never
 filtered, because it is usually a script and is often also the token a
-browser signed in with; it can still read and change its tree's set. So a
+browser signed in with. It reads `"filtered":false` with no topics, and a
+PUT on it is a 409, since no user holds its choices; the browsers and
+phones made from it read and change their tree's set. So a
 phone set up by pasting such a token shows every topic; link it, or attach
 the token to a user, to have it follow subscriptions. A script on a token
 attached to a user follows that user's subscriptions; give it its own token
@@ -488,9 +490,11 @@ stream's `synced_seq` and the `ready` seq, as for topics a token cannot
 read.
 
 **Sync.** The owner's set is part of the per-device settings view
-(section 2.1): `"subscriptions":{"new_topics":true,"topics":{"chat":false}}`
+(section 2.1): `"subscriptions":{"filtered":true,"new_topics":true,"topics":{"chat":false}}`
 in `GET /api/v1/settings` and in every `settings` stream message, with only
-the topics that have a row and that this token can read. A topic is
+the topics that have a row and that this token can read. `filtered` is
+false for a token that is never filtered (see Who is filtered); then
+`topics` is empty and `new_topics` is left out. A topic is
 subscribed when `topics[t]` is true, or it has no row and `new_topics` is
 true. Every change appends an event of type `subscriptions` that only the
 owner's filtered devices receive (it moves the seq like any event; clients
@@ -505,11 +509,16 @@ notification already shown stays until it is closed, as it does today
 after a clear. A filtered device that connects with a `since` older than
 the seq of its owner's last `subscriptions` event gets `reset` (and
 `GET /api/v1/events` a 410 `reset`), so a device that was offline during
-the change catches up the same way.
+the change catches up the same way. A typed-in token with no user is not
+filtered, so only an attach or detach resets it, never its browsers
+changing the set.
 
 **API and MCP.** `GET /api/v1/subscriptions` returns
-`{"new_topics":true,"topics":[{"topic":"chat","subscribed":false,"open":2,"last_at":"RFC3339"|null}]}`,
-every topic the token can read, subscribed or not, sorted by name.
+`{"filtered":true,"new_topics":true,"topics":[{"topic":"chat","subscribed":false,"open":2,"last_at":"RFC3339"|null,"approvals":false}]}`,
+every topic the token can read, subscribed or not, sorted by name. With
+`"filtered":false` (a typed-in token with no user) `topics` is empty,
+`new_topics` is left out and a PUT answers 409 `conflict`: the token has no
+user to store topic choices for.
 `PUT /api/v1/subscriptions` takes `{"new_topics"?:bool,"topics"?:{"chat":false,"infra":true}}`
 (at least one key, at most 500 topics in one call; a name outside the
 topic pattern is a 400 naming it, a topic the token cannot read is a 403
@@ -517,14 +526,23 @@ naming it, and nothing is changed when any entry fails) and returns the same
 shape as GET. Scope read. Any token of the owner may change the owner's set,
 and a full admin may add `?for=<user id or token id>` to read or set another
 owner's set (an invited agent is its own user, so this is how an admin agent
-sets a person's topics). The MCP tool is `subscriptions(topics?,
+sets a person's topics). A user id, or the id of any typed-in token,
+names its owner; for a typed-in token with no user that is the token
+itself, which is not filtered, so to set the set its browsers and phones
+share, name one of them. The MCP tool is `subscriptions(topics?,
 new_topics?, for?)`: no arguments reads, arguments change those fields.
 `GET /api/v1/topics` also gains `subscribed` and `last_at` on each topic.
+Both also carry `approvals` on each topic (#623): true once any message
+that waits for an answer (a reply action, as `/mcp/approve` sends, or a
+confirm prompt) has been sent to it, and it stays true after that message
+is gone. Clients warn before unsubscribing from a topic with `approvals`
+(or `agents`), since an agent's request there would go unseen.
 
 **Clients.** The web and Android apps add a Topics page (a switch per topic,
 last message time, open count, search), Unsubscribe in a card's menu and on
 a stack header, and a way to open an unsubscribed topic (`subscribed=all`
-with `topic=`) without subscribing. Android's device-only muted topics stay
+with `topic=`) without subscribing. When `filtered` is false they show the
+Topics page as not available on this token. Android's device-only muted topics stay
 as they are: muted still shows the card and only stops the pop-up. Per-device
 overrides are a later issue.
 
@@ -549,6 +567,23 @@ notification in the event; they never merge diffs.
 Clients store the highest `seq` they applied. On (re)connect they ask for
 everything after it. That is the whole sync model: no client clocks, no
 conflict resolution, last write on the server wins.
+
+**Alerts on catch-up (#589).** A client may keep only the last event per
+notification while it replays, so a phone that was offline does not buzz for
+things already cleared elsewhere. It must still remember, per notification,
+whether any replayed event hid it (`snoozed`, `dismissed` or `resolved`). When
+the last one shows it again (a snooze that ended, a reopen), that is a fresh
+show and alerts as it did on the devices that were online, even if the card
+was showing on this device before it went offline. The client keeps the
+sequence of the event that showed it again, so it can tell a reopen made
+elsewhere from this device's own action (an Undo it sent, matched against its
+pending actions and the answers it got back), which stays quiet. A replayed
+`repeat` or `mark` may carry an earlier show forward but never makes one: on
+its own it never alerts, and it never brings back a card this phone's tray hid
+by a swipe. A replay the client saves quietly (too long, or no `ready` in
+time) stays quiet. This applies to clients that alert
+on events (the Android and desktop trays); the web inbox plays nothing on
+catch-up (section 10.1).
 
 ### WebSocket `GET /api/v1/ws?since=<seq>&topics=a,b`
 
@@ -866,8 +901,8 @@ resolved`) and `ntfy_import`.
 | Method | Path | Does |
 |---|---|---|
 | GET | `/api/v1/counts` | Exact counts of what the token can read: `{"active":3,"acknowledged":1,"snoozed":2,"dismissed":640,"resolved":12,"inbox":4,"cleared":652}`. `inbox` is active plus acknowledged, `cleared` is dismissed plus resolved. |
-| GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
-| GET/PUT | `/api/v1/subscriptions` | Which topics reach this owner's devices (section 2.3, not built yet). GET lists every readable topic with `subscribed`, `open` and `last_at`, plus `new_topics`; PUT takes `{"new_topics"?,"topics"?:{"chat":false}}`. Scope read; `?for=` is full admin only. |
+| GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":"","approvals":false}]}`. `approvals` marks a topic that has carried a message waiting for an answer (section 2.3). |
+| GET/PUT | `/api/v1/subscriptions` | Which topics reach this owner's devices (section 2.3). GET lists every readable topic with `subscribed`, `open` and `last_at`, plus `filtered` and `new_topics`; PUT takes `{"new_topics"?,"topics"?:{"chat":false}}`. Scope read; `?for=` is full admin only. |
 | GET | `/api/v1/format-check?topic=&by=` | Format check (#308), advice only. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). `by=sender` (#320) groups by topic and sending token (the top of its token tree, as kept for #187), adding `sender_id` (`"unknown"` for messages with no known sending token, #391) and `sender` (the token name) to each group and naming the token in the prompt; only a full admin, or the token the sender belongs to (as in Linked devices, #245), gets `sender` and the prompt, anyone else gets both blank (#406); the default `by=topic` leaves both out. Returns `{"checked":N,"problems":N,"topics":[{"topic","sender_id"?,"sender"?,"checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}],"off":["topic"],"dismissed":[{"topic","rule","sender_id"}]}`, only groups with findings, in topic then sender_id order; topics in `off` are not checked or counted, and a dismissed rule does not count for that topic and sender (`sender_id` "" means every sender); `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters, with anything that looks like a secret (a value after `password=`, `token:`, `Bearer` and the like, the password in `user:pass@host`, a run of 20+ letters and digits) shown as `[hidden]`; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
 | POST | `/api/v1/format-check/dismiss` | Body `{"topic","rule","sender_id"?,"dismissed"?}` (#320): stop `rule` counting in `topic` for that sending token (`"unknown"` for the group with no known sender), or every sender without `sender_id`. `"dismissed":false` undoes it. Unknown rule is a 400. Scope publish on the topic. Nothing is dismissed until set. |
 | PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. `{"format_check":false}` leaves the topic out of the format check, `true` (the default) puts it back (#320). `{"device_actions":true}` lets senders add `http` and `broadcast` actions (section 2, #401), `false` (the default) refuses them; this key needs scope admin on the topic, and a body with it and a token without admin changes nothing. A body with none of these keys is a 400. Scope publish on the topic. |
@@ -890,7 +925,7 @@ resolved`) and `ntfy_import`.
 | GET | `/api/v1/devices/log` | The last 200 links, sign-ins and unlinks for the same devices, newest first: `{events:[{at,action,device,device_id,by}]}`. |
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
 | PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
-| DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. |
+| DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. Needs `read`, except that a device may always unlink itself, whatever its scopes (#609); `{id}` = `this` means the asking device, so it need not look up its own id. |
 | POST | `/api/v1/devices/approve-request` | Body `{"approve":"allowed"}` or `ask`, `topic` optional (default `agents`, needs publish there): the calling device asks to raise its own setting (section 4). 202 with a confirm prompt on that topic; a repeat returns the same open prompt; 400 unless it is a raise. |
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. It starts denied for approval requests (section 4); `approve` other than `denied` is 400. |
@@ -1200,7 +1235,7 @@ only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?, body?)`,
 `preview_hook(topic, body, event?)`, `hook_allow()`, `set_hook_allow(networks, ports)`, `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
 `create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
-`subscriptions(topics?, new_topics?, for?)` (section 2.3, not built yet), `server_env()` (`GET /api/v1/server`), `version()` (`GET /api/v1/version`, section 5.2, any token), `ntfy_ignored()`, `senders()` and
+`subscriptions(topics?, new_topics?, for?)` (section 2.3), `server_env()` (`GET /api/v1/server`), `version()` (`GET /api/v1/version`, section 5.2, any token), `ntfy_ignored()`, `senders()` and
 `sender(id)` (section 5.1).
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
@@ -1285,6 +1320,20 @@ and is a linked device like any other, under the same Allowed, Ask and Denied
 rules. Its token lives in the OS keychain and is sent only as an
 `Authorization` header.
 
+- The window is signed in without the token: the core asks
+  `POST /api/v1/session` for a session and the app puts that cookie into the
+  web view's cookie store itself, for the server's host only, HttpOnly, and
+  with no expiry so the web view keeps it in memory and never writes it to
+  disk. The token never reaches the page, a URL or a file.
+- The server's page gets no native commands. Only the app's own bundled
+  "This computer" page (link, unlink, status) may call the core. The window
+  stays on the server's origin; any other address opens in the system
+  browser.
+- Unlinking ends the window session (`DELETE /api/v1/session`), revokes the
+  device on the server and removes the token from the
+  keychain.
+- One copy runs per user. Starting it again opens the window of the one
+  already running (Linux; Windows is still to come).
 - Each open notification = one system notification.
 - Closing a system notification (its close button, or the desktop's own
   clear) only hides it on that computer and sends nothing, the same rule as
@@ -1370,6 +1419,7 @@ JavaScript off the web page shows every section and no search box.
 |---|---|---|---|---|
 | Notifications | `sound` | Sound | sound, chime, ring, audio, volume | both |
 | Notifications | `push` | Browser notifications | push, system notification, pop up, desktop, alert | web |
+| Notifications | `topics` | Topics | subscribe, unsubscribe, follow, hide, topic | both |
 | Notifications | `silences` | Silences | mute, quiet, quiet hours, do not disturb, pause | web |
 | Notifications | `subscriptions` | Topics | subscribe, unsubscribe, topic, follow, new topics | Android |
 | Notifications | `muted-topics` | Muted topics | mute, topic, pop up, quiet | Android |
@@ -1405,10 +1455,10 @@ Fonts: Geist (UI), Geist Mono (meta, ids, code). Self-host the font files; no Go
 | paper | `#F5F3EE` | light bg |
 | surface | `#FFFFFF` | cards |
 | line | `#DEDAD1` | 1px hairlines |
-| slate | `#5B6470` | quiet text |
+| slate | `#5B6470` (dark mode `#98A1AC`) | quiet text |
 | body | `#3D444D` | body copy |
 | clear | `#0B7A55` (dark mode `#3DDC97`) | done, Clear button |
-| signal | `#C2410C` | urgent only |
+| signal | `#C2410C` (dark mode `#F97316`) | urgent only |
 | snooze | `#B7791F` | waiting |
 
 State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
@@ -1417,7 +1467,7 @@ State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
 
 Rules: no gradients, flat fills, 1px hairlines, radius 6 (chips, inputs), 8
 (buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. A user's color rules (section 2.1) color their own cards, gradient included; clrd's own chrome keeps these rules. Dark
-mode swaps paper and ink, same accents. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
+mode swaps paper and ink, and accents use the lighter dark mode values above where given. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
 
 Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every surface uses one file). The three lines end on one circle around the disc, so every gap to the disc is the same:
 
