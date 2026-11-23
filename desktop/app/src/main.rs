@@ -561,14 +561,25 @@ fn main() {
             // only a dark this app set itself is taken back.
             #[cfg(target_os = "linux")]
             {
-                let app = app.clone();
-                // No preference hands the choice back to the GTK theme.
-                clrd_core::theme::follow(move |scheme| {
-                    app.set_theme(match scheme {
-                        1 => Some(tauri::Theme::Dark),
-                        2 => Some(tauri::Theme::Light),
-                        _ => None,
-                    });
+                let (app, set) = (app.clone(), AtomicBool::new(false));
+                clrd_core::theme::follow(move |scheme| match scheme {
+                    1 | 2 => {
+                        set.store(true, Ordering::Relaxed);
+                        let dark = scheme == 1;
+                        app.set_theme(Some(if dark {
+                            tauri::Theme::Dark
+                        } else {
+                            tauri::Theme::Light
+                        }));
+                    }
+                    // No preference: GTK's own choice stands. Setting none
+                    // here would turn GTK's dark off, so it is only done to
+                    // take back a choice made above.
+                    _ => {
+                        if set.swap(false, Ordering::Relaxed) {
+                            app.set_theme(None);
+                        }
+                    }
                 });
             }
             // Started by hand, or with no tray to reach it by: show a window.
