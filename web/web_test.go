@@ -653,6 +653,26 @@ func TestTimeLeft(t *testing.T) {
 	}
 }
 
+// Any topic the server marks as carrying approval requests (#623) warns
+// before unsubscribing, on the card, in Settings and on a plain form post.
+func TestApprovalsFlag(t *testing.T) {
+	f := NewFake()
+	f.put(Notification{Topic: "deploys", Title: "Ship it?", State: "active", CreatedAt: time.Now(), Actions: []Action{{Label: "Yes", Reply: "yes"}}})
+	h := Handler(f, "")
+	if _, b := get(t, h, "/app"); !strings.Contains(b, `data-unsub="deploys" data-approvals`) || strings.Contains(b, `data-unsub="home" data-approvals`) {
+		t.Fatal("the card does not warn on deploys, or warns on home")
+	}
+	if _, b := get(t, h, "/app/settings"); !strings.Contains(b, `value="deploys" checked data-approvals`) || strings.Contains(b, `value="home" checked data-approvals`) {
+		t.Fatal("Settings does not warn on deploys, or warns on home")
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/app/subscriptions", strings.NewReader("topic=deploys&subscribe=0"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if h.ServeHTTP(w, r); w.Header().Get("Location") != "/app/settings#topics" || !f.subscribed("deploys") {
+		t.Fatal("unsubscribing from deploys did not stop at the warning first")
+	}
+}
+
 // Topic subscriptions (SPEC 2.3): the card menu, the not-subscribed banner
 // and the Settings list, all as plain form posts.
 func TestSubscriptions(t *testing.T) {
