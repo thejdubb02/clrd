@@ -177,6 +177,15 @@
     stackSw.checked = stacking;
     stackSw.addEventListener('change', () => { try { localStorage.setItem('clrd.stack', stackSw.checked ? '1' : '0'); } catch {} });
   }
+  // Appearance (#583): theme.js applies it; this browser keeps the choice.
+  const themeSel = $('[data-theme-setting]');
+  if (themeSel) {
+    try { themeSel.value = localStorage.getItem('clrd.theme') || ''; } catch {}
+    themeSel.addEventListener('change', () => {
+      try { themeSel.value ? localStorage.setItem('clrd.theme', themeSel.value) : localStorage.removeItem('clrd.theme'); } catch {}
+      window.clrdTheme?.();
+    });
+  }
   addEventListener('storage', e => { if (e.key === 'clrd.stack') { stacking = e.newValue === '1'; restack(); tidy(); } });
 
   // Settings search (#575): match the typed text in a setting's label, its
