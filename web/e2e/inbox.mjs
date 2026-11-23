@@ -1533,9 +1533,11 @@ try {
     await qp.goto(base + '/app');
     const old = qp.locator('article.card', { hasText: 'Plain one' }).locator('[data-unsub]');
     await old.waitFor({ state: 'attached' });
-    await api(phone, '/api/v1/notifications', { topic: 'qflag', title: 'Ship it?', actions: [{ label: 'Yes', reply: 'yes' }] });
+    const sq = await api(phone, '/api/v1/notifications', { topic: 'qflag', title: 'Ship it?', actions: [{ label: 'Yes', reply: 'yes' }] });
     await qp.locator('article.card', { hasText: 'Ship it?' }).waitFor();
-    assert.equal(await old.getAttribute('data-approvals'), null, 'the older card was redrawn, so this does not test the live case');
+    // The question leaves the inbox: the older card still warns on its own (#700).
+    await api(phone, `/api/v1/notifications/${sq.id}/dismiss`);
+    await qp.locator('article.card', { hasText: 'Ship it?' }).waitFor({ state: 'detached' });
     let msg = '';
     qp.once('dialog', d => { msg = d.message(); d.dismiss(); });
     await old.dispatchEvent('click');
