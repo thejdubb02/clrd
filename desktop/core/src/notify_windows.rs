@@ -67,14 +67,21 @@ impl Os {
 
         // Windows calls these on threads of its own: they only hand on.
         let (tx, clears) = (self.tx.clone(), self.close_clears.clone());
-        let toasts = Arc::downgrade(&self.toasts);
+        let (toasts, app_id) = (Arc::downgrade(&self.toasts), self.app_id.clone());
         toast.Dismissed(&TypedEventHandler::new(
             move |_, args: Ref<ToastDismissedEventArgs>| {
                 // Only a close by the user counts. One that timed out is
                 // still in the notification centre, and still ours.
                 if args.ok()?.Reason()? == ToastDismissalReason::UserCanceled {
-                    if let Some(toasts) = toasts.upgrade() {
-                        toasts.lock().unwrap().remove(&os_id);
+                    // Closed here means gone here: Windows may keep a closed
+                    // toast in the notification centre, where nothing of
+                    // ours would ever take it down.
+                    let gone = toasts
+                        .upgrade()
+                        .and_then(|t| t.lock().unwrap().remove(&os_id));
+                    if let Some((tag, _)) = gone {
+                        let _ = ToastNotificationManager::History()
+                            .and_then(|h| h.RemoveGroupedTagWithId(&tag, GROUP, &app_id));
                     }
                     // The setting as it is now, as the close arrives (#685).
                     let _ = tx.send(Signal::Closed(os_id, clears.load(Ordering::Relaxed)));

@@ -152,16 +152,25 @@ fn summary(n: &Notification) -> &str {
 /// so a toast cannot start a program or open a page by itself.
 #[cfg(any(windows, test))]
 fn toast_xml(n: &Notification, alert: bool) -> String {
-    // Windows refuses a toast over about 5 KB, and one with a character XML
-    // does not allow. It shows a few lines at most, so the cut loses nothing
-    // the user would have seen.
+    // Windows refuses a toast with a character XML does not allow, and one
+    // over about 5 KB. `most` is in bytes of the escaped text, counted as
+    // UTF-8 or UTF-16, whichever is more, so the whole toast stays under
+    // that either way. A toast shows a few lines at most, so the cut loses
+    // nothing the user would have seen.
     let text = |s: &str, most: usize| {
-        let kept: String = s
-            .chars()
-            .filter(|c| matches!(c, '\t' | '\n' | ' '..='\u{d7ff}' | '\u{e000}'..='\u{fffd}'))
-            .take(most)
-            .collect();
-        escape(&kept)
+        let mut out = String::new();
+        let mut used = 0;
+        for c in s.chars().filter(|c| {
+            matches!(c, '\t' | '\n' | ' '..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..)
+        }) {
+            let piece = escape(c.encode_utf8(&mut [0; 4]));
+            used += size(&piece);
+            if used > most {
+                break;
+            }
+            out += &piece;
+        }
+        out
     };
     // clrd priority is 1 to 5; 1 and 2 are the quiet ones.
     let quiet = !alert || n.silenced || matches!(n.priority, 1 | 2);
@@ -172,9 +181,15 @@ fn toast_xml(n: &Notification, alert: bool) -> String {
          <text>{}</text><text>{}</text></binding></visual>\
          <actions><action content=\"Clear\" arguments=\"clear\"/></actions>\
          <audio silent=\"{quiet}\"/></toast>",
-        text(summary(n), 200),
-        text(&n.message, 1000),
+        text(summary(n), 400),
+        text(&n.message, 4000),
     )
+}
+
+/// The bytes `s` takes as UTF-8 or as UTF-16, whichever is more.
+#[cfg(any(windows, test))]
+fn size(s: &str) -> usize {
+    s.len().max(2 * s.encode_utf16().count())
 }
 
 impl Inner {
@@ -330,7 +345,13 @@ mod tests {
     fn a_toast_is_cut_to_what_windows_takes() {
         let xml = toast_xml(&n(&"é".repeat(5000), &"&".repeat(5000), 3, false), true);
         assert_eq!(xml.matches('é').count(), 200);
-        assert_eq!(xml.matches("&amp;").count(), 1000);
+        assert_eq!(xml.matches("&amp;").count(), 400);
+        assert!(size(&xml) < 5000, "{}", size(&xml));
+        // An emoji is text like any other, and is never cut in half.
+        let xml = toast_xml(&n("🔥 backup", &"🔥".repeat(5000), 3, false), true);
+        assert!(xml.contains("<text>🔥 backup</text>"));
+        assert_eq!(xml.matches('🔥').count(), 1001);
+        assert!(size(&xml) < 5000, "{}", size(&xml));
     }
 
     #[test]

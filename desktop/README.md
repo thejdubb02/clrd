@@ -45,7 +45,7 @@ window; the address a sender attached is never opened from a toast. Clicking
 a toast left over after clrd has quit does nothing, and the next start takes
 those away. None of this has been seen on a Windows computer yet: the code
 is built for Windows, its text handling is tested on Linux, and under Wine,
-which has no toasts, the app was only seen to carry on without them.
+which has no toasts, only the refusal was seen: showing one fails cleanly.
 
 Still to come: `clrd://link` addresses on Windows.
 
