@@ -1889,7 +1889,7 @@ try {
   // brings every setting back. Without script every section shows and there
   // is no search box.
   {
-    const order = ['Notifications', 'Inbox', 'Display', 'Devices', 'Integrations'];
+    const order = ['Notifications', 'Inbox', 'Display', 'Devices', 'Integrations', 'About'];
     const ctx = await browser.newContext();
     assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search' } })).ok(), 'search sign-in');
     const sp = await ctx.newPage();
@@ -1904,8 +1904,11 @@ try {
     assert.deepEqual(await groups(), ['Notifications'], 'a section with no match still shows');
     await q.press('Enter');
     await until(sp, () => location.hash === '#silences' && document.activeElement?.id === 'silences');
-    await q.fill('Dark Mode ');
+    await q.fill("what's new"); // About (#580)
     await sp.locator('#silences').waitFor({ state: 'hidden' });
+    assert.deepEqual(await sets(), ['Version'], 'search missed the About section');
+    await q.fill('Dark Mode ');
+    await sp.locator('#about').waitFor({ state: 'hidden' });
     assert.deepEqual(await sets(), ['Appearance'], 'a keyword in Display found the wrong settings');
     assert.deepEqual(await groups(), ['Display'], 'only the matching section shows');
     await q.fill('confirm first'); // in Linked devices' second paragraph

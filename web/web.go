@@ -930,15 +930,26 @@ type About struct {
 	}
 }
 
+var inlineGM = goldmark.New(goldmark.WithExtensions(extension.GFM)) // raw HTML stays escaped
+
+// inlineMD renders one changelog line as inline Markdown (SPEC 5.2). A line
+// that parses as anything but one paragraph (a "1. " list, a heading) shows
+// as plain text instead.
+func inlineMD(s string) template.HTML {
+	var b bytes.Buffer
+	_ = inlineGM.Convert([]byte(s), &b)
+	if in, ok := strings.CutPrefix(b.String(), "<p>"); ok && strings.Count(in, "</p>") == 1 && strings.HasSuffix(in, "</p>\n") {
+		return template.HTML(strings.TrimSuffix(in, "</p>\n"))
+	}
+	return template.HTML(template.HTMLEscapeString(s))
+}
+
 var about = sync.OnceValue(func() (a About) {
 	_ = json.Unmarshal(clrd.VersionJSON(), &a)
-	md := goldmark.New(goldmark.WithExtensions(extension.GFM)) // raw HTML stays escaped
 	for i := range a.History {
 		for _, c := range a.History[i].Changes {
 			for k, item := range c.Items {
-				var b bytes.Buffer
-				_ = md.Convert([]byte(item), &b)
-				c.Items[k] = template.HTML(strings.TrimSuffix(strings.TrimPrefix(b.String(), "<p>"), "</p>\n"))
+				c.Items[k] = inlineMD(string(item))
 			}
 		}
 	}
