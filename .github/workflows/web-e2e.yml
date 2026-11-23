@@ -41,9 +41,14 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: app.css matches its source
-        run: |
-          web/ui/build.sh
-          git diff --exit-code -- web/static/app.css || { echo "web/static/app.css is stale: run web/ui/build.sh and commit it"; exit 1; }
+        run: web/ui/check.sh
+      - name: upload app.css builds that differed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-css
+          path: ${{ runner.temp }}/app-css
+          if-no-files-found: ignore
       - name: build
         run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
       - name: inbox in Chromium
