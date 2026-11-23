@@ -65,6 +65,10 @@ pub struct Device {
     keys: Result<Keychain, String>,
     name: String,
     inner: Mutex<Inner>,
+    /// Held for the whole of `session` and `unlink`, server calls included,
+    /// so no session is made while an unlink runs (#636). Taken before
+    /// `inner`, never while holding it.
+    one: Mutex<()>,
 }
 
 impl Device {
@@ -75,6 +79,7 @@ impl Device {
             keys,
             name: name.to_string(),
             inner: Mutex::default(),
+            one: Mutex::default(),
         };
         device.reload();
         device
@@ -267,6 +272,7 @@ impl Device {
     /// in the keychain, so there is one window session per computer however
     /// often the app restarts.
     pub fn session(&self) -> Result<String, Error> {
+        let _one = self.one.lock().unwrap();
         let Some(mut linked) = self.linked() else {
             return Err(Error::Auth);
         };
@@ -302,6 +308,7 @@ impl Device {
     /// when the server cannot be told; the screen then says the device may
     /// still be listed there.
     pub fn unlink(&self) {
+        let _one = self.one.lock().unwrap();
         let Some(linked) = self.inner.lock().unwrap().linked.take() else {
             return;
         };
