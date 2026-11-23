@@ -1258,9 +1258,10 @@
         // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
         if (ready && m.notification.state === 'active' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')) alertSound(m.notification);
         // A card that comes in live while this tab is in front slides in (SPEC 10.1).
-        // Its old copy may still be leaving (a snooze that ended at once): that one does not count (#611).
+        // Its old copy may still be leaving (a snooze that ended at once), or
+        // be about to with a Clear all's reply: that one does not count (#611, #656).
         if (ready && document.visibilityState === 'visible' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')
-          && show.includes(m.notification.state) && !cards().some(c => c.dataset.id === m.notification.id)) arrived.push(m.notification.id);
+          && show.includes(m.notification.state) && (clearing.has(m.notification.id) || !cards().some(c => c.dataset.id === m.notification.id))) arrived.push(m.notification.id);
         onEvent(m);
       }
     };
