@@ -127,6 +127,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: Clear on a card no longer wraps onto three lines on a common phone. Share and Copy now sit in the card's More menu, and on a narrow screen or with large text Ack and then Snooze move there too, so Clear always shows whole (#734).
 - Desktop (Linux, build from source): flipping "Closing clears everywhere" no longer changes what happens to a notification you closed just before, while the app was still busy with an earlier clear. Each close follows the setting as it was when you closed it (#685).
 - Desktop (build from source): a notification that was snoozed and woke up, or was dismissed and reopened, while the computer was offline now alerts when the app catches up, as it did on the devices that were online (#646).
 - Android: Settings shows Snooze times and Linked devices only once the

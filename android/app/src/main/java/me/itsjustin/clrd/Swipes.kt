@@ -53,3 +53,13 @@ data class Swipes(val start: List<String> = listOf("clear", "snooze"), val end: 
         }
     }
 }
+
+/**
+ * How many of the last buttons, [widths] wide, fit in [room]: a card row moves its first buttons to the More menu
+ * first, and always keeps the last one (Clear) (#734).
+ */
+internal fun fitsFromEnd(room: Int, widths: List<Int>): Int {
+    var left = room
+    val fit = widths.asReversed().takeWhile { left -= it; left >= 0 }.size
+    return if (widths.isEmpty()) 0 else maxOf(1, fit)
+}
