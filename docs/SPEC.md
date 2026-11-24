@@ -1410,7 +1410,9 @@ rules. Its token lives in the OS keychain and is sent only as an
   "Update automatically" is a setting on that computer, on by default; off,
   the app asks nothing by itself and Check for updates still works. An empty
   file `no-auto-update` in the app's data folder is the off state, so a setup
-  script can set it. The app asks at start and every six hours, and does not
+  script can set it. A machine policy wins over it: the DWORD `AutoUpdate`
+  under `HKLM\Software\Policies\clrd` (0 off, any other number on) is the
+  switch for every user while it is there, and the user cannot change it. The app asks at start and every six hours, and does not
   start the installer for the same version twice by itself.
 
 ## 9. Web
