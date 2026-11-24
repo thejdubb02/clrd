@@ -439,6 +439,7 @@ fn updater(app: &AppHandle) -> Option<Updater> {
         running: env!("CARGO_PKG_VERSION").into(),
         target: "windows-x86_64".into(),
         dir: state_file(app).ok()?.parent()?.into(),
+        policy: clrd_core::update::policy(),
     };
     (cfg!(windows) && updater.enabled()).then_some(updater)
 }
@@ -458,11 +459,12 @@ fn install(app: &AppHandle, updater: &Updater, update: &Update) -> Result<(), St
     Ok(())
 }
 
-/// For the This computer page: the running version and the "Update
-/// automatically" switch, or nothing in a build with no updates.
+/// For the This computer page: the running version, the "Update
+/// automatically" switch and whether the administrator set it, or nothing
+/// in a build with no updates.
 #[tauri::command(async)]
-fn updates(app: AppHandle) -> Option<(&'static str, bool)> {
-    updater(&app).map(|updater| (env!("CARGO_PKG_VERSION"), updater.auto()))
+fn updates(app: AppHandle) -> Option<(&'static str, bool, bool)> {
+    updater(&app).map(|u| (env!("CARGO_PKG_VERSION"), u.auto(), u.policy.is_some()))
 }
 
 #[tauri::command(async)]
@@ -642,10 +644,12 @@ fn main() {
             start_sync(app);
             // Automatic updates: at start and a few times a day, while the
             // switch is on. Off, each round asks nothing.
-            if let Some(updater) = updater(app) {
+            if updater(app).is_some() {
                 let app = app.clone();
                 std::thread::spawn(move || loop {
-                    {
+                    // Read again each round: a policy the administrator
+                    // sets while the app runs counts from the next one.
+                    if let Some(updater) = updater(&app) {
                         let _one = UPDATING.lock();
                         // Asked again after the download: the switch may
                         // have been turned off while it ran.

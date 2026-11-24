@@ -208,6 +208,15 @@ refused.
   works. A setup script turns it off by making an empty file named
   `no-auto-update` in `%APPDATA%\org.clrd.desktop`, before or after the first
   start.
+- An administrator sets it for every user of a computer with the number
+  (DWORD) `AutoUpdate` under `HKLM\Software\Policies\clrd`: 0 is off, any
+  other number is on. While it is there the switch shows that answer, is
+  greyed out and cannot be changed, and the `no-auto-update` file does not
+  count. Take the number away and each user's own choice is back as they left
+  it. It is read at every check, so it counts without a restart. Check for
+  updates still works with the policy off. Proven with Wine: the read of each
+  registry state. Not proven yet: the greyed switch on a real Windows
+  computer.
 - The update requests carry no sign-in: the token and the window's session
   never go to the update address.
 - The private key signs every update a user will run. It never belongs in
