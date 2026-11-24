@@ -649,11 +649,13 @@ fn main() {
                 std::thread::spawn(move || loop {
                     // Read again each round: a policy the administrator
                     // sets while the app runs counts from the next one.
-                    if let Some(updater) = updater(&app) {
+                    if let Some(mut updater) = updater(&app) {
                         let _one = UPDATING.lock();
-                        // Asked again after the download: the switch may
-                        // have been turned off while it ran.
-                        let update = updater.background().filter(|_| updater.auto());
+                        let update = updater.background();
+                        // Asked again after the download: the switch or
+                        // the policy may have been turned off while it ran.
+                        updater.policy = clrd_core::update::policy();
+                        let update = update.filter(|_| updater.auto());
                         if let Some(Err(e)) = update.map(|u| install(&app, &updater, &u)) {
                             eprintln!("clrd: {e}");
                         }
