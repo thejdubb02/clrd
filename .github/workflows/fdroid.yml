@@ -19,17 +19,20 @@ permissions:
 
 jobs:
   publish:
-    runs-on: [self-hosted, cezar1]
+    runs-on: ubicloud-standard-2
     environment: release
     defaults:
       run:
         shell: bash
-    env:
-      ANDROID_HOME: /opt/android-sdk
-      # Gradle 8.11 cannot run on a newer default JDK.
-      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-      APKSIGNER: /opt/android-sdk/build-tools/35.0.0/apksigner
     steps:
+      # The runner image ships the Android SDK (ANDROID_HOME) but not fdroidserver.
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fdroidserver
+          # Gradle 8.11 cannot run on a newer default JDK.
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "APKSIGNER=$ANDROID_HOME/build-tools/35.0.0/apksigner" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
