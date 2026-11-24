@@ -1594,5 +1594,5 @@ card simply appears.
 - Public repo: no secrets, no internal hostnames or IPs, no em dashes, en dashes or the ellipsis character in anything committed.
 - Stay in your own directories. A spec change goes in its own commit with a reason.
 - Work on your branch, open a PR to `main`, tests green. Never force-push `main`.
-- CI on `runs-on: ubicloud-standard-4`; the Android and F-Droid jobs on `runs-on: [self-hosted, cezar1]`.
+- CI on `runs-on: ubicloud-standard-2` (`-4` for the desktop job), the Android and F-Droid jobs included.
 - File follow-ups as GitHub issues on `thejdubb02/clrd`.

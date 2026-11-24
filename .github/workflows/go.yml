@@ -41,13 +41,12 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-2
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: false
       - name: gofmt
         run: test -z "$(gofmt -l server web internal)" || { gofmt -l server web internal; exit 1; }
       - run: go vet ./...
