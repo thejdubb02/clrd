@@ -28,8 +28,9 @@ jobs:
       # The runner image ships the Android SDK (ANDROID_HOME) but not fdroidserver.
       - name: Tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fdroidserver
+          # Ubuntu 24.04's packaged fdroidserver (androguard 3) cannot read our APK: "res1 must be zero".
+          pipx install fdroidserver==2.4.3
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           # Gradle 8.11 cannot run on a newer default JDK.
           echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
           echo "APKSIGNER=$ANDROID_HOME/build-tools/35.0.0/apksigner" >> "$GITHUB_ENV"
