@@ -335,7 +335,13 @@ fetch('/report', { method: 'POST', body: 'open' });
     fake.refuse_unlink(true);
     wait_long("the keychain forgets the link", || {
         press(&unlink);
-        keys.load().unwrap().is_none()
+        // The unlink gets five seconds before the keys go again. A Try
+        // again pressed while the keychain is still empty takes that button
+        // away for good, and stray keys are one way to press it (#737).
+        (0..50).any(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            keys.load().unwrap().is_none()
+        })
     });
     assert!(fake.sessions().is_empty(), "the window's session is ended");
     keys.save(&clrd_core::keychain::Linked {
@@ -350,7 +356,15 @@ fetch('/report', { method: 'POST', body: 'open' });
         all.iter().filter(|r| r.contains("/api/v1/ws")).count()
     };
     let before = live();
+    let since = Instant::now();
     wait_long("Try again links this computer again", || {
+        // This step has timed out under load with no trace of why (#737):
+        // say what the keychain and the server saw before it does.
+        if since.elapsed() > Duration::from_secs(80) {
+            let all = fake.requests();
+            let last = &all[all.len().saturating_sub(10)..];
+            eprintln!("keychain: {:?}, last requests: {last:#?}", keys.load());
+        }
         // Past the link box and its button to Try again.
         press(&["Tab", "Tab", "Tab", "Return"]);
         live() > before
