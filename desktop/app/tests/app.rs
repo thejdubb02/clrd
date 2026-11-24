@@ -334,10 +334,18 @@ fetch('/report', { method: 'POST', body: 'open' });
     // Try again, which only works once Unlink has finished and let go.
     fake.refuse_unlink(true);
     wait_long("the keychain forgets the link", || {
-        press(&unlink);
-        // The unlink gets five seconds before the keys go again. A Try
-        // again pressed while the keychain is still empty takes that button
-        // away for good, and stray keys are one way to press it (#737).
+        // No more keys once the app has asked the server: the page changes
+        // under them when the unlink ends, and the next Tab and Return then
+        // land on Try again. Pressed while the keychain is still empty, that
+        // takes the button away for good (#737).
+        let asked = fake
+            .requests()
+            .iter()
+            .any(|r| r.starts_with("DELETE /api/v1/session") || r.contains("/devices"));
+        if !asked {
+            press(&unlink);
+        }
+        // An unlink the server has not heard of yet gets five seconds too.
         (0..50).any(|_| {
             std::thread::sleep(Duration::from_millis(100));
             keys.load().unwrap().is_none()
