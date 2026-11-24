@@ -34,6 +34,7 @@ import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -63,7 +64,6 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -113,11 +113,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -439,6 +439,9 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
         }
     }
     val topicMenu: @Composable (String) -> Unit = { t -> if (subs?.filtered == true) TopicMenu(t, unsubscribe) }
+    val topicItems: @Composable (String) -> List<Pair<String, () -> Unit>> = { t ->
+        if (subs?.filtered == true) listOf(stringResource(R.string.unsubscribe_from, t) to { unsubscribe(t) }) else emptyList()
+    }
 
     Scaffold(
         containerColor = b.paper,
@@ -508,7 +511,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                           Box {
                             if (e is Ghost) {
                                 Gone(e, still, { ms.ghosts.remove(e); swept++ }) { why ->
-                                    when (val g = e.entry) { is Stack -> StackCard(g, false, null, {}, gone = why) {}; is One -> Card(g.n) { why() } }
+                                    when (val g = e.entry) { is Stack -> StackCard(g, false, null, {}, gone = why) {}; is One -> Card(g.n, end = { why() }) }
                                 }
                                 return@Box
                             }
@@ -520,7 +523,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                                 return@Arrive
                             }
                             val n = (e as One).n
-                            if (tab == Tab.Cleared) Card(n, { topicMenu(n.topic) }) { TextButton(onClick = { app.act(n.id, "reopen") }) { Text(stringResource(R.string.restore), color = b.ink) } }
+                            if (tab == Tab.Cleared) Card(n, topicItems(n.topic), listOf(CardAction(stringResource(R.string.restore), { app.act(n.id, "reopen") })))
                             else {
                                 // The buttons the shared setting names, minus any this card cannot take (#161).
                                 val reveal = { names: List<String>, dir: Int ->
@@ -541,11 +544,13 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                                     }
                                 }
                                 RevealRow(reveal(swipes.start, -1), reveal(swipes.end, 1), app.fastSwipe) {
-                                    Card(n, { topicMenu(n.topic) }) {
-                                        if (n.state == Notif.ACTIVE) TextButton(onClick = { app.act(n.id, "ack") }) { Text(ackLabel, color = b.ink) }
-                                        if (tab == Tab.Inbox) SnoozeButton(app, n.id)
-                                        TextButton(onClick = { clear(n) }) { Text(clearLabel, color = b.clear, fontWeight = FontWeight.SemiBold) }
-                                    }
+                                    val snoozeFor = stringResource(R.string.snooze_for, snoozeLabel(snooze.default))
+                                    Card(n, topicItems(n.topic), listOfNotNull(
+                                        if (n.state == Notif.ACTIVE) CardAction(ackLabel, { app.act(n.id, "ack") }) else null,
+                                        if (tab == Tab.Inbox) CardAction(snoozeFor, { app.act(n.id, "snooze", Snooze.body(snooze.default)) },
+                                            moved = snooze.times.map { t -> stringResource(R.string.snooze_for, snoozeLabel(t)) to { app.act(n.id, "snooze", Snooze.body(t)) } }) { SnoozeButton(app, n.id) } else null,
+                                        CardAction(clearLabel, { clear(n) }, strong = true),
+                                    ))
                                 }
                             }
                             }
@@ -707,8 +712,18 @@ private fun RevealButton(a: RevealAction, tap: () -> Unit) {
     }
 }
 
+/** A button on a card's bottom row; [button] draws it when a plain text button will not do, [moved] is what it becomes in More. */
+internal class CardAction(
+    val label: String, val run: () -> Unit, val strong: Boolean = false,
+    val moved: List<Pair<String, () -> Unit>> = listOf(label to run), val button: (@Composable () -> Unit)? = null,
+)
+
+/**
+ * A card. Share, Copy, [menu] and any [actions] the row has no room for sit in its More menu: the first actions
+ * go there first, so the last one (Clear) always shows whole, at any width or font size (#734).
+ */
 @Composable
-private fun Card(n: Notif, menu: @Composable () -> Unit = {}, actions: @Composable () -> Unit) {
+internal fun Card(n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), actions: List<CardAction> = emptyList(), end: @Composable () -> Unit = {}) {
     val b = LocalBrand.current
     // Tap to read the whole message; tap again to fold it.
     var open by rememberSaveable(n.id) { mutableStateOf(false) }
@@ -754,13 +769,26 @@ private fun Card(n: Notif, menu: @Composable () -> Unit = {}, actions: @Composab
             if (n.replyText.isNotEmpty() && open) Text(stringResource(R.string.answered_text, n.replyText), color = b.body, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, end = 8.dp))
             Spacer(Modifier.height(8.dp))
             Text(meta(ctx, n), style = Mono, color = b.slate, maxLines = 2, overflow = TextOverflow.Ellipsis) // 2: a full date is long
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                IconButton(onClick = { share(ctx, n) }) { Icon(Icons.Filled.Share, stringResource(R.string.share), tint = b.slate) }
-                IconButton(onClick = { copy(ctx, n) }) { Icon(painterResource(R.drawable.ic_copy), stringResource(R.string.copy), tint = b.slate, modifier = Modifier.size(20.dp)) }
-                MarkButton(App.of(ctx), n)
-                menu()
-                Spacer(Modifier.weight(1f))
-                actions()
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val measure = rememberTextMeasurer()
+                val style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold) // the widest a label draws
+                val density = LocalDensity.current
+                val px = { d: androidx.compose.ui.unit.Dp -> with(density) { d.roundToPx() } }
+                val pad = 2 * px(12.dp) + 1; val least = px(ButtonDefaults.MinWidth) // each side rounds on its own, so 1 px spare
+                val keep = fitsFromEnd(constraints.maxWidth - px(96.dp), actions.map { maxOf(measure.measure(it.label, style).size.width + pad, least) }) // 96: More and Mark
+                val items = listOf(stringResource(R.string.share) to { share(ctx, n) }, stringResource(R.string.copy) to { copy(ctx, n) }) +
+                    actions.dropLast(keep).flatMap { it.moved } + menu
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    MoreMenu(items)
+                    MarkButton(App.of(ctx), n)
+                    Spacer(Modifier.weight(1f))
+                    actions.takeLast(keep).forEach { a ->
+                        a.button?.invoke() ?: TextButton(onClick = a.run) {
+                            Text(a.label, color = if (a.strong) b.clear else b.ink, fontWeight = if (a.strong) FontWeight.SemiBold else null, maxLines = 1)
+                        }
+                    }
+                    end()
+                }
             }
         }
     }
@@ -894,7 +922,19 @@ private fun StackCard(
     }
 }
 
-/** A card's or stack's menu (#617): Unsubscribe from its topic on every device. */
+@Composable
+private fun MoreMenu(items: List<Pair<String, () -> Unit>>) {
+    val b = LocalBrand.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more), tint = b.slate) }
+        DropdownMenu(open, { open = false }) {
+            items.forEach { (label, run) -> DropdownMenuItem(text = { Text(label) }, onClick = { open = false; run() }) }
+        }
+    }
+}
+
+/** A stack's menu (#617): Unsubscribe from its topic on every device. */
 @Composable
 private fun TopicMenu(topic: String, unsubscribe: (String) -> Unit) {
     val b = LocalBrand.current
@@ -1023,7 +1063,7 @@ private fun TopicReader(app: App, topic: String, resumes: Int, close: () -> Unit
                 }
                 error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
                 if (rows?.isEmpty() == true) Text(stringResource(R.string.subs_read_empty), color = b.slate)
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) { items(rows.orEmpty(), key = { it.id }) { Card(it) {} } }
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) { items(rows.orEmpty(), key = { it.id }) { Card(it) } }
             }
         }
     }
