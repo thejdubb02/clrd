@@ -29,7 +29,8 @@ jobs:
       - name: Tools
         run: |
           # Ubuntu 24.04's packaged fdroidserver (androguard 3) cannot read our APK: "res1 must be zero".
-          pipx install fdroidserver==2.4.3
+          # 2.4.3 crashes with androguard 4.1.4 ("NoOverwriteDict has no attribute append"); 2.4.5 works.
+          pipx install fdroidserver==2.4.5
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           # Gradle 8.11 cannot run on a newer default JDK.
           echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
