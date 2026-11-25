@@ -7,6 +7,7 @@ import java.net.URI
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.UUID
 
 // Flow A (issue #74): a signed-in browser shows a QR code, this phone scans it, the browser approves the phone.
 
@@ -82,3 +83,11 @@ fun claimRetries(e: Exception): Boolean = e !is HttpError || e.code >= 500 || e.
 /** The name the browser shows when asked to approve this phone. */
 fun deviceName(ctx: Context): String =
     Settings.Global.getString(ctx.contentResolver, Settings.Global.DEVICE_NAME)?.takeIf { it.isNotBlank() } ?: Build.MODEL
+
+/** A random id made once per install and sent when linking, so linking again replaces this phone's row instead of adding one (#769). Kept across sign-outs; uninstall clears it, and it never leaves the phone in a backup. */
+fun installId(app: App): String = synchronized(app.prefs) {
+    app.prefs.getString("install_id", null) ?: UUID.randomUUID().toString().also { app.prefs.edit().putString("install_id", it).apply() }
+}
+
+/** The line under the name in the device list that tells two phones of one name apart, for example "Pixel 8, Android 15". */
+fun deviceDetail(): String = "${Build.MODEL}, Android ${Build.VERSION.RELEASE}"
