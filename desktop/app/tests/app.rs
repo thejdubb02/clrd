@@ -61,7 +61,13 @@ fn app(bus: &Bus, home: &Path, args: &[&str]) -> Command {
         // The screen is picked here, so it is written down for a test that
         // presses keys on it. The first start's line is the app's screen.
         .args(["-a", "sh", "-c"])
-        .arg(r#"echo "$DISPLAY $XAUTHORITY" >> "$HOME/screen"; exec "$0" "$@""#)
+        // A test that writes xsettingsd.conf gets a desktop that hands GTK
+        // its settings while running, as GNOME and others do on X11.
+        .arg(concat!(
+            r#"echo "$DISPLAY $XAUTHORITY" >> "$HOME/screen"; "#,
+            r#"if [ -f "$HOME/xsettingsd.conf" ]; then xsettingsd -c "$HOME/xsettingsd.conf" 2>/dev/null & echo $! > "$HOME/xsettingsd.pid"; sleep 1; fi; "#,
+            r#"exec "$0" "$@""#
+        ))
         .arg(env!("CARGO_BIN_EXE_clrd-desktop"))
         .args(args)
         .env("DBUS_SESSION_BUS_ADDRESS", &bus.1)
@@ -344,6 +350,68 @@ say();
         .unwrap();
         sees(what, dark);
     }
+}
+
+/// With a desktop that hands GTK its theme while running, the theme comes
+/// back from the desktop after a light switch, so one picked later shows at
+/// once instead of at the next start (#756).
+#[test]
+fn after_a_light_switch_a_theme_picked_on_the_desktop_shows_at_once() {
+    let fake = Fake::start();
+    fake.set_page(
+        r#"<!doctype html><title>theme</title><script>
+const dark = matchMedia('(prefers-color-scheme: dark)');
+const say = () => fetch('/report', { method: 'POST', body: String(dark.matches) });
+dark.addEventListener('change', say);
+say();
+</script>"#,
+    );
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let conf = home.join("xsettingsd.conf");
+    std::fs::write(&conf, "Net/ThemeName \"Adwaita-dark\"\n").unwrap();
+    let scheme = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let portal = portal(&bus, scheme.clone());
+    let _app = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run and xsettingsd are needed for this test"),
+    );
+    let sees = |what: &str, dark: &str| {
+        wait_long(what, || {
+            fake.reports().last().map(String::as_str) == Some(dark)
+        })
+    };
+    let ask = |to: u32| {
+        scheme.store(to, std::sync::atomic::Ordering::Relaxed);
+        zbus::block_on(portal.emit_signal(
+            None::<&str>,
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings",
+            "SettingChanged",
+            &(
+                "org.freedesktop.appearance",
+                "color-scheme",
+                zbus::Variant::U32(to),
+            ),
+        ))
+        .unwrap();
+    };
+    sees("the desktop's dark theme at start", "true");
+    ask(2);
+    sees("light when the desktop asks for light", "false");
+    ask(0);
+    sees("the desktop's dark theme back", "true");
+    // A light theme picked on the desktop now.
+    std::fs::write(&conf, "Net/ThemeName \"Adwaita\"\n").unwrap();
+    let pid = std::fs::read_to_string(home.join("xsettingsd.pid")).unwrap();
+    assert!(Command::new("kill")
+        .args(["-HUP", pid.trim()])
+        .status()
+        .unwrap()
+        .success());
+    sees("the theme picked on the desktop, at once", "false");
 }
 
 /// Unlink, pressed on the This computer page itself with the inbox window
