@@ -555,12 +555,15 @@ class SyncClientTest {
                 ws.send(ev(8, "p", "active").replace("\"created\"", "\"repeat\"")) // a repeat alone never makes a show
                 ws.send(ev(9, "h", "active"))
                 ws.send(ev(10, "h", "resolved")) // hidden at the end: nothing to ring
-                ws.send("""{"type":"ready","seq":10}""")
+                ws.send(ev(11, "u", "dismissed"))
+                ws.send(ev(12, "u", "active")) // this phone's own Undo, say
+                ws.send(ev(13, "u", "active").replace("\"created\"", "\"updated\"")) // then an edit: still the show at 12
+                ws.send("""{"type":"ready","seq":13}""")
             }
         }
         start()
         await { SyncClient.Status.CONNECTED in statuses }
-        assertEquals(listOf(mapOf("w" to 3L, "o" to 6L)), store.shown.toList())
+        assertEquals(listOf(mapOf("w" to 3L, "o" to 6L, "u" to 12L)), store.shown.toList())
         assertEquals(listOf(false), store.quiet.toList())
     }
 

@@ -197,8 +197,8 @@ class SyncClient(
                 if (replaying) {
                     when {
                         n.state == Notif.SNOOZED || n.state == Notif.DISMISSED || n.state == Notif.RESOLVED -> { hid += n.id; shown -= n.id }
-                        // A repeat only carries an earlier show forward, never makes one.
-                        n.state == Notif.ACTIVE && n.id in hid && o.optString("type") != "repeat" -> shown[n.id] = seq
+                        // Only the event that brings it back is the show: a later edit or repeat carries it forward.
+                        n.state == Notif.ACTIVE && n.id in hid && o.optString("type") != "repeat" -> { hid -= n.id; shown[n.id] = seq }
                     }
                     buffer.remove(n.id) // re-insert so order follows the latest event
                     buffer[n.id] = n
