@@ -15,6 +15,9 @@ import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.CopyOnWriteArrayList
 
+/** A request path without the subscribed=mine every app request ends with (#764), for tests that match exact paths. */
+val RecordedRequest.bare get() = path.orEmpty().replace(Regex("[?&]subscribed=mine$"), "")
+
 /** Runs SyncClient against a fake clrd server: replay, reconnect, reset, queued actions, bad token. */
 class SyncClientTest {
     private val server = MockWebServer()
@@ -49,12 +52,12 @@ class SyncClientTest {
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
-                val path = request.path.orEmpty()
+                val path = request.bare
                 return when {
                     path.startsWith("/api/v1/ws") -> {
                         wsAt += System.nanoTime()
                         wsSince += request.requestUrl!!.queryParameter("since")!!
-                        wsPaths += path
+                        wsPaths += request.path.orEmpty()
                         val n = wsSince.size
                         wsResponse() ?: MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) { serverSockets += webSocket; onConnect(n, webSocket) }
@@ -64,7 +67,7 @@ class SyncClientTest {
                         })
                     }
                     path.startsWith("/api/v1/notifications?state=open") -> {
-                        lists += path
+                        lists += request.path.orEmpty()
                         MockResponse().setBody(open(request.requestUrl!!.queryParameter("before")))
                     }
                     request.method == "GET" && path.startsWith("/api/v1/notifications/") -> {

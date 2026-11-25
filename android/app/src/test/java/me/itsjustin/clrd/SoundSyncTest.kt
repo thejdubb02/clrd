@@ -41,7 +41,7 @@ class SoundSyncTest {
         server.enqueue(MockResponse().setBody("{}"))
         assertNull(onIo { app.pickSound("bell") })
         val r = server.takeRequest(5, TimeUnit.SECONDS)!!
-        assertEquals("PUT /api/v1/settings", "${r.method} ${r.path}")
+        assertEquals("PUT /api/v1/settings", "${r.method} ${r.bare}")
         assertEquals("bell", JSONObject(r.body.readUtf8()).getString("sound"))
         assertNull(app.soundPending)
         assertEquals("bell", app.sound)
