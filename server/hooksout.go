@@ -474,9 +474,17 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 // still has the URL and kind it was sent with: a save during the send moved
 // it to another channel, where that id means nothing (#795).
 func (s *Server) keepPost(ctx context.Context, j hookJob, id, remote string) error {
-	_, err := s.db.ExecContext(context.WithoutCancel(ctx), `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id)
+	ctx, at := context.WithoutCancel(ctx), j.url
+	if j.kind == "discord" { // a save that only changed wait is the same channel (#816)
+		var now string
+		_ = s.db.QueryRowContext(ctx, `SELECT url FROM hooks_out WHERE topic = ? AND name = ? AND kind = 'discord'`, j.topic, j.name).Scan(&now)
+		if discordURL(now) == discordURL(j.url) {
+			at = now
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id)
 		SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ? AND kind = ?)`,
-		j.topic, j.name, id, remote, j.topic, j.name, j.url, j.kind)
+		j.topic, j.name, id, remote, j.topic, j.name, at, j.kind)
 	return err
 }
 
@@ -488,9 +496,10 @@ type hookReq struct {
 // discordURL drops wait from a Discord webhook URL: clrd sets it on each post
 // itself, so a hook saved with or without it is the same channel and keeps its
 // message ids. thread_id stays: another thread is another channel (#816).
+// The query is re-encoded in key order, so reordering it is no change either.
 func discordURL(s string) string {
 	u, err := url.Parse(s)
-	if err != nil || !u.Query().Has("wait") {
+	if err != nil || u.RawQuery == "" {
 		return s
 	}
 	q := u.Query()

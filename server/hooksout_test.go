@@ -814,12 +814,19 @@ func TestHooksOutDiscordWaitKeepsPosts(t *testing.T) {
 	s.fetch.allow = func(netip.Addr, string) bool { return true }
 	var mu sync.Mutex
 	var hits []string
+	var during func() // runs inside a post, before the reply, once
 	dc, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		hits = append(hits, r.Method+" "+r.URL.Path)
-		n := len(hits)
+		n, f := len(hits), during
+		if r.Method == "POST" {
+			during = nil
+		}
 		mu.Unlock()
 		if r.Method == "POST" {
+			if f != nil {
+				f()
+			}
 			fmt.Fprintf(w, `{"id":"m%d"}`, n)
 		}
 	})
@@ -862,6 +869,35 @@ func TestHooksOutDiscordWaitKeepsPosts(t *testing.T) {
 	cycle(id)
 	if last := hits[len(hits)-1]; last != "POST /api/webhooks/1/tok" {
 		t.Fatalf("after a new thread_id: %v, want a POST", hits)
+	}
+	// A hook saved before #816, unsorted: adding wait, in any order, is no change.
+	legacy := func(rest string) {
+		s.db.Exec(`UPDATE hooks_out SET url = ? WHERE name = 'dc'`, dc.URL+"/api/webhooks/1/tok"+rest)
+	}
+	legacy("?with_components=true&thread_id=9")
+	save("?thread_id=9&with_components=true&wait=true")
+	cycle(id)
+	if last := hits[len(hits)-1]; !strings.HasPrefix(last, "PATCH ") {
+		t.Fatalf("legacy URL reordered with wait: %v, want a PATCH", hits)
+	}
+	// A legacy URL with wait, resaved without it while a post is out, keeps the new id.
+	legacy("?wait=true")
+	mu.Lock()
+	during = func() {
+		if err := s.SaveHook(ctx, serverToken, "ops", "dc", OutHook{URL: dc.URL + "/api/webhooks/1/tok", Kind: "discord"}, false, false); err != nil {
+			t.Error(err)
+		}
+	}
+	mu.Unlock()
+	code, n = call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Load"})
+	if code != 200 {
+		t.Fatalf("publish: %d", code)
+	}
+	s.deliverHooks(ctx)
+	var kept int
+	s.db.QueryRow(`SELECT count(*) FROM hook_posts WHERE id = ?`, n["id"]).Scan(&kept)
+	if kept != 1 {
+		t.Fatalf("wait dropped during a post: kept %d message ids, want 1", kept)
 	}
 }
 
