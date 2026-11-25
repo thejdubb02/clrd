@@ -400,7 +400,9 @@ const idleSQL = `SELECT t.id FROM tokens t JOIN sessions s ON s.token_id = t.id
 // unlinkIfIdle unlinks id, logged by by, only while it is still idle since
 // cutoff: the delete itself checks again (#773), so a browser that came back,
 // added web push or gained a child since it was picked stays. false if it did.
-func (s *Server) unlinkIfIdle(ctx context.Context, id string, cutoff time.Time, browsersOnly bool, by string) (bool, error) {
+// The delete also needs the token caller to still exist (#805), so a tidy
+// whose caller is revoked mid-loop stops unlinking; the sweep passes id.
+func (s *Server) unlinkIfIdle(ctx context.Context, id string, cutoff time.Time, browsersOnly bool, caller, by string) (bool, error) {
 	if live, _, _ := s.hub.status(id); live {
 		return false, nil // a stream signs in first, so the delete's own check sees it too
 	}
@@ -410,7 +412,7 @@ func (s *Server) unlinkIfIdle(ctx context.Context, id string, cutoff time.Time, 
 		err = s.db.QueryRowContext(ctx, `SELECT name FROM tokens WHERE id = ?`, id).Scan(&name)
 	}
 	if err == nil {
-		err = s.deleteTokenIf(ctx, id, idleSQL+` AND t.id = ?`, ms(cutoff), browsersOnly, id)
+		err = s.deleteTokenIf(ctx, id, idleSQL+` AND t.id = ? AND EXISTS (SELECT 1 FROM tokens k WHERE k.id = ?)`, ms(cutoff), browsersOnly, id, caller)
 	}
 	if errors.Is(err, sql.ErrNoRows) || isNotFound(err) {
 		return false, nil // gone already, or no longer idle
@@ -437,11 +439,11 @@ func (s *Server) Tidy(ctx context.Context, tok *Token, n int, dryRun bool, only 
 	}
 	out := []string{}
 	for _, d := range ds {
-		if d.This || !d.CanUnlink || d.Kind == "agent" || !slices.Contains(idle, d.ID) || only != nil && !slices.Contains(only, d.ID) {
+		if !tidyable(d, idle, only) {
 			continue
 		}
 		if !dryRun {
-			ok, err := s.unlinkIfIdle(context.WithoutCancel(ctx), d.ID, cutoff, false, tok.Name)
+			ok, err := s.unlinkIfIdle(context.WithoutCancel(ctx), d.ID, cutoff, false, tok.ID, tok.Name)
 			if err != nil {
 				return out, err
 			}
@@ -452,6 +454,14 @@ func (s *Server) Tidy(ctx context.Context, tok *Token, n int, dryRun bool, only 
 		out = append(out, d.ID)
 	}
 	return out, nil
+}
+
+// tidyable says whether Tidy takes d, given the idle ids and its only list.
+// Connected too (#805): a stream opened after idle was read would be skipped
+// by the unlink, so a dry run must not count it either.
+func tidyable(d LinkedDevice, idle, only []string) bool {
+	return !d.This && d.CanUnlink && d.Kind != "agent" && !d.Connected &&
+		slices.Contains(idle, d.ID) && (only == nil || slices.Contains(only, d.ID))
 }
 
 // unlinkIdle is the background sweep (#765): browsers unseen for the
@@ -472,7 +482,7 @@ func (s *Server) unlinkIdle(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		if _, err := s.unlinkIfIdle(ctx, id, cutoff, true, fmt.Sprintf("unused for %d days", n)); err != nil {
+		if _, err := s.unlinkIfIdle(ctx, id, cutoff, true, id, fmt.Sprintf("unused for %d days", n)); err != nil {
 			return err
 		}
 	}
