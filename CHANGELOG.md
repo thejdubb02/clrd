@@ -139,6 +139,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Fixed
 
 - Desktop (Linux): a clear that arrives just after the notification service restarted no longer closes another app's notification that took the old one's number (#601).
+- Desktop (Linux): after the notification service restarts, an update to a clrd notification no longer replaces another app's notification that got the same number, and a button pressed on a notification from before the restart no longer acts on a different one (#791).
 - Desktop (Linux): if the keyring quits while its unlock dialog is open, clrd stops waiting and says so instead of hanging. Keyrings that lock each entry on its own are now unlocked entry by entry, and only the keyring itself can end the wait for its dialog (#608).
 - Android: a phone set up by pasting a token now follows the topics you unsubscribed from on the web. Before, it kept showing cards of those topics, so a clear on the web looked like it never reached the phone. After the update the phone drops them on its own; nothing to set up. Scripts using the same token still see every topic (#764).
 - Web: Undo after an Unsubscribe sends `if_request_id`, so if another device changed topic subscriptions before the click, the server refuses it and the page shows "Changed on another device." instead of reversing their choice (#716).

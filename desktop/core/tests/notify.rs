@@ -486,14 +486,12 @@ fn quitting_takes_down_what_is_showing() {
     assert_eq!(closes, ["close 1", "close 2"]);
 }
 
-#[test]
-fn a_clear_after_the_service_restarts_leaves_the_new_one_alone() {
-    let mut d = Desk::start();
-    d.show(&note("a"), true);
-    // Another run of the service takes over; its ids start over at 1.
+/// Another run of the service takes over; its ids start over at 1. The old
+/// run stays connected, as one that gave up the name would.
+fn new_run(d: &Desk) -> (Connection, Arc<Mutex<Vec<String>>>) {
     block_on(d.service.release_name(NAME)).unwrap();
     let calls = Arc::new(Mutex::new(Vec::new()));
-    let _new = block_on(
+    let conn = block_on(
         zbus::connection::Builder::address(d._bus.1.as_str())
             .name(NAME)
             .serve_at(
@@ -508,6 +506,43 @@ fn a_clear_after_the_service_restarts_leaves_the_new_one_alone() {
             .build(),
     )
     .unwrap();
+    (conn, calls)
+}
+
+#[test]
+fn an_update_after_the_service_restarts_shows_as_new() {
+    let mut d = Desk::start();
+    d.show(&note("a"), true);
+    let (_new, calls) = new_run(&d);
+    block_on(d.service.clone().close()).unwrap(); // the old run exits
+                                                  // The new run may have given id 1 to another app: no replacing it.
+    d.show(&note("a"), false);
+    assert_eq!(
+        *calls.lock().unwrap(),
+        ["notify 1 replaces=0 urgency=1 quiet=true [title a] [done]"]
+    );
+}
+
+#[test]
+fn a_press_from_the_old_run_leaves_what_the_new_run_shows_alone() {
+    let mut d = Desk::start();
+    d.show(&note("a"), true);
+    let (_new, _) = new_run(&d);
+    d.show(&note("b"), true); // the new run gives it id 1 too
+    d.user_presses(1, "clear"); // on what the old run still shows
+    settle();
+    assert!(
+        d.server.dismissed().is_empty(),
+        "{:?}",
+        d.server.dismissed()
+    );
+}
+
+#[test]
+fn a_clear_after_the_service_restarts_leaves_the_new_one_alone() {
+    let mut d = Desk::start();
+    d.show(&note("a"), true);
+    let (_new, calls) = new_run(&d);
     d.notifier.as_mut().unwrap().close("a"); // another device cleared it
     settle();
     assert!(
