@@ -680,7 +680,13 @@ fn gtk_look(app: &AppHandle, dark: Option<bool>) {
             return;
         };
         if dark.is_none() {
-            settings.set_gtk_application_prefer_dark_theme(GTK_DARK.get());
+            // After the window library's own no-theme step, which turns the
+            // setting off: it is queued already, but this may run before it
+            // (inline when called on this thread). Idle runs after it.
+            let settings = settings.clone();
+            gtk::glib::idle_add_local_once(move || {
+                settings.set_gtk_application_prefer_dark_theme(GTK_DARK.get());
+            });
         }
         DARK.with_borrow_mut(|dark| {
             if !light {

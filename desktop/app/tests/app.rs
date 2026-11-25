@@ -405,6 +405,9 @@ setInterval(async () => {
         fake.reports().len() == 3
     });
     assert_eq!(fake.reports()[2], "true");
+    // And it stays dark: nothing turns it off again after.
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(fake.reports().len(), 3, "dark did not stay");
 }
 
 /// A pick kept from an earlier run shows from the first moment of the next.
