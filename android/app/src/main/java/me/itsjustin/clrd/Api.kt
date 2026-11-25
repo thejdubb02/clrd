@@ -71,7 +71,10 @@ class Api(private val http: OkHttpClient, baseUrl: String, private val token: St
 
     fun wsRequest(since: Long): Request = req("/api/v1/ws?since=$since").build()
 
-    private fun req(path: String) = Request.Builder().url(base + path).header("Authorization", "Bearer $token")
+    /** subscribed=mine: follow this token's topic choices even when it is a typed-in one with no user (#764). A path naming its own subscribed= keeps it. */
+    private fun req(path: String) = Request.Builder()
+        .url(base + path + if ("subscribed=" in path) "" else (if ('?' in path) "&" else "?") + "subscribed=mine")
+        .header("Authorization", "Bearer $token")
 
     private fun call(b: Request.Builder): String = http.newCall(b.build()).execute().use { r ->
         val text = r.body?.string().orEmpty()

@@ -50,12 +50,12 @@ class SubsTest {
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
-                request.path == "/api/v1/subscriptions" && request.method == "PUT" -> {
+                request.bare == "/api/v1/subscriptions" && request.method == "PUT" -> {
                     puts += request.body.readUtf8(); MockResponse().setBody(list).apply { if (slow) setBodyDelay(1, java.util.concurrent.TimeUnit.SECONDS) }
                 }
-                request.path == "/api/v1/subscriptions" -> MockResponse().setResponseCode(listCode).setBody(if (listCode == 200) list else """{"error":"not found"}""")
-                request.path!!.startsWith("/api/v1/notifications?") -> {
-                    lists += request.path!!
+                request.bare == "/api/v1/subscriptions" -> MockResponse().setResponseCode(listCode).setBody(if (listCode == 200) list else """{"error":"not found"}""")
+                request.bare.startsWith("/api/v1/notifications?") -> {
+                    lists += request.bare
                     MockResponse().setBody("""{"seq":9,"epoch":"e","notifications":[{"id":"d1","topic":"deploys","title":"Deploy done","message":"web 4.2","seq":7}]}""")
                 }
                 else -> MockResponse().setBody("{}")

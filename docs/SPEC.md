@@ -482,9 +482,14 @@ any token attached to a user. A typed-in token with no user is never
 filtered, because it is usually a script and is often also the token a
 browser signed in with. It reads `"filtered":false` with no topics, and a
 PUT on it is a 409, since no user holds its choices; the browsers and
-phones made from it read and change their tree's set. So a
-phone set up by pasting such a token shows every topic; link it, or attach
-the token to a user, to have it follow subscriptions. A script on a token
+phones made from it read and change their tree's set. An app holding such
+a token asks to follow that set by sending `subscribed=mine` on every
+request (list, settings, subscriptions, WebSocket, SSE and events); it is
+then filtered like a linked device, gets the same resets, and may change
+the set. A request that does not ask stays unfiltered, so scripts and SDKs
+are untouched, and asking only narrows: it never shows a topic the token
+cannot read. The Android app always asks (#764), and reloads what it holds
+the first time a settings message says it is filtered. A script on a token
 attached to a user follows that user's subscriptions; give it its own token
 with no user, or have it send `subscribed=all`, to see every topic.
 
