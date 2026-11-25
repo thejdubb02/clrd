@@ -123,6 +123,149 @@ func userGrants(raw json.RawMessage) (stored string, gs *[]Grant, err error) {
 	return string(b), &list, nil
 }
 
+// Merged is the reply to a merge: the person kept, how many tokens moved,
+// and every token whose topic rules changed, wider or narrower (#143).
+type Merged struct {
+	User          User          `json:"user"`
+	Moved         int           `json:"moved_tokens"`
+	AccessChanged []MergedToken `json:"access_changed"`
+}
+
+// MergedToken is a token whose topic rules a merge changed.
+type MergedToken struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	User string `json:"from_user"` // the person it belonged to before
+}
+
+// mergeUsers moves every token of person from under person into, gives into
+// the grants of both, moves from's subscriptions and deletes from, in one
+// transaction (#143). Only an admin signed in on the web or the app may,
+// never a typed-in token: a leaked admin token cannot fold someone's phone
+// into another person. No token's approve setting is touched.
+func (s *Server) mergeUsers(ctx context.Context, tok *Token, into, from string) (Merged, error) {
+	var out Merged
+	if err := tok.needFullAdmin(); err != nil {
+		return out, err
+	}
+	var session bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM sessions WHERE token_id = ?)`, tok.ID).Scan(&session); err != nil {
+		return out, err
+	}
+	if !session {
+		return out, errf(403, "forbidden", "merging people needs an admin signed in on the web or the app, not a token")
+	}
+	if from == "" || from == into {
+		return out, errf(400, "bad_request", "from required: the id of another person")
+	}
+	err := s.changeSubs(ctx, "u:"+into, nil, true, "", func(tx *sql.Tx, _ bool) error {
+		grants := map[string]string{}
+		for _, id := range []string{into, from} {
+			var g, kind string
+			var config int
+			err := tx.QueryRowContext(ctx, `SELECT grants, kind, config FROM people WHERE id = ?`, id).Scan(&g, &kind, &config)
+			if err == sql.ErrNoRows {
+				return errf(404, "not_found", "no person %q", id)
+			}
+			if err != nil {
+				return err
+			}
+			if kind != "person" {
+				return errf(409, "conflict", "%q is an agent: only people merge", id)
+			}
+			if config != 0 {
+				return errf(409, "conflict", "%q is managed by the config file: merge them there", id)
+			}
+			grants[id] = g
+		}
+		merged, err := mergeGrants(grants[into], grants[from])
+		if err != nil {
+			return err
+		}
+		// Each token of either side whose rules change is listed. An admin
+		// token keeps its own access (withUser), so it never changes.
+		rows, err := tx.QueryContext(ctx, `SELECT id, name, user_id FROM tokens WHERE user_id IN (?, ?)
+		  AND ',' || scopes || ',' NOT LIKE '%,admin,%' ORDER BY created_at, id`, into, from)
+		if err != nil {
+			return err
+		}
+		out.AccessChanged = []MergedToken{}
+		for rows.Next() {
+			var m MergedToken
+			if err := rows.Scan(&m.ID, &m.Name, &m.User); err != nil {
+				rows.Close()
+				return err
+			}
+			if grants[m.User] != merged {
+				out.AccessChanged = append(out.AccessChanged, m)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE tokens SET user_id = ? WHERE user_id = ?`, into, from)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		out.Moved = int(n)
+		// into's own choice wins where both chose for one topic.
+		for _, q := range []string{
+			`INSERT INTO subscriptions (owner, topic, subscribed) SELECT ?, topic, subscribed FROM subscriptions WHERE owner = ? ON CONFLICT DO NOTHING`,
+			`DELETE FROM subscriptions WHERE owner = ?2`,
+			`DELETE FROM sub_owners WHERE owner = ?2`,
+		} {
+			if _, err := tx.ExecContext(ctx, q, "u:"+into, "u:"+from); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM people WHERE id = ?`, from); err != nil {
+			return err
+		}
+		var created int64
+		out.User = User{ID: into}
+		err = tx.QueryRowContext(ctx, `UPDATE people SET grants = ? WHERE id = ? RETURNING name, kind, created_at`, merged, into).Scan(&out.User.Name, &out.User.Kind, &created)
+		out.User.CreatedAt = fromMS(created)
+		if merged != "" {
+			out.User.Grants = &[]Grant{}
+			json.Unmarshal([]byte(merged), out.User.Grants)
+		}
+		return err
+	})
+	if err != nil {
+		return Merged{}, err
+	}
+	s.dropStreams(context.WithoutCancel(ctx), `user_id = ?`, into)
+	return out, nil
+}
+
+// mergeGrants is two people's stored grants as one: null on either side
+// limits nothing, so the result does not either; otherwise into's rules come
+// first, then from's not already there. Rules match in order, so where both
+// name a topic, into's rule decides. Either side's devices may end up with
+// more or fewer topics; mergeUsers lists them.
+func mergeGrants(into, from string) (string, error) {
+	if into == "" || from == "" {
+		return "", nil
+	}
+	var a, b []Grant
+	if err := json.Unmarshal([]byte(into), &a); err != nil {
+		return "", err
+	}
+	if err := json.Unmarshal([]byte(from), &b); err != nil {
+		return "", err
+	}
+	for _, g := range b {
+		if !slices.ContainsFunc(a, func(h Grant) bool { return h.Topic == g.Topic && slices.Equal(h.Scopes, g.Scopes) }) {
+			a = append(a, g)
+		}
+	}
+	raw, _ := json.Marshal(a)
+	stored, _, err := userGrants(raw)
+	return stored, err
+}
+
 func (s *Server) userRoutes() {
 	admin := func(h func(w http.ResponseWriter, r *http.Request) error) func(http.ResponseWriter, *http.Request, *Token) error {
 		return func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -235,6 +378,20 @@ func (s *Server) userRoutes() {
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}))
+	s.api("POST /api/v1/users/{id}/merge", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		var in struct {
+			From string `json:"from"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		out, err := s.mergeUsers(r.Context(), tok, r.PathValue("id"), in.From)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, out)
+		return nil
+	})
 	s.api("PUT /api/v1/tokens/{id}/user", admin(func(w http.ResponseWriter, r *http.Request) error {
 		var in struct {
 			User *string `json:"user"`

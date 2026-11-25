@@ -359,3 +359,95 @@ func openStream(t *testing.T, url, tok string) (*http.Response, chan string) {
 	}()
 	return res, lines
 }
+
+// #143: merging two people. Only an admin signed in on the web or the app
+// may; tokens move with their approve settings untouched; grants join, and
+// every token whose topics change is named in the reply.
+func TestUsersMerge(t *testing.T) {
+	s, srv, admin := newTest(t)
+	s.tokLimit, s.topicLimit = nil, nil
+	person := func(name string, grants any) string {
+		_, u := call(t, srv, "POST", "/api/v1/users", admin, map[string]any{"name": name, "grants": grants})
+		return u["id"].(string)
+	}
+	tokenOf := func(name, user, approve string) (id, raw string) {
+		_, out := call(t, srv, "POST", "/api/v1/tokens", admin, map[string]any{"name": name, "scopes": []string{"read", "publish"}, "user": user})
+		id, raw = out["id"].(string), out["token"].(string)
+		s.db.Exec(`UPDATE tokens SET approve = ? WHERE id = ?`, approve, id)
+		return id, raw
+	}
+	home := []Grant{{Topic: "home-*", Scopes: []string{ScopeRead, ScopePublish}}}
+	into := person("Justin", home)
+	from := person("justin-old", []Grant{{Topic: "work", Scopes: []string{ScopeRead}}})
+	laptopID, _ := tokenOf("laptop", into, ApproveDenied)
+	scriptID, script := tokenOf("script", from, ApproveDenied)
+	phoneID, _ := tokenOf("phone", from, ApproveAsk)
+	call(t, srv, "PUT", "/api/v1/subscriptions", childOf(t, s, script), map[string]any{"topics": map[string]bool{"work": false}})
+	merge := func(tok, from string) (int, map[string]any) {
+		return call(t, srv, "POST", "/api/v1/users/"+into+"/merge", tok, map[string]any{"from": from})
+	}
+
+	// No typed-in token may, not even a full admin one or an allowed device of a non-admin.
+	signedIn := childOf(t, s, admin)
+	for _, tok := range []string{admin, childOf(t, s, script), mkToken(t, s, "limited-admin", []string{"admin"}, []string{"x"}), ""} {
+		if c, out := merge(tok, from); c != 403 && c != 401 {
+			t.Fatalf("merge by a token: %d %v", c, out)
+		}
+	}
+	for _, bad := range []string{"", into, "nobody"} {
+		if c, _ := merge(signedIn, bad); c != 400 && c != 404 {
+			t.Fatalf("merge from %q: %d", bad, c)
+		}
+	}
+
+	c, out := merge(signedIn, from)
+	if c != 200 || out["moved_tokens"] != float64(2) {
+		t.Fatalf("merge: %d %v", c, out)
+	}
+	changed := map[string]bool{}
+	for _, m := range out["access_changed"].([]any) {
+		changed[m.(map[string]any)["id"].(string)] = true
+	}
+	if !changed[laptopID] || !changed[scriptID] || !changed[phoneID] {
+		t.Fatalf("access_changed misses a token: %v", out["access_changed"])
+	}
+	var people, left int
+	s.db.QueryRow(`SELECT COUNT(*) FROM people WHERE id = ?`, from).Scan(&people)
+	s.db.QueryRow(`SELECT COUNT(*) FROM tokens WHERE user_id = ?`, into).Scan(&left)
+	if people != 0 || left != 3 {
+		t.Fatalf("after merge: from still there %d, tokens of into %d", people, left)
+	}
+	for id, want := range map[string]string{laptopID: ApproveDenied, scriptID: ApproveDenied, phoneID: ApproveAsk} {
+		var got string
+		s.db.QueryRow(`SELECT approve FROM tokens WHERE id = ?`, id).Scan(&got)
+		if got != want {
+			t.Fatalf("approve of %s: %q, want %q", id, got, want)
+		}
+	}
+	read := func(topic string) int { c, _ := call(t, srv, "GET", "/api/v1/notifications?topic="+topic, script, nil); return c }
+	if read("home-door") != 200 || read("work") != 200 || read("other") != 403 {
+		t.Fatalf("merged grants: home %d, work %d, other %d", read("home-door"), read("work"), read("other"))
+	}
+	var sub int
+	s.db.QueryRow(`SELECT COUNT(*) FROM subscriptions WHERE owner = ? AND topic = 'work' AND subscribed = 0`, "u:"+into).Scan(&sub)
+	if sub != 1 {
+		t.Fatal("from's subscriptions did not move")
+	}
+
+	// Same grants on both sides: nobody's topics change, so nobody is listed.
+	other := person("same", append(home, Grant{Topic: "work", Scopes: []string{ScopeRead}}))
+	tokenOf("tablet", other, ApproveDenied)
+	if _, out := merge(signedIn, other); len(out["access_changed"].([]any)) != 0 {
+		t.Fatalf("unchanged access listed: %v", out)
+	}
+	// Agents and people the config file manages do not merge.
+	agent := person("bot", nil)
+	s.db.Exec(`UPDATE people SET kind = 'agent' WHERE id = ?`, agent)
+	file := person("filed", nil)
+	s.db.Exec(`UPDATE people SET config = 1 WHERE id = ?`, file)
+	for _, id := range []string{agent, file} {
+		if c, _ := merge(signedIn, id); c != 409 {
+			t.Fatalf("merge of %s: %d, want 409", id, c)
+		}
+	}
+}
