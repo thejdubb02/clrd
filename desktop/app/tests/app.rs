@@ -443,9 +443,16 @@ localStorage.setItem('clrd.theme', 'dark');
         std::fs::read_to_string(&kept).is_ok_and(|pick| pick == "dark")
     });
     drop(first);
-    let dbus = zbus::block_on(zbus::fdo::DBusProxy::new(&portal)).unwrap();
     wait_long("the first run is gone", || {
-        !zbus::block_on(dbus.name_has_owner("org.clrd.Desktop".try_into().unwrap())).unwrap()
+        let reply = zbus::block_on(portal.call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "NameHasOwner",
+            &("org.clrd.Desktop",),
+        ))
+        .unwrap();
+        !reply.body().deserialize::<bool>().unwrap()
     });
 
     let seen = fake.reports().len();
