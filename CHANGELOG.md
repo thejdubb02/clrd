@@ -19,6 +19,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Added
 
 - Android: linking the same phone again replaces its row in Linked devices instead of adding a second one, and the row shows the model and Android version (for example "Pixel 8, Android 15") (#769).
+- Desktop (Linux): the title bar and the This computer page follow the Appearance pick in the inbox (Dark, Light or System), not only the desktop's own setting. The pick is kept for the next start (#760).
 - Desktop: linking the same computer again replaces its row in Linked devices instead of adding a second one, and the row shows its system (for example "Fedora Linux 41" or "Windows 11") (#770).
 - Server and web: a browser that signs in again replaces its own row in Linked devices instead of adding a new one, keeping any lower approve setting the old row had. Each browser and phone row also shows what it is (for example "Firefox 120 on Linux"), a Rename button names it, and "Unlink devices unused for 7 days" tidies old rows in one click. Linked browsers unused for 30 days now unlink on their own (setting `unlink_idle_browsers_days`, 0 turns it off); on upgrade, browsers already unused that long unlink within the hour (#765).
 - SDKs: the JavaScript client and GitHub Action READMEs link to the source repository on GitHub (#586).
