@@ -2316,9 +2316,10 @@ try {
       for (let i = 0; i < 20 && (await mine()) !== 'pop'; i++) await sp.waitForTimeout(250);
       assert.equal(await mine(), 'pop', 'a setting saved under a sub-path reached the server');
       // Pair page: the sign-in code request also stays inside the sub-path.
-      const pc = await (await browser.newContext()).newPage();
+      const pc = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
       pc.on('request', r => { const u = new URL(r.url()); if (u.origin === root && !u.pathname.startsWith('/clrd/')) outside.push(u.pathname); });
       await pc.goto(sub + '/app');
+      await pc.locator('footer a[href="https://github.com/thejdubb02/clrd"]').waitFor({ state: 'visible' }); // visible on phone width (#586)
       await pc.getByRole('button', { name: 'Show sign-in code' }).click();
       await pc.locator('[data-pair-qr]').waitFor({ state: 'visible' });
       assert.deepEqual(outside, [], 'requests left the sub-path');

@@ -180,33 +180,12 @@ impl Server {
     }
 
     /// Unlinks this device on the server: its token stops working, and so
-    /// does every window session signed in with it.
+    /// does every window session signed in with it. `this` names the asking
+    /// device, which may unlink itself whatever its scopes (#643).
     pub fn unlink(&self) -> Result<(), Error> {
-        #[derive(Deserialize)]
-        struct Device {
-            id: String,
-            #[serde(default)]
-            this: bool,
-        }
-        #[derive(Deserialize)]
-        struct Devices {
-            devices: Vec<Device>,
-        }
-        let mut res = Self::checked(
-            self.http
-                .get(format!("{}/api/v1/devices?all=1", self.base))
-                .header("Authorization", &self.bearer)
-                .call(),
-        )?;
-        let list: Devices = res.body_mut().read_json().map_err(retry)?;
-        let me = list
-            .devices
-            .into_iter()
-            .find(|d| d.this)
-            .ok_or_else(|| retry("the server does not list this device"))?;
         Self::checked(
             self.http
-                .delete(format!("{}/api/v1/devices/{}", self.base, me.id))
+                .delete(format!("{}/api/v1/devices/this", self.base))
                 .header("Authorization", &self.bearer)
                 .call(),
         )

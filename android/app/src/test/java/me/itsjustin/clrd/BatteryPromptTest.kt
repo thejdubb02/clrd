@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.ResolveInfo
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.test.core.app.ApplicationProvider
@@ -28,9 +29,11 @@ class BatteryPromptTest {
 
     // Never made visible, so its screen is never composed: a composed screen here left Compose stuck in the shared
     // test JVM, and Compose tests later in the run never went idle (#161). These tests only need the activity itself.
+    // The closed screen's last posted work runs before the next test, or a Compose test that ran earlier in the JVM
+    // leaves later ones stuck the same way.
     private fun open() = Robolectric.buildActivity(MainActivity::class.java).create().start().resume().also { screens += it }
 
-    @After fun close() = screens.forEach { it.pause().stop().destroy() }
+    @After fun close() { screens.forEach { it.pause().stop().destroy() }; shadowOf(Looper.getMainLooper()).idle() }
 
     @Test fun asksWhileOptimised() {
         power.setIgnoringBatteryOptimizations(ctx.packageName, false)

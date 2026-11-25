@@ -222,6 +222,9 @@ func TestUnauthorized(t *testing.T) {
 		if code != 401 || strings.Contains(body, "secret-title") || strings.Contains(body, "data-inbox") || !strings.Contains(body, `action="/api/v1/session"`) {
 			t.Errorf("%T: status %d, page leaked data, rendered the inbox or has no sign-in form", api, code)
 		}
+		if !strings.Contains(body, `aria-label="Footer"`) || !strings.Contains(body, `class="hover:text-foreground" href="https://github.com/thejdubb02/clrd">GitHub</a>`) {
+			t.Errorf("%T: sign-in page missing shared footer GitHub link", api)
+		}
 	}
 	if _, body := get(t, Handler(deny{}, ""), "/app?topic=home&auth=clrd_old"); !strings.Contains(body, `value="/app?topic=home"`) || strings.Contains(body, `role="alert"`) {
 		t.Error("next must keep the filters and drop auth, with no error shown")

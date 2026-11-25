@@ -360,6 +360,109 @@ fetch('/report', { method: 'POST', body: String(matchMedia('(prefers-color-schem
     assert_eq!(fake.reports(), ["true"]);
 }
 
+/// With no desktop preference and GTK set to dark, picking Light and then
+/// System brings GTK's dark back (#783).
+#[test]
+fn system_after_light_brings_gtks_dark_back() {
+    const PICKS: &str = r#"<!doctype html><title>pick</title><script>
+const dark = matchMedia('(prefers-color-scheme: dark)');
+let sent = Promise.resolve();
+const say = () => {
+  const body = String(dark.matches);
+  sent = sent.then(() => fetch('/report', { method: 'POST', body }));
+};
+dark.addEventListener('change', say);
+say();
+localStorage.setItem('clrd.theme', 'light');
+setInterval(async () => {
+  const page = await (await fetch(location.href)).text();
+  if (page.includes('GO ' + 'SYSTEM')) localStorage.removeItem('clrd.theme');
+}, 300);
+</script>"#;
+
+    let fake = Fake::start();
+    fake.set_page(PICKS);
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let gtk = home.join("config/gtk-3.0");
+    std::fs::create_dir_all(&gtk).unwrap();
+    std::fs::write(
+        gtk.join("settings.ini"),
+        "[Settings]\ngtk-application-prefer-dark-theme=1\n",
+    )
+    .unwrap();
+    let _portal = portal(&bus, Default::default());
+    let _app = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    wait_long("dark, then the Light pick", || fake.reports().len() == 2);
+    assert_eq!(fake.reports(), ["true", "false"]);
+    fake.set_page(&format!("{PICKS}<!-- GO SYSTEM -->"));
+    wait_long("System brings GTK's dark back", || {
+        fake.reports().len() == 3
+    });
+    assert_eq!(fake.reports()[2], "true");
+    // And it stays dark: nothing turns it off again after.
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(fake.reports().len(), 3, "dark did not stay");
+}
+
+/// A pick kept from an earlier run shows from the first moment of the next.
+#[test]
+fn a_kept_pick_shows_after_a_restart() {
+    let fake = Fake::start();
+    fake.set_page(
+        r#"<!doctype html><title>pick</title><script>
+fetch('/report', { method: 'POST', body: String(matchMedia('(prefers-color-scheme: dark)').matches) });
+localStorage.setItem('clrd.theme', 'dark');
+</script>"#,
+    );
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    // A light desktop, so only the kept pick can make it dark.
+    let portal = portal(
+        &bus,
+        std::sync::Arc::new(std::sync::atomic::AtomicU32::new(2)),
+    );
+    let start = || {
+        Group(
+            app(&bus, &home, &[])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("xvfb-run is needed for this test"),
+        )
+    };
+    let first = start();
+    wait_long("the page says what it sees", || !fake.reports().is_empty());
+    assert_eq!(fake.reports(), ["false"], "light at the first start");
+    let kept = home.join("data/org.clrd.desktop/theme");
+    wait_long("the dark pick is kept", || {
+        std::fs::read_to_string(&kept).is_ok_and(|pick| pick == "dark")
+    });
+    drop(first);
+    wait_long("the first run is gone", || {
+        let reply = zbus::block_on(portal.call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "NameHasOwner",
+            &("org.clrd.Desktop",),
+        ))
+        .unwrap();
+        !reply.body().deserialize::<bool>().unwrap()
+    });
+
+    let seen = fake.reports().len();
+    let _second = start();
+    wait_long("the page says what it sees again", || {
+        fake.reports().len() > seen
+    });
+    assert_eq!(fake.reports()[seen], "true", "the kept pick at start");
+}
+
 /// A GTK theme that is dark by its name ("Adwaita-dark") gives way when the
 /// desktop asks for light, and comes back when it no longer does (#703).
 #[test]
@@ -528,6 +631,8 @@ fetch('/report', { method: 'POST', body: 'open' });
 
     // First against a server that refuses the removal: the page then offers
     // Try again, which only works once Unlink has finished and let go.
+    let before_unlink = fake.sessions();
+    assert!(!before_unlink.is_empty(), "the inbox window is signed in");
     fake.refuse_unlink(true);
     wait_long("the keychain forgets the link", || {
         // No more keys once the app has asked the server: the page changes
@@ -555,6 +660,11 @@ fetch('/report', { method: 'POST', body: 'open' });
     })
     .unwrap();
     fake.refuse_unlink(false);
+    // Unlink must also take the window's cookie out of the web view (#709).
+    // New sessions go to /app only from here, so a cookie left over for all
+    // of / is not replaced by the next one and rides along beside it.
+    fake.session_path("/app");
+    let seen = fake.heads().len();
     let live = || {
         let all = fake.requests();
         all.iter().filter(|r| r.contains("/api/v1/ws")).count()
@@ -573,6 +683,35 @@ fetch('/report', { method: 'POST', body: 'open' });
         press(&["Tab", "Tab", "Tab", "Return"]);
         live() > before
     });
+    // A plain start opens the inbox window again, if Try again has not. It
+    // is dropped while Try again still holds the app, so ask until it opens.
+    let opened = || {
+        fake.heads()[seen..]
+            .iter()
+            .find(|h| h.starts_with("GET /app "))
+            .cloned()
+    };
+    wait_long("the inbox window opens again", || {
+        assert!(app(&bus, &home, &[]).output().unwrap().status.success());
+        (0..20).any(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            opened().is_some()
+        })
+    });
+    let opened = opened().unwrap();
+    assert!(opened.contains("clrd_session="), "not signed in: {opened}");
+    for old in &before_unlink {
+        assert!(
+            !opened.contains(old.as_str()),
+            "the cookie from before Unlink is still in the web view: {opened}"
+        );
+    }
+    // The page back on top, for the last Unlink.
+    assert!(app(&bus, &home, &["clrd://x"])
+        .output()
+        .unwrap()
+        .status
+        .success());
 
     wait_long("the server is told of the unlink", || {
         press(&unlink);

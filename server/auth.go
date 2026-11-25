@@ -587,6 +587,9 @@ func (s *Server) linkDevice(ctx context.Context, access *Token, parentID, name s
 	// a pairing captured it: a session can never answer more than its token (#187).
 	err = s.db.QueryRowContext(ctx, `UPDATE tokens SET approve = (SELECT approve FROM tokens WHERE id = ?) WHERE id = ? RETURNING approve`,
 		access.ID, st.ID).Scan(&st.Approve)
+	if err == nil {
+		err = inheritClears(ctx, s.db, access.ID, st.ID) // and where its clears apply (#767)
+	}
 	var res sql.Result
 	if err == nil {
 		// Only while the parent exists, so a racing revoke cannot miss this one.
@@ -649,6 +652,9 @@ func (s *Server) replaceInstall(ctx context.Context, st *Token, parentID string,
 				return err
 			}
 			st.Approve = o.approve
+		}
+		if err := inheritClears(ctx, s.db, o.id, st.ID); err != nil {
+			return err
 		}
 		// What hung under the old row now hangs under the new one, so
 		// dropping it signs nothing else out; so does its web push.
