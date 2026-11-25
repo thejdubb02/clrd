@@ -2,8 +2,15 @@ package server
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestStats(t *testing.T) {
@@ -124,5 +131,260 @@ func TestClearedAtUpgrade(t *testing.T) {
 	var v int64
 	if err := s.db.QueryRow(`SELECT cleared_at FROM notifications WHERE id = ?`, n.ID).Scan(&v); err != nil || v != 42 {
 		t.Fatalf("after upgrade: %v %d", err, v)
+	}
+}
+
+// Upgrade backfill refines cleared_at from the event log when a mark landed
+// after the clear, and uses the latest clear after a reopen (#661).
+func TestClearedAtUpgradeFromEvents(t *testing.T) {
+	open := reopener(t)
+	s := open()
+	raw := mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
+	ctx := context.Background()
+	tok := s.lookupToken(ctx, raw)
+	// First: dismiss at t=100, then mark at t=500 -> backfill must pick 100.
+	n1, err := s.Publish(ctx, tok, PublishInput{Topic: "t", Message: "m1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Act(ctx, tok, n1.ID, "dismiss", "api", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE events SET created_at = 100 WHERE type = ? AND json_extract(data, '$.notification.id') = ?`, EventState, n1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetMark(ctx, tok, n1.ID, MarkSeen, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET updated_at = 500 WHERE id = ?`, n1.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Second: dismiss at 100, reopen at 200, dismiss at 300, mark at 600 -> must pick 300.
+	n2, err := s.Publish(ctx, tok, PublishInput{Topic: "t", Message: "m2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Act(ctx, tok, n2.ID, "dismiss", "api", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Act(ctx, tok, n2.ID, "reopen", "api", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Act(ctx, tok, n2.ID, "dismiss", "api", nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.db.Query(`SELECT seq FROM events WHERE type = ? AND json_extract(data, '$.notification.id') = ? ORDER BY seq`, EventState, n2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seqs []int64
+	for rows.Next() {
+		var seq int64
+		rows.Scan(&seq)
+		seqs = append(seqs, seq)
+	}
+	rows.Close()
+	if len(seqs) != 3 {
+		t.Fatalf("state events: %v", seqs)
+	}
+	for i, ts := range []int64{100, 200, 300} {
+		if _, err := s.db.Exec(`UPDATE events SET created_at = ? WHERE seq = ?`, ts, seqs[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.SetMark(ctx, tok, n2.ID, MarkSeen, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET updated_at = 600 WHERE id = ?`, n2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE notifications DROP COLUMN cleared_at`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s = open()
+	defer s.Close()
+	var c1, c2 int64
+	if err := s.db.QueryRow(`SELECT cleared_at FROM notifications WHERE id = ?`, n1.ID).Scan(&c1); err != nil || c1 != 100 {
+		t.Fatalf("n1 cleared_at: %v %d, want 100", err, c1)
+	}
+	if err := s.db.QueryRow(`SELECT cleared_at FROM notifications WHERE id = ?`, n2.ID).Scan(&c2); err != nil || c2 != 300 {
+		t.Fatalf("n2 cleared_at: %v %d, want 300", err, c2)
+	}
+}
+
+// Pre-1970 timestamps floor to the hour below instead of rounding toward zero (#661).
+func TestStatsFloorPre1970(t *testing.T) {
+	s, ts, admin := newTest(t)
+	code, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "old", "message": "m"})
+	if code != 200 {
+		t.Fatalf("publish: %d", code)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET created_at = -1 WHERE id = ?`, n["id"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	code, st := call(t, ts, "GET", "/api/v1/stats?from=-7200000&to=3600000", admin, nil)
+	if code != 200 {
+		t.Fatalf("stats: %d %v", code, st)
+	}
+	hours := st["hours"].([]any)
+	if len(hours) != 1 || hours[0].(map[string]any)["at"] != float64(-3_600_000) {
+		t.Fatalf("pre-1970 bucket: %v, want at=-3600000", hours)
+	}
+}
+
+// Delivery health counts failed outgoing webhooks and Web Push sends per topic,
+// and CSV export carries the same numbers (#661).
+func TestStatsDeliveryAndCSV(t *testing.T) {
+	s, ts, admin := newTest(t)
+	const base = int64(1_700_000_000_000)
+	code, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m", "external_id": "=SUM(A1)"})
+	if code != 200 {
+		t.Fatalf("publish: %d", code)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET created_at = ? WHERE id = ?`, base+1000, n["id"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	// Dismiss the first so a second publish with the same external_id creates a second row (flapper).
+	call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/dismiss", admin, nil)
+	code, n2 := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m2", "external_id": "=SUM(A1)"})
+	if code != 200 {
+		t.Fatalf("publish 2: %d", code)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET created_at = ? WHERE id = ?`, base+2000, n2["id"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	// Seed failed and ok webhook deliveries, plus Web Push failures inside and outside the range.
+	for _, q := range []string{
+		fmt.Sprintf(`INSERT INTO hook_deliveries (topic, name, seq, event, body, status, next_at, updated_at) VALUES ('alerts', 'h1', 1, 'dismissed', '{}', 'failed', 0, %d)`, base+3000),
+		fmt.Sprintf(`INSERT INTO hook_deliveries (topic, name, seq, event, body, status, next_at, updated_at) VALUES ('alerts', 'h1', 2, 'dismissed', '{}', 'failed', 0, %d)`, base+4000),
+		fmt.Sprintf(`INSERT INTO hook_deliveries (topic, name, seq, event, body, status, next_at, updated_at) VALUES ('alerts', 'h1', 3, 'dismissed', '{}', 'ok', 0, %d)`, base+5000),
+		fmt.Sprintf(`INSERT INTO push_failures (topic, at) VALUES ('alerts', %d)`, base+3500),
+		fmt.Sprintf(`INSERT INTO push_failures (topic, at) VALUES ('ops', %d)`, base+3600),
+		fmt.Sprintf(`INSERT INTO push_failures (topic, at) VALUES ('ops', %d)`, base-1000),
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q := fmt.Sprintf("/api/v1/stats?from=%d&to=%d", base, base+86_400_000)
+	code, st := call(t, ts, "GET", q, admin, nil)
+	if code != 200 {
+		t.Fatalf("stats: %d %v", code, st)
+	}
+	deliv := st["delivery"].([]any)
+	if len(deliv) != 2 {
+		t.Fatalf("delivery: %v", deliv)
+	}
+	d0 := deliv[0].(map[string]any)
+	d1 := deliv[1].(map[string]any)
+	if d0["topic"] != "alerts" || d0["webhooks"] != 2.0 || d0["web_push"] != 1.0 ||
+		d1["topic"] != "ops" || d1["webhooks"] != 0.0 || d1["web_push"] != 1.0 {
+		t.Fatalf("delivery order/counts: %v", deliv)
+	}
+	// Bad format is refused.
+	if c, _ := call(t, ts, "GET", q+"&format=xml", admin, nil); c != 400 {
+		t.Fatalf("bad format: %d, want 400", c)
+	}
+	// CSV export.
+	req, _ := http.NewRequest("GET", ts.URL+q+"&format=csv", nil)
+	req.Header.Set("Authorization", "Bearer "+admin)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/csv") {
+		t.Fatalf("csv status/type: %d %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	recs, err := csv.NewReader(strings.NewReader(string(body))).ReadAll()
+	if err != nil {
+		t.Fatalf("csv parse: %v\n%s", err, body)
+	}
+	if len(recs) < 5 || recs[0][0] != "section" {
+		t.Fatalf("csv header: %v", recs)
+	}
+	joined := string(body)
+	for _, want := range []string{
+		"summary,total,,2,",
+		"topic,alerts,,2,1,1,",
+		"flapper,alerts,'=SUM(A1),2,",
+		"delivery_webhook,alerts,,2,",
+		"delivery_web_push,alerts,,1,",
+		"delivery_web_push,ops,,1,",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("csv missing %q in:\n%s", want, joined)
+		}
+	}
+}
+
+// Prometheus /metrics is off by default, requires full admin when on, and
+// reports stored counts and 24h delivery failures (#661).
+func TestMetrics(t *testing.T) {
+	// Off by default.
+	_, tsOff, adminOff := newTest(t)
+	if c, _ := call(t, tsOff, "GET", "/metrics", adminOff, nil); c != 404 {
+		t.Fatalf("/metrics when off: %d, want 404", c)
+	}
+	// ConfigFromEnv parses CLRD_METRICS.
+	t.Setenv("CLRD_METRICS", "on")
+	if o, err := ConfigFromEnv(); err != nil || !o.Metrics {
+		t.Fatalf("ConfigFromEnv on: %v %+v", err, o)
+	}
+	t.Setenv("CLRD_METRICS", "maybe")
+	if _, err := ConfigFromEnv(); err == nil {
+		t.Fatal("ConfigFromEnv accepted invalid CLRD_METRICS")
+	}
+
+	s, err := New(Options{DB: filepath.Join(t.TempDir(), "m.db"), Metrics: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ts := httptest.NewServer(s)
+	t.Cleanup(ts.Close)
+	admin := mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
+	reader := mkToken(t, s, "reader", []string{ScopeRead}, nil)
+	scoped := mkToken(t, s, "scoped", []string{ScopeAdmin}, []string{"ops"})
+
+	if c, _ := call(t, ts, "GET", "/metrics", "", nil); c != 401 {
+		t.Fatalf("unauth /metrics: %d, want 401", c)
+	}
+	for _, tok := range []string{reader, scoped} {
+		if c, _ := call(t, ts, "GET", "/metrics", tok, nil); c != 403 {
+			t.Fatalf("non-full-admin /metrics: %d, want 403", c)
+		}
+	}
+	if c, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "hi", "priority": 5}); c != 200 {
+		t.Fatalf("publish: %d", c)
+	}
+	if _, err := s.db.Exec(`INSERT INTO push_failures (topic, at) VALUES ('ops', ?)`, ms(time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("GET", ts.URL+"/metrics", nil)
+	req.Header.Set("Authorization", "Bearer "+admin)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	body := string(raw)
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") {
+		t.Fatalf("metrics status/type: %d %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	for _, want := range []string{
+		`clrd_notifications_stored{state="active"} 1`,
+		`clrd_notifications_topic_open{topic="ops"} 1`,
+		`clrd_notifications_priority_stored{priority="5"} 1`,
+		`clrd_delivery_failures_24h{kind="web_push",topic="ops"} 1`,
+		`clrd_events_seq 1`,
+		`clrd_jobs_failing 0`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/metrics missing %q in:\n%s", want, body)
+		}
 	}
 }

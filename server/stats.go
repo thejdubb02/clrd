@@ -1,12 +1,16 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/csv"
+	"fmt"
 	"net/http"
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -43,17 +47,34 @@ type StatsFlapper struct {
 	Count      int    `json:"count"`
 }
 
+// StatsDelivery is one topic's failed delivery counts in the range (#661).
+type StatsDelivery struct {
+	Topic    string `json:"topic"`
+	Webhooks int    `json:"webhooks"` // outgoing webhook deliveries that failed
+	WebPush  int    `json:"web_push"` // Web Push sends that failed
+}
+
 type Stats struct {
-	From       int64          `json:"from"`
-	To         int64          `json:"to"`
-	Total      int            `json:"total"`
-	Answered   int            `json:"answered"` // a reply action was tapped
-	Priorities map[string]int `json:"priorities"`
-	Hours      []StatsBucket  `json:"hours"`
-	Topics     []*StatsGroup  `json:"topics"`
-	Senders    []*StatsGroup  `json:"senders"`
-	ClearedBy  []*StatsGroup  `json:"cleared_by"`
-	Flappers   []StatsFlapper `json:"flappers"`
+	From       int64           `json:"from"`
+	To         int64           `json:"to"`
+	Total      int             `json:"total"`
+	Answered   int             `json:"answered"` // a reply action was tapped
+	Priorities map[string]int  `json:"priorities"`
+	Hours      []StatsBucket   `json:"hours"`
+	Topics     []*StatsGroup   `json:"topics"`
+	Senders    []*StatsGroup   `json:"senders"`
+	ClearedBy  []*StatsGroup   `json:"cleared_by"`
+	Flappers   []StatsFlapper  `json:"flappers"`
+	Delivery   []StatsDelivery `json:"delivery"` // topics with webhook or Web Push failures, worst first
+}
+
+// floorBucket rounds t down to a multiple of step, even for timestamps before 1970 (#661).
+func floorBucket(t, step int64) int64 {
+	r := t % step
+	if r < 0 {
+		r += step
+	}
+	return t - r
 }
 
 // Stats counts notifications created in [from, to). Admin with no topic list.
@@ -101,7 +122,7 @@ func (s *Server) Stats(ctx context.Context, tok *Token, from, to time.Time) (*St
 			st.Answered++
 		}
 		st.Priorities[strconv.Itoa(prio)]++
-		hours[created-created%int64(time.Hour/time.Millisecond)]++
+		hours[floorBucket(created, int64(time.Hour/time.Millisecond))]++
 		add(topics, topic, cleared, created)
 		add(senders, sender, cleared, created)
 		if cleared.Valid {
@@ -131,7 +152,69 @@ func (s *Server) Stats(ctx context.Context, tok *Token, from, to time.Time) (*St
 		return a.Count > b.Count || a.Count == b.Count && a.Topic+"\x00"+a.ExternalID < b.Topic+"\x00"+b.ExternalID
 	})
 	st.Flappers = st.Flappers[:min(len(st.Flappers), statsTop)]
+	deliv, err := s.deliveryFailures(ctx, ms(from), ms(to))
+	if err != nil {
+		return nil, err
+	}
+	st.Delivery = deliv
 	return st, nil
+}
+
+// deliveryFailures counts failed outgoing webhook deliveries and Web Push
+// sends per topic in [fromMS, toMS), worst first (#661).
+func (s *Server) deliveryFailures(ctx context.Context, fromMS, toMS int64) ([]StatsDelivery, error) {
+	byTopic := map[string]*StatsDelivery{}
+	get := func(topic string) *StatsDelivery {
+		d := byTopic[topic]
+		if d == nil {
+			d = &StatsDelivery{Topic: topic}
+			byTopic[topic] = d
+		}
+		return d
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, COUNT(*) FROM hook_deliveries WHERE status = 'failed' AND updated_at >= ? AND updated_at < ? GROUP BY topic`, fromMS, toMS)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var topic string
+		var n int
+		if err := rows.Scan(&topic, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		get(topic).Webhooks = n
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	rows, err = s.db.QueryContext(ctx, `SELECT topic, COUNT(*) FROM push_failures WHERE at >= ? AND at < ? GROUP BY topic`, fromMS, toMS)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var topic string
+		var n int
+		if err := rows.Scan(&topic, &n); err != nil {
+			return nil, err
+		}
+		get(topic).WebPush = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]StatsDelivery, 0, len(byTopic))
+	for _, d := range byTopic {
+		out = append(out, *d)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].Webhooks+out[i].WebPush, out[j].Webhooks+out[j].WebPush
+		return a > b || a == b && out[i].Topic < out[j].Topic
+	})
+	return out[:min(len(out), statsTop)], nil
 }
 
 // top sorts groups by count, keeps the first statsTop and fills their clear times.
@@ -179,11 +262,194 @@ func (s *Server) statsRoutes() {
 			}
 			from = fromMS(n)
 		}
+		format := q.Get("format")
+		if format != "" && format != "json" && format != "csv" {
+			return errf(400, "bad_request", "format must be json or csv")
+		}
 		st, err := s.Stats(r.Context(), tok, from, to)
 		if err != nil {
 			return err
 		}
+		if format == "csv" {
+			writeStatsCSV(w, st)
+			return nil
+		}
 		writeJSON(w, 200, st)
 		return nil
 	})
+	s.route("GET /metrics", s.handleMetrics)
+}
+
+// csvCell guards free-text cells against spreadsheet formula prefixes.
+func csvCell(v string) string {
+	if len(v) > 0 && strings.ContainsRune("=+-@\t\r", rune(v[0])) {
+		return "'" + v
+	}
+	return v
+}
+
+// writeStatsCSV writes st in one flat CSV table with a section column (#661).
+func writeStatsCSV(w http.ResponseWriter, st *Stats) {
+	var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	cw.Write([]string{"section", "key", "detail", "count", "open", "cleared", "clear_median_ms", "clear_p90_ms"})
+	cw.Write([]string{"summary", "total", "", strconv.Itoa(st.Total), "", "", "", ""})
+	cw.Write([]string{"summary", "answered", "", strconv.Itoa(st.Answered), "", "", "", ""})
+	pkeys := make([]string, 0, len(st.Priorities))
+	for k := range st.Priorities {
+		pkeys = append(pkeys, k)
+	}
+	sort.Strings(pkeys)
+	for _, k := range pkeys {
+		cw.Write([]string{"priority", k, "", strconv.Itoa(st.Priorities[k]), "", "", "", ""})
+	}
+	for _, h := range st.Hours {
+		cw.Write([]string{"hour", fromMS(h.At).UTC().Format(time.RFC3339), "", strconv.Itoa(h.Count), "", "", "", ""})
+	}
+	writeGroups := func(sec string, gs []*StatsGroup) {
+		for _, g := range gs {
+			cw.Write([]string{sec, csvCell(g.Key), "", strconv.Itoa(g.Count), strconv.Itoa(g.Open), strconv.Itoa(g.Cleared),
+				strconv.FormatInt(g.ClearMedianMS, 10), strconv.FormatInt(g.ClearP90MS, 10)})
+		}
+	}
+	writeGroups("topic", st.Topics)
+	writeGroups("sender", st.Senders)
+	writeGroups("cleared_by", st.ClearedBy)
+	for _, f := range st.Flappers {
+		cw.Write([]string{"flapper", csvCell(f.Topic), csvCell(f.ExternalID), strconv.Itoa(f.Count), "", "", "", ""})
+	}
+	for _, d := range st.Delivery {
+		if d.Webhooks > 0 {
+			cw.Write([]string{"delivery_webhook", csvCell(d.Topic), "", strconv.Itoa(d.Webhooks), "", "", "", ""})
+		}
+		if d.WebPush > 0 {
+			cw.Write([]string{"delivery_web_push", csvCell(d.Topic), "", strconv.Itoa(d.WebPush), "", "", "", ""})
+		}
+	}
+	cw.Flush()
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="clrd-stats.csv"`)
+	w.WriteHeader(200)
+	w.Write(buf.Bytes())
+}
+
+// promLabel escapes a Prometheus label value (text exposition format 0.0.4).
+func promLabel(v string) string {
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
+	return r.Replace(v)
+}
+
+// handleMetrics serves Prometheus text metrics when CLRD_METRICS=on (#661).
+// Full admin only, like GET /api/v1/stats, so topic names never leak.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) error {
+	if !s.opt.Metrics {
+		return errf(404, "not_found", "metrics are off; set CLRD_METRICS=on")
+	}
+	tok := s.auth(r, true)
+	if tok == nil {
+		return errf(401, "unauthorized", noToken)
+	}
+	if err := tok.needFullAdmin(); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	byState := map[string]int{}
+	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM notifications GROUP BY state`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var st string
+		var n int
+		if err := rows.Scan(&st, &n); err != nil {
+			rows.Close()
+			return err
+		}
+		byState[st] = n
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	byTopic := map[string]int{}
+	rows, err = s.db.QueryContext(ctx, `SELECT topic, COUNT(*) FROM notifications WHERE cleared_at IS NULL GROUP BY topic ORDER BY topic`)
+	if err != nil {
+		return err
+	}
+	var topics []string
+	for rows.Next() {
+		var topic string
+		var n int
+		if err := rows.Scan(&topic, &n); err != nil {
+			rows.Close()
+			return err
+		}
+		byTopic[topic] = n
+		topics = append(topics, topic)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	byPrio := map[int]int{}
+	rows, err = s.db.QueryContext(ctx, `SELECT priority, COUNT(*) FROM notifications GROUP BY priority`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var p, n int
+		if err := rows.Scan(&p, &n); err != nil {
+			rows.Close()
+			return err
+		}
+		byPrio[p] = n
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	to := now()
+	deliv, err := s.deliveryFailures(ctx, ms(to.Add(-24*time.Hour)), ms(to))
+	if err != nil {
+		return err
+	}
+	failingJobs := 0
+	s.failing.Range(func(_, _ any) bool { failingJobs++; return true })
+
+	var b bytes.Buffer
+	b.WriteString("# HELP clrd_notifications_stored Stored notifications by state.\n# TYPE clrd_notifications_stored gauge\n")
+	for _, st := range []string{Active, Acknowledged, Snoozed, Dismissed, Resolved} {
+		fmt.Fprintf(&b, "clrd_notifications_stored{state=%q} %d\n", st, byState[st])
+	}
+	b.WriteString("# HELP clrd_notifications_topic_open Open (not cleared) notifications by topic.\n# TYPE clrd_notifications_topic_open gauge\n")
+	for _, t := range topics {
+		fmt.Fprintf(&b, "clrd_notifications_topic_open{topic=\"%s\"} %d\n", promLabel(t), byTopic[t])
+	}
+	b.WriteString("# HELP clrd_notifications_priority_stored Stored notifications by priority.\n# TYPE clrd_notifications_priority_stored gauge\n")
+	for p := 1; p <= 5; p++ {
+		fmt.Fprintf(&b, "clrd_notifications_priority_stored{priority=\"%d\"} %d\n", p, byPrio[p])
+	}
+	b.WriteString("# HELP clrd_delivery_failures_24h Failed webhook and Web Push deliveries in the last 24 hours by topic.\n# TYPE clrd_delivery_failures_24h gauge\n")
+	sort.Slice(deliv, func(i, j int) bool { return deliv[i].Topic < deliv[j].Topic })
+	for _, d := range deliv {
+		if d.Webhooks > 0 {
+			fmt.Fprintf(&b, "clrd_delivery_failures_24h{kind=\"webhook\",topic=\"%s\"} %d\n", promLabel(d.Topic), d.Webhooks)
+		}
+		if d.WebPush > 0 {
+			fmt.Fprintf(&b, "clrd_delivery_failures_24h{kind=\"web_push\",topic=\"%s\"} %d\n", promLabel(d.Topic), d.WebPush)
+		}
+	}
+	fmt.Fprintf(&b, "# HELP clrd_events_seq Latest event sequence number.\n# TYPE clrd_events_seq counter\nclrd_events_seq %d\n", s.CurrentSeq())
+	fmt.Fprintf(&b, "# HELP clrd_jobs_failing Number of background jobs currently failing.\n# TYPE clrd_jobs_failing gauge\nclrd_jobs_failing %d\n", failingJobs)
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.WriteHeader(200)
+	w.Write(b.Bytes())
+	return nil
 }

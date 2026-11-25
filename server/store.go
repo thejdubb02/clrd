@@ -144,6 +144,13 @@ CREATE TABLE IF NOT EXISTS push_subs (
   auth TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+-- Failed Web Push sends per topic, for delivery health in stats (#661).
+CREATE TABLE IF NOT EXISTS push_failures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS push_failures_at ON push_failures (at);
 CREATE TABLE IF NOT EXISTS sessions (
   token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
   parent_id TEXT NOT NULL,
@@ -349,7 +356,7 @@ var topicRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Reserved topic names: the server and mounted pages own these paths.
 var reserved = map[string]bool{"api": true, "app": true, "assets": true, "docs": true, "healthz": true,
-	"login": true, "logout": true, "mcp": true, "setup": true, "static": true, "v1": true}
+	"login": true, "logout": true, "mcp": true, "metrics": true, "setup": true, "static": true, "v1": true}
 
 func validTopic(t string) error {
 	if t == "" {
@@ -503,7 +510,21 @@ func openDB(path string) (*sql.DB, error) {
 			}
 			return err
 		}
-		if _, err := tx.Exec(`UPDATE notifications SET cleared_at = updated_at WHERE state IN (?, ?)`, Dismissed, Resolved); err != nil {
+		// Refine cleared_at from the event log when events are still kept:
+		// a mark after a clear moves updated_at, so the earliest clear event
+		// after any reopen is more accurate (#661).
+		if _, err := tx.Exec(`UPDATE notifications SET cleared_at = COALESCE(
+			(SELECT MIN(e.created_at) FROM events e
+			 WHERE e.type = ?
+			   AND json_extract(e.data, '$.notification.id') = notifications.id
+			   AND json_extract(e.data, '$.notification.state') IN (?, ?)
+			   AND e.seq > COALESCE((SELECT MAX(r.seq) FROM events r
+			     WHERE r.type = ?
+			       AND json_extract(r.data, '$.notification.id') = notifications.id
+			       AND json_extract(r.data, '$.notification.state') NOT IN (?, ?)), 0)),
+			updated_at)
+			WHERE state IN (?, ?)`,
+			EventState, Dismissed, Resolved, EventState, Dismissed, Resolved, Dismissed, Resolved); err != nil {
 			return err
 		}
 		return tx.Commit()
@@ -1568,6 +1589,9 @@ func (s *Server) prune(ctx context.Context) error {
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM push_failures WHERE at < ?`, cutoff); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_posts WHERE id NOT IN (SELECT id FROM notifications)`); err != nil {

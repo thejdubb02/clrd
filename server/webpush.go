@@ -242,14 +242,22 @@ func (s *Server) sendPushes(ctx context.Context, e Event) {
 			switch {
 			case err != nil:
 				s.log.Warn("web push", "device", p.tokenID, "err", err)
+				s.recordPushFailure(ctx, n.Topic)
 			case code == 404 || code == 410: // the browser dropped it
 				s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM push_subs WHERE endpoint = ? AND token_id = ? AND auth = ?`, p.endpoint, p.tokenID, p.auth)
 			case code < 200 || code > 299:
 				s.log.Warn("web push", "device", p.tokenID, "code", code)
+				s.recordPushFailure(ctx, n.Topic)
 			}
 		}()
 	}
 	wg.Wait()
+}
+
+func (s *Server) recordPushFailure(ctx context.Context, topic string) {
+	if _, err := s.db.ExecContext(context.WithoutCancel(ctx), `INSERT INTO push_failures (topic, at) VALUES (?, ?)`, topic, ms(now())); err != nil {
+		s.log.Warn("web push failure record", "err", err)
+	}
 }
 
 // pushPayload is e as a push carries it, cut to fit: the message first,
