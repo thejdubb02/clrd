@@ -255,7 +255,7 @@ class Tray(private val ctx: Context) {
             if (silent) return
             app.trayHidden -= n.id
         }
-        val text = Md.tray(n.message, n.isMarkdown)
+        val text = Md.tray(n.message, n.isMarkdown && app.formatting.value)
         val b = NotificationCompat.Builder(ctx, Sounds.channel(n.priority, app.sound))
             .setSmallIcon(R.drawable.ic_stat_clrd)
             .setContentTitle(n.title.ifEmpty { n.topic })

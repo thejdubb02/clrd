@@ -753,8 +753,13 @@ internal fun Card(n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), 
             }
             if (n.message.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                val favicons by App.of(LocalContext.current).favicons.collectAsState()
-                val text = remember(n.message, n.format, b, favicons) { Md.render(n.message, n.isMarkdown, link = b.clear, muted = b.slate, icons = favicons) }
+                val app = App.of(LocalContext.current)
+                val favicons by app.favicons.collectAsState()
+                val formatting by app.formatting.collectAsState()
+                val autolink by app.autolink.collectAsState()
+                val text = remember(n.message, n.format, b, favicons, formatting, autolink) {
+                    Md.render(n.message, n.isMarkdown && formatting, link = b.clear, muted = b.slate, icons = favicons, autolink = autolink)
+                }
                 val body = @Composable { MessageText(text, maxLines = if (open) Int.MAX_VALUE else 6, modifier = Modifier.padding(end = 8.dp)) }
                 // Open text can be selected and copied; links open in the browser.
                 if (open) SelectionContainer { body() } else body()
