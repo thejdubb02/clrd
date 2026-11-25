@@ -210,11 +210,26 @@ func TestWebPush(t *testing.T) {
 		t.Fatalf("big payload: title %q message %d bytes", m.Title, len(m.Message))
 	}
 
+	// A 500 records a Web Push failure for delivery health (#661), while a 410
+	// drops the stale subscription without counting as a failure.
+	status = 500
+	publish(map[string]any{"topic": "alerts", "message": "m"})
+	if len(pushes()) != 1 {
+		t.Fatal("no push before the 500")
+	}
+	var fails int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM push_failures WHERE topic = 'alerts'`).Scan(&fails); err != nil || fails != 1 {
+		t.Fatalf("push_failures after 500: %v %d, want 1", err, fails)
+	}
+
 	// A 410 drops the subscription.
 	status = 410
 	publish(map[string]any{"topic": "alerts", "message": "m"})
 	if len(pushes()) != 1 {
 		t.Fatal("no push before the 410")
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM push_failures WHERE topic = 'alerts'`).Scan(&fails); err != nil || fails != 1 {
+		t.Fatalf("push_failures after 410: %v %d, want 1", err, fails)
 	}
 	if _, info := call(t, ts, "GET", "/api/v1/push", phone, nil); info["subscribed"] != false {
 		t.Fatal("a 410 kept the subscription")

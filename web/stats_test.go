@@ -27,7 +27,8 @@ func (s statsAPI) Snapshot(_ *http.Request, q Query) (Snapshot, error) {
 			Topics:     []StatsGroup{{Key: "home", Count: 3, Open: 1, Cleared: 2, ClearMedianMS: 45000, ClearP90MS: 3*3600000 + 5*60000}},
 			Senders:    []StatsGroup{{Key: "", Count: 2, Open: 2}, {Key: "tok-1", Name: "nas", Count: 1, Cleared: 1}},
 			ClearedBy:  []StatsGroup{{Key: "web", Count: 2, Cleared: 2, ClearMedianMS: 60000}},
-			Flappers:   []StatsFlapper{{Topic: "home", ExternalID: "disk-full", Count: 2}}}
+			Flappers:   []StatsFlapper{{Topic: "home", ExternalID: "disk-full", Count: 2}},
+			Delivery:   []StatsDelivery{{Topic: "home", Webhooks: 3, WebPush: 1}}}
 	}
 	return snap, nil
 }
@@ -46,6 +47,8 @@ func TestStatsPage(t *testing.T) {
 		"<td>Urgent</td><td class=\"tabular-nums\">2</td>",
 		">Anonymous</td>", ">nas</td>", ">45s</td>", ">3h 5m</td>", "disk-full",
 		`data-live="stats"`, `<th scope="col">Cleared</th>`, ">1m</td>",
+		`href="/api/v1/stats?days=1&amp;format=csv">CSV</a>`,
+		"Delivery health", `<th scope="col">Webhooks</th>`, `<th scope="col">Web Push</th>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("stats page has no %q", want)
@@ -76,5 +79,15 @@ func TestTook(t *testing.T) {
 		if got := took(ms); got != want {
 			t.Errorf("took(%d) = %q, want %q", ms, got, want)
 		}
+	}
+}
+
+func TestFloorBucket(t *testing.T) {
+	const hour = int64(time.Hour / time.Millisecond)
+	if got := floorBucket(-1, hour); got != -hour {
+		t.Fatalf("floorBucket(-1, hour) = %d, want %d", got, -hour)
+	}
+	if got := floorBucket(0, hour); got != 0 {
+		t.Fatalf("floorBucket(0, hour) = %d, want 0", got)
 	}
 }

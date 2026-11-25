@@ -51,6 +51,10 @@ type Options struct {
 	// and read-only, whatever is saved, so no token can open the LAN (#498).
 	LockHookAllow bool
 
+	// Metrics (CLRD_METRICS=on) turns on the Prometheus /metrics endpoint,
+	// off by default (#661).
+	Metrics bool
+
 	Attachments     string // CLRD_ATTACHMENTS, default "attachments" next to DB
 	AttachmentMax   int64  // CLRD_ATTACHMENT_MAX_MB, bytes, default 15 MB
 	AttachmentTotal int64  // CLRD_ATTACHMENT_TOTAL_MB, bytes, default 5000 MB
@@ -90,6 +94,13 @@ func ConfigFromEnv() (Options, error) {
 		o.LockHookAllow = true
 	default:
 		return o, fmt.Errorf("CLRD_HOOK_ALLOW: want on or off, got %q", v)
+	}
+	switch v := os.Getenv("CLRD_METRICS"); v {
+	case "", "off":
+	case "on":
+		o.Metrics = true
+	default:
+		return o, fmt.Errorf("CLRD_METRICS: want on or off, got %q", v)
 	}
 	for _, v := range []struct {
 		env string
@@ -386,12 +397,15 @@ func (s *Server) effectiveEnv() map[string]string {
 	for i, p := range o.TrustedProxies {
 		proxies[i] = p.String()
 	}
-	public, hookAllow := "on", "on"
+	public, hookAllow, metrics := "on", "on", "off"
 	if o.HidePublicPages {
 		public = "off"
 	}
 	if o.LockHookAllow {
 		hookAllow = "off"
+	}
+	if o.Metrics {
+		metrics = "on"
 	}
 	rate := func(n int) string { return strconv.Itoa(max(n, 0)) } // -1 is off, set as 0
 	return map[string]string{
@@ -399,7 +413,7 @@ func (s *Server) effectiveEnv() map[string]string {
 		"CLRD_ATTACHMENTS": o.Attachments, "CLRD_ATTACHMENT_MAX_MB": strconv.FormatInt(o.AttachmentMax>>20, 10),
 		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
 		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
-		"CLRD_CONFIG": o.Config, "CLRD_HOOK_ALLOW": hookAllow,
+		"CLRD_CONFIG": o.Config, "CLRD_HOOK_ALLOW": hookAllow, "CLRD_METRICS": metrics,
 	}
 }
 
@@ -412,7 +426,7 @@ func (s *Server) Path(p string) string { return s.prefix + p }
 // are checked before the server's own routes. Call before Run.
 func (s *Server) Mount(prefix string, h http.Handler) {
 	prefix = "/" + strings.Trim(prefix, "/")
-	for _, own := range []string{"/api", "/healthz", "/openapi.json", "/setup", "/v1"} {
+	for _, own := range []string{"/api", "/healthz", "/metrics", "/openapi.json", "/setup", "/v1"} {
 		if prefix == own || strings.HasPrefix(prefix, own+"/") {
 			panic("clrd: Mount: " + prefix + " belongs to the server")
 		}

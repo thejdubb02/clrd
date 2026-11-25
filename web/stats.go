@@ -9,17 +9,24 @@ import (
 
 // Stats is GET /api/v1/stats (docs/SPEC.md, #120) for the Stats page.
 type Stats struct {
-	From       int64          `json:"from"`
-	To         int64          `json:"to"`
-	Total      int            `json:"total"`
-	Answered   int            `json:"answered"`
-	Priorities map[string]int `json:"priorities"`
-	Hours      []StatsBucket  `json:"hours"`
-	Topics     []StatsGroup   `json:"topics"`
-	Senders    []StatsGroup   `json:"senders"` // Key is the top token id; Name is filled from the senders list
-	ClearedBy  []StatsGroup   `json:"cleared_by"`
-	Flappers   []StatsFlapper `json:"flappers"`
-	Days       int            `json:"-"` // the range picked on the page
+	From       int64           `json:"from"`
+	To         int64           `json:"to"`
+	Total      int             `json:"total"`
+	Answered   int             `json:"answered"`
+	Priorities map[string]int  `json:"priorities"`
+	Hours      []StatsBucket   `json:"hours"`
+	Topics     []StatsGroup    `json:"topics"`
+	Senders    []StatsGroup    `json:"senders"` // Key is the top token id; Name is filled from the senders list
+	ClearedBy  []StatsGroup    `json:"cleared_by"`
+	Flappers   []StatsFlapper  `json:"flappers"`
+	Delivery   []StatsDelivery `json:"delivery"`
+	Days       int             `json:"-"` // the range picked on the page
+}
+
+type StatsDelivery struct {
+	Topic    string `json:"topic"`
+	Webhooks int    `json:"webhooks"`
+	WebPush  int    `json:"web_push"`
 }
 
 type StatsBucket struct {
@@ -85,6 +92,14 @@ type Bar struct {
 	Label      string
 }
 
+func floorBucket(t, step int64) int64 {
+	r := t % step
+	if r < 0 {
+		r += step
+	}
+	return t - r
+}
+
 // Bars buckets Hours by hour for a one day range and by day otherwise,
 // with empty buckets kept so the chart shows the quiet stretches.
 func (s Stats) Bars() []Bar {
@@ -94,15 +109,17 @@ func (s Stats) Bars() []Bar {
 		step *= 24
 		format = "Mon Jan 2"
 	}
-	start := s.From - s.From%step
+	start := floorBucket(s.From, step)
 	n := int((s.To - start + step - 1) / step)
 	if n < 1 {
 		return nil
 	}
 	counts := make([]int, n)
 	for _, h := range s.Hours {
-		if i := int((h.At - start) / step); i >= 0 && i < n {
-			counts[i] += h.Count
+		if h.At >= start {
+			if i := int((h.At - start) / step); i < n {
+				counts[i] += h.Count
+			}
 		}
 	}
 	top := max(slices.Max(counts), 1)

@@ -2789,7 +2789,8 @@
     "parameters": [
      {"name": "to", "in": "query", "description": "End, unix ms. Default now.", "schema": {"type": "integer"}},
      {"name": "days", "in": "query", "description": "Days back from to when from is not given. Default 7.", "schema": {"type": "integer", "minimum": 1}},
-     {"name": "from", "in": "query", "description": "Start, unix ms. At most 366 days before to.", "schema": {"type": "integer"}}
+     {"name": "from", "in": "query", "description": "Start, unix ms. At most 366 days before to.", "schema": {"type": "integer"}},
+     {"name": "format", "in": "query", "description": "Output format: json (default) or csv.", "schema": {"type": "string", "enum": ["json", "csv"]}}
     ],
     "responses": {
      "200": {
@@ -2808,9 +2809,13 @@
           "topics": {"type": "array", "items": {"$ref": "#/components/schemas/StatsGroup"}},
           "senders": {"type": "array", "description": "Keyed by the top token id of the sending tree, \"\" for clrd's own alerts.", "items": {"$ref": "#/components/schemas/StatsGroup"}},
           "cleared_by": {"type": "array", "description": "Cleared messages keyed by the name of who cleared them.", "items": {"$ref": "#/components/schemas/StatsGroup"}},
-          "flappers": {"type": "array", "description": "An external id that fired more than once.", "items": {"type": "object", "properties": {"topic": {"type": "string"}, "external_id": {"type": "string"}, "count": {"type": "integer"}}}}
+          "flappers": {"type": "array", "description": "An external id that fired more than once.", "items": {"type": "object", "properties": {"topic": {"type": "string"}, "external_id": {"type": "string"}, "count": {"type": "integer"}}}},
+          "delivery": {"type": "array", "description": "Failed outgoing webhook deliveries and Web Push sends per topic, worst first.", "items": {"type": "object", "properties": {"topic": {"type": "string"}, "webhooks": {"type": "integer"}, "web_push": {"type": "integer"}}}}
          }
         }
+       },
+       "text/csv": {
+        "schema": {"type": "string"}
        }
       }
      },
@@ -2821,6 +2826,34 @@
       "$ref": "#/components/responses/Error"
      },
      "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/metrics": {
+   "get": {
+    "summary": "Prometheus metrics",
+    "description": "Off by default (404). Set CLRD_METRICS=on to enable. Requires an admin token with no topic limit.",
+    "tags": [
+     "admin"
+    ],
+    "responses": {
+     "200": {
+      "description": "Prometheus text exposition format.",
+      "content": {
+       "text/plain": {
+        "schema": {"type": "string"}
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
       "$ref": "#/components/responses/Error"
      }
     }
