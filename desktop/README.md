@@ -72,6 +72,9 @@ which has no toasts, only the refusal was seen: showing one fails cleanly.
   `Authorization` header on API calls.
 - The window stays on the server's address. Any other link opens in the
   system browser.
+- On Linux the page tells the app one thing, the Appearance pick, by a
+  `clrd-theme:dark`, `:light` or `:system` link the window turns away. Any
+  other word is ignored.
 
 ## Build and test
 
