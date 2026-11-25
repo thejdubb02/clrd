@@ -1236,6 +1236,14 @@ internal fun approveChoices(list: List<org.json.JSONObject>, d: org.json.JSONObj
     return if (i >= 0 && isOwn(list, d)) approveOrder.take(i + 1) else approveOrder
 }
 
+/**
+ * A refused device change in plain words. The server's 403 `approve_denied` means this phone is not
+ * allowed to change it (an allowed device can); anything else keeps the server's own message.
+ */
+internal fun refusal(ctx: Context, e: Throwable): String =
+    if ((e as? HttpError)?.let { it.code == 403 && it.reason == "approve_denied" } == true) ctx.getString(R.string.device_not_allowed)
+    else ctx.getString(R.string.device_approve_failed, e.message)
+
 /** One device's second line: what it is, what it hangs under, when it was last seen. */
 private fun deviceLine(ctx: Context, d: org.json.JSONObject): String = listOfNotNull(
     when (d.optString("kind")) {
@@ -1262,20 +1270,27 @@ private fun DeviceSettings(app: App, resumes: Int) {
     var reload by remember { mutableStateOf(0) }
     var unlink by remember { mutableStateOf<org.json.JSONObject?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var clearsError by remember { mutableStateOf<String?>(null) } // shown by the switch, which sits far above the list's error line
     var showLog by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf<String?>(null) }
     var lower by remember { mutableStateOf<Pair<org.json.JSONObject, String>?>(null) }
     // The server decides (docs/SPEC.md "Who may approve"): a refusal shows as the error line.
     var busy by remember { mutableStateOf(false) } // a change is on its way; the menu waits for the fresh list
-    val setApprove: (org.json.JSONObject, String) -> Unit = { d, v ->
+    val change: (org.json.JSONObject, String, org.json.JSONObject) -> Unit = { d, what, body ->
         busy = true
         val api = app.api()
         app.io.execute {
-            error = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/approve", org.json.JSONObject().put("approve", v).toString()) }
-                .exceptionOrNull()?.let { ctx.getString(R.string.device_approve_failed, it.message) }
+            val out = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/$what", body.toString()) }
+            // The server answers with the device: show it at once, so a failed reload never leaves the old value up.
+            out.getOrNull()?.let { r -> runCatching { org.json.JSONObject(r) }.getOrNull() }?.let { nd ->
+                devices = devices?.map { o -> if (o.optString("id") != nd.optString("id")) o else org.json.JSONObject(o.toString()).also { c -> nd.keys().forEach { k -> if (k != "this") c.put(k, nd.get(k)) } } }
+            }
+            val e = out.exceptionOrNull()?.let { refusal(ctx, it) }
+            if (what == "clears") { clearsError = e; error = null } else { error = e; clearsError = null }
             reload++
         }
     }
+    val setApprove: (org.json.JSONObject, String) -> Unit = { d, v -> change(d, "approve", org.json.JSONObject().put("approve", v)) }
     val changed by app.devicesChanged.collectAsState() // another device changed this phone's approve setting, or one came or went
     LaunchedEffect(server, resumes, reload, changed) {
         val api = app.api()
@@ -1296,6 +1311,20 @@ private fun DeviceSettings(app: App, resumes: Int) {
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.approve_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         Text(stringResource(approve), color = b.slate, fontSize = 13.sp)
+    }
+    // Clears everywhere (#767): shown to every phone so it sees where its clears go; the server lets only an
+    // allowed one change it, and its refusal shows as the error line. Absent from a server older than #767.
+    list.firstOrNull { it.optBoolean("this") }?.takeIf { it.has("clears_everywhere") }?.let { me ->
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.clears_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(if (me.optBoolean("clears_everywhere")) R.string.clears_on else R.string.clears_off), color = b.slate, fontSize = 13.sp)
+            }
+            Switch(checked = me.optBoolean("clears_everywhere"), enabled = !busy, modifier = Modifier.testTag("clears-everywhere"),
+                onCheckedChange = { change(me, "clears", org.json.JSONObject().put("everywhere", it)) })
+        }
+        clearsError?.let { Text(it, color = b.signal, fontSize = 13.sp) }
     }
     Spacer(Modifier.height(8.dp))
     Text(stringResource(R.string.devices_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
