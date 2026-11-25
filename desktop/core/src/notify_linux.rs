@@ -111,7 +111,7 @@ impl Os {
                 "clrd",
                 replaces,
                 "",
-                summary.as_str(),
+                summary,
                 body.as_str(),
                 actions,
                 hints,
@@ -171,24 +171,28 @@ fn listen(
         let from = header.sender().map(|s| s.as_str());
         // Another run showed what we hold under this id: an old run that is
         // still up says nothing about what a later run gave the same id (#791).
-        let other = |id: &u32| {
-            let owners = owners.lock().unwrap();
-            owners.get(id).is_some_and(|o| Some(o.as_str()) != from)
+        // A close from the run that showed it also drops the id, under the
+        // same lock, so a Notify that records a new owner meanwhile keeps it.
+        let ours = |id: &u32, closed: bool| {
+            let mut owners = owners.lock().unwrap();
+            let ours = owners.get(id).is_none_or(|o| Some(o.as_str()) == from);
+            if ours && closed {
+                owners.remove(id);
+            }
+            ours
         };
         let signal = match header.member().map(|m| m.as_str()) {
             Some("NotificationClosed") => body
                 .deserialize::<(u32, u32)>()
                 .ok()
-                .filter(|(id, _)| !other(id))
+                .filter(|(id, _)| ours(id, true))
                 .map(|(id, why)| {
-                    // Gone from the run that showed it: nothing left to close.
-                    owners.lock().unwrap().remove(&id);
                     Signal::Closed(id, why == BY_USER && close_clears.load(Ordering::Relaxed))
                 }),
             Some("ActionInvoked") => body
                 .deserialize::<(u32, String)>()
                 .ok()
-                .filter(|(id, _)| !other(id))
+                .filter(|(id, _)| ours(id, false))
                 .map(|(id, key)| Signal::Action(id, key)),
             _ => None,
         };
