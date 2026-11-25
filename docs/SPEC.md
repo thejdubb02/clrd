@@ -1235,8 +1235,13 @@ and `initialize` reports `version` as `serverInfo.version`.
   count at any age). The issue body starts with a hidden mark
   `<!-- clrd TOPIC/HOOK/ID -->` (query-escaped); before opening, clrd lists
   the repo's newest issues and adopts one with that mark, so a lost reply
-  never opens a second. The body puts the sender's text in a fenced block it
-  cannot close. Each subscribed state
+  never opens a second. The issue title is prefixed with `[clrd <topic>] `,
+  and issues carry the `clrd` and `priority:<min|low|default|high|urgent>`
+  labels. When `CLRD_BASE_URL` is set, the body links back to the notification
+  in the web inbox. The body puts the sender's text in a fenced block it
+  cannot close. Setting `github_hooks_paused: true` in `PUT /api/v1/settings`
+  (full admin) pauses every GitHub issue hook server-wide without deleting it
+  (#680). Each subscribed state
   change comments with the status line; dismissed and resolved first close
   the issue. A deleted issue (410) is done; any other error is retried.
   Delivery errors never carry the URL. Docs:

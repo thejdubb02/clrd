@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -799,7 +801,8 @@ func TestHooksOutGitHub(t *testing.T) {
 		t.Fatalf("want post, close, comment; got %+v", hits)
 	}
 	p, c, m := hits[0], hits[1], hits[2]
-	if p.method != "POST" || p.path != "/repos/o/r/issues" || p.auth != "Bearer ghtok" || p.body["title"] != "Disk full" ||
+	if p.method != "POST" || p.path != "/repos/o/r/issues" || p.auth != "Bearer ghtok" || p.body["title"] != "[clrd ops] Disk full" ||
+		fmt.Sprint(p.body["labels"]) != "[clrd priority:default]" ||
 		!strings.HasSuffix(p.body["body"].(string), "\n\n````text\nDisk full\n\n@octocat ```x```\n````") {
 		t.Fatalf("post: %+v", p)
 	}
@@ -858,5 +861,174 @@ func TestHooksOutGitHub(t *testing.T) {
 	s.db.QueryRow(`SELECT remote_id FROM hook_posts WHERE id = ?`, c2["id"]).Scan(&remote)
 	if len(hits) != 1 || remote != fmt.Sprint(6+len(opened)) || !strings.HasPrefix(hits[0].body["body"].(string), githubMark("gh", &Notification{Topic: "ops", ID: c2["id"].(string)})) {
 		t.Fatalf("want one issue, kept as %d; got %q and %+v", 6+len(opened), remote, hits)
+	}
+}
+
+// GitHub issue hook follow-ups (#680): priority labels, [clrd topic] title
+// prefix, notification link when CLRD_BASE_URL is set, and github_hooks_paused.
+func TestHooksOutGitHubFollowups(t *testing.T) {
+	s, err := New(Options{DB: filepath.Join(t.TempDir(), "gh.db"), BaseURL: "https://user:pass@clrd.example.com/clrd?ignored=1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ts := httptest.NewServer(s)
+	t.Cleanup(ts.Close)
+	admin := mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
+	reader := mkToken(t, s, "reader", []string{ScopeRead}, nil)
+	scoped := mkToken(t, s, "scoped", []string{ScopeAdmin}, []string{"ops"})
+	ctx := context.Background()
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+
+	var mu sync.Mutex
+	var bodies []map[string]any
+	var dcHits int
+	gh, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/issues") {
+			w.Write([]byte(`[]`))
+			return
+		}
+		var b map[string]any
+		json.NewDecoder(r.Body).Decode(&b)
+		mu.Lock()
+		bodies = append(bodies, b)
+		num := len(bodies)
+		mu.Unlock()
+		w.WriteHeader(201)
+		fmt.Fprintf(w, `{"number":%d}`, num)
+	})
+	dc, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		dcHits++
+		mu.Unlock()
+		w.Write([]byte(`{"id":"d1"}`))
+	})
+	githubAPI = gh.URL + "/repos/"
+	t.Cleanup(func() { githubAPI = "https://api.github.com/repos/" })
+
+	if code, _ := call(t, ts, "PUT", "/api/v1/topics/ops/hooks/gh", admin, map[string]any{"url": gh.URL + "/repos/o/r", "kind": "github", "secret": "ghtok"}); code != 200 {
+		t.Fatalf("save gh: %d", code)
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/topics/ops/hooks/dc", admin, map[string]any{"url": dc.URL + "/api/webhooks/1/tok", "kind": "discord"}); code != 200 {
+		t.Fatalf("save dc: %d", code)
+	}
+
+	// 1. Priority labels, [clrd topic] title prefix (with and without title,
+	//    stripping leading newlines/CR), and credential-free notification link.
+	_, n5 := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "DB down", "message": "unreachable", "priority": 5})
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "\nquiet note\r\nline 2", "priority": 1})
+	s.deliverHooks(ctx)
+	s.deliverHooks(ctx)
+	if len(bodies) != 2 {
+		t.Fatalf("want 2 opened issues, got %d", len(bodies))
+	}
+	wantLink := "Notification: https://clrd.example.com/clrd/app?topic=ops#t-" + n5["id"].(string)
+	if bodies[0]["title"] != "[clrd ops] DB down" || fmt.Sprint(bodies[0]["labels"]) != "[clrd priority:urgent]" || !strings.Contains(bodies[0]["body"].(string), wantLink) || strings.Contains(bodies[0]["body"].(string), "user") || strings.Contains(bodies[0]["body"].(string), "pass") {
+		t.Fatalf("priority 5 issue: %+v", bodies[0])
+	}
+	if bodies[1]["title"] != "[clrd ops] quiet note" || fmt.Sprint(bodies[1]["labels"]) != "[clrd priority:min]" {
+		t.Fatalf("priority 1 issue: %+v", bodies[1])
+	}
+
+	// 2. Without BaseURL (default), no localhost link is emitted in the issue body.
+	reqs := githubReqs(url.URL{Scheme: "https", Host: "api.github.com", Path: "/repos/o/r"},
+		&Notification{ID: "01J", Topic: "ops", Title: "T", Message: "M", Priority: 4, CreatedAt: time.Now()}, "posted", "", "<!-- m -->\n", "")
+	bodyMap := reqs[0].body.(map[string]any)
+	if strings.Contains(bodyMap["body"].(string), "Notification:") || fmt.Sprint(bodyMap["labels"]) != "[clrd priority:high]" {
+		t.Fatalf("no-baseURL req: %+v", bodyMap)
+	}
+
+	// 3. Server-wide pause switch: full admin only, stops new issues and pauses pending ones,
+	//    while leaving Discord hooks running.
+	if _, st := call(t, ts, "GET", "/api/v1/settings", admin, nil); st["github_hooks_paused"] != false {
+		t.Fatalf("default github_hooks_paused: %v", st["github_hooks_paused"])
+	}
+	for _, tok := range []string{reader, scoped} {
+		if code, _ := call(t, ts, "PUT", "/api/v1/settings", tok, map[string]any{"github_hooks_paused": true}); code != 403 {
+			t.Fatalf("non-full-admin pause: %d, want 403", code)
+		}
+	}
+	// Queue a GitHub issue before pausing, then pause before delivering.
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Before pause", "message": "pending"})
+	if code, st := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"github_hooks_paused": true}); code != 200 || st["github_hooks_paused"] != true {
+		t.Fatalf("pause: %d %v", code, st)
+	}
+	// Publish and dismiss another while paused: must not queue post or state-change
+	// deliveries for GitHub, must still deliver to Discord.
+	dcBefore := dcHits
+	_, pausedNotif := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "While paused", "message": "skipped"})
+	call(t, ts, "POST", "/api/v1/notifications/"+pausedNotif["id"].(string)+"/dismiss", admin, nil)
+	s.deliverHooks(ctx)
+	s.deliverHooks(ctx)
+	if len(bodies) != 2 {
+		t.Fatalf("github hook delivered while paused: %d", len(bodies))
+	}
+	if dcHits <= dcBefore {
+		t.Fatalf("discord hook did not deliver while github hooks paused: before=%d after=%d", dcBefore, dcHits)
+	}
+	var ghPending int
+	s.db.QueryRow(`SELECT count(*) FROM hook_deliveries WHERE name = 'gh' AND status = 'pending'`).Scan(&ghPending)
+	if ghPending != 1 {
+		t.Fatalf("expected only 1 pending pre-pause github delivery (no state-change pileup), got %d", ghPending)
+	}
+	// Unpause: only the pre-pause pending issue delivers; the while-paused alert was not queued.
+	if code, st := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"github_hooks_paused": false}); code != 200 || st["github_hooks_paused"] != false {
+		t.Fatalf("unpause: %d %v", code, st)
+	}
+	s.deliverHooks(ctx)
+	s.deliverHooks(ctx)
+	if len(bodies) != 3 || bodies[2]["title"] != "[clrd ops] Before pause" {
+		t.Fatalf("after unpause: %+v", bodies)
+	}
+
+	// 4. Time spent paused does not count toward the 24h auto-disable window (#680).
+	// Seed a failing github hook with 1h of unpaused failure, pause it for 30h,
+	// unpause, and fail one retry: it must stay enabled (only 1h unpaused, < 24h).
+	deadHook := "/api/v1/topics/ops/hooks/ghdead"
+	if code, _ := call(t, ts, "PUT", deadHook, admin, map[string]any{"url": githubAPI + "o/dead", "kind": "github", "secret": "ghtok"}); code != 200 {
+		t.Fatalf("save ghdead: %d", code)
+	}
+	// Point ghdead at a failing URL via status 500 on /repos/o/dead by using a closed server URL prefix.
+	badSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) }))
+	t.Cleanup(badSrv.Close)
+	githubAPI = badSrv.URL + "/repos/"
+	if code, _ := call(t, ts, "PUT", deadHook, admin, map[string]any{"url": badSrv.URL + "/repos/o/dead", "kind": "github", "secret": "ghtok"}); code != 200 {
+		t.Fatalf("save ghdead 500: %d", code)
+	}
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Flake", "message": "err"})
+	s.deliverHooks(ctx)
+	if code, _ := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"github_hooks_paused": true}); code != 200 {
+		t.Fatalf("pause for window test: %d", code)
+	}
+	// Backdate both failing_since (31h ago) and paused_at (30h ago): 1h failing before a 30h pause.
+	tNow := time.Now()
+	if _, err := s.db.Exec(`UPDATE hooks_out SET failing_since = ? WHERE topic = 'ops' AND name = 'ghdead'`, ms(tNow.Add(-31*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE settings SET value = ? WHERE key = 'github_hooks_paused_at'`, fmt.Sprint(ms(tNow.Add(-30*time.Hour)))); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"github_hooks_paused": false}); code != 200 {
+		t.Fatalf("unpause after 30h: %d", code)
+	}
+	if _, err := s.db.Exec(`UPDATE hook_deliveries SET next_at = 0 WHERE name = 'ghdead' AND status = 'pending'`); err != nil {
+		t.Fatal(err)
+	}
+	s.deliverHooks(ctx)
+	hs, err := s.OutHooks(ctx, serverToken, "ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundDead := false
+	for _, h := range hs {
+		if h.Name == "ghdead" {
+			foundDead = true
+			if !h.Enabled {
+				t.Fatalf("ghdead was disabled after 1h unpaused + 30h paused failure: %+v", h)
+			}
+		}
+	}
+	if !foundDead {
+		t.Fatalf("ghdead missing from OutHooks: %+v", hs)
 	}
 }

@@ -229,6 +229,10 @@
      "description": "Turn web addresses into links",
      "type": "boolean"
     },
+    "github_hooks_paused": {
+     "description": "Server-wide off switch that pauses every outgoing GitHub issue hook without deleting it (full admin only)",
+     "type": "boolean"
+    },
     "color_rules": {
      "description": "Card colors, first match wins, on every device. Replaces the whole list: read settings first and send every rule to keep. A rule matches when all its set fields match. Severity preset: [{\"priority_min\":5,\"color\":\"#DC2626\",\"style\":\"bar\"},{\"priority_min\":4,\"priority_max\":4,\"color\":\"#EA580C\",\"style\":\"bar\"},{\"priority_min\":3,\"priority_max\":3,\"color\":\"#CA8A04\",\"style\":\"bar\"}]",
      "items": {
