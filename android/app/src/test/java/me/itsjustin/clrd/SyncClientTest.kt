@@ -542,6 +542,40 @@ class SyncClientTest {
         await { store.rows["a"] != null }
     }
 
+    @Test fun aShowAfterAHideInTheReplayIsAFreshAlert() { // #589
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send(ev(1, "w", "active"))
+                ws.send(ev(2, "w", "snoozed"))
+                ws.send(ev(3, "w", "active")) // the snooze ended while we were offline
+                ws.send(ev(4, "w", "active").replace("\"created\"", "\"repeat\"")) // carries the show forward
+                ws.send(ev(5, "o", "dismissed"))
+                ws.send(ev(6, "o", "active")) // reopened elsewhere
+                ws.send(ev(7, "p", "active"))
+                ws.send(ev(8, "p", "active").replace("\"created\"", "\"repeat\"")) // a repeat alone never makes a show
+                ws.send(ev(9, "h", "active"))
+                ws.send(ev(10, "h", "resolved")) // hidden at the end: nothing to ring
+                ws.send("""{"type":"ready","seq":10}""")
+            }
+        }
+        start()
+        await { SyncClient.Status.CONNECTED in statuses }
+        assertEquals(listOf(mapOf("w" to 3L, "o" to 6L)), store.shown.toList())
+        assertEquals(listOf(false), store.quiet.toList())
+    }
+
+    @Test fun aQuietPartialSaveMakesNoShow() { // #589: a replay saved quietly stays quiet
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send(ev(1, "w", "snoozed"))
+                ws.send(ev(2, "w", "active"))
+            } // and no `ready` yet
+        }
+        start(replayQuietMs = 100)
+        await { store.rows["w"]?.state == "active" }
+        assertEquals(emptyMap<String, Long>(), store.shown.first())
+    }
+
     @Test fun aFullReplayBufferIsSavedQuietly() {
         onConnect = { n, ws ->
             if (n == 1) {
@@ -643,9 +677,11 @@ class SyncClientTest {
         override fun live(notifs: Collection<Notif>, arrive: Boolean) { notifs.forEach { lives += "${it.id}:$arrive" } }
         val again = CopyOnWriteArrayList<Boolean>()
         val answers = CopyOnWriteArrayList<Boolean>()
-        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) {
+        val shown = CopyOnWriteArrayList<Map<String, Long>>()
+        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean, shown: Map<String, Long>) {
             if (failOnce) { failOnce = false; throw IllegalStateException("disk full") }
             applies += notifs
+            this.shown += shown
             this.quiet += quiet
             this.again += again
             answers += answer
