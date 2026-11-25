@@ -57,6 +57,13 @@ test("snooze, dismiss, list", async () => {
   assert.equal(call(), "GET /api/v1/notifications?state=open&topic=infra");
 });
 
+test("mark and unmark", async () => {
+  await c.mark("01J", "actioned", { note: "filed #5" });
+  assert.deepEqual([call(), last().body], ["POST /api/v1/notifications/01J/mark", { mark: "actioned", note: "filed #5" }]);
+  await c.unmark("01J");
+  assert.equal(call(), "DELETE /api/v1/notifications/01J/mark");
+});
+
 test("no default server: a call without a url says to set CLRD_URL", async () => {
   const saved = process.env.CLRD_URL;
   delete process.env.CLRD_URL;

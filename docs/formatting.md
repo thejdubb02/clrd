@@ -55,6 +55,8 @@ and default can also be changed in the Android app's Settings.
 | `topic_previews` | none | Turn link previews on or off for one topic. |
 | `snooze_intervals` | `["1h","4h"]` | Snooze times offered on each card, 1 to 8, each up to 31 days (`15m`, `2h`, `48h`). |
 | `snooze_default` | `1h` | The time a plain tap on Snooze uses. Must be one of the snooze times. |
+| `swipe_start` | `["clear","snooze"]` | Buttons a swipe to the left reveals on a card (to the right in a right-to-left language), 0 to 3 of `clear`, `snooze`, `ack`, `resolve`. |
+| `swipe_end` | `["ack"]` | Buttons the opposite swipe reveals, same choices. An action may appear on one side only. |
 
 ```sh
 curl -X PUT -H "Authorization: Bearer $TOKEN" -d '{"link_previews":true,"topic_previews":{"alerts":false}}' https://clrd.example.com/api/v1/settings
@@ -72,11 +74,13 @@ shows anything that looks like a password or key as `[hidden]`. Read it
 before you paste: a short secret with no label can still slip through. The check only gives
 advice: it never changes or blocks a message.
 
-In the web inbox, Settings shows the results under Message format, one group
-per topic and sender, with a Copy button for each prompt. A device that may
-publish to the topic can dismiss a finding for that sender or the whole
-topic, or stop checking the topic, and undo any of these from the list below
-the results. The section only appears when there is something to fix or
+In the web inbox, Settings shows the results under Message format check, one
+card per topic with a count of its findings, and inside it one group per
+sender with a Copy fix prompt button. With more than three topics the cards
+start closed. A device that may publish to the topic can dismiss a finding
+for that sender or the whole topic from its Dismiss menu, or stop checking the
+topic from the card's footer, and undo any of these from the list below the
+results. The section only appears when there is something to fix or
 something dismissed.
 
 ```sh

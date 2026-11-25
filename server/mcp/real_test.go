@@ -120,6 +120,7 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 	ok("reopen", map[string]any{"id": a["id"]}, `"state":"active"`)
 	ok("send", map[string]any{"topic": "agents", "message": "b"})
 	ok("clear", map[string]any{"topic": "agents"}, `"cleared":2`)
+	ok("send", map[string]any{"topic": "agents", "message": "c", "live": true}, `"live":true`) // stores nothing (#400)
 
 	sl := ok("silence", map[string]any{"topic": "agents", "for": "2h", "comment": "deploy"}, `"comment":"deploy"`)
 	ok("silences", nil, sl["id"].(string))
@@ -129,6 +130,9 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 	}
 
 	ok("set_topic", map[string]any{"topic": "backups", "checkin": "25h"}, `"checkin":"25h"`)
+	ok("set_topic", map[string]any{"topic": "home", "device_actions": true}, `"device_actions":true`) // #401
+	ok("send", map[string]any{"topic": "home", "message": "lights", "actions": []any{map[string]any{"label": "Off",
+		"http": map[string]any{"url": "https://example.com/off"}}}}, `"method":"POST"`)
 
 	ok("set_template", map[string]any{"topic": "ci", "name": "build", "title": "{{.repo}}", "id": "{{.run}}"}, `"id":"{{.run}}"`)
 	ok("templates", map[string]any{"topic": "ci"}, `"title":"{{.repo}}"`, `"builtin"`)
@@ -136,6 +140,9 @@ func TestSetupToolsAgainstRealServer(t *testing.T) {
 
 	ok("set_hook", map[string]any{"topic": "ops", "name": "audit", "url": "https://example.com/h", "events": []string{"acknowledged"}, "secret": "s"}, `"has_secret":true`)
 	ok("hooks", map[string]any{"topic": "ops"}, `"name":"audit"`)
+	ok("preview_hook", map[string]any{"topic": "ops", "body": `{"t": {{json .notification.topic}}}`}, `"body":"{\"t\": \"ops\"}"`)
+	ok("set_hook_allow", map[string]any{"networks": []string{"192.168.1.7/24"}, "ports": []int{8080}}, `"networks":["192.168.1.0/24"]`, `"ports":[8080]`)
+	ok("hook_allow", map[string]any{}, `"networks":["192.168.1.0/24"]`)
 	ok("hook_deliveries", map[string]any{"topic": "ops", "name": "audit"}, `"deliveries"`)
 	ok("delete_hook", map[string]any{"topic": "ops", "name": "audit"}, `"deleted":true`)
 
@@ -261,7 +268,7 @@ func TestClientSession(t *testing.T) {
 	if got, _ := tool(agent, "get", map[string]any{"id": id}); got["id"] != id || got["message"] != "step 2 of 3" || got["state"] != "acknowledged" {
 		t.Fatalf("get: %v", got)
 	}
-	if got, _ := tool(agent, "topics", nil); fmt.Sprint(got["topics"]) != "[map[icon: open:1 topic:build]]" {
+	if got, _ := tool(agent, "topics", nil); !strings.HasPrefix(fmt.Sprint(got["topics"]), "[map[approvals:false icon: last_at:") || !strings.HasSuffix(fmt.Sprint(got["topics"]), " open:1 subscribed:true topic:build]]") {
 		t.Fatalf("topics: %v", got)
 	}
 	// The format check's fix prompt points at this server, not example.com (#308).
@@ -354,7 +361,7 @@ func TestReplyButtons(t *testing.T) {
 	}
 	sent := call("send", map[string]any{"topic": "agents", "message": "deploy?", "id": "deploy-2", "format": "text", "icon": "https://x.test/i.png",
 		"attachment": map[string]any{"url": "https://x.test/r.pdf", "name": "r.pdf"}, "actions": []any{
-			map[string]any{"label": "Yes", "reply": "yes"}, map[string]any{"label": "No", "reply": "no"}}})
+			map[string]any{"label": "Yes", "reply": "yes"}, map[string]any{"label": "Other", "reply": "other", "text": true}}})
 	id, _ := sent["id"].(string)
 	if acts, _ := sent["actions"].([]any); len(acts) != 2 {
 		t.Fatalf("send dropped the buttons: %v", sent)
@@ -364,23 +371,51 @@ func TestReplyButtons(t *testing.T) {
 	}
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		s.Reply(context.Background(), phone, id, "yes", "app", 0)
+		s.Reply(context.Background(), phone, id, "other", "next week", "app", 0)
 	}()
-	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "acknowledged" || got["answer"] != "yes" || got["by"] != "pixel-9" {
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "acknowledged" || got["answer"] != "other" || got["text"] != "next week" || got["by"] != "pixel-9" {
 		t.Fatalf("wait_for_reply: %v", got)
 	}
-	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["answer"] != "yes" {
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["answer"] != "other" || got["text"] != "next week" {
 		t.Fatalf("second wait_for_reply: %v", got)
 	}
 	// Once the sender resolves it, by is the sender, so no answer rides along.
 	call("resolve", map[string]any{"topic": "agents", "external_id": "deploy-2"})
-	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "resolved" || got["answer"] != nil {
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "resolved" || got["answer"] != nil || got["text"] != nil {
 		t.Fatalf("wait after resolve: %v", got)
 	}
 }
 
 // /mcp/approve answers a permission hook from a tap: Allow allows, anything
 // else denies, and a timeout denies and clears the phones.
+func TestApproveSummary(t *testing.T) {
+	for in, want := range map[string]string{
+		`{"command":"rm -rf build","description":"clean"}`:                                                          "rm -rf build\ndescription: clean",
+		`{"command":"rm *","workdir":"/srv","timeout":5,"sandbox":null,"env":{"A":"1 && b"}}`:                       "rm *\nenv: {\"A\":\"1 && b\"}\ntimeout: 5\nworkdir: /srv", // #441: Allow approves every field
+		`{"description":"read","scope":"all\nworkdir: /safe"}`:                                                      "read\nscope: \"all\\nworkdir: /safe\"",                    // a line break cannot fake a field
+		`{"command":"ls\nworkdir: /safe","workdir":"/srv"}`:                                                         "\"ls\\nworkdir: /safe\"\nworkdir: /srv",
+		`{"description":"x","a: b":"c","n":"1\u2028m\u0085"}`:                                                       "x\n\"a: b\": c\nn: \"1\\u2028m\\u0085\"", // a colon or Unicode line break cannot fake a field
+		`{"command":"x","big":1e400}`:                                                                               "x\nbig: 1e400",
+		`{"file_path":"/a/x.go","content":"y","scope":"all"}`:                                                       "/a/x.go\nscope: all\ny",
+		`{"file_path":"/a/x.go","old_string":"a := 1\nb := 2","new_string":"a := 3"}`:                               "/a/x.go\n- a := 1\n- b := 2\n+ a := 3",
+		`{"file_path":"/a/x.go","old_string":"a","new_string":"","replace_all":true}`:                               "/a/x.go\n(every match)\n- a\n+ ",
+		`{"file_path":"/a/x.go","edits":[{"old_string":"a","new_string":"b"},{"old_string":"c","new_string":"d"}]}`: "/a/x.go\n- a\n+ b\n- c\n+ d",
+		`{"file_path":"/a/new.sh","content":"#!/bin/sh\nrm -rf ~\n"}`:                                               "/a/new.sh\n#!/bin/sh\nrm -rf ~\n",
+		`{"notebook_path":"/a/n.ipynb","new_source":"print(1)"}`:                                                    "/a/n.ipynb\n(replace cell)\nprint(1)",
+		`{"notebook_path":"/a/n.ipynb","cell_id":"c7","edit_mode":"delete","new_source":"x"}`:                       "/a/n.ipynb\n(delete cell c7)",
+		`{"notebook_path":"/a/n.ipynb","cell_id":"c7","edit_mode":"insert","cell_type":"code","new_source":"x"}`:    "/a/n.ipynb\n(insert cell c7 code)\nx",
+		`{"file_path":"/a/x\n- fake","content":"y"}`:                                                                `"/a/x\n- fake"` + "\ny",
+		`{"file_path":"/a/blank","content":"  "}`:                                                                   "/a/blank\n  ",
+		`{"file_path":"/a/empty","content":""}`:                                                                     "/a/empty\n(empty)",
+		`{"file_path":"/a/x.go"}`:                                                                                   "/a/x.go",
+		`{"query":"clrd"}`:                                                                                          `{"query":"clrd"}`,
+	} {
+		if got := summary(json.RawMessage(in)); got != want {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestApproveHook(t *testing.T) {
 	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
@@ -405,7 +440,7 @@ func TestApproveHook(t *testing.T) {
 					time.Sleep(10 * time.Millisecond)
 					open, _ := s.List(context.Background(), phone, server.ListQuery{Topics: []string{"agents"}, State: "active"})
 					if len(open) > 0 {
-						s.Reply(context.Background(), phone, open[0].ID, tap, "app", 0)
+						s.Reply(context.Background(), phone, open[0].ID, tap, "", "app", 0)
 						return
 					}
 				}
@@ -427,8 +462,9 @@ func TestApproveHook(t *testing.T) {
 	if code, dec := ask("Bearer "+raw, "", "deny"); code != 200 || dec["behavior"] != "deny" || !strings.Contains(fmt.Sprint(dec["message"]), "pixel-9") {
 		t.Fatalf("deny tap: %d %v", code, dec)
 	}
-	if code, dec := ask("Bearer "+raw, "?timeout=0.1", ""); code != 200 || dec["behavior"] != "deny" {
-		t.Fatalf("timeout: %d %v", code, dec)
+	t0 := time.Now()
+	if code, dec := ask("Bearer "+raw, "?timeout=0.1", ""); code != 200 || dec["behavior"] != "deny" || time.Since(t0) > 10*time.Second {
+		t.Fatalf("timeout: %d %v after %v", code, dec, time.Since(t0))
 	}
 	if open, _ := s.List(context.Background(), phone, server.ListQuery{Topics: []string{"agents"}, State: "active"}); len(open) != 0 {
 		t.Fatalf("timed-out ask still rings: %v", open)

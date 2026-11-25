@@ -1,14 +1,21 @@
 package web
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"html"
+	"html/template"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -33,13 +40,14 @@ func TestPages(t *testing.T) {
 		"/":                          {">Dismiss once. Gone everywhere.</h1>", `og:image" content="https://clrd.example.com/assets/og.png`, "Uptime Kuma", "Alertmanager", "F-Droid", "github.com/thejdubb02/clrd"},
 		"/docs/":                     {"<h1>Docs</h1>", `href="/docs/spec"`},
 		"/docs/spec":                 {"clrd spec", `aria-current="page">clrd spec`},
+		"/docs/changelog":            {"<h2 id=\"unreleased\">Unreleased</h2>", `full history on GitHub</a>`},
 		"/docs/integrations/":        {`href="/docs/integrations/curl"`, `href="/docs/integrations/mcp"`},
 		"/docs/integrations/grafana": {`href="/docs/integrations/alertmanager"`},
 		"/app":                       {`data-view="inbox"`, "Nightly backup failed", "Urgent", "Acknowledged on pixel-9", "In sync on 2 devices", `aria-label="pixel-9: connected"`, `aria-label="tablet: offline"`, `href="/app/settings#dev-h"`, `data-act="dismiss"`},
 		"/app/snoozed":               {"TLS certificate renews in 7 days", "Snoozed until"},
 		"/app/cleared":               {"Cleared on pixel-9", "Resolved by gatus", `data-act="reopen"`},
-		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css"`, `data-variant="clear"`, `class="command-dialog"`},
-		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", `data-live="linked"`, ">Status</th>", "Offline", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications", `<option value="14" selected>14 days</option>`, `data-tkeep="gone=3;home=14;"`, `<select id="tk-gone" class="input w-auto" data-topic="gone">`, `data-approve="tok-laptop" data-name="laptop" data-own aria-label="May approve: laptop"><option value="denied" selected>Denied</option></select>`, `data-approve="tok-pixel" data-name="pixel-9" aria-label="May approve: pixel-9"><option value="denied">Denied</option><option value="ask" selected>Ask</option><option value="allowed">Allowed</option></select>`},
+		"/app/ui":                    {"<h1 id=\"h-intro\" class=\"text-2xl font-semibold tracking-tight\">Components</h1>", `href="/static/app.css?v=`, `data-variant="clear"`, `class="command-dialog"`},
+		"/app/settings":              {"Linked devices", "Phone, linked to web", `data-unlink="tok-pixel"`, "pixel-9 linked by web", `data-live="linked"`, `data-unlink="tok-bot"`, "build-bot</span>\n              <div class=\"meta\">Agent</div>", `data-agent hidden`, `<option value="15m" selected>15 minutes</option>`, `name="topic" value="home"`, ">Status</th>", "Offline", "web</span> <span class=\"text-muted-foreground\">(this browser)</span>", "https://clrd.example.com/api/v1/notifications", `<option value="14" selected>14 days</option>`, `data-tkeep="gone=3;home=14;"`, `<select id="tk-gone" class="input w-auto" data-topic="gone">`, `data-approve="tok-laptop" data-name="laptop" data-own aria-label="May approve: laptop"><option value="denied" selected>Denied</option></select>`, `href="https://github.com/thejdubb02/clrd">Source code</a>`, `href="https://github.com/thejdubb02/clrd/issues">Report a problem</a>`, `data-approve="tok-pixel" data-name="pixel-9" aria-label="May approve: pixel-9"><option value="denied">Denied</option><option value="ask" selected>Ask</option><option value="allowed">Allowed</option></select>`},
 		"/app?q=disk":                {"Disk 91% full on web-1"},
 		"/app?topic=home":            {"Front door open", `data-topic>in home</span>`},
 		"/robots.txt":                {"User-agent: GPTBot", "User-agent: ClaudeBot", "User-agent: PerplexityBot", "User-agent: OAI-SearchBot", "Sitemap: https://clrd.example.com/sitemap.xml"},
@@ -53,6 +61,31 @@ func TestPages(t *testing.T) {
 				t.Errorf("%s: missing %q", path, s)
 			}
 		}
+	}
+	// About (#580): the running version, and its history with inline Markdown.
+	_, body := get(t, h, "/app/settings")
+	want := []string{`data-version>This server runs clrd ` + clrd.Version(), `id="about"`, `<summary class="cursor-pointer font-medium">What's new</summary>`, `href="` + clrd.FullHistory + `"`}
+	for _, r := range clrd.ParseChangelog(clrd.Changelog) {
+		if r.Date != "" {
+			want = append(want, `>`+r.Version+` <span class="meta">`+r.Date+`</span></h4>`)
+		}
+	}
+	for _, s := range want {
+		if !strings.Contains(body, s) {
+			t.Errorf("settings About: missing %q", s)
+		}
+	}
+	for in, out := range map[string]template.HTML{
+		"Run `clrd import ntfy`, see [docs](https://x.example)": `Run <code>clrd import ntfy</code>, see <a href="https://x.example">docs</a>`,
+		"1. Reconnect automatically":                            "1. Reconnect automatically",
+		"# Not a heading":                                       "# Not a heading",
+	} {
+		if got := inlineMD(in); got != out {
+			t.Errorf("inlineMD(%q) = %q, want %q", in, got, out)
+		}
+	}
+	if got := inlineMD("<b>bold</b> & co"); strings.Contains(string(got), "<b>") {
+		t.Errorf("inlineMD kept raw HTML: %q", got)
 	}
 	if _, body := get(t, h, "/app/settings"); strings.Contains(body, `data-unlink="tok-web"`) || strings.Contains(body, `data-unlink="tok-laptop"`) {
 		t.Error("unlink offered on this browser or a typed-in token")
@@ -68,6 +101,28 @@ func TestPages(t *testing.T) {
 	}
 	if code, _ := get(t, h, "/docs/nope"); code != 404 {
 		t.Errorf("/docs/nope: %d, want 404", code)
+	}
+}
+
+// The landing page's sample inbox (#592) is the real card template with the
+// demo data, inside a disabled, inert fieldset so no button on it posts and
+// no link or menu in it opens or takes focus.
+func TestLandingDemo(t *testing.T) {
+	_, body := get(t, Handler(NewFake(), ""), "/")
+	i := strings.Index(body, `<fieldset class="grid min-w-0 gap-2" disabled inert aria-label="Sample inbox">`)
+	j := strings.Index(body, "</fieldset>")
+	if i < 0 || j < i {
+		t.Fatal("no disabled sample inbox on the landing page")
+	}
+	demo := body[i:j]
+	for _, s := range []string{`data-id="demo-backup"`, ">Urgent</span>", "<strong>nas-1</strong>", `>Open logs`, `data-act="reply">Approve</button>`,
+		"Acknowledged on pixel-9", "ops-agent actioned: pruned old images, now 71%", `data-act="dismiss"`} {
+		if !strings.Contains(demo, s) {
+			t.Errorf("sample inbox: missing %q", s)
+		}
+	}
+	if n := strings.Count(body, "<form"); n == 0 || n != strings.Count(demo, "<form") {
+		t.Errorf("%d forms on the landing page, all must sit in the disabled sample inbox", n)
 	}
 }
 
@@ -117,8 +172,9 @@ func TestLinks(t *testing.T) {
 // readOnly is for page tests that never act.
 type readOnly struct{}
 
-func (readOnly) Act(*http.Request, string, string, *time.Time) error { return ErrUnauthorized }
-func (readOnly) Reply(*http.Request, string, string, int64) error    { return ErrUnauthorized }
+func (readOnly) Act(*http.Request, string, string, *time.Time) error      { return ErrUnauthorized }
+func (readOnly) Reply(*http.Request, string, string, string, int64) error { return ErrUnauthorized }
+func (readOnly) Mark(*http.Request, string, string, string, string) error { return ErrUnauthorized }
 
 func (readOnly) StartSilence(*http.Request, string, string, string, string) error {
 	return ErrUnauthorized
@@ -130,14 +186,19 @@ func (readOnly) FormatIgnore(*http.Request, string, string, string, bool) error 
 	return ErrUnauthorized
 }
 
-func (readOnly) SaveHook(*http.Request, string, string, string, []string, string, bool) error {
+func (readOnly) SaveHook(*http.Request, string, string, string, []string, *string, string, bool) error {
 	return ErrUnauthorized
 }
 
 func (readOnly) DeleteHook(*http.Request, string, string) error { return ErrUnauthorized }
 
 func (readOnly) SaveTemplate(*http.Request, Template, string, bool) error { return ErrUnauthorized }
-func (readOnly) DeleteTemplate(*http.Request, string, string) error       { return ErrUnauthorized }
+func (readOnly) SetSenderRules(*http.Request, string, SenderRules, int64) error {
+	return ErrUnauthorized
+}
+func (readOnly) UndoSenderChange(*http.Request, string, int64) error          { return ErrUnauthorized }
+func (readOnly) DeleteTemplate(*http.Request, string, string) error           { return ErrUnauthorized }
+func (readOnly) SetSubscriptions(*http.Request, *bool, map[string]bool) error { return ErrUnauthorized }
 
 type deny struct{ readOnly }
 
@@ -263,6 +324,11 @@ func TestActForm(t *testing.T) {
 	if _, body := get(t, h, "/app?topic=agents"); !strings.Contains(body, `name="reply" value="yes" data-act="reply">Approve</button>`) || strings.Contains(body, ` data-links>`) {
 		t.Fatal("reply actions are not answer buttons, or show as empty links")
 	}
+	// Device actions (#450) are shown as text, never as a link or a button the browser runs.
+	if _, body := get(t, h, "/app?topic=infra"); !strings.Contains(body, `Clean /tmp</span> runs on a phone: POST https://ops.example.com/clean?host=web-1</li>`) ||
+		!strings.Contains(body, `Ping</span> runs on a phone: Android broadcast (the app&#39;s default)</li>`) || strings.Contains(body, `href="https://ops.example.com`) {
+		t.Fatal("device actions missing, or rendered as links")
+	}
 	seq := strconv.FormatInt(f.items[agent].Seq, 10)
 	if w := post(url.Values{"id": {agent}, "reply": {"yes"}, "seq": {seq}, "next": {"/app?topic=agents"}}); w.Code != 303 || f.items[agent].Reply != "yes" || f.items[agent].State != "acknowledged" {
 		t.Fatalf("reply: %d, stored %q state %s", w.Code, f.items[agent].Reply, f.items[agent].State)
@@ -291,6 +357,73 @@ func TestHostileNotification(t *testing.T) {
 	}
 	if !strings.Contains(body, "&lt;img src=x onerror=alert(1)&gt;") {
 		t.Error("title not shown escaped")
+	}
+}
+
+// The shared color rule fixture every client runs (#165, SPEC Color rules).
+func TestColorRules(t *testing.T) {
+	b, err := os.ReadFile("../server/testdata/colorrules.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fx struct {
+		Rules []ColorRule
+		Cases []struct {
+			N            Notification
+			Color, Style string
+		}
+	}
+	if err := json.Unmarshal(b, &fx); err != nil || len(fx.Cases) == 0 {
+		t.Fatal(err, len(fx.Cases))
+	}
+	s := Snapshot{ColorRules: fx.Rules}
+	for i, c := range fx.Cases {
+		color, style := s.look(c.N)
+		if want := strings.ToUpper(strings.TrimPrefix(c.Color, "#")); color != want || style != c.Style {
+			t.Errorf("case %d: got %q %q, want %q %q", i, color, style, want, c.Style)
+		}
+	}
+	if _, style := (Snapshot{ColorRules: []ColorRule{{Color: "#123456", Style: "neon"}}}).look(Notification{}); style != "bar" {
+		t.Errorf("unknown style drew as %q, want bar", style)
+	}
+}
+
+// The stylesheet takes only 6-digit hex and picks readable text for each color.
+func TestCardColorsCSS(t *testing.T) {
+	_, body := get(t, Handler(NewFake(), ""), "/card-colors.css?c=FDE047.1E3A8A.FF00FF.zz-x.12345.fde047")
+	for _, want := range []string{".cc-FDE047{--cc:#FDE047;--cc-ink:#0F1114}", ".cc-1E3A8A{--cc:#1E3A8A;--cc-ink:#FFFFFF}",
+		".cc-FF00FF{--cc:#FF00FF;--cc-ink:#0F1114}"} { // magenta: white text would be 3.1:1 (#696)
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in %q", want, body)
+		}
+	}
+	if strings.Count(body, ".cc-") != 3 {
+		t.Errorf("bad input let through: %q", body)
+	}
+	// A sender's own color draws as a bar, and the page links its stylesheet.
+	_, body = get(t, Handler(one{n: Notification{ID: "c1", Topic: "t", Title: "x", Color: "#0ea5e9", State: "active", CreatedAt: time.Now()}}, ""), "/app")
+	for _, want := range []string{"cc-0EA5E9 cs-bar", "card-colors.css?v=2&c=0EA5E9"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("colored card: missing %q", want)
+		}
+	}
+}
+
+// A card shows who marked it, and a mark never hides it (card marks).
+func TestMarks(t *testing.T) {
+	n := Notification{ID: "m1", Topic: "triage", Title: "disk", State: "active", CreatedAt: time.Now(), Marks: []Mark{
+		{By: "stew", Mark: "actioned", Note: "filed relay#512", Link: "https://github.com/x/relay/issues/512"},
+		{By: "Ann", Mark: "seen"},
+		{By: "eve", Mark: "actioned", Link: "javascript:alert(1)"},
+	}}
+	_, body := get(t, Handler(one{n: n}, ""), "/app")
+	for _, want := range []string{`data-mark="actioned">stew actioned: filed relay#512 <a class="underline" href="https://github.com/x/relay/issues/512"`, `data-mark="seen">Ann seen</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `href="javascript:`) {
+		t.Error("a mark link rendered a script URL")
 	}
 }
 
@@ -347,6 +480,139 @@ func TestMountBesideNtfy(t *testing.T) {
 			t.Errorf("%s routed to the wrong side (%d)", path, code)
 		}
 	}
+}
+
+// A page names every script and stylesheet by its content, so after an upgrade
+// it never runs with an older cached file (#410).
+func TestStaticVersioned(t *testing.T) {
+	h := Handler(NewFake(), "")
+	ref := regexp.MustCompile(`(?:src|href)="/static/([^"?]+)([^"]*)"`)
+	named := map[string]bool{}
+	for _, p := range []string{"/", "/docs/spec", "/app", "/app/ui", "/app/settings"} {
+		_, body := get(t, h, p)
+		for _, m := range ref.FindAllStringSubmatch(body, -1) {
+			b, err := fs.ReadFile(files, "static/"+m[1])
+			if err != nil {
+				t.Fatalf("%s names a missing file %s", p, m[1])
+			}
+			sum := sha256.Sum256(b)
+			if want := "?v=" + hex.EncodeToString(sum[:6]); m[2] != want {
+				t.Errorf("%s: /static/%s%s, want %s", p, m[1], m[2], want)
+			}
+			named[p+" "+m[1]] = true
+		}
+	}
+	for _, k := range []string{"/ app.css", "/app app.css", "/app inbox.js", "/app vendor/basecoat.min.js", "/app vendor/command.min.js",
+		"/app/ui app.css", "/app/ui vendor/basecoat.min.js", "/app/ui vendor/command.min.js", "/app/settings pair.js"} {
+		if !named[k] {
+			t.Errorf("%s: not named", k)
+		}
+	}
+
+	// Each GET runs once with the current hash, an old one and none.
+	do := func(path, etag string) *http.Response {
+		r := httptest.NewRequest("GET", path, nil)
+		if etag != "" {
+			r.Header.Set("If-None-Match", etag)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Result()
+	}
+	v := staticHash["inbox.js"]
+	for path, want := range map[string]string{
+		"/static/inbox.js?v=" + v:   "public, max-age=31536000, immutable",
+		"/static/inbox.js?v=000000": "no-cache",
+		"/static/inbox.js":          "no-cache",
+	} {
+		res := do(path, "")
+		if res.StatusCode != 200 || res.Header.Get("Cache-Control") != want || res.Header.Get("ETag") != `"`+v+`"` {
+			t.Errorf("%s: %d %q %q, want 200 %q", path, res.StatusCode, res.Header.Get("Cache-Control"), res.Header.Get("ETag"), want)
+		}
+	}
+	if res := do("/static/inbox.js", `"`+v+`"`); res.StatusCode != 304 {
+		t.Errorf("revalidate with the current ETag: %d, want 304", res.StatusCode)
+	}
+	if res := do("/static/inbox.js", `"000000"`); res.StatusCode != 200 {
+		t.Errorf("revalidate with an old ETag: %d, want 200", res.StatusCode)
+	}
+	if res := do("/app/ui", ""); res.Header.Get("Cache-Control") != "no-cache" {
+		t.Errorf("/app/ui Cache-Control %q, want no-cache", res.Header.Get("Cache-Control"))
+	}
+}
+
+// Every static file answers the same in the plain and the packed build (#690):
+// type, ETag, caching and body from the file on disk. Only the packed build
+// sends gzip, and only to a client that takes it.
+func TestStaticEveryFile(t *testing.T) {
+	h := Handler(NewFake(), "")
+	accepts := map[string]bool{"gzip": true, "br, GZIP;q=0.5": true, "": false, "gzip;q=0": false, "deflate": false}
+	n := 0
+	err := fs.WalkDir(os.DirFS("static"), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		n++
+		want, _ := os.ReadFile("static/" + p)
+		sum := sha256.Sum256(want)
+		v := hex.EncodeToString(sum[:6])
+		ct := mime.TypeByExtension(path.Ext(p))
+		if ct == "" {
+			ct = http.DetectContentType(want)
+		}
+		for ae, gz := range accepts {
+			gz = gz && packedBuild
+			for _, method := range []string{"GET", "HEAD"} {
+				r := httptest.NewRequest(method, "/static/"+p+"?v="+v, nil)
+				r.Header.Set("Accept-Encoding", ae)
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				res := w.Result()
+				body := w.Body.Bytes()
+				if gz && method == "GET" {
+					z, err := gzip.NewReader(bytes.NewReader(body))
+					if err != nil {
+						t.Fatalf("%s %q: %v", p, ae, err)
+					}
+					body, _ = io.ReadAll(z)
+				}
+				size := len(want)
+				if gz {
+					size = len(staticGz(t, p))
+				}
+				hd := res.Header
+				if res.StatusCode != 200 || hd.Get("Content-Type") != ct || hd.Get("ETag") != `"`+v+`"` ||
+					hd.Get("Cache-Control") != "public, max-age=31536000, immutable" || hd.Get("Vary") != "Accept-Encoding" ||
+					(hd.Get("Content-Encoding") == "gzip") != gz || hd.Get("Content-Length") != strconv.Itoa(size) {
+					t.Errorf("%s %s %q: %d %v", method, p, ae, res.StatusCode, hd)
+				}
+				if method == "GET" && !bytes.Equal(body, want) {
+					t.Errorf("%s %q: body differs from the file", p, ae)
+				}
+			}
+			r := httptest.NewRequest("GET", "/static/"+p, nil)
+			r.Header.Set("Accept-Encoding", ae)
+			r.Header.Set("If-None-Match", `"`+v+`"`)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != 304 || w.Header().Get("Vary") != "Accept-Encoding" || w.Header().Get("Cache-Control") != "no-cache" {
+				t.Errorf("revalidate %s %q: %d %v", p, ae, w.Code, w.Header())
+			}
+		}
+		return nil
+	})
+	if err != nil || n < 5 {
+		t.Fatalf("walked %d files: %v", n, err)
+	}
+}
+
+// staticGz is the stored gzip of a static file in the packed build.
+func staticGz(t *testing.T, p string) []byte {
+	b, err := os.ReadFile("packed/static/" + p + ".gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 func TestAssets(t *testing.T) {
@@ -537,5 +803,78 @@ func TestTimeLeft(t *testing.T) {
 		if got := timeLeft(time.Now().Add(d)); got != want {
 			t.Errorf("timeLeft(+%v) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+// Any topic the server marks as carrying approval requests (#623) warns
+// before unsubscribing, on the card, in Settings and on a plain form post.
+func TestApprovalsFlag(t *testing.T) {
+	f := NewFake()
+	f.put(Notification{Topic: "deploys", Title: "Ship it?", State: "active", CreatedAt: time.Now(), Actions: []Action{{Label: "Yes", Reply: "yes"}}})
+	h := Handler(f, "")
+	if _, b := get(t, h, "/app"); !strings.Contains(b, `data-unsub="deploys" data-approvals`) || strings.Contains(b, `data-unsub="home" data-approvals`) {
+		t.Fatal("the card does not warn on deploys, or warns on home")
+	}
+	if _, b := get(t, h, "/app/settings"); !strings.Contains(b, `value="deploys" checked data-approvals`) || strings.Contains(b, `value="home" checked data-approvals`) {
+		t.Fatal("Settings does not warn on deploys, or warns on home")
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/app/subscriptions", strings.NewReader("topic=deploys&subscribe=0"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if h.ServeHTTP(w, r); w.Header().Get("Location") != "/app/settings#topics" || !f.subscribed("deploys") {
+		t.Fatal("unsubscribing from deploys did not stop at the warning first")
+	}
+}
+
+// Topic subscriptions (SPEC 2.3): the card menu, the not-subscribed banner
+// and the Settings list, all as plain form posts.
+func TestSubscriptions(t *testing.T) {
+	f := NewFake()
+	h := Handler(f, "")
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/app/subscriptions", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.ServeHTTP(w, r)
+		return w
+	}
+	_, inbox := get(t, h, "/app")
+	if !strings.Contains(inbox, `data-unsub="home"`) || !strings.Contains(inbox, `data-unsub="agents" data-approvals`) || strings.Contains(inbox, `data-unsub="home" data-approvals`) {
+		t.Fatal("cards offer no Unsubscribe, or warn on the wrong topic")
+	}
+	if w := post(url.Values{"topic": {"home"}, "subscribe": {"0"}, "next": {"/app"}}); w.Code != 303 || w.Header().Get("Location") != "/app" || f.subscribed("home") {
+		t.Fatalf("unsubscribe home: %d to %q", w.Code, w.Header().Get("Location"))
+	}
+	if _, b := get(t, h, "/app"); strings.Contains(b, "Front door open") || strings.Contains(b, `href="/app?topic=home"`) {
+		t.Fatal("an unsubscribed topic still shows in the inbox or the topic list")
+	}
+	_, page := get(t, h, "/app?topic=home")
+	if !strings.Contains(page, "Front door open") || !strings.Contains(page, "Not subscribed to home") || !strings.Contains(page, `data-subscribe="home"`) || strings.Contains(page, `data-unsub="home"`) {
+		t.Fatal("the topic page does not browse an unsubscribed topic with its banner")
+	}
+	if w := post(url.Values{"topic": {"agents"}, "subscribe": {"0"}}); w.Header().Get("Location") != "/app/settings#topics" || !f.subscribed("agents") {
+		t.Fatal("unsubscribing from agents did not stop at the warning first")
+	}
+	if post(url.Values{"topic": {"agents"}, "subscribe": {"0"}, "sure": {"1"}}); f.subscribed("agents") {
+		t.Fatal("a confirmed unsubscribe from agents did not save")
+	}
+	_, set := get(t, h, "/app/settings")
+	if !strings.Contains(set, `name="was" value="0:home"`) || !strings.Contains(set, `name="on" value="infra" checked`) || !strings.Contains(set, "data-approval-warn") {
+		t.Fatal("Settings has no Topics list as drawn")
+	}
+	// Another device turns infra off after the list was drawn: saving the
+	// list with infra untouched leaves it off, and only home changes.
+	f.subs["infra"] = false
+	post(url.Values{"was": {"0:home", "1:infra", "1:backups"}, "on": {"home", "infra"}, "new_topics": {"1"}, "new_topics_was": {"1"}})
+	if !f.subscribed("home") || f.subscribed("infra") || f.subscribed("backups") || f.NoNewTopics {
+		t.Fatalf("the list sent rows it did not change: %v, new topics off %v", f.subs, f.NoNewTopics)
+	}
+	// A server with no topics yet: the list has no rows, only the new-topics switch.
+	if w := post(url.Values{"new_topics_was": {"1"}}); w.Code != 303 || !f.NoNewTopics {
+		t.Fatalf("turning new topics off with no rows: %d, off %v, %v", w.Code, f.NoNewTopics, f.subs)
+	}
+	f.Unfiltered = true
+	if _, b := get(t, h, "/app/settings"); !strings.Contains(b, "Not available here") || strings.Contains(b, "data-subs-form") {
+		t.Fatal("a token with no user is offered a list it may not change")
 	}
 }

@@ -19,11 +19,42 @@ type Fake struct {
 	mu    sync.Mutex
 	seq   int64
 	items map[string]*Notification
+	// Topic subscriptions (SPEC 2.3): Unfiltered is a token with no user.
+	Unfiltered  bool
+	NoNewTopics bool
+	subs        map[string]bool
+}
+
+func (f *Fake) subscribed(t string) bool {
+	if on, ok := f.subs[t]; ok && !f.Unfiltered {
+		return on
+	}
+	return !f.NoNewTopics || f.Unfiltered
+}
+
+func (f *Fake) SetSubscriptions(r *http.Request, newTopics *bool, topics map[string]bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Unfiltered {
+		return errors.New("this token has no user")
+	}
+	for t := range topics {
+		if t == "" || strings.ContainsAny(t, " /") {
+			return errors.New("bad topic name " + t)
+		}
+	}
+	if newTopics != nil {
+		f.NoNewTopics = !*newTopics
+	}
+	for t, on := range topics {
+		f.subs[t] = on
+	}
+	return nil
 }
 
 // NewFake returns a Fake seeded with a realistic mix of notifications.
 func NewFake() *Fake {
-	f := &Fake{items: map[string]*Notification{}}
+	f := &Fake{items: map[string]*Notification{}, subs: map[string]bool{}}
 	now := time.Now().UTC().Truncate(time.Minute)
 	ago := func(m int) time.Time { return now.Add(-time.Duration(m) * time.Minute) }
 	until := now.Add(3 * time.Hour)
@@ -36,7 +67,7 @@ func NewFake() *Fake {
 			Actions: []Action{{Label: "Approve", Reply: "yes"}, {Label: "Reject", Reply: "no"}}, CreatedAt: ago(41)},
 		{Topic: "home", Title: "Front door open for 10 minutes", Priority: 4, CreatedAt: ago(18)},
 		{Topic: "infra", ExternalID: "disk-web-1", Title: "Disk 91% full on web-1", Message: "/var at 91%. Grows about 2% a day.", Priority: 4, Tags: []string{"disk"},
-			Actions: []Action{{Label: "Open dashboard", URL: "https://grafana.example.com/d/disk"}}, CreatedAt: ago(9)},
+			Actions: []Action{{Label: "Open dashboard", URL: "https://grafana.example.com/d/disk"}, {Label: "Clean /tmp", HTTP: &HTTPAction{URL: "https://ops.example.com/clean?host=web-1"}}, {Label: "Ping", Broadcast: &BroadcastAction{}}}, CreatedAt: ago(9)},
 		{Topic: "backups", Title: "Nightly backup failed", Message: "restic exited 1 after 4m 12s.\nRepository is locked by a stale process.", Priority: 5, Tags: []string{"restic"}, CreatedAt: ago(3)},
 	} {
 		if n.State == "" {
@@ -69,10 +100,24 @@ func (f *Fake) put(n Notification) {
 func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s := Snapshot{Seq: f.seq, Counts: map[string]int{}, Items: []Notification{}, Me: "web", MeID: "tok-web", SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h", TopicKeepClearedDays: map[string]int{"home": 14, "gone": 3}} // gone has no notifications left (#336)
+	s := Snapshot{Seq: f.seq, CanKeep: true, Counts: map[string]int{}, Items: []Notification{}, Me: "web", MeID: "tok-web", MarkID: "me", SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h", TopicKeepClearedDays: map[string]int{"home": 14, "gone": 3}} // gone has no notifications left (#336)
 	topics := map[string]int{}
+	last := map[string]time.Time{}
+	asks := map[string]bool{} // topics a question was sent to, as the server marks them (#623)
 	needle := strings.ToLower(q.Q)
+	s.Filtered, s.NewTopics = !f.Unfiltered, !f.NoNewTopics
+	s.Unsubscribed = q.Topic != "" && !f.subscribed(q.Topic)
 	for _, n := range f.items {
+		asks[n.Topic] = asks[n.Topic] || slices.ContainsFunc(n.Actions, func(a Action) bool { return a.Reply != "" })
+		if n.CreatedAt.After(last[n.Topic]) {
+			last[n.Topic] = n.CreatedAt
+		}
+		if !f.subscribed(n.Topic) {
+			if q.Topic == n.Topic && slices.Contains(q.States, n.State) {
+				s.Items = append(s.Items, *n) // subscribed=all browses it
+			}
+			continue
+		}
 		s.Counts[n.State]++
 		if _, ok := topics[n.Topic]; !ok {
 			topics[n.Topic] = 0
@@ -88,16 +133,29 @@ func (f *Fake) Snapshot(r *http.Request, q Query) (Snapshot, error) {
 	}
 	sort.Slice(s.Items, func(i, j int) bool { return s.Items[i].CreatedAt.After(s.Items[j].CreatedAt) })
 	for name, open := range topics {
-		s.Topics = append(s.Topics, Topic{Name: name, Open: open})
+		s.Topics = append(s.Topics, Topic{Name: name, Open: open, Approvals: asks[name]})
 	}
 	sort.Slice(s.Topics, func(i, j int) bool { return s.Topics[i].Name < s.Topics[j].Name })
+	if q.Devices && s.Filtered {
+		for name, at := range last {
+			open := 0
+			for _, n := range f.items {
+				if n.Topic == name && (n.State == "active" || n.State == "acknowledged" || n.State == "snoozed") {
+					open++
+				}
+			}
+			s.SubTopics = append(s.SubTopics, SubTopic{Topic: name, Subscribed: f.subscribed(name), Open: open, LastAt: &at, Approvals: asks[name]})
+		}
+		sort.Slice(s.SubTopics, func(i, j int) bool { return s.SubTopics[i].Topic < s.SubTopics[j].Topic })
+	}
 	now := time.Now().UTC()
 	day := now.Add(-24 * time.Hour)
 	s.Linked = []LinkedDevice{{ID: "tok-laptop", Name: "laptop", Kind: "token", LinkedAt: day, Approve: "denied"},
 		{ID: "tok-web", Name: "web", Kind: "browser", Via: "laptop", ViaID: "tok-laptop", Approve: "allowed", LinkedAt: day, LastSeenAt: &now, This: true, CanUnlink: true},
 		{ID: "tok-pixel", Name: "pixel-9", Kind: "phone", Via: "web", ViaID: "tok-web", Approve: "ask", LinkedAt: day, CanUnlink: true, Connected: true, CaughtUp: true},
-		{ID: "tok-tablet", Name: "tablet", Kind: "phone", Via: "web", ViaID: "tok-web", Approve: "denied", LinkedAt: day, CanUnlink: true}}
-	s.CanApprove = true
+		{ID: "tok-tablet", Name: "tablet", Kind: "phone", Via: "web", ViaID: "tok-web", Approve: "denied", LinkedAt: day, CanUnlink: true},
+		{ID: "tok-bot", Name: "build-bot", Kind: "agent", Approve: "denied", LinkedAt: day, CanUnlink: true}}
+	s.CanApprove, s.CanInvite = true, q.Devices
 	if q.Devices {
 		s.Log = []DeviceEvent{{At: day, Action: "linked", Device: "pixel-9", By: "web"}}
 	}
@@ -118,6 +176,23 @@ func (f *Fake) Act(r *http.Request, id, action string, until *time.Time) error {
 	return nil
 }
 
+// Mark keeps one mark, by "me", like the server's one per author.
+func (f *Fake) Mark(r *http.Request, id, mark, note, link string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.items[id]
+	if !ok {
+		return errors.New("not found")
+	}
+	m := *n
+	m.Marks = nil
+	if mark != "" {
+		m.Marks = []Mark{{By: "web", ByID: "me", Mark: mark, Note: note, Link: link}}
+	}
+	f.put(m)
+	return nil
+}
+
 func (f *Fake) StartSilence(r *http.Request, topic, tag, dur, comment string) error { return nil }
 func (f *Fake) EndSilence(r *http.Request, id string) error                         { return nil }
 
@@ -125,16 +200,18 @@ func (f *Fake) FormatIgnore(r *http.Request, topic, rule, senderID string, on bo
 	return nil
 }
 
-func (f *Fake) SaveHook(*http.Request, string, string, string, []string, string, bool) error {
+func (f *Fake) SaveHook(*http.Request, string, string, string, []string, *string, string, bool) error {
 	return nil
 }
 
 func (f *Fake) DeleteHook(*http.Request, string, string) error { return nil }
 
-func (f *Fake) SaveTemplate(*http.Request, Template, string, bool) error { return nil }
-func (f *Fake) DeleteTemplate(*http.Request, string, string) error       { return nil }
+func (f *Fake) SaveTemplate(*http.Request, Template, string, bool) error       { return nil }
+func (f *Fake) SetSenderRules(*http.Request, string, SenderRules, int64) error { return nil }
+func (f *Fake) UndoSenderChange(*http.Request, string, int64) error            { return nil }
+func (f *Fake) DeleteTemplate(*http.Request, string, string) error             { return nil }
 
-func (f *Fake) Reply(r *http.Request, id, reply string, seq int64) error {
+func (f *Fake) Reply(r *http.Request, id, reply, text string, seq int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n, ok := f.items[id]
@@ -142,7 +219,7 @@ func (f *Fake) Reply(r *http.Request, id, reply string, seq int64) error {
 		return errors.New("conflict")
 	}
 	m := *n
-	m.State, m.StateBy, m.Reply = "acknowledged", "web", reply
+	m.State, m.StateBy, m.Reply, m.ReplyText = "acknowledged", "web", reply, strings.TrimSpace(text)
 	f.put(m)
 	return nil
 }

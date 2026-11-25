@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -50,6 +51,46 @@ class TrayRaceTest {
         Notif(id, "t", "T", "m", 3, "", null, "[]", state, null, null, seq, System.currentTimeMillis(), seq) // recent, or prune drops it
     private fun buttons(n: Notification) = n.actions.orEmpty().map { it.title.toString() }
 
+    @Test fun undoAfterClearKeepsASnooze() { // #425: back as it was, not active
+        val until = System.currentTimeMillis() + 3_600_000
+        val snoozed = row("s", Notif.SNOOZED, 1).copy(snoozeUntil = until)
+        val open = row("o", Notif.ACTIVE, 2)
+        bg { dao.applyAll(listOf(snoozed, open), 2) }
+        app.act(listOf("s", "o"), "dismiss", App.VIA_APP_BULK)
+        app.undoClear(listOf(snoozed, open))
+        drainIo()
+        val q = bg { dao.pending() }
+        assertEquals(listOf("s" to "dismiss", "o" to "dismiss", "o" to "reopen", "s" to "reopen"), q.map { it.notifId to it.action }) // #508: no follow-up snooze
+        assertEquals(java.time.Instant.ofEpochMilli(until).toString(), JSONObject(q[3].body).getString("until")) // #473: the reopen itself snoozes
+        assertEquals(Notif.SNOOZED, bg { dao.get("s")?.state })
+        assertEquals(until, bg { dao.get("s")?.snoozeUntil })
+        assertEquals(Notif.ACTIVE, bg { dao.get("o")?.state })
+    }
+
+    @Test fun aSnoozeShowsItsTimeAtOnce() { // #473: the Snoozed list has the time before the server answers
+        bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        val before = System.currentTimeMillis()
+        app.act("a", "snooze", Snooze.body("1h30m"))
+        drainIo()
+        val got = bg { dao.get("a") }!!
+        assertEquals(Notif.SNOOZED, got.state)
+        assertTrue(got.snoozeUntil!! in before + 5_400_000..System.currentTimeMillis() + 5_400_000)
+        val queued = bg { dao.pending() }.single().body // #508: a late send ends at the time shown, not later
+        val late = got.snoozeUntil!! - 600_000 // sent 80 minutes after the tap
+        val sent = JSONObject(snoozeWire(queued, late))
+        assertEquals("600000ms", sent.getString("for"))
+        assertTrue(!sent.has(ENDS)) // the server never sees the phone's clock
+        assertEquals("1000ms", JSONObject(snoozeWire(queued, got.snoozeUntil!! + 1)).getString("for")) // ran out offline: still stops a repeat
+    }
+
+    @Test fun anyServerDurationShowsItsTime() { // #508: not only whole h, m and s
+        bg { dao.applyAll(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        val before = System.currentTimeMillis()
+        app.act("a", "snooze", Snooze.body("1.5h"))
+        drainIo()
+        assertTrue(bg { dao.get("a") }!!.snoozeUntil!! in before + 5_400_000..System.currentTimeMillis() + 5_400_000)
+    }
+
     @Test fun anOlderEventNeverChangesTheTray() {
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.ACKNOWLEDGED, 10)), 10) }
@@ -86,6 +127,98 @@ class TrayRaceTest {
         assertTrue(!once("a"))
         bg { store.apply(listOf(row("b", Notif.ACKNOWLEDGED, 4)), 4, again = true) } // acked: never rings
         assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("b")!!.groupAlertBehavior)
+    }
+
+    @Test fun aShowAfterAHideInTheReplayRings() { // #589: snoozed and woken while offline, active over active here
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1), row("c", Notif.ACTIVE, 1)), 1) }
+        bg { dao.answered("b", 3) } // b's reopen was this phone's own Undo
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 3), row("b", Notif.ACTIVE, 3), row("c", Notif.ACTIVE, 3)), 3, shown = mapOf("a" to 3L, "b" to 3L)) }
+        assertTrue(!once("a"))
+        assertTrue(once("b"))
+        assertTrue(once("c")) // no hide in the replay: an update stays quiet
+    }
+
+    @Test fun aRepeatBehindOurOwnMarkStillRings() { // #500: the mark's answer (seq 5) lands before the repeat (seq 4)
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1)), 1) }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 5).copy(createdAt = 1, marks = "[{\"mark\":\"seen\"}]")), 0, quiet = true) }
+        assertTrue(once("a"))
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4).copy(createdAt = 1)), 4, again = true) }
+        assertTrue(!once("a"))
+        assertEquals(5L, bg { dao.get("a")!!.seq }) // the newer row stays
+        bg { store.apply(listOf(row("c", Notif.ACKNOWLEDGED, 7)), 7) }
+        bg { store.apply(listOf(row("c", Notif.ACTIVE, 6)), 7, again = true) } // acked since: no ring, no going back
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("c")!!.groupAlertBehavior)
+    }
+
+    @Test fun aLateRepeatAfterClearAndUndoStaysQuiet() { // #504: the Clear (5) and Undo (6) answers land before a repeat sent at 4
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1).copy(createdAt = 1, stateBy = "web")), 1) }
+        bg { store.apply(listOf(row("a", Notif.DISMISSED, 5).copy(createdAt = 1, stateBy = "phone")), 0, quiet = true) }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 6).copy(createdAt = 1, stateBy = "phone")), 0, quiet = true) }
+        assertTrue(once("a"))
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4).copy(createdAt = 1, stateBy = "web")), 4, again = true) }
+        assertTrue(once("a")) // the user's own Undo stays quiet
+        assertEquals(6L, bg { dao.get("a")!!.seq })
+    }
+
+    @Test fun aLateRepeatStaysQuietWhenThisPhoneMadeEveryChange() { // #550: this phone published it, cleared it and undid it
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        val a = row("a", Notif.ACTIVE, 1).copy(createdAt = 1, stateBy = "phone")
+        bg { store.apply(listOf(a), 1) }
+        bg { store.apply(listOf(a.copy(state = Notif.DISMISSED, seq = 5)), 0, quiet = true, answer = true) }
+        bg { store.apply(listOf(a.copy(seq = 6)), 0, quiet = true, answer = true) } // the same row as the repeat, bar seq
+        assertTrue(once("a"))
+        bg { store.apply(listOf(a.copy(seq = 4)), 4, again = true) }
+        assertTrue(once("a"))
+        assertEquals(6L, bg { dao.get("a")!!.seq })
+        bg { store.apply(listOf(a.copy(seq = 8, marks = "[{\"mark\":\"seen\"}]")), 0, quiet = true) } // a mark after the Undo
+        bg { store.apply(listOf(a.copy(seq = 3)), 3, again = true) } // still sent before the Clear
+        assertTrue(once("a"))
+        bg { store.apply(listOf(a.copy(seq = 9)), 9, again = true) } // a repeat sent after the Undo still rings
+        assertTrue(!once("a"))
+    }
+
+    @Test fun theOwnChangeGuardOutlivesARestartAndGoesWithItsRow() { // #561
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        val a = row("a", Notif.ACTIVE, 6).copy(createdAt = 1, stateBy = "phone")
+        bg { store.apply(listOf(a), 6, quiet = true) }
+        bg { dao.answered("a", 6); dao.answered("a", 2) } // what the process before the restart saved; it never goes back
+        assertEquals(6L, bg { dao.answerOf("a") })
+        bg { store.apply(listOf(a.copy(seq = 4)), 4, again = true) } // a late repeat, sent before that change
+        assertTrue(once("a"))
+        bg { store.apply(listOf(a.copy(state = Notif.DISMISSED, seq = 7)), 7) }
+        bg { app.pruneCleared(System.currentTimeMillis() + 400L * 24 * 3600_000) }
+        assertNull(bg { dao.answerOf("a") }) // dropped with the row, so the table never only grows
+    }
+
+    @Test fun theGuardHoldsWhenAMarkBeatsTheAnswerAndGoesWithAReset() { // #561 review
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        val b = row("b", Notif.ACTIVE, 1).copy(createdAt = 1, stateBy = "phone")
+        bg { store.apply(listOf(b), 1) }
+        bg { store.apply(listOf(b.copy(seq = 8, marks = "[{\"mark\":\"seen\"}]")), 8, quiet = true) } // a mark from elsewhere first
+        bg { store.apply(listOf(b.copy(state = Notif.DISMISSED, seq = 5)), 0, quiet = true, answer = true) } // then our Clear's answer
+        bg { store.apply(listOf(b.copy(seq = 6)), 0, quiet = true, answer = true) } // and our Undo's
+        assertEquals(6L, bg { dao.answerOf("b") }) // kept though Room had the newer mark
+        bg { store.apply(listOf(b.copy(seq = 4)), 4, again = true) } // sent before the Clear
+        assertTrue(once("b"))
+        bg { dao.replaceAll(listOf(b.copy(seq = 2)), 2, sameDb = false) } // a restored server counts again from low seqs
+        assertNull(bg { dao.answerOf("b") })
+    }
+
+    @Test fun aTapsOutcomeMessageIsMarkedInRoom() { // #383: so a resend after a restart does not say it again
+        bg { dao.addPending(Pending(notifId = "q", action = "reply", body = """{"reply":"yes"}""")) }
+        val p = bg { dao.pending() }.single()
+        assertFalse(p.told)
+        bg { RoomStore(app).replyOutcome(p, "approve_denied") }
+        assertTrue(bg { dao.pending() }.single().told)
     }
 
     @Test fun reconcileWaitsForSyncWrites() {
@@ -138,12 +271,57 @@ class TrayRaceTest {
         assertEquals(listOf("b"), bg { dao.openNow().map { it.id } })
     }
 
+    @Test fun aLateRefetchDoesNotBringBackARowAResetDropped() { // #34: from the #68 review
+        val store = RoomStore(app)
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 5)), 5) }
+        bg { store.replaceAll(emptyList(), 6) } // cleared elsewhere at 6: the reset no longer lists it
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 5)), 0, quiet = true) } // a refused tap's refetch, answered before that
+        assertNull(bg { dao.get("a") })
+        assertNull(tray("a"))
+        bg { store.apply(listOf(row("p", Notif.ACTIVE, 7)), 0, quiet = true) } // newer than the cursor, such as a confirm prompt: kept
+        assertNotNull(bg { dao.get("p") })
+    }
+
+    @Test fun pruneKeepsAnOldClearStillQueued() { // #34 review: a refused Clear must find its row, or its refetch is dropped
+        bg {
+            dao.put(row("a", Notif.DISMISSED, 1).copy(updatedAt = 1)) // the phone's guess, last changed long ago
+            dao.put(row("b", Notif.DISMISSED, 1).copy(updatedAt = 1)) // not now: within one millisecond prune would keep it
+            dao.addPending(Pending(notifId = "a", action = "dismiss", body = "{}"))
+            dao.prune(System.currentTimeMillis(), emptyList())
+            dao.pruneTopic("t", System.currentTimeMillis())
+        }
+        assertNotNull(bg { dao.get("a") })
+        assertNull(bg { dao.get("b") })
+    }
+
+    @Test fun resetWithoutATopicDropsItsCardAndTrayEntry() { // #617: an unsubscribe elsewhere comes as a reset
+        val store = RoomStore(app)
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 2)), 2) }
+        assertNotNull(tray("a"))
+        bg { store.replaceAll(listOf(row("b", Notif.ACTIVE, 2)), 3) } // a's topic is no longer in the list
+        assertNull(tray("a"))
+        assertEquals(listOf("b"), bg { dao.openNow().map { it.id } })
+    }
+
+    @Test fun anAnswerFromAnUnsubscribedTopicStaysOut() { // #617: a queued Restore lands after another device unsubscribed
+        app.saveSettings(org.json.JSONObject("""{"subscriptions":{"filtered":true,"topics":{"t":false}}}"""))
+        val store = RoomStore(app)
+        val before = app.outside.value
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4)), 0, answer = true) }
+        assertEquals(before + 1, app.outside.value) // a topic read without subscribing reloads to show the answer (#624)
+        assertNull(tray("a"))
+        assertTrue(bg { dao.openNow() }.isEmpty())
+        app.saveSettings(org.json.JSONObject("{}")) // a server without subscriptions keeps every row
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 4)), 0, answer = true) }
+        assertNotNull(tray("a"))
+    }
+
     @Test fun resetAfterAServerRestoreKeepsNothingOld() {
         val store = RoomStore(app)
         bg { store.apply(listOf(row("a", Notif.DISMISSED, 100)), 100) }
         bg { store.replaceAll(listOf(row("a", Notif.ACTIVE, 3)), 4) } // the server's seq went back to 4
         assertEquals(Notif.ACTIVE, bg { dao.openNow().single().state })
-        assertTrue(tray("a") != null)
+        assertNotNull(tray("a"))
     }
 
     @Test fun resetOnAnotherEpochKeepsNothingOld() {
@@ -171,7 +349,7 @@ class TrayRaceTest {
         }
         assertNull(tray("a")) // still hidden while our dismiss is queued
         bg { store.removePending(dao.pending().single()) }
-        assertTrue(tray("a") != null)
+        assertNotNull(tray("a"))
     }
 
     @Test fun aReopenFromTheInboxDoesNotBuzz() {
@@ -217,6 +395,26 @@ class TrayRaceTest {
             app.act("b", "dismiss", server = app.serverUrl)
             assertNull(server.takeRequest(2, TimeUnit.SECONDS)) // the next tap waits too
             assertEquals(listOf("a", "b"), bg { dao.pending().map { it.notifId } })
+        } finally {
+            app.token = ""
+            server.shutdown()
+        }
+    }
+
+    /** #360: a stack's Clear in the app goes out as one bulk clear, logged as such. */
+    @Test fun aStackClearIsOneBulkClear() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody("{}"))
+        server.start()
+        try {
+            app.serverUrl = server.url("/").toString().trimEnd('/')
+            app.token = "t"
+            bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
+            app.act(listOf("a", "b"), "dismiss", App.VIA_APP_BULK)
+            val r = server.takeRequest(10, TimeUnit.SECONDS)!!
+            assertEquals("/api/v1/notifications/clear", r.path)
+            assertEquals("""{"ids":["a","b"],"via":"app_bulk"}""", r.body.readUtf8())
+            assertTrue(bg { dao.openNow().none { it.state == Notif.ACTIVE } })
         } finally {
             app.token = ""
             server.shutdown()

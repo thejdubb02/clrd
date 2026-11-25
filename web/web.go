@@ -7,13 +7,17 @@ package web
 
 import (
 	"bytes"
-	"embed"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
 	"html/template"
 	"io/fs"
 	"log"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -23,16 +27,32 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/thejdubb02/clrd"
+	"github.com/thejdubb02/clrd/internal/gzfs"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 )
 
-//go:embed templates static
-var files embed.FS
+// staticHash maps each file under static/ to a short hash of its bytes. A page
+// names its scripts and stylesheet with ?v=<hash>, so after an upgrade a
+// browser fetches the new file instead of pairing the new page with an old
+// cached one (#410).
+var staticHash = func() map[string]string {
+	m := map[string]string{}
+	fs.WalkDir(files, "static", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			b, _ := fs.ReadFile(files, p)
+			s := sha256.Sum256(b)
+			m[strings.TrimPrefix(p, "static/")] = hex.EncodeToString(s[:6])
+		}
+		return nil
+	})
+	return m
+}()
 
 // Notification mirrors docs/SPEC.md section 2.
 type Notification struct {
@@ -45,18 +65,31 @@ type Notification struct {
 	Tags        []string    `json:"tags"`
 	Click       string      `json:"click,omitempty"`
 	Icon        string      `json:"icon,omitempty"`   // http(s) image URL
+	Color       string      `json:"color"`            // the sender's own #RRGGBB, "" for none
 	Format      string      `json:"format,omitempty"` // "markdown" (also when empty) or "text"
 	Attachment  *Attachment `json:"attachment,omitempty"`
 	Actions     []Action    `json:"actions,omitempty"`
 	State       string      `json:"state"`
 	StateBy     string      `json:"state_by"`
 	StateByID   string      `json:"state_by_id"`
-	Reply       string      `json:"reply"` // the reply action tapped, "" until someone answers
+	Reply       string      `json:"reply"`      // the reply action tapped, "" until someone answers
+	ReplyText   string      `json:"reply_text"` // what was typed with a text reply action (#153), "" for none
 	SnoozeUntil *time.Time  `json:"snooze_until"`
 	Repeat      *Repeat     `json:"repeat"` // re-alert until answered (docs/repeat.md), or nil
+	Marks       []Mark      `json:"marks"`  // who saw or dealt with it (docs/SPEC.md section 2)
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 	Seq         int64       `json:"seq"`
+}
+
+// Mark is one reader's note that they saw or actioned a notification. It
+// never changes the state.
+type Mark struct {
+	By   string `json:"by"`
+	ByID string `json:"by_id"`
+	Mark string `json:"mark"` // seen or actioned
+	Note string `json:"note"`
+	Link string `json:"link"`
 }
 
 // Repeat is how often a notification has alerted again, and when it will
@@ -66,11 +99,26 @@ type Repeat struct {
 	Next  *time.Time `json:"next"`
 }
 
-// Action is a link (URL) or an answer button (Reply), never both.
+// Action is a link (URL), an answer button (Reply) or a device action (HTTP
+// or Broadcast, #401) that only a phone runs; the inbox shows it, never runs it.
 type Action struct {
-	Label string `json:"label"`
-	URL   string `json:"url"`
-	Reply string `json:"reply,omitempty"`
+	Label     string           `json:"label"`
+	URL       string           `json:"url"`
+	Reply     string           `json:"reply,omitempty"`
+	Text      bool             `json:"text,omitempty"` // answered with typed text (#153)
+	HTTP      *HTTPAction      `json:"http,omitempty"`
+	Broadcast *BroadcastAction `json:"broadcast,omitempty"`
+}
+
+// BroadcastAction is an Android broadcast; Intent "" is the app's default.
+type BroadcastAction struct {
+	Intent string `json:"intent"`
+}
+
+// HTTPAction is the request a phone sends; headers and body are not shown.
+type HTTPAction struct {
+	Method string `json:"method"`
+	URL    string `json:"url"`
 }
 
 // Attachment is a file on a notification: uploaded (/api/v1/files/<id>, with
@@ -109,10 +157,30 @@ func (n Notification) Links() (out []Action) {
 	return out
 }
 
-// Replies are the answer buttons still open: none once someone has answered.
+// Replies are the plain answer buttons still open: none once someone has answered.
 func (n Notification) Replies() (out []Action) {
 	for _, a := range n.Actions {
-		if a.Reply != "" && n.Reply == "" {
+		if a.Reply != "" && !a.Text && n.Reply == "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// TextReply is the open reply answered with typed text (#153), or nil.
+func (n Notification) TextReply() *Action {
+	for _, a := range n.Actions {
+		if a.Reply != "" && a.Text && n.Reply == "" {
+			return &a
+		}
+	}
+	return nil
+}
+
+// DeviceActions are the http and broadcast buttons, shown read-only (#450).
+func (n Notification) DeviceActions() (out []Action) {
+	for _, a := range n.Actions {
+		if a.HTTP != nil || a.Broadcast != nil {
 			out = append(out, a)
 		}
 	}
@@ -161,6 +229,35 @@ type Topic struct {
 	Open    int    `json:"open"`
 	Icon    string `json:"icon"` // image URL new notifications in the topic get, "" for none
 	Silence bool   `json:"-"`    // this token may silence the topic (#326)
+	// Approvals: an approval request or question was sent here (#623).
+	Approvals bool `json:"approvals"`
+}
+
+// SubTopic is one row of Settings, Topics: a topic the reader can read, as
+// GET /api/v1/subscriptions returns it (docs/SPEC.md section 2.3).
+type SubTopic struct {
+	Topic      string     `json:"topic"`
+	Subscribed bool       `json:"subscribed"`
+	Open       int        `json:"open"`
+	LastAt     *time.Time `json:"last_at"`
+	Approvals  bool       `json:"approvals"` // as on Topic (#623)
+}
+
+// ApprovalTopic is where approval prompts go unless an agent names another
+// (server/approve.go). Unsubscribing from it always warns, even before the
+// first request, as does any topic the server marks with Approvals (#623).
+const ApprovalTopic = "agents"
+
+// approvals says whether unsubscribing from topic should warn first.
+func (s Snapshot) approvals(topic string) bool {
+	return topic == ApprovalTopic || slices.ContainsFunc(s.Topics, func(t Topic) bool { return t.Name == topic && t.Approvals })
+}
+
+// topicApprovals asks the server whether topic carries approval requests,
+// for a plain form post that has no snapshot. An error warns, to be safe.
+func topicApprovals(api API, r *http.Request, topic string) bool {
+	snap, err := api.Snapshot(r, Query{States: []string{}})
+	return err != nil || snap.approvals(topic)
 }
 
 // LinkedDevice is one row of the Settings device list (issue #246), as
@@ -168,7 +265,7 @@ type Topic struct {
 type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
-	Kind       string     `json:"kind"` // token, browser or phone
+	Kind       string     `json:"kind"` // token, browser, phone or agent
 	Via        string     `json:"via"`
 	ViaID      string     `json:"via_id"`
 	Approve    string     `json:"approve"` // allowed, ask or denied: may it tap a reply (#329)
@@ -288,9 +385,187 @@ type DeviceEvent struct {
 // Query selects the cards for one inbox view.
 type Query struct {
 	States  []string // e.g. active, acknowledged
-	Topic   string   // empty = all topics
+	Topic   string   // empty = all topics; one topic shows even when not subscribed (subscribed=all, SPEC 2.3)
 	Q       string   // free-text search, empty = none
-	Devices bool     // fill Log (the Settings page)
+	Devices bool     // fill Log and SubTopics (the Settings page)
+	Senders bool     // fill Senders (the Senders page, #119)
+	Sender  string   // fill Sender with this one, or ErrNotFound
+	Stats   int      // fill Stats for this many days back (the Stats page, #120); 0 = none
+}
+
+// Sender is one service or device that publishes (#119), as GET
+// /api/v1/senders returns it (docs/SPEC.md section 5.1).
+type Sender struct {
+	Rules     SenderRules    `json:"rules"`
+	Changes   []SenderChange `json:"-"` // its rule changes, newest first: its own page only
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Kind      string         `json:"kind"`
+	Template  string         `json:"template"`
+	UserAgent string         `json:"user_agent"`
+	Address   string         `json:"address"`
+	FirstSeen time.Time      `json:"first_seen"`
+	LastSeen  time.Time      `json:"last_seen"`
+	Count     int            `json:"count"`
+	Topics    map[string]int `json:"topics"`
+	Recent    []Notification `json:"recent"`
+	Form      *RulesForm     `json:"-"` // a refused save, shown again
+}
+
+// KindLabel names the kind for people.
+func (s Sender) KindLabel() string {
+	if l, ok := map[string]string{"person": "Person", "ntfy_user": "ntfy user", "gotify_app": "Gotify app", "pushover_app": "Pushover app", "anonymous": "Anonymous"}[s.Kind]; ok {
+		return l
+	}
+	return "Token"
+}
+
+// SenderRules are what an admin sets on a sender (SPEC 5.1); the zero value
+// changes nothing.
+type SenderRules struct {
+	Paused      bool                `json:"paused"`
+	Muted       bool                `json:"muted"`
+	PriorityMin int                 `json:"priority_min"`
+	PriorityMax int                 `json:"priority_max"`
+	Routes      map[string][]string `json:"routes"`
+	Expect      string              `json:"expect"`      // alarm when quiet this long, "" off; sent empty so a save clears it
+	AlertTopic  string              `json:"alert_topic"` // where that alarm goes
+}
+
+// RulesForm is a refused save shown again: what was typed, the base it was
+// typed on, and the server's message for the one field it named.
+type RulesForm struct {
+	Rules      SenderRules
+	Base       int64
+	Field, Err string
+}
+
+type rulesFormKey struct{}
+
+// FormRules are the rules the form shows: a refused save's, else the saved.
+func (s Sender) FormRules() SenderRules {
+	if s.Form != nil {
+		return s.Form.Rules
+	}
+	return s.Rules
+}
+
+// LastSeq is the seq of the newest change, 0 for none: the rules form sends
+// it back so a save over a newer change is refused (#543). A refused save
+// keeps the base it was typed on, so the stale check still holds.
+func (s Sender) LastSeq() int64 {
+	if s.Form != nil {
+		return s.Form.Base
+	}
+	if len(s.Changes) == 0 {
+		return 0
+	}
+	return s.Changes[0].Seq
+}
+
+// FieldErr is the server's message for this form field, "" for none.
+func (s Sender) FieldErr(field string) string {
+	if s.Form != nil && s.Form.Field == field {
+		return s.Form.Err
+	}
+	return ""
+}
+
+// SenderChange is one logged edit of a sender's rules.
+type SenderChange struct {
+	Seq    int64       `json:"seq"`
+	Before SenderRules `json:"before"`
+	After  SenderRules `json:"after"`
+	By     string      `json:"by"`
+	At     time.Time   `json:"at"`
+}
+
+// RouteLines are the routes as the form edits them: "topic: target, target",
+// one a line.
+func (r SenderRules) RouteLines() string {
+	var b strings.Builder
+	for _, k := range r.routeKeys() {
+		fmt.Fprintf(&b, "%s: %s\n", k, strings.Join(r.Routes[k], ", "))
+	}
+	return b.String()
+}
+
+func (r SenderRules) routeKeys() []string {
+	keys := make([]string, 0, len(r.Routes))
+	for k := range r.Routes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// Summary says the rules in a few words, for the change log.
+func (r SenderRules) Summary() string {
+	var p []string
+	if r.Paused {
+		p = append(p, "paused")
+	}
+	if r.Muted {
+		p = append(p, "muted")
+	}
+	if r.PriorityMin > 0 || r.PriorityMax > 0 {
+		lo, hi := r.PriorityMin, r.PriorityMax
+		if lo == 0 {
+			lo = 1
+		}
+		if hi == 0 {
+			hi = 5
+		}
+		p = append(p, fmt.Sprintf("priority %d to %d", lo, hi))
+	}
+	for _, k := range r.routeKeys() {
+		v := strings.Join(r.Routes[k], ", ")
+		if v == "" {
+			v = "nowhere"
+		}
+		if k == "*" {
+			k = "any other topic"
+		}
+		p = append(p, k+" to "+v)
+	}
+	if r.Expect != "" {
+		a := "alarm if quiet " + r.Expect
+		if r.AlertTopic != "" {
+			a += " in " + r.AlertTopic
+		}
+		p = append(p, a)
+	}
+	if len(p) == 0 {
+		return "No rules"
+	}
+	s := strings.Join(p, "; ")
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// parseRoutes reads the routes box: "topic: target, target" a line, blank
+// lines skipped; "topic:" with no target drops that topic's publishes.
+func parseRoutes(s string) (map[string][]string, error) {
+	out := map[string][]string{}
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(l); l == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(l, ":")
+		if k = strings.TrimSpace(k); !ok || k == "" {
+			return nil, fmt.Errorf("route %q needs a topic, a colon, then its targets", l)
+		}
+		if _, dup := out[k]; dup {
+			return nil, fmt.Errorf("topic %q has two routes; put its targets on one line", k)
+		}
+		to := []string{}
+		for _, t := range strings.Split(v, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				to = append(to, t)
+			}
+		}
+		out[k] = to
+	}
+	return out, nil
 }
 
 // Snapshot is everything one inbox page needs. Seq must be read before (or in
@@ -306,9 +581,12 @@ type Snapshot struct {
 	Log    []DeviceEvent
 	Me     string // device name of the signed-in token, the state_by its own actions get
 	MeID   string // its token id, the state_by_id its own actions get (names can repeat)
+	MarkID string // the by_id its marks get: its person, or the top of its token tree
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
+	// Buttons a part swipe on a card shows on a touch screen, per side (docs/SPEC.md section 2.1).
+	SwipeStart, SwipeEnd []string
 	// Display settings for message bodies (docs/SPEC.md section 2.1).
 	Formatting, Autolink, Favicons, LinkPreviews bool
 	TopicPreviews                                map[string]bool // overrides LinkPreviews for one topic
@@ -319,13 +597,68 @@ type Snapshot struct {
 	FormatOff                                    []FormatOff     // topics left out of the check (#320)
 	FormatDismissed                              []FormatDismiss // findings dismissed (#320)
 	Silences                                     []Silence       // running silences (docs/silences.md), Settings only
-	CanSilence                                   bool            // the token may start a silence (it can publish)
-	Hooks                                        []Hook          // outgoing webhooks (#238), Settings and admin only
-	CanHooks                                     bool            // the token may manage webhooks (admin)
-	CanApprove                                   bool            // the token may change who may approve: allowed, all topics (#329)
-	Templates                                    []Template      // saved webhook templates (#129), Settings only
-	CanTemplates                                 bool            // the token may publish, so it may save templates
-	BuiltinTemplates                             []string        // names of the built-in webhook templates
+	// Topic subscriptions (docs/SPEC.md section 2.3). Filtered is false for a
+	// token with no user, which always sees every topic and may not change
+	// the list. Unsubscribed: Query.Topic is a topic the reader is not
+	// subscribed to, shown anyway. SubTopics is Settings only.
+	Filtered, NewTopics, Unsubscribed bool
+	SubTopics                         []SubTopic
+	CanSilence                        bool       // the token may start a silence (it can publish)
+	Hooks                             []Hook     // outgoing webhooks (#238), Settings and admin only
+	CanHooks                          bool       // the token may manage webhooks (admin)
+	CanKeep                           bool       // the token has admin, so it may set how long cleared messages are kept
+	CanApprove                        bool       // the token may change who may approve: allowed, all topics (#329)
+	Templates                         []Template // saved webhook templates (#129), Settings only
+	CanTemplates                      bool       // the token may publish, so it may save templates
+	CanInvite                         bool       // the token may make an agent invite (#456): a person's session or a full admin
+	BuiltinTemplates                  []string   // names of the built-in webhook templates
+	CanSenders                        bool       // a full admin: the Senders page is theirs (#119)
+	Senders                           []Sender   // the Senders page only
+	Sender                            *Sender    // a sender's own page only
+	Stats                             *Stats     // the Stats page only (#120)
+	ColorRules                        []ColorRule
+}
+
+// ColorRule colors matching cards (docs/SPEC.md section 2.1, Color rules).
+type ColorRule struct {
+	Topic, Tag, Title, Color, Style string
+	PriorityMin                     int `json:"priority_min"`
+	PriorityMax                     int `json:"priority_max"`
+}
+
+// look is a card's color, RRGGBB in capitals, and style: the first rule
+// whose set fields all match, else the sender's color as a bar, else none.
+// The color becomes a class name, so anything but six hex digits is none.
+func (s Snapshot) look(n Notification) (string, string) {
+	color, style := n.Color, "bar"
+	for _, r := range s.ColorRules {
+		if (r.Topic == "" || r.Topic == n.Topic) && (r.Tag == "" || slices.Contains(n.Tags, r.Tag)) &&
+			(r.PriorityMin == 0 || n.Priority >= r.PriorityMin) && (r.PriorityMax == 0 || n.Priority <= r.PriorityMax) &&
+			strings.Contains(strings.ToLower(n.Title), strings.ToLower(r.Title)) {
+			color, style = r.Color, r.Style
+			break
+		}
+	}
+	if !slices.Contains([]string{"tint", "solid", "gradient"}, style) {
+		style = "bar" // a style this client does not know
+	}
+	if color = strings.ToUpper(strings.TrimPrefix(color, "#")); !hex6(color) {
+		return "", ""
+	}
+	return color, style
+}
+
+func hex6(c string) bool { return len(c) == 6 && strings.Trim(c, "0123456789ABCDEF") == "" }
+
+// cardColors is the card-colors.css query for the colors on a page.
+func cardColors(s Snapshot) string {
+	var cs []string
+	for _, n := range s.Items {
+		if c, _ := s.look(n); c != "" && !slices.Contains(cs, c) {
+			cs = append(cs, c)
+		}
+	}
+	return strings.Join(cs, ".")
 }
 
 // Template is a saved webhook template on one topic
@@ -352,6 +685,7 @@ type Hook struct {
 	Name         string         `json:"name"`
 	URL          string         `json:"url"`
 	Events       []string       `json:"events"`
+	Body         string         `json:"body"` // a body template; "" sends the event (#239)
 	HasSecret    bool           `json:"has_secret"`
 	Enabled      bool           `json:"enabled"`
 	FailingSince *time.Time     `json:"failing_since"`
@@ -416,6 +750,32 @@ type FormatTopic struct {
 	Prompt   string          `json:"prompt"`
 }
 
+// FormatCard is one topic in the format check, drawn as one card in
+// Settings with a group per sender (#618).
+type FormatCard struct {
+	Topic    string
+	Findings int  // finding rows across its senders
+	CanFix   bool // this token may leave the topic out
+	Groups   []FormatTopic
+}
+
+// FormatCards groups Format by topic, in the order topics first appear.
+func (s Snapshot) FormatCards() (cards []FormatCard) {
+	at := map[string]int{}
+	for _, g := range s.Format {
+		i, ok := at[g.Topic]
+		if !ok {
+			i, at[g.Topic] = len(cards), len(cards)
+			cards = append(cards, FormatCard{Topic: g.Topic})
+		}
+		c := &cards[i]
+		c.Findings += len(g.Findings)
+		c.CanFix = c.CanFix || g.CanFix
+		c.Groups = append(c.Groups, g)
+	}
+	return cards
+}
+
 // FormatOff is a topic left out of the format check (#320).
 type FormatOff struct {
 	Topic  string
@@ -462,27 +822,43 @@ type API interface {
 	// Act changes one notification for the signed-in browser: ack, snooze
 	// (until is set), dismiss or reopen.
 	Act(r *http.Request, id, action string, until *time.Time) error
-	// Reply answers with one of the notification's reply actions, as shown at seq.
-	Reply(r *http.Request, id, reply string, seq int64) error
+	// Reply answers with one of the notification's reply actions, as shown at seq;
+	// text is what was typed for a text action (#153), "" for a plain one.
+	Reply(r *http.Request, id, reply, text string, seq int64) error
+	// Mark sets the reader's own mark (seen or actioned); mark "" removes it.
+	Mark(r *http.Request, id, mark, note, link string) error
 	// StartSilence (dur is a Go duration) and EndSilence back the Settings
 	// silence form without script. Their error text is shown on the page.
 	StartSilence(r *http.Request, topic, tag, dur, comment string) error
+	// SetSubscriptions changes the reader's topic subscriptions, all or
+	// nothing (PUT /api/v1/subscriptions); a nil newTopics keeps it.
+	SetSubscriptions(r *http.Request, newTopics *bool, topics map[string]bool) error
 	EndSilence(r *http.Request, id string) error
 	// FormatIgnore dismisses a format check rule in a topic (for one sender
 	// when senderID is set), or with rule "" leaves the topic out; on false
 	// undoes it.
 	FormatIgnore(r *http.Request, topic, rule, senderID string, on bool) error
-	// SaveHook adds or replaces a webhook; an empty secret keeps the saved
-	// one unless clearSecret. DeleteHook removes it and its log.
-	SaveHook(r *http.Request, topic, name, url string, events []string, secret string, clearSecret bool) error
+	// SaveHook adds or replaces a webhook. A nil body keeps the saved body
+	// template, "" sends the event; an empty secret keeps the saved one unless
+	// clearSecret.
+	// DeleteHook removes it and its log.
+	SaveHook(r *http.Request, topic, name, url string, events []string, body *string, secret string, clearSecret bool) error
 	DeleteHook(r *http.Request, topic, name string) error
 	// SaveTemplate saves a webhook template (t.Topic, t.Name); an empty
 	// secret keeps the saved one unless clearSecret. DeleteTemplate removes it.
 	SaveTemplate(r *http.Request, t Template, secret string, clearSecret bool) error
 	DeleteTemplate(r *http.Request, topic, name string) error
+	// SetSenderRules replaces a sender's rules (#119); UndoSenderChange puts
+	// back the rules from before change seq. base is the newest change seq
+	// the form was drawn from; a newer change refuses the save (#543).
+	SetSenderRules(r *http.Request, id string, rules SenderRules, base int64) error
+	UndoSenderChange(r *http.Request, id string, seq int64) error
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
+
+// ErrNotFound: Query.Sender names no sender.
+var ErrNotFound = errors.New("web: not found")
 
 // Views of the inbox and the states each one shows.
 var views = map[string][]string{
@@ -497,7 +873,16 @@ var views = map[string][]string{
 func templates(base string) *template.Template {
 	var t *template.Template
 	t = template.Must(template.New("").Funcs(template.FuncMap{
-		"base": func() string { return base },
+		"base":          func() string { return base },
+		"approvalTopic": func() string { return ApprovalTopic },
+		// static is the URL of a file under static/, named by its content (#410).
+		"static": func(p string) (string, error) {
+			h, ok := staticHash[p]
+			if !ok {
+				return "", fmt.Errorf("no static file %q", p)
+			}
+			return base + "/static/" + p + "?v=" + h, nil
+		},
 		// multiline: a template field saved with a newline edits in a textarea,
 		// since a one-line input would drop it (#376).
 		"multiline": func(s string) bool { return strings.Contains(s, "\n") },
@@ -516,21 +901,44 @@ func templates(base string) *template.Template {
 		},
 		"iso":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		"clock": func(t time.Time) string { return t.UTC().Format("Jan 2, 15:04 UTC") },
+		"took":  took,
 		"card": func(n Notification, view, here string, snap Snapshot) any {
 			if !snap.Formatting {
 				n.Format = "text" // the untitled headline shows as typed too
 			}
-			return struct {
+			c := struct {
 				N             Notification
 				View, Here    string
 				Snooze        []string
 				SnoozeDefault string
 				Text          template.HTML
 				Preview       bool
-				Silence       bool // offer Silence topic for 1 hour (#326)
+				Silence       bool  // offer Silence topic for 1 hour (#326)
+				Mine          *Mark // the reader's own mark, which it may change or remove
+				Unsub         bool  // offer Unsubscribe from the topic (SPEC 2.3)
+				Approvals     bool  // the topic carries approval prompts, so Unsubscribe warns first
+				Color, Style  string
 			}{n, view, here, snap.SnoozeIntervals, snap.SnoozeDefault, renderBody(n.Body(), n.Format, snap, base), snap.PreviewsOn(n.Topic),
-				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence })}
+				slices.ContainsFunc(snap.Topics, func(t Topic) bool { return t.Name == n.Topic && t.Silence }), nil,
+				snap.Filtered && !snap.Unsubscribed, snap.approvals(n.Topic), "", ""}
+			c.Color, c.Style = snap.look(n)
+			for i, m := range n.Marks {
+				if snap.MarkID != "" && m.ByID == snap.MarkID {
+					c.Mine = &n.Marks[i]
+				}
+			}
+			return c
 		},
+		// demo is the landing page's sample inbox (#592): fixed data drawn by
+		// the real card template, so the page always shows the inbox as it is.
+		"demo": func() any {
+			return struct {
+				Items []Notification
+				Snap  Snapshot
+			}{demoInbox, Snapshot{Formatting: true, SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}}
+		},
+		"about":       about,
+		"cardColors":  cardColors,
 		"snoozeLabel": snoozeLabel,
 		"left":        timeLeft,
 		"hookEvents":  func() any { return HookEvents },
@@ -545,6 +953,7 @@ func templates(base string) *template.Template {
 		"newTemplate": func() Template { return Template{} },
 		"has":         func(list []string, s string) bool { return slices.Contains(list, s) },
 		"add":         func(a, b int) int { return a + b },
+		"priorities":  func() []string { return []string{"No limit", "1 min", "2 low", "3 default", "4 high", "5 urgent"} },
 		"plural": func(n int, one, many string) string {
 			if n == 1 {
 				return one
@@ -554,6 +963,52 @@ func templates(base string) *template.Template {
 	}).ParseFS(files, "templates/*.html"))
 	return t
 }
+
+// About is Settings, About (#580): the version this binary runs and its
+// history, read from the same JSON as GET /api/v1/version (SPEC 5.2).
+type About struct {
+	Version, Commit, Date string
+	FullHistory           string `json:"full_history"`
+	History               []struct {
+		Version, Date string
+		Changes       []struct {
+			Section string
+			Items   []template.HTML
+		}
+	}
+}
+
+var inlineGM = goldmark.New(goldmark.WithExtensions(extension.GFM)) // raw HTML stays escaped
+
+// inlineMD renders one changelog line as inline Markdown (SPEC 5.2). A line
+// that parses as anything but one paragraph (a "1. " list, a heading) shows
+// as plain text instead.
+func inlineMD(s string) template.HTML {
+	var b bytes.Buffer
+	_ = inlineGM.Convert([]byte(s), &b)
+	if in, ok := strings.CutPrefix(b.String(), "<p>"); ok && strings.Count(in, "</p>") == 1 && strings.HasSuffix(in, "</p>\n") {
+		return template.HTML(strings.TrimSuffix(in, "</p>\n"))
+	}
+	return template.HTML(template.HTMLEscapeString(s))
+}
+
+var about = sync.OnceValue(func() (a About) {
+	_ = json.Unmarshal(clrd.VersionJSON(), &a)
+	for i := range a.History {
+		for _, c := range a.History[i].Changes {
+			for k, item := range c.Items {
+				c.Items[k] = inlineMD(string(item))
+			}
+		}
+	}
+	if len(a.Commit) > 7 {
+		a.Commit = a.Commit[:7]
+	}
+	if len(a.Date) > 10 {
+		a.Date = a.Date[:10]
+	}
+	return a
+})
 
 // PreviewsOn says whether a topic's cards show link previews, as the server
 // decides for GET /api/v1/preview.
@@ -641,6 +1096,25 @@ func (m meta) URL() string { return m.Base + m.Path }
 // Icon names an i-<name> icon in icons.html (#292).
 type Tip struct{ Icon, Title, Text, Copy, Link, LinkText string }
 
+// demoInbox is the landing page's sample inbox (#592). Fixed data, so the
+// page and its test never change with the clock; every claim in it works on
+// main: an urgent alert with a link, an agent's question with answer
+// buttons, and an alert someone took and an agent marked.
+var demoInbox = func() []Notification {
+	at := time.Date(2026, 11, 20, 9, 12, 0, 0, time.UTC)
+	return []Notification{
+		{ID: "demo-backup", Topic: "backups", Title: "Nightly backup failed", Priority: 5, State: "active", Tags: []string{"restic"},
+			Message: "restic exited 1 after 4m 12s on **nas-1**.", CreatedAt: at,
+			Actions: []Action{{Label: "Open logs", URL: "https://grafana.example.com/d/backups"}}},
+		{ID: "demo-deploy", Topic: "deploys", Title: "Deploy web-2 to production?", Priority: 4, State: "active",
+			Message: "Tests passed on 4f2c1a9. The agent waits for your answer.", CreatedAt: at.Add(-3 * time.Minute),
+			Actions: []Action{{Label: "Approve", Reply: "approve"}, {Label: "Deny", Reply: "deny"}}},
+		{ID: "demo-disk", Topic: "infra", Title: "Disk full", Priority: 3, State: "acknowledged", StateBy: "pixel-9",
+			Message: "web-1 at 95%.", CreatedAt: at.Add(-18 * time.Minute),
+			Marks: []Mark{{By: "ops-agent", Mark: "actioned", Note: "pruned old images, now 71%"}}},
+	}
+}()
+
 // topicName matches a topic the server accepts (server validTopic).
 var topicName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
@@ -702,13 +1176,13 @@ func loadDocs() (map[string]doc, []doc) {
 		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 	)
 	m := map[string]doc{}
-	err := fs.WalkDir(clrd.Files, "docs", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || path.Ext(p) != ".md" {
-			return err
-		}
+	add := func(p string) error {
 		src, err := fs.ReadFile(clrd.Files, p)
 		if err != nil {
 			return err
+		}
+		if p == "CHANGELOG.md" { // the binary carries recent versions only (#580)
+			src = append(src, "\nEvery version, older ones too: [full history on GitHub]("+clrd.FullHistory+").\n"...)
 		}
 		var b bytes.Buffer
 		if err := md.Convert(src, &b); err != nil {
@@ -737,7 +1211,16 @@ func loadDocs() (map[string]doc, []doc) {
 		}
 		m[key] = doc{key, title, template.HTML(html)}
 		return nil
+	}
+	err := fs.WalkDir(clrd.Files, "docs", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Ext(p) != ".md" {
+			return err
+		}
+		return add(p)
 	})
+	if err == nil {
+		err = add("CHANGELOG.md") // served at /docs/changelog
+	}
 	if err != nil {
 		panic(err)
 	}
@@ -776,6 +1259,9 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if w.Header().Get("Cache-Control") == "" {
+			w.Header().Set("Cache-Control", "no-cache") // a page always names current assets (#410)
+		}
 		w.WriteHeader(status)
 		w.Write(b.Bytes())
 	}
@@ -789,9 +1275,54 @@ func Handler(api API, baseURL string) http.Handler {
 		})
 	}
 
+	// The packed build sends its stored gzip as is when it can (#690).
+	fileServer := http.FileServerFS(static)
+	statics := http.StripPrefix("/static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !gzfs.Serve(w, r, files, "static/"+r.URL.Path) {
+			fileServer.ServeHTTP(w, r)
+		}
+	}))
 	mux := http.NewServeMux()
-	mux.Handle("GET /static/", cached("/static/", static))
+	// A URL that carries the file's current hash never changes content, so it
+	// is cached for good. Any other (no ?v=, or an old one) is revalidated by
+	// ETag, so a stale request still gets today's file (#410).
+	mux.HandleFunc("GET /static/", func(w http.ResponseWriter, r *http.Request) {
+		h, ok := staticHash[strings.TrimPrefix(r.URL.Path, "/static/")]
+		if ok {
+			w.Header().Set("ETag", `"`+h+`"`)
+		}
+		if ok && r.URL.Query().Get("v") == h {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		w.Header().Add("Vary", "Accept-Encoding")
+		statics.ServeHTTP(w, r)
+	})
 	mux.Handle("GET /assets/", cached("/assets/", assets))
+	// Card colors (#165): the CSP allows no inline styles, so each color on a
+	// page is a class from here, with the text color that reads on it.
+	mux.HandleFunc("GET /card-colors.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		for _, c := range strings.Split(r.URL.Query().Get("c"), ".") {
+			if v, err := strconv.ParseUint(c, 16, 32); err == nil && hex6(c) {
+				// WCAG relative luminance: dark text when it out-contrasts white (#696).
+				lin := func(x uint64) float64 {
+					s := float64(x&255) / 255
+					if s <= 0.04045 {
+						return s / 12.92
+					}
+					return math.Pow((s+0.055)/1.055, 2.4)
+				}
+				l, ink := 0.2126*lin(v>>16)+0.7152*lin(v>>8)+0.0722*lin(v)+0.05, "#FFFFFF"
+				if l/0.0555 >= 1.05/l { // 0.0555 is #0F1114's luminance plus 0.05
+					ink = "#0F1114"
+				}
+				fmt.Fprintf(w, ".cc-%s{--cc:#%s;--cc-ink:%s}\n", c, c, ink)
+			}
+		}
+	})
 	// Root icon paths that browsers, wrappers and home screens ask for by
 	// name. The manifest's relative URLs resolve under a sub-path base.
 	for p, f := range map[string][2]string{
@@ -851,8 +1382,16 @@ func Handler(api API, baseURL string) http.Handler {
 			if states == nil { // settings: no list, the rest of the snapshot still counts
 				states = []string{}
 			}
-			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings"}
+			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings",
+				Senders: view == "senders", Sender: r.PathValue("id")}
+			if view == "stats" {
+				q.Stats = statsDays(r.URL.Query().Get("days"))
+			}
 			snap, err := api.Snapshot(r, q)
+			status := 200
+			if errors.Is(err, ErrNotFound) {
+				status, err = http.StatusNotFound, nil
+			}
 			if errors.Is(err, ErrUnauthorized) {
 				next := *r.URL // keep the filters, drop a stale ?auth= that would beat the new cookie
 				v := next.Query()
@@ -880,13 +1419,22 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 			w.Header().Set("Cache-Control", "no-store")
 			c := snap.Counts
-			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings"}
+			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender", "stats": "Stats"}
+			if snap.Sender != nil {
+				titles["sender"] = snap.Sender.Name
+			}
+			if (view == "senders" || view == "sender" || view == "stats") && !snap.CanSenders {
+				status = http.StatusForbidden
+			}
+			if fm, ok := r.Context().Value(rulesFormKey{}).(*RulesForm); ok && snap.Sender != nil && status == 200 {
+				snap.Sender.Form, status = fm, http.StatusBadRequest
+			}
 			// A new tip on each visit; the send-a-test tip while nothing has ever arrived.
 			ts, tip := tips(base(r), q.Topic, snap.Topics), 0
 			if c["active"]+c["acknowledged"]+c["snoozed"]+c["dismissed"]+c["resolved"] > 0 {
 				tip = rand.IntN(len(ts))
 			}
-			page(w, "app", 200, struct {
+			page(w, "app", status, struct {
 				meta
 				View, Heading, Topic, Q, Here string
 				Snap                          Snapshot
@@ -907,6 +1455,56 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/snoozed", app("snoozed"))
 	mux.HandleFunc("GET /app/cleared", app("cleared"))
 	mux.HandleFunc("GET /app/settings", app("settings"))
+	mux.HandleFunc("GET /app/senders", app("senders"))
+	mux.HandleFunc("GET /app/stats", app("stats"))
+	mux.HandleFunc("GET /app/senders/{id}", app("sender"))
+	// A sender's rules (#119): save them all, or undo one change, as a plain
+	// form post. The server checks the full admin.
+	mux.HandleFunc("POST /app/senders/{id}", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f, id := r.PostForm, r.PathValue("id")
+		var err error
+		if u := f.Get("undo"); u != "" {
+			seq, perr := strconv.ParseInt(u, 10, 64)
+			if err = perr; err == nil {
+				err = api.UndoSenderChange(r, id, seq)
+			}
+		} else if !f.Has("priority_min") || !f.Has("priority_max") || !f.Has("base_seq") {
+			// Not the rules form: never read a missing field as "clear it".
+			err = errors.New("the rules form was incomplete")
+		} else {
+			rules := SenderRules{Paused: f.Get("paused") != "", Muted: f.Get("muted") != "",
+				Expect: strings.TrimSpace(f.Get("expect")), AlertTopic: strings.TrimSpace(f.Get("alert_topic"))}
+			var e1, e2, e3 error
+			var base int64
+			rules.PriorityMin, e1 = strconv.Atoi(f.Get("priority_min"))
+			rules.PriorityMax, e2 = strconv.Atoi(f.Get("priority_max"))
+			base, e3 = strconv.ParseInt(f.Get("base_seq"), 10, 64)
+			if err = errors.Join(e1, e2, e3); err == nil {
+				if rules.Routes, err = parseRoutes(f.Get("routes")); err == nil {
+					err = api.SetSenderRules(r, id, rules, base)
+				}
+			}
+			// A field the server named: the page again, typed values kept, the
+			// message by that field.
+			for _, field := range []string{"expect", "alert_topic"} {
+				if err != nil && strings.HasPrefix(err.Error(), field) {
+					fm := &RulesForm{Rules: rules, Base: base, Field: field, Err: strings.TrimPrefix(err.Error(), "alert_topic: ")}
+					app("sender")(w, r.WithContext(context.WithValue(r.Context(), rulesFormKey{}, fm)))
+					return
+				}
+			}
+		}
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
+			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "/app/senders/"+url.PathEscape(id)+"#rules-h", http.StatusSeeOther)
+	})
 	// The style guide: every component in every state, no data, no sign-in.
 	mux.HandleFunc("GET /app/ui", func(w http.ResponseWriter, r *http.Request) {
 		page(w, "ui", 200, meta{Title: "Components: clrd", Path: "/app/ui", Base: base(r)})
@@ -940,7 +1538,7 @@ func Handler(api API, baseURL string) http.Handler {
 			if seq, perr := strconv.ParseInt(f.Get("seq"), 10, 64); perr != nil || seq <= 0 {
 				err = errors.New("reply without the card's seq")
 			} else {
-				err = api.Reply(r, f.Get("id"), reply, seq)
+				err = api.Reply(r, f.Get("id"), reply, strings.ReplaceAll(f.Get("text"), "\r\n", "\n"), seq)
 			}
 		} else if act == "ack" || act == "snooze" || act == "dismiss" || act == "reopen" {
 			err = api.Act(r, f.Get("id"), act, until)
@@ -958,6 +1556,33 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		http.Redirect(w, r, next, http.StatusSeeOther) // signed out: next shows the sign-in page
+	})
+
+	// Card marks (#451) as a plain form post. The card has a form of its own
+	// for them, so Enter in the note never presses Ack or a reply button.
+	// mark "" removes the reader's own mark.
+	mux.HandleFunc("POST /app/mark", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		mark, note, link := f.Get("mark"), strings.TrimSpace(f.Get("note")), strings.TrimSpace(f.Get("link"))
+		if !f.Has("mark") {
+			http.Error(w, "Bad form.", http.StatusBadRequest) // only Remove sends an empty mark
+			return
+		}
+		if mark == "" {
+			note, link = "", "" // Remove never fails on a draft note or link
+		}
+		err := api.Mark(r, f.Get("id"), mark, note, link)
+		if err != nil && !errors.Is(err, ErrUnauthorized) {
+			log.Printf("web: mark: %v", err)
+			http.Error(w, "Not marked: "+err.Error()+". Go back and reload the page.", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, inboxNext(f.Get("next"), "/app"), http.StatusSeeOther) // signed out: next shows the sign-in page
 	})
 
 	// The Settings silence form and End now as a plain form post (#326). A set
@@ -983,6 +1608,48 @@ func Handler(api API, baseURL string) http.Handler {
 			return
 		}
 		http.Redirect(w, r, inboxNext(f.Get("next"), "/app/settings"), http.StatusSeeOther)
+	})
+
+	// Topic subscriptions (SPEC 2.3) as a plain form post: one topic from a
+	// card or the not-subscribed banner, or the Settings list, which sends
+	// only the rows changed since it was drawn so it never undoes a change
+	// made on another device.
+	mux.HandleFunc("POST /app/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		f := r.PostForm
+		next := inboxNext(f.Get("next"), "/app/settings#topics")
+		var newTopics *bool
+		topics := map[string]bool{}
+		if f.Has("was") || f.Has("new_topics_was") { // the Settings list, maybe with no rows yet
+			for _, v := range f["was"] { // "1:name" or "0:name", as drawn
+				was, t, _ := strings.Cut(v, ":")
+				if on := slices.Contains(f["on"], t); on != (was == "1") {
+					topics[t] = on
+				}
+			}
+			if on := f.Get("new_topics") == "1"; f.Has("new_topics_was") && on != (f.Get("new_topics_was") == "1") {
+				newTopics = &on
+			}
+		} else {
+			t, on := f.Get("topic"), f.Get("subscribe") == "1"
+			if !on && f.Get("sure") == "" && (t == ApprovalTopic || topicApprovals(api, r, t)) {
+				// Not a silent no-op: Settings says what this hides, next to its switch.
+				http.Redirect(w, r, "/app/settings#topics", http.StatusSeeOther)
+				return
+			}
+			topics[t] = on
+		}
+		if newTopics != nil || len(topics) > 0 {
+			if err := api.SetSubscriptions(r, newTopics, topics); err != nil && !errors.Is(err, ErrUnauthorized) {
+				http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+				return
+			}
+		}
+		http.Redirect(w, r, next, http.StatusSeeOther)
 	})
 
 	// Settings format check (#320): dismiss a finding, leave a topic out, or
@@ -1015,7 +1682,12 @@ func Handler(api API, baseURL string) http.Handler {
 		if f.Get("delete") != "" {
 			err = api.DeleteHook(r, topic, name)
 		} else {
-			err = api.SaveHook(r, topic, name, strings.TrimSpace(f.Get("url")), f["events"], f.Get("secret"), f.Get("clear_secret") != "")
+			var body *string // a tab from before the field kept no body: keep the saved one
+			if _, ok := f["body"]; ok {
+				b := strings.TrimSpace(f.Get("body"))
+				body = &b
+			}
+			err = api.SaveHook(r, topic, name, strings.TrimSpace(f.Get("url")), f["events"], body, f.Get("secret"), f.Get("clear_secret") != "")
 		}
 		if err != nil && !errors.Is(err, ErrUnauthorized) {
 			http.Error(w, "Not saved: "+err.Error()+". Go back and try again.", http.StatusBadRequest)

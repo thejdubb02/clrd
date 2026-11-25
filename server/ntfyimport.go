@@ -120,6 +120,13 @@ func (s *Server) ImportNtfy(ctx context.Context, in NtfyImport, out io.Writer) (
 	if tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = 'ntfy_imported'`).Scan(&done) == nil {
 		return fmt.Errorf("this database already has an ntfy import (%s); start from a fresh one", fromMS(done).Format(time.RFC3339))
 	}
+	// Imported events carry ntfy's old times, and a prune drops every event
+	// up to the newest old one, so they must not sit after live ones (#388).
+	// Notifications too: a prune can empty events and leave them.
+	var has int
+	if tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM events) OR EXISTS (SELECT 1 FROM notifications)`).Scan(&has); has == 1 {
+		return fmt.Errorf("this database already has notifications; import into a fresh one (a new CLRD_DB)")
+	}
 	var copied []string // files to remove if the import does not commit
 	defer func() {
 		if err != nil || in.DryRun {
@@ -427,6 +434,7 @@ func (s *Server) importNtfyMessages(ctx context.Context, tx *sql.Tx, in NtfyImpo
 			n.Actions = nil
 			badActions++
 		}
+		n.Actions = slices.DeleteFunc(n.Actions, isDeviceAction) // an import skips the publish checks, so links only, as before
 		if n.Actions == nil {
 			n.Actions = []Action{}
 		}
@@ -508,7 +516,7 @@ func importEvent(ctx context.Context, tx *sql.Tx, typ string, n *Notification, a
 	}
 	n.Seq, _ = res.LastInsertId()
 	n.UpdatedAt = at
-	if err := saveNotification(tx, n); err != nil {
+	if err := saveNotification(tx, n, typ); err != nil {
 		return err
 	}
 	ev := Event{Seq: n.Seq, Type: typ, Notification: n}

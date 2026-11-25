@@ -328,6 +328,23 @@ func TestNtfyImportReplacesAnonymous(t *testing.T) {
 	}
 }
 
+// #458: topics are case-sensitive, so a grant allows only its own case, and
+// a match in another case still denies (first match wins).
+func TestGrantCase(t *testing.T) {
+	tok := &Token{Scopes: []string{ScopeRead, ScopePublish}, Grants: []Grant{
+		{Topic: "home", Scopes: []string{ScopeRead, ScopePublish}},
+		{Topic: "secret", Scopes: []string{}},
+		{Topic: "ops-*", Scopes: []string{ScopePublish}},
+		{Topic: "HOME", Scopes: []string{ScopeRead, ScopePublish}},
+	}}
+	for topic, want := range map[string]bool{"home": true, "HOME": true, "Home": false,
+		"secret": false, "SECRET": false, "ops-a": true, "OPS-a": false, "other": false} {
+		if got := tok.may(ScopePublish, topic); got != want {
+			t.Errorf("publish %s: %v, want %v", topic, got, want)
+		}
+	}
+}
+
 func TestGrantsRejectBadPatterns(t *testing.T) {
 	if _, _, err := ntfyGrants([]ntfyRule{{topic: "a/b", read: true}}, nil, nil); err == nil {
 		t.Fatal("bad pattern imported")
@@ -401,5 +418,26 @@ func TestNtfyMIDRejectsPaths(t *testing.T) {
 	}
 	if !ntfyMID.MatchString("WkNQimnAbetP") {
 		t.Error("real id refused")
+	}
+}
+
+// Imported events carry old times; after live ones a prune would drop the
+// live ones too (#388), so a used database is refused.
+func TestNtfyImportNeedsFreshDB(t *testing.T) {
+	s, _, _ := newTest(t)
+	if _, err := s.db.Exec(`INSERT INTO events (type, topic, data, created_at) VALUES ('created', 'live', '', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	in := NtfyImport{AuthFile: dir + "/user.db", CacheFile: dir + "/cache.db", DefaultAccess: "deny-all"}
+	if err := s.ImportNtfy(context.Background(), in, io.Discard); err == nil || !strings.Contains(err.Error(), "fresh") {
+		t.Fatalf("import into a used database: %v", err)
+	}
+	// Events pruned away, a notification left: still used.
+	if _, err := s.db.Exec(`DELETE FROM events; INSERT INTO notifications (id, topic, state, created_at, updated_at) VALUES ('n1', 'live', 'active', 0, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ImportNtfy(context.Background(), in, io.Discard); err == nil || !strings.Contains(err.Error(), "fresh") {
+		t.Fatalf("import with notifications but no events: %v", err)
 	}
 }

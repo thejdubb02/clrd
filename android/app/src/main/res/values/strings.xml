@@ -11,8 +11,18 @@
 
     <!-- Inbox -->
     <string name="cleared_everywhere">Cleared everywhere</string>
+    <!-- Why a card is leaving the list, shown for a moment as it goes (#598). -->
+    <string name="gone_resolved">Resolved</string>
+    <string name="gone_acknowledged">Acknowledged</string>
+    <string name="gone_back">Back in the inbox</string>
+    <string name="gone_moved">Moved</string>
+    <!-- %1$s is one of the above, %2$s the device that did it. -->
+    <string name="gone_on">%1$s on %2$s</string>
+    <!-- %1$s is Resolved, %2$s the sender that resolved it. -->
+    <string name="gone_by">%1$s by %2$s</string>
     <string name="undo">Undo</string>
     <string name="restore">Restore</string>
+    <string name="tap_to_answer">Tap to read it all and answer</string>
     <string name="ack">Ack</string>
     <string name="snooze_for">Snooze %1$s</string>
     <string name="clear">Clear</string>
@@ -31,6 +41,10 @@
     <plurals name="cleared_on_server">
         <item quantity="one">%1$d cleared on the server. This phone shows the last %2$d days.</item>
         <item quantity="other">%1$d cleared on the server. This phone shows the last %2$d days.</item>
+    </plurals>
+    <plurals name="cleared_on_server_dropped">
+        <item quantity="one">%1$d cleared on the server. This phone removes cleared items (Settings).</item>
+        <item quantity="other">%1$d cleared on the server. This phone removes cleared items (Settings).</item>
     </plurals>
 
     <!-- Notification states, on the chip and in the line under each one. %1$s is a device name. -->
@@ -74,11 +88,44 @@
     <string name="test_unreachable">Could not reach the server: %1$s</string>
     <string name="battery_explain">This phone may pause clrd in the background, and then clears from other devices arrive late.</string>
     <string name="battery_button">Let clrd run in the background</string>
-    <string name="topics">Topics</string>
-    <string name="topics_explain">A muted topic stays in the inbox but never pops up on this phone.</string>
+    <string name="topics">Muted topics</string>
+    <string name="topics_explain">A muted topic stays in the inbox but never pops up, on this phone only. To stop a topic on every device, unsubscribe in Topics.</string>
+    <string name="subs_title">Topics</string>
+    <string name="subs_explain">Unsubscribe removes a topic from this account everywhere: no card, no pop up, on every device. Mute keeps it in the inbox without the pop up, on this phone only.</string>
+    <string name="subs_unfiltered">Not available on this phone. It signed in with a token that has no user, so it always shows every topic. Link the phone with a code from the web inbox, or attach the token to a user, to choose topics.</string>
+    <string name="subs_new">New topics</string>
+    <string name="subs_new_explain">Subscribe to a topic the first time it sends. Off, a new topic starts unsubscribed.</string>
+    <string name="subs_search">Search topics</string>
+    <string name="subs_open">%1$d open</string>
+    <string name="subs_never">no messages yet</string>
+    <string name="subs_agents_note">Approval prompts from agents come in this topic. Unsubscribed, they are hidden too.</string>
+    <string name="subs_agents_title">Unsubscribe from %1$s?</string>
+    <string name="subs_agents_text">Approval prompts from agents come in this topic. They will stop reaching all your devices, and an agent waiting on an answer keeps waiting.</string>
+    <string name="subs_failed">Could not change topics: %1$s</string>
+    <string name="subs_read">Read</string>
+    <string name="subs_reading">Not subscribed. Reading here adds nothing to your inbox and never rings.</string>
+    <string name="subs_read_empty">Nothing open in this topic.</string>
+    <string name="subs_subscribe">Subscribe</string>
+    <string name="subs_close">Close</string>
+    <string name="unsubscribe">Unsubscribe</string>
+    <string name="unsubscribe_from">Unsubscribe from %1$s</string>
+    <string name="unsubscribed">Unsubscribed from %1$s on every device</string>
+    <string name="more">More</string>
     <string name="topic_muted">muted</string>
     <string name="topic_on">on</string>
     <string name="stack">Stack by topic</string>
+    <string name="drop_cleared">Remove cleared items</string>
+    <string name="drop_cleared_explain">A cleared item also leaves this phone once the server has the clear, so the Cleared tab stays empty. The server keeps its copy, and the web inbox still shows it.</string>
+    <string name="fast_swipe">Full swipe acts</string>
+    <string name="fast_swipe_explain">A swipe on a card shows its buttons, and nothing happens until you tap one. Turn this on and a swipe all the way across runs the first button on that side, the one nearest the edge. A clear can still be undone.</string>
+    <string name="swipe_settings">Swipe buttons</string>
+    <string name="swipe_explain">The buttons a swipe on a card shows, numbered from the screen edge. Tap to add or take one off. Saved on your server, so every device shows the same. This app has no Resolve button yet, so it skips that one.</string>
+    <string name="swipe_locked">This token can see the swipe buttons but not change them. Change them from a device signed in with a full token.</string>
+    <string name="swipe_left">Swipe left</string>
+    <string name="swipe_right">Swipe right</string>
+    <string name="swipe_resolve">Resolve</string>
+    <string name="swipe_full">each swipe shows at most %1$d buttons</string>
+    <string name="swipe_place">%1$d. %2$s</string>
     <string name="stack_show">Show all</string>
     <string name="stack_hide">Hide</string>
     <string name="stack_explain">Notifications from the same topic fold into one stack, in the app\'s list and in the phone\'s notification shade. Tap a stack in the list to open it. Swiping a notification or stack away only hides it on this phone; clear it in the app to clear it everywhere.</string>
@@ -98,13 +145,22 @@
     <string name="reply_sent_to_confirm">Your answer was sent for confirmation. It counts once an allowed device confirms it.</string>
     <string name="reply_approve_denied">Not answered: this phone may not answer approval requests. An allowed device can change that.</string>
     <string name="reply_own_request">Not answered: this request came from this phone\'s own token, so another device has to answer it.</string>
+    <string name="device_failed">%1$s did not work. Try again from the tray.</string>
+    <string name="device_changed">Not run: this notification changed or is gone.</string>
     <string name="reply_changed">Not answered: the question changed or was already answered.</string>
+    <string name="reply_text_refused">Not answered: the server refused the text. It is kept in the reply box.</string>
+    <string name="reply_text_invalid">Not sent: an answer is 1 to 1000 characters.</string>
+    <string name="reply_text_count">%1$d of 1000</string>
+    <string name="reply_text_send">Send</string>
+    <string name="answered_text">Answer: %1$s</string>
     <string name="approve_title">Approval requests</string>
     <string name="approve_allowed">This phone can answer approval requests.</string>
     <string name="approve_ask">This phone\'s answers to approval requests need an allowed device to confirm them.</string>
     <string name="approve_denied">This phone may not answer approval requests. An allowed device can change that.</string>
     <string name="dnd_explain">Urgent notifications (priority 5) are quiet in Do Not Disturb unless you let them through. Only you can turn that on, in Android\'s settings.</string>
     <string name="dnd_lost">Changing the sound turned off the Do Not Disturb pass for urgent ones. Android lets only you turn it back on, with the button below.</string>
+    <string name="dnd_notice_title">Urgent ones are quiet in Do Not Disturb</string>
+    <string name="dnd_notice">The notification sound was changed from another device, and Android turned off the Do Not Disturb pass for urgent ones. Tap to turn it back on.</string>
     <string name="dnd_open">Let urgent ones through Do Not Disturb</string>
     <string name="signed_out">The server no longer accepts this phone. It was unlinked from another device, its token was revoked, or the token is wrong. Scan a new code or enter a token to sign in again.</string>
     <!-- Linked devices in Settings, the same list as the web Settings page. -->
@@ -113,6 +169,38 @@
     <string name="kind_phone">phone</string>
     <string name="kind_browser">browser</string>
     <string name="kind_token">token</string>
+    <string name="kind_agent">agent</string>
+    <!-- Add agent (#457): an invite that gives an AI agent its own login, limited to some topics. -->
+    <string name="agent_add">Add agent</string>
+    <string name="agent_name">Agent name</string>
+    <string name="agent_topics">Topics</string>
+    <string name="agent_topics_hint">The topics it may read and publish on, separated by commas</string>
+    <string name="agent_lasts">The invite lasts</string>
+    <string name="agent_5m">5 min</string>
+    <string name="agent_15m">15 min</string>
+    <string name="agent_1h">1 hour</string>
+    <string name="agent_denied">Its approvals start as Denied: it can ask a person, but never answer a request itself.</string>
+    <string name="agent_make">Make invite</string>
+    <!-- %1$s is a clock time. -->
+    <string name="agent_once">Give this to the agent privately, like a password. It works once and runs out at %1$s.</string>
+    <string name="agent_copy">Copy</string>
+    <string name="agent_share">Share</string>
+    <string name="agent_done">Done</string>
+    <string name="agent_failed">No invite: %1$s</string>
+    <string name="send">Send</string>
+    <string name="send_title">Send a notification</string>
+    <string name="send_hint">It shows on every device, this one too.</string>
+    <string name="send_topic">Topic</string>
+    <string name="send_title_field">Title (optional)</string>
+    <string name="send_message">Message</string>
+    <string name="send_priority">Priority</string>
+    <string name="send_p1">Min</string>
+    <string name="send_p2">Low</string>
+    <string name="send_p3">Default</string>
+    <string name="send_p4">High</string>
+    <string name="send_p5">Urgent</string>
+    <string name="send_done">Sent.</string>
+    <string name="send_failed">Not sent: %1$s</string>
     <string name="device_via">linked from %1$s</string>
     <string name="device_seen">seen %1$s</string>
     <string name="device_never_seen">never seen</string>
@@ -120,6 +208,14 @@
     <string name="device_unlink_title">Unlink %1$s?</string>
     <string name="device_unlink_text">It is signed out at once and stops syncing. Unlinking a phone also signs out the browsers it approved. It can be linked again with a new code.</string>
     <string name="device_unlink_failed">Not unlinked: %1$s</string>
+    <string name="device_approve">May approve: %1$s</string>
+    <string name="approve_name_allowed">Allowed</string>
+    <string name="approve_name_ask">Ask</string>
+    <string name="approve_name_denied">Denied</string>
+    <string name="device_approve_failed">Not changed: %1$s</string>
+    <string name="device_lower_title">Lower %1$s to %2$s?</string>
+    <string name="device_lower_text">Only another allowed device can raise it again.</string>
+    <string name="device_lower">Lower</string>
     <string name="device_log_show">Show activity</string>
     <string name="device_log_hide">Hide activity</string>
     <!-- A log line: how long ago, which device, what happened (linked, signed in, unlinked). -->
@@ -151,6 +247,7 @@
     <string name="tray_open">Open</string>
     <string name="tray_answered">Answered %1$s on %2$s</string>
     <string name="tray_acked">Acknowledged on %1$s</string>
+    <string name="tray_draft">Answer not accepted: edit it in the clrd app</string>
     <string name="tray_another_device">another device</string>
 
     <!-- Signing in a browser from a clrd://pair link -->
@@ -167,6 +264,20 @@
 
     <!-- Linking this phone from a signed-in browser (QR code or clrd://link) -->
     <string name="scan_qr">Scan QR code</string>
+    <string name="link_phone">Link a phone</string>
+    <string name="server_explain">The clrd server this phone syncs with, and the token it signs in with.</string>
+    <string name="devices_explain">Every phone and browser signed in to your server.</string>
+    <string name="link_phone_explain">Signed in on a browser already? Its Settings page shows a code that sets this phone up.</string>
+    <string name="battery">Battery</string>
+    <string name="section_notifications">Notifications</string>
+    <string name="section_inbox">Inbox</string>
+    <string name="section_devices">Devices</string>
+    <string name="section_integrations">Integrations</string>
+    <string name="settings_search">Search settings</string>
+    <string name="settings_none">No settings match \"%1$s\"</string>
+    <string name="settings_clear">Clear search</string>
+    <string name="source_code">Source code</string>
+    <string name="report_problem">Report a problem</string>
     <string name="scan_prompt">Point at the code on your clrd Settings page</string>
     <string name="scan_not_clrd">Not a clrd code</string>
     <string name="link_title">Connect to %1$s?</string>
@@ -177,13 +288,74 @@
     <string name="link_waiting_title">Approve on your computer</string>
     <string name="link_waiting_text">Your browser on %1$s now shows this phone. Approve it there only if it shows %2$s.</string>
     <string name="link_cancel">Cancel</string>
+    <string name="mark">Mark seen or actioned</string>
+    <string name="marked_seen">Marked seen</string>
+    <string name="marked_actioned">Marked actioned</string>
+    <string name="mark_note">Note (optional)</string>
+    <string name="mark_link">Link (optional)</string>
+    <string name="mark_seen">Seen</string>
+    <string name="mark_actioned">Actioned</string>
+    <string name="mark_remove">Remove my mark</string>
+    <string name="mark_failed">Not saved: %1$s</string>
+    <string name="mark_no_connection">no connection to the server</string>
     <string name="link_done">Phone linked. Syncing now.</string>
     <string name="link_expired">That code expired, was denied or was already used. Make a new one on the browser.</string>
-    <string name="snooze_settings">Snooze</string>
+    <string name="snooze_settings">Snooze times</string>
     <string name="snooze_explain">Snooze on a card uses the default time. Long press it for the other times. These settings apply to every device.</string>
     <string name="snooze_times">Times, comma separated (15m, 4h, 2d)</string>
     <string name="snooze_default">Default</string>
     <string name="snooze_save">Save snooze times</string>
     <string name="snooze_saved">Saved.</string>
     <string name="snooze_not_saved">Not saved: %1$s</string>
+    <!-- Senders (#119): shown only to an admin token for every topic. -->
+    <string name="senders_title">Senders</string>
+    <string name="senders_explain">Every token, app and person that has sent a notification here. Tap one for more.</string>
+    <string name="senders_none">No senders yet. Send a notification and its sender shows up here.</string>
+    <!-- %1$s is the kind (and template), %2$d how many it sent, %3$s when it was last heard from. -->
+    <string name="sender_line">%1$s, %2$d sent, last %3$s</string>
+    <string name="sender_template">template %1$s</string>
+    <string name="sender_agent">User agent: %1$s</string>
+    <string name="sender_address">Address: %1$s</string>
+    <string name="sender_first_seen">First seen: %1$s</string>
+    <string name="sender_recent">Recent</string>
+    <string name="sender_none_stored">None of its last 10 notifications are still stored.</string>
+    <string name="sender_none_sent">Nothing sent yet.</string>
+    <string name="sender_token">Token</string>
+    <string name="sender_person">Person</string>
+    <string name="sender_ntfy_user">ntfy user</string>
+    <string name="sender_gotify_app">Gotify app</string>
+    <string name="sender_pushover_app">Pushover app</string>
+    <string name="sender_anonymous">Anonymous</string>
+    <string name="rules_title">Rules</string>
+    <string name="rules_explain">Paused drops what it sends. Muted keeps it but never rings. A priority range clamps what it asks for. Routes send a topic somewhere else.</string>
+    <string name="rules_pause">Pause</string>
+    <string name="rules_mute">Mute</string>
+    <string name="rules_lowest">Lowest priority</string>
+    <string name="rules_highest">Highest priority</string>
+    <string name="rules_no_limit">No limit</string>
+    <string name="rules_routes">Routes</string>
+    <string name="rules_routes_hint">One a line: topic: target, target. Use * for any other topic. Nothing after the colon drops it.</string>
+    <string name="rules_routes_bad">Each route needs a topic, a colon, then its targets, and each topic once.</string>
+    <string name="rules_save_routes">Save routes</string>
+    <string name="rules_expect">Alarm if quiet for</string>
+    <string name="rules_expect_hint">One urgent alarm when it sends nothing for this long, like 25h or 30m. Its next notification clears the alarm. Empty is off.</string>
+    <string name="rules_save_expect">Save quiet alarm</string>
+    <string name="rules_alert_topic">Alarm topic</string>
+    <string name="rules_alert_topic_hint">Where the alarm goes. Empty means the first topic its last topic routes to, or that topic when it has no route.</string>
+    <string name="rules_save_alert_topic">Save alarm topic</string>
+    <string name="rules_alarm_open">Quiet alarm open in %1$s</string>
+    <string name="rules_quiet">alarm if quiet for %1$s</string>
+    <string name="rules_alarm_to">alarm to %1$s</string>
+    <string name="rules_failed">Could not change it: %1$s</string>
+    <string name="rules_changes">Change log</string>
+    <string name="rules_no_changes">No changes yet. An anonymous sender\'s log can age out.</string>
+    <string name="rules_was">was: %1$s, by %2$s, %3$s</string>
+    <string name="rules_undo">Undo</string>
+    <string name="rules_none">No rules</string>
+    <string name="rules_paused">paused</string>
+    <string name="rules_muted">muted</string>
+    <string name="rules_priority">priority %1$d to %2$d</string>
+    <string name="rules_route">%1$s to %2$s</string>
+    <string name="rules_any_topic">any other topic</string>
+    <string name="rules_nowhere">nowhere</string>
 </resources>

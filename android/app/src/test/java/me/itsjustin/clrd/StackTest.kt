@@ -32,7 +32,18 @@ class StackTest {
         app.stack = true
     }
 
-    @After fun tearDown() { app.stack = true }
+    @After fun tearDown() { app.prefs.edit().remove("stack").commit() }
+
+    /** #465: off until a person turns it on; a stored choice is kept. */
+    @Test fun offByDefaultAndAChoiceIsKept() {
+        app.prefs.edit().remove("stack").commit()
+        assertEquals(false, app.stack)
+        app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk")), emptySet())
+        assertNull("no stack until turned on", summary("disk"))
+        assertEquals("silent", shadowOf(nm).getNotification("a", 0).group) // NotificationCompat's own, not ours
+        app.stack = true
+        assertEquals(true, app.stack)
+    }
 
     private fun row(id: String, topic: String) =
         Notif(id, topic, "T", "m", 3, "", null, "[]", Notif.ACTIVE, null, null, 1, System.currentTimeMillis(), 1)
@@ -83,5 +94,13 @@ class StackTest {
         app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk")), emptySet())
         assertNull(shadowOf(nm).getNotification("a", 0))
         assertNull(summary("disk"))
+    }
+
+    @Test fun clearAllOnAListStackClearsEveryRowEverywhere() { // in the app list, unlike a shade swipe
+        bg { dao.applyAll(listOf(row("a", "disk"), row("b", "disk"), row("c", "cpu")), 1) }
+        app.act(listOf("a", "b"), "dismiss")
+        app.acts.submit {}.get(10, TimeUnit.SECONDS)
+        assertEquals(listOf("a" to "dismiss", "b" to "dismiss"), bg { dao.pending() }.map { it.notifId to it.action })
+        assertEquals(listOf(Notif.DISMISSED, Notif.DISMISSED, Notif.ACTIVE), bg { listOf("a", "b", "c").map { dao.get(it)!!.state } })
     }
 }

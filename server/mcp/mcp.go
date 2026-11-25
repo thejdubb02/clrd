@@ -12,6 +12,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,12 +21,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thejdubb02/clrd"
 	"github.com/thejdubb02/clrd/server"
 )
 
 // MaxWait caps wait_for_reply. Keep it under the server's WriteTimeout and any
 // proxy idle timeout in front of it.
 var MaxWait = 600 * time.Second
+
+// tools is the tools/list answer, kept as JSON so it costs no init code
+// (#683). Edit tools.json by hand; TestInitializeAndList checks the names.
+//
+//go:embed tools.json
+var tools []byte
 
 // viaMCP marks a state change an agent made, so the log tells it from a person's tap.
 var viaMCP = map[string]any{"via": "mcp"}
@@ -120,19 +128,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeRPC(w, req.ID, map[string]any{
 			"protocolVersion": v,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "clrd", "version": "0.1.0"},
+			"serverInfo":      map[string]any{"name": "clrd", "version": clrd.Version()},
 			"instructions":    "clrd notifications. send() to alert a human, wait_for_reply() to block until they ack or dismiss it, resolve() when the problem clears.",
 		}, nil)
 	case "ping":
 		writeRPC(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
-		writeRPC(w, req.ID, map[string]any{"tools": tools}, nil)
+		writeRPC(w, req.ID, map[string]any{"tools": json.RawMessage(tools)}, nil)
 	case "tools/call":
 		var p struct {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
 		}
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(req.Params))
+		dec.UseNumber() // a big whole number keeps its exact digits on the way to the API (#355)
+		err := dec.Decode(&p)
+		if err == nil {
+			_, err = exact(p.Arguments)
+		}
+		if err != nil {
 			writeRPC(w, req.ID, nil, &rpcErr{-32602, "invalid params"})
 			return
 		}
@@ -236,6 +250,45 @@ func str(a map[string]any, k string) string {
 	return ""
 }
 
+// exact keeps a plain whole number as its digits (#355); any other number
+// becomes a float64 as before, so 5.0 still reaches an int field as 5.
+func exact(v any) (any, error) {
+	var err error
+	switch t := v.(type) {
+	case json.Number:
+		f, err := t.Float64()
+		if err != nil || strings.ContainsAny(string(t), ".eE") {
+			return f, err
+		}
+	case map[string]any:
+		for k, x := range t {
+			if t[k], err = exact(x); err != nil {
+				return nil, err
+			}
+		}
+	case []any:
+		for i, x := range t {
+			if t[i], err = exact(x); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return v, nil
+}
+
+// num reads a number argument: a json.Number from a tool call, a float64
+// from an in-process caller such as approve.
+func num(a map[string]any, k string) (float64, bool) {
+	switch v := a[k].(type) {
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case float64:
+		return v, true
+	}
+	return 0, false
+}
+
 func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, error) {
 	if a == nil {
 		a = map[string]any{}
@@ -278,18 +331,21 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		body := map[string]any{"topic": str(a, "topic"), "message": str(a, "message")}
-		for _, k := range []string{"title", "format", "icon"} {
+		for _, k := range []string{"title", "format", "icon", "color"} {
 			if v := str(a, k); v != "" {
 				body[k] = v
 			}
 		}
-		if v, ok := a["priority"].(float64); ok {
+		if v, ok := num(a, "priority"); ok {
 			body["priority"] = int(v)
 		}
 		if v := str(a, "repeat"); v != "" {
 			body["repeat"] = v
 		}
-		if v, ok := a["repeat_times"].(float64); ok {
+		if v, ok := a["live"].(bool); ok && v {
+			body["live"] = true
+		}
+		if v, ok := num(a, "repeat_times"); ok {
 			body["repeat_times"] = int(v)
 		}
 		if v := str(a, "id"); v != "" {
@@ -297,6 +353,9 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		}
 		if v, ok := a["actions"].([]any); ok {
 			body["actions"] = v
+		}
+		if v, ok := a["devices"]; ok {
+			body["devices"] = v // anything but a list of strings is the server's 400, never a send to everyone
 		}
 		if v, ok := a["attachment"].(map[string]any); ok {
 			if str(v, "url") == "" {
@@ -323,6 +382,8 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		return h.api(r, "GET", "/api/v1/topics", nil)
 	case "counts":
 		return h.api(r, "GET", "/api/v1/counts?"+query(a, "keep_cleared_days", "topic"), nil)
+	case "stats":
+		return h.api(r, "GET", "/api/v1/stats?"+query(a, "days"), nil)
 	case "format_check":
 		return h.api(r, "GET", "/api/v1/format-check?"+query(a, "topic", "by"), nil)
 	case "devices":
@@ -347,6 +408,20 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		return h.api(r, "POST", "/api/v1/devices/approve-request", map[string]any{"approve": str(a, "approve"), "topic": str(a, "topic")})
+	case "subscriptions":
+		path, body := "/api/v1/subscriptions", map[string]any{}
+		if f := str(a, "for"); f != "" {
+			path += "?for=" + url.QueryEscape(f)
+		}
+		for _, k := range []string{"topics", "new_topics"} {
+			if v, ok := a[k]; ok {
+				body[k] = v
+			}
+		}
+		if len(body) == 0 {
+			return h.api(r, "GET", path, nil)
+		}
+		return h.api(r, "PUT", path, body)
 	case "settings":
 		if len(a) == 0 {
 			return h.api(r, "GET", "/api/v1/settings", nil)
@@ -362,6 +437,15 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		return h.api(r, "PATCH", "/api/v1/notifications/"+id, map[string]any{"message": str(a, "message")})
+	case "mark":
+		if err := need("id"); err != nil {
+			return nil, err
+		}
+		if str(a, "mark") == "" {
+			return h.api(r, "DELETE", "/api/v1/notifications/"+id+"/mark", nil)
+		}
+		return h.api(r, "POST", "/api/v1/notifications/"+id+"/mark",
+			map[string]any{"mark": str(a, "mark"), "note": str(a, "note"), "link": str(a, "link")})
 	case "ack":
 		if err := need("id"); err != nil {
 			return nil, err
@@ -394,7 +478,7 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 // state, so an ack quickly followed by a snooze still counts as the reply.
 func (h *Handler) wait(r *http.Request, id string, a map[string]any) (any, error) {
 	d := 60 * time.Second
-	if v, ok := a["timeout_s"].(float64); ok && v > 0 {
+	if v, ok := num(a, "timeout_s"); ok && v > 0 {
 		d = time.Duration(v * float64(time.Second))
 	}
 	if d > MaxWait {
@@ -431,12 +515,19 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 		return nil, err
 	}
 	if st := str(n, "state"); replied(st) {
-		return answered(map[string]any{"reply": st, "by": n["state_by"], "notification": n}, st, str(n, "reply")), nil
+		return answered(map[string]any{"reply": st, "by": n["state_by"], "notification": n}, st, str(n, "reply"), str(n, "reply_text")), nil
 	}
 	var last any = n
 	for {
 		select {
 		case <-r.Context().Done():
+			// Read again before showing it: the stream is not filtered, and the
+			// grant for this topic may have gone mid-wait (#428).
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+			defer cancel()
+			if _, err := h.api(r.WithContext(ctx), "GET", "/api/v1/notifications/"+id, nil); err != nil {
+				return map[string]any{"reply": "timeout"}, nil
+			}
 			return map[string]any{"reply": "timeout", "notification": last}, nil
 		case e, ok := <-evs:
 			if !ok {
@@ -461,162 +552,22 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 				}
 				return nil, err
 			}
-			return answered(map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, x.State, x.Reply), nil
+			return answered(map[string]any{"reply": x.State, "by": x.StateBy, "notification": x}, x.State, x.Reply, x.ReplyText), nil
 		}
 	}
 }
 
 // answered adds which reply action was tapped. Only while the tap's own
-// acknowledged state stands, so "by" is the device that tapped it.
-func answered(out map[string]any, state, reply string) map[string]any {
+// acknowledged state stands, so "by" is the device that tapped it. text is
+// what was typed with a text reply action.
+func answered(out map[string]any, state, reply, text string) map[string]any {
 	if reply != "" && state == server.Acknowledged {
 		out["answer"] = reply
+		if text != "" {
+			out["text"] = text
+		}
 	}
 	return out
-}
-
-func schema(props map[string]any, required ...string) map[string]any {
-	s := map[string]any{"type": "object", "properties": props}
-	if len(required) > 0 {
-		s["required"] = required
-	}
-	return s
-}
-
-func p(typ, desc string) map[string]any { return map[string]any{"type": typ, "description": desc} }
-
-var tools = []map[string]any{
-	{"name": "send", "description": "Send a notification to a topic. Reusing an id while the previous one is still open updates it instead of making a new one.",
-		"inputSchema": schema(map[string]any{
-			"topic":        p("string", "Topic, e.g. infra"),
-			"message":      p("string", "Body text"),
-			"title":        p("string", "Optional title"),
-			"format":       map[string]any{"type": "string", "enum": []string{"markdown", "text"}, "description": "markdown (default) or text, which is shown exactly as sent"},
-			"icon":         p("string", "Optional http(s) image URL shown with the notification; the topic's icon when omitted"),
-			"attachment":   schema(map[string]any{"url": p("string", "http(s) URL of the file"), "name": p("string", "Optional file name")}, "url"),
-			"priority":     map[string]any{"type": "integer", "minimum": 1, "maximum": 5, "description": "1..5, 5 = urgent"},
-			"repeat":       p("string", "Optional: alert again every this long (1m to 24h, e.g. 5m) until someone acknowledges, snoozes, dismisses or resolves it"),
-			"repeat_times": map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "How many times to repeat at most (default 10)"},
-			"id":           p("string", "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id)."),
-			"actions": map[string]any{"type": "array", "maxItems": 3,
-				"description": "Optional answer buttons, e.g. [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]. wait_for_reply returns the tapped one as answer.",
-				"items":       schema(map[string]any{"label": p("string", "Button text"), "reply": map[string]any{"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Value returned as answer, unique"}}, "label", "reply")},
-		}, "topic", "message")},
-	{"name": "list", "description": "List notifications.",
-		"inputSchema": schema(map[string]any{
-			"topic": p("string", "Filter by topic"),
-			"state": p("string", "open (default), all, active, acknowledged, snoozed, dismissed or resolved"),
-		})},
-	{"name": "topics", "description": "List the topics this token can read, with how many notifications are open in each.",
-		"inputSchema": schema(map[string]any{})},
-	{"name": "counts", "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved). With keep_cleared_days, also would_remove: how many cleared messages that setting would delete.",
-		"inputSchema": schema(map[string]any{"keep_cleared_days": map[string]any{"type": []string{"integer", "string"}, "description": "Preview a keep_cleared_days value before setting it, or \"default\" with topic to preview dropping that topic's own value"},
-			"topic": p("string", "With keep_cleared_days, would_remove counts only this topic, to preview a topic_keep_cleared_days value")})},
-	{"name": "format_check", "description": "Find formatting problems in the newest 500 messages, by topic: Markdown sent as plain text, unknown :shortcodes:, no title, very long messages, raw JSON. Each topic has a count and an example per problem, and a prompt that says how to fix the sender. Fix the sending code with it, then send a test message. With by=sender, one group per topic and sending token. Dismissed findings and topics turned off are left out and listed in dismissed and off.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Check only this topic"), "by": p("string", "topic (the default) or sender")})},
-	{"name": "format_dismiss", "description": "Stop a format_check rule showing for a topic, for one sending token (sender_id from format_check by=sender) or every sender. dismissed=false shows it again. To turn the whole check off for a topic, use set_topic with format_check=false.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "rule": p("string", "Rule id, like no_title"),
-			"sender_id": p("string", "Sending token id; leave out for every sender"), "dismissed": p("boolean", "false to show it again; default true")}, "topic", "rule")},
-	{"name": "settings", "description": "Read the server settings, or change them: pass only the fields to change. keep_cleared_days (0 = forever) deletes cleared messages older than that on the next hourly cleanup and needs an admin token; preview it with counts first.",
-		"inputSchema": schema(map[string]any{
-			"keep_cleared_days":       p("integer", "Days to keep dismissed and resolved messages, counted from when they were cleared; 0 = forever"),
-			"topic_keep_cleared_days": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": []string{"integer", "null"}}, "description": "Per-topic keep_cleared_days, like {\"alerts\": 7}; null drops a topic's own value so it follows keep_cleared_days again"},
-			"render_formatting":       p("boolean", "Show Markdown formatting"),
-			"autolink":                p("boolean", "Turn web addresses into links"),
-			"favicons":                p("boolean", "Show site icons next to links"),
-			"link_previews":           p("boolean", "Show link previews"),
-			"snooze_intervals":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Snooze menu times as durations like 30m or 4h, 1 to 8"},
-			"snooze_default":          p("string", "The snooze time a plain tap uses, one of snooze_intervals"),
-		})},
-	{"name": "get", "description": "Get one notification by its server id, with its current state.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
-	{"name": "update", "description": "Replace the message of an open notification, keeping its id and state. Use it for progress (step 3 of 10) instead of sending a new one each time.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "message": p("string", "New body text")}, "id", "message")},
-	{"name": "ack", "description": "Acknowledge a notification by its server id.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
-	{"name": "resolve", "description": "Resolve (sender clears) a notification by server id, or by topic plus external_id. Clears it from every device.",
-		"inputSchema": schema(map[string]any{
-			"id":          p("string", "Server id"),
-			"topic":       p("string", "Topic, with external_id"),
-			"external_id": p("string", "The id given to send"),
-		})},
-	{"name": "snooze", "description": "Snooze a notification by server id.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Server id"), "for": p("string", "Duration, e.g. 30m or 1h")}, "id", "for")},
-	{"name": "wait_for_reply", "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout, and answer = the reply value when one of send's actions was tapped.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Server id from send"), "timeout_s": map[string]any{"type": "number", "description": "Seconds to wait, default 60, max 600"}}, "id")},
-	{"name": "devices", "description": "List every linked device this token can see: id, name, kind (token, browser or phone), linked and last seen times, who may approve (allowed, ask or denied), and whether it can be unlinked.",
-		"inputSchema": schema(map[string]any{})},
-	{"name": "device_log", "description": "Recent links, sign-ins and unlinks of those devices, newest first, with the device that did each.",
-		"inputSchema": schema(map[string]any{})},
-	{"name": "unlink", "description": "Unlink a browser or phone by its id from devices. It is signed out at once, with every browser it approved.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices")}, "id")},
-	{"name": "sound", "description": "Notification sounds, chosen per device. No arguments lists the valid sound names and the default; devices shows each device's current sound. With id and sound, sets that device's sound.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Device id from devices"), "sound": p("string", "A name from the list, e.g. chime or none")})},
-	{"name": "request_approve", "description": "Ask the user to let this token answer approval requests. devices shows its current approve setting. Posts a Confirm prompt on topic; the setting changes only when an allowed device taps Confirm. Returns the prompt: wait_for_reply on its id gives confirm or reject.",
-		"inputSchema": schema(map[string]any{"approve": p("string", "allowed, or ask (its taps then wait for an allowed device to confirm)"), "topic": p("string", "Topic for the prompt, default agents; needs publish there")}, "approve")},
-	{"name": "dismiss", "description": "Dismiss (clear) a notification by its server id. It goes away on every device; reopen undoes it.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
-	{"name": "reopen", "description": "Make a dismissed, acknowledged, snoozed or resolved notification active again, by its server id.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Server id")}, "id")},
-	{"name": "clear", "description": "Dismiss every open notification in a topic, or a list of them by server id. Give topic or ids, not both. Returns how many were cleared.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic to clear"), "ids": strs("Server ids to clear")})},
-	{"name": "silences", "description": "List silences that have not ended yet.",
-		"inputSchema": schema(map[string]any{})},
-	{"name": "silence", "description": "Mute a topic, a tag, or a tag in one topic until a set time. Notifications still arrive and sync but do not ring. Give for or until.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic to mute"), "tag": p("string", "Tag to mute, in every topic unless topic is set"),
-			"for": p("string", "How long, like 2h or 30m"), "until": p("string", "End time, RFC 3339"), "comment": p("string", "Why, shown in the list")})},
-	{"name": "end_silence", "description": "End a silence now, by its id from silences.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Silence id")}, "id")},
-	{"name": "set_topic", "description": "Set a topic's icon, its check-in timer, or whether format_check looks at it. With checkin, the topic alerts if nothing arrives for that long (a dead man's switch). \"\" removes the icon or the timer.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "icon": p("string", "Image URL, or \"\" to remove"), "checkin": p("string", "Duration like 25h, or \"\" for off"),
-			"format_check": p("boolean", "false turns the format check off for this topic, true back on")}, "topic")},
-	{"name": "templates", "description": "List a topic's incoming webhook templates, saved and built in. A service posts to /{topic}?template={name}.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic")}, "topic")},
-	{"name": "set_template", "description": "Save an incoming webhook template: how a service's JSON becomes a notification. Fields other than each and secret are Go templates over the posted JSON, like {{.alert.name}}. Needs title or message unless name is a built-in template.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Template name, used as ?template={name}"),
-			"title": p("string", "Title template"), "message": p("string", "Message template"), "priority": p("string", "Renders to 1-5 or min, low, default, high, urgent"),
-			"tags": p("string", "Renders to a comma separated list"), "click": p("string", "Link to open"), "id": p("string", "Renders to an external id, so the same id updates one notification"),
-			"resolve": p("string", "Renders to true to resolve the notification with that id"), "each": p("string", "Dotted path to an array: one notification per item"),
-			"secret": p("string", "Shared secret the service sends; never returned")}, "topic", "name")},
-	{"name": "delete_template", "description": "Delete a saved incoming webhook template.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Template name")}, "topic", "name")},
-	{"name": "preview_template", "description": "Dry run an incoming webhook template over a sample payload: returns the notifications a post would publish, stores and sends nothing. Give template to try an unsaved one; otherwise the saved or built-in template named name is used.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Template name"),
-			"payload":  map[string]any{"type": []string{"object", "array"}, "description": "The JSON a service would post"},
-			"headers":  map[string]any{"type": "object", "description": "Request headers the service would send, like X-GitHub-Event"},
-			"template": map[string]any{"type": "object", "description": "An unsaved template with the set_template fields"}}, "topic", "name", "payload")},
-	{"name": "hooks", "description": "List a topic's outgoing webhooks: URLs clrd calls when its notifications are dismissed, acknowledged, resolved, snoozed or an action is tapped. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic")}, "topic")},
-	{"name": "set_hook", "description": "Add or replace an outgoing webhook. Saving again turns a failing hook back on. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Hook name"), "url": p("string", "http(s) URL to call"),
-			"events": strs("Any of dismissed, acknowledged, resolved, snoozed, action; default all"), "secret": p("string", "Signs each call with HMAC-SHA256; never returned")}, "topic", "name", "url")},
-	{"name": "delete_hook", "description": "Delete an outgoing webhook. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Hook name")}, "topic", "name")},
-	{"name": "hook_deliveries", "description": "Recent calls of one outgoing webhook, with status and error. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"topic": p("string", "Topic"), "name": p("string", "Hook name")}, "topic", "name")},
-	{"name": "tokens", "description": "List API tokens (never their secrets). Needs an admin token.",
-		"inputSchema": schema(map[string]any{})},
-	{"name": "create_token", "description": "Create an API token for a phone, script or agent. The secret is in the result once and never again. It starts denied for approval requests; raise it with request_approve or from an allowed device. Limit it with topics, or with grants (per-topic scopes, first match wins), not both. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"name": p("string", "Who uses it, e.g. backup-job"), "scopes": strs("Any of read, publish, admin"),
-			"topics": strs("Topics it may use; leave out for every topic"),
-			"grants": map[string]any{"type": "array", "description": "Per-topic rules, like [{\"topic\":\"home-*\",\"scopes\":[\"publish\"]}]; each grant's scopes must be in scopes",
-				"items": schema(map[string]any{"topic": p("string", "Topic or prefix ending in *"), "scopes": strs("Scopes on that topic")}, "topic", "scopes")}}, "name", "scopes")},
-	{"name": "revoke_token", "description": "Revoke an API token by its id from tokens. Its open streams close at once. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"id": p("string", "Token id")}, "id")},
-	{"name": "create_gotify_app", "description": "Create a Gotify app key for one topic, for senders built for Gotify (shoutrrr, Watchtower, the gotify CLI). The key is in the result once; it only publishes, only to that topic, only on POST /message. Revoke it with revoke_token and the result's token_id. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"name": p("string", "App name, the title when a message has none"), "topic": p("string", "Topic it posts to"),
-			"priority": p("integer", "Gotify priority 0 to 10 for messages that send none; leave out for clrd's default")}, "name", "topic")},
-	{"name": "create_pushover_app", "description": "Create a Pushover app key for one topic, for senders built for Pushover (Apprise, scripts). The key is in the result once, with a user value for senders that require one (clrd never checks it); the key only publishes, only to that topic, only on POST /1/messages.json. Revoke it with revoke_token and the result's token_id. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"name": p("string", "App name, the title when a message has none"), "topic": p("string", "Topic it posts to")}, "name", "topic")},
-	{"name": "ntfy_anonymous", "description": "Whether ntfy routes take requests with no credentials, and on which topics. Off unless set. Needs an admin token.",
-		"inputSchema": schema(map[string]any{})},
-	{"name": "set_ntfy_anonymous", "description": "Set the topics anyone may use with no credentials, on ntfy routes only (the native API always needs a token). Like ntfy's everyone rules, e.g. [{\"topic\":\"up*\",\"scopes\":[\"publish\"]}] for UnifiedPush. An empty list turns it off. Open anonymous streams reconnect under the new rules. Needs an admin token.",
-		"inputSchema": schema(map[string]any{"grants": map[string]any{"type": "array", "description": "Per-topic rules, first match wins; scopes are read and/or publish, empty to deny",
-			"items": schema(map[string]any{"topic": p("string", "Topic or pattern with *"), "scopes": strs("read, publish, or empty to deny")}, "topic", "scopes")}}, "grants")},
-	{"name": "server_env", "description": "Every CLRD_* environment setting in effect, defaults filled in. Read only: these change by setting the variable and restarting. Needs an admin token.",
-		"inputSchema": schema(map[string]any{})},
-	{"name": "ntfy_ignored", "description": "ntfy publish options senders used that clrd accepts but ignores (email, call and the like), with counts, so a migrated sender can be fixed. Needs an admin token.",
-		"inputSchema": schema(map[string]any{})},
 }
 
 // restTools are tools that are one REST call: {x} in the path comes from the
@@ -641,17 +592,30 @@ var restTools = map[string]struct {
 	"set_hook":            {"PUT", "/api/v1/topics/{topic}/hooks/{name}", false},
 	"delete_hook":         {"DELETE", "/api/v1/topics/{topic}/hooks/{name}", false},
 	"hook_deliveries":     {"GET", "/api/v1/topics/{topic}/hooks/{name}/deliveries", false},
+	"preview_hook":        {"POST", "/api/v1/topics/{topic}/hooks/preview", false},
+	"hook_allow":          {"GET", "/api/v1/hooks/allow", false},
+	"set_hook_allow":      {"PUT", "/api/v1/hooks/allow", false},
 	"tokens":              {"GET", "/api/v1/tokens", false},
 	"create_token":        {"POST", "/api/v1/tokens", false},
 	"revoke_token":        {"DELETE", "/api/v1/tokens/{id}", false},
+	"create_agent_invite": {"POST", "/api/v1/agents/invite", false},
+	"users":               {"GET", "/api/v1/users", false},
+	"create_user":         {"POST", "/api/v1/users", false},
+	"set_user_grants":     {"PUT", "/api/v1/users/{id}", false},
+	"delete_user":         {"DELETE", "/api/v1/users/{id}", false},
+	"set_token_user":      {"PUT", "/api/v1/tokens/{id}/user", false},
 	"create_gotify_app":   {"POST", "/api/v1/gotify/apps", false},
 	"create_pushover_app": {"POST", "/api/v1/pushover/apps", false},
 	"ntfy_anonymous":      {"GET", "/api/v1/ntfy/anonymous", false},
 	"set_ntfy_anonymous":  {"PUT", "/api/v1/ntfy/anonymous", false},
+	"ntfy_origins":        {"GET", "/api/v1/ntfy/origins", false},
+	"set_ntfy_origins":    {"PUT", "/api/v1/ntfy/origins", false},
 	"server_env":          {"GET", "/api/v1/server", false},
+	"version":             {"GET", "/api/v1/version", false},
 	"ntfy_ignored":        {"GET", "/api/v1/ntfy/ignored", false},
-}
-
-func strs(desc string) map[string]any {
-	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+	"senders":             {"GET", "/api/v1/senders", false},
+	"sender":              {"GET", "/api/v1/senders/{id}", false},
+	"set_sender":          {"PUT", "/api/v1/senders/{id}", false},
+	"sender_changes":      {"GET", "/api/v1/senders/{id}/changes", false},
+	"undo_sender_change":  {"POST", "/api/v1/senders/{id}/changes/{seq}/undo", false},
 }

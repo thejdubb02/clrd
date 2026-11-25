@@ -13,9 +13,25 @@ export interface Notification {
   state: State;
   state_by?: string;
   snooze_until?: string | null;
+  /** Who saw or actioned it. A mark never clears it. */
+  marks?: Mark[];
   created_at: string;
   updated_at: string;
   seq: number;
+}
+
+export interface Mark {
+  by: string;
+  by_id: string;
+  mark: "seen" | "actioned";
+  note?: string;
+  link?: string;
+  at: string;
+}
+
+export interface MarkOptions {
+  note?: string;
+  link?: string;
 }
 
 export interface SendOptions {
@@ -49,6 +65,8 @@ export declare class Client {
   ack(id: string): Promise<Notification>;
   dismiss(id: string): Promise<Notification>;
   snooze(id: string, duration?: string): Promise<Notification>;
+  mark(id: string, mark: "seen" | "actioned", opts?: MarkOptions): Promise<Notification>;
+  unmark(id: string): Promise<Notification>;
   get(id: string): Promise<Notification>;
   list(opts?: ListOptions): Promise<unknown>;
 }
@@ -60,5 +78,7 @@ export declare function ack(topic: string, externalId: string): Promise<Notifica
 export declare function ack(id: string): Promise<Notification>;
 export declare function dismiss(id: string): Promise<Notification>;
 export declare function snooze(id: string, duration?: string): Promise<Notification>;
+export declare function mark(id: string, mark: "seen" | "actioned", opts?: MarkOptions): Promise<Notification>;
+export declare function unmark(id: string): Promise<Notification>;
 export declare function get(id: string): Promise<Notification>;
 export declare function list(opts?: ListOptions): Promise<unknown>;

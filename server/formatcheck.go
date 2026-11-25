@@ -68,7 +68,7 @@ type formatFinding struct {
 
 type formatTopic struct {
 	Topic    string          `json:"topic"`
-	SenderID string          `json:"sender_id,omitempty"` // with by=sender: the sending token, "" when unknown
+	SenderID string          `json:"sender_id,omitempty"` // with by=sender: the sending token, unknownSender when not known
 	Sender   string          `json:"sender,omitempty"`    // its name
 	Checked  int             `json:"checked"`
 	Problems int             `json:"problems"` // messages with at least one finding
@@ -113,7 +113,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		return nil, err
 	}
 	// Off topics are left out in the query, so they never use up the 500.
-	lq := ListQuery{State: "all", Limit: 500, Skip: off}
+	lq := ListQuery{State: "all", Limit: 500, Skip: off, All: true} // a sender's format is not a view of one owner (#617)
 	if topic != "" {
 		lq.Topics = []string{topic}
 	}
@@ -124,7 +124,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 	// A sender's name, and the prompt that holds it, go only to a full admin
 	// or to the person it belongs to, as in Linked devices (#245, #406).
 	all := tok.needFullAdmin() == nil
-	own, err := topIn(r.Context(), s.db, tok.ID)
+	own, err := topsIn(r.Context(), s.db, tok.ID) // every top token of tok's user (#143)
 	if err != nil {
 		return nil, err
 	}
@@ -134,13 +134,14 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 	for _, n := range ns {
 		key := [2]string{n.Topic}
 		if bySender {
-			key[1] = n.sender
+			key[1] = formatSender(n.sender)
 		}
 		t := groups[key]
 		if t == nil {
 			t = &formatTopic{Topic: n.Topic, SenderID: key[1], Findings: make([]formatFinding, len(formatRules))}
-			t.hide = t.SenderID != "" && !all && t.SenderID != own
-			if t.SenderID != "" && !t.hide {
+			known := t.SenderID != "" && t.SenderID != unknownSender
+			t.hide = known && !all && !own[t.SenderID]
+			if known && !t.hide {
 				if _, ok := names[t.SenderID]; !ok {
 					var name string
 					if err := s.db.QueryRowContext(r.Context(), `SELECT name FROM tokens WHERE id = ?`, t.SenderID).Scan(&name); err != nil && err != sql.ErrNoRows {
@@ -155,7 +156,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		t.Checked++
 		bad := false
 		for i, rule := range formatRules {
-			if ignored[formatIgnore{n.Topic, rule.id, ""}] || ignored[formatIgnore{n.Topic, rule.id, n.sender}] {
+			if ignored[formatIgnore{n.Topic, rule.id, ""}] || ignored[formatIgnore{n.Topic, rule.id, formatSender(n.sender)}] {
 				continue
 			}
 			if f := &t.Findings[i]; rule.hit(n) {
@@ -194,8 +195,19 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 	return map[string]any{"checked": checked, "problems": problems, "topics": topics, "off": off, "dismissed": dismissed}, nil
 }
 
+// unknownSender is the by=sender group, and the dismiss key, for messages
+// with no known sending token, since "" already means every sender (#391).
+const unknownSender = "unknown"
+
+func formatSender(id string) string {
+	if id == "" {
+		return unknownSender
+	}
+	return id
+}
+
 // SetFormatIgnore dismisses a rule's findings in topic (for one sending
-// token, or every one when senderID is ""), or with rule "" turns the
+// token, unknownSender, or every one when senderID is ""), or with rule "" turns the
 // check off for the topic; on false undoes it. Off by default (#320).
 func (s *Server) SetFormatIgnore(ctx context.Context, tok *Token, topic, rule, senderID string, on bool) error {
 	if err := validTopic(topic); err != nil {

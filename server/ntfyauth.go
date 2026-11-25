@@ -88,10 +88,5 @@ func (s *Server) passwordUser(ctx context.Context, user, pass string) *Token {
 	if err != nil || id == "" {
 		return nil
 	}
-	t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE id = ?`, id))
-	if err != nil {
-		return nil
-	}
-	s.touch(ctx, t)
-	return t
+	return s.tokenWhere(ctx, `id = ?`, id)
 }

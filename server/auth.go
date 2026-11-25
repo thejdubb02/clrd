@@ -57,12 +57,15 @@ type Token struct {
 	Topics     []string   `json:"topics"`           // empty = every topic
 	Grants     []Grant    `json:"grants,omitempty"` // set = only these, in order
 	Approve    string     `json:"approve"`          // may it answer approval requests: allowed or denied (#187)
+	User       string     `json:"user,omitempty"`   // the person it belongs to (#143), "" for none
 	CreatedAt  time.Time  `json:"created_at"`
 	LastSeenAt *time.Time `json:"last_seen_at"`
+	view       *view      // its subscriptions filter once loaded (subs.go); nil until then
+	union      []*Token   // set: may what any of these may (an admin's ?for=<user>, subs.go)
 }
 
 // limited reports whether the token is held to some topics.
-func (t *Token) limited() bool { return len(t.Topics) > 0 || len(t.Grants) > 0 }
+func (t *Token) limited() bool { return len(t.Topics) > 0 || len(t.Grants) > 0 || len(t.union) > 0 }
 
 // may reports whether the token may use scope on topic. Topic "" asks only
 // about the scope. Every topic check goes through here.
@@ -73,11 +76,21 @@ func (t *Token) may(scope, topic string) bool {
 	if topic == "" {
 		return true
 	}
+	if len(t.union) > 0 {
+		return slices.ContainsFunc(t.union, func(u *Token) bool { return u.may(scope, topic) })
+	}
 	if len(t.Grants) > 0 {
+		// A grant matches in any case, as ntfy's rules do, so a deny on
+		// "secret" also holds for "SECRET". But topics are case-sensitive, so
+		// a match only in another case can only deny, never allow: one that
+		// would allow is skipped, so a later grant in the topic's case decides (#458).
 		lt := strings.ToLower(topic)
 		for _, g := range t.Grants {
 			if ok, _ := path.Match(strings.ToLower(g.Topic), lt); ok {
-				return slices.Contains(g.Scopes, scope)
+				has := slices.Contains(g.Scopes, scope)
+				if exact, _ := path.Match(g.Topic, topic); exact || !has {
+					return exact && has
+				}
 			}
 		}
 		return false
@@ -148,12 +161,18 @@ func checkToken(t *Token) error {
 	if len(t.Topics) > 0 || slices.Contains(t.Scopes, ScopeAdmin) {
 		return errf(400, "bad_request", "grants cannot go with topics or the admin scope")
 	}
-	for _, g := range t.Grants {
+	return checkGrants(t.Grants, t.Scopes)
+}
+
+// checkGrants: each grant names a topic pattern and only read or publish
+// scopes from held.
+func checkGrants(gs []Grant, held []string) error {
+	for _, g := range gs {
 		if !grantPattern.MatchString(g.Topic) {
 			return errf(400, "bad_request", "bad grant topic %q", g.Topic)
 		}
 		for _, sc := range g.Scopes {
-			if (sc != ScopePublish && sc != ScopeRead) || !slices.Contains(t.Scopes, sc) {
+			if (sc != ScopePublish && sc != ScopeRead) || !slices.Contains(held, sc) {
 				return errf(400, "bad_request", "grant scope %q must be read or publish and held by the token", sc)
 			}
 		}
@@ -177,8 +196,11 @@ func insertToken(ctx context.Context, db execer, t *Token, hash string) error {
 		b, _ := json.Marshal(t.Grants)
 		grants = string(b)
 	}
-	_, err := db.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, grants, created_at, approve) VALUES (?,?,?,?,?,?,?,?)`,
-		t.ID, t.Name, hash, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), grants, ms(t.CreatedAt), t.Approve)
+	_, err := db.ExecContext(ctx, `INSERT INTO tokens (id, name, hash, scopes, topics, grants, created_at, approve, user_id) VALUES (?,?,?,?,?,?,?,?,NULLIF(?, ''))`,
+		t.ID, t.Name, hash, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), grants, ms(t.CreatedAt), t.Approve, t.User)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") { // user_id is the only foreign key
+		return errf(400, "bad_request", "no user %q", t.User)
+	}
 	return err
 }
 
@@ -229,14 +251,14 @@ func (s *Server) createToken(ctx context.Context, t *Token) (*Token, string, err
 	return t, raw, nil
 }
 
-const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve`
+const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve, COALESCE(user_id, '')`
 
 func scanToken(r scanner) (*Token, error) {
 	var t Token
 	var scopes, topics, grants string
 	var created int64
 	var seen sql.NullInt64
-	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve); err != nil {
+	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve, &t.User); err != nil {
 		return nil, err
 	}
 	if grants != "" {
@@ -294,36 +316,43 @@ func (s *Server) listTokens(ctx context.Context, q string, args ...any) ([]*Toke
 
 // DeleteToken revokes a token and every web session signed in with it.
 func (s *Server) DeleteToken(ctx context.Context, id string) error {
-	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE k(id) AS
-	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  DELETE FROM tokens WHERE id IN k RETURNING id`, id)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	n := 0
-	for ; rows.Next(); n++ {
-		var gone string
-		if err := rows.Scan(&gone); err != nil {
-			return err
+	var gone []string
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		// A revoked sender never speaks again: its quiet alarm ends now, before
+		// the cascade drops its row (#558). Sessions are never senders.
+		evs, err := endQuiet(ctx, tx, id)
+		if err != nil {
+			return nil, err
 		}
-		s.revoked.Store(gone, true) // streams check this before every send
-		s.hub.drop(gone)            // and wake on this, so an idle stream closes now
+		if gone, err = dropTokens(ctx, tx, `SELECT ?`, id); err != nil {
+			return nil, err
+		}
+		if len(gone) == 0 {
+			return nil, errf(404, "not_found", "token not found")
+		}
+		return evs, nil
+	})
+	if err == nil {
+		s.revokeAll(gone)
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if n == 0 {
-		return errf(404, "not_found", "token not found")
-	}
-	return nil
+	return err
 }
 
 func (s *Server) lookupToken(ctx context.Context, raw string) *Token {
 	if !isToken(raw) {
 		return nil
 	}
-	t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE hash = ?`, hashToken(raw)))
+	return s.tokenWhere(ctx, `hash = ?`, hashToken(raw))
+}
+
+// tokenWhere loads the token matching where with its user's access, marks
+// it seen, and is nil when there is none or its user cannot be read. Every
+// credential lookup goes through here, so access always follows the user.
+func (s *Server) tokenWhere(ctx context.Context, where string, args ...any) *Token {
+	t, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE `+where, args...))
+	if err == nil {
+		err = s.withUser(ctx, t)
+	}
 	if err != nil {
 		return nil
 	}
@@ -401,16 +430,30 @@ func (s *Server) auth(r *http.Request, cookie bool) *Token {
 
 // sameOrigin: SameSite=Lax already blocks cross-site cookie POSTs; this also
 // stops sibling subdomains. A missing Origin header (old browsers) passes.
+// The page's scheme and host must match CLRD_BASE_URL (a proxy may rewrite
+// Host or drop the port) or this request's own (#430).
 func (s *Server) sameOrigin(r *http.Request) bool {
 	o := r.Header.Get("Origin")
 	if o == "" {
 		return true
 	}
 	u, err := url.Parse(o)
-	if err != nil || u.Host != r.Host {
+	if err != nil || u.Scheme != "https" && u.Scheme != "http" {
 		return false
 	}
-	return u.Scheme == "https" || !s.https(r) // a plain-http page cannot act on an https site
+	// A browser leaves out the default port, which CLRD_BASE_URL may spell out.
+	if b, err := url.Parse(s.opt.BaseURL); s.baseSet && err == nil && u.Scheme == b.Scheme &&
+		u.Host == strings.TrimSuffix(b.Host, map[string]string{"https": ":443", "http": ":80"}[b.Scheme]) {
+		return true
+	}
+	if u.Host != r.Host {
+		return false
+	}
+	if p := s.reqScheme(r); p != "" {
+		return u.Scheme == p
+	}
+	// Scheme unknown: a TLS proxy may hide https, but a plain-http page cannot act on an https site.
+	return u.Scheme == "https" || !s.https(r)
 }
 
 func (s *Server) https(r *http.Request) bool {
@@ -497,7 +540,16 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *To
 // phone marks a phone linked from a browser, capped apart from browsers.
 // Pass a context that is not cancelled mid-way: never leave a half-made token.
 func (s *Server) childToken(ctx context.Context, access *Token, parentID, name string, phone bool) (*Token, string, error) {
-	st, raw, err := s.createToken(ctx, &Token{Name: name, Scopes: access.Scopes, Topics: access.Topics, Grants: access.Grants})
+	// Its own access as stored, not as its user widens or narrows it: the
+	// child follows the user at every request anyway (#143).
+	own, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE id = ?`, access.ID))
+	if errors.Is(err, sql.ErrNoRows) {
+		err = errf(401, "unauthorized", "token revoked")
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	st, raw, err := s.createToken(ctx, &Token{Name: name, Scopes: own.Scopes, Topics: own.Topics, Grants: own.Grants})
 	if err != nil {
 		return nil, "", err
 	}

@@ -26,14 +26,6 @@ import (
 
 const ntfyMaxBody = 4096
 
-type ntfyAction struct {
-	ID     string `json:"id"`
-	Action string `json:"action"`
-	Label  string `json:"label"`
-	URL    string `json:"url"`
-	Clear  bool   `json:"clear"`
-}
-
 type ntfyMsg struct {
 	ID         string       `json:"id"`
 	Time       int64        `json:"time"`
@@ -64,13 +56,21 @@ type ntfyAttach struct {
 // 12 chars like ntfy's own), so since=<id> works.
 func ntfyID(seq int64) string { return fmt.Sprintf("s%011d", seq) }
 
+// ntfyMsgID is n's ntfy id as of seq: a live message keeps its own (live.go).
+func ntfyMsgID(n *Notification, seq int64) string {
+	if n.Live {
+		return n.ID
+	}
+	return ntfyID(seq)
+}
+
 // ntfyMessage renders a notification as of event seq. The ntfy event comes
 // from the state: active shows, acknowledged/snoozed clear, dismissed/resolved delete.
 // With sched (ntfy's ?scheduled=1, and the reply to a delayed publish), a
 // notification snoozed until later shows as a message at that time, as ntfy
 // lists a delayed message.
 func (s *Server) ntfyMessage(n *Notification, seq int64, sched bool) ntfyMsg {
-	m := ntfyMsg{ID: ntfyID(seq), Time: n.UpdatedAt.Unix(), Event: "message", Topic: n.Topic, SequenceID: n.ExternalID}
+	m := ntfyMsg{ID: ntfyMsgID(n, seq), Time: n.UpdatedAt.Unix(), Event: "message", Topic: n.Topic, SequenceID: n.ExternalID}
 	if m.SequenceID == "" {
 		m.SequenceID = n.ID
 	}
@@ -102,8 +102,9 @@ func (s *Server) ntfyMessage(n *Notification, seq int64, sched bool) ntfyMsg {
 		}
 	}
 	for i, a := range n.Actions {
-		if a.URL != "" { // ntfy has no reply button; an http action would need our token
-			m.Actions = append(m.Actions, ntfyAction{ID: strconv.Itoa(i), Action: "view", Label: a.Label, URL: a.URL})
+		if na, ok := ntfyActionOut(a); ok { // ntfy has no reply button
+			na.ID = strconv.Itoa(i)
+			m.Actions = append(m.Actions, na)
 		}
 	}
 	return m
@@ -115,12 +116,14 @@ func ntfyEvent(event, topic string) ntfyMsg {
 }
 
 func (s *Server) ntfyRoutes() {
-	// ntfy answers any origin, so web pages elsewhere can publish and
-	// subscribe with a token. No cookies are read on these routes, so this
-	// grants nothing a token holder could not already do.
+	// ntfy answers any origin; clrd answers only the sites an admin allowed
+	// (ntfyorigins.go), so a page elsewhere cannot use anonymous access or
+	// a server reachable only from its visitor's network.
 	route := func(pattern string, h func(http.ResponseWriter, *http.Request) error) {
 		s.route(pattern, func(w http.ResponseWriter, r *http.Request) error {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			if err := s.ntfyCORS(w, r); err != nil {
+				return err
+			}
 			if _, _, ok := ntfyPassword(r); ok { // taken before bcrypt, kept only if the password was wrong
 				ip := clientIP(r, s.opt.TrustedProxies)
 				if wait := s.pwLimit.take(ip, time.Now()); wait > 0 {
@@ -232,38 +235,6 @@ func ntfyPriority(v string) (int, error) {
 	return 0, errf(400, "bad_request", "invalid priority %q", v)
 }
 
-// ntfyActions keeps view actions from ntfy's short form
-// ("view, Open, https://x; http, ...") or its JSON array form.
-// http and broadcast actions are dropped (not supported yet).
-func ntfyActions(v string) ([]Action, error) {
-	var out []Action
-	if v = strings.TrimSpace(v); v == "" {
-		return nil, nil
-	}
-	if strings.HasPrefix(v, "[") {
-		var as []ntfyAction
-		if err := json.Unmarshal([]byte(v), &as); err != nil {
-			return nil, errf(400, "bad_request", "invalid actions: %v", err)
-		}
-		for _, a := range as {
-			if a.Action == "view" {
-				out = append(out, Action{Label: a.Label, URL: a.URL})
-			}
-		}
-		return out, nil
-	}
-	for _, part := range strings.Split(v, ";") {
-		f := strings.Split(part, ",")
-		for i := range f {
-			f[i] = strings.TrimSpace(f[i])
-		}
-		if len(f) >= 3 && f[0] == "view" {
-			out = append(out, Action{Label: f[1], URL: f[2]})
-		}
-	}
-	return out, nil
-}
-
 // ntfyDelay reads a unix time or a duration (30m, 2h, 1d), at most 3 days
 // ahead like ntfy's default limit.
 func ntfyDelay(v string) (*time.Time, error) {
@@ -285,7 +256,7 @@ func ntfyDelay(v string) (*time.Time, error) {
 	return nil, errf(400, "bad_request", "invalid delay %q: use a unix time or a duration like 30m", v)
 }
 
-var errNoCache = errf(400, "bad_request", "Cache: no is not supported: clrd stores every notification so it can sync")
+var errNoCache = errf(400, "bad_request", "Cache: no is not supported with a webhook template")
 
 func parseDuration(v string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(v, "d"); ok {
@@ -304,11 +275,9 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == http.MethodHead { // GET routes also match HEAD; a probe must not publish
 		return errf(405, "bad_request", "use GET, PUT or POST to publish")
 	}
-	if strings.EqualFold(param(r, "Cache"), "no") { // ntfy drops these after delivery; clrd keeps every notification
-		return errNoCache
-	}
 	tok := s.ntfyAuth(r)
 	s.noteIgnored(r)
+	live := strings.EqualFold(param(r, "Cache"), "no") // sent to open streams, stored nowhere (live.go)
 	file := ntfyFilename(r)
 	if r.Method == http.MethodGet {
 		file = "" // GET /{topic}/publish has no body to be the file
@@ -317,9 +286,12 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	yes := inline != nil && *inline
 	tpl := yes && file == "" && r.Method != http.MethodGet
 	if t := r.URL.Query().Get("template"); t != "" && !yes && r.Method != http.MethodGet {
+		if live {
+			return errNoCache
+		}
 		return s.webhookIn(w, r, tok, t) // webhooks.go
 	}
-	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid")}
+	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid"), Live: live, dropDevice: true}
 	if in.ExternalID == "" {
 		in.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
 	}
@@ -463,11 +435,9 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	s.noteIgnored(r, unknown...)
-	if strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no") {
-		return errNoCache
-	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
-		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown}
+		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown,
+		Live: strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no"), dropDevice: true}
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
 	p.Icon = ntfyIcon(icon)
@@ -482,8 +452,8 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	for _, a := range in.Actions {
-		if a.Action == "view" {
-			p.Actions = append(p.Actions, Action{Label: a.Label, URL: a.URL})
+		if pa, ok := a.action(); ok {
+			p.Actions = append(p.Actions, pa)
 		}
 	}
 	if p.SnoozeUntil, err = ntfyDelay(in.Delay); err != nil {
@@ -644,7 +614,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		var write func(m ntfyMsg) error
 		ctx := r.Context()
 		if format == "ws" {
-			// Any origin, like the other ntfy routes: auth here is a token, never a cookie.
+			// The origin was checked by ntfyCORS, as on every ntfy route.
 			c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 			if err != nil {
 				return nil
@@ -682,47 +652,45 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			}
 		}
 		joined := strings.Join(topics, ",")
-		if !poll {
-			if err := write(ntfyEvent("open", joined)); err != nil {
-				return nil
-			}
+		// Only the replay lists delayed messages; live ones come when they
+		// fire. The replay ends here, before "open": an event after this was
+		// published once the client could see the stream was open, so it is live.
+		// A poll has no live part: it lists all it returns.
+		replayEnd := s.CurrentSeq()
+		opened := func() error { return write(ntfyEvent("open", joined)) }
+		if poll {
+			opened = nil
 		}
 		// ntfy has no reset: since= means all that is left after it, so a
-		// prune (before or during replay) restarts from the oldest event left.
-		for tries := 0; ; tries++ {
-			err := s.follow(ctx, tok, since, topics, func(raw []byte, seq int64) error {
-				if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
-					f.sched = false // only the replay lists delayed messages; live ones come when they fire
-					if poll {
-						return errStop
-					}
-					return nil
+		// prune (before or during replay) restarts from the oldest event left,
+		// up to 3 times, then goes on from now.
+		resets := 0
+		s.follow(ctx, tok, since, topics, opened, func(raw []byte, seq int64) error {
+			if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
+				if poll {
+					return errStop
 				}
-				if seq < 0 {
-					if tries < 3 {
-						return errPruned
-					}
-					return nil
-				}
-				since = seq
-				var e Event
-				if err := json.Unmarshal(raw, &e); err != nil {
-					return err
-				}
-				if !f.pass(e.Notification, ntfyID(seq)) {
-					return nil
-				}
-				return write(s.ntfyMessage(e.Notification, seq, f.sched))
-			}, func() error { return write(ntfyEvent("keepalive", joined)) })
-			if err != errPruned {
 				return nil
 			}
-			var oldest int64
-			if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(seq) - 1, ?) FROM events`, s.CurrentSeq()).Scan(&oldest); err != nil {
+			if seq < 0 {
+				if resets++; resets <= 3 {
+					return errPruned
+				}
 				return nil
 			}
-			since = max(since, oldest)
-		}
+			var e Event
+			if err := json.Unmarshal(raw, &e); err != nil {
+				return err
+			}
+			if e.Type == EventMark { // ntfy has no marks; sending it again would alert again
+				return nil
+			}
+			if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
+				return nil
+			}
+			return write(s.ntfyMessage(e.Notification, seq, f.sched && (poll || seq <= replayEnd)))
+		}, func() error { return write(ntfyEvent("keepalive", joined)) })
+		return nil
 	}
 }
 
@@ -806,11 +774,11 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		return 0, nil
 	case "latest":
 		var seq *int64
-		args := make([]any, len(topics))
-		for i, t := range topics {
-			args[i] = t
+		args := []any{EventMark} // the stream skips marks, so the latest message is never one
+		for _, t := range topics {
+			args = append(args, t)
 		}
-		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
+		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE type != ? AND topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
 		if err != nil || seq == nil {
 			return cur, err
 		}
@@ -831,6 +799,9 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		var seq int64
 		if s.db.QueryRowContext(ctx, `SELECT seq FROM ntfy_mids WHERE mid = ?`, v).Scan(&seq) == nil {
 			return min(seq, cur), nil
+		}
+		if n, ok := liveSeq(v); ok { // after the imported ids, which can start with l too
+			return min(n, cur), nil
 		}
 		return 0, nil
 	}

@@ -1,0 +1,63 @@
+[package]
+name = "clrd-core"
+description = "clrd desktop core: sync client, with no window or GUI code"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Every crate here is in the binary, so each one says why it is not std (#298).
+[dependencies]
+# JSON on the wire and in the state file. std has no JSON.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# WebSocket client, blocking, no async runtime. TLS comes from the OS
+# (OpenSSL on Linux, SChannel on Windows), so no TLS stack is compiled in.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake", "native-tls"] }
+# Blocking HTTP client for the few REST calls, on the same OS TLS.
+ureq = { version = "3", default-features = false, features = ["native-tls", "json"] }
+# Already in the tree (tungstenite logs through it); named here only to
+# compile trace logging out of the whole app. tungstenite traces the raw
+# handshake, Authorization header included, so with trace on the token could
+# reach a log file.
+log = { version = "0.4", features = ["max_level_debug"] }
+# The OS random source, for the secret that claims a link code. std has no
+# public one. Already in the tree (the WebSocket key comes from it).
+getrandom = "0.4"
+# Checks the signature on an update before it is run. Verify only, pure Rust,
+# no dependencies of its own. A signature check is never written by hand.
+minisign-verify = "0.2"
+# The update's key and signature arrive as base64. Already in the tree (the
+# HTTP client uses it), so naming it adds no code.
+base64 = "0.23"
+
+[target.'cfg(windows)'.dependencies]
+# Credential Manager, where the token is kept, the named pipe that keeps
+# it to one running app, and the registry read for the update policy. Bindings only, no code of its own, and already in
+# the tree for the OS TLS.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Credentials",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# Toast notifications. They are a WinRT API, which windows-sys does not
+# cover. Already in the tree (the window and tray use it); these features
+# add the bindings for toasts and their XML, and no code of its own.
+windows = { version = "0.62", features = ["Data_Xml_Dom", "Foundation", "UI_Notifications"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# D-Bus, for desktop notifications (org.freedesktop.Notifications). Pure Rust,
+# so no libdbus to install or ship. Only the client half is compiled in.
+zbus = { version = "6", default-features = false, features = ["default-rt"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# The service half, for the fake notification service in the tests.
+zbus = { version = "6", default-features = false, features = ["default-rt", "service"] }

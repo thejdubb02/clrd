@@ -2,7 +2,11 @@
 # docker compose logs clrd. Put a TLS proxy in front for phones.
 services:
   clrd:
-    build: .
+    build:
+      context: .
+      args: # optional, shown at /api/v1/version; see docs/self-host.md
+        CLRD_COMMIT: ${CLRD_COMMIT:-}
+        CLRD_DATE: ${CLRD_DATE:-}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"

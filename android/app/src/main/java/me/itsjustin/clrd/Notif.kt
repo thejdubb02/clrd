@@ -29,7 +29,23 @@ data class Notif(
     @ColumnInfo(defaultValue = "") val attachment: String = "", // raw JSON object, "" if none
     @ColumnInfo(defaultValue = "markdown") val format: String = "markdown", // or "text": shown exactly as sent
     @ColumnInfo(defaultValue = "0") val silenced: Boolean = false, // a server silence matched this event: show, never alert (#328)
+    @ColumnInfo(defaultValue = "") val marks: String = "", // raw JSON array of {by, mark, note, link}, "" if none
+    @ColumnInfo(defaultValue = "") val replyText: String = "", // what was typed for a text action (#153), shown as plain text
 ) {
+    /** Who saw or actioned it, for the card: "stew actioned: filed relay#512". */
+    val markLines: List<String> get() = runCatching {
+        val a = JSONArray(marks)
+        (0 until a.length()).map { a.getJSONObject(it) }.map { m ->
+            "${m.optString("by")} ${m.optString("mark")}" + (m.optString("note").takeIf { it.isNotEmpty() }?.let { ": $it" } ?: "")
+        }
+    }.getOrDefault(emptyList())
+
+    /** The mark from [byId] (this phone's, from `ready`), or null. Never guessed: no id, no mark (#451). */
+    fun markBy(byId: String): JSONObject? = if (byId.isEmpty()) null else runCatching {
+        val a = JSONArray(marks)
+        (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.optString("by_id") == byId }
+    }.getOrNull()
+
     val isFinal get() = state == DISMISSED || state == RESOLVED
 
     /** The one file this notification carries, or null (docs/SPEC.md section 2, "Attachments"). */
@@ -66,10 +82,12 @@ data class Notif(
             updatedAt = o.str("updated_at")?.let(::millis) ?: 0,
             seq = o.optLong("seq"),
             reply = o.str("reply") ?: "",
+            replyText = o.str("reply_text") ?: "",
             icon = o.str("icon") ?: "", // events logged before the server had icons leave it out
             attachment = o.optJSONObject("attachment")?.toString() ?: "",
             format = o.str("format") ?: "markdown", // events logged before formats existed are Markdown
             silenced = o.optBoolean("silenced"), // missing on events logged before silences: not silenced
+            marks = o.optJSONArray("marks")?.takeIf { it.length() > 0 }?.toString() ?: "",
         )
 
         private fun millis(s: String) = OffsetDateTime.parse(s).toInstant().toEpochMilli()
@@ -104,8 +122,18 @@ data class Pending(
     val notifId: String,
     val action: String, // ack | snooze | dismiss | reopen | reply
     val body: String = "{}",
+    /** Its outcome message has shown, so a retry, even after a restart, does not show it again (#383). */
+    @ColumnInfo(defaultValue = "0") val told: Boolean = false,
 )
 
 /** One-row table: the highest event seq applied. Kept in the same database so it commits with the rows it covers. */
 @Entity(tableName = "meta")
 data class Meta(@PrimaryKey val k: String, val v: Long)
+
+/**
+ * Per notification, the seq of the row the server sent back after this phone's own state change (Clear, Undo, Ack,
+ * Snooze, reply). A repeat older than that was sent before the change and never rings it again (#550). In Room, so a
+ * restart between the answer and a late repeat keeps it (#561); dropped with its notification.
+ */
+@Entity(tableName = "answer")
+data class Answer(@PrimaryKey val id: String, val seq: Long)

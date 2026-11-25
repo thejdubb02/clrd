@@ -17,7 +17,8 @@ Claude Code asks two questions: your server URL and a token. That is all.
 
 - **Server URL**: for example `https://clrd.example.com`. It must be https,
   unless the server is on the same machine (`http://localhost`,
-  `http://127.0.0.1` or `http://[::1]`).
+  `http://127.0.0.1` or `http://[::1]`). With any other http URL the plugin
+  sends nothing: `/mcp` shows "server URL must be https".
 - **Token**: make one for this agent, never reuse your phone's. It needs
   `read` and `publish`:
 
@@ -37,7 +38,7 @@ with `/plugin configure clrd@clrd`.
 
 | When | What you get |
 |---|---|
-| Claude finishes a task | "Claude finished: *project*" |
+| Claude finishes a task | "Claude finished: *project*" with Claude's last message |
 | Claude waits for your input | "Claude is waiting: *project*", priority 4 |
 | Claude asks permission to run a tool | "Allow Bash? (*project*)" with Allow and Deny buttons |
 | Always | The clrd MCP server, so Claude can send, list, clear and `wait_for_reply` |
@@ -52,6 +53,9 @@ Answer either one.
 
 - **Allow** on the phone runs the tool. **Deny** stops it and tells Claude it
   was denied from clrd.
+- A file edit shows the path and the change itself (removed lines with `-`,
+  added lines with `+`), and a new file shows its text, so you see what Allow
+  writes. Too long to show on a phone, it stays on screen only.
 - No answer in about 9.5 minutes: Claude Code stops waiting for the phone and
   the prompt stays on screen. Nothing is ever allowed without a tap.
 - clrd down, bad token or URL: the hook gives up and you get the normal
@@ -64,13 +68,10 @@ Answer either one.
 
 ## Limits
 
-- Answering on screen does not clear the phone's prompt right away: it goes
-  away when the hook stops waiting, about 9.5 minutes later. Tapping it late
-  does nothing.
-- The finished ping does not carry Claude's last message, only the project.
-- The https rule is checked by the plugin's hooks. The MCP connection uses the
-  URL as you typed it, so type an https one.
-- The hooks need `bash` and `curl`. On Windows that means Git Bash or WSL;
+- Answering on screen clears the phone's prompt: on Allow once the tool runs,
+  on Deny at once. If the same session runs the same tool while a prompt is
+  waiting, the phone's prompt can clear early; the prompt on screen stays.
+- The hooks and the MCP connection need `bash` and `curl`. On Windows that means Git Bash or WSL;
   only Linux has been tested.
 
 ## Without the plugin

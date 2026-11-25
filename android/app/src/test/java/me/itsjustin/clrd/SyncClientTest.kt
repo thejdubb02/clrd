@@ -56,6 +56,9 @@ class SyncClientTest {
                         val n = wsSince.size
                         wsResponse() ?: MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) { serverSockets += webSocket; onConnect(n, webSocket) }
+                            // Answer the client's close as a real server does. A socket still opening when
+                            // tearDown runs is not in serverSockets, and unanswered it held shutdown for 5 s (#421).
+                            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
                         })
                     }
                     path.startsWith("/api/v1/notifications?state=open") -> {
@@ -81,6 +84,7 @@ class SyncClientTest {
                         else if (path.contains("stale")) MockResponse().setResponseCode(409).setBody("""{"error":"changed"}""")
                         else if (path.contains("gone")) MockResponse().setResponseCode(404).setBody("""{"error":"not found"}""")
                         else if (path.contains("denied")) MockResponse().setResponseCode(403).setBody("""{"error":"no","code":"approve_denied"}""")
+                        else if (path.contains("badtext")) MockResponse().setResponseCode(400).setBody("""{"error":"text over 1000 characters","code":"bad_request"}""")
                         else if (path.contains("asked")) MockResponse().setResponseCode(202).setBody(notifJson("prompt", "active", 7))
                         else MockResponse().setBody(answer(path))
                     }
@@ -151,6 +155,22 @@ class SyncClientTest {
         assertEquals(9L, store.lastSeq())
     }
 
+    @Test fun onlyLiveEventsMayMoveACard() { // #598: a replay is a catch-up, it never animates
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send(ev(1, "old", "active"))
+                ws.send("""{"type":"ready","seq":1}""")
+                ws.send(ev(2, "new", "active"))
+                ws.send(ev(3, "new", "dismissed"))
+                ws.send(ev(4, "new", "active").replace("\"created\"", "\"repeat\""))
+                ws.send(ev(5, "z", "active").replace("\"created\"", "\"state\"").replace("\"seq\":5,", "\"seq\":5,\"via\":\"snooze_end\","))
+            }
+        }
+        start()
+        await { store.lastSeq() == 5L }
+        assertEquals(listOf("new:true", "new:false", "new:true", "z:true"), store.lives.toList())
+    }
+
     @Test fun aRepeatEventAlertsAgain() {
         onConnect = { _, ws ->
             ws.send("""{"type":"ready","seq":0}""")
@@ -160,6 +180,60 @@ class SyncClientTest {
         start()
         await { store.rows["r"]?.seq == 5L }
         assertEquals(listOf(false, true), store.again.toList()) // only the repeat rings while it is showing
+    }
+
+    @Test fun readyTellsThePhoneWhichMarksAreItsOwn() { // #451: never guessed, and an older server sends none
+        onConnect = { n, ws -> ws.send(if (n == 1) """{"type":"ready","seq":1,"mark_id":"u1"}""" else """{"type":"ready","seq":1}""") }
+        start()
+        await { store.markIds.isNotEmpty() }
+        assertEquals(listOf("u1"), store.markIds.toList())
+        val n = Notif.fromJson(org.json.JSONObject(notifJson("m", "active", 1)).put("marks", org.json.JSONArray(
+            """[{"by":"stew","by_id":"t9","mark":"seen"},{"by":"justin","by_id":"u1","mark":"actioned","note":"done"}]""")))
+        assertEquals("done", n.markBy("u1")!!.optString("note"))
+        assertEquals(null, n.markBy("u2"))
+        assertEquals(null, n.markBy("")) // no id from the server: no own mark, so no Remove
+    }
+
+    @Test fun aMarkUpdatesTheCardQuietly() { // card marks: someone else saw or actioned it, nothing rings
+        val mark = """"marks":[{"by":"stew","mark":"actioned","note":"filed relay#512"}],"seq":6}"""
+        onConnect = { _, ws ->
+            ws.send(ev(5, "z", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":5}}", "$mark}")) // only a mark in the replay
+            ws.send("""{"type":"ready","seq":6}""")
+            ws.send(ev(7, "y", "active"))
+            ws.send(ev(8, "y", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":8}}", mark.replace(":6", ":8") + "}"))
+        }
+        start()
+        await { store.lastSeq() == 8L } // set after the row, so the row is there too
+        assertEquals(listOf("stew actioned: filed relay#512"), store.rows["z"]!!.markLines)
+        assertEquals(listOf("stew actioned: filed relay#512"), store.rows["y"]!!.markLines)
+        assertEquals(listOf(true, false, false, true), store.quiet.toList()) // mark z, the empty replay save, y created, mark y
+        assertEquals(8L, store.lastSeq())
+    }
+
+    @Test fun aReplayedMarkKeepsTheAlertsSilence() { // the mark event has no silenced field, the created one does
+        val mark = """"marks":[{"by":"stew","mark":"seen"}],"seq":6}"""
+        onConnect = { _, ws ->
+            ws.send(ev(5, "x", "active").replace("\"seq\":5}}", "\"silenced\":true,\"seq\":5}}"))
+            ws.send(ev(6, "x", "active").replace("\"created\"", "\"mark\"").replace("\"seq\":6}}", "$mark}"))
+            ws.send("""{"type":"ready","seq":6}""")
+        }
+        start()
+        await { store.lastSeq() == 6L }
+        assertTrue(store.rows["x"]!!.silenced)
+        assertEquals(listOf("stew seen"), store.rows["x"]!!.markLines)
+    }
+
+    @Test fun aReplayedMarkIsDroppedOnANewEpoch() {
+        store.epoch = "old"
+        open = { """{"notifications":[${notifJson("fresh", "active", 2)}],"seq":3,"epoch":"new"}""" }
+        onConnect = { n, ws ->
+            if (n == 1) ws.send(ev(91, "other", "active").replace("\"created\"", "\"mark\""))
+            ws.send("""{"type":"ready","seq":${if (n == 1) 91 else 3},"epoch":"new"}""")
+        }
+        start()
+        await { wsSince.size >= 2 }
+        assertEquals(setOf("fresh"), store.rows.keys)
+        assertTrue(store.applies.none { c -> c.any { it.id == "other" } }) // the other database's mark is never saved, not even briefly
     }
 
     @Test fun reconnectAsksForEventsSinceLastSeq() {
@@ -193,6 +267,16 @@ class SyncClientTest {
         assertEquals("50", wsSince[1]) // seq from the first page, read by the server before its query
     }
 
+    /** #588: a list row silenced for this device stays silenced after a reset, so the tray shows it without an alert. */
+    @Test fun aResetKeepsTheListsSilence() {
+        open = { """{"notifications":[${notifJson("q", "active", 4).replace("\"seq\":4", "\"silenced\":true,\"seq\":4")},${notifJson("loud", "active", 5)}],"seq":5}""" }
+        onConnect = { n, ws -> if (n == 1) ws.send("""{"type":"reset"}""") else ws.send("""{"type":"ready","seq":5}""") }
+        start()
+        await { wsSince.size >= 2 }
+        assertTrue(store.rows["q"]!!.silenced)
+        assertTrue(!store.rows["loud"]!!.silenced)
+    }
+
     @Test fun aNewEpochIsHandledLikeAReset() {
         store.epoch = "old"
         store.apply(listOf(notif("stale", "active", 90)), 90) // a cursor from the old database
@@ -221,10 +305,12 @@ class SyncClientTest {
     @Test fun queuedActionsGoOutInOrderOnConnectAndA404IsDropped() {
         store.queue += Pending(1, "a", "dismiss")
         store.queue += Pending(2, "gone", "ack")
+        answer = { if (it.endsWith("/a/dismiss")) notifJson("a", "dismissed", 5) else "{}" }
         onConnect = { _, ws -> ws.send("""{"type":"ready","seq":0}""") }
         start()
         await { store.queue.isEmpty() && SyncClient.Status.CONNECTED in statuses }
         assertEquals(listOf("/api/v1/notifications/a/dismiss", "/api/v1/notifications/gone/ack"), posts)
+        assertEquals(listOf("a"), store.applies.zip(store.answers).filter { it.second }.flatMap { p -> p.first.map { it.id } }) // the taken Clear (#550)
     }
 
     @Test fun aRefusedActionTakesTheServersRow() {
@@ -248,6 +334,18 @@ class SyncClientTest {
         assertEquals(listOf("approve_denied"), store.outcomes)
         assertEquals("active", store.rows["denied"]!!.state)
         assertEquals(listOf(true), store.quiet)
+        assertEquals(listOf(false), store.answers) // refused: the row is not this phone's change (#550)
+    }
+
+    @Test fun aRefusedTypedAnswerSaysWhyQuietly() { // #153: a 400 is about the text, so it says so and never rings
+        store.rows["badtext"] = notif("badtext", "acknowledged", 4)
+        store.queue += Pending(1, "badtext", "reply", """{"reply":"other","text":"x","seq":4}""")
+        current = { notifJson(it, "active", 4) }
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(emptyList<Pending>(), store.queue)
+        assertEquals(listOf("bad_request"), store.outcomes)
+        assertEquals("active", store.rows["badtext"]!!.state)
+        assertEquals(listOf(true), store.quiet)
     }
 
     @Test fun aRefusedTapRetriedAfterAFailedRefetchSaysWhyOnce() { // #345
@@ -261,6 +359,15 @@ class SyncClientTest {
         flushPending(store, api)
         assertEquals(emptyList<Pending>(), store.queue)
         assertEquals(listOf("approve_denied"), store.outcomes)
+    }
+
+    @Test fun aTapAlreadyToldBeforeARestartStaysQuiet() { // #383: the flag comes from the saved row, not this process
+        store.rows["denied"] = notif("denied", "acknowledged", 4)
+        store.queue += Pending(1, "denied", "reply", """{"reply":"yes","seq":4}""", told = true)
+        current = { notifJson(it, "active", 4) }
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(emptyList<Pending>(), store.queue)
+        assertEquals(emptyList<String>(), store.outcomes)
     }
 
     @Test fun aDevicesMessageTellsTheApp() { // #345: Settings reloads the device list when one connects or drops
@@ -280,6 +387,7 @@ class SyncClientTest {
         assertEquals(listOf("confirm"), store.outcomes)
         assertEquals("active", store.rows["asked"]!!.state)
         assertEquals("active", store.rows["prompt"]!!.state)
+        assertEquals(listOf(false, false), store.answers) // the question did not change, so a repeat behind it may still ring (#550)
         assertEquals(listOf("/api/v1/notifications/asked"), gets)
     }
 
@@ -408,6 +516,15 @@ class SyncClientTest {
         assertTrue(store.queue.isEmpty())
     }
 
+    @Test fun anAckQueuedFirstDoesNotSplitAClear() { // #425
+        store.queue += Pending(1, "a", "ack")
+        store.queue += Pending(2, "b", "dismiss")
+        store.queue += Pending(3, "c", "dismiss")
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(listOf("/api/v1/notifications/a/ack", "/api/v1/notifications/clear"), posts)
+        assertTrue(store.queue.isEmpty())
+    }
+
     @Test fun aClearRunKeepsOneVia() { // #267: each clear call is logged the way it was made
         store.queue += Pending(1, "a", "dismiss", """{"via":"tray_button"}""")
         store.queue += Pending(2, "b", "dismiss", """{"via":"tray_button"}""")
@@ -423,6 +540,43 @@ class SyncClientTest {
         onConnect = { n, ws -> if (n == 1) ws.send(ev(1, "a", "active")) } // and no `ready` yet
         start(replayQuietMs = 100)
         await { store.rows["a"] != null }
+    }
+
+    @Test fun aShowAfterAHideInTheReplayIsAFreshAlert() { // #589
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send(ev(1, "w", "active"))
+                ws.send(ev(2, "w", "snoozed"))
+                ws.send(ev(3, "w", "active")) // the snooze ended while we were offline
+                ws.send(ev(4, "w", "active").replace("\"created\"", "\"repeat\"")) // carries the show forward
+                ws.send(ev(5, "o", "dismissed"))
+                ws.send(ev(6, "o", "active")) // reopened elsewhere
+                ws.send(ev(7, "p", "active"))
+                ws.send(ev(8, "p", "active").replace("\"created\"", "\"repeat\"")) // a repeat alone never makes a show
+                ws.send(ev(9, "h", "active"))
+                ws.send(ev(10, "h", "resolved")) // hidden at the end: nothing to ring
+                ws.send(ev(11, "u", "dismissed"))
+                ws.send(ev(12, "u", "active")) // this phone's own Undo, say
+                ws.send(ev(13, "u", "active").replace("\"created\"", "\"updated\"")) // then an edit: still the show at 12
+                ws.send("""{"type":"ready","seq":13}""")
+            }
+        }
+        start()
+        await { SyncClient.Status.CONNECTED in statuses }
+        assertEquals(listOf(mapOf("w" to 3L, "o" to 6L, "u" to 12L)), store.shown.toList())
+        assertEquals(listOf(false), store.quiet.toList())
+    }
+
+    @Test fun aQuietPartialSaveMakesNoShow() { // #589: a replay saved quietly stays quiet
+        onConnect = { n, ws ->
+            if (n == 1) {
+                ws.send(ev(1, "w", "snoozed"))
+                ws.send(ev(2, "w", "active"))
+            } // and no `ready` yet
+        }
+        start(replayQuietMs = 100)
+        await { store.rows["w"]?.state == "active" }
+        assertEquals(emptyMap<String, Long>(), store.shown.first())
     }
 
     @Test fun aFullReplayBufferIsSavedQuietly() {
@@ -522,12 +676,18 @@ class SyncClientTest {
         @Volatile private var seq = 0L
 
         override fun lastSeq() = seq
+        val lives = CopyOnWriteArrayList<String>()
+        override fun live(notifs: Collection<Notif>, arrive: Boolean) { notifs.forEach { lives += "${it.id}:$arrive" } }
         val again = CopyOnWriteArrayList<Boolean>()
-        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean) {
+        val answers = CopyOnWriteArrayList<Boolean>()
+        val shown = CopyOnWriteArrayList<Map<String, Long>>()
+        @Synchronized override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean, shown: Map<String, Long>) {
             if (failOnce) { failOnce = false; throw IllegalStateException("disk full") }
             applies += notifs
+            this.shown += shown
             this.quiet += quiet
             this.again += again
+            answers += answer
             for (n in notifs) if (n.seq >= (rows[n.id]?.seq ?: 0)) rows[n.id] = n
             this.seq = maxOf(this.seq, seq)
         }
@@ -540,9 +700,11 @@ class SyncClientTest {
         @Volatile var epoch = ""
         override fun epoch() = epoch
         override fun saveEpoch(epoch: String) { this.epoch = epoch }
+        val markIds = CopyOnWriteArrayList<String>()
+        override fun saveMarkId(id: String) { markIds += id }
         override fun pending() = queue.toList()
-        override fun removePending(p: Pending) { queue.remove(p) }
+        override fun removePending(p: Pending) { queue.removeIf { it.key == p.key } }
         val outcomes = CopyOnWriteArrayList<String>()
-        override fun replyOutcome(p: Pending, outcome: String) { outcomes += outcome }
+        override fun replyOutcome(p: Pending, outcome: String) { outcomes += outcome; queue.replaceAll { if (it.key == p.key) it.copy(told = true) else it } }
     }
 }

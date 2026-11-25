@@ -21,9 +21,10 @@ curl -X PUT https://clrd.example.com/api/v1/topics/alerts/hooks/github \
   -d '{"url": "https://hooks.example.com/clrd", "events": ["resolved"], "secret": "a long random string"}'
 ```
 
-- `url`: http or https. clrd refuses private, loopback and link-local
-  addresses and ports other than 80 and 443, the same guard it uses to fetch
-  favicons. Put a receiver on your LAN behind a public reverse proxy.
+- `url`: http or https. By default clrd refuses private, loopback and
+  link-local addresses and ports other than 80 and 443, the same guard it
+  uses to fetch favicons. For a receiver on your LAN, see
+  [Receivers on your LAN](#receivers-on-your-lan).
 - `events`: any of `dismissed`, `acknowledged`, `resolved`, `snoozed` and
   `action` (a tapped reply button). Leave it out for all five. A tapped reply
   also acknowledges, so a webhook on `acknowledged` gets it too.
@@ -60,6 +61,126 @@ The notification has every field the API returns; this shows a few. Headers:
 - `X-Clrd-Delivery`: an id, the same on every retry of one delivery.
 - `X-Clrd-Signature`: when the webhook has a secret.
 
+## Your own body shape
+
+Some receivers, like Slack and Discord, want their own JSON instead of the
+event. Give the webhook a `body` template and clrd sends what it renders. It
+uses the same template language as [incoming webhooks](custom-webhooks.md),
+run against the event above, plus `json`, which quotes a value so a title
+with a quote or a line break still makes valid JSON:
+
+```json
+{"url": "https://hooks.slack.com/services/...",
+ "body": "{\"text\": {{json .notification.title}}}"}
+```
+
+For Discord, use `{"content": {{json .notification.title}}}`. The output must
+be valid JSON of at most 16 KB. If it is not, nothing is sent and the
+delivery log shows why; fix the template and the waiting retries use it. The
+signature covers the body as sent. Leave `body` empty to send the event.
+The web inbox has a Body template field on each webhook under Settings >
+Webhooks; empty there sends the event too. Its Preview button shows what a
+delivery would send, using the endpoint below.
+
+Try a template before saving it. This sends nothing and returns what a
+delivery would POST as a string, exactly as sent, or the error it would log:
+
+```sh
+curl -X POST https://clrd.example.com/api/v1/topics/alerts/hooks/preview \
+  -H "Authorization: Bearer clrd_..." -H "Content-Type: application/json" \
+  -d '{"body": "{\"text\": {{json .notification.title}}}"}'
+```
+
+Without `event` it uses a sample resolved notification on the topic; pass an
+event shaped like the one above to try your own. Agents use the MCP tool
+`preview_hook`.
+
+## Receivers on your LAN
+
+To let webhooks reach a receiver like `http://192.168.1.20:8080/hook`, an
+admin lists its network and its port. A dial passes when the address is
+public or in a listed network, and the port is 80, 443 or listed: a LAN
+receiver on port 80 needs only its network, a public one on 8080 only its
+port.
+
+```sh
+curl -X PUT https://clrd.example.com/api/v1/hooks/allow \
+  -H "Authorization: Bearer clrd_..." -H "Content-Type: application/json" \
+  -d '{"networks": ["192.168.1.0/24"], "ports": [8080]}'
+```
+
+A single address works too, like `192.168.1.20`. Send both fields every
+time; `{"networks": [], "ports": []}` turns it off again, and webhooks no
+longer reach those addresses from that moment. `GET /api/v1/hooks/allow`
+shows the list. Agents use the MCP tools `hook_allow` and `set_hook_allow`.
+The favicon and link preview fetcher is not affected.
+
+List only what you need. A full admin token can then make clrd POST to
+those addresses, with a body it chooses, and read the status code in the
+delivery log, so a leaked admin token reaches whatever you list. Never
+list `127.0.0.0/8` or `169.254.0.0/16` unless the receiver lives there.
+
+If the box runs other services on loopback or a private network and no
+webhook needs them, lock the list: start clrd with `CLRD_HOOK_ALLOW=off`.
+Webhooks then reach only public addresses on ports 80 and 443, any saved
+list is ignored, `GET /api/v1/hooks/allow` shows `"locked": true`, and
+saving one answers 403 `locked`. Only the operator can undo it, by unsetting
+the variable (or setting it to `on`) and restarting.
+
+## Discord: post, then edit when cleared
+
+Give a hook `"kind": "discord"` and a Discord webhook URL (channel settings,
+Integrations, Webhooks, Copy Webhook URL). Every new notification on the
+topic is posted to the channel. When it is dismissed, acknowledged,
+resolved, snoozed or answered (pick with `events`), clrd edits that message:
+the title is struck through once it is cleared or resolved, and a small line
+says what happened and on which device, such as "Cleared by pixel-9". A
+Discord webhook cannot add emoji reactions, so the edit is the reaction.
+
+```sh
+curl -X PUT https://clrd.example.com/api/v1/topics/alerts/hooks/discord \
+  -H "Authorization: Bearer clrd_..." -H "Content-Type: application/json" \
+  -d '{"url": "https://discord.com/api/webhooks/123/abc", "kind": "discord"}'
+```
+
+A discord hook takes no `body` or `secret`. Mentions like `@everyone` in a
+message are shown but never ping anyone. If someone deletes the message in
+Discord, the edit is skipped. A scheduled notification is not posted.
+The webhook URL holds a token, so treat it like a password: only admins can
+see it, and delivery errors leave it out.
+
+## GitHub: open an issue, close it when cleared
+
+Give a hook `"kind": "github"`, the repo's API URL and a GitHub token that
+can write issues (a fine-grained token with Issues: Read and write on that
+one repo is enough) as `secret`. Every new notification on the topic opens
+an issue. Each state change you pick with `events` adds a comment saying
+what happened, such as "Cleared by pixel-9", and a clear or resolve closes
+the issue.
+
+```sh
+curl -X PUT https://clrd.example.com/api/v1/topics/relay-alerts/hooks/github \
+  -H "Authorization: Bearer clrd_..." -H "Content-Type: application/json" \
+  -d '{"url": "https://api.github.com/repos/OWNER/REPO", "kind": "github", "secret": "github_pat_..."}'
+```
+
+This is how an alert starts a coding agent: anything that picks up work
+from GitHub issues (GitHub's coding agent, an issue label runner, a T3 Code
+or Claude Code runner) takes it from there. Because the issue may be read by
+an agent, clrd is careful about what it opens:
+
+- Never for a notification from an anonymous sender, and never for a
+  question (a confirm prompt or reply buttons), which waits for a person.
+- At most 10 issues an hour per hook. Alerts past that stay in clrd only.
+- The sender's text goes in a fenced code block it cannot close, under a
+  line saying it is data, not instructions. An `@name` in it pings nobody.
+- clrd does not acknowledge or clear the notification itself when the issue
+  opens; it stays as it was on every device.
+
+Delete the hook to stop new issues at once. The
+token is write only: the API never shows it again. A scheduled notification
+does not open an issue.
+
 ## Retries and turning off
 
 Any 2xx answer is a success. Anything else, a redirect or no answer within 10
@@ -69,6 +190,10 @@ to order them.
 
 If a webhook keeps failing for 24 hours, clrd turns it off and posts a
 notification to the topic saying so. Save it again to turn it back on.
+Deliveries still waiting then go out once it is back on. Each try uses the
+URL, secret and body template saved at that moment, so saving a fix also
+fixes the retries already queued. A webhook with nothing to send stays on;
+the next failure after 24 hours of failing turns it off at once.
 
 `GET /api/v1/topics/alerts/hooks/github/deliveries` shows the last 100
 deliveries: status (`pending`, `ok` or `failed`), tries, the last HTTP code

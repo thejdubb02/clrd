@@ -568,6 +568,120 @@
     ]
    }
   },
+  "/api/v1/notifications/{id}/mark": {
+   "post": {
+    "summary": "Mark seen or actioned",
+    "tags": [
+     "notifications"
+    ],
+    "description": "Sets the caller's mark, so everyone who reads the topic sees who saw or dealt with it. Needs read scope on the topic. It changes no state and clears nothing. One mark per author (the person a token belongs to, else the token): setting it again replaces it. No alert, and not sent to ntfy clients.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "mark"
+        ],
+        "properties": {
+         "mark": {
+          "type": "string",
+          "enum": [
+           "seen",
+           "actioned"
+          ]
+         },
+         "note": {
+          "type": "string",
+          "maxLength": 200,
+          "example": "filed relay#512"
+         },
+         "link": {
+          "type": "string",
+          "description": "http(s) URL, at most 2048 characters"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "summary": "Remove your mark",
+    "tags": [
+     "notifications"
+    ],
+    "description": "Removes only the caller's own mark. Needs read scope on the topic.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Notification id (ULID)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Notification"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/api/v1/notifications/{id}/reply": {
    "post": {
     "summary": "Answer with a reply action",
@@ -633,6 +747,10 @@
          "reply": {
           "type": "string",
           "example": "yes"
+         },
+         "text": {
+          "type": "string",
+          "description": "Typed answer, only for a reply action with text: true. Trimmed, then 1 to 1000 characters; 400 if missing, too long, or sent to an action without text."
          },
          "seq": {
           "type": "integer",
@@ -1022,6 +1140,20 @@
             "null"
            ]
           }
+         },
+         "swipe_start": {
+          "$ref": "#/components/schemas/SwipeButtons"
+         },
+         "swipe_end": {
+          "$ref": "#/components/schemas/SwipeButtons"
+         },
+         "color_rules": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+           "$ref": "#/components/schemas/ColorRule"
+          },
+          "description": "Replaces the whole list; [] clears it. Needs a token with no topic list."
          }
         }
        }
@@ -1370,6 +1502,19 @@
              },
              "icon": {
               "type": "string"
+             },
+             "subscribed": {
+              "type": "boolean",
+              "description": "Whether the asking token's view includes this topic (#617). Always true for a token that is not filtered."
+             },
+             "last_at": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "description": "When the newest notification on the topic arrived, null for none."
+             },
+             "approvals": {
+              "type": "boolean",
+              "description": "Whether a message that waits for an answer (a reply action or a confirm prompt) has ever been sent here, so clients warn before unsubscribing (#623). It stays true after the message is gone."
              }
             }
            }
@@ -1388,6 +1533,40 @@
      "403": {
       "$ref": "#/components/responses/Error"
      }
+    }
+   }
+  },
+  "/api/v1/subscriptions": {
+   "get": {
+    "summary": "The asking user's topic subscriptions",
+    "tags": ["settings"],
+    "description": "Scope read (#617). Every topic the token may read, with whether its owner's view includes it. filtered is false for a typed-in token with no user: then topics is empty and new_topics is left out. A full admin may pass for=<user id or token id> to read another owner's set.",
+    "parameters": [{"name": "for", "in": "query", "schema": {"type": "string"}}],
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Subscriptions"}}}},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "put": {
+    "summary": "Subscribe or unsubscribe topics",
+    "tags": ["settings"],
+    "description": "Scope read. Only the topics given change; no data is cleared and other readers are untouched. new_topics false first subscribes every topic that exists now, so only later topics start unsubscribed. 403 for a topic the token cannot read, 409 for a token with no user to store the choices for.",
+    "parameters": [{"name": "for", "in": "query", "schema": {"type": "string"}}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {
+     "new_topics": {"type": "boolean"},
+     "topics": {"type": "object", "additionalProperties": {"type": "boolean"}, "maxProperties": 500},
+     "request_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{0,64}$", "description": "Optional id the client picks for this change; GET returns it while this is the set's last change (#702)."},
+     "if_request_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{0,64}$", "description": "Optional: apply only while the set's last change is still this request_id; otherwise 409 and nothing changes (#716)."}
+    }}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Subscriptions"}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"},
+     "409": {"$ref": "#/components/responses/Error"}
     }
    }
   },
@@ -1528,6 +1707,55 @@
       "description": "Any value: list every device, not only recent ones, with kind (token, browser or phone), via, linked_at, last_seen_at, this, can_unlink, sound, approve (allowed, ask or denied: may it answer approval requests), and the live sync state: connected (has a stream open now), caught_up (one of its streams has finished replay) and synced_seq (the last event seq the server sent it). A full admin sees every token; anyone else sees the devices under the token they signed in with, phones linked from them and browsers those phones approved."
      }
     ]
+   }
+  },
+  "/api/v1/push": {
+   "get": {
+    "summary": "Web Push public key and whether this device is subscribed",
+    "description": "Scope read. public_key is the server's VAPID key (base64url, uncompressed P-256), made on first start; pass it as applicationServerKey to pushManager.subscribe.",
+    "tags": ["sync"],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {"application/json": {"schema": {"type": "object", "properties": {
+       "public_key": {"type": "string"},
+       "subscribed": {"type": "boolean"}
+      }}}}
+     },
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "put": {
+    "summary": "Subscribe this device to Web Push",
+    "description": "Scope read. The body is the browser's PushSubscription JSON. One subscription per device: a new one replaces the old. The server pushes each notification that would ring this device in the inbox.",
+    "tags": ["sync"],
+    "requestBody": {
+     "required": true,
+     "content": {"application/json": {"schema": {"type": "object", "required": ["endpoint", "keys"], "properties": {
+      "endpoint": {"type": "string", "description": "https URL from the browser's push service"},
+      "keys": {"type": "object", "required": ["p256dh", "auth"], "properties": {
+       "p256dh": {"type": "string"},
+       "auth": {"type": "string"}
+      }}
+     }}}}
+    },
+    "responses": {
+     "204": {"description": "Subscribed"},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "delete": {
+    "summary": "Stop Web Push to this device",
+    "description": "Scope read. Revoking the device's token also drops its subscription.",
+    "tags": ["sync"],
+    "responses": {
+     "204": {"description": "Unsubscribed"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
+    }
    }
   },
   "/api/v1/devices/log": {
@@ -1883,12 +2111,64 @@
            "denied"
           ],
           "description": "A new token starts denied; leave this out. Any other value is 400."
+         },
+         "user": {
+          "type": "string",
+          "description": "Id of the user it belongs to (GET /api/v1/users). The user's grants, when set, replace its topics and grants at every request."
          }
         },
         "required": [
          "name",
          "scopes"
         ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/version": {
+   "get": {
+    "summary": "Version, build commit and date, and recent history (no token)",
+    "tags": [
+     "server"
+    ],
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": ["version", "commit", "date", "history", "full_history"],
+         "properties": {
+          "version": {"type": "string"},
+          "commit": {"type": "string"},
+          "date": {"type": "string"},
+          "full_history": {"type": "string"},
+          "history": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "version": {"type": "string"},
+             "date": {"type": "string"},
+             "changes": {
+              "type": "array",
+              "items": {
+               "type": "object",
+               "properties": {
+                "section": {"type": "string"},
+                "items": {"type": "array", "items": {"type": "string"}}
+               }
+              }
+             }
+            }
+           }
+          }
+         }
+        }
        }
       }
      }
@@ -1927,6 +2207,78 @@
      "403": {
       "$ref": "#/components/responses/Error"
      }
+    }
+   }
+  },
+  "/api/v1/users": {
+   "get": {
+    "summary": "List users (people)",
+    "description": "Admin with no topic limit. A user owns many device tokens; see spec section 4.",
+    "tags": ["auth"],
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object", "properties": {"users": {"type": "array", "items": {"$ref": "#/components/schemas/User"}}}}}}},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "post": {
+    "summary": "Create a user",
+    "description": "Admin with no topic limit. Leave grants out (or null) for a user that limits nothing.",
+    "tags": ["auth"],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name"],
+     "properties": {"name": {"type": "string"}, "grants": {"$ref": "#/components/schemas/User/properties/grants"}}}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/User"}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "409": {"$ref": "#/components/responses/Error"}
+    }
+   }
+  },
+  "/api/v1/users/{id}": {
+   "put": {
+    "summary": "Set a user's grants",
+    "description": "Admin with no topic limit. grants is required: a list (read and publish only, [] for no topic) or null for no limit. Open streams of the user's devices close so they reconnect under the new rules.",
+    "tags": ["auth"],
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["grants"],
+     "properties": {"grants": {"$ref": "#/components/schemas/User/properties/grants"}}}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/User"}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"}
+    }
+   },
+   "delete": {
+    "summary": "Delete a user",
+    "description": "Admin with no topic limit. 409 while tokens are attached.",
+    "tags": ["auth"],
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+    "responses": {
+     "204": {"description": "Deleted"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"},
+     "409": {"$ref": "#/components/responses/Error"}
+    }
+   }
+  },
+  "/api/v1/tokens/{id}/user": {
+   "put": {
+    "summary": "Attach a token to a user, or detach it",
+    "description": "Admin with no topic limit. Typed-in tokens only: a browser or phone follows the token it came from. user is a user id, or \"\" to detach. Open streams of the token's devices close so they reconnect under the new rules.",
+    "tags": ["auth"],
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["user"], "properties": {"user": {"type": "string"}}}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object", "properties": {"id": {"type": "string"}, "user": {"type": "string"}}}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"}
     }
    }
   },
@@ -2120,6 +2472,152 @@
     }
    }
   },
+  "/api/v1/hooks/allow": {
+   "get": {
+    "summary": "Private networks and ports webhooks may reach",
+    "description": "Full admin only. Outgoing webhooks reach only public addresses on ports 80 and 443 unless listed here. A dial passes when the address is public or in a listed network, and the port is 80, 443 or listed. Both lists are empty by default.",
+    "tags": [
+     "admin"
+    ],
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/HookAllow"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "summary": "Set the private networks and ports webhooks may reach",
+    "description": "Full admin only. Both fields are required ([] for none), at most 64 of each. A bare address is a single-address network; ranges are stored masked. Takes effect at once, pooled connections included.",
+    "tags": [
+     "admin"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HookAllow"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "$ref": "#/components/responses/HookAllow"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/ntfy/origins": {
+  "get": {
+   "summary": "Web sites allowed on ntfy routes",
+   "description": "Full admin only. The other web sites whose pages may use the ntfy and Gotify routes from a browser (CORS and WebSocket). Empty by default: a request with a foreign Origin is refused with 403; requests with no Origin (phones, scripts) and clrd's own pages are never affected.",
+   "tags": [
+    "admin"
+   ],
+   "responses": {
+    "200": {
+     "description": "The allow list.",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "origins": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "description": "Origins as scheme://host[:port], or \"*\" for any site."
+         }
+        }
+       }
+      }
+     }
+    },
+    "401": {
+     "$ref": "#/components/responses/Error"
+    },
+    "403": {
+     "$ref": "#/components/responses/Error"
+    }
+   }
+  },
+  "put": {
+   "summary": "Set web sites allowed on ntfy routes",
+   "description": "Full admin only. Replaces the allow list. Each entry is an origin (scheme://host[:port], lowercased) or \"*\" for any site, as ntfy answers. An empty list allows only clrd's own pages.",
+   "tags": [
+    "admin"
+   ],
+   "requestBody": {
+    "required": true,
+    "content": {
+     "application/json": {
+      "schema": {
+       "type": "object",
+       "properties": {
+        "origins": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "description": "Origins as scheme://host[:port], or \"*\" for any site."
+        }
+       },
+       "required": [
+        "origins"
+       ]
+      }
+     }
+    }
+   },
+   "responses": {
+    "200": {
+     "description": "The allow list now in effect.",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "origins": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "description": "Origins as scheme://host[:port], or \"*\" for any site."
+         }
+        }
+       }
+      }
+     }
+    },
+    "400": {
+     "$ref": "#/components/responses/Error"
+    },
+    "401": {
+     "$ref": "#/components/responses/Error"
+    },
+    "403": {
+     "$ref": "#/components/responses/Error"
+    }
+   }
+  }
+ },
   "/api/v1/ntfy/ignored": {
    "get": {
     "summary": "ntfy options received but ignored",
@@ -2162,6 +2660,274 @@
       "$ref": "#/components/responses/Error"
      },
      "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/stats": {
+   "get": {
+    "summary": "Traffic numbers",
+    "description": "Admin with no topic limit. Counts the notifications created in [from, to), read from what is stored: cleared messages past the keep-cleared setting are gone. Lists hold the top 50 by count.",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {"name": "to", "in": "query", "description": "End, unix ms. Default now.", "schema": {"type": "integer"}},
+     {"name": "days", "in": "query", "description": "Days back from to when from is not given. Default 7.", "schema": {"type": "integer", "minimum": 1}},
+     {"name": "from", "in": "query", "description": "Start, unix ms. At most 366 days before to.", "schema": {"type": "integer"}}
+    ],
+    "responses": {
+     "200": {
+      "description": "Stats.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "from": {"type": "integer"},
+          "to": {"type": "integer"},
+          "total": {"type": "integer"},
+          "answered": {"type": "integer", "description": "A reply action was tapped."},
+          "priorities": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Count per priority, keyed \"1\" to \"5\"."},
+          "hours": {"type": "array", "description": "Count per UTC hour that had any, oldest first.", "items": {"type": "object", "properties": {"at": {"type": "integer"}, "count": {"type": "integer"}}}},
+          "topics": {"type": "array", "items": {"$ref": "#/components/schemas/StatsGroup"}},
+          "senders": {"type": "array", "description": "Keyed by the top token id of the sending tree, \"\" for clrd's own alerts.", "items": {"$ref": "#/components/schemas/StatsGroup"}},
+          "cleared_by": {"type": "array", "description": "Cleared messages keyed by the name of who cleared them.", "items": {"$ref": "#/components/schemas/StatsGroup"}},
+          "flappers": {"type": "array", "description": "An external id that fired more than once.", "items": {"type": "object", "properties": {"topic": {"type": "string"}, "external_id": {"type": "string"}, "count": {"type": "integer"}}}}
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/senders": {
+   "get": {
+    "summary": "Every sender that has published",
+    "description": "Admin with no topic limit. One row per token tree that stored a notification, most recently heard first, found on its first message. Anonymous ntfy publishers are one sender per address.",
+    "tags": [
+     "admin"
+    ],
+    "responses": {
+     "200": {
+      "description": "Senders.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "senders": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Sender"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/senders/{id}": {
+   "get": {
+    "summary": "One sender with its recent notifications",
+    "description": "Admin with no topic limit. recent holds up to its last 10 notifications that are still stored, newest first.",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The sender.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Sender"
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "summary": "Set a sender's rules",
+    "description": "Admin with no topic limit. Only the fields sent change; routes, when sent, replaces every route. id is a listed sender or a top-level token that has not published yet. Each change is kept in /changes and can be undone.",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SenderRules"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The sender with its new rules.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Sender"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/senders/{id}/changes": {
+   "get": {
+    "summary": "A sender's rule changes, newest first",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The changes.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "changes": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/SenderChange"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/senders/{id}/changes/{seq}/undo": {
+   "post": {
+    "summary": "Undo one rule change",
+    "description": "Puts back the rules from before change seq, recorded as a new change.",
+    "tags": [
+     "admin"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "seq",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The sender with its rules as they were.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Sender"
+        }
+       }
+      }
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "404": {
       "$ref": "#/components/responses/Error"
      }
     }
@@ -4351,7 +5117,7 @@
   "/api/v1/topics/{topic}/hooks/{name}": {
    "put": {
     "summary": "Save an outgoing webhook: POST the topic's state changes to a URL",
-    "description": "Scope admin. Replaces the whole hook and turns it back on. Each delivery's body is the sync stream event; X-Clrd-Event names it and X-Clrd-Signature is sha256=<hex HMAC-SHA256 of the body> when a secret is set. Private addresses and ports other than 80 and 443 are refused at send time. See docs/integrations/webhooks-out.md.",
+    "description": "Scope admin. Replaces the whole hook and turns it back on. Each delivery's body is the sync stream event, or the hook's body template rendered against it; X-Clrd-Event names it and X-Clrd-Signature is sha256=<hex HMAC-SHA256 of the body> when a secret is set. Private addresses and ports other than 80 and 443 are refused at send time. See docs/integrations/webhooks-out.md.",
     "tags": [
      "notifications"
     ],
@@ -4395,6 +5161,15 @@
          },
          "secret": {
           "type": "string"
+         },
+         "body": {
+          "type": "string",
+          "description": "Optional template for the POST body, rendered against the sync stream event at each try, with the incoming template functions plus json (quotes a value). Must render valid JSON, at most 16 KB. Empty sends the event."
+         },
+         "kind": {
+          "type": "string",
+          "enum": ["", "discord", "github"],
+          "description": "discord: url is a Discord webhook URL. Each new notification is posted there, and a state change in events edits that message (a status line, the title struck through once cleared or resolved). Takes no body or secret. github: url is https://api.github.com/repos/OWNER/REPO and secret a GitHub token that can write issues. Each new notification opens an issue (not for anonymous senders or questions, at most 10 an hour), a state change in events comments on it, and a clear or resolve closes it. Takes no body."
          }
         }
        }
@@ -4483,6 +5258,66 @@
            "items": {
             "type": "object"
            }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/topics/{topic}/hooks/preview": {
+   "post": {
+    "summary": "Dry run an outgoing webhook body template: returns the JSON it would POST, sends nothing",
+    "description": "Scope admin. Same render and checks as a delivery (valid JSON, 16 KB at most). Without event, a sample resolved notification on the topic is used.",
+    "tags": [
+     "notifications"
+    ],
+    "parameters": [
+     {
+      "name": "topic",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "body"
+        ],
+        "properties": {
+         "body": {
+          "type": "string",
+          "description": "The body template, as for PUT"
+         },
+         "event": {
+          "type": "object",
+          "description": "A sync stream event to render against"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "body": {
+           "type": "string",
+           "description": "The rendered JSON, exactly as a delivery sends it"
           }
          }
         }
@@ -5011,6 +5846,68 @@
      }
     }
    }
+  },
+  "/agent": {
+   "get": {
+    "summary": "Agent invite guide, as plain text",
+    "tags": [
+     "auth"
+    ],
+    "description": "No auth. The invite link is /agent#<code>: the code after # is never sent, so this page is the same for every invite. For an agent that can only fetch a URL: how to claim with its code, publish, ask, wait and MCP addresses, and limits. Spends nothing and holds no token.",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "Plain text guide"
+     }
+    }
+   }
+  },
+  "/api/v1/agents/invite": {
+   "post": {
+    "summary": "Invite an agent",
+    "tags": [
+     "auth"
+    ],
+    "description": "Body {\"name\", \"topics\": [...], \"expires_in\": \"15m\"} (1m to 1h, default 15m). From a browser or phone of a person, or a full admin token; an agent's own token or devices get 403. Each topic gets the read and publish the caller holds there; a topic the caller may not use is 403, and only a full admin may name a pattern. 201 {\"code\", \"invite\": \"clrd://agent?server=...&code=...\", \"url\": \"<server>/agent#<code>\", \"expires_at\", \"name\", \"grants\"}. Single use; 429 busy when too many wait; 409 when the name is taken.",
+    "responses": {
+     "201": {
+      "description": "The invite"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "429": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/api/v1/agents/claim": {
+   "post": {
+    "summary": "Claim an agent invite",
+    "tags": [
+     "auth"
+    ],
+    "description": "No auth. Body {\"code\"}. Spends the code and makes a user of kind agent with its own token: scopes read and publish on the invite's topics only, approve denied. 200 {\"token\" (shown once), \"user\", \"name\", \"guide\"}; the guide holds server, grants, publish, notification, events, mcp, approve_request, approve and limits. 410 when expired, used or unknown; 409 when a user took the name since (the code is spent).",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "token, user, name, guide"
+     },
+     "409": {
+      "$ref": "#/components/responses/Error"
+     },
+     "410": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {
@@ -5035,9 +5932,49 @@
       }
      }
     }
+   },
+   "HookAllow": {
+    "description": "The webhook allow list.",
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/HookAllow"
+      }
+     }
+    }
    }
   },
   "schemas": {
+   "HookAllow": {
+    "type": "object",
+    "required": [
+     "networks",
+     "ports"
+    ],
+    "properties": {
+     "networks": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "CIDR ranges like 192.168.1.0/24, or single addresses."
+     },
+     "ports": {
+      "type": "array",
+      "items": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 65535
+      },
+      "description": "Ports besides 80 and 443."
+     },
+     "locked": {
+      "type": "boolean",
+      "readOnly": true,
+      "description": "True when the server operator set CLRD_HOOK_ALLOW=off: both lists stay empty and PUT answers 403 locked."
+     }
+    }
+   },
    "NtfyAnonymousGrant": {
     "type": "object",
     "required": [
@@ -5077,6 +6014,153 @@
      "token_id": {
       "type": "string",
       "description": "The anonymous token's id while on; revoking it also turns access off."
+     }
+    }
+   },
+   "StatsGroup": {
+    "type": "object",
+    "properties": {
+     "key": {"type": "string"},
+     "count": {"type": "integer"},
+     "open": {"type": "integer", "description": "Not cleared yet."},
+     "cleared": {"type": "integer"},
+     "clear_median_ms": {"type": "integer", "description": "Median time from publish to first dismiss or resolve; 0 when none cleared."},
+     "clear_p90_ms": {"type": "integer"}
+    }
+   },
+   "Sender": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "token_id": {
+      "type": "string",
+      "description": "The top token of the sender's tree; empty for an anonymous sender."
+     },
+     "name": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "token",
+       "person",
+       "ntfy_user",
+       "gotify_app",
+       "pushover_app",
+       "anonymous"
+      ]
+     },
+     "template": {
+      "type": "string",
+      "description": "The last webhook template it posted through, empty for none."
+     },
+     "user_agent": {
+      "type": "string"
+     },
+     "address": {
+      "type": "string"
+     },
+     "first_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "count": {
+      "type": "integer"
+     },
+     "topics": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "integer"
+      }
+     },
+     "rules": {
+      "$ref": "#/components/schemas/SenderRules"
+     },
+     "alarm": {
+      "type": "string",
+      "description": "The topic of the sender's last quiet alarm, until its next publish or a change to expect or alert_topic; absent when there is none."
+     },
+     "recent": {
+      "type": "array",
+      "description": "Only on GET /api/v1/senders/{id}.",
+      "items": {
+       "$ref": "#/components/schemas/Notification"
+      }
+     }
+    }
+   },
+   "SenderRules": {
+    "type": "object",
+    "description": "What an admin set on a sender. All zero (the default) changes nothing.",
+    "properties": {
+     "paused": {
+      "type": "boolean",
+      "description": "Accept every publish with a 2xx and store nothing."
+     },
+     "muted": {
+      "type": "boolean",
+      "description": "Store and show its notifications, listed silenced: they never alert."
+     },
+     "priority_min": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "Raise a lower priority to this; 0 for none."
+     },
+     "priority_max": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "Lower a higher priority to this; 0 for none."
+     },
+     "expect": {
+      "type": "string",
+      "description": "A duration, 1m to 8784h (like 25h): when the sender sends nothing for this long the server raises an urgent alarm with external_id clrd-quiet-{id}, and its next publish resolves it. Empty or absent is off."
+     },
+     "alert_topic": {
+      "type": "string",
+      "description": "The topic for the quiet alarm. Empty: the first topic the sender's last topic routes to, or that topic itself."
+     },
+     "routes": {
+      "type": "object",
+      "description": "The topic it names, or * for any, to the topics it goes to instead. The exact topic wins over *; no match keeps the topic; an empty list drops the publish.",
+      "additionalProperties": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   },
+   "SenderChange": {
+    "type": "object",
+    "properties": {
+     "seq": {
+      "type": "integer"
+     },
+     "before": {
+      "$ref": "#/components/schemas/SenderRules"
+     },
+     "after": {
+      "$ref": "#/components/schemas/SenderRules"
+     },
+     "by": {
+      "type": "string",
+      "description": "Name of the token that made the change."
+     },
+     "by_id": {
+      "type": "string"
+     },
+     "at": {
+      "type": "string",
+      "format": "date-time"
      }
     }
    },
@@ -5135,6 +6219,12 @@
       "type": "string",
       "format": "date-time",
       "nullable": true
+     },
+     "body": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string"
      }
     }
    },
@@ -5155,7 +6245,7 @@
    },
    "Action": {
     "type": "object",
-    "description": "A link (url) or an answer button (reply), exactly one of the two. At most 3 reply actions; reply values are 1 to 64 of A-Z a-z 0-9 _ - and unique.",
+    "description": "A link (url) or an answer button (reply), exactly one of the two. At most 3 reply actions; reply values are 1 to 64 of A-Z a-z 0-9 _ - and unique. At most one reply action may set text: true; answering it needs typed text.",
     "properties": {
      "label": {
       "type": "string"
@@ -5167,6 +6257,10 @@
       "type": "string",
       "example": "yes",
       "pattern": "^[A-Za-z0-9_-]{1,64}$"
+     },
+     "text": {
+      "type": "boolean",
+      "description": "This reply action is answered with typed text (reply route body text)."
      }
     },
     "required": [
@@ -5217,6 +6311,10 @@
       "type": "string",
       "description": "http(s) image URL; the topic's icon when the sender gave none. Empty if unset. Events logged before a server upgrade may omit it: treat missing as empty."
      },
+     "color": {
+      "type": "string",
+      "description": "The sender's card color, #RRGGBB, or empty. The user's color_rules (settings) win over it. Missing in old events: treat as empty."
+     },
      "actions": {
       "type": "array",
       "items": {
@@ -5237,6 +6335,10 @@
      "reply": {
       "type": "string",
       "description": "The reply action tapped, empty until someone answers"
+     },
+     "reply_text": {
+      "type": "string",
+      "description": "What the human typed for a text reply action, empty otherwise. Plain text, never markdown. Cleared with reply."
      },
      "state": {
       "type": "string",
@@ -5292,6 +6394,53 @@
          "null"
         ],
         "format": "date-time"
+       }
+      }
+     },
+     "requested_topic": {
+      "type": "string",
+      "description": "The topic the sender named when its rules routed it here. Absent when it was not routed."
+     },
+     "changed": {
+      "type": "boolean",
+      "description": "Only in the answer to a state change (ack, snooze, dismiss, resolve, reopen): false when the notification already had that state and no event was written."
+     },
+     "devices": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Token ids it alerts on; every other reader gets it silenced. Always present, [] for every device."
+     },
+     "marks": {
+      "type": "array",
+      "description": "Who saw or acted on it, one per author. Never changes the state. Always present, [] for none.",
+      "items": {
+       "type": "object",
+       "properties": {
+        "by": {
+         "type": "string"
+        },
+        "by_id": {
+         "type": "string"
+        },
+        "mark": {
+         "type": "string",
+         "enum": [
+          "seen",
+          "actioned"
+         ]
+        },
+        "note": {
+         "type": "string"
+        },
+        "link": {
+         "type": "string"
+        },
+        "at": {
+         "type": "string",
+         "format": "date-time"
+        }
        }
       }
      },
@@ -5351,6 +6500,10 @@
       "type": "string",
       "description": "http(s) image URL, at most 2048 characters, or empty for none."
      },
+     "color": {
+      "type": "string",
+      "description": "Card color as #RRGGBB, or empty for none. Anything else is a 400."
+     },
      "actions": {
       "type": "array",
       "items": {
@@ -5389,6 +6542,14 @@
       "minimum": 1,
       "maximum": 100,
       "description": "How many re-alerts at most. Default 10 when repeat is set."
+     },
+     "devices": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+       "type": "string"
+      },
+      "description": "Only these devices alert: names (any case) or token ids from GET /api/v1/devices, each one able to read the topic, else 400. Every other reader gets it silenced. Omit for every device."
      },
      "status": {
       "type": "string",
@@ -5439,11 +6600,28 @@
      "type"
     ]
    },
+   "User": {
+    "type": "object",
+    "description": "A person who owns device tokens (spec section 4).",
+    "properties": {
+     "id": {"type": "string"},
+     "name": {"type": "string"},
+     "grants": {
+      "description": "null limits nothing (devices keep their own access); a list replaces each device's topics and grants, first match decides, read and publish only. A token holding admin keeps its own access.",
+      "oneOf": [{"type": "null"}, {"$ref": "#/components/schemas/Token/properties/grants"}]
+     },
+     "created_at": {"type": "string", "format": "date-time"}
+    }
+   },
    "Token": {
     "type": "object",
     "properties": {
      "id": {
       "type": "string"
+     },
+     "user": {
+      "type": "string",
+      "description": "Id of the user (person) it belongs to; left out for none. A browser or phone shows its top token's user only when loaded for a request."
      },
      "approve": {
       "type": "string",
@@ -5697,10 +6875,49 @@
      }
     }
    },
+   "SwipeButtons": {
+    "type": "array",
+    "description": "0 to 3 actions, each at most once across swipe_start and swipe_end. A token limited to some topics cannot change them.",
+    "maxItems": 3,
+    "uniqueItems": true,
+    "items": {
+     "type": "string",
+     "enum": [
+      "clear",
+      "snooze",
+      "ack",
+      "resolve"
+     ]
+    }
+   },
+   "Subscriptions": {
+    "type": "object",
+    "properties": {
+     "filtered": {"type": "boolean", "description": "Whether this token's view follows its owner's subscriptions. false for a typed-in token with no user: clients show topic choices as not available."},
+     "new_topics": {"type": "boolean", "description": "Whether a topic first seen later starts subscribed. Default true. Left out when filtered is false."},
+     "topics": {"type": "array", "items": {"type": "object", "properties": {
+      "topic": {"type": "string"},
+      "subscribed": {"type": "boolean"},
+      "open": {"type": "integer"},
+      "last_at": {"type": ["string", "null"], "format": "date-time"},
+      "approvals": {"type": "boolean", "description": "As on GET /api/v1/topics (#623)."}
+     }}},
+     "request_id": {"type": "string", "description": "The request_id the set's last change was sent with. Left out when that change had none. A client compares it with its own to tell its change from another device's (#702)."}
+    }
+   },
    "Settings": {
     "type": "object",
     "description": "Display settings every device follows. One set per server.",
     "properties": {
+     "subscriptions": {
+      "type": "object",
+      "description": "Read only, change it with PUT /api/v1/subscriptions (#617). topics maps each topic the owner chose to whether it is subscribed.",
+      "properties": {
+       "filtered": {"type": "boolean"},
+       "new_topics": {"type": "boolean"},
+       "topics": {"type": "object", "additionalProperties": {"type": "boolean"}}
+      }
+     },
      "keep_cleared_days": {
       "type": "integer",
       "description": "Days dismissed and resolved notifications are kept after they were cleared; 0 keeps them forever. Until set, follows CLRD_RETENTION (30 days)."
@@ -5731,6 +6948,21 @@
        "type": "boolean"
       },
       "description": "Per-topic override of link_previews. A token limited to some topics only sees its own."
+     },
+     "swipe_start": {
+      "$ref": "#/components/schemas/SwipeButtons",
+      "description": "Buttons a swipe toward the start of the line (to the left) reveals, first nearest the edge. Default [\"clear\", \"snooze\"]."
+     },
+     "swipe_end": {
+      "$ref": "#/components/schemas/SwipeButtons",
+      "description": "Buttons the opposite swipe reveals. Default [\"ack\"]."
+     },
+     "color_rules": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ColorRule"
+      },
+      "description": "Card colors, first match wins (spec section 2.1). Default []. A token limited to some topics sees only rules with no topic or one of its topics."
      }
     },
     "required": [
@@ -5739,6 +6971,51 @@
      "favicons",
      "link_previews",
      "topic_previews"
+    ]
+   },
+   "ColorRule": {
+    "type": "object",
+    "description": "Colors a card when every set field matches; empty or 0 matches anything.",
+    "properties": {
+     "topic": {
+      "type": "string"
+     },
+     "tag": {
+      "type": "string",
+      "maxLength": 64
+     },
+     "priority_min": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+     },
+     "priority_max": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+     },
+     "title": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "Text anywhere in the title, any case."
+     },
+     "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+     },
+     "style": {
+      "type": "string",
+      "enum": [
+       "bar",
+       "tint",
+       "solid",
+       "gradient"
+      ]
+     }
+    },
+    "required": [
+     "color",
+     "style"
     ]
    },
    "Preview": {

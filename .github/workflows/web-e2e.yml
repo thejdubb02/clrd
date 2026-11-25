@@ -9,6 +9,7 @@ on:
       - "docs/**"
       - "assets/**"
       - "*.go"
+      - "internal/**"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/web-e2e.yml"
@@ -19,31 +20,39 @@ on:
       - "docs/**"
       - "assets/**"
       - "*.go"
+      - "internal/**"
       - "go.mod"
       - "go.sum"
       - ".github/workflows/web-e2e.yml"
 
-# A new push cancels the older run on the same branch or pull request, so
-# main runs only its newest commit (#379). Publishing lives in fdroid.yml.
+# A new push cancels the older run on the same branch or pull request. On
+# main each commit is its own group, so no run there is ever cancelled: a
+# rerun of an older commit cannot cancel the newest (#379, #402).
+# Publishing lives in fdroid.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
   browser:
-    runs-on: [self-hosted, cezar1]
+    runs-on: ubicloud-standard-2
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: false
       - name: app.css matches its source
-        run: |
-          web/ui/build.sh
-          git diff --exit-code -- web/static/app.css || { echo "web/static/app.css is stale: run web/ui/build.sh and commit it"; exit 1; }
+        run: web/ui/check.sh
+      - name: upload app.css builds that differed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-css
+          path: ${{ runner.temp }}/app-css
+          if-no-files-found: ignore
       - name: build
-        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
+        # The packed build, as it ships (#690).
+        run: go run ./server/cmd/pack && CGO_ENABLED=0 go build -tags packed -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
       - name: inbox in Chromium
         run: |
           docker run --rm --network host --init \

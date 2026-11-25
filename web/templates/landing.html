@@ -11,7 +11,7 @@
       <a class="btn" data-variant="primary" data-size="lg" href="#self-host">Self-host clrd</a>
       <a class="btn" data-variant="outline" data-size="lg" href="{{base}}/docs/">Read the docs</a>
     </p>
-    <p class="mb-3 max-w-[34em]">Small on purpose: a 15.6 MB server and a 1.9 MB Android app, against 77.5 MB and 9.3 MB for ntfy (measured 2026-11-20).</p>
+    <p class="mb-3 max-w-[34em]">Small on purpose: a 16.3 MB server and a 1.9 MB Android app, against 77.5 MB and 9.3 MB for ntfy (server measured 2026-11-23, the rest 2026-11-20).</p>
     <p class="meta">In early development. The API is settling; expect changes before 1.0.</p>
   </div>
 
@@ -30,14 +30,25 @@
   </figure>
 </section>
 
+<section class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 pb-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:pb-18" aria-labelledby="inbox">
+  <div>
+    <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="inbox">The web inbox</h2>
+    <p class="mt-2 max-w-[60ch] text-lg">Every alert is a card you can act on. Clear it, acknowledge it, snooze it, answer an agent's question, or mark that you dealt with it so the rest of the team knows.</p>
+    <p class="text-muted-foreground mt-3 text-sm">This sample is drawn by the same template as the real inbox, so it always matches it. The buttons do nothing here.</p>
+  </div>
+  {{with demo}}{{$d := .}}<fieldset class="grid min-w-0 gap-2" disabled inert aria-label="Sample inbox">
+    {{range .Items}}{{template "card" (card . "demo" "" $d.Snap)}}{{end}}
+  </fieldset>{{end}}
+</section>
+
 <section class="bg-card border-y" aria-labelledby="how">
   <div class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-18">
     <div>
       <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="how">How it works</h2>
       <ol class="mt-5 grid list-decimal gap-3.5 ps-5 marker:font-mono marker:text-sm marker:text-muted-foreground [&_strong]:text-foreground [&_strong]:font-semibold">
         <li><strong>Send.</strong> A script, a monitor or an AI agent posts an alert to a topic.</li>
-        <li><strong>It arrives everywhere.</strong> Every phone, tablet and browser signed in to that topic shows it, and an open web inbox plays the sound you picked. Adding a device is one QR code scan.</li>
-        <li><strong>Clear it anywhere.</strong> Swipe it in the phone app, click Clear on the web, or let the sender resolve it when the fault is fixed.</li>
+        <li><strong>It arrives everywhere.</strong> Every phone, tablet and browser signed in to that topic shows it, an open web inbox plays the sound you picked, and a browser with notifications turned on in Settings shows one even with clrd closed. Adding a device is one QR code scan.</li>
+        <li><strong>Clear it anywhere.</strong> Swipe it aside and tap Clear in the phone app, click Clear on the web (on a phone, swipe a card and tap Clear), or let the sender resolve it when the fault is fixed.</li>
         <li><strong>Every device follows.</strong> The server owns the state, so the alert leaves every inbox and every phone tray.</li>
       </ol>
     </div>
@@ -53,12 +64,13 @@
 
 <section class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:py-18" aria-labelledby="states">
   <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="states">More than read and unread</h2>
-  <p class="mt-2 mb-8 max-w-[60ch] text-lg">Four things can happen to an alert, and every device sees which one did.</p>
+  <p class="mt-2 mb-8 max-w-[60ch] text-lg">An alert is active, cleared, acknowledged, resolved or snoozed, and every device on its topic sees which. Anyone who can read the topic can also mark it as seen or dealt with.</p>
   <dl class="grid border-t sm:grid-cols-2 lg:grid-cols-4 [&>div]:grid [&>div]:content-start [&>div]:gap-3 [&>div]:border-b [&>div]:py-5 sm:[&>div]:pe-5 lg:[&>div]:border-b-0 lg:[&>div+div]:border-s lg:[&>div+div]:ps-5">
     <div><dt><span class="badge" data-state="dismissed">Cleared</span></dt><dd>You cleared it. Gone from every device.</dd></div>
     <div><dt><span class="badge" data-state="acknowledged">Acknowledged</span></dt><dd>Someone is on it. It stays in the inbox and stops buzzing.</dd></div>
     <div><dt><span class="badge" data-state="resolved">Resolved</span></dt><dd>The sender cleared it because the fault is fixed. Monitors close their own alerts by id.</dd></div>
     <div><dt><span class="badge" data-state="snoozed">Snoozed</span></dt><dd>Hidden until a time you pick, then it comes back and notifies again.</dd></div>
+    <div><dt>Marked</dt><dd>Someone else, or an agent, saw it or actioned it. The card stays put and shows who, with their note and link.</dd></div>
   </dl>
 </section>
 
@@ -80,7 +92,7 @@
       </div>
       <div>
         <h3 class="text-foreground text-base font-semibold">AI agents (MCP)</h3>
-        <p>clrd serves MCP at <code>/mcp</code>. Agents can send, list, acknowledge and resolve, edit a progress message in place, and <code>wait_for_reply</code> lets an agent ask you a yes or no question and wait for your tap. With publish on a topic an agent can also set up silences, check-ins and incoming webhook templates there; with an admin token, outgoing webhooks and tokens. Claude Code and Codex can send their permission prompts to your phone through <code>/mcp/approve</code>. For Claude Code, the <a href="{{base}}/docs/integrations/claude-code">clrd plugin</a> sets up all of it, plus a ping when a task finishes, in one install.</p>
+        <p>clrd serves MCP at <code>/mcp</code>. Agents can send, list, acknowledge and resolve, edit a progress message in place, and <code>wait_for_reply</code> lets an agent ask you a yes or no question and wait for your tap. With publish on a topic an agent can also set up silences, check-ins and incoming webhook templates there; with an admin token, outgoing webhooks and tokens. Claude Code and Codex can send their permission prompts to your phone through <code>/mcp/approve</code>. For Claude Code, the <a href="{{base}}/docs/integrations/claude-code">clrd plugin</a> sets up all of it, plus a ping when a task finishes, in one install. To give an agent its own sign-in, press Add agent in Settings and hand it the one-use <a href="{{base}}/docs/integrations/agent-invite">invite</a>: it reaches only the topics you pick.</p>
         <h3 class="text-foreground text-base font-semibold">SDKs</h3>
         <p>Thin clients for Python, JavaScript and Go wrap the same API. The <a href="{{base}}/docs/spec">API reference</a> lists every endpoint.</p>
       </div>
@@ -98,7 +110,7 @@
       <div><dt>GitHub, Sentry, Stripe, Jira</dt><dd>Point the webhook at <code>/{topic}?template=github</code> (or <code>sentry</code>, <code>stripe</code>, <code>jira</code>). Signatures are checked. Closed issues clear.</dd></div>
       <div><dt>Homelab</dt><dd>Built-in templates for Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the *arr apps. Recoveries clear.</dd></div>
       <div><dt>Any webhook</dt><dd>Save a template that maps any service's JSON to a notification.</dd></div>
-      <div><dt>Webhooks out</dt><dd>Tell your own service when someone dismisses, acks, resolves, snoozes or replies. Retried, logged, and signed when you set a secret.</dd></div>
+      <div><dt>Webhooks out</dt><dd>Tell your own service when someone dismisses, acks, resolves, snoozes or replies. Retried, logged, signed when you set a secret, and shaped the way Slack or Discord wants.</dd></div>
       <div><dt>Any ntfy client</dt><dd>The ntfy app, CLI and libraries publish and subscribe unchanged.</dd></div>
       <div><dt>Gotify senders</dt><dd>Scripts and tools that post to Gotify's <code>/message</code> keep working with a clrd app token, Watchtower too.</dd></div>
       <div><dt>Pushover scripts</dt><dd>Scripts that post to Pushover's <code>/1/messages.json</code> keep working with a clrd app key.</dd></div>
@@ -168,7 +180,7 @@ docker compose logs clrd</code></pre>
   <div>
     <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="android">The Android app</h2>
     <p>Built for F-Droid. No Google Play Services, so it runs on GrapheneOS, LineageOS and any phone without Google. It keeps one connection to your server and removes an alert from the tray the moment it is cleared anywhere else.</p>
-    <p class="mt-3">Notifications from one topic stack together in the tray, Reply and link buttons work from the tray, and it trusts certificate authorities you install, so a home-lab server works over HTTPS.</p>
+    <p class="mt-3">Notifications from one topic can stack together in the tray (off until you turn it on), Reply and link buttons work from the tray, and it trusts certificate authorities you install, so a home-lab server works over HTTPS.</p>
     <p class="text-muted-foreground mt-3 text-sm">Not in the main F-Droid catalog yet. Every Android change on <code>main</code> goes to clrd's own F-Droid repository: <a href="https://github.com/thejdubb02/clrd/blob/main/android/README.md#install-from-the-clrd-f-droid-repo">how to add it</a>.</p>
   </div>
   <div>

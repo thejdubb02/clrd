@@ -22,8 +22,17 @@ interface Store {
      * A row older than the one already saved is dropped. `seq = 0` leaves the cursor where it is.
      * [quiet] posts to the tray without a sound (part of a replay that is not finished).
      * [again] is a live `repeat` event: an active row alerts again even while it is showing.
+     * [answer] is the server's row after it took this phone's own queued action (a state change, never a mark).
+     * [shown] (#589): cards a replay hid and then showed again, with the seq of the show. A fresh alert, even
+     * while showing, unless that show is this phone's own change.
      */
-    fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false, again: Boolean = false)
+    fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false, again: Boolean = false, answer: Boolean = false, shown: Map<String, Long> = emptyMap())
+
+    /**
+     * Said just before [apply] for a live event, never for a replay (#598): the inbox may move these cards.
+     * [arrive] is a new message, a repeat or a snooze ending, as on the web.
+     */
+    fun live(notifs: Collection<Notif>, arrive: Boolean) {}
 
     /**
      * After a `reset`: the open list from the server replaces everything known, and [epoch] is saved.
@@ -35,12 +44,16 @@ interface Store {
     fun epoch(): String
     fun saveEpoch(epoch: String)
 
+    /** The `by_id` this phone's marks get, from `ready` (docs/SPEC.md section 3), so a card can show which mark is ours. */
+    fun saveMarkId(id: String) {}
+
     fun pending(): List<Pending>
     fun removePending(p: Pending)
 
     /**
      * How a reply tap ended when it did not simply count (#330): `confirm` (sent to an allowed device
-     * to confirm), `approve_denied`, `own_request` or `conflict` (the question changed).
+     * to confirm), `approve_denied`, `own_request`, `conflict` (the question changed) or `bad_request` (typed text refused, #153).
+     * Marks [p] told first, so a resend, even after a restart, does not say it again (#383).
      */
     fun replyOutcome(p: Pending, outcome: String) {}
 }
@@ -81,7 +94,11 @@ class SyncClient(
 
     private var replaying = false
     private val buffer = LinkedHashMap<String, Notif>()
+    private val marks = LinkedHashMap<String, Notif>() // replayed marks on cards not in [buffer]: saved quietly with it, after `ready` checks the epoch
     private var bufferSeq = 0L
+    // #589: cards a buffered event hid, and the seq of the event that showed each one again (a fresh alert on `ready`).
+    private val hid = HashSet<String>()
+    private val shown = HashMap<String, Long>()
     private var replayQuiet = false // part of this replay was already saved quietly, so the rest is too
 
     /** Runs on the sync thread unless stopped. Once stop() has run, calls are dropped, never thrown. */
@@ -140,6 +157,9 @@ class SyncClient(
         val myGen = ++gen
         replaying = true
         buffer.clear()
+        marks.clear()
+        hid.clear()
+        shown.clear()
         replayQuiet = false
         bufferSeq = 0 // or a silent new socket would save the dropped replay's cursor with none of its rows
         ws = http.newWebSocket(api.wsRequest(store.lastSeq()), object : WebSocketListener() {
@@ -175,12 +195,30 @@ class SyncClient(
                 val n = Notif.fromJson(o.getJSONObject("notification"))
                 val seq = o.optLong("seq", n.seq)
                 if (replaying) {
+                    when {
+                        n.state == Notif.SNOOZED || n.state == Notif.DISMISSED || n.state == Notif.RESOLVED -> { hid += n.id; shown -= n.id }
+                        // Only the event that brings it back is the show: a later edit or repeat carries it forward.
+                        n.state == Notif.ACTIVE && n.id in hid && o.optString("type") != "repeat" -> { hid -= n.id; shown[n.id] = seq }
+                    }
                     buffer.remove(n.id) // re-insert so order follows the latest event
                     buffer[n.id] = n
                     bufferSeq = maxOf(bufferSeq, seq)
                     if (buffer.size >= 500) applyBuffer(quiet = true) // a later event in the replay may still clear these
                 } else {
-                    store.apply(listOf(n), seq, again = o.optString("type") == "repeat") // a missed repeat in a replay does not ring
+                    val type = o.optString("type")
+                    store.live(listOf(n), type == "created" || type == "repeat" || o.optString("via") == "snooze_end")
+                    store.apply(listOf(n), seq, again = type == "repeat") // a missed repeat in a replay does not ring
+                }
+            }
+            "mark" -> { // someone saw or actioned it: the card updates quietly and a card hidden on this phone stays hidden
+                val n = Notif.fromJson(o.getJSONObject("notification"))
+                val seq = o.optLong("seq", n.seq)
+                if (replaying) {
+                    // Only the marks change: the earlier event in this replay still decides whether it rings.
+                    buffer[n.id]?.let { buffer[n.id] = it.copy(marks = n.marks) } ?: run { marks[n.id] = n }
+                    bufferSeq = maxOf(bufferSeq, seq)
+                } else {
+                    store.apply(listOf(n), seq, quiet = true)
                 }
             }
             "ready" -> {
@@ -190,6 +228,7 @@ class SyncClient(
                 val saved = store.epoch()
                 if (epoch.isNotEmpty() && saved.isNotEmpty() && epoch != saved) return reset()
                 if (epoch.isNotEmpty() && saved.isEmpty()) store.saveEpoch(epoch)
+                o.optString("mark_id").takeIf { it.isNotEmpty() }?.let(store::saveMarkId) // absent from a server older than #451
                 // Events this token cannot see still move the cursor, or a filtered token
                 // falls behind retention and resets on every reconnect.
                 bufferSeq = maxOf(bufferSeq, o.optLong("seq"))
@@ -211,10 +250,16 @@ class SyncClient(
     }
 
     private fun applyBuffer(quiet: Boolean = false) {
+        if (marks.isNotEmpty()) { // before the buffer, which holds newer copies of the same cards
+            store.apply(marks.values.toList(), 0, quiet = true) // 0: the cursor moves with the buffer
+            marks.clear()
+        }
         if (buffer.isEmpty() && bufferSeq <= store.lastSeq()) return
-        store.apply(buffer.values.toList(), bufferSeq, quiet)
+        store.apply(buffer.values.toList(), bufferSeq, quiet, shown = if (quiet) emptyMap() else shown.toMap())
         if (quiet && buffer.isNotEmpty()) replayQuiet = true
         buffer.clear()
+        hid.clear()
+        shown.clear()
     }
 
     /**
@@ -257,10 +302,6 @@ class SyncClient(
 
 private val flushLock = Any()
 
-// Taps whose outcome message has shown, so a retry after a failed refetch does not show it again (#345).
-// ponytail: in memory, so a restart between the two tries shows it once more; store it on Pending if that matters.
-private val told = HashSet<Long>()
-
 /** How a queued action was made ("" for one queued before it was recorded). */
 private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via") }.getOrDefault("")
 
@@ -274,51 +315,61 @@ private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via"
  * One sender at a time, process wide: a stopped client's sender stops at [live] instead of
  * sending again what its replacement already sent.
  */
-fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synchronized(flushLock) {
-    // Several dismisses at the head of the queue (a stack swiped away, #108) go out as one clear call.
-    // Only the head run, so a later reopen of the same row still lands after its dismiss.
-    // Only one via per run, so the server logs each clear the way it was made (#267).
-    val head = store.pending()
-    val via = head.firstOrNull()?.let(::viaOf)
-    val run = head.takeWhile { it.action == "dismiss" && viaOf(it) == via }
-    if (run.size > 1 && live()) {
-        val sent = try {
-            val body = JSONObject().put("ids", JSONArray(run.map { it.notifId }))
-            if (!via.isNullOrEmpty()) body.put("via", via)
-            api.post("/api/v1/notifications/clear", body.toString())
-            true
-        } catch (e: HttpError) {
-            if (!e.isPermanent) throw e
-            false // refused as a batch: the loop below sends them one by one
-        }
-        if (sent) run.forEach(store::removePending) // the server's events bring the rows themselves
-    }
-    for (p in store.pending()) {
-        if (!live()) break
-        var mine = true // the row after our own action: the person just tapped it, so no sound
-        val answer = try {
-            api.action(p).let { body ->
-                // An ask device gets back the confirm prompt (202), not the question: the question stays unanswered.
-                val prompt = p.action == "reply" && runCatching { JSONObject(body).optString("id") }.getOrNull().orEmpty().let { it.isNotEmpty() && it != p.notifId }
-                if (!prompt) body else {
-                    // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
-                    store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
-                    if (told.add(p.key)) store.replyOutcome(p, "confirm")
-                    try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
-                }
+fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }): Unit = synchronized(flushLock) {
+    // Several dismisses in a row (a stack swiped away, #108) go out as one clear call, wherever they
+    // are in the queue (#425), so an Ack queued first does not split it. In order, so a later reopen
+    // of the same row still lands after its dismiss. One via per run, so the server logs each clear
+    // the way it was made (#267).
+    while (live()) {
+        val queue = store.pending()
+        val via = queue.firstOrNull()?.let(::viaOf) ?: return
+        val run = queue.takeWhile { it.action == "dismiss" && viaOf(it) == via }
+        if (run.size > 1) {
+            val sent = try {
+                val body = JSONObject().put("ids", JSONArray(run.map { it.notifId }))
+                if (via.isNotEmpty()) body.put("via", via)
+                api.post("/api/v1/notifications/clear", body.toString())
+                true
+            } catch (e: HttpError) {
+                if (!e.isPermanent) throw e
+                false // refused as a batch: sent one by one below
             }
-        } catch (e: HttpError) {
-            if (!e.isPermanent) throw e
-            // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
-            if (p.action == "reply" && (e.code == 403 || e.code == 409)) { if (told.add(p.key)) store.replyOutcome(p, if (e.code == 409) "conflict" else e.reason) }
-            else mine = false
-            // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
-            // so take the server's current row instead. A fetch that may work later throws and keeps the
-            // action queued: the event that changed the row may already be behind the cursor.
-            try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
+            if (sent) { run.forEach(store::removePending); continue } // the server's events bring the rows themselves
         }
-        answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine) }
-        store.removePending(p)
-        told.remove(p.key)
+        for (p in run.ifEmpty { queue.take(1) }) {
+            if (!live()) return
+            sendOne(store, api, p)
+        }
     }
+}
+
+/** Send one queued action and save the server's row; see [flushPending]. */
+private fun sendOne(store: Store, api: Api, p: Pending) {
+    var mine = true // the row after our own action: the person just tapped it, so no sound
+    var changed = true // the server took the action, so the row it sends back is our own change (#550)
+    val answer = try {
+        api.action(p).let { body ->
+            // An ask device gets back the confirm prompt (202), not the question: the question stays unanswered.
+            val prompt = p.action == "reply" && runCatching { JSONObject(body).optString("id") }.getOrNull().orEmpty().let { it.isNotEmpty() && it != p.notifId }
+            if (!prompt) body else {
+                // Prompt and message first: a failed fetch below resends the tap, and the server answers it with the same prompt.
+                store.apply(listOf(Notif.fromJson(JSONObject(body))), 0, quiet = true)
+                if (!p.told) store.replyOutcome(p, "confirm")
+                changed = false // the question waits for the confirm, so the row fetched below is not our change
+                try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
+            }
+        }
+    } catch (e: HttpError) {
+        if (!e.isPermanent) throw e
+        changed = false
+        // A refused tap is still the person's own: the row goes back quietly, with a message saying why.
+        if (p.action == "reply" && e.code in setOf(400, 403, 409)) { if (!p.told) store.replyOutcome(p, when (e.code) { 409 -> "conflict"; 400 -> "bad_request"; else -> e.reason }) }
+        else mine = false
+        // Refused for good (409: it changed since the tap; 404: gone). The row shows our local guess,
+        // so take the server's current row instead. A fetch that may work later throws and keeps the
+        // action queued: the event that changed the row may already be behind the cursor.
+        try { api.get("/api/v1/notifications/${p.notifId}") } catch (g: HttpError) { if (!g.isPermanent) throw g; null }
+    }
+    answer?.let { runCatching { Notif.fromJson(JSONObject(it)) }.getOrNull() }?.let { store.apply(listOf(it), 0, quiet = mine, answer = changed) }
+    store.removePending(p)
 }

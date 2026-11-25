@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"math/rand/v2"
 	"mime/multipart"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -95,13 +97,52 @@ func TestPushoverPublish(t *testing.T) {
 	if att, _ := latest(t, ts.URL, admin, "up")["attachment"].(map[string]any); att["name"] != "cam.png" {
 		t.Fatalf("multipart attachment: %v", att)
 	}
-	// Bigger than the 1 MB a plain body may be, as Pushover takes up to 5 MB.
-	big := append(append([]byte{}, pngBytes...), make([]byte, 1<<20)...)
+	// Bigger than the 1 MB a plain body may be, as Pushover takes up to 5 MB,
+	// and right at the file cap: base64 makes the body a third bigger than that.
+	s.opt.AttachmentMax = 4 << 20
+	big := make([]byte, 4<<20) // random like a real image, so its base64 has the usual + and / to escape
+	rand.NewChaCha8([32]byte{}).Read(big)
+	copy(big, pngBytes)
 	if code, m = pushoverPost(t, ts.URL, url.Values{"token": {key}, "user": {"u"}, "message": {"b64"}, "attachment_base64": {base64.StdEncoding.EncodeToString(big)}, "attachment_type": {"image/png"}}); code != 200 {
 		t.Fatalf("base64: %d %v", code, m)
 	}
 	if att, _ := latest(t, ts.URL, admin, "up")["attachment"].(map[string]any); att["name"] != "attachment.png" || att["size"] != float64(len(big)) {
 		t.Fatalf("base64 attachment: %v", att)
+	}
+	// #437: base64 in a multipart field, past the 11 MiB ParseMultipartForm
+	// keeps for text fields, still under the file cap.
+	s.opt.AttachmentMax = 10 << 20
+	big = append(big, make([]byte, 6<<20)...)
+	mp.Reset()
+	mw = multipart.NewWriter(&mp)
+	for k, v := range map[string]string{"token": key, "user": "u", "message": "b64 form", "attachment_base64": base64.StdEncoding.EncodeToString(big)} {
+		mw.WriteField(k, v)
+	}
+	mw.Close()
+	if code, m = gotifyPost(t, ts.URL+"/1/messages.json", mw.FormDataContentType(), mp.String(), nil); code != 200 {
+		t.Fatalf("multipart base64: %d %v", code, m)
+	}
+	if att, _ := latest(t, ts.URL, admin, "up")["attachment"].(map[string]any); att["size"] != float64(len(big)) {
+		t.Fatalf("multipart base64 attachment: %v", att)
+	}
+	// Any other field stays under 1 MiB, and a query parameter wins, as before.
+	mp.Reset()
+	mw = multipart.NewWriter(&mp)
+	mw.WriteField("token", "wrong")
+	mw.WriteField("user", "u")
+	mw.WriteField("message", strings.Repeat("m", maxBody+1))
+	mw.Close()
+	if code, _ = gotifyPost(t, ts.URL+"/1/messages.json?token="+key, mw.FormDataContentType(), mp.String(), nil); code != 400 {
+		t.Fatalf("1 MiB message field: %d", code)
+	}
+	mp.Reset()
+	mw = multipart.NewWriter(&mp)
+	mw.WriteField("token", "wrong")
+	mw.WriteField("user", "u")
+	mw.WriteField("message", "query token")
+	mw.Close()
+	if code, m = gotifyPost(t, ts.URL+"/1/messages.json?token="+key, mw.FormDataContentType(), mp.String(), nil); code != 200 {
+		t.Fatalf("query token first: %d %v", code, m)
 	}
 
 	// validate.json

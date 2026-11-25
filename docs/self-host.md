@@ -30,9 +30,13 @@ another machine, publish the port on a private interface instead.
 Or the binary (Go 1.24+, no C compiler needed):
 
 ```sh
-CGO_ENABLED=0 go build -o clrd ./server/cmd/clrd
+go run ./server/cmd/pack
+CGO_ENABLED=0 go build -tags packed -trimpath -ldflags="-s -w" -o clrd ./server/cmd/clrd
 ./clrd
 ```
+
+`pack` stores the docs and web files gzipped, which makes the binary smaller.
+A plain `go build` without it and without `-tags packed` works too.
 
 No settings are needed. The first log line says where the database went.
 
@@ -81,13 +85,65 @@ at once.
 `topics` it takes per-topic `grants`, first match wins, for example
 `{"name":"cam","scopes":["read","publish"],"grants":[{"topic":"home-*","scopes":["publish"]},{"topic":"alerts","scopes":["read"]}]}`.
 
+### Users: one person, many devices
+
+Optional. A user is one person who owns several tokens, so you set their
+topics once and every phone, browser and computer they use follows. With an
+admin token:
+
+```sh
+# make a user who may read and publish on family and home-*
+curl -H "Authorization: Bearer $ADMIN" -d '{"name":"Ann","grants":[{"topic":"family","scopes":["read","publish"]},{"topic":"home-*","scopes":["read"]}]}' https://clrd.example.com/api/v1/users
+# give her a new phone token, or attach one she already has
+curl -H "Authorization: Bearer $ADMIN" -d '{"name":"ann-phone","scopes":["read","publish"],"user":"<user id>"}' https://clrd.example.com/api/v1/tokens
+curl -X PUT -H "Authorization: Bearer $ADMIN" -d '{"user":"<user id>"}' https://clrd.example.com/api/v1/tokens/<token id>/user
+```
+
+Change her topics later with `PUT /api/v1/users/{id}` and `{"grants":[...]}`:
+every device she has, including browsers already signed in, follows at once.
+To share a topic with someone else, give their user a grant on it (read,
+publish or both). A token's own scopes stay its limit, a user grant never
+gives admin, and an admin token keeps full admin. `{"grants":null}` means
+the user limits nothing and each device keeps its own access. Tokens with no
+user work exactly as before. The same tools are in MCP: `users`,
+`create_user`, `set_user_grants`, `set_token_user`, `delete_user`.
+
+### Users and tokens in a config file
+
+Optional. Set `CLRD_CONFIG` to a JSON file and every start makes the users
+and tokens in it match the file, so a server can be rebuilt from config:
+
+```json
+{
+  "users": [{"name": "Ann", "grants": [{"topic": "family", "scopes": ["read", "publish"]}]}],
+  "tokens": [
+    {"name": "admin", "secret": "$CLRD_ADMIN_SECRET", "scopes": ["admin"], "approve": "allowed"},
+    {"name": "ann-phone", "secret": "$ANN_PHONE_SECRET", "scopes": ["read", "publish"], "user": "Ann"}
+  ]
+}
+```
+
+A token is its secret: the value a device sends, `clrd_` and at least 15
+more characters (`echo clrd_$(openssl rand -hex 20)` makes one). `"$NAME"` reads it from the
+environment variable `NAME`, so the file itself holds no secret. Each token
+takes the same fields as `POST /api/v1/tokens`, plus `approve` and `user`
+(a user name from the file). A token already made on the API is taken over
+when the file names its secret. Tokens and users the file made and no
+longer lists are removed at the next start, with every browser signed in
+with them; ones made on the API are left alone. A user the file drops is
+kept, with a warning in the log, when it was made on the API or a token made
+there still uses it. The file wins over API edits
+to its rows at every start. A file with a mistake (an unknown field, a short
+secret, a user it does not list) stops the server with the reason, and
+changes nothing. With an admin token in the file, no setup link is printed.
+
 ## Settings
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `CLRD_LISTEN` | `:8080` | Address to listen on. |
 | `CLRD_DB` | `/data/clrd.db` if it exists, else `~/.local/share/clrd/clrd.db` (or under `$XDG_DATA_HOME`) | SQLite file. Its folder must be writable (WAL files live next to it). |
-| `CLRD_BASE_URL` | unset: links use the address the browser opened clrd on | Public URL, used in the setup and phone pairing links. Set it to your https URL behind a proxy. A path in it (`https://example.com/clrd`) serves everything under that path. |
+| `CLRD_BASE_URL` | unset: links use the address the browser opened clrd on | Public URL, used in the setup and phone pairing links. Set it to your https URL behind a proxy; a proxy that rewrites the host or drops the port then still works for clrd's own pages. A path in it (`https://example.com/clrd`) serves everything under that path. |
 | `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. This is the starting value: once someone sets "Keep cleared messages" in Settings (or `keep_cleared_days` over the API or MCP), that setting wins, and a topic can have its own value (in Settings under "By topic", or `topic_keep_cleared_days`). Open and snoozed messages are never deleted. |
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
 | `CLRD_PUBLIC_PAGES` | `on` | `off` hides the landing page and docs on a private server: `/` goes to the inbox, `/docs` is 404, and `robots.txt` asks every crawler to stay out. |
@@ -96,6 +152,8 @@ at once.
 | `CLRD_RATE_TOKEN` | `60` | Publishes a minute one token may send, with a burst of the same size. Past it gets 429 with `Retry-After`. `0` turns it off. |
 | `CLRD_RATE_TOPIC` | `60` | Publishes a minute one topic may take from all tokens together. `0` turns it off. |
 | `CLRD_TRUSTED_PROXIES` | unset | Comma-separated CIDRs or addresses of your reverse proxies, for example `127.0.0.1,172.16.0.0/12`. Only these may set the client address with `X-Forwarded-For`, and the link scheme with `X-Forwarded-Proto`. Unset, any loopback or private-network peer may. |
+| `CLRD_HOOK_ALLOW` | `on` | `off` locks the [webhook LAN allow list](integrations/webhooks-out.md#receivers-on-your-lan) empty: webhooks reach only public addresses on ports 80 and 443, whatever an admin saved, and no token can change it. Set it on a box that runs other services on loopback or a private network. |
+| `CLRD_CONFIG` | unset | A JSON file of users and tokens applied at every start. See [Users and tokens in a config file](#users-and-tokens-in-a-config-file). |
 
 `GET /api/v1/server` with an admin token returns every one of these as in
 effect, defaults filled in, so an agent can check a setup. They change only by
@@ -207,11 +265,33 @@ Anonymous topics are off until an admin sets them, with
 `clrd import ntfy` brings over ntfy's `everyone` rules
 ([Switch from ntfy](migrate-from-ntfy.md)).
 
-Not supported yet: email and phone call forwarding, `Cache: no` (refused, since clrd stores every notification
-to sync it), and `http`/`broadcast` action buttons (view actions work).
+`Cache: no` sends a live-only message: it goes to the ntfy streams open
+right now and is stored nowhere, so it never shows in the inbox or a replay.
+It cannot be delayed, repeated, carry a file or an `Id`.
+
+`view` action buttons work everywhere. `http` and `broadcast` buttons are
+stored and passed to ntfy apps once an admin turns them on for the topic
+(`{"device_actions":true}` on `PUT /api/v1/topics/{topic}`, or the MCP tool
+`set_topic`); until then they are dropped. clrd's own app does not run them
+yet. The web inbox shows them under the card as text and never runs them.
+
+Not supported yet: email and phone call forwarding.
 
 ## Upgrading
 
 Pull, rebuild, restart. Take a backup first.
+
+Your server shows its version, and what changed in each one, at
+`/api/v1/version` and `/docs/changelog`. A Docker build has no git history
+to read, so to show the exact commit too, pass it in:
+
+```sh
+CLRD_COMMIT=$(git rev-parse HEAD) docker compose build
+docker build --build-arg CLRD_COMMIT=$(git rev-parse HEAD) -t clrd .
+```
+
+A plain `docker compose build` still works: the commit is left empty and the
+build date is the time of the build (`CLRD_DATE` overrides it). A `go build`
+inside the git checkout fills both in from the last commit on its own.
 
 The full API is at `/openapi.json` on your server.

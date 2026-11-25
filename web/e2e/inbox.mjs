@@ -28,6 +28,13 @@ const api = async (tok, path, body) => {
   return r.json();
 };
 const get = async (tok, id) => (await fetch(`${base}/api/v1/notifications/${id}`, { headers: { Authorization: `Bearer ${tok}` } })).json();
+// until polls fn in the page until it returns true. Never page.waitForFunction:
+// Playwright runs its predicate through eval on every recheck after the first,
+// and the page CSP refuses eval, so it fails only when the first check is false.
+const until = async (p, fn, arg) => {
+  for (let i = 0; i < 100; i++) { if (await p.evaluate(fn, arg)) return; await p.waitForTimeout(100); }
+  throw new Error(`timed out waiting for ${fn}`);
+};
 
 let browser;
 try {
@@ -88,9 +95,21 @@ try {
     await tp.locator('[data-tips]').hover();
     await tp.clock.runFor(30000);
     assert.equal(await title(), second, 'the tip stays put while hovered');
+    // Pause stops the rotation with the pointer and focus gone (a screen
+    // reader's virtual cursor triggers neither); Play starts it again (#352).
+    const away = async () => { await tp.mouse.move(0, 0); await tp.evaluate(() => document.activeElement.blur()); };
+    await tp.getByRole('button', { name: 'Pause tips' }).click();
+    await away();
+    await tp.clock.runFor(30000);
+    assert.equal(await title(), second, 'the tip stays put once paused');
+    // Play from the keyboard: focus stays on the button, and it still rotates.
+    await tp.getByRole('button', { name: 'Play tips' }).focus();
+    await tp.keyboard.press('Enter');
+    await tp.clock.runFor(10000);
+    assert.notEqual(await title(), second, 'Play starts the rotation again, focus or not');
     await tp.close();
   }
-  console.log('ok: tips advance on their own and pause on hover');
+  console.log('ok: tips advance on their own, pause on hover, and have Pause and Play');
 
   // Clearing it here offers Undo, and Undo brings it back.
   const a = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Disk full on web-1', message: '/var at 99%' });
@@ -99,7 +118,7 @@ try {
   await toast.getByRole('button', { name: 'Undo' }).waitFor();
   assert.equal((await get(laptop, a.id)).state, 'dismissed');
   await toast.getByRole('button', { name: 'Undo' }).click();
-  await page.waitForFunction(async id => (await (await fetch(`/api/v1/notifications/${id}`)).json()).state === 'active', a.id);
+  await until(page, async id => (await (await fetch(`/api/v1/notifications/${id}`)).json()).state === 'active', a.id);
   console.log('ok: Clear offers Undo, Undo reopens');
 
   // Another device resolved it before this page heard: Clear is a no-op on the
@@ -212,7 +231,7 @@ try {
   await page.reload();
   await card('Renew domain').getByLabel('More snooze times').click();
   // The custom time box and its Set button fit inside the menu, not clipped by it.
-  const box = await card('Renew domain').locator('[data-popover]').boundingBox();
+  const box = await card('Renew domain').locator('details[open] [data-popover]').boundingBox();
   const set = await card('Renew domain').getByRole('button', { name: 'Set' }).boundingBox();
   assert.ok(set.x >= box.x && set.x + set.width <= box.x + box.width, 'Set button clipped by the snooze menu');
   const deskFit = await dateFit(card('Renew domain'));
@@ -242,15 +261,32 @@ try {
   const sc = t => sp.locator('article.card', { hasText: t });
   await putSettings({ snooze_intervals: ['15m', '2h', '48h'], snooze_default: '2h' });
   await sp.locator('[data-snooze="2h,15m,2h,48h"]').waitFor({ state: 'attached' }); // the open page reloaded itself
+  // The new copy can show its cards before its script runs: a press that starts
+  // then is no long press at all (#714). Live means the script is up.
+  await sp.locator('#sync.is-live').waitFor();
   await sc('Prune images').getByText('Snooze', { exact: true }).click({ delay: 700 });
   assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'long press did not open the snooze times');
   assert.deepEqual(await sc('Prune images').locator('[data-popover] [data-for]').allTextContents(), ['15 min', '2 hours', '2 days']);
-  await sc('Prune images').locator('details').evaluate(d => { d.open = false; });
+  await sc('Prune images').locator('details[open]').evaluate(d => { d.open = false; });
+  // A busy page handles the release before its 500 ms timer: still a long press,
+  // never a tap that snoozes (#476). The page is held busy from 300 to 900 ms,
+  // in its own browser: this one's clock is faked above, so a busy loop never ends.
+  const bctx = await browser.newContext();
+  assert.ok((await bctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'busy-web' } })).ok());
+  const bz = await bctx.newPage();
+  await bz.goto(`${base}/app`);
+  const pb = await bz.locator('article.card', { hasText: 'Prune images' }).getByText('Snooze', { exact: true }).boundingBox();
+  await bz.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2);
+  await bz.evaluate(() => document.addEventListener('pointerdown', () => setTimeout(() => { const t = performance.now(); while (performance.now() - t < 600); }, 300), { once: true, capture: true }));
+  await bz.mouse.down(); await bz.waitForTimeout(700); await bz.mouse.up();
+  assert.equal(await bz.locator('article.card', { hasText: 'Prune images' }).locator('details[open] [data-popover]').isVisible(), true, 'a long press on a busy page did not open the snooze times');
+  assert.equal((await get(laptop, hold.id)).state, 'active', 'a long press on a busy page snoozed');
+  await bctx.close();
   await sc('Prune images').getByText('Snooze', { exact: true }).click({ button: 'right' });
   assert.equal(await sc('Prune images').locator('details[open] [data-popover]').isVisible(), true, 'right click did not open the snooze times');
   await sp.waitForTimeout(300);
   assert.equal((await get(laptop, hold.id)).state, 'active', 'long press or right click snoozed');
-  await sc('Prune images').locator('details').evaluate(d => { d.open = false; });
+  await sc('Prune images').locator('details[open]').evaluate(d => { d.open = false; });
   const before = Date.now();
   await sc('Rotate keys').getByText('Snooze', { exact: true }).click();
   await sc('Rotate keys').waitFor({ state: 'detached' });
@@ -284,6 +320,30 @@ try {
   assert.equal(await sp.getByLabel('Times').inputValue(), '1h, soon', 'unsaved snooze edit dropped');
   await sp.reload();
   await sp.locator('[data-snooze="1h,1h,4h"]').waitFor({ state: 'attached' });
+  // Appearance (#583): a saved choice beats the device, at once and on every page, before
+  // first paint; System follows the device again.
+  const dark = () => sp.evaluate(() => document.documentElement.classList.contains('dark'));
+  await sp.emulateMedia({ colorScheme: 'light' });
+  await sp.getByLabel('Theme').selectOption('dark');
+  assert.ok(await dark(), 'Dark did not apply at once');
+  assert.equal(await sp.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(15, 17, 20)', 'Dark set the class but not the colors');
+  await sp.addInitScript(() => new MutationObserver((_, o) => {
+    if (document.body) { window.darkAtBody = document.documentElement.classList.contains('dark'); o.disconnect(); }
+  }).observe(document, { childList: true, subtree: true }));
+  for (const path of ['/', '/docs/spec', '/app/settings']) {
+    await sp.goto(base + path);
+    assert.equal(await sp.evaluate(() => window.darkAtBody), true, `${path} painted light before going dark`);
+  }
+  assert.equal(await sp.getByLabel('Theme').inputValue(), 'dark', 'the saved choice did not show');
+  await sp.emulateMedia({ colorScheme: 'dark' });
+  await sp.getByLabel('Theme').selectOption('light');
+  assert.equal(await dark(), false, 'Light lost to a dark device');
+  await sp.getByLabel('Theme').selectOption('');
+  assert.ok(await dark(), 'System did not follow a dark device');
+  await sp.emulateMedia({ colorScheme: 'light' });
+  // The device change arrives as an event, so poll for it (#714).
+  await until(sp, () => !document.documentElement.classList.contains('dark'))
+    .catch(() => assert.fail('System did not follow the device changing'));
   await sp.close();
   console.log('ok: snooze default, long press, right click and Settings');
 
@@ -354,7 +414,41 @@ try {
   assert.ok(await sendBox.getByLabel('Title').isVisible(), 'a finished send closed the new note');
   await sendPage.keyboard.press('Escape');
   await sendPage.close();
+  assert.deepEqual(sent[0].devices, [], 'a send with nothing ticked was aimed at chosen devices');
   console.log('ok: send a notification from the inbox');
+
+  // Alert only these devices (#82): off by default, sends the ticked ids, clears
+  // after a send, and a device the server refuses is named, not shown as an id.
+  {
+    const pumps = execFileSync(bin, ['token', 'create', '--name', 'pumps-only', '--scope', 'read', '--topics', 'pumps'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const all = (await (await fetch(`${base}/api/v1/devices?all=1`, { headers: { Authorization: `Bearer ${laptop}` } })).json()).devices;
+    const idOf = n => all.find(d => d.name === n).id;
+    const dp = await page.context().newPage();
+    await dp.goto(`${base}/app`);
+    const box = dp.getByRole('dialog', { name: 'Send a notification' });
+    await dp.getByRole('button', { name: 'Send', exact: true }).click();
+    assert.ok(!(await box.getByLabel('pumps-only').isVisible()), 'the device picker starts open');
+    await box.locator('summary', { hasText: 'Alert only these devices' }).click();
+    assert.equal(await box.locator('[name=devices]:checked').count(), 0, 'a device is ticked by default');
+    await box.getByLabel('Topic').fill('notes');
+    await box.getByLabel('Message').fill('only the phone');
+    await box.getByLabel('pixel-9').check();
+    await box.getByLabel('pumps-only').check();
+    await box.getByRole('button', { name: 'Send' }).click();
+    const refused = box.locator('[data-send-status]').filter({ hasText: '"pumps-only" is not a device that may read' });
+    await refused.waitFor();
+    assert.ok(!(await refused.textContent()).includes(idOf('pumps-only')), 'the refusal shows an id, not the name');
+    await box.getByLabel('pumps-only').uncheck();
+    await box.getByRole('button', { name: 'Send' }).click();
+    await box.getByLabel('Message').waitFor({ state: 'hidden' });
+    const got = (await (await fetch(`${base}/api/v1/notifications?topic=notes`, { headers: { Authorization: `Bearer ${phone}` } })).json()).notifications.find(n => n.message === 'only the phone');
+    assert.deepEqual(got.devices, [idOf('pixel-9')], 'the ticked device was not the target');
+    await dp.getByRole('button', { name: 'Send', exact: true }).click();
+    assert.equal(await box.locator('[name=devices]:checked').count(), 0, 'a ticked device carried over to the next send');
+    await dp.close();
+    assert.ok(pumps, 'pumps-only token');
+    console.log('ok: a send from the inbox can alert only chosen devices');
+  }
 
   // A reply button stores the answer for whoever waits on it; the card then shows it.
   const q = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Merge 212?', message: 'tests pass', actions: [{ label: 'Yes', reply: 'yes' }, { label: 'No', reply: 'no' }] });
@@ -367,6 +461,96 @@ try {
   await card('Merge 212?').getByText('Answered Yes').waitFor();
   assert.equal(await card('Merge 212?').getByRole('button', { name: 'No', exact: true }).count(), 0, 'answered card still offers replies');
   console.log('ok: reply button stores the answer');
+
+  // A typed answer (#153): the text action gets a box, the others stay buttons;
+  // a refusal keeps what was typed; the answer shows as plain text.
+  {
+    const tq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Name the release?', actions: [{ label: 'Keep', reply: 'keep' }, { label: 'Other', reply: 'other', text: true }] });
+    await page.reload();
+    const tc = card('Name the release?');
+    const box = tc.getByLabel('Other: type an answer');
+    await tc.getByRole('button', { name: 'Keep' }).waitFor();
+    await tc.getByRole('button', { name: 'Other' }).click();
+    await page.locator('[data-toast]').filter({ hasText: 'Type an answer first.' }).waitFor({ state: 'attached' });
+    await box.fill('x'.repeat(1001));
+    await tc.getByRole('button', { name: 'Other' }).click();
+    await tc.locator('[data-note]').filter({ hasText: 'Not answered:' }).waitFor();
+    assert.equal((await box.inputValue()).length, 1001, 'a refused answer lost what was typed');
+    assert.ok(!(await get(laptop, tq.id)).reply, 'an over-long answer was stored');
+    // A live change (a mark from another device) redraws the card: the half-typed answer stays.
+    {
+      const lp = await page.context().newPage(); // page no longer hears live events (above)
+      await lp.goto(page.url());
+      await lp.locator('.is-live').waitFor();
+      const lc = lp.locator('article.card').filter({ hasText: 'Name the release?' }), lbox = lc.getByLabel('Other: type an answer');
+      await lbox.fill('half typed');
+      const seq0 = await lc.getAttribute('data-seq');
+      await api(phone, `/api/v1/notifications/${tq.id}/mark`, { mark: 'seen' });
+      await lp.locator(`article.card[data-id="${tq.id}"]:not([data-seq="${seq0}"])`).waitFor({ state: 'attached' });
+      assert.equal(await lbox.inputValue(), 'half typed', 'a live update wiped a half-typed answer');
+      assert.ok(await lbox.evaluate(e => e === document.activeElement), 'a live update took focus off the text box');
+      // A new card arriving moves this unchanged card: typing goes on in the box (#517).
+      await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Arrived 517' });
+      await lp.locator('article.card', { hasText: 'Arrived 517' }).waitFor();
+      assert.ok(await lbox.evaluate(e => e === document.activeElement), 'a new card took focus off the text box');
+      await lp.close();
+    }
+    // Shift+Enter makes a new line (#517); Enter sends.
+    await box.fill('  <b>calm</b>');
+    await box.press('Shift+Enter');
+    await box.pressSequentially('fox  ');
+    assert.ok(!(await get(laptop, tq.id)).reply, 'Shift+Enter sent the answer');
+    await box.press('Enter');
+    await announce.filter({ hasText: 'Answered Other' }).waitFor({ state: 'attached' });
+    const ta = await get(laptop, tq.id);
+    assert.equal(ta.reply, 'other');
+    assert.equal(ta.reply_text, '<b>calm</b>\nfox', 'the inner line break was lost');
+    await tc.locator('[data-reply-text]').filter({ hasText: 'Answer: <b>calm</b> fox' }).waitFor();
+    assert.match(await tc.locator('[data-reply-text]').innerText(), /calm<\/b>\nfox/, 'the shown answer lost its line break');
+    assert.equal(await tc.getByLabel('Other: type an answer').count(), 0, 'answered card still offers the text box');
+    console.log("ok: a typed answer is sent, refused text stays, Shift+Enter keeps a line break, the answer shows as text");
+  }
+
+  // Marks (#451): Enter in the note marks it actioned, never acks or answers
+  // the card; Remove takes only this reader's mark off.
+  const mq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Rollback 214?', actions: [{ label: 'Go', reply: 'go' }] });
+  await api(phone, `/api/v1/notifications/${mq.id}/mark`, { mark: 'seen' });
+  await page.reload();
+  await card('Rollback 214?').locator('summary[aria-label="More snooze times"]').click();
+  await card('Rollback 214?').locator('[data-mark-menu] summary').click();
+  await until(page, () => [...document.querySelectorAll('article')].find(a => a.textContent.includes('Rollback 214?')).querySelectorAll('details[open]').length === 1);
+  await card('Rollback 214?').getByLabel('Note').fill('on it');
+  await card('Rollback 214?').getByLabel('Note').press('Enter');
+  await announce.filter({ hasText: 'Marked actioned.' }).waitFor({ state: 'attached' });
+  await card('Rollback 214?').locator('[data-mark="actioned"]', { hasText: 'laptop actioned: on it' }).waitFor();
+  let mn = await get(laptop, mq.id);
+  assert.equal(mn.state, 'active', 'Enter in the note changed the card state');
+  assert.ok(!mn.reply, 'Enter in the note answered the card');
+  assert.equal(mn.marks.length, 2, 'own mark not added next to the phone one');
+  await card('Rollback 214?').getByText('Marked actioned').click();
+  await card('Rollback 214?').getByRole('button', { name: 'Remove my mark' }).click();
+  await announce.filter({ hasText: 'Your mark is removed.' }).waitFor({ state: 'attached' });
+  await until(page, () => !document.querySelector('[data-mark="actioned"]'));
+  mn = await get(laptop, mq.id);
+  assert.deepEqual(mn.marks.map(m => m.by), ['pixel-9'], 'Remove took the wrong mark');
+  console.log('ok: mark a card seen or actioned and remove your own mark');
+
+  // A color rule change recolors a card in place: its open mark menu and draft note stay (#696).
+  {
+    const cp = await page.context().newPage(); // page no longer hears live events (above)
+    await cp.goto(page.url());
+    await cp.locator('.is-live').waitFor();
+    const rc = cp.locator('article.card', { hasText: 'Rollback 214?' });
+    await rc.locator('[data-mark-menu] summary').click();
+    await rc.getByLabel('Note').fill('half typed');
+    await putSettings({ color_rules: [{ title: 'rollback', color: '#DC2626', style: 'solid' }] });
+    await until(cp, () => document.querySelector('article.cc-DC2626.cs-solid [data-mark-menu][open]'));
+    assert.equal(await rc.getByLabel('Note').inputValue(), 'half typed', 'recolor lost the draft note');
+    await putSettings({ color_rules: [] });
+    await until(cp, () => !document.querySelector('article.cs-solid'));
+    await cp.close();
+  }
+  console.log('ok: a color rule change keeps an open menu and its draft');
 
   // Share and Copy hand over the title, the message and the link; the icon and attachments show on the card.
   const sharePage = await page.context().newPage();
@@ -502,12 +686,12 @@ try {
   await narrow.goto(`${base}/app?auth=${link}`);
   const wide = narrow.locator('article.card', { hasText: 'Deploy 213?' });
   await wide.getByLabel('More snooze times').click();
-  const menu = await wide.locator('[data-popover]').boundingBox();
+  const menu = await wide.locator('details[open] [data-popover]').boundingBox();
   assert.ok(menu.x >= 0 && menu.x + menu.width <= 360, `snooze menu spans ${menu.x} to ${menu.x + menu.width} on a 360 px screen`);
   assert.equal(await narrow.evaluate(() => document.documentElement.scrollWidth), 360, 'page scrolls sideways with the menu open');
   // A very small phone too.
   await narrow.setViewportSize({ width: 300, height: 740 });
-  const small = await wide.locator('[data-popover]').boundingBox();
+  const small = await wide.locator('details[open] [data-popover]').boundingBox();
   assert.ok(small.x >= 0 && small.x + small.width <= 300, `snooze menu spans ${small.x} to ${small.x + small.width} on a 300 px screen`);
   const smallSet = await wide.getByRole('button', { name: 'Set' }).boundingBox();
   assert.ok(smallSet.x >= small.x && smallSet.x + smallSet.width <= small.x + small.width, 'Set button clipped by the snooze menu on a 300 px screen');
@@ -541,6 +725,12 @@ try {
   await plain('Lock the door?').getByRole('button', { name: 'Lock' }).click();
   await plain('Lock the door?').getByText('Answered Lock').waitFor();
   assert.equal((await get(laptop, r.id)).reply, 'lock');
+  const tr = await api(phone, '/api/v1/notifications', { topic: 'home', title: 'Which door?', actions: [{ label: 'Say', reply: 'say', text: true }] });
+  await nojs.goto(`${base}/app?topic=home`);
+  await plain('Which door?').getByLabel('Say: type an answer').fill('back\ndoor');
+  await plain('Which door?').getByRole('button', { name: 'Say' }).click();
+  await plain('Which door?').getByText('Answer: back door').waitFor();
+  assert.equal((await get(laptop, tr.id)).reply_text, 'back\ndoor', 'a form post kept CRLF line breaks (#517)');
   console.log('ok: Clear, Snooze and reply work without JavaScript');
 
   // Stack by topic (#108): off by default; on, a topic with two or more
@@ -573,32 +763,58 @@ try {
     // A live refresh keeps keyboard focus on the stack, and a topic named like
     // an Object property does not break the page.
     await stack.getByRole('button', { name: 'Hide' }).focus();
-    await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' });
+    const odd = (await api(phone, '/api/v1/notifications', { topic: 'constructor', title: 'Odd topic name', message: 'x' })).id;
     await item('Odd topic name').waitFor();
-    assert.equal(await stack.getByRole('button', { name: 'Hide' }).evaluate(b => b === document.activeElement), true, 'focus lost from the stack on refresh');
+    // Each refresh rebuilds the stack node, so a locator's evaluate can land on
+    // the old, detached copy: look it up and check it in one step (#675).
+    const onStack = (sel, cls) => sp.evaluate(([sel, cls]) => { const s = document.querySelector('[data-stack="ci-stack"]'), e = s && (sel ? s.querySelector(sel) : s); return !!e && e === document.activeElement && (!cls || s.classList.contains(cls)); }, [sel, cls]);
+    assert.equal(await onStack('[data-stack-toggle][aria-expanded="true"]'), true, 'focus lost from the stack on refresh'); // still open: Hide, not Show all
     // Clear all on the stack clears all four on the server, and Undo reopens them.
     await stack.getByRole('button', { name: 'Clear all' }).click();
     await sp.locator('[data-toast]').filter({ hasText: 'Cleared 4 notifications.' }).waitFor();
     for (const id of ids) assert.equal((await get(laptop, id)).state, 'dismissed');
     await sp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
-    for (const id of ids) await sp.waitForFunction(async i => (await (await fetch(`/api/v1/notifications/${i}`)).json()).state === 'active', id);
+    for (const id of ids) await until(sp, async i => (await (await fetch(`/api/v1/notifications/${i}`)).json()).state === 'active', id);
     await stack.locator('[data-stack-count]', { hasText: '4 notifications' }).waitFor();
     // J lands on the closed stack and Enter opens it (#227).
     await sp.reload(); // nothing selected, so J starts from the top
     await stack.waitFor();
-    for (let i = 0; i < 200 && !(await stack.evaluate(s => s.classList.contains('is-selected'))); i++) await sp.keyboard.press('j');
-    assert.equal(await stack.evaluate(s => s === document.activeElement && s.classList.contains('is-selected')), true, 'J skipped the closed stack');
+    for (let i = 0; i < 200 && !(await sp.evaluate(() => document.querySelector('[data-stack="ci-stack"]')?.classList.contains('is-selected'))); i++) await sp.keyboard.press('j');
+    assert.equal(await onStack(null, 'is-selected'), true, 'J skipped the closed stack');
     await sp.keyboard.press('c');
-    await sp.waitForFunction(() => document.querySelector('[data-announce]').textContent === 'Open the stack to act on one notification.');
+    await until(sp, () => document.querySelector('[data-announce]').textContent === 'Open the stack to act on one notification.');
     for (const id of ids) assert.equal((await get(laptop, id)).state, 'active', 'C on a stack cleared a card');
     await sp.keyboard.press('Enter');
     await item('Build 1 failed').waitFor({ state: 'visible' });
     await stack.getByRole('button', { name: 'Hide' }).click();
     await item('Build 1 failed').waitFor({ state: 'hidden' });
+    // A page fetch already on its way when another change lands must not put
+    // the cleared card back (#402). Hold one fetch, made before the clear, and
+    // hand it over after the clear.
+    let release;
+    const onApp = u => u.pathname === '/app';
+    await sp.route(onApp, async route => {
+      if (route.request().resourceType() !== 'fetch' || release) return route.continue();
+      const stale = await route.fetch();
+      await new Promise(ok => { release = ok; });
+      await route.fulfill({ response: stale });
+    });
+    await api(phone, `/api/v1/notifications/${odd}/dismiss`);
+    for (let i = 0; i < 200 && !release; i++) await new Promise(ok => setTimeout(ok, 25));
+    assert.ok(release, 'no page fetch after a change');
     // Another device clears one inside the closed stack: the count and newest
     // title change at once, not after the hidden card's exit timer (about 1.7 s).
+    // The exit path marks the card leaving first: watch for that, not the clock (#714).
+    await sp.evaluate(id => { const c = document.querySelector(`.card[data-id="${id}"][hidden]`); window.hiddenLeft = !c;
+      if (c) new MutationObserver(() => { if (c.classList.contains('is-leaving')) window.hiddenLeft = true; }).observe(c, { attributes: true }); }, ids[3]);
     await api(phone, `/api/v1/notifications/${ids[3]}/dismiss`);
-    await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor({ timeout: 1000 });
+    await stack.locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor();
+    assert.equal(await sp.evaluate(() => window.hiddenLeft), false, 'the hidden card was missing or took the exit timer');
+    await sp.evaluate(() => { window.backAgain = false; new MutationObserver(() => { if (document.querySelector('[data-stack="ci-stack"] [data-stack-count]')?.textContent === '4 notifications') window.backAgain = true; }).observe(document.querySelector('[data-list]'), { childList: true, subtree: true, characterData: true }); });
+    release();
+    await sp.waitForTimeout(1000);
+    await sp.unroute(onApp);
+    assert.equal(await sp.evaluate(() => window.backAgain), false, 'a stale page put the cleared card back');
     assert.equal(await stack.locator('[data-stack-latest]').textContent(), 'Build 3 failed');
     // A single topic's page never stacks.
     await sp.goto(`${base}/app?topic=ci-stack`);
@@ -642,8 +858,51 @@ try {
     await sp.locator('[data-stack="tanks"].is-leaving').waitFor();
     assert.equal(await sp.locator('[data-stack].is-leaving').count(), 1, 'a stack that came in while clearing was marked Cleared');
     await stackOf('late').locator('[data-stack-count]', { hasText: '2 notifications' }).waitFor();
+    // While one stack's Clear all waits for its reply, another device clears a
+    // card inside a different closed stack: that stack's count changes at
+    // once, and the waiting stack stays as it is (#397).
+    await sp.unroute('**/api/v1/notifications/clear');
+    const holdClear = () => {
+      let go; const held = new Promise(r => { go = r; });
+      return sp.route('**/api/v1/notifications/clear', async route => { const res = await route.fetch(); await held; await route.fulfill({ response: res }); }).then(() => go);
+    };
+    const late3 = await send('late', 'Late 3');
+    for (const t of ['Pump 5 down', 'Pump 6 down']) await send('pumps', t);
+    await stackOf('late').locator('[data-stack-count]', { hasText: '3 notifications' }).waitFor();
+    await stackOf('pumps').waitFor();
+    let go = await holdClear();
+    await stackOf('pumps').getByRole('button', { name: 'Clear all' }).click();
+    await api(phone, `/api/v1/notifications/${late3}/dismiss`);
+    await stackOf('late').locator('[data-stack-count]', { hasText: '2 notifications' }).waitFor({ timeout: 1000 });
+    assert.equal(await stackOf('pumps').locator('[data-stack-count]').textContent(), '2 notifications', 'the waiting stack changed before its reply');
+    go();
+    await stackOf('pumps').waitFor({ state: 'detached' });
+    // A page load already on its way when Clear all starts: its answer, from
+    // before the clear, changes nothing until the clear's reply (#397).
+    await sp.unroute('**/api/v1/notifications/clear');
+    let loadGo, loaded; const loadHeld = new Promise(r => { loadGo = r; }), asked = new Promise(r => { loaded = r; });
+    const isLoad = u => new URL(u).pathname === '/app';
+    await sp.route(isLoad, async route => {
+      if (route.request().resourceType() !== 'fetch') return route.continue();
+      // Hold only the load that has Late 4, so an older refresh cannot stand in for it.
+      const res = await route.fetch();
+      if ((await res.text()).includes('Late 4')) { loaded(); await loadHeld; }
+      await route.fulfill({ response: res });
+    });
+    go = await holdClear();
+    await send('late', 'Late 4');
+    await asked;
+    await stackOf('late').getByRole('button', { name: 'Clear all' }).click();
+    loadGo();
+    await sp.waitForTimeout(1000); // nothing to wait on: the late answer must change nothing
+    assert.equal(await stackOf('late').locator('[data-stack-count]').textContent(), '2 notifications', 'a page load from before the clear changed the stack');
+    go();
+    await sp.locator('[data-stack="late"].is-leaving').waitFor();
+    await sp.locator('.card-title', { hasText: 'Late 4' }).waitFor();
+    await sp.unroute(isLoad);
+    await sp.unroute('**/api/v1/notifications/clear');
     await sp.context().close();
-    console.log('ok: stacks stay right while Clear all waits and while one fades');
+    console.log('ok: stacks stay right while Clear all waits, while one fades, and with a load in flight');
   }
 
   // QR sign-in (#74): a signed-out browser shows a code, a signed-in phone
@@ -691,6 +950,50 @@ try {
     const list = await fetch(base + '/api/v1/notifications', { headers: { Authorization: `Bearer ${linked}` } });
     assert.equal(list.status, 200, 'linked token lists notifications');
     console.log('ok: link a phone from Settings by approving it by name');
+  }
+
+  // Add an agent (#456): Settings makes a one-use invite, the agent claims it,
+  // shows in Linked devices as an agent and can be unlinked there.
+  {
+    const ag = await page.context().newPage(); // page no longer hears live events (above)
+    await ag.goto(base + '/app/settings');
+    const at = ag.url();
+    await ag.locator('.is-live').waitFor({ timeout: 5000 }); // the stream is up, so the new agent shows without a reload
+    await ag.getByRole('button', { name: 'Add agent' }).click();
+    await ag.getByLabel('Agent name').fill('build-bot');
+    await ag.locator('[data-agent-form] [name=more]').fill('builds, deploys');
+    assert.equal(await ag.getByLabel('Invite works for').inputValue(), '15m', 'default 15 minutes');
+    const [made] = await Promise.all([
+      ag.waitForResponse(r => r.url().endsWith('/api/v1/agents/invite')),
+      ag.getByRole('button', { name: 'Make invite' }).click(),
+    ]);
+    assert.equal(made.status(), 201, 'invite made');
+    const inv = await made.json();
+    assert.deepEqual(JSON.parse(made.request().postData()).topics, ['builds', 'deploys'], 'topics from the box');
+    await ag.getByText('It works once, until').waitFor();
+    assert.equal(await ag.locator('[data-agent-invite]').textContent(), inv.url, 'shows the invite');
+    assert.equal(ag.url(), at, 'the code is never in the address');
+    assert.ok(await ag.evaluate(() => document.activeElement === document.querySelector('[data-agent-invite]').parentElement), 'focus moves to the invite');
+    assert.match(await ag.locator('[data-agent-done]').textContent(), /May approve starts at Denied/, 'says approvals start denied');
+    const claim = await fetch(base + '/api/v1/agents/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: inv.code }) });
+    assert.equal(claim.status, 200, 'agent claims');
+    const { token: bot } = await claim.json();
+    const row = ag.locator('tr', { hasText: 'build-bot' });
+    await row.waitFor({ timeout: 5000 });
+    assert.match(await row.textContent(), /Agent/, 'row says agent');
+    // A second agent of the same name: the server's reason shows in the form.
+    await ag.getByRole('button', { name: 'Add another agent' }).click();
+    await ag.getByLabel('Agent name').fill('build-bot');
+    await ag.locator('[data-agent-form] [name=more]').fill('builds');
+    await ag.getByRole('button', { name: 'Make invite' }).click();
+    await ag.locator('[data-agent-status]', { hasText: 'exists' }).waitFor();
+    await row.getByRole('button', { name: 'Unlink' }).click();
+    await ag.getByRole('dialog').getByRole('button', { name: 'Unlink' }).click();
+    await row.waitFor({ state: 'detached' });
+    const after = await fetch(base + '/api/v1/notifications', { headers: { Authorization: `Bearer ${bot}` } });
+    assert.equal(after.status, 401, 'unlinked agent is signed out');
+    await ag.close();
+    console.log('ok: add an agent from Settings, see it as an agent, unlink it');
   }
 
   // Unlink (#246): browser a unlinks browser b from Settings; b's open inbox
@@ -789,7 +1092,7 @@ try {
     const me = (await (await ctx.request.get(base + '/api/v1/devices?all=1')).json()).devices.find(d => d.this);
     const put = await fetch(`${base}/api/v1/devices/${me.id}`, { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sound: 'bell' }) });
     assert.ok(put.ok, `agent sets the sound: ${put.status}`);
-    await sp.waitForFunction(() => document.querySelector('[data-sound-setting]').value === 'bell');
+    await until(sp, () => document.querySelector('[data-sound-setting]').value === 'bell');
     await sp.evaluate(() => localStorage.setItem('clrd.sound', 'soft'));
     await inbox();
     await settle('soft', 'a browser-only choice moves to the server');
@@ -862,7 +1165,7 @@ try {
     const sel = kp.locator('#tk-keepy');
     kp.once('dialog', d => d.dismiss());
     await sel.selectOption('1');
-    await kp.waitForFunction(() => !document.querySelector('[data-topic-keep] select').disabled);
+    await until(kp, () => !document.querySelector('[data-topic-keep] select').disabled);
     assert.equal(await sel.inputValue(), '', 'No puts the select back');
     assert.deepEqual(await topicKeep(), {}, 'and saves nothing');
     let msg = '';
@@ -909,7 +1212,7 @@ try {
     await rctx.close();
 
     await sp.locator('tr[data-silence]', { hasText: 'nojs' }).getByRole('button', { name: 'End now' }).click();
-    await sp.locator('h2', { hasText: 'Silences' }).waitFor();
+    await sp.locator('h3', { hasText: 'Silences' }).waitFor();
     assert.equal(await sp.locator('tr[data-silence]', { hasText: 'nojs' }).count(), 0, 'End now without script ends it');
     assert.equal((await api(phone, '/api/v1/notifications', { topic: 'nojs', title: 'Loud' })).silenced, false, 'and publishes alert again');
     await ctx.close();
@@ -991,13 +1294,70 @@ try {
     await card.getByText('ops2.example.invalid').waitFor();
     assert.match(await card.innerText(), /Signed with a secret\./, 'a blank secret on Edit removed it');
 
+    // A body template saves from Edit, comes back in the form, and clears.
+    const tmpl = '{"text": {{json .notification.title}}}';
+    const hookBody = async () => (await (await fetch(base + '/api/v1/topics/hooked/hooks', { headers: { Authorization: `Bearer ${laptop}` } })).json()).hooks[0].body;
+    await card.locator('summary', { hasText: 'Edit' }).click();
+    assert.ok(!(await edit.getByRole('button', { name: 'Preview' }).isVisible()), 'Preview shown without script, where it cannot work');
+    await edit.getByLabel('Body template').fill(tmpl);
+    await edit.getByRole('button', { name: 'Save webhook' }).click();
+    await card.getByText('Custom body.').waitFor();
+    assert.equal(await hookBody(), tmpl, 'the body template was not saved');
+    // A form from before the field (no body sent) keeps the saved template.
+    const old = await ctx.request.post(base + '/app/hooks', { form: { topic: 'hooked', name: 'ops', url: 'https://ops2.example.invalid/in' }, headers: { Origin: base }, maxRedirects: 0 });
+    assert.equal(old.status(), 303, `old-form hook save: ${old.status()}`);
+    assert.equal(await hookBody(), tmpl, 'a save without the body field wiped the template');
+    // With script, Preview renders the field against a sample event (#495),
+    // says why a broken one fails, and saves nothing.
+    {
+      const jctx = await browser.newContext();
+      assert.ok((await jctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'hooks-js' } })).ok(), 'hooks-js sign-in');
+      const jp = await jctx.newPage();
+      await jp.goto(base + '/app/settings');
+      const jcard = jp.locator('[data-hook="hooked/ops"]');
+      await jcard.locator('summary', { hasText: 'Edit' }).click();
+      const jedit = jcard.locator('form', { has: jp.getByRole('button', { name: 'Save webhook' }) });
+      const out = jedit.locator('[data-hook-preview-out]');
+      await jedit.getByLabel('Body template').fill(tmpl.slice(0, -1));
+      await jedit.getByRole('button', { name: 'Preview' }).click();
+      await out.getByText('not valid JSON').waitFor();
+      assert.ok((await out.getAttribute('class')).includes('text-destructive'), 'a broken preview is not shown as an error');
+      await jedit.getByLabel('Body template').fill('{"t": {{json .notification.title}}}');
+      await jedit.getByRole('button', { name: 'Preview' }).click();
+      await out.getByText('{"t": "Disk full"}', { exact: true }).waitFor();
+      assert.ok(!(await out.getAttribute('class')).includes('text-destructive'), 'a good preview is shown as an error');
+      assert.equal(await hookBody(), tmpl, 'Preview saved the template');
+      // A slow earlier answer never replaces the latest one.
+      let slow = true;
+      await jp.route('**/hooks/preview', async r => { if (slow) { slow = false; await new Promise(ok => setTimeout(ok, 800)); } await r.continue(); });
+      const late = jp.waitForResponse(r => r.url().endsWith('/hooks/preview') && r.status() === 400);
+      await jedit.getByLabel('Body template').fill(tmpl.slice(0, -1));
+      await jedit.getByRole('button', { name: 'Preview' }).click();
+      await jedit.getByLabel('Body template').fill('{"u": {{json .notification.title}}}');
+      await jedit.getByRole('button', { name: 'Preview' }).click();
+      await out.getByText('{"u": "Disk full"}', { exact: true }).waitFor();
+      await late;
+      await jp.evaluate(() => new Promise(ok => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(ok)), 50)));
+      assert.equal(await out.textContent(), '{"u": "Disk full"}', 'a stale preview replaced the latest one');
+      await jctx.close();
+    }
+    await sp.reload();
+    await card.locator('summary', { hasText: 'Edit' }).click();
+    assert.equal((await edit.getByLabel('Body template').inputValue()).trim(), tmpl, 'Edit does not show the saved body');
+    await edit.getByLabel('Body template').fill('');
+    await edit.getByRole('button', { name: 'Save webhook' }).click();
+    await card.getByText('Custom body.').waitFor({ state: 'detached' });
+    assert.equal(await hookBody(), '', 'clearing the body template kept it');
+
     // Not admin: no hooks on the page, and the form post is refused.
     const pub = execFileSync(bin, ['token', 'create', '--name', 'hooks-pub', '--scope', 'read,publish'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     const rctx = await browser.newContext();
     assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: pub, name: 'hooks-pub' } })).ok(), 'publish sign-in');
     const rp = await rctx.newPage();
     await rp.goto(base + '/app/settings');
-    await rp.getByText('Webhooks need an admin sign-in.').waitFor();
+    await rp.locator('#templates').waitFor();
+    assert.equal(await rp.locator('#webhooks').count(), 0, 'Webhooks shown to a device that cannot open them');
+    assert.equal(await rp.locator('#keep-cleared').count(), 0, 'Cleared messages shown to a device that cannot change it');
     assert.ok(!(await rp.content()).includes('ops2.example.invalid'), 'a hook URL shown to a non-admin');
     const refused = await rctx.request.post(base + '/app/hooks', { form: { topic: 'hooked', name: 'evil', url: 'https://x.example.invalid/' }, headers: { Origin: base }, maxRedirects: 0 });
     assert.equal(refused.status(), 400, `non-admin hook save: ${refused.status()}`);
@@ -1009,7 +1369,7 @@ try {
     await card.getByRole('button', { name: 'Delete' }).click();
     await sp.getByText('No webhooks yet.').waitFor();
     await ctx.close();
-    console.log('ok: webhooks are added, logged, edited and deleted in Settings; a non-admin sees none');
+    console.log('ok: webhooks are added, logged, edited (body template and preview too) and deleted in Settings; a non-admin sees none');
   }
 
   // Who may approve (#329). An Ask browser's tap goes to an allowed device to
@@ -1038,24 +1398,49 @@ try {
     await bp.locator('article.card', { hasText: "Confirm asker-web's answer: Ship" }).getByRole('button', { name: 'Confirm' }).click();
     for (let i = 0; (await get(laptop, q.id)).reply !== 'ship'; i++) { assert.ok(i < 20, 'confirm did not answer the question'); await new Promise(r => setTimeout(r, 250)); }
 
+    // A typed answer from the Ask browser: the confirm prompt shows the text (#153).
+    const tq = await api(phone, '/api/v1/notifications', { topic: 'agents', title: 'Why 153?', actions: [{ label: 'Because', reply: 'because', text: true }] });
+    await ap.goto(base + '/app');
+    const tcard = ap.locator('article.card', { hasText: 'Why 153?' });
+    await tcard.getByLabel('Because: type an answer').fill('the tests pass');
+    await tcard.getByRole('button', { name: 'Because' }).click();
+    await ap.locator('[data-toast]').filter({ hasText: 'Sent for confirmation.' }).waitFor();
+    await bp.goto(base + '/app');
+    const prompt = bp.locator('article.card', { hasText: "Confirm asker-web's answer: Because" });
+    await prompt.getByText('Answer: the tests pass').waitFor();
+    await prompt.getByRole('button', { name: 'Confirm' }).click();
+    for (let i = 0; (await get(laptop, tq.id)).reply_text !== 'the tests pass'; i++) { assert.ok(i < 20, 'confirm did not store the typed answer'); await new Promise(r => setTimeout(r, 250)); }
+
     // The allowed browser lowers the asker token to Denied from Settings.
+    // Pick after the redraw that every page load does once it is live, so the
+    // pick is not racing it (#476). The menu's handler is on the document and
+    // survives a redraw; this keeps the step about the menu, not the timing.
+    const settled = bp.waitForResponse(r => r.url() === base + '/app/settings' && r.request().resourceType() === 'fetch');
     await bp.goto(base + '/app/settings');
+    await (await settled).finished(); // the whole body, which the redraw reads before it swaps
     const sel = bp.locator('select[data-name="asker"]');
     assert.deepEqual(await sel.locator('option').allTextContents(), ['Denied', 'Ask', 'Allowed'], 'menu for another tree');
+    // Wait on the saved setting, not the toast: a toast can come and go
+    // before a busy runner looks for it (#599).
+    const devices = async () => (await (await fetch(base + '/api/v1/devices?all=1', { headers: { Authorization: `Bearer ${laptop}` } })).json()).devices;
+    const saved = async (name, want, msg) => {
+      for (let i = 0; (await devices()).find(d => d.name === name).approve !== want; i++) { assert.ok(i < 40, msg); await new Promise(r => setTimeout(r, 250)); }
+    };
     await sel.selectOption('denied');
-    await bp.locator('[data-toast]').filter({ hasText: 'asker may approve: Denied.' }).waitFor({ state: 'attached' });
-    const list = await (await fetch(base + '/api/v1/devices?all=1', { headers: { Authorization: `Bearer ${laptop}` } })).json();
-    assert.equal(list.devices.find(d => d.name === 'asker').approve, 'denied', 'the menu did not save');
+    await saved('asker', 'denied', 'the menu did not save');
+    // The save redraws the table: a pick on the old menu as it is swapped out
+    // reaches no handler (#714). The redrawn menu marks Denied as saved.
+    await sel.locator('option[value="denied"][selected]').waitFor({ state: 'attached' });
 
     // Its own row lowers after a confirm, and then the menus are gone: nothing raises it back here.
     const own = bp.locator('select[data-name="boss-web"]');
     assert.ok(await own.evaluate(s => s.hasAttribute('data-own')), 'own row not marked');
     bp.once('dialog', d => { assert.match(d.message(), /Lower boss-web to Ask\?/); d.accept(); });
     await own.selectOption('ask');
-    await bp.locator('[data-toast]').filter({ hasText: 'boss-web may approve: Ask.' }).waitFor({ state: 'attached' });
+    await saved('boss-web', 'ask', 'boss-web did not lower itself to Ask');
     await bp.reload();
     assert.equal(await bp.locator('[data-approve]').count(), 0, 'a device that lowered itself to Ask can still change settings');
-    const up = await bctx.request.put(base + '/api/v1/devices/' + list.devices.find(d => d.name === 'boss-web').id + '/approve', { data: { approve: 'allowed' }, headers: { Origin: base } });
+    const up = await bctx.request.put(base + '/api/v1/devices/' + (await devices()).find(d => d.name === 'boss-web').id + '/approve', { data: { approve: 'allowed' }, headers: { Origin: base } });
     assert.equal(up.status(), 403, `an Ask browser raised itself: ${up.status()}`);
     await actx.close();
     await bctx.close();
@@ -1148,9 +1533,73 @@ try {
     console.log('ok: webhook templates are added, edited, previewed and deleted in Settings; a read-only device gets no forms');
   }
 
-  // Format check in Settings (#320): one group per sender, dismiss for one
-  // sender, leave the topic out and check it again, undo. A read-only device
-  // sees the findings but no buttons.
+  // A topic's first question flags it for approvals (#623): an older card in
+  // that topic, kept as it was by the live update, still warns on Unsubscribe.
+  {
+    await api(phone, '/api/v1/notifications', { topic: 'qflag', title: 'Plain one' });
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'qflag' } })).ok(), 'qflag sign-in');
+    const qp = await ctx.newPage();
+    await qp.goto(base + '/app');
+    const old = qp.locator('article.card', { hasText: 'Plain one' }).locator('[data-unsub]');
+    await old.waitFor({ state: 'attached' });
+    await old.evaluate(b => { b.closest('article').kept = true; });
+    const sq = await api(phone, '/api/v1/notifications', { topic: 'qflag', title: 'Ship it?', actions: [{ label: 'Yes', reply: 'yes' }] });
+    await qp.locator('article.card', { hasText: 'Ship it?' }).waitFor();
+    // The question leaves the inbox: the older card still warns on its own (#700).
+    await api(phone, `/api/v1/notifications/${sq.id}/dismiss`);
+    await qp.locator('article.card', { hasText: 'Ship it?' }).waitFor({ state: 'detached' });
+    assert.ok(await old.evaluate(b => b.closest('article').kept), 'the older card was redrawn, so this does not test the live case');
+    let msg = '';
+    qp.once('dialog', d => { msg = d.message(); d.dismiss(); });
+    await old.dispatchEvent('click');
+    await qp.waitForTimeout(300);
+    assert.match(msg, /Unsubscribe anyway/, 'no warning from the older card');
+    await ctx.close();
+    console.log('ok: a topic that got a question warns on Unsubscribe from any of its cards');
+  }
+
+  // Subscriptions follow-ups (#649): a change from another device reloads the
+  // page and keeps a half-typed answer; Undo shows only for an Unsubscribe
+  // that landed.
+  {
+    const q = await api(phone, '/api/v1/notifications', { topic: 'drafts', title: 'Name it?', actions: [{ label: 'Say', reply: 'say', text: true }] });
+    await api(phone, '/api/v1/notifications', { topic: 'drafts2', title: 'Leave me' });
+    const sign = async name => { const c = await browser.newContext(); assert.ok((await c.request.post(base + '/api/v1/session', { data: { token: laptop, name } })).ok(), name + ' sign-in'); return c; };
+    const ctx = await sign('drafts'), other = await sign('drafts-other');
+    const dp = await ctx.newPage();
+    await dp.goto(base + '/app');
+    await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).fill('half typed');
+    const put = (c, topics, request_id) => c.request.put(base + '/api/v1/subscriptions', { data: { topics, request_id }, headers: { Origin: base } });
+    const [, r1] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: false })]);
+    assert.ok(r1.ok(), 'unsubscribe from another device');
+    assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'the reload dropped the half-typed answer');
+    const [, r2] = await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: true })]);
+    assert.ok(r2.ok(), 'subscribe again');
+    // Its own topic unsubscribed elsewhere: the card leaves, and resubscribing brings the answer back (#687).
+    await Promise.all([dp.waitForEvent('load'), put(other, { drafts: false })]);
+    assert.equal(await dp.locator(`[data-id="${q.id}"]`).count(), 0, 'card still shown after its topic was unsubscribed');
+    await Promise.all([dp.waitForEvent('load'), put(other, { drafts: true })]);
+    assert.equal(await dp.locator(`[data-id="${q.id}"] [data-text-reply] [name=text]`).inputValue(), 'half typed', 'resubscribing lost the half-typed answer');
+    // This tab's Unsubscribe marker, but the topic was turned off by another
+    // device's change: no Undo, it would reverse their choice (#702).
+    await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: false }, 'other-device')]);
+    await dp.evaluate(() => sessionStorage.setItem('clrd-unsub', JSON.stringify(['drafts2', 'this-tab'])));
+    await Promise.all([dp.waitForResponse(r => r.url().endsWith('/api/v1/subscriptions') && r.request().method() === 'GET'), dp.reload()]);
+    await dp.waitForTimeout(300); // the check has answered; give a wrong toast time to show
+    assert.equal(await dp.locator('[data-toast]', { hasText: 'Unsubscribed from' }).count(), 0, "Undo offered for another device's Unsubscribe");
+    await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: true })]);
+    // One that did land still offers it.
+    await dp.locator('article.card', { hasText: 'Leave me' }).locator('[data-unsub]').dispatchEvent('click');
+    await dp.locator('[data-toast]', { hasText: 'Unsubscribed from drafts2' }).waitFor();
+    assert.ok((await put(other, { drafts2: true })).ok(), 'subscribe again');
+    await ctx.close(); await other.close();
+    console.log('ok: a subscriptions change keeps a half-typed answer, and Undo shows only for an Unsubscribe that landed');
+  }
+
+  // Format check in Settings (#320, #618): one card per topic with a group per
+  // sender, dismiss for one sender from a row's menu, leave the topic out and
+  // check it again, undo. A read-only device sees the findings but no buttons.
   {
     const bot = execFileSync(bin, ['token', 'create', '--name', 'fmt-bot', '--scope', 'publish', '--topics', 'fmtchk'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     await api(laptop, '/api/v1/notifications', { topic: 'fmtchk', message: 'untitled from laptop' });
@@ -1160,25 +1609,32 @@ try {
     const sp = await ctx.newPage();
     await sp.goto(base + '/app/settings');
     const botG = sp.locator('[data-format-topic="fmtchk/fmt-bot"]'), lapG = sp.locator('[data-format-topic="fmtchk/laptop"]');
-    await botG.getByText('fmtchk from fmt-bot').waitFor();
-    await lapG.waitFor();
+    // Other tests leave many topics with findings, so cards start collapsed.
+    const card = sp.locator('[data-format-card="fmtchk"]'), open = () => card.evaluate(d => { d.open = true; });
+    await open();
+    await botG.getByRole('heading', { name: /^fmt-bot, \d+ of the last \d+ messages$/ }).waitFor();
+    assert.equal(await card.locator('[data-format-topic]').count(), 2, 'both senders in one fmtchk card');
+    await card.locator('summary', { hasText: '2 findings' }).first().waitFor();
+    await lapG.waitFor({ state: 'attached' });
     const click = b => Promise.all([sp.waitForEvent('load'), b.click()]);
-    await click(botG.locator('li', { hasText: 'No title' }).getByRole('button', { name: 'Dismiss for this sender' }));
+    const dismiss = async g => { await open(); const li = g.locator('li', { hasText: 'No title' }); await li.locator('summary').click(); await click(li.getByRole('button', { name: 'Dismiss for this sender' })); };
+    await dismiss(botG);
     assert.equal(await botG.count(), 0, 'dismissed for the bot, its group still shows');
     assert.equal(await lapG.count(), 1, 'dismissing for the bot hid the laptop too');
     const dis = sp.locator('[data-format-dismissed-item="fmtchk/no_title/fmt-bot"]');
     await dis.getByText('fmtchk: No title, from fmt-bot').waitFor();
-    await click(lapG.getByRole('button', { name: 'Stop checking fmtchk' }));
+    await open();
+    await click(card.getByRole('button', { name: 'Stop checking fmtchk' }));
     assert.equal(await lapG.count(), 0, 'a topic left out still shows');
     const off = (await (await fetch(base + '/api/v1/format-check', { headers: { Authorization: `Bearer ${laptop}` } })).json()).off;
     assert.deepEqual(off, ['fmtchk'], 'Stop checking did not reach the server');
     await click(sp.locator('[data-format-off-item="fmtchk"]').getByRole('button', { name: 'Check again' }));
-    await lapG.waitFor();
+    await lapG.waitFor({ state: 'attached' });
     await click(dis.getByRole('button', { name: 'Undo' }));
-    await botG.waitFor();
+    await botG.waitFor({ state: 'attached' });
     assert.equal(await sp.locator('[data-format-dismissed-item^="fmtchk/"]').count(), 0, 'Undo left the dismissal listed');
     // Dismissed again so the read-only page below also lists a dismissal by the bot.
-    await click(botG.locator('li', { hasText: 'No title' }).getByRole('button', { name: 'Dismiss for this sender' }));
+    await dismiss(botG);
     await dis.waitFor();
 
     const ro = execFileSync(bin, ['token', 'create', '--name', 'fmt-ro', '--scope', 'read', '--topics', 'fmtchk'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
@@ -1187,13 +1643,638 @@ try {
     const rp = await rctx.newPage();
     await rp.goto(base + '/app/settings');
     // Not an admin, so other people's devices are not named (#245).
-    await rp.locator('[data-format-topic="fmtchk/"]', { hasText: 'fmtchk from another device' }).first().waitFor();
+    await rp.locator('[data-format-topic="fmtchk/"]', { hasText: 'Another device, ' }).first().waitFor({ state: 'attached' });
     await rp.locator('[data-format-dismissed-item="fmtchk/no_title/"]', { hasText: 'from another device' }).waitFor();
     assert.ok(!(await rp.locator('[data-format-check]').innerHTML()).includes('fmt-bot'), 'a read-only device sees the bot\'s name, in text or markup');
     assert.equal(await rp.locator('[data-format-dismiss], [data-format-off]').count(), 0, 'a read-only device got dismiss buttons');
     await rctx.close();
     await ctx.close();
     console.log('ok: the format check groups by sender, dismisses, leaves a topic out and undoes in Settings');
+  }
+
+  // Senders (#119): an admin sees who sent what, on a page that works without
+  // JavaScript, and opens one sender; anyone else gets 403 and no nav link.
+  {
+    const bot = execFileSync(bin, ['token', 'create', '--name', 'sens-bot', '--scope', 'publish'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    await api(bot, '/api/v1/notifications', { topic: 'sens-a', title: 'Pump 3 stopped', message: 'x' });
+    await api(bot, '/api/v1/notifications', { topic: 'sens-b', title: 'Tank low', message: 'y' });
+    const ctx = await browser.newContext({ javaScriptEnabled: false });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'sens-web' } })).ok(), 'senders sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app');
+    await sp.getByRole('link', { name: 'Senders', exact: true }).click();
+    const row = sp.locator('tr[data-sender]', { hasText: 'sens-bot' });
+    await row.waitFor();
+    assert.match(await row.innerText(), /sens-a \(1\)\s+sens-b \(1\)\s+2/, 'the row lists both topics and the count');
+    await row.getByRole('link', { name: 'sens-bot' }).click();
+    await sp.getByRole('heading', { name: /sens-bot/ }).waitFor();
+    assert.equal(await sp.locator('tr[data-recent]').count(), 2, 'the detail lists both notifications');
+    await sp.locator('tr[data-recent]', { hasText: 'Pump 3 stopped' }).waitFor();
+    assert.equal((await sp.goto(base + '/app/senders/nope')).status(), 404, 'an unknown sender');
+    const rctx = await browser.newContext();
+    const reader = execFileSync(bin, ['token', 'create', '--name', 'sens-ro', '--scope', 'read'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: reader, name: 'sens-ro' } })).ok(), 'reader sign-in');
+    const rp = await rctx.newPage();
+    assert.equal((await rp.goto(base + '/app/senders')).status(), 403, 'a non-admin on Senders');
+    assert.ok(!(await rp.content()).includes('sens-bot'), 'a non-admin sees a sender');
+    await rp.goto(base + '/app');
+    assert.equal(await rp.getByRole('link', { name: 'Senders', exact: true }).count(), 0, 'a non-admin got the Senders link');
+    await rctx.close();
+    await ctx.close();
+    console.log('ok: Senders lists who sent what without JavaScript, opens one sender, 404s an unknown one and 403s a non-admin');
+  }
+
+  // Sender rules (#119 part 2): off until set; Pause drops what it sends,
+  // the change log shows it, Undo puts it back, routes and priorities round
+  // trip, bad routes and a non-admin get 400. No JavaScript.
+  {
+    const bot = execFileSync(bin, ['token', 'create', '--name', 'rule-bot', '--scope', 'publish'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    await api(bot, '/api/v1/notifications', { topic: 'rule-a', title: 'Before rules', message: 'x' });
+    const ctx = await browser.newContext({ javaScriptEnabled: false });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'rule-web' } })).ok(), 'rules sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/senders');
+    await sp.locator('tr[data-sender]', { hasText: 'rule-bot' }).getByRole('link', { name: 'rule-bot' }).click();
+    const rules = sp.locator('[data-rules]');
+    await rules.getByText('No changes yet.').waitFor();
+    assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'paused before any rule');
+    const path = new URL(sp.url()).pathname;
+
+    await sp.locator('[name=paused]').check();
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    const change = rules.locator('tr[data-change]');
+    await change.first().waitFor();
+    assert.match(await change.first().innerText(), /Paused[\s\S]*was: No rules/, 'the change row');
+    assert.equal(await sp.locator('[name=paused]').isChecked(), true, 'paused after save');
+    await api(bot, '/api/v1/notifications', { topic: 'rule-a', title: 'Dropped one', message: 'x' });
+    await sp.reload();
+    assert.equal(await sp.locator('tr[data-recent]', { hasText: 'Dropped one' }).count(), 0, 'a paused sender stored a notification');
+
+    await change.first().getByRole('button', { name: 'Undo' }).click();
+    await rules.locator('tr[data-change]:nth-child(2)').waitFor();
+    assert.match(await change.first().innerText(), /^No rules[\s\S]*was: Paused/, 'the undo row');
+    assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'paused after undo');
+    await api(bot, '/api/v1/notifications', { topic: 'rule-a', title: 'Kept one', message: 'x' });
+    await sp.reload();
+    await sp.locator('tr[data-recent]', { hasText: 'Kept one' }).waitFor();
+
+    await sp.locator('#r-pmin').selectOption('2');
+    await sp.locator('#r-routes').fill('rule-a: rule-b, rule-c\n*: rule-b');
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await rules.locator('tr[data-change]:nth-child(3)').waitFor();
+    assert.equal(await sp.locator('#r-pmin').inputValue(), '2', 'priority min after save');
+    assert.equal((await sp.locator('#r-routes').inputValue()).trim(), '*: rule-b\nrule-a: rule-b, rule-c', 'routes after save');
+
+    // Each refused post leaves the rules alone (checked by the count below).
+    const full = { priority_min: '0', priority_max: '0', base_seq: '0' };
+    for (const [form, why] of [[{ ...full, routes: 'no colon here' }, 'bad routes'], [{ ...full, routes: 'a: b\na: ' }, 'a topic routed twice'], [{}, 'an empty post'], [{ ...full, priority_min: 'x' }, 'a bad priority']]) {
+      const bad = await ctx.request.post(base + path, { form, headers: { Origin: base }, maxRedirects: 0 });
+      assert.equal(bad.status(), 400, `${why}: ${bad.status()}`);
+      assert.match(await bad.text(), /Not saved/, `${why} message`);
+    }
+
+    const rctx = await browser.newContext();
+    const reader = execFileSync(bin, ['token', 'create', '--name', 'rule-ro', '--scope', 'read'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    assert.ok((await rctx.request.post(base + '/api/v1/session', { data: { token: reader, name: 'rule-ro' } })).ok(), 'reader sign-in');
+    const refused = await rctx.request.post(base + path, { form: { ...full, paused: 'on', base_seq: await sp.locator('[name=base_seq]').inputValue() }, headers: { Origin: base }, maxRedirects: 0 });
+    assert.equal(refused.status(), 400, `non-admin rules save: ${refused.status()}`);
+    await rctx.close();
+    await sp.reload();
+    assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'a non-admin paused a sender');
+    assert.equal(await change.count(), 3, 'a refused save logged a change');
+
+    // A stale page (#543): a second tab mutes the sender; saving the first
+    // tab's older form is refused and the mute stays.
+    const sp2 = await ctx.newPage();
+    await sp2.goto(base + path);
+    await sp2.locator('[name=muted]').check();
+    await sp2.getByRole('button', { name: 'Save rules' }).click();
+    await sp2.locator('[data-rules] tr[data-change]:nth-child(4)').waitFor();
+    await sp2.close();
+    await sp.locator('[name=paused]').check();
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await sp.getByText(/Not saved: the rules changed since you loaded them/).waitFor();
+    await sp.goto(base + path);
+    assert.equal(await sp.locator('[name=muted]').isChecked(), true, 'a stale form undid a newer mute');
+    assert.equal(await sp.locator('[name=paused]').isChecked(), false, 'a stale form saved');
+    assert.equal(await change.count(), 4, 'a stale save logged a change');
+    await sp.locator('[name=paused]').check();
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await rules.locator('tr[data-change]:nth-child(5)').waitFor();
+    assert.equal(await sp.locator('[name=muted]').isChecked(), true, 'muted after a fresh save');
+
+    // The quiet alarm (#119 part 3, #560): a bad duration comes back as the
+    // page with the server's message by the field and the typed value kept.
+    await sp.locator('#r-expect').fill('5s');
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await sp.locator('#r-expect-err', { hasText: /Not saved: expect must be a duration from 1m to 8784h/ }).waitFor();
+    assert.equal(await sp.locator('#r-expect').inputValue(), '5s', 'typed duration kept');
+    assert.equal(await sp.locator('#r-expect').getAttribute('aria-invalid'), 'true', 'expect marked invalid');
+    assert.equal(await change.count(), 5, 'a bad duration logged a change');
+    const badExpect = await ctx.request.post(base + path, { form: { ...full, expect: '5s', base_seq: await sp.locator('[name=base_seq]').inputValue() }, headers: { Origin: base }, maxRedirects: 0 });
+    assert.equal(badExpect.status(), 400, `bad duration: ${badExpect.status()}`);
+    await sp.locator('#r-expect').fill('25h');
+    await sp.locator('#r-alert').fill('rule-alarm');
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await rules.locator('tr[data-change]:nth-child(6)').waitFor();
+    await sp.reload();
+    assert.equal(await sp.locator('#r-expect').inputValue(), '25h', 'expect after reload');
+    assert.equal(await sp.locator('#r-alert').inputValue(), 'rule-alarm', 'alert topic after reload');
+    await rules.locator('tr[data-change]', { hasText: 'alarm if quiet 25h in rule-alarm' }).first().waitFor();
+    // Emptied fields turn it off, not keep the old value.
+    await sp.locator('#r-expect').fill('');
+    await sp.locator('#r-alert').fill('');
+    await sp.getByRole('button', { name: 'Save rules' }).click();
+    await rules.locator('tr[data-change]:nth-child(7)').waitFor();
+    assert.equal(await sp.locator('#r-expect').inputValue(), '', 'expect after clearing');
+    assert.equal(await sp.locator('#r-alert').inputValue(), '', 'alert topic after clearing');
+    await ctx.close();
+    console.log('ok: sender rules pause, log, undo, quiet alarm and round trip without JavaScript; bad routes, a bad duration, a stale page and a non-admin get 400');
+  }
+
+  // Swipe on a touch screen (#161): a part swipe shows the buttons Settings
+  // picked for that side and changes nothing; swiping back, a vertical drag
+  // and a full swipe change nothing either; a tapped button acts; a mouse drag
+  // shows nothing; a sign-in that may not change settings sees them read-only.
+  {
+    const ctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } });
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'swiper' } })).ok(), 'swipe sign-in');
+    const sp = await ctx.newPage();
+    const cdp = await ctx.newCDPSession(sp);
+    const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    const swipe = async (loc, dx, dy = 0, held) => {
+      const b = await loc.boundingBox(), x = b.x + b.width / 2, y = b.y + 20; // on the title, not a button
+      await touch('touchStart', x, y);
+      for (let i = 1; i <= 8; i++) { await touch('touchMove', x + dx * i / 8, y + dy * i / 8); await sp.waitForTimeout(20); }
+      await sp.waitForTimeout(150); // held still, so no fling follows to eat the next tap
+      if (held) await held(); // checked while the finger is still down
+      await touch('touchEnd');
+    };
+    const a = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-a', message: 'one' });
+    const b = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-b', message: 'two' });
+    await sp.goto(base + '/app');
+    const ca = sp.locator('article.card', { hasText: 'swipe-a' }), cb = sp.locator('article.card', { hasText: 'swipe-b' });
+    const tray = c => c.locator('[data-swipe-tray]');
+    await swipe(ca, -120);
+    await tray(ca).getByRole('button', { name: 'Clear' }).waitFor();
+    assert.deepEqual(await tray(ca).getByRole('button').allTextContents(), ['Snooze', 'Clear'], 'swipe left shows Snooze, then Clear at the edge');
+    assert.equal((await get(laptop, a.id)).state, 'active', 'a part swipe changes nothing');
+    await swipe(ca, 120);
+    await tray(ca).waitFor({ state: 'detached' });
+    await swipe(ca, -150, 200); // far enough to open, were it sideways
+    assert.equal(await tray(ca).count(), 0, 'a mostly vertical drag shows nothing');
+    let mid; await swipe(ca, -380, 0, async () => { mid = await ca.evaluate(c => c.x <= c.trayW); });
+    assert.ok(mid, 'the slide stops at the buttons while the finger is still moving');
+    await tray(ca).waitFor();
+    assert.ok(await ca.evaluate(c => c.x === c.trayW), 'a full swipe stops at the buttons');
+    await sp.waitForTimeout(300);
+    assert.equal((await get(laptop, a.id)).state, 'active', 'a full swipe does not clear');
+    await tray(ca).getByRole('button', { name: 'Clear' }).tap();
+    await sp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).waitFor();
+    assert.equal((await get(laptop, a.id)).state, 'dismissed', 'the tapped Clear clears');
+    await swipe(cb, 120);
+    assert.deepEqual(await tray(cb).getByRole('button').allTextContents(), ['Ack'], 'swipe right shows Ack');
+    await tray(cb).getByRole('button', { name: 'Ack' }).tap();
+    await cb.locator('.badge[data-state=acknowledged]').waitFor();
+    assert.equal((await get(laptop, b.id)).state, 'acknowledged', 'the tapped Ack acknowledges');
+
+    // Settings move Ack to the left and leave the right empty.
+    await sp.goto(base + '/app/settings');
+    await sp.getByLabel('Swipe left, button 1').selectOption('ack');
+    await sp.getByLabel('Swipe left, button 2').selectOption('');
+    await sp.getByLabel('Swipe right, button 1').selectOption('');
+    await Promise.all([sp.waitForEvent('load'), sp.locator('[data-swipe-settings]').getByRole('button', { name: 'Save' }).click()]);
+    assert.equal(await sp.getByLabel('Swipe left, button 1').inputValue(), 'ack', 'swipe setting saved');
+    const c = await api(laptop, '/api/v1/notifications', { topic: 'swp', title: 'swipe-c', message: 'three' });
+    await sp.goto(base + '/app');
+    const cc = sp.locator('article.card', { hasText: 'swipe-c' });
+    await swipe(cc, 120);
+    assert.equal(await tray(cc).count(), 0, 'an empty side shows nothing');
+    await swipe(cc, -120);
+    assert.deepEqual(await tray(cc).getByRole('button').allTextContents(), ['Ack'], 'the new left side');
+    await ctx.close();
+
+    // A mouse drag shows nothing.
+    const mctx = await browser.newContext();
+    assert.ok((await mctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'mouse' } })).ok(), 'mouse sign-in');
+    const mp = await mctx.newPage();
+    await mp.goto(base + '/app');
+    const pm = mp.locator('article.card', { hasText: 'swipe-c' }), box = await pm.boundingBox();
+    await mp.mouse.move(box.x + box.width / 2, box.y + 20);
+    await mp.mouse.down();
+    await mp.mouse.move(box.x + 20, box.y + 20, { steps: 8 });
+    await mp.mouse.up();
+    assert.equal(await tray(pm).count(), 0, 'a mouse drag shows nothing');
+    assert.equal((await get(laptop, c.id)).state, 'active', 'and changes nothing');
+    // Swipe settings changed elsewhere reload an open page, so its buttons and form are current.
+    await mp.locator('#sync.is-live').waitFor();
+    const [, put] = await Promise.all([mp.waitForEvent('load'), fetch(base + '/api/v1/settings', { method: 'PUT', headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ swipe_start: ['clear', 'snooze'], swipe_end: ['ack'] }) })]);
+    assert.equal(put.status, 200, 'swipe settings put back');
+    assert.equal(await mp.locator('[data-inbox]').getAttribute('data-swipe-end'), 'ack ', 'the reloaded page has the new buttons');
+    await mctx.close();
+
+    // A topic-limited sign-in cannot change settings: 403, then read-only.
+    const lim = execFileSync(bin, ['token', 'create', '--name', 'swp-only', '--scope', 'read,publish', '--topics', 'swp'], { env, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const lctx = await browser.newContext();
+    assert.ok((await lctx.request.post(base + '/api/v1/session', { data: { token: lim, name: 'swp-only' } })).ok(), 'limited sign-in');
+    const lp = await lctx.newPage();
+    await lp.goto(base + '/app/settings');
+    await lp.locator('[data-swipe-settings]').getByRole('button', { name: 'Save' }).click();
+    await lp.locator('[data-swipe-status]:not(:empty)').waitFor();
+    assert.ok(await lp.getByLabel('Swipe left, button 1').isDisabled(), 'read-only after a refused save');
+    await lctx.close();
+    console.log('ok: on a touch screen a part swipe shows the chosen buttons and acts only on a tap; swipe back, vertical, full and mouse drags change nothing; settings move them; a refused save is read-only');
+  }
+
+  // Web Push (#164): nothing asks for permission on load; the switch subscribes
+  // and unsubscribes against the server; a lost subscription and a blocked
+  // site tidy both sides to off; a push shows a notification, fetches the rest
+  // when only the id came, and clears nothing. Headless Chromium denies
+  // notifications, so permission and the push service are stubbed: no real
+  // push service is reached and a notification tap cannot be dispatched.
+  {
+    const { createECDH, randomBytes } = await import('node:crypto');
+    const ec = createECDH('prime256v1'); ec.generateKeys();
+    const fake = { endpoint: 'https://push.example.invalid/sub/1', keys: { p256dh: ec.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') } };
+    const ctx = await browser.newContext();
+    await ctx.addInitScript(f => {
+      const ss = (k, v) => { try { return v === undefined ? sessionStorage.getItem(k) : sessionStorage.setItem(k, v); } catch { return null; } };
+      window.asked = 0;
+      let perm = ss('perm') || 'default';
+      Object.defineProperty(Notification, 'permission', { get: () => perm, configurable: true });
+      Notification.requestPermission = async () => { window.asked++; perm = ss('answer') || 'granted'; ss('perm', perm); return perm; };
+      // Gone after a reload (the browser lost it) unless keep is set.
+      const mk = () => ({ ...f, toJSON: () => f, unsubscribe: async () => { sub = null; ss('keep', ''); return true; } });
+      let sub = ss('keep') ? mk() : null;
+      PushManager.prototype.subscribe = async () => (sub = mk());
+      PushManager.prototype.getSubscription = async () => sub;
+    }, fake);
+    const pp = await ctx.newPage();
+    await pp.goto(`${base}/app?auth=${Buffer.from(`Bearer ${laptop}`).toString('base64url')}`);
+    await pp.goto(base + '/app/settings');
+    const btn = pp.locator('[data-push]');
+    const subscribed = async () => (await (await ctx.request.get(base + '/api/v1/push')).json()).subscribed;
+    const ready = async name => { await pp.getByRole('button', { name }).waitFor(); await until(pp, () => !document.querySelector('[data-push]').disabled); };
+    await ready('Turn on notifications');
+    assert.equal(await pp.evaluate(() => window.asked), 0, 'asked for permission on load');
+    assert.equal(await pp.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0, 'a worker registered before opting in');
+    assert.equal(await subscribed(), false);
+
+    const swe = ctx.waitForEvent('serviceworker');
+    await btn.click();
+    await ready('Turn off notifications');
+    assert.equal(await pp.evaluate(() => window.asked), 1);
+    assert.equal(await subscribed(), true, 'turning on reached the server');
+    // A push: record what the worker shows instead of the browser's own call.
+    const sw = await swe;
+    await sw.evaluate(() => { self.seen = []; self.registration.showNotification = async (t, o) => { self.seen.push({ t, ...o }); }; });
+    const cdp = await ctx.newCDPSession(pp);
+    const regs = new Promise(ok => cdp.on('ServiceWorker.workerRegistrationUpdated', e => e.registrations[0] && ok(e.registrations[0].registrationId)));
+    await cdp.send('ServiceWorker.enable');
+    const regId = await regs;
+    const n = await api(phone, '/api/v1/notifications', { topic: 'pushy', title: 'Disk full', message: 'Free 2 GB' });
+    const push = async d => { await cdp.send('ServiceWorker.deliverPushMessage', { origin: base, registrationId: regId, data: JSON.stringify(d) }); };
+    await push({ type: 'notification', id: 'abc', topic: 'pushy', title: 'Short one', message: 'body' });
+    await push({ type: 'notification', via: 'new', seq: 1, id: n.id, topic: 'pushy' }); // too big: only the id came
+    for (let i = 0; i < 50 && (await sw.evaluate(() => self.seen.length)) < 2; i++) await pp.waitForTimeout(100);
+    const seen = await sw.evaluate(() => self.seen);
+    assert.deepEqual(seen.map(s => [s.t, s.body, s.tag, s.renotify]), [['Short one', 'body', 'abc', true], ['Disk full', 'Free 2 GB', n.id, true]], 'what the worker showed');
+    assert.equal((await get(laptop, n.id)).state, 'active', 'a push cleared the notification');
+
+    // The browser lost its subscription (stub gone after reload): tidy to off.
+    await pp.reload();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'a lost browser subscription left the server row');
+    // Both sides keep it: still on after a reload.
+    await btn.click();
+    await ready('Turn off notifications');
+    await pp.evaluate(() => sessionStorage.setItem('keep', '1'));
+    await pp.reload();
+    await ready('Turn off notifications');
+    assert.equal(await subscribed(), true);
+    // The server dropped it (the push service said gone): the browser drops it too, never re-sends it.
+    await ctx.request.delete(base + '/api/v1/push');
+    await pp.reload();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'a subscription the server dropped was sent again');
+    assert.equal(await pp.evaluate(() => sessionStorage.getItem('keep')), '', 'the browser kept a subscription the server dropped');
+    // On, then off.
+    await btn.click();
+    await ready('Turn off notifications');
+    await btn.click();
+    await ready('Turn on notifications');
+    assert.equal(await subscribed(), false, 'turning off reached the server');
+    // Blocked after opting in: the next load tidies the server and says why.
+    await btn.click();
+    await ready('Turn off notifications');
+    await pp.evaluate(() => sessionStorage.setItem('perm', 'denied'));
+    await pp.reload();
+    await pp.locator('[data-push-hint]', { hasText: 'blocked' }).waitFor();
+    assert.equal(await btn.isDisabled(), true, 'the switch works while the site is blocked');
+    assert.equal(await subscribed(), false, 'a blocked site kept the server row');
+    // Refused when asked: nothing subscribed.
+    await pp.evaluate(() => { sessionStorage.setItem('perm', 'default'); sessionStorage.setItem('answer', 'denied'); });
+    await pp.reload();
+    await ready('Turn on notifications');
+    await btn.click();
+    await pp.locator('[data-push-hint]', { hasText: 'blocked' }).waitFor();
+    assert.equal(await subscribed(), false, 'a refused permission subscribed');
+    await ctx.close();
+    console.log('ok: web push asks only on tap, subscribes and unsubscribes, tidies a lost or blocked subscription, and a push shows without clearing');
+  }
+
+  // Settings search (#575): five sections in the order SPEC 9.1 gives; a
+  // keyword that is in no label finds its setting and hides the other
+  // sections; Enter goes to it; no match shows the empty state and Clear
+  // brings every setting back. Without script every section shows and there
+  // is no search box.
+  {
+    const order = ['Notifications', 'Inbox', 'Display', 'Devices', 'Integrations', 'About'];
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search' } })).ok(), 'search sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/settings');
+    const groups = () => sp.locator('[data-settings-group] > h2:visible').allTextContents();
+    const sets = () => sp.locator('[data-setting] > h3:visible').allTextContents();
+    assert.deepEqual(await groups(), order, 'settings sections or their order');
+    const q = sp.getByLabel('Search settings');
+    await q.fill('do not disturb');
+    await sp.locator('#sound').waitFor({ state: 'hidden' });
+    assert.deepEqual(await sets(), ['Silences'], 'a keyword found the wrong settings');
+    assert.deepEqual(await groups(), ['Notifications'], 'a section with no match still shows');
+    await q.press('Enter');
+    await until(sp, () => location.hash === '#silences' && document.activeElement?.id === 'silences');
+    await q.fill("what's new"); // About (#580)
+    await sp.locator('#silences').waitFor({ state: 'hidden' });
+    assert.deepEqual(await sets(), ['Version'], 'search missed the About section');
+    await q.fill('Dark Mode ');
+    await sp.locator('#about').waitFor({ state: 'hidden' });
+    assert.deepEqual(await sets(), ['Appearance'], 'a keyword in Display found the wrong settings');
+    assert.deepEqual(await groups(), ['Display'], 'only the matching section shows');
+    await q.fill('confirm first'); // in Linked devices' second paragraph
+    await sp.locator('#appearance').waitFor({ state: 'hidden' });
+    assert.ok((await sets()).includes('Linked devices'), 'search missed a later paragraph');
+    await sp.evaluate(() => { location.hash = '#dev-h'; }); // a link to a setting, while searching
+    await sp.locator('#sound').waitFor();
+    assert.equal(await q.inputValue(), '', 'a link to a setting left the search on');
+    await q.fill('nothing like this');
+    await sp.locator('[data-settings-none]').waitFor();
+    assert.equal(await sp.locator('[data-settings-term]').textContent(), 'nothing like this', 'empty state names the search');
+    assert.deepEqual(await sets(), [], 'a setting shown with no match');
+    await sp.getByRole('button', { name: 'Clear search' }).click();
+    await sp.locator('#sound').waitFor();
+    assert.equal(await q.inputValue(), '', 'Clear left the search text');
+    assert.ok(await q.evaluate(e => e === document.activeElement), 'Clear did not return to the search box');
+    assert.deepEqual(await groups(), order, 'Clear did not bring every section back');
+    await ctx.close();
+
+    // #591: a search typed while pair.js still loads finds Link a phone once pair.js shows it.
+    const lctx = await browser.newContext();
+    assert.ok((await lctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search-late' } })).ok(), 'late sign-in');
+    const lp = await lctx.newPage();
+    let letPair;
+    const pairHeld = new Promise(r => { letPair = r; });
+    await lp.route('**/pair.js*', async r => { await pairHeld; await r.continue(); });
+    await lp.goto(base + '/app/settings', { waitUntil: 'commit' });
+    await lp.getByLabel('Search settings').fill('qr');
+    await lp.locator('[data-settings-none]').waitFor(); // inbox.js ran; Link a phone is not shown yet
+    letPair();
+    await lp.locator('#link-phone').waitFor();
+    assert.equal(await lp.locator('[data-settings-none]').isVisible(), false, 'empty state stayed after Link a phone appeared');
+    assert.equal(await lp.locator('[data-settings-n]').textContent(), '1 setting matches. Press Enter to go to the first.', 'match count missed Link a phone');
+    await lctx.close();
+
+    const nctx = await browser.newContext({ javaScriptEnabled: false });
+    assert.ok((await nctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search-nojs' } })).ok(), 'no-js sign-in');
+    const np = await nctx.newPage();
+    await np.goto(base + '/app/settings');
+    assert.deepEqual(await np.locator('[data-settings-group] > h2:visible').allTextContents(), order, 'a section missing without script');
+    assert.equal(await np.getByLabel('Search settings').isVisible(), false, 'search box shown without script');
+    assert.ok(await np.locator('#silences').isVisible(), 'Silences hidden without script');
+    await nctx.close();
+    console.log('ok: settings sit in six sections, search finds by keyword, goes to the match, shows an empty state and clears; without script all sections show');
+  }
+
+  // Motion (#598, SPEC 10.1), on its own server so no other card is in the way.
+  // A recorder in the page logs each card animation and slide as it starts,
+  // so a 200ms step is never missed on a busy machine.
+  {
+    const p3 = await new Promise(ok => { const s = createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+    const b3 = `http://127.0.0.1:${p3}`;
+    const env3 = { ...process.env, CLRD_DB: join(mkdtempSync(join(tmpdir(), 'clrd-motion-')), 'clrd.db'), CLRD_LISTEN: `127.0.0.1:${p3}`, CLRD_BASE_URL: b3 + '/' };
+    const mk = name => execFileSync(bin, ['token', 'create', '--name', name, '--scope', 'admin', '--approve', 'allowed'], { env: env3, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const tok = mk('motion'), other = mk('other-phone');
+    const srv3 = spawn(bin, [], { env: env3, stdio: 'inherit' });
+    const post3 = async (path, body) => {
+      const r = await fetch(b3 + path, { method: 'POST', headers: { Authorization: `Bearer ${other}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      assert.equal(r.status, 200, `${path}: ${r.status}`);
+      return r.json();
+    };
+    const send = title => post3('/api/v1/notifications', { topic: 'motion', title });
+    try {
+      for (let i = 0; ; i++) {
+        try { if ((await fetch(b3 + '/healthz')).ok) break; } catch {}
+        if (i > 50) throw new Error('motion server did not start');
+        await new Promise(r => setTimeout(r, 100));
+      }
+      const old = await send('Was here first');
+      const ctx = await browser.newContext();
+      await ctx.addInitScript(() => {
+        window.moves = [];
+        const rec = e => {
+          const c = e.target;
+          if (e.pseudoElement || !c.matches || !c.matches('article.card')) return;
+          const name = e.type === 'animationstart' ? e.animationName : e.propertyName;
+          if (name === 'opacity') return;
+          const entry = { name, title: c.querySelector('.card-title')?.textContent.trim(), at: e.timeStamp };
+          window.moves.push(entry);
+          // A card sliding out past the list's edge must not widen the page.
+          if (name === 'transform') setTimeout(() => { entry.wide = document.documentElement.scrollWidth > document.documentElement.clientWidth; }, 150); // mid-slide, past the edge
+        };
+        addEventListener('animationstart', rec, true);
+        addEventListener('transitionrun', rec, true);
+      });
+      const mp = await ctx.newPage();
+      await mp.setViewportSize({ width: 390, height: 800 });
+      // Live sync runs through here, so a step can drop it (down) or hold what
+      // the server sends (held) and then let it all through at once.
+      let sock, down = false, held = null;
+      await mp.routeWebSocket(/\/api\/v1\/ws/, ws => {
+        if (down) return ws.close();
+        const srv = ws.connectToServer();
+        srv.onMessage(m => held ? held.push(m) : ws.send(m));
+        sock = { ws, srv };
+      });
+      const heldNotes = () => (held || []).map(m => JSON.parse(m).notification).filter(Boolean);
+      const hold = async (ok, what) => {
+        for (let i = 0; i < 200 && !ok(heldNotes()); i++) await mp.waitForTimeout(100);
+        assert.ok(ok(heldNotes()), `live sync never sent ${what}`);
+        const all = held; held = null;
+        all.forEach(m => sock.ws.send(m));
+      };
+      await mp.goto(`${b3}/app?auth=${Buffer.from(`Bearer ${tok}`).toString('base64url')}`);
+      await mp.locator('.is-live').waitFor({ timeout: 5000 });
+      const mc = t => mp.locator('article.card', { hasText: t });
+      const moved = (name, title) => mp.evaluate(([n, t]) => window.moves.some(m => m.name === n && m.title === t), [name, title]);
+      await mc('Was here first').waitFor();
+      await mp.waitForTimeout(400);
+      assert.equal(await moved('clrd-in', 'Was here first'), false, 'a card already there on first load slid in');
+
+      // Live, tab in front: it slides in and wiggles once.
+      await send('Just arrived');
+      await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Just arrived'));
+      assert.ok(await moved('clrd-in', 'Just arrived'), 'a live card did not slide in');
+
+      // A burst: all slide in, only the newest wiggles. Held and let through
+      // together, so the burst lands in one refresh even on a slow machine (#612).
+      held = [];
+      for (const t of ['Burst one', 'Burst two', 'Burst three']) await send(t);
+      await hold(ns => ns.length >= 3, 'the burst');
+      for (const t of ['Burst one', 'Burst two', 'Burst three']) await mc(t).waitFor();
+      await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Burst three'));
+      const burst = await mp.evaluate(() => window.moves.filter(m => m.title.startsWith('Burst')).map(m => `${m.name}:${m.title}`));
+      assert.ok(['one', 'two', 'three'].every(n => burst.includes(`clrd-in:Burst ${n}`)),`a burst card did not slide in: ${burst}`);
+      assert.ok(!burst.includes('clrd-wiggle:Burst one') && !burst.includes('clrd-wiggle:Burst two'), `an older card in a burst wiggled: ${burst}`);
+
+      // Tab in the background: the card is there when the person comes back, with no motion.
+      await mp.evaluate(() => Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }));
+      await send('Came while away');
+      await mc('Came while away').waitFor();
+      await mp.waitForTimeout(400);
+      assert.equal(await moved('clrd-in', 'Came while away'), false, 'a card that came while the tab was hidden slid in');
+      await mp.evaluate(() => delete document.visibilityState);
+
+      // Live sync drops and a card is sent meanwhile: it comes in with the
+      // catch-up on reconnect, so it just appears (#614).
+      down = true;
+      sock.ws.close(); sock.srv.close();
+      await mp.locator('.is-live').waitFor({ state: 'detached' });
+      await send('Sent while offline');
+      down = false;
+      await mc('Sent while offline').waitFor({ timeout: 20000 });
+      await mp.locator('.is-live').waitFor();
+      await mp.waitForTimeout(400);
+      assert.equal(await moved('clrd-in', 'Sent while offline'), false, 'a card from the catch-up after a reconnect slid in');
+
+      // Cleared on another device: the reason shows, then it slides away, without widening the page.
+      await post3(`/api/v1/notifications/${old.id}/dismiss`);
+      await until(mp, () => window.moves.some(m => m.name === 'transform' && m.title === 'Was here first'));
+      await mc('Was here first').waitFor({ state: 'detached' });
+      assert.equal(await mp.evaluate(() => window.moves.find(m => m.name === 'transform' && m.title === 'Was here first').wide), false, 'a sliding card widened the page');
+
+      // Clear all: each card starts its slide a little after the one above it.
+      const top = (await mp.locator('article.card .card-title').allTextContents()).map(t => t.trim());
+      assert.equal(top.length, 6, `cards before Clear all: ${top}`);
+      await mp.getByRole('button', { name: 'Clear all' }).first().click();
+      await until(mp, () => window.moves.filter(m => m.name === 'transform').length >= 7);
+      const at = Object.fromEntries(await mp.evaluate(() => window.moves.filter(m => m.name === 'transform' && m.title !== 'Was here first').map(m => [m.title, m.at])));
+      // Start times in on-screen order: two whose delays both passed before a
+      // frame start in the same frame, so only a later card starting earlier is wrong (#632).
+      const order = top.map(t => [t, at[t]]);
+      assert.ok(order.every(([, t], i) => i === 0 || t >= order[i - 1][1]), `Clear all slid out of order: ${order}`);
+      // 40ms a card, so 200ms from first to last; a busy machine can only fire the first one late.
+      assert.ok(order.at(-1)[1] - order[0][1] >= 80, `Clear all did not stagger: ${order}`);
+      await mp.locator('article.card').first().waitFor({ state: 'detached' }); // Clear all done folding
+
+      // A snooze that ends while the card is still leaving: it comes back with
+      // its slide in and wiggle (#611). Live sync holds the snooze until the
+      // server wakes it, so both changes reach the page together.
+      const back = await send('Back soon');
+      await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Back soon'));
+      held = [];
+      await post3(`/api/v1/notifications/${back.id}/snooze`, { until: new Date(Date.now() + 3000).toISOString() }); // slack for a busy runner; the wake tick is 15s
+      await hold(ns => ns.some(n => n.id === back.id && n.state === 'active'), 'the snooze ending');
+      await mc('Back soon').and(mp.locator('.is-leaving')).waitFor();
+      await until(mp, () => window.moves.filter(m => m.name === 'clrd-wiggle' && m.title === 'Back soon').length === 2);
+      assert.equal(await mp.evaluate(() => window.moves.filter(m => m.name === 'clrd-in' && m.title === 'Back soon').length), 2, 'a card back from a snooze did not slide in');
+      await post3(`/api/v1/notifications/${back.id}/dismiss`);
+      await mc('Back soon').waitFor({ state: 'detached' });
+
+      // The same while a Clear all waits for its reply (#656): the server has
+      // cleared the card, another device reopens it for later and it wakes, all before
+      // the reply. The card is not leaving yet, but the reply takes it, so its
+      // return still slides in.
+      const mid = await send('Mid clear');
+      await until(mp, () => window.moves.some(m => m.name === 'clrd-wiggle' && m.title === 'Mid clear'));
+      let go; const gate = new Promise(r => { go = r; });
+      await mp.route('**/api/v1/notifications/clear', async route => { const res = await route.fetch(); await gate; await route.fulfill({ response: res }); });
+      held = [];
+      await mp.getByRole('button', { name: 'Clear all' }).first().click();
+      await hold(ns => ns.some(n => n.id === mid.id && n.state === 'dismissed'), 'the clear');
+      held = [];
+      await post3(`/api/v1/notifications/${mid.id}/reopen`, { until: new Date(Date.now() + 3000).toISOString() });
+      await hold(ns => ns.some(n => n.id === mid.id && n.state === 'active'), 'the snooze ending');
+      await mp.waitForTimeout(300); // the wake reaches the page before the reply
+      go();
+      await until(mp, () => window.moves.filter(m => m.name === 'clrd-in' && m.title === 'Mid clear').length === 2);
+      await mp.unroute('**/api/v1/notifications/clear');
+      await post3(`/api/v1/notifications/${mid.id}/dismiss`);
+      await mc('Mid clear').waitFor({ state: 'detached' });
+
+      // Reduce motion: a live card just appears and a cleared one just goes.
+      await mp.emulateMedia({ reducedMotion: 'reduce' });
+      // Every frame looks at document.getAnimations(), so Element.animate and
+      // the check mark's path are seen too, not only the card's own CSS (#613).
+      await mp.evaluate(() => {
+        window.moves = []; window.anims = [];
+        const look = () => {
+          for (const a of document.getAnimations()) {
+            const t = a.effect?.target;
+            // A button fading as it is disabled is not motion: opacity alone is left out, as above.
+            if (t?.closest?.('[data-list]') && a.transitionProperty !== 'opacity') window.anims.push(`${a.animationName || a.transitionProperty || 'animate'} on ${t.tagName}`);
+          }
+          window.looking = requestAnimationFrame(look);
+        };
+        look();
+      });
+      const still = await send('Quiet arrival');
+      await mc('Quiet arrival').waitFor();
+      await post3(`/api/v1/notifications/${still.id}/dismiss`);
+      await mc('Quiet arrival').waitFor({ state: 'detached' });
+      assert.deepEqual(await mp.evaluate(() => window.moves), [], 'something moved with reduce motion on');
+      assert.deepEqual(await mp.evaluate(() => { cancelAnimationFrame(window.looking); return [...new Set(window.anims)]; }), [], 'something animated with reduce motion on');
+      await ctx.close();
+      console.log('ok: a live card slides in and wiggles, only the newest in a burst, none on load or while hidden; clears slide away and Clear all staggers; reduce motion plays nothing');
+    } finally { srv3.kill(); }
+  }
+
+  // Under a sub-path (#528): a second server at /clrd/. The inbox and pair
+  // scripts send every request inside it, and a setting saved from the page
+  // reaches the server.
+  {
+    const p2 = await new Promise(ok => { const s = createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+    const root = `http://127.0.0.1:${p2}`, sub = root + '/clrd';
+    const env2 = { ...process.env, CLRD_DB: join(mkdtempSync(join(tmpdir(), 'clrd-sub-')), 'clrd.db'), CLRD_LISTEN: `127.0.0.1:${p2}`, CLRD_BASE_URL: sub + '/' };
+    const tok = execFileSync(bin, ['token', 'create', '--name', 'sub', '--scope', 'admin', '--approve', 'allowed'], { env: env2, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const srv2 = spawn(bin, [], { env: env2, stdio: 'inherit' });
+    try {
+      for (let i = 0; ; i++) {
+        try { if ((await fetch(sub + '/healthz')).ok) break; } catch {}
+        if (i > 50) throw new Error('sub-path server did not start');
+        await new Promise(r => setTimeout(r, 100));
+      }
+      const ctx = await browser.newContext();
+      const outside = [];
+      ctx.on('request', r => { const u = new URL(r.url()); if (u.origin === root && !u.pathname.startsWith('/clrd/')) outside.push(u.pathname); });
+      const sp = await ctx.newPage();
+      await sp.goto(`${sub}/app?auth=${Buffer.from(`Bearer ${tok}`).toString('base64url')}`);
+      await sp.goto(sub + '/app/settings');
+      await sp.locator('.is-live').waitFor({ timeout: 5000 });
+      await sp.getByRole('combobox', { name: 'Sound', exact: true }).selectOption('pop');
+      const mine = async () => (await (await ctx.request.get(sub + '/api/v1/settings')).json()).sound;
+      for (let i = 0; i < 20 && (await mine()) !== 'pop'; i++) await sp.waitForTimeout(250);
+      assert.equal(await mine(), 'pop', 'a setting saved under a sub-path reached the server');
+      // Pair page: the sign-in code request also stays inside the sub-path.
+      const pc = await (await browser.newContext()).newPage();
+      pc.on('request', r => { const u = new URL(r.url()); if (u.origin === root && !u.pathname.startsWith('/clrd/')) outside.push(u.pathname); });
+      await pc.goto(sub + '/app');
+      await pc.getByRole('button', { name: 'Show sign-in code' }).click();
+      await pc.locator('[data-pair-qr]').waitFor({ state: 'visible' });
+      assert.deepEqual(outside, [], 'requests left the sub-path');
+      await pc.context().close();
+      await ctx.close();
+      console.log('ok: under a sub-path the inbox and sign-in code requests stay inside it and a setting saves');
+    } finally { srv2.kill(); }
   }
 } finally {
   await browser?.close();

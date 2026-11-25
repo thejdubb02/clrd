@@ -20,15 +20,21 @@ settings) is optional and has a default. Server settings, topics, tokens and
 webhooks are all on the REST API (`/openapi.json` describes it), so a script or
 an AI agent can set them up without a person clicking through Settings.
 
-Small on purpose. Measured 2026-11-20: the server is one 15.6 MB binary
-(ntfy 2.38.1: 77.5 MB) and the Android app is a 1.9 MB APK (ntfy 1.25.2:
-9.3 MB). CI fails any change that grows either past its budget in
+Small on purpose. The server is one 16.3 MB binary (measured 2026-11-23;
+ntfy 2.38.1: 77.5 MB) and the Android app is a 1.9 MB APK (measured
+2026-11-20; ntfy 1.25.2: 9.3 MB). CI fails any change that grows either past its budget in
 [`.github/size-budget`](.github/size-budget).
 
 <p align="center">
   <img src=".github/images/inbox-light.png" alt="The clrd web inbox: an urgent backup failure, a disk warning, an alert acknowledged on a phone and an agent asking to merge a pull request" width="760">
   <img src=".github/images/inbox-phone-dark.png" alt="The same inbox on a phone in dark mode" width="200">
 </p>
+<p align="center">
+  <img src=".github/images/settings-search-light.png" alt="Settings with a search for sound: only the matching settings show" width="760">
+</p>
+
+The pictures are made by `web/e2e/screens.mjs` with `SET=readme` against the
+real server and fixed demo data, so they show the inbox as it is on `main`.
 
 > **Status: early, no tagged release yet.** The server, web inbox, Android app
 > and SDKs have tests that run in CI, and so do the integration guides (see the
@@ -52,9 +58,17 @@ offline catches up the moment it reconnects.
 - **State that syncs.** Dismiss (hide it), acknowledge (someone is on it),
   resolve (it is fixed) and snooze, each shown on every device. Snooze times
   and the default are one setting shared by every device.
+- **Marks.** You (in the web inbox), another person or an agent with its own token can mark a card
+  seen, or actioned with a note and link ("stew actioned: filed relay#512").
+  It clears nothing; everyone on the topic sees who handled it.
 - **Self-resolving alerts.** Senders tag an alert with their own ID and resolve
   it by that ID when the fault clears. Or give one `"expires": "30m"` and it
   clears itself then.
+- **Senders.** Every service, app or person that sends shows up on its own, with
+  nothing to set up: an admin sees who sent what, where and when, in the web
+  inbox, in the Android app's Settings or at `GET /api/v1/senders`. Pause, mute,
+  cap the priority or reroute one sender from its web page or the app, and undo any change.
+  Its web page can also raise an urgent alarm when that sender goes quiet too long.
 - **Missed check-in alerts.** Give a topic an interval, say 25 hours, and clrd
   raises an urgent alert when a backup or cron job stops reporting in.
 - **Repeat and silence.** Send with `"repeat": "5m"` and the alert rings
@@ -84,20 +98,32 @@ offline catches up the moment it reconnects.
   show both.
 - **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
   work without JavaScript, Markdown formatting and links, link previews,
-  Share and Copy on each card, optional stacking by topic, a Ctrl+K command
+  Share and Copy on each card, a part swipe on a phone that shows a card's buttons, optional stacking by topic, a Ctrl+K command
   palette, a Send box for a quick note to your phone, a sound for new
-  notifications (pick one in Settings, silenced ones stay quiet), silences
-  started and ended from Settings, a dot for each linked device (up to six)
-  showing which are connected, dark mode, phone width.
+  notifications (pick one in Settings, silenced ones stay quiet), system
+  notifications through Web Push even with the tab closed (off until you
+  turn them on in Settings; needs HTTPS), silences
+  started and ended from Settings, subscribe and unsubscribe per topic (from
+  a card or Settings, every device you sign in to follows), a dot for each linked device (up to six)
+  showing which are connected, a Light, Dark or System theme, phone width. Settings sit in six
+  sections with a search box that also finds a setting by keywords such as
+  "do not disturb", and an About section shows the running version and
+  what changed in each version.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, notifications stacked by
-  topic, Share and Copy, Markdown formatting and tappable links. A choice of
+  topic if you turn it on (off by default), Share and Copy, Markdown formatting and tappable links, a Send
+  button for a quick note to your other devices. A choice of
   six built-in notification sounds (or the phone's default, or none), kept
   on the server so an agent can set it. Trusts
   certificate authorities you install, for a server on a home-lab CA.
 - **Add devices by QR code.** Sign a new browser in by scanning its code with
   the app, or link a phone from Settings in a signed-in browser. Both screens
   show the same 4-digit number, so no token is typed or copied.
+- **Add an agent in one step.** Press Add agent in Settings, give it a name
+  and its topics, and hand it the one-use invite. The agent gets its own user
+  and token held to those topics, cannot approve its own prompts, and shows in
+  Linked devices where you can unlink it. See
+  [docs/integrations/agent-invite.md](docs/integrations/agent-invite.md).
 - **For tools and agents.** Python, JavaScript and Go SDKs, a GitHub Action,
   and an MCP server so an AI agent can notify you and wait for your answer.
   Claude Code and Codex can ask your phone before running a command, and
@@ -150,6 +176,11 @@ dismisses, acks, resolves, snoozes or replies. Setup for each, and which ones re
 - [docs/self-host.md](docs/self-host.md): run it, put HTTPS in front, tokens, backups
 - [docs/integrations/mcp.md](docs/integrations/mcp.md): MCP tools for agents, and phone approval of agent prompts
 - [docs/formatting.md](docs/formatting.md): Markdown, emoji, display settings and the format check
+- [docs/repeat.md](docs/repeat.md): alerts that ring again until someone acts, 10 more times by default
+- [docs/silences.md](docs/silences.md): mute a topic or tag until a set time
+- [docs/migrate-from-ntfy.md](docs/migrate-from-ntfy.md): switch from ntfy
+- [docs/migrate-from-gotify.md](docs/migrate-from-gotify.md): switch from Gotify
+- [docs/integrations/README.md](docs/integrations/README.md): every integration guide and what its test runs
 - [docs/SPEC.md](docs/SPEC.md): the API, sync model, states and auth
 - [android/README.md](android/README.md): build the Android app
 - [web/README.md](web/README.md): how the web pages are served

@@ -28,9 +28,12 @@
   },
   "mcpServers": {
     "clrd": {
-      "type": "http",
-      "url": "${user_config.server_url}/mcp",
-      "headers": { "Authorization": "Bearer ${user_config.token}" }
+      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/clrd-hook.sh",
+      "args": ["mcp"],
+      "env": {
+        "CLAUDE_PLUGIN_OPTION_SERVER_URL": "${user_config.server_url}",
+        "CLAUDE_PLUGIN_OPTION_TOKEN": "${user_config.token}"
+      }
     }
   }
 }

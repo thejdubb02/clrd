@@ -18,6 +18,7 @@ type fakeAPI struct {
 	mu    sync.Mutex
 	calls []string
 	body  map[string]any
+	raw   string // the body as sent
 	auth  string
 	state string
 	gets  int // GETs allowed before the token is revoked (401); 0 means no limit
@@ -48,7 +49,9 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.calls = append(f.calls, r.Method+" "+r.URL.RequestURI())
 	f.auth = r.Header.Get("Authorization")
 	f.body = nil
-	_ = json.NewDecoder(r.Body).Decode(&f.body)
+	b, _ := io.ReadAll(r.Body)
+	f.raw = string(b)
+	_ = json.Unmarshal(b, &f.body)
 	if r.Header.Get("Authorization") != "Bearer clrd_good" {
 		w.WriteHeader(403)
 		io.WriteString(w, `{"error":"token lacks scope","code":"forbidden"}`)
@@ -154,9 +157,9 @@ func TestInitializeAndList(t *testing.T) {
 	for _, tl := range out["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,request_approve,"+
+	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,mark,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,subscriptions,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,preview_template,"+
-		"hooks,set_hook,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,server_env,ntfy_ignored" {
+		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,version,ntfy_ignored,senders,stats,sender,set_sender,sender_changes,undo_sender_change" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
@@ -186,10 +189,13 @@ func TestTools(t *testing.T) {
 			"POST /api/v1/notifications", map[string]any{"attachment": map[string]any{"name": "r.pdf", "url": "https://x.test/r.pdf"}, "icon": "https://x.test/i.png", "message": "m", "reopen": true, "topic": "infra"}},
 		{"list", map[string]any{"topic": "infra"}, "GET /api/v1/notifications?state=open&topic=infra", nil},
 		{"list", map[string]any{"state": "all"}, "GET /api/v1/notifications?state=all", nil},
+		{"mark", map[string]any{"id": "01J", "mark": "actioned", "note": "filed relay#512"}, "POST /api/v1/notifications/01J/mark", map[string]any{"link": "", "mark": "actioned", "note": "filed relay#512"}},
+		{"mark", map[string]any{"id": "01J"}, "DELETE /api/v1/notifications/01J/mark", nil},
 		{"ack", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/ack", map[string]any{"via": "mcp"}},
 		{"resolve", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/resolve", map[string]any{"via": "mcp"}},
 		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", map[string]any{"via": "mcp"}},
 		{"snooze", map[string]any{"id": "01J", "for": "1h"}, "POST /api/v1/notifications/01J/snooze", map[string]any{"for": "1h", "via": "mcp"}},
+		{"stats", map[string]any{"days": 30}, "GET /api/v1/stats?days=30", nil},
 		{"counts", map[string]any{"keep_cleared_days": 5}, "GET /api/v1/counts?keep_cleared_days=5", nil},
 		{"counts", map[string]any{"keep_cleared_days": 5, "topic": "infra"}, "GET /api/v1/counts?keep_cleared_days=5&topic=infra", nil},
 		{"counts", map[string]any{"keep_cleared_days": "default", "topic": "infra"}, "GET /api/v1/counts?keep_cleared_days=default&topic=infra", nil},
@@ -199,7 +205,11 @@ func TestTools(t *testing.T) {
 		{"format_dismiss", map[string]any{"topic": "infra", "rule": "no_title", "dismissed": false}, "POST /api/v1/format-check/dismiss", map[string]any{"topic": "infra", "rule": "no_title", "dismissed": false}},
 		{"sound", nil, "GET /api/v1/sounds", nil},
 		{"sound", map[string]any{"id": "d1", "sound": ""}, "PUT /api/v1/devices/d1", map[string]any{"sound": ""}}, // the server refuses it (#299)
+		{"subscriptions", nil, "GET /api/v1/subscriptions", nil},
+		{"subscriptions", map[string]any{"for": "u1", "topics": map[string]any{"chat": false}}, "PUT /api/v1/subscriptions?for=u1", map[string]any{"topics": map[string]any{"chat": false}}},
 		{"request_approve", map[string]any{"approve": "allowed"}, "POST /api/v1/devices/approve-request", map[string]any{"approve": "allowed", "topic": ""}},
+		{"set_sender", map[string]any{"id": "tk1", "routes": map[string]any{"*": []any{"infra"}}}, "PUT /api/v1/senders/tk1", map[string]any{"routes": map[string]any{"*": []any{"infra"}}}},
+		{"undo_sender_change", map[string]any{"id": "tk1", "seq": 3}, "POST /api/v1/senders/tk1/changes/3/undo", map[string]any{}},
 		{"settings", nil, "GET /api/v1/settings", nil},
 		{"settings", map[string]any{"keep_cleared_days": 5}, "PUT /api/v1/settings", map[string]any{"keep_cleared_days": float64(5)}},
 	}
@@ -231,10 +241,48 @@ func TestTools(t *testing.T) {
 	}
 }
 
+// #355: a whole number past 2^53 reaches the API with its exact digits.
+// send passes devices through, so an agent can alert one phone (#82).
+func TestSendDevices(t *testing.T) {
+	f := &fakeAPI{}
+	callTool(t, New(f), "send", map[string]any{"topic": "ci", "message": "m", "devices": []any{"phone"}})
+	if _, b := f.last(); fmt.Sprint(b["devices"]) != "[phone]" {
+		t.Fatalf("devices: %v", b)
+	}
+	// Not a list: passed on for the server to refuse, never dropped.
+	callTool(t, New(f), "send", map[string]any{"topic": "ci", "message": "m", "devices": "phone"})
+	if _, b := f.last(); b["devices"] != "phone" {
+		t.Fatalf("devices string: %v", b)
+	}
+}
+
+func TestBigNumberArgs(t *testing.T) {
+	f := &fakeAPI{}
+	h := New(f)
+	big := json.Number("9007199254740993")
+	callTool(t, h, "preview_template", map[string]any{"topic": "ci", "name": "github", "payload": map[string]any{"id": big}})
+	if !strings.Contains(f.raw, `"id":9007199254740993`) {
+		t.Fatalf("payload id lost precision: %s", f.raw)
+	}
+	callTool(t, h, "send", map[string]any{"topic": "ci", "message": "m", "priority": json.Number("5"), "repeat_times": json.Number("2")})
+	if _, b := f.last(); b["priority"] != float64(5) || b["repeat_times"] != float64(2) {
+		t.Fatalf("numbers after UseNumber: %v", b)
+	}
+	// Any other number goes as before: 5.0 reaches an int field as 5, 1e309 is refused.
+	callTool(t, h, "settings", map[string]any{"keep_cleared_days": json.Number("5.0")})
+	if !strings.Contains(f.raw, `"keep_cleared_days":5}`) {
+		t.Fatalf("5.0 sent as: %s", f.raw)
+	}
+	code, out := rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send","arguments":{"topic":"ci","message":"m","priority":1e309}}}`)
+	if code != 200 || out["error"] == nil {
+		t.Fatalf("1e309: want invalid params, got %d %v", code, out)
+	}
+}
+
 func TestMissingArgsAreToolErrors(t *testing.T) {
 	h := New(&fakeAPI{})
 	for tool, args := range map[string]map[string]any{
-		"send": {"topic": "infra"}, "ack": {}, "resolve": {"topic": "infra"}, "snooze": {"id": "01J"}, "wait_for_reply": {}, "unlink": {}, "bogus": {},
+		"send": {"topic": "infra"}, "ack": {}, "mark": {"mark": "seen"}, "resolve": {"topic": "infra"}, "snooze": {"id": "01J"}, "wait_for_reply": {}, "unlink": {}, "bogus": {},
 	} {
 		if _, isErr := callTool(t, h, tool, args); !isErr {
 			t.Errorf("%s: want isError", tool)
@@ -286,6 +334,15 @@ func TestWaitForReply(t *testing.T) {
 	text, _ = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 0.05})
 	if !strings.Contains(text, `"reply":"timeout"`) || !strings.Contains(text, `"state":"snoozed"`) {
 		t.Fatalf("want timeout showing snoozed, got %s", text)
+	}
+
+	// Access gone by the deadline: a bare timeout, not the card (#428).
+	evs = make(chan server.Event, 1)
+	evs <- ev(8, "01J", "snoozed")
+	f = &fakeAPI{state: "active", gets: 1, subs: []chan server.Event{evs}}
+	text, _ = callTool(t, New(f), "wait_for_reply", map[string]any{"id": "01J", "timeout_s": 0.05})
+	if text != `{"reply":"timeout"}` {
+		t.Fatalf("lost access at the deadline got %s", text)
 	}
 
 	// A token revoked mid-wait gets an error, not the reply.

@@ -33,9 +33,20 @@ type Notification struct {
 	State       string     `json:"state"`
 	StateBy     string     `json:"state_by,omitempty"`
 	SnoozeUntil *time.Time `json:"snooze_until,omitempty"`
+	Marks       []Mark     `json:"marks,omitempty"` // who saw or actioned it; a mark never clears it
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	Seq         int64      `json:"seq"`
+}
+
+// Mark is one reader's mark on a notification (docs/SPEC.md section 2).
+type Mark struct {
+	By   string    `json:"by"`
+	ByID string    `json:"by_id"`
+	Mark string    `json:"mark"` // "seen" or "actioned"
+	Note string    `json:"note,omitempty"`
+	Link string    `json:"link,omitempty"`
+	At   time.Time `json:"at"`
 }
 
 // Action is a button on a notification: a link (URL) or an answer (Reply),
@@ -187,6 +198,17 @@ func (c *Client) Dismiss(ctx context.Context, id string) (*Notification, error) 
 // Snooze hides a notification for a duration like "1h".
 func (c *Client) Snooze(ctx context.Context, id, duration string) (*Notification, error) {
 	return c.one(ctx, "POST", byID(id, "snooze"), map[string]string{"for": duration})
+}
+
+// Mark sets your mark on a notification: mark is "seen" or "actioned", note and
+// link are optional. Everyone who reads the topic sees it; it clears nothing.
+func (c *Client) Mark(ctx context.Context, id, mark, note, link string) (*Notification, error) {
+	return c.one(ctx, "POST", byID(id, "mark"), map[string]string{"mark": mark, "note": note, "link": link})
+}
+
+// Unmark removes your mark from a notification.
+func (c *Client) Unmark(ctx context.Context, id string) (*Notification, error) {
+	return c.one(ctx, "DELETE", byID(id, "mark"), nil)
 }
 
 // Get fetches one notification by server id.

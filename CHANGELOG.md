@@ -1,563 +1,200 @@
 # Changelog
 
 Every change a user would notice goes here, newest first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions will
-follow [Semantic Versioning](https://semver.org/) once releases start.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions
+follow [Semantic Versioning](https://semver.org/).
 
 Add your entry under `Unreleased`, in the section that fits (Added, Changed,
 Fixed, Removed, Security), as one line a user can understand.
 
+The server binary carries this file and shows it as its version history.
+`go run ./server/cmd/cutversion X.Y.Z` cuts a version (`-summary-file F`
+keeps a short summary here and puts the full entries in the archive), and
+moves the oldest
+ones to `CHANGELOG-archive.md` in the repo when this file nears
+96,000 bytes, so the archive holds the rest of the history.
+
 ## Unreleased
-
-### Security
-
-- Server: a new token made through the API or the MCP tool `create_token`
-  now always starts denied for approval requests, whoever makes it. Raise it
-  the same way as any device, from an allowed device or with an approve
-  request. Asking for `allowed` or `ask` at creation is refused. (#187)
-
-- Server: a third approve setting, ask. A tap from an ask device does not
-  count until an allowed device confirms it: clrd posts a "Confirm" prompt on
-  the same topic, and the answer lands only when another allowed device taps
-  Confirm, never one from the sender's token tree. A phone linked from the same
-  token as the asking browser can confirm it. (#187)
-
-- Server: a device or agent can ask to be allowed to approve, through the
-  API or the new MCP tool `request_approve`. The change lands only when an
-  allowed device taps Confirm on the prompt clrd posts. (#187)
-
-- Server: each token, phone and browser now has an "approve" setting,
-  allowed or denied. Only an allowed device can tap a reply button, and no
-  token can answer a request it sent, so an agent cannot approve its own
-  permission prompts. Linked phones and browsers stay allowed on upgrade;
-  plain tokens start denied (`clrd token create --approve allowed` to make an
-  allowed one). A device can lower its own setting but never raise it. (#187)
-
-### Fixed
-
-- Server: an ntfy import replaces anonymous access set before it through the
-  admin API, so no older anonymous token stays live beside the imported one
-  (#375).
-- Web: Clear all on stacks stays right when the server is slow to answer: a
-  stack fades as one instead of shrinking card by card, a topic that arrives
-  meanwhile is no longer shown as Cleared, and another stack's count updates
-  at once while one fades. (#387)
-- Webhook templates: saving an Edit with the secret left empty can no longer bring back an old secret that was rotated or removed at the same moment, and a field saved with a line break through the API keeps it when edited in Settings. (#376)
-- Web: J and K now stop on a closed stack and Enter opens it. A notification
-  another device clears inside a closed stack updates its count and newest
-  title at once, and Clear all takes every stack with it. (#227)
-
-- Settings: choosing Default for a topic's keep now counts what it would delete against the exact server keep, not whole days, and By topic lists a topic with its own keep even after its last notification is gone. `GET /api/v1/counts?keep_cleared_days=default&topic=T` (and the MCP `counts` tool) previews that. (#336)
-- Android: a refused approval tap that has to be sent again shows its message
-  once, not twice, and the Linked devices list in Settings updates as soon as a
-  device connects, drops or has its approve setting changed.
-- Web: on a phone, the Linked devices table in Settings fits the screen; the
-  "May approve" menu now sits under its label.
-- Android: changing the sound replaces the notification channels, which
-  drops a Do Not Disturb pass you set for urgent ones (Android lets only you
-  set it). Settings now tells you and offers one tap to turn it back on. (#346)
-
-- Android: a refused approval tap now says why (this phone may not answer,
-  the request came from this phone's own token, or the question changed)
-  and is not retried. An answer from an ask phone says it was sent for
-  confirmation and the Confirm prompt shows. Settings shows whether this
-  phone can answer approval requests. (#330)
-- Android: the Cleared tab follows the server keep setting, so a cleared item the server deleted (globally or for its topic) leaves the phone too, and the tab says when the server holds more cleared items than the phone shows (#261).
-
-- Web: in a topic's empty inbox, the first tip's test command sends to that
-  topic, so the test shows up where you are looking. The topic icon tip only
-  shows once there is a topic to set an icon on (#258).
-- Android: a notification sent with `repeat` rings again on the phone each
-  time it repeats, even while it is still in the tray, until someone deals
-  with it. Settings has a new button that opens Android's own screen for
-  letting urgent (priority 5) notifications through Do Not Disturb. (#259)
-- Android: the sound you pick is saved on the server for this phone, so an
-  agent can read and change it over the API or MCP and the phone follows at
-  once. A sound picked before this moves to the server on the next connect,
-  and one the server refuses stays on the phone and wins (#289).
-- Android: dark notification icons (GitHub's and others) no longer vanish in
-  the dark theme. They sit on a small light tile there, as on the web inbox
-  (#313).
-- Android: a silenced topic or tag no longer rings the phone. The message
-  still shows in the shade and the inbox, without sound or vibration (#328).
-
-- Server: the format check's example message, which goes into the prompt you
-  paste into your agent, now shows passwords, keys and tokens in it as
-  `[hidden]` (#315).
-- Server: changing a device's sound answers with the sound it saved, even
-  when two changes land at once, and a browser unlinked mid-request can no
-  longer change one. The MCP `sound` tool now refuses an empty name like the
-  API does, instead of listing the names. (#299)
-- Web: a message sent without a title now shows its first line as the
-  headline, as plain text, and the rest as the formatted body, instead of the
-  whole message squeezed into the headline (#303).
-- Web: dark site icons (GitHub's and others) no longer vanish in dark mode.
-  Link, topic and notification icons sit on a small light tile there, and a
-  link icon that fails to load is hidden instead of leaving a gap (#309).
-- Server: behind a TLS proxy with `CLRD_BASE_URL` unset, the app link on the
-  pair and link pages now says `https://` instead of `http://`, taken from the
-  proxy's `X-Forwarded-Proto` (#254).
-- Server: a reply button on an old card can no longer answer a question that
-  was updated since, even after the update has aged out of the event log
-  (#280). The device gets a conflict and shows the current question.
-- Server: the "seen in the last 10 minutes" device list no longer shows a
-  reader token devices from other people's sign-ins. It now shows the same
-  devices as the full linked devices list (#263).
-- Server: ntfy publish URLs with `tpl=yes` now render their templated
-  message, title and priority from the JSON body, as ntfy does. Before, a
-  templated priority was refused with "invalid priority" and the alert was
-  lost, and a templated message arrived as raw JSON (#272).
-- F-Droid: updating the app no longer fails with a 404 when the phone's
-  F-Droid app list is a few builds old. The clrd F-Droid repo now keeps the
-  last 30 builds instead of 5 (#277).
-- Web: the linked devices list in Settings fits a phone screen again (the
-  Linked date column hides on narrow screens; Last seen stays).
-- Android: swiping a notification out of the phone's notification shade (one,
-  a stack, or Clear all) no longer clears it on every device. It only hides it
-  on this phone, and it stays open in the inbox. Clear it in the app, on the
-  web, or with the notification's Clear button. Before, one swipe on a bundle
-  could clear every notification everywhere (#265).
 
 ### Added
 
-- Web: a card's snooze menu offers "Silence <topic> for 1 hour", which mutes
-  the whole topic in one tap, with or without JavaScript. It shows only where
-  your device may silence that topic (#326).
-- Server: Pushover senders work. `POST /1/messages.json` takes Pushover's
-  form, multipart or JSON body with a clrd app key (made by an admin, or an
-  agent over MCP, shaped like a Pushover token), priority -2 to 2 with
-  emergency repeats, HTML, a click URL, expiry and an image attachment, and
-  answers in Pushover's shape. See docs/integrations/pushover.md. (#116)
+- Desktop (Windows): an administrator can set "Update automatically" for every user of a computer with the registry number `AutoUpdate` under `HKLM\Software\Policies\clrd` (0 off, 1 on). The switch then shows that answer and is greyed out. Only in builds made with an update address (#725).
+- Android: cards move as on the web. A card cleared, snoozed or resolved while you look (here or on another device) shows a green wash and why, holds, then slides away and the list closes the gap; Clear all goes top to bottom. A new message drops in and the newest gives a small wiggle. Nothing moves on first load, on catch-up, or with Remove animations on (#598).
+- Server: a subscriptions change can carry `if_request_id`, so it applies only while the set's last change is still that request; otherwise it is refused with 409 and nothing changes, so an Undo never reverses another device's change (#716).
+- Server: a subscriptions change can carry a `request_id`, and the subscriptions list says which request made the last change, so the web can offer Undo only for its own Unsubscribe (#702).
+- Server: the answer to ack, snooze, dismiss, resolve or reopen says `"changed": false` when it changed nothing (the notification already had that state), so an app retrying an action does not mistake it for its own change (#693).
+- Web: a Stats page for admins, with notifications per hour or day, priorities, top topics and senders, how fast each gets cleared, and repeat alerts, over 24 hours, 7, 30 or 90 days (#120).
+- Web: Settings, Appearance picks System, Light or Dark for this browser. It applies at once on every page with no flash, and System still follows the device (#583).
+- Web: Settings has an About section with the version this server runs and
+  a What's new list of what changed in each version, read from the
+  changelog built into the binary (#580).
+- Android: a Topics page in Settings lists every topic with its open count
+  and last message, and turns each one on or off for your account on every
+  device, plus whether new topics start subscribed (#617). A card or a
+  stack's menu unsubscribes from its topic with Undo, and the "agents" topic
+  asks first since it carries approval prompts. Muted topics stay a separate,
+  this phone only setting.
+- Server: traffic stats for admins at `GET /api/v1/stats` and the MCP
+  `stats` tool: volume per hour, top topics and senders, how long alerts
+  stay open before someone clears them (median and p90), who clears them,
+  and alerts that keep firing (#120).
+- Site: the landing page shows a sample web inbox, drawn by the real card
+  template with fixed demo data, so it always matches the inbox and needs
+  no pictures or JavaScript (#592).
+- Web: subscribe and unsubscribe to topics, per user (#617). A card's
+  snooze menu has Unsubscribe from the topic, with Undo; Settings, Topics
+  lists every topic with a switch and a switch for new topics. An
+  unsubscribed topic leaves the inbox, counts and devices but still opens
+  from its link, with a Subscribe button. Unsubscribing from agents warns
+  first, since approval requests go there.
 
-- Web: Settings shows the format check by topic and sender. Dismiss a finding for one sender or the whole topic, stop checking a topic, and undo either from the same page. Nothing is dismissed until you choose (#320).
-- Server: an admin can turn anonymous ntfy access on, set its topics or turn it off through the API (`PUT /api/v1/ntfy/anonymous`) or the MCP tools `ntfy_anonymous` and `set_ntfy_anonymous`. It stays off until set (#375, #27).
+- Server: the topics and subscriptions lists mark each topic that has
+  carried an approval request or another message waiting for an answer
+  (`approvals`), so apps can warn before you unsubscribe from it (#623).
+- Web: the foot of Settings links to the source code and to the issue tracker
+  for reporting a problem, like the Android app (#586).
+- Topic subscriptions on the server (#617): unsubscribe from a topic and
+  it leaves your list, counts, live stream and Web Push on all your
+  devices, without clearing anything or changing what anyone else sees.
+  Everything stays subscribed until you choose otherwise. Set it through
+  the API or an agent over MCP; the web and Android screens come next.
+- Android: Read on an unsubscribed topic in the Topics page shows its open
+  cards without subscribing (#624). Nothing is saved on the phone and nothing
+  rings; Subscribe there turns the topic back on.
+- Android: Settings is now in the same sections as the web (Notifications,
+  Inbox, Devices, Integrations) with a search box at the top (#575). It
+  matches a setting's name, its description or keywords such as "qr", and
+  says so when nothing matches. Settings also links to the source code and
+  to the issue tracker for reporting a problem (#586).
+- Color rules on the server: color cards by topic, tag, priority or title text, as a bar, tint, solid fill or gradient, set through the settings API or an agent over MCP. Senders can give a message its own color. The web inbox draws them on its cards, picks dark or white text on a solid fill by contrast, and recolors live when the rules change without closing an open menu; the Android screen comes next.
+- Web: a cleared card now slides away and the cards below close the gap, on
+  every kind of clear, and Clear all goes top to bottom (#598). A card that
+  arrives while you are looking slides in with one small wiggle; nothing
+  plays on load, after a reconnect or for cards that came while the tab was
+  in the background, and nothing moves with reduce motion on. The timings are
+  in SPEC section 10.1 so every app matches.
+- Desktop app for Linux, to build from source for now (there is no download yet): a tray icon and a window on your inbox. Link it with a link from Settings > Devices; its token stays in the system keychain and never reaches the page in the window (#162).
+- Desktop (Linux): a script that packs your own build into a `.deb` for
+  Debian and Ubuntu (#625). The package brings the tray library with it,
+  adds clrd to the applications menu and starts it with your desktop
+  session. There is still no download. Without the tray library the app no
+  longer stops at start: it opens its window instead.
+- Desktop (Linux, with the package installed): "Open in the clrd app" on the
+  link page opens the app with the link filled in (#626). The app names the
+  server and waits for you to press Link this computer; it never links from
+  an address by itself, since any web page can send one.
+- Desktop (Linux, build from source): the This computer page has a
+  "Closing clears everywhere" switch (#627). It is off at first, so closing
+  a notification on the computer only hides it there; turn it on and a close
+  clears it on all your devices. The choice is kept across restarts.
+- Desktop (Linux, build from source): the window follows the desktop's light
+  or dark setting, at start and when you change it (#628). Before, it only
+  followed the GTK theme, so a dark desktop could show a light inbox.
+- Desktop (Windows, build from source): the installer registers `clrd://` addresses, so "Open in the clrd app" on the server's link page opens the installed app with the link filled in (#162). Nothing is linked until you press Link this computer. Not yet tried on a Windows computer.
+- Desktop (Windows, build from source): the installed app starts when you sign in to Windows, as a tray icon with no window (#162). Turn it off in Windows Settings > Apps > Startup; removing clrd removes the entry. Run under Wine only, not on a Windows computer yet.
+- Desktop (Windows, build from source): the installed app shows each open notification as a Windows toast, with a Clear button that clears it everywhere (#162). Closing one only hides it on that computer unless "Closing clears everywhere" is on, and one cleared on another device leaves the screen and the notification centre. Built for Windows only: not seen on a Windows computer yet.
+- Desktop (Windows, build from source): only one clrd runs per sign-in (#627). Starting it again opens the window of the one already running instead of a second app with a second tray icon. Run under Wine only, not on a Windows computer yet.
+- Desktop (Windows, build from source): a build given an update address and a public key updates itself (#719). It runs only an installer signed with that key for the very version on offer; anything else is dropped and the running version carries on. "Update automatically" on the This computer page is on at first and can be turned off; Check for updates works either way. A build with no address never asks anywhere.
+- Desktop (Windows, build from source): the app can be built into an installer that needs no administrator rights, adds clrd to the Start menu and can be removed from Windows Settings (#719). It is built on Linux and has not been run on a Windows computer yet. There is still no download.
 
-- Server: ntfy's `?scheduled=1` lists delayed messages that have not fired
-  yet, and the reply to a delayed ntfy publish is now the message at its
-  delivery time instead of a clear (#27).
-- Server: `clrd import gotify` copies a Gotify server in: each app becomes a
-  topic whose token (Gotify 3's `gtfya.` keys and older ones) keeps sending,
-  with its default priority, plus the message history. See
-  docs/migrate-from-gotify.md. (#116)
-- Server: the format check can group findings by the token that sent them
-  (`by=sender`), dismiss a finding you accept (for one sender or the whole
-  topic), and leave a topic out entirely. All off until set, and settable
-  through the API and the MCP tools `format_check`, `format_dismiss` and
-  `set_topic`. (#320) Only a full admin, or the token that sent the
-  messages, sees the sender's name and the prompt that names it, as in Linked
-  devices. (#406)
+- Server: outgoing webhooks can post to Discord (#166). A hook with
+  `"kind": "discord"` posts each new notification to a Discord webhook URL and
+  edits that message when it is cleared, acknowledged, resolved, snoozed or
+  answered, so the channel shows what happened without anyone clearing it
+  twice. Set it up through the API or an agent over MCP. Delivery errors no
+  longer show a webhook's URL.
 
-- Integrations: a Claude Code plugin, installed from this repo with
-  `/plugin marketplace add thejdubb02/clrd`. One install and two questions
-  (server URL and token) give Claude the clrd MCP server, a ping when a task
-  finishes or waits on you, and permission prompts you allow or deny from
-  your phone. No answer in time leaves the prompt on screen. (#156)
-- Server: Gotify app keys. An admin (or an agent over MCP) makes a key
-  shaped like Gotify's for one topic, so shoutrrr and Watchtower's
-  `gotify://` URLs send to clrd. `POST /message` also takes the key as
-  `Authorization: Bearer`, uses the app's default priority, and returns its
-  `appid`. (#370, #371, #372)
-- Server: Gotify senders work. `POST /message` takes Gotify's app token
-  (`?token=` or `X-Gotify-Key`), JSON, form or multipart body, priority
-  0 to 10 and the Markdown, click and image extras, and answers in Gotify's
-  shape. The app token is a clrd token limited to one topic. Apprise and the
-  gotify CLI are checked. (#116)
-
-- Android: Stack by topic now also folds the app's list, as on the web.
-  Two or more notifications of one topic show as one card with the count and
-  the top one's title; tap it to show or hide them. Not when one topic is picked.
-  (#231)
-- Web: manage a topic's webhook templates in Settings. Add, edit and delete
-  them, set or keep the secret, and try the unsaved fields on a sample post
-  before saving. Needs a token that can publish on the topic.
-- Server: try a webhook template before pointing a service at it.
-  `POST /api/v1/topics/{topic}/templates/{name}/preview` (and the MCP tool
-  `preview_template`) takes a sample payload and returns the notifications a
-  real post would make, without publishing anything. (#332)
-- Android: Settings lists the linked devices (name, kind, what each is linked from, last seen) with an Unlink button that asks first, and an activity log of links, sign-ins and unlinks. When this phone itself is unlinked or its token revoked, the app says so and opens the sign-in screen at once (#264).
-
-- Web: Settings shows who may approve for each linked device (Allowed, Ask
-  or Denied), and an allowed browser changes it there. A browser can lower
-  its own setting, never raise it. A reply tap from an Ask browser says it
-  was sent for confirmation, and a refused tap says why on the card. The
-  device list in the API now carries `via_id`, so names that repeat cannot
-  be mixed up (#329).
-- Web: Settings lists outgoing webhooks with their recent delivery log, and
-  an admin can add, edit and delete them there, with or without JavaScript
-  (#238).
-- Web: Settings gives each topic its own "keep cleared messages" period, and
-  asks first when a change deletes messages, like the global setting (#323).
-- Web: starting and ending a silence in Settings works without JavaScript, and a device that cannot change silences no longer sees Start silence or End now (#326).
-- Web: Settings lists the running silences with the time left, starts one
-  (topic, tag or both, for a set time or until a time, with a comment) and
-  ends one early (#257).
-- Web: a repeating alert shows on its card how many times it alerted and when
-  the next one is due, until someone acts on it (#260).
-- Web: Settings shows the format check under Message format: each topic with
-  hard to read messages, the count per problem, and a button to copy the fix
-  prompt. Nothing shows when there is nothing to fix (#308).
-- Server: give one topic its own "keep cleared messages" days with `topic_keep_cleared_days`, over the API or MCP, and preview it per topic (#262).
-
-- Server: a format check finds topics whose messages are hard to read
-  (Markdown sent as plain text, unknown shortcodes, no title, very long
-  messages, raw JSON) and gives a ready prompt to fix the sender, through
-  `GET /api/v1/format-check` and the MCP tool `format_check` (#308).
-- Server: emoji shortcodes like `:warning:` show as the emoji on the web, in
-  the Android app and tray, and in every API and stream, and a tag that names
-  an emoji goes in front of the title, as in ntfy. Unknown names, code and
-  times like `10:30:15` stay as typed (#306).
-- Server: the device list says which devices are connected right now and
-  caught up, and the last event each was sent (`connected`, `caught_up`,
-  `synced_seq`). Every open WebSocket gets the new list when another device
-  connects, catches up or drops (#300).
-- Web: the empty inbox is friendlier. A larger "Nothing waiting" with the
-  clrd mark, an icon on every tip, a new tip about sounds, and tips that move
-  on by themselves every few seconds. They hold still while you hover or
-  focus them, while the tab is hidden, and when your system asks for reduced
-  motion (#292).
-
-- MCP: tools to set up every feature except the environment settings (which
-  `server_env` reads), so an agent needs no web page or command line: dismiss, reopen and clear; silences; topic icon and check-in;
-  incoming webhook templates; and, with an admin token, outgoing webhooks,
-  tokens with per-topic grants, the server settings in effect and ignored ntfy
-  options (#252).
-- Server: each device can have its own notification sound (default, none,
-  chime, ding, pop, bell, alert or soft), read and set through the API and the
-  MCP `sound` tool; `GET /api/v1/sounds` lists the names (#282).
-- Android: pick the notification sound in Settings, with a Play button to
-  hear each one: the phone's default (still the default), none, or one of
-  the six built-in clrd sounds. Only that phone changes. If the phone's own
-  notification settings override the choice, Settings says so (#282).
-- Web: a sound plays when a new notification arrives while the inbox is open,
-  in a desktop browser or the installed app. Pick Chime, Ding, Pop, Bell,
-  Alert, Soft or None in Settings and hear it first. Chime plays with no
-  setup. Silenced notifications make no sound, and if the browser blocks
-  sound until you click the page, the inbox says so instead of failing
-  quietly (#282).
-- Server: an admin can read every server setting in effect with
-  `GET /api/v1/server`, and create a token with per-topic grants over the API
-  (`grants` on `POST /api/v1/tokens`), so an agent can check and set up access
-  without the command line (#253).
-- Server: every state change now records how it was made (`via`: the Android
-  inbox, a tray button, the web inbox, an agent, ntfy, or the
-  server itself), on the event and as one log line per change, so "I never
-  cleared that" can be answered from the log. The Android app and the web inbox
-  send it (#267, #265).
-- Server: `GET /api/v1/counts` and the MCP `counts` tool give the exact number
-  of notifications in each state, plus inbox and cleared totals.
-- Settings lists every linked device (not only the last 10 minutes) with how
-  and when each was linked, unlinks a browser or phone from another device
-  after a confirm, and shows a log of links, sign-ins and unlinks. An unlinked
-  browser goes to sign-in at once with a plain message. The same is on the
-  API (`GET /api/v1/devices?all=1`, `GET /api/v1/devices/log`,
-  `DELETE /api/v1/devices/{id}`) and MCP (`devices`, `device_log`, `unlink`).
-- Keep cleared messages for 1, 5, 7, 30 (default), 90 days, forever or a
-  custom number of days: set it in web Settings, over the API
-  (`keep_cleared_days`) or with the new MCP `settings` tool. Settings shows how
-  many messages a shorter period would delete before you confirm.
-
-- Docs: the README and landing page now open with the out-of-box path (one
-  setting, the setup link, linking the phone by QR, send), point to the clrd F-Droid repo
-  for the Android app, show Docker Compose as the way to run it, and list
-  stacking by topic, snooze settings, topic icons, sub-path hosting and
-  user-installed certificates. Landing page examples use `clrd.example.com`.
-- Server: `clrd help` lists the commands and settings.
-
-### Changed
-- Docs: plainer wording on the README and landing page. The badge row is
-  gone, and the landing page no longer promises a five-minute switch from
-  ntfy (#123).
-- Docs: README, the landing page and the docs now match what `main` does.
-  The approve setting is documented (new CLI tokens are denied, and the
-  headless admin command passes `--approve allowed`), formatting covers
-  emoji shortcodes,
-  and the MCP tools for repeat, format check, silences, templates, template
-  preview and outgoing webhooks are listed where each feature is described.
-- Web: the sound picked in Settings is saved on the server for this browser, so an agent can set it over the API or MCP and an open Settings page follows. A sound picked before this moves to the server on the next visit; if the server refuses it, it stays in the browser (#297).
-- Web: the sync indicator shows one dot per device, green when it is connected and red when it is not, and updates live as devices come and go. "In sync on N devices" counts only the connected ones, the indicator links to Linked devices, and Settings shows each device as Connected, Catching up or Offline (#295).
-
-- Android: the release APK is shrunk with R8 and resource shrinking, from
-  7.8 MB to 1.9 MB. CI now fails if the server binary or the APK grows past
-  its size budget, and prints both sizes in the job summary.
-- Web: the empty inbox sits centered in the main panel, and its tip reads as a
-  quiet hint instead of a card (#302).
-- SDKs and GitHub Action: no default server. The Go, JavaScript and Python
-  clients used to fall back to `clrd.itsjustin.me`, which is not a clrd
-  server; now a call with no URL and no `CLRD_URL` fails saying to set it, and
-  the action's `url` input is required. Docs use `clrd.example.com` (#249).
-- Server: runs with no settings as any user. The database defaults to
-  `~/.local/share/clrd/clrd.db` (an existing `/data/clrd.db` is still used),
-  the phone pairing link uses the address your browser opened clrd on when
-  `CLRD_BASE_URL` is unset, and a missing token or topic error says what to
-  do next. `clrd token create` no longer needs `--name`.
-
-- Web: the empty inbox shows one tip at a time, with previous and next, a
-  slow rotation that pauses on hover or focus, and copy-ready commands and AI
-  agent prompts that use your own server address. A first run starts with
-  sending a test.
-- Server: alerts that repeat until someone acts. Publish with `"repeat": "5m"`
-  (and optional `repeat_times`, default 10) and the server alerts again while
-  the notification stays active; acknowledge, snooze, dismiss or resolve stops
-  it on every device. Also on the MCP `send` tool. docs/repeat.md.
-- Server: silences. Mute a topic, a tag, or a tag within a topic until a set
-  time; notifications still arrive and sync but carry `silenced: true` so
-  apps stay quiet, and ntfy apps get them at min priority. Set over the API:
-  docs/silences.md.
-- Server: outgoing webhooks. A topic can POST to your URL when a notification
-  is dismissed, acknowledged, resolved, snoozed or replied to, signed with
-  HMAC, retried with backoff and turned off with a notice after a day of
-  failures. Setup: docs/integrations/webhooks-out.md.
-- Run clrd under a sub-path: put the path in `CLRD_BASE_URL`
-  (`https://example.com/clrd`) and the inbox, docs, API and live updates all
-  work there behind your proxy.
-- MCP: new tools `topics`, `get` and `update`, so an agent can see its topics,
-  read one notification and edit a progress message in place. The REST API has
-  the same edit as `PATCH /api/v1/notifications/{id}`. The MCP guide has setup
-  for Cursor, VS Code, Windsurf, Zed, Codex CLI and Gemini CLI.
-- Android: the app trusts certificate authorities you install in Android
-  settings, so a server behind your own home-lab CA works over HTTPS.
-- Android: notifications from the same topic stack together in the phone's
-  notification shade. Turn it off in Settings with "Stack by topic".
-- Web: a "Stack by topic" setting (off by default, kept per browser). With it
-  on, two or more notifications from one topic show as one card with a count
-  and the newest title; tap it to see them all, or clear them all at once.
-- Android: items older than a day show the full date and time instead of
-  "3d", and each topic chip shows how many items that topic has.
-- Android: Snooze uses the snooze default from your server settings instead
-  of always 1 hour, a long press on Snooze offers the other saved times, and
-  Settings has a section to change the times and the default for every device.
-- Web: the device list in Settings marks the browser you are using with
-  "(this browser)".
-- `CLRD_TRUSTED_PROXIES` setting: list your reverse proxies so only they can
-  set the client address used by the wrong-password limit.
-- Web: set a topic's icon in Settings, under Topic icons.
-- Web: link previews. With previews on, a message's first link shows a card
-  with the page's title, summary and image, fetched by your server. Settings
-  has a switch for previews and a Default, On or Off choice for each topic.
-- Web: links in messages show the site's icon, fetched by your server, and
-  Settings has switches for Markdown formatting, links and site icons that
-  apply to every device.
-- Android: set the app up by scanning the Link a phone code on a signed-in
-  browser. A new Scan QR code button in Settings asks before connecting to the
-  scanned server, then waits for that browser to approve the phone. Both
-  screens show the same 4-digit number so you approve the right phone.
-- Android: approve a browser sign-in from the phone. Opening a `clrd://pair`
-  link asks before signing that browser in, and refuses a link made for a
-  different server than the one the app is set up with.
-- Link a phone from Settings in the web inbox: show a QR code, scan it in the
-  clrd app, and approve the phone by name once both screens show the same
-  4-digit number. It gets this browser's access.
-- Sign in a browser with your phone: the web sign-in page shows a QR code,
-  you scan it with a phone that is already signed in and tap Approve, and the
-  browser signs itself in with the phone's access. No token to copy or type.
-- Web: messages show their Markdown formatting (bold, lists, code, quotes,
-  links) and web addresses become links, following the server's
-  `render_formatting` and `autolink` settings. Other HTML shows as typed and
-  images in a message are never loaded.
-- Approve agent actions from your phone: point Claude Code's or Codex's
-  permission hook at `/mcp/approve` and each prompt arrives as a notification
-  with Allow and Deny. No answer in time means deny.
-- Web: Share and Copy on each card (Share only where the browser has a share
-  sheet), and cards show the notification's icon and attachment: an uploaded
-  image inline, any other file as a download link. An icon or file on another
-  site loads from that site, which then sees the reader's IP address.
-- MCP: the `send` tool takes `icon` (an image URL) and `attachment` (a link to
-  a file by URL, with an optional name).
-- MCP: the `send` tool takes `format` (`markdown` or `text`), so an agent can
-  send plain text that is shown exactly as written.
-- Android: web links in plain text messages can be tapped, just like in
-  Markdown messages.
-- Server: auto-clear. Publish with `"expires": "30m"` (or a time) and the
-  notification resolves itself then, leaving every inbox and phone.
-- Missed check-in alerts: give a topic an expected interval (for example
-  `{"checkin":"25h"}` on `PUT /api/v1/topics/{topic}`) and clrd raises an
-  urgent notification when no message arrives in time. The next message
-  resolves it on every device.
-- `CLRD_PUBLIC_PAGES=off` for a private server: the address opens the inbox
-  instead of the landing page, the docs are gone, and search engines are told
-  to stay away.
-- ntfy compatibility: `GET /v1/account`, which the ntfy app and CLI use to check
-  a login and scripts use to check a token still works.
-- Web: a command palette on Ctrl+K (Cmd+K on a Mac) that lists every keyboard
-  shortcut: J and K to move between notifications, C to clear, A to
-  acknowledge, S to snooze, / to search, and G then I, S, C or comma to change
-  page.
-- Web: Snooze uses a default time from Settings. Long press it, right click
-  it, or tap the arrow next to it for the other times. Settings has a Snooze
-  section to pick up to 8 times and the default, shared by every device.
-- Web: a Send button in the inbox opens a box to send a notification (topic,
-  title, message, priority) to every device, for a quick link or note from the
-  laptop to the phone.
-- Web: the browser tab shows how many notifications are open, as "(3) Inbox",
-  and keeps it current when another device clears one.
-- Web: times read as "5 min. ago" and similar for the last day, then as a date
-  and time ("Nov 18, 14:05", with the year when it is not this year). Hover a
-  time to see the exact date.
-
-- Android: messages show their formatting (bold, italic, underline, strike,
-  code, lists, quotes, headings and tappable links) in the list, and bold and
-  italic in the system notification. A message sent as plain text is shown
-  exactly as sent.
-- Web: a component guide at `/app/ui` showing every button, chip, field, menu
-  and dialog in light and dark. It is the start of one look for every screen.
-- Android: Share and Copy on each notification. Icons show in the tray and the
-  list, picture attachments show as a preview, and other files get a Download
-  button.
-- Server: webhooks in. `POST /{topic}?template=<name>` now has built-in
-  templates for GitHub, Sentry, Stripe, Jira, Healthchecks.io, Proxmox VE,
-  Zabbix, Netdata, Jellyfin and the *arr apps, checks GitHub, Sentry, Stripe
-  and Jira signatures, and takes a template you save for any other service's
-  JSON (`/api/v1/topics/{topic}/templates`). See
-  [docs/integrations/custom-webhooks.md](docs/integrations/custom-webhooks.md).
-- Server: message formatting. Each notification is Markdown or plain text
-  (`format`, or ntfy's `X-Markdown: no`); the default is Markdown, so ntfy apps
-  now render clrd messages as Markdown unless sent with `X-Markdown: no`.
-  Display settings (formatting, links, site icons, link previews, per-topic
-  previews) are stored on the server and sync to every device. New site icon
-  and link preview endpoints fetch pages for your devices, refuse private
-  network addresses, and cache results. The web inbox and Android app do not
-  use them yet. See docs/formatting.md.
-- Docs: every integration guide now runs against a live clrd in CI, with the
-  real tool where one can run (Gatus, Uptime Kuma, Alertmanager, Grafana,
-  Apprise, the ntfy CLI, Claude Code and Claude Desktop). The integrations
-  table says what each one checks. The Gatus guide now sets an alert
-  description, so the notification is not blank, and the Apprise guide no
-  longer claims priority, tags and click URL work (#130).
-- Server: `clrd import ntfy` moves an ntfy server into clrd: users, bcrypt
-  passwords (ntfy routes only), `tk_` tokens, per-topic access rules (read-only,
-  write-only, deny, wildcards), anonymous access, message history and
-  attachments. `--dry-run` lists what maps and what does not. Tokens can now be
-  limited to certain topics with read, publish or both. Ignored ntfy publish
-  options are counted at `/api/v1/ntfy/ignored`. Guide: docs/migrate-from-ntfy.md.
-- Server: files on notifications. Upload a file with the publish (multipart, or
-  ntfy's `X-Filename` / `PUT` with the file as the body) or link one by URL
-  (`attachment`, or ntfy's `X-Attach`). Downloads need a token that can read the
-  topic. Files are capped at 15 MB each and 5 GB in total, and go away with
-  their notification. The web inbox does not show them yet.
-- Android: the app notices a server that was reinstalled or moved to a fresh
-  database and reloads its list, instead of showing notifications from the old one.
-- Server: an icon on each notification (`icon`, or ntfy's `X-Icon`), and a
-  default icon per topic so each service gets its own picture. The web inbox
-  does not show it yet.
-- Server: one Go binary with SQLite. Native publish API, notification states
-  (dismiss, acknowledge, resolve, snooze) synced to every device over WebSocket
-  and SSE, with catch-up from the last seen event after a reconnect.
-- Server: ntfy-compatible publish and subscribe (JSON, SSE, WebSocket, filters,
-  Basic auth), so most ntfy scripts and the ntfy app work unchanged.
-- Server: resolve an alert by the sender's own ID, plus templates for
-  Alertmanager and Grafana webhooks.
-- Server: tokens with read, publish and admin scopes and optional topic lists;
-  one-time setup link on first start; `/healthz` reports failing background jobs.
-- Server: MCP endpoint so AI agents can send notifications, resolve them and
-  wait for a reply.
-- Web: landing page, docs served from `docs/`, and the inbox with Snoozed,
-  Cleared and Settings. Live sync, Undo, dark mode, phone width, and the main
-  actions work without JavaScript.
-- Web: sign in with a token and name the browser; reply buttons on cards; a
-  notice when live sync has been down for 3 minutes.
-- Android: app with live sync, tray notifications that clear when cleared
-  anywhere else, link and reply buttons in the tray, F-Droid metadata. No Google
-  Play Services.
-- Android: tap a notification in the inbox to read the whole message; the open
-  text can be selected and copied.
-- Android: pasting a link into the Server URL field replaces the prefilled
-  `https://`, and a pasted setup or page link is cut down to the server address.
-- Android: signed builds are published to the project's own F-Droid repo on
-  every change, so the F-Droid app can install and update clrd. The address is
-  in `android/README.md`.
-- SDKs for Python, JavaScript and Go, and a GitHub Action.
-- Integration guides for curl, GitHub Actions, MCP clients, Home Assistant,
-  Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise and ntfy clients.
-- Docker image build and a Compose file for self-hosting.
-- Server: `ready`, the events poll and the notification list carry an `epoch`
-  naming the database, so a client can tell when the server was reinstalled or
-  started on a new database and fetch fresh. The Android app does not act on it
-  yet, and a restored backup keeps its old epoch.
-- Web: an open inbox reloads when the server comes back on a different database
-  (a new epoch), instead of carrying on from a position that no longer exists.
-- Webhook templates honor `X-Markdown` and `?markdown=false`, so a webhook can
-  ask for its message to be shown as plain text.
+- Server: outgoing webhooks can open GitHub issues (#168). A hook with
+  `"kind": "github"` opens an issue in a repo for each new notification,
+  comments when it is acknowledged, answered or snoozed, and closes it when
+  it is cleared or resolved, so a coding agent that works from issues can
+  pick up an alert. Never for anonymous senders or questions, and at most 10
+  issues an hour per hook. Set it up through the API or an agent over MCP.
 
 ### Changed
 
-- Building clrd from source now needs Go 1.24 or later.
-- Web: every page (inbox, snoozed, cleared, settings, sign-in, setup, the
-  home page and the docs) uses the new design, with dark mode that follows
-  the system. Clearing a notification plays one short "cleared" motion, which
-  is off when the system asks for reduced motion.
+- Android: a stack's Clear all shows only in the inbox, as on the web. The Snoozed tab no longer offers to clear a whole stack of snoozed notifications at once (#108).
+- Server: the release binary stores its docs, web files and API description gzipped, so it is about 500 KB smaller, and browsers get the web app's scripts, its stylesheet and the API description compressed (#690). Building from source: run `go run ./server/cmd/pack`, then build with `-tags packed`.
+- Android: unsubscribing asks first for any topic the server marks as
+  carrying approval requests, from the Topics page or a card's menu, not
+  only for "agents" (#623). With an older server, "agents" still asks.
+- Web: Unsubscribe warns on any topic that has had an approval request or
+  question, not only `agents` (#623).
 
-- Web: the final logo. The three lines now end on one circle around the
-  green disc, so every gap is the same. The README and site header use it.
+- Web: the Message format check in Settings is one card per topic with a
+  count of its findings, a Dismiss menu on each finding and Copy fix prompt as
+  the main button, instead of one block of text and buttons (#618). With more
+  than three topics the cards start closed.
 
 ### Fixed
 
-- Web: a browser signed in with a token that is not admin, such as one
-  signed in by QR from a phone, no longer says "In sync on 0 devices". It
-  lists its own devices: itself, the token or phone that signed it in, and
-  that token's other sessions. It still never shows anyone else's. When the
-  count is unknown the header says only "In sync". (#245)
-- Web: the clrd icon now shows in Ferdium, other app wrappers, bookmarks and
-  home screens. The server sends `/favicon.ico`, `/apple-touch-icon.png`, PNG
-  icons at 32, 192 and 512 pixels and a small web manifest, and every page
-  links them, also under a sub-path base URL (#243).
-- Web: the Inbox, Snoozed and Cleared counts in the sidebar are exact; they
-  stopped at 500 before.
+- Android: a card that was snoozed and woke up, or was cleared and reopened, while the phone was offline now alerts when the phone catches up, as it did on the devices that were online. Your own Undo stays quiet (#645).
+- Android: Clear on a card no longer wraps onto three lines on a common phone. Share and Copy now sit in the card's More menu, and on a narrow screen or with large text Ack and then Snooze move there too, so Clear always shows whole (#734).
+- Desktop (Linux, build from source): flipping "Closing clears everywhere" no longer changes what happens to a notification you closed just before, while the app was still busy with an earlier clear. Each close follows the setting as it was when you closed it (#685).
+- Desktop (build from source): a notification that was snoozed and woke up, or was dismissed and reopened, while the computer was offline now alerts when the app catches up, as it did on the devices that were online (#646).
+- Android: Settings shows Snooze times and Linked devices only once the
+  server accepts the token for reading, and hides Senders as soon as the
+  token is rejected, instead of after the next refresh (#604).
+- Android: a notification cleared on another device no longer comes back on
+  the phone when a refused tap's late answer arrives after the phone caught
+  up (#34).
+- Android: the message that says how an approval tap ended (sent to confirm,
+  denied, changed) shows once, even when the app restarted before the tap was
+  sent again (#383).
+- Android: a late repeat of a notification you just cleared, acknowledged or
+  snoozed on the phone stays quiet even when the app restarted in between, and
+  the phone forgets these marks once the notification is gone (#561).
+- Android: in a right-to-left language, Settings names the swipe sides the
+  way the gestures go there. A settings message from the old server that
+  arrives just as you switch servers no longer brings back its swipe or
+  snooze choices, and a failed swipe save no longer shows an older choice
+  when another device changed it meanwhile (#568).
+- Web: a subscriptions change from another device no longer drops a half-typed answer, and Undo shows only for an Unsubscribe that went through (#649).
+- Web: a half-typed answer on a card whose topic was unsubscribed on another device comes back when the topic is subscribed again in the same tab (#687).
+- Web: Unsubscribe from a card warns that approval requests will stop, even after the question that flagged its topic has left the inbox (#700).
+- Web: Undo after an Unsubscribe shows only when this tab made the last change, so it never reverses another device's unsubscribe (#702).
+- Web: a card reopened for later on another device that wakes while a Clear all is still waiting for its reply now comes back with its slide in and wiggle (#656).
+- Docs: the self-host build command strips debug data, so the binary it
+  makes is about 7.5 MB smaller, the same size as the release builds (#683).
+- Web: a Settings search typed while the page is still loading now finds
+  Link a phone once it appears (#591).
+- Server: `color_rules: null` in a settings change is now refused with a
+  400 like the swipe keys, instead of quietly changing nothing, and a rule
+  field of the wrong type names the rule it is in (#615).
+- Web: a snooze that ends while its card is still leaving now brings the card back with its slide in and wiggle.
+- Web and Android: the sender's Alarm topic hint now says an empty topic
+  means the first topic its last topic routes to, or that topic when it has
+  no route, which is what the server does (#585).
+- Server: a linked device can always unlink itself, even when it was linked
+  from a publish-only token, with `DELETE /api/v1/devices/this` (#609).
 
-- Android: switching to another server no longer keeps the old server's
-  snooze times, and the snooze times box is no longer reset while you type in
-  it when another device saves them.
-- Web: Settings locks the snooze and display settings while a save is on its
-  way, so an edit made in that moment is no longer lost when the page reloads.
-- Android: a new alert no longer shows twice in the notification drawer, once
-  bundled under the silent sync notice. The sync notice also shows the real
-  connection state instead of staying on Connecting after the app is opened.
-- Android: the topic chips above the inbox have a solid background and a
-  gap below, so cards no longer show through them while scrolling.
-- ntfy publish: a header such as `Prio: high` now wins over a query parameter
-  such as `?priority=low`, the same order ntfy uses.
-- A phone linked from the web inbox is no longer signed out when the same
-  token signs in more than 20 browsers. Phones have their own limit of 20.
-- A phone linked from a browser that was itself signed in by another browser
-  now stays signed in when either browser signs out, like any linked phone.
-- Restoring an older backup now makes every phone and browser drop its
-  local copy and resync, instead of risking missed messages. clrd keeps a
-  small `clrd.db.epoch` file next to the database for this.
-- Linking a phone: approving it in the last moments of the 2 minute code no
-  longer leaves the browser saying Connected while the phone never connects.
-- Web: a snooze time just typed in Settings can be picked as the default
-  before saving; a settings change from another device no longer drops snooze
-  edits not yet saved; closing the Send box mid-send and starting a new note
-  no longer clears that note when the first send finishes.
-- Web: an icon that fails to load is hidden instead of shown broken; Copy
-  works on a page served over plain http; external image attachments show
-  inline when their name or link ends in an image type.
-- The server no longer serves stale data or fails writes with "database is
-  locked" after a request is cancelled mid-query, for example when the web
-  inbox reloads while it is still loading.
-- Web: the open Snooze menu stays on screen on a phone, and on a wide screen
-  it no longer cuts off the custom time box.
-- ntfy compatibility: a JSON publish to `/` now reads priority, title, tags,
-  click URL and icon from headers when the JSON leaves them out, as ntfy does,
-  so Apprise's `?priority=high` arrives.
-- Android: the always-on "in sync" notice no longer puts a dot on the app icon.
-- Web: the inbox no longer scrolls sideways on a phone (long titles, the
-  closed Snooze menu and the action row pushed it wider than the screen), and
-  code blocks and tables that scroll can be scrolled from the keyboard.
-- Android: reopening a notification from the inbox, and the end of a long
-  catch-up after being offline, no longer make the phone buzz; with sync off,
-  a busy server's retry wait is respected; tray buttons on notifications from
-  older app versions work again.
+## 0.1.0 - 2026-11-23
+
+### Added
+
+- First version of clrd: a self-hosted notification server in one Go binary with SQLite, a web inbox and an Android app. Clear, snooze or resolve a notification on one device and it clears on every device, and a device that was offline catches up when it reconnects.
+- Works with no settings: start the server, open the setup link it prints, and send your first notification. Docker image build and a Compose file are included.
+- ntfy compatible: ntfy publish and subscribe URLs, headers and clients work, and `clrd import ntfy` moves an ntfy server in with its users and messages.
+- Gotify and Pushover senders work too, and `clrd import gotify` copies a Gotify server in.
+- Web inbox with Inbox, Snoozed and Cleared views, stacks by topic, keyboard shortcuts with a command palette, a Send box, and live sync status for every device.
+- Android app on clrd's own F-Droid repo, with no Google services: live sync, tray notifications that leave the phone when cleared elsewhere, and set up by scanning a code from the web inbox.
+- Sign a browser in with your phone, or link a phone from the web inbox, with a QR code.
+- Approve agent actions from your phone: a Claude Code plugin and a Codex hook send each permission request to clrd with Allow and Deny buttons, and each device has an approve setting (Allowed, Ask or Denied).
+- Questions with reply buttons, including typed answers, so a script or agent can wait for your answer.
+- MCP endpoint so AI agents can send, read, clear and resolve notifications and set up every feature, plus agent invites that give an agent its own token.
+- Rich messages: Markdown formatting, emoji shortcodes, icons, link previews with site icons, file attachments, and ntfy-style action buttons.
+- Alerts that repeat until someone acts, auto-clear after a set time, and resolve by the sender's own ID.
+- Silences for a topic or tag, and alarms when a topic misses its check-in or a sender goes quiet.
+- Senders page: see every service that sends to you, and pause, mute or reroute one with its own rules.
+- Send to chosen devices only, and mark a notification seen or actioned with a note and a link.
+- Notification sounds per device, set on the phone, in the browser or by an agent.
+- System notifications in the browser through Web Push.
+- Settings in five sections with search, covering topics, how long to keep cleared messages, snooze defaults, swipe buttons, linked devices and integrations.
+- Webhooks in, with built-in templates for common services, and outgoing webhooks with their own body templates and a delivery log.
+- Users with many devices, tokens with read, publish and admin scopes, and a config file for users and tokens.
+- SDKs for Python, JavaScript and Go, a GitHub Action, and integration guides that are each tested against a live server.
+- Version history: `GET /api/v1/version`, the changelog page in the docs, and the MCP `version` tool.
 
 ### Security
 
-- Server: publishing is rate limited, 60 a minute per token and 60 a minute per
-  topic by default, so a looping script cannot flood every device. Over the cap
-  gets 429 with `Retry-After`. Set `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` to
-  change them, or `0` to turn one off.
-- ntfy compatibility: ten wrong passwords from one address now block password
-  logins from it for a while (429 with `Retry-After`, one more try each
-  minute). Tokens are never blocked. Behind a proxy, the client address comes
-  from `X-Forwarded-For`; the nginx example in the self-host guide now sets it.
-- Server: a token that can publish to a topic but not read it no longer gets
-  another sender's message back when it acks, resolves or overwrites one by
-  external id.
+- Publishing is rate limited, repeated wrong ntfy passwords block the address, and link previews and site icons are fetched only from public addresses.

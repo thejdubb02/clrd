@@ -60,6 +60,8 @@ func TestPaths(t *testing.T) {
 	c.Snooze(ctx, "01J", "30m")
 	c.Get(ctx, "01J")
 	list, err := c.List(ctx, "infra", "")
+	c.Mark(ctx, "01J", "actioned", "filed #5", "")
+	c.Unmark(ctx, "01J")
 	if err != nil || len(list) != 1 {
 		t.Fatal(list, err)
 	}
@@ -72,6 +74,8 @@ func TestPaths(t *testing.T) {
 		"POST /api/v1/notifications/01J/snooze",
 		"GET /api/v1/notifications/01J",
 		"GET /api/v1/notifications?state=open&topic=infra",
+		"POST /api/v1/notifications/01J/mark",
+		"DELETE /api/v1/notifications/01J/mark",
 	}
 	for i, w := range want {
 		if got := (*hits)[i].method + " " + (*hits)[i].uri; got != w {
@@ -80,6 +84,9 @@ func TestPaths(t *testing.T) {
 	}
 	if (*hits)[5].body != `{"for":"30m"}` {
 		t.Errorf("snooze body %s", (*hits)[5].body)
+	}
+	if (*hits)[8].body != `{"link":"","mark":"actioned","note":"filed #5"}` {
+		t.Errorf("mark body %s", (*hits)[8].body)
 	}
 }
 
