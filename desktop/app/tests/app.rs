@@ -286,6 +286,66 @@ fetch('/report', { method: 'POST', body: String(matchMedia('(prefers-color-schem
     assert_eq!(fake.reports(), ["true"]);
 }
 
+/// A GTK theme that is dark by its name ("Adwaita-dark") gives way when the
+/// desktop asks for light, and comes back when it no longer does (#703).
+#[test]
+fn a_desktop_that_asks_for_light_wins_over_a_dark_theme_name() {
+    let fake = Fake::start();
+    fake.set_page(
+        r#"<!doctype html><title>theme</title><script>
+const dark = matchMedia('(prefers-color-scheme: dark)');
+const say = () => fetch('/report', { method: 'POST', body: String(dark.matches) });
+dark.addEventListener('change', say);
+say();
+</script>"#,
+    );
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let gtk = home.join("config/gtk-3.0");
+    std::fs::create_dir_all(&gtk).unwrap();
+    std::fs::write(
+        gtk.join("settings.ini"),
+        "[Settings]\ngtk-theme-name=Adwaita-dark\n",
+    )
+    .unwrap();
+    let scheme = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(2));
+    let portal = portal(&bus, scheme.clone());
+    let _app = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    // The page may first see the theme's dark, before the app has had its
+    // say, so each step waits for what the page sees last.
+    let sees = |what: &str, dark: &str| {
+        wait_long(what, || {
+            fake.reports().last().map(String::as_str) == Some(dark)
+        })
+    };
+    sees("light at start", "false");
+    for (to, what, dark) in [
+        (1, "dark when the desktop asks for dark", "true"),
+        (2, "light again", "false"),
+        (0, "the theme's own dark back with no preference", "true"),
+    ] {
+        scheme.store(to, std::sync::atomic::Ordering::Relaxed);
+        zbus::block_on(portal.emit_signal(
+            None::<&str>,
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings",
+            "SettingChanged",
+            &(
+                "org.freedesktop.appearance",
+                "color-scheme",
+                zbus::Variant::U32(to),
+            ),
+        ))
+        .unwrap();
+        sees(what, dark);
+    }
+}
+
 /// Unlink, pressed on the This computer page itself with the inbox window
 /// open beside it: the server is told, the command finishes, and the app is
 /// still there after.

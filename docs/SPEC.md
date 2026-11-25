@@ -411,8 +411,9 @@ means the same sound on a phone, the web inbox and a desktop:
 | `alert` | Two tones back and forth, for urgent alerts. |
 | `soft` | One low, pure note that fades slowly. |
 
-The six built-in sounds are `assets/sounds/<name>.wav` (16-bit mono, 22050 Hz,
-under 40 KB each), served by the binary at `/assets/sounds/<name>.wav`. The
+The six built-in sounds are `assets/sounds/<name>.wav` (16-bit mono PCM at
+8000 to 22050 Hz, the lowest rate that holds the sound's tones, under 40 KB
+each), served by the binary at `/assets/sounds/<name>.wav`. The
 Android build packs the same files. They are generated from sine waves by
 `go run ./assets/sounds/_gen` (no samples, so they ship under Apache-2.0); to
 change a sound, change the generator and commit both. New names may be added;

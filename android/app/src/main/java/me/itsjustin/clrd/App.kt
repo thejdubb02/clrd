@@ -151,6 +151,9 @@ class App : Application() {
     /** The buttons a swipe on a card shows (#161), as the server last sent them; the defaults until it does. */
     val swipes by lazy { MutableStateFlow(Swipes.parse(prefs.getString("swipes", null))) }
 
+    /** The favicons setting (#107): a site icon beside each link on a card. On until the server says otherwise. */
+    val favicons by lazy { MutableStateFlow(prefs.getBoolean("favicons", true)) }
+
     /** This token got 403 changing [swipes], so Settings shows them read-only. In memory: a token's grants can widen. */
     val swipesLocked = MutableStateFlow(false)
 
@@ -228,6 +231,11 @@ class App : Application() {
             prefs.edit().putString("swipes", w.json()).apply()
             swipes.value = w
         }
+        if (o.has("favicons")) {
+            val f = o.optBoolean("favicons", true)
+            prefs.edit().putBoolean("favicons", f).apply()
+            favicons.value = f
+        }
         // Every settings message is the whole view, so no subscriptions object means a server without them (#617).
         val sub = o.optJSONObject("subscriptions")
         prefs.edit().apply { if (sub == null) remove("subs") else putString("subs", sub.toString()) }.apply()
@@ -281,9 +289,10 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").remove("favicons").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
                 swipes.value = Swipes()
+                favicons.value = true
                 swipesLocked.value = false // another token may change them
                 markId.value = ""
                 subs.value = null // the new token's own set arrives with its settings message

@@ -16,7 +16,24 @@ import (
 	"runtime"
 )
 
-const rate = 22050 // Hz, mono, 16-bit: small files, plenty for short tones
+// rateFor picks the lowest common sample rate (Hz, mono, 16-bit) that holds
+// every partial of a sound with room to spare, so no tone is lost and a low
+// sound is a small file. 2.5 times the top partial keeps it clear of the
+// low-pass filter a player applies near half the rate (#690).
+func rateFor(notes []note) int {
+	top := 0.0
+	for _, n := range notes {
+		for _, p := range n.partials {
+			top = math.Max(top, math.Max(n.freq, n.glide)*p[0])
+		}
+	}
+	for _, r := range []int{8000, 11025, 16000} {
+		if float64(r) >= 2.5*top {
+			return r
+		}
+	}
+	return 22050
+}
 
 // note is one tone: start and length in seconds, frequency in Hz, how fast it
 // fades (higher is shorter), partials as frequency ratios with their levels.
@@ -45,7 +62,7 @@ var sounds = map[string][]note{
 	"alert": {{at: 0, dur: 0.15, freq: 988, decay: 3, partials: soft}, {at: 0.18, dur: 0.15, freq: 784, decay: 3, partials: soft}, {at: 0.36, dur: 0.15, freq: 988, decay: 3, partials: soft}, {at: 0.54, dur: 0.15, freq: 784, decay: 3, partials: soft}},
 }
 
-func render(notes []note) []int16 {
+func render(notes []note, rate float64) []int16 {
 	end := 0.0
 	for _, n := range notes {
 		end = math.Max(end, n.at+n.dur)
@@ -80,7 +97,7 @@ func render(notes []note) []int16 {
 	return out
 }
 
-func writeWAV(path string, s []int16) error {
+func writeWAV(path string, s []int16, rate int) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -101,7 +118,8 @@ func writeWAV(path string, s []int16) error {
 func main() {
 	_, self, _, _ := runtime.Caller(0)
 	for name, notes := range sounds {
-		if err := writeWAV(filepath.Join(filepath.Dir(self), "..", name+".wav"), render(notes)); err != nil {
+		r := rateFor(notes)
+		if err := writeWAV(filepath.Join(filepath.Dir(self), "..", name+".wav"), render(notes, float64(r)), r); err != nil {
 			panic(err)
 		}
 	}
