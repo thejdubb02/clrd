@@ -473,12 +473,13 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	}
 	isForm := !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json")
 	var in struct {
-		Token string `json:"token"`
-		Next  string `json:"next"`
-		Name  string `json:"name"`
+		Token   string `json:"token"`
+		Next    string `json:"next"`
+		Name    string `json:"name"`
+		Install string `json:"install"`
 	}
 	if isForm {
-		in.Token, in.Next, in.Name = r.PostFormValue("token"), r.PostFormValue("next"), r.PostFormValue("name")
+		in.Token, in.Next, in.Name, in.Install = r.PostFormValue("token"), r.PostFormValue("next"), r.PostFormValue("name"), r.PostFormValue("install")
 	} else if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
@@ -508,7 +509,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 	if t == nil {
 		return errf(401, "unauthorized", "invalid token")
 	}
-	st, err := s.startSession(w, r, t, in.Name)
+	st, err := s.startSession(w, r, t, in.Name, in.Install)
 	if err != nil {
 		return err
 	}
@@ -523,13 +524,17 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 // startSession signs this browser in with its own token (issue #30): same
 // scopes, topics and grants as parent, its own name in the device list and in
 // state_by, revocable alone, and revoked with its parent.
-func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *Token, name string) (*Token, error) {
-	if err := s.endSession(r); err != nil {
-		return nil, err
-	}
-	st, raw, err := s.childToken(context.WithoutCancel(r.Context()), parent, parent.ID, deviceName(name, r.UserAgent()), false)
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *Token, name, install string) (*Token, error) {
+	// Link first, so a sign-in again from this browser finds its old row by
+	// install and keeps a lowered approve (#765); then end what is left of
+	// the old cookie's row, never the token this sign-in hangs under.
+	st, raw, err := s.linkDevice(context.WithoutCancel(r.Context()), parent, parent.ID, deviceName(name, r.UserAgent()), false,
+		deviceInfo{installID(install), deviceDetail(r.UserAgent())})
 	if err != nil {
 		return nil, err
+	}
+	if err := s.endSession(r, parent.ID); err != nil {
+		s.log.Warn("end old session", "err", err)
 	}
 	s.setCookie(w, r, raw, 365*24*3600)
 	return st, nil
@@ -540,6 +545,30 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *To
 // phone marks a phone linked from a browser, capped apart from browsers.
 // Pass a context that is not cancelled mid-way: never leave a half-made token.
 func (s *Server) childToken(ctx context.Context, access *Token, parentID, name string, phone bool) (*Token, string, error) {
+	return s.linkDevice(ctx, access, parentID, name, phone, deviceInfo{})
+}
+
+// deviceInfo is what a browser or app says about itself when it links (#765):
+// install is the id it keeps for itself, detail a short "Chrome 131, Windows".
+type deviceInfo struct{ install, detail string }
+
+// installID keeps a sent install id only when it looks like one: 16 to 64
+// letters, digits, - or _. Anything else is dropped, never an error, so an
+// old app keeps linking.
+func installID(v string) string {
+	if len(v) < 16 || len(v) > 64 || strings.ContainsFunc(v, func(c rune) bool {
+		return !(c == '-' || c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z')
+	}) {
+		return ""
+	}
+	return v
+}
+
+// linkDevice is childToken for a device that said who it is. A row of the
+// same install, under the same parent, of the same kind is that device linked
+// before: it goes, its browsers move under the new row, and the new row keeps
+// the lower of its approve setting and the token's (#187). Never by name.
+func (s *Server) linkDevice(ctx context.Context, access *Token, parentID, name string, phone bool, dev deviceInfo) (*Token, string, error) {
 	// Its own access as stored, not as its user widens or narrows it: the
 	// child follows the user at every request anyway (#143).
 	own, err := scanToken(s.db.QueryRowContext(ctx, `SELECT `+tokenCols+` FROM tokens WHERE id = ?`, access.ID))
@@ -567,6 +596,9 @@ func (s *Server) childToken(ctx context.Context, access *Token, parentID, name s
 			err = errf(401, "unauthorized", "token revoked")
 		}
 	}
+	if err == nil && (dev.install != "" || dev.detail != "") {
+		err = s.replaceInstall(ctx, st, parentID, phone, dev)
+	}
 	if err != nil {
 		if derr := s.DeleteToken(ctx, st.ID); derr != nil {
 			s.log.Warn("drop half-made session", "err", derr)
@@ -582,6 +614,54 @@ func (s *Server) childToken(ctx context.Context, access *Token, parentID, name s
 		s.logDevice(ctx, top, action, name, st.ID, access.Name)
 	}
 	return st, raw, nil
+}
+
+// replaceInstall stores dev on st and drops the rows the same install left
+// under parentID (see linkDevice).
+func (s *Server) replaceInstall(ctx context.Context, st *Token, parentID string, phone bool, dev deviceInfo) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE tokens SET install = ?, detail = ? WHERE id = ?`, dev.install, dev.detail, st.ID); err != nil {
+		return err
+	}
+	if dev.install == "" {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT t.id, t.approve FROM sessions s JOIN tokens t ON t.id = s.token_id
+	  WHERE s.parent_id = ? AND s.phone = ? AND t.install = ? AND t.rowid < (SELECT rowid FROM tokens WHERE id = ?)`,
+		parentID, phone, dev.install, st.ID) // only older rows: two racing sign-ins never drop each other
+	if err != nil {
+		return err
+	}
+	type row struct{ id, approve string }
+	var old []row
+	for rows.Next() {
+		var o row
+		if err := rows.Scan(&o.id, &o.approve); err != nil {
+			rows.Close()
+			return err
+		}
+		old = append(old, o)
+	}
+	rows.Close()
+	for _, o := range old {
+		if approveRank[o.approve] < approveRank[st.Approve] {
+			if _, err := s.db.ExecContext(ctx, `UPDATE tokens SET approve = ? WHERE id = ?`, o.approve, st.ID); err != nil {
+				return err
+			}
+			st.Approve = o.approve
+		}
+		// What hung under the old row now hangs under the new one, so
+		// dropping it signs nothing else out; so does its web push.
+		if _, err := s.db.ExecContext(ctx, `UPDATE sessions SET parent_id = ? WHERE parent_id = ?`, st.ID, o.id); err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE OR IGNORE push_subs SET token_id = ? WHERE token_id = ?`, st.ID, o.id); err != nil {
+			return err
+		}
+		if err := s.DeleteToken(ctx, o.id); err != nil && !isNotFound(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 // maxSessions is how many browsers one token may have signed in at once,
@@ -616,7 +696,7 @@ func (s *Server) capSessions(ctx context.Context, parent string, phone bool) {
 
 // endSession revokes the token in this browser's cookie, only when sign-in
 // minted it. Cookies set before #30 hold a real token; keep those.
-func (s *Server) endSession(r *http.Request) error {
+func (s *Server) endSession(r *http.Request, keep string) error {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return nil
@@ -624,7 +704,7 @@ func (s *Server) endSession(r *http.Request) error {
 	var id string
 	err = s.db.QueryRowContext(r.Context(), `SELECT token_id FROM sessions JOIN tokens ON id = token_id WHERE hash = ?`,
 		hashToken(c.Value)).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) || err == nil && id == keep {
 		return nil
 	}
 	if err == nil {
@@ -663,11 +743,39 @@ func deviceName(name, ua string) string {
 	return name
 }
 
+// deviceDetail is the User-Agent's label with the browser's major version,
+// "Chrome 131 on Windows", to tell rows of one name apart (#765).
+func deviceDetail(ua string) string {
+	if ua == "" {
+		return ""
+	}
+	d := deviceName("", ua)
+	for _, m := range []string{"Edg/", "OPR/", "Firefox/", "Chrome/", "Version/"} { // Version/ is Safari's
+		i := strings.Index(ua, m)
+		if i < 0 {
+			continue
+		}
+		v := ua[i+len(m):]
+		if n := strings.IndexFunc(v, func(c rune) bool { return c < '0' || c > '9' }); n >= 0 {
+			v = v[:n]
+		}
+		if v != "" && len(v) < 6 {
+			b, sys, ok := strings.Cut(d, " on ")
+			d = b + " " + v
+			if ok {
+				d += " on " + sys
+			}
+		}
+		break
+	}
+	return d
+}
+
 func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) error {
 	if !s.sameOrigin(r) {
 		return errf(403, "forbidden", "sign-out must come from this site")
 	}
-	if err := s.endSession(r); err != nil {
+	if err := s.endSession(r, ""); err != nil {
 		return err // keep the cookie so a retry can still revoke its token
 	}
 	s.setCookie(w, r, "", -1)
@@ -743,7 +851,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) error {
 	s.setupCode = ""
 	// The browser gets its own token too, so signing out never revokes the
 	// admin token shown below. If that fails, still show the admin token.
-	if _, err := s.startSession(w, r, t, ""); err != nil {
+	if _, err := s.startSession(w, r, t, "", r.PostFormValue("install")); err != nil {
 		s.log.Warn("setup sign-in", "err", err)
 	}
 	return setupPage.Execute(w, map[string]string{"Token": raw, "Name": t.Name, "Base": s.prefix})

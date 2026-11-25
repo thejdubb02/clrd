@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Server and web: a browser that signs in again replaces its own row in Linked devices instead of adding a new one, keeping any lower approve setting the old row had. Each browser and phone row also shows what it is (for example "Firefox 120 on Linux"), a Rename button names it, and "Unlink devices unused for 7 days" tidies old rows in one click. Linked browsers unused for 30 days now unlink on their own (setting `unlink_idle_browsers_days`, 0 turns it off); on upgrade, browsers already unused that long unlink within the hour. The phone and desktop apps do not send their install id yet, so they still add a row when they link again (#765).
 - SDKs: the JavaScript client and GitHub Action READMEs link to the source repository on GitHub (#586).
 - Android: a link in a message shows only its words, with the site's icon beside it (fetched through your server, as on the web) or a plain link icon. A tap opens it; a long press shows the full address with Open and Copy. The site icons follow the `favicons` setting (#107).
 - Desktop (Windows): an administrator can set "Update automatically" for every user of a computer with the registry number `AutoUpdate` under `HKLM\Software\Policies\clrd` (0 off, 1 on). The switch then shows that answer and is greyed out. Only in builds made with an update address (#725).

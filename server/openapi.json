@@ -208,6 +208,10 @@
          "name": {
           "type": "string",
           "description": "Device name for this browser. Default: from the User-Agent."
+         },
+         "install": {
+          "type": "string",
+          "description": "Optional id this browser keeps for itself, 16 to 64 of A-Z a-z 0-9 _ -. A row of the same install under the same token is this browser signed in before: it is replaced, and the new row keeps the lower of the two approve settings."
          }
         },
         "required": [
@@ -228,6 +232,10 @@
          "name": {
           "type": "string",
           "description": "Device name for this browser. Default: from the User-Agent."
+         },
+         "install": {
+          "type": "string",
+          "description": "Optional id this browser keeps for itself, 16 to 64 of A-Z a-z 0-9 _ -. A row of the same install under the same token is this browser signed in before: it is replaced, and the new row keeps the lower of the two approve settings."
          }
         },
         "required": [
@@ -1116,6 +1124,12 @@
           "maximum": 36500,
           "description": "Days dismissed and resolved notifications are kept after they were cleared. 0 keeps them forever. Needs scope admin."
          },
+         "unlink_idle_browsers_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 36500,
+          "description": "Signed-in browsers unseen this many days are unlinked on their own, each with a device log line. 0 never. Needs an admin token with no topic list."
+         },
          "sound": {
           "type": "string",
           "description": "The asking device's own notification sound, a name from GET /api/v1/sounds. Needs a token with no topic list."
@@ -1670,6 +1684,10 @@
              "name": {
               "type": "string"
              },
+             "detail": {
+              "type": "string",
+              "description": "Browser and system (\"Firefox 120 on Linux\") or what the app sent, to tell devices of one name apart. Absent when unknown."
+             },
              "last_seen_at": {
               "type": [
                "string",
@@ -1800,8 +1818,8 @@
   },
   "/api/v1/devices/{id}": {
    "put": {
-    "summary": "Set a device's notification sound",
-    "description": "Scope read, from a token not limited to some topics. Body {\"sound\":\"chime\"}, a name from GET /api/v1/sounds; an unknown name gives 400 listing the valid ones. The caller must see the device in GET /api/v1/devices?all=1 (else 404). Returns the device. The device's settings stream carries the new sound.",
+    "summary": "Rename a device or set its notification sound",
+    "description": "Scope read. Body {\"sound\":\"chime\"}, {\"name\":\"Work laptop\"} or both. sound needs a token not limited to some topics and is a name from GET /api/v1/sounds; an unknown name gives 400 listing the valid ones. name renames a browser or phone (403 for a typed-in token or agent; an empty name gives 400). The caller must see the device in GET /api/v1/devices?all=1 (else 404). Returns the device. The device's settings stream carries the new sound.",
     "tags": [
      "sync"
     ],
@@ -1811,11 +1829,11 @@
       "application/json": {
        "schema": {
         "type": "object",
-        "required": [
-         "sound"
-        ],
         "properties": {
          "sound": {
+          "type": "string"
+         },
+         "name": {
           "type": "string"
          }
         }
@@ -1881,6 +1899,48 @@
       }
      }
     ]
+   }
+  },
+  "/api/v1/devices/tidy": {
+   "post": {
+    "summary": "Unlink browsers and phones unused for some days",
+    "description": "Scope read. Body {\"days\":7,\"dry_run\":true}, both optional (days 1 to 36500, default 7). Unlinks the browsers and phones in the caller's GET /api/v1/devices?all=1 list unseen for days, never the caller, a typed-in token or an agent, nor a device with an open stream, web push or a browser signed in under it. dry_run only counts. Returns {count, devices (ids), dry_run}.",
+    "tags": [
+     "sync"
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 36500
+         },
+         "dry_run": {
+          "type": "boolean"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "count, devices, dry_run"
+     },
+     "400": {
+      "$ref": "#/components/responses/Error"
+     },
+     "401": {
+      "$ref": "#/components/responses/Error"
+     },
+     "403": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
    }
   },
   "/api/v1/devices/approve-request": {
@@ -5718,7 +5778,7 @@
     "tags": [
      "auth"
     ],
-    "description": "No auth; called by the clrd app. Body {\"code\", \"secret\", \"name\"}: secret is 32+ characters the app made, name the device name. The first claim binds the secret and name; later claims must send the same secret. 202 {\"state\":\"waiting\"} until approved; 200 {\"state\":\"approved\", \"token\", \"name\"} once approved, with a new token that has the approving token's access and is revoked with it; 410 when denied, expired, used, unknown or the secret does not match.",
+    "description": "No auth; called by the clrd app. Body {\"code\", \"secret\", \"name\", \"install\", \"detail\"}: secret is 32+ characters the app made, name the device name. Optional install is the app's own id (16 to 64 of A-Z a-z 0-9 _ -): a phone of the same install under the same token is this phone linked before and is replaced, keeping the lower approve setting. Optional detail is a short line such as \"Pixel 8, Android 15\" shown to tell phones of one name apart. The first claim binds the secret and name; later claims must send the same secret. 202 {\"state\":\"waiting\"} until approved; 200 {\"state\":\"approved\", \"token\", \"name\"} once approved, with a new token that has the approving token's access and is revoked with it; 410 when denied, expired, used, unknown or the secret does not match.",
     "responses": {
      "200": {
       "description": "Approved: state, token, name"
@@ -6921,6 +6981,10 @@
      "keep_cleared_days": {
       "type": "integer",
       "description": "Days dismissed and resolved notifications are kept after they were cleared; 0 keeps them forever. Until set, follows CLRD_RETENTION (30 days)."
+     },
+     "unlink_idle_browsers_days": {
+      "type": "integer",
+      "description": "Signed-in browsers unseen this many days are unlinked on their own (phones and typed-in tokens never). 0 never. Default 30."
      },
      "sound": {
       "type": "string",
