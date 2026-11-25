@@ -638,9 +638,13 @@ func (s *Server) replaceInstall(ctx context.Context, st *Token, parentID string,
 	// One transaction (#773): an approve lowered on the old row while this
 	// runs is either carried over or waits, never lost with the row.
 	var gone []string
-	approve := st.Approve
+	var approve string
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
-		gone, approve = nil, st.Approve
+		var err error
+		gone = nil
+		if approve, err = approveOf(ctx, tx, st.ID); err != nil { // as stored now: the new row may be lowered already
+			return nil, err
+		}
 		rows, err := tx.QueryContext(ctx, `SELECT t.id, t.approve FROM sessions s JOIN tokens t ON t.id = s.token_id
 		  WHERE s.parent_id = ? AND s.phone = ? AND t.install = ? AND t.rowid < (SELECT rowid FROM tokens WHERE id = ?)`,
 			parentID, phone, dev.install, st.ID) // only older rows: two racing sign-ins never drop each other
