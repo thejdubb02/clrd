@@ -18,11 +18,15 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Android: Settings, Devices has a "Clears everywhere" switch for this phone. Turn it off and clearing a notification on the phone hides it there only. Only an allowed device can change it; a phone that is not allowed is told so beside the switch (#767).
+- Android: Settings, Devices, Client certificate picks a certificate installed on the phone for a server behind mutual TLS. The key stays in Android's key store and is offered only to the clrd server address it was picked for, never to a site a message links to (#152).
 - Server and web: each device has "Clears everywhere", on by default. Turn it off and clearing a notification on that device hides it there only, while your other devices keep it; Undo brings it back. Set it in Settings, Devices, or with `PUT /api/v1/devices/{id}/clears` (#767).
 - Server and web: a browser that signs in again replaces its own row in Linked devices instead of adding a new one, keeping any lower approve setting the old row had. Each browser and phone row also shows what it is (for example "Firefox 120 on Linux"), a Rename button names it, and "Unlink devices unused for 7 days" tidies old rows in one click. Linked browsers unused for 30 days now unlink on their own (setting `unlink_idle_browsers_days`, 0 turns it off); on upgrade, browsers already unused that long unlink within the hour. The phone and desktop apps do not send their install id yet, so they still add a row when they link again (#765).
 - Android: linking the same phone again replaces its row in Linked devices instead of adding a second one, and the row shows the model and Android version (for example "Pixel 8, Android 15") (#769).
 - Discord webhooks: Settings > Webhooks now has a Kind selector (plain webhook, Discord or GitHub), scheduled notifications post to Discord when they wake, and updating a notification in place re-edits its Discord message (#673).
+- Stats: `GET /api/v1/stats` and the web Stats page now show failed outgoing webhook and Web Push deliveries per topic, export the same numbers as CSV (`?format=csv`), and `CLRD_METRICS=on` exposes optional Prometheus metrics at `GET /metrics` for full admins (off by default) (#661).
 - Desktop (Linux): the title bar and the This computer page follow the Appearance pick in the inbox (Dark, Light or System), not only the desktop's own setting. The pick is kept for the next start (#760).
+- Web: the first open after the server moves to a new version shows a small, dismissible What's new note linking to Settings, About, with a per-browser switch in Settings to turn it off (#580).
 - Web, SDKs and F-Droid: the sign-in page now carries the shared footer so the GitHub link is visible on phones, the Go and Python SDK READMEs link to the repo, and the F-Droid metadata sets the changelog URL (#586).
 - Desktop: linking the same computer again replaces its row in Linked devices instead of adding a second one, and the row shows its system (for example "Fedora Linux 41" or "Windows 11") (#770).
 - Server and web: a browser that signs in again replaces its own row in Linked devices instead of adding a new one, keeping any lower approve setting the old row had. Each browser and phone row also shows what it is (for example "Firefox 120 on Linux"), a Rename button names it, and "Unlink devices unused for 7 days" tidies old rows in one click. Linked browsers unused for 30 days now unlink on their own (setting `unlink_idle_browsers_days`, 0 turns it off); on upgrade, browsers already unused that long unlink within the hour (#765).
@@ -125,6 +129,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Changed
 
 - Desktop: Unlink is one call to the server, `DELETE /api/v1/devices/this`, so it works whatever the computer's token may do (#643).
+- Android: the phone unlinks itself with `DELETE /api/v1/devices/this`. A phone linked with a publish-only token, which cannot see Linked devices, now gets an "Unlink this phone" button in Settings, Devices (#643).
 - Android: a stack's Clear all shows only in the inbox, as on the web. The Snoozed tab no longer offers to clear a whole stack of snoozed notifications at once (#108).
 - Server: the release binary stores its docs, web files and API description gzipped, so it is about 500 KB smaller, and browsers get the web app's scripts, its stylesheet and the API description compressed (#690). Building from source: run `go run ./server/cmd/pack`, then build with `-tags packed`.
 - Server and Android: five of the six built-in sounds are stored at the lowest sample rate that still holds every tone they play, so they sound the same and take 51 KB less in the server and the app (#690).
@@ -141,6 +146,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: when a cleared card leaves the list, the space under it now closes with it in one smooth move, as on the web, instead of snapping shut at the end (#726).
 - Desktop (Linux): with GTK set to prefer dark and no desktop preference, picking Light and then System in Appearance turns the window dark again at once, instead of only after a restart (#783).
 - Desktop (Linux): a clear that arrives just after the notification service restarted no longer closes another app's notification that took the old one's number (#601).
 - Desktop (Linux): after the notification service restarts, an update to a clrd notification no longer replaces another app's notification that got the same number, and a button pressed on a notification from before the restart no longer acts on a different one (#791).

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +36,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -118,6 +121,9 @@ internal class MotionState {
 internal const val HOLD_MS = 1400L
 internal const val SLIDE_MS = 200
 internal const val GAP_MS = 200
+internal val CARD_GAP = 10.dp // the space under each card in the list, part of the card so it closes with it
+/** The drawn alpha of a leaving card's reason, so a test can see it is not see-through. */
+internal val ReasonAlpha = SemanticsPropertyKey<Float>("ReasonAlpha")
 internal val EaseOut = CubicBezierEasing(.2f, .7f, .2f, 1f)
 internal val EaseInOut = CubicBezierEasing(.4f, 0f, .2f, 1f)
 
@@ -173,10 +179,11 @@ internal fun Gone(g: Ghost, still: Boolean, done: () -> Unit, card: @Composable 
     Box(
         Modifier.fillMaxWidth().testTag("gone")
             .layout { m, c -> val p = m.measure(c); layout(p.width, (p.height * (1f - shut.value)).toInt()) { p.place(0, 0) } }
-            .graphicsLayer { translationX = size.width * away.value * dir; alpha = 1f - away.value },
+            .padding(bottom = CARD_GAP), // the gap below shrinks with the card
     ) {
+      Box(Modifier.graphicsLayer { translationX = size.width * away.value * dir; alpha = 1f - away.value }) {
         card {
-            Row(Modifier.alpha(tick.value), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.alpha(tick.value).semantics { set(ReasonAlpha, tick.value) }, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Check, null, tint = b.clear, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(reason(g.moved), color = b.clear, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -185,6 +192,7 @@ internal fun Gone(g: Ghost, still: Boolean, done: () -> Unit, card: @Composable 
         Box(Modifier.matchParentSize().clip(shape).border(1.dp, b.clear.copy(alpha = wash.value), shape)) {
             Box(Modifier.fillMaxHeight().fillMaxWidth(wash.value).background(b.clear.copy(alpha = .08f)))
         }
+      }
     }
 }
 

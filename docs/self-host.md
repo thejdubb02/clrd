@@ -153,6 +153,7 @@ changes nothing. With an admin token in the file, no setup link is printed.
 | `CLRD_RATE_TOPIC` | `60` | Publishes a minute one topic may take from all tokens together. `0` turns it off. |
 | `CLRD_TRUSTED_PROXIES` | unset | Comma-separated CIDRs or addresses of your reverse proxies, for example `127.0.0.1,172.16.0.0/12`. Only these may set the client address with `X-Forwarded-For`, and the link scheme with `X-Forwarded-Proto`. Unset, any loopback or private-network peer may. |
 | `CLRD_HOOK_ALLOW` | `on` | `off` locks the [webhook LAN allow list](integrations/webhooks-out.md#receivers-on-your-lan) empty: webhooks reach only public addresses on ports 80 and 443, whatever an admin saved, and no token can change it. Set it on a box that runs other services on loopback or a private network. |
+| `CLRD_METRICS` | `off` | `on` exposes Prometheus metrics at `GET /metrics` (requires an admin token with no topic limit). |
 | `CLRD_CONFIG` | unset | A JSON file of users and tokens applied at every start. See [Users and tokens in a config file](#users-and-tokens-in-a-config-file). |
 
 `GET /api/v1/server` with an admin token returns every one of these as in
@@ -168,6 +169,14 @@ minute or more are fine.
 Using your own certificate authority? Install its CA certificate on the phone
 (Settings, Security, Encryption and credentials, Install a certificate, CA
 certificate). The Android app trusts CAs installed that way.
+
+Server behind mutual TLS (a client certificate at the proxy)? Install the
+certificate on the phone (same screen, VPN and app user certificate), then in
+the app pick it under Settings, Devices, Client certificate. The key stays in
+Android's key store, and clrd offers it only to the server address it was
+picked for, and only once that server has proved its name, never to a site a
+message links to. Change the server address and you pick it again. Picking needs the phone's own dialog, so an agent
+cannot set it over the API.
 
 Caddy (handles certificates and WebSockets on its own):
 

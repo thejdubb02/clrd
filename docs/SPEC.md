@@ -110,6 +110,9 @@ as emoji but leave the tag emoji out, since ntfy apps add those themselves.
   Changing the option follows the rules of `PUT /api/v1/devices/{id}/approve`,
   and as with approve a browser or phone signed in or linked with a token
   starts with that token's option (and keeps the option of a row it replaces).
+  The web Devices page sets it for any device; the Android app shows a
+  switch for its own phone under Settings, Devices, and a refusal from the
+  server (`approve_denied`) shows beside it in plain words.
 - `acknowledged` keeps it in the inbox, stops repeat alerting, shows "Acknowledged on <device>".
 - `snoozed` hides it until `snooze_until`; then the server moves it back to
   `active` with a new event (and re-notifies).
@@ -987,7 +990,8 @@ resolved`) and `ntfy_import`.
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | PUT | `/api/v1/devices/{id}/clears` | Body `{"everywhere":false}` or `true`: whether that device's clears reach every device (section 2, "Clears everywhere"). Same rules and errors as `/approve`: 403 `approve_denied` when the caller is not allowed, 403 `forbidden` from a token limited to some topics, 404 outside the device list, 400 without `everywhere`. Returns the device. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. It starts denied for approval requests (section 4); `approve` other than `denied` is 400. |
-| GET | `/api/v1/stats` | Traffic numbers for notifications created in `[from, to)` (unix ms; `to` defaults to now, `from` to `days` back, default 7, at most 366): `total`, `answered`, count per `priorities`, count per UTC hour in `hours`, and the top 50 `topics`, `senders` (top token id) and `cleared_by` (who cleared), each with `open`, `cleared` and the median and p90 time from publish to first clear in ms, plus `flappers` (an external id that fired more than once). Read from stored rows, so cleared messages past the keep-cleared setting are not counted. Admin with no topic limit (#120). The web Stats page (`/app/stats`, `days` 1, 7, 30 or 90) shows the same numbers. |
+| GET | `/api/v1/stats` | Traffic numbers for notifications created in `[from, to)` (unix ms; `to` defaults to now, `from` to `days` back, default 7, at most 366): `total`, `answered`, count per `priorities`, count per UTC hour in `hours`, and the top 50 `topics`, `senders` (top token id) and `cleared_by` (who cleared), each with `open`, `cleared` and the median and p90 time from publish to first clear in ms, plus `flappers` (an external id that fired more than once) and `delivery` (failed outgoing webhook deliveries and Web Push sends per topic, worst first, #661). `?format=csv` returns the same numbers as CSV (`text/csv`). Read from stored rows, so cleared messages past the keep-cleared setting are not counted. Admin with no topic limit (#120). The web Stats page (`/app/stats`, `days` 1, 7, 30 or 90) shows the same numbers and links to the CSV export. |
+| GET | `/metrics` | Optional Prometheus text exposition metrics, off by default (404 until `CLRD_METRICS=on`, #661). Admin with no topic limit. |
 | GET | `/api/v1/senders` | Every sender, most recently heard first (section 5.1). Admin with no topic limit. |
 | GET | `/api/v1/senders/{id}` | One sender with `recent`, its last notifications still stored (section 5.1). 404 for an unknown id. |
 | PUT | `/api/v1/senders/{id}` | Change a sender's `rules` (section 5.1). Returns the Sender. |
@@ -1144,6 +1148,9 @@ its data):
   joined with a space.
 - Views of the history (the web, apps, `/docs/changelog`) end with a link to
   `full_history`, where older versions are.
+- After an update to a new version, the web inbox shows a small, dismissible
+  What's new note on the first open (quiet on a browser's first visit ever),
+  linking to Settings, About; each browser can turn the note off in Settings.
 
 `/docs/changelog` renders the same file; a private server hides it with the
 rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
@@ -1355,6 +1362,8 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   private-network peer is trusted.
   `CLRD_HOOK_ALLOW` (`on`; `off` locks the webhook allow list of section 5
   empty, whatever is saved, and no token can change it).
+  `CLRD_METRICS` (`off`; `on` turns on `GET /metrics` in Prometheus text
+  format for a full admin token, #661).
   `CLRD_CONFIG` (unset): a JSON file `{"users": [...], "tokens": [...]}`
   applied at every start (#155). A user is `name` and `grants` as on the
   API; a user named like an agent stops the start, since it would take the
@@ -1559,12 +1568,13 @@ JavaScript off the web page shows every section and no search box.
 | Devices | `server` | Server | server, address, url, token, sign in, log in | Android |
 | Devices | `devices` | Linked devices | phone, browser, unlink, sign out, approve, may approve, activity | both |
 | Devices | `link-phone` | Link a phone | qr, scan, pair, code, add phone | web shows the code, Android scans it |
+| Devices | `client-cert` | Client certificate | certificate, mtls, mutual tls, tls, key | Android: picked from the Android key store, offered only to the server origin (host and port) it was picked for |
 | Devices | `add-agent` | Add an agent | agent, ai, bot, invite, mcp, token | web, admin only |
 | Integrations | `senders` | Senders | sender, rules, bot, agent, allow | both, only where the token may manage senders |
 | Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
 | Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
 | Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
-| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version and What's new, the history in section 5.2 |
+| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2) |
 
 The Android version line stays at the foot of the page, outside the sections.
 

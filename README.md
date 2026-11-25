@@ -108,7 +108,7 @@ offline catches up the moment it reconnects.
   showing which are connected, a Light, Dark or System theme, phone width. Settings sit in six
   sections with a search box that also finds a setting by keywords such as
   "do not disturb", and an About section shows the running version and
-  what changed in each version.
+  what changed in each version, with a dismissible What's new note after an update.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
   and LineageOS. Reply and link buttons in the tray, notifications stacked by
   topic if you turn it on (off by default), Share and Copy, Markdown formatting and tappable links, a Send

@@ -136,6 +136,7 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * Null when the phone already lets clrd run in the background, else the system prompt that allows it.
@@ -508,11 +509,11 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                     if (shown.isEmpty() && ms.ghosts.isEmpty()) Empty(tab) else LazyColumn(
                         state = list,
                         // Room under the last card for the Send button on the inbox.
-                        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, if (tab == Tab.Inbox) 88.dp else 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        // Each card carries the 10 dp below it, so a leaving card closes its gap as it shrinks (#726).
+                        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, if (tab == Tab.Inbox) 78.dp else 6.dp),
                     ) {
                         items(ms.shown(entries), key = { if (it is Ghost) "gone\u0000" + it.entry.key else (it as Entry).key }) { e ->
-                          Box {
+                          Box(if (e is Ghost) Modifier else Modifier.padding(bottom = CARD_GAP)) {
                             if (e is Ghost) {
                                 Gone(e, still, { ms.ghosts.remove(e); swept++ }) { why ->
                                     when (val g = e.entry) { is Stack -> StackCard(g, false, null, {}, gone = why) {}; is One -> Card(g.n, end = { why() }) }
@@ -1235,6 +1236,14 @@ internal fun approveChoices(list: List<org.json.JSONObject>, d: org.json.JSONObj
     return if (i >= 0 && isOwn(list, d)) approveOrder.take(i + 1) else approveOrder
 }
 
+/**
+ * A refused device change in plain words. The server's 403 `approve_denied` means this phone is not
+ * allowed to change it (an allowed device can); anything else keeps the server's own message.
+ */
+internal fun refusal(ctx: Context, e: Throwable): String =
+    if ((e as? HttpError)?.let { it.code == 403 && it.reason == "approve_denied" } == true) ctx.getString(R.string.device_not_allowed)
+    else ctx.getString(R.string.device_approve_failed, e.message)
+
 /** One device's second line: what it is, what it hangs under, when it was last seen. */
 private fun deviceLine(ctx: Context, d: org.json.JSONObject): String = listOfNotNull(
     when (d.optString("kind")) {
@@ -1260,31 +1269,72 @@ private fun DeviceSettings(app: App, resumes: Int) {
     var log by remember(server) { mutableStateOf<List<org.json.JSONObject>>(emptyList()) }
     var reload by remember { mutableStateOf(0) }
     var unlink by remember { mutableStateOf<org.json.JSONObject?>(null) }
+    var closed by remember(server) { mutableStateOf(false) } // the server refused the list: a publish-only phone
     var error by remember { mutableStateOf<String?>(null) }
+    var clearsError by remember { mutableStateOf<String?>(null) } // shown by the switch, which sits far above the list's error line
     var showLog by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf<String?>(null) }
     var lower by remember { mutableStateOf<Pair<org.json.JSONObject, String>?>(null) }
     // The server decides (docs/SPEC.md "Who may approve"): a refusal shows as the error line.
     var busy by remember { mutableStateOf(false) } // a change is on its way; the menu waits for the fresh list
-    val setApprove: (org.json.JSONObject, String) -> Unit = { d, v ->
+    val change: (org.json.JSONObject, String, org.json.JSONObject) -> Unit = { d, what, body ->
         busy = true
         val api = app.api()
         app.io.execute {
-            error = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/approve", org.json.JSONObject().put("approve", v).toString()) }
-                .exceptionOrNull()?.let { ctx.getString(R.string.device_approve_failed, it.message) }
+            val out = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/$what", body.toString()) }
+            // The server answers with the device: show it at once, so a failed reload never leaves the old value up.
+            out.getOrNull()?.let { r -> runCatching { org.json.JSONObject(r) }.getOrNull() }?.let { nd ->
+                devices = devices?.map { o -> if (o.optString("id") != nd.optString("id")) o else org.json.JSONObject(o.toString()).also { c -> nd.keys().forEach { k -> if (k != "this") c.put(k, nd.get(k)) } } }
+            }
+            val e = out.exceptionOrNull()?.let { refusal(ctx, it) }
+            if (what == "clears") { clearsError = e; error = null } else { error = e; clearsError = null }
             reload++
         }
     }
+    val setApprove: (org.json.JSONObject, String) -> Unit = { d, v -> change(d, "approve", org.json.JSONObject().put("approve", v)) }
     val changed by app.devicesChanged.collectAsState() // another device changed this phone's approve setting, or one came or went
     LaunchedEffect(server, resumes, reload, changed) {
         val api = app.api()
         app.io.execute {
-            runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices?all=1")), "devices") }.getOrNull()?.let { devices = it }
+            val got = runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices?all=1")), "devices") }
+            got.getOrNull()?.let { devices = it }
+            val refused = got.exceptionOrNull() as? HttpError
+            if (refused?.isAuth == true) devices = null // a signed-out phone shows no old list
+            closed = refused?.code == 403
             busy = false
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices/log")), "events") }.getOrNull()?.let { log = it }
         }
     }
-    val list = devices ?: return
+    unlink?.let { d ->
+        AlertDialog(
+            onDismissRequest = { unlink = null },
+            title = { Text(stringResource(R.string.device_unlink_title, d.optString("name"))) },
+            text = { Text(stringResource(R.string.device_unlink_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    unlink = null
+                    val api = app.api()
+                    app.io.execute {
+                        error = runCatching { api.delete(unlinkPath(d)) }
+                            .exceptionOrNull()?.let { ctx.getString(R.string.device_unlink_failed, it.message) }
+                        reload++
+                    }
+                }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
+            },
+            dismissButton = { TextButton(onClick = { unlink = null }) { Text(stringResource(R.string.link_cancel)) } },
+        )
+    }
+    val list = devices ?: run {
+        // A publish-only phone may not read the list, but it may still unlink itself (#643).
+        if (closed) {
+            Spacer(Modifier.height(8.dp))
+            Text(stringResource(R.string.devices_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            val me = stringResource(R.string.this_phone)
+            TextButton(onClick = { unlink = org.json.JSONObject().put("this", true).put("name", me) }) { Text(stringResource(R.string.device_unlink_this), color = b.signal) }
+            error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+        }
+        return
+    }
     val approve = when (list.firstOrNull { it.optBoolean("this") }?.optString("approve")) {
         "allowed" -> R.string.approve_allowed
         "ask" -> R.string.approve_ask
@@ -1295,6 +1345,20 @@ private fun DeviceSettings(app: App, resumes: Int) {
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.approve_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         Text(stringResource(approve), color = b.slate, fontSize = 13.sp)
+    }
+    // Clears everywhere (#767): shown to every phone so it sees where its clears go; the server lets only an
+    // allowed one change it, and its refusal shows as the error line. Absent from a server older than #767.
+    list.firstOrNull { it.optBoolean("this") }?.takeIf { it.has("clears_everywhere") }?.let { me ->
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.clears_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(if (me.optBoolean("clears_everywhere")) R.string.clears_on else R.string.clears_off), color = b.slate, fontSize = 13.sp)
+            }
+            Switch(checked = me.optBoolean("clears_everywhere"), enabled = !busy, modifier = Modifier.testTag("clears-everywhere"),
+                onCheckedChange = { change(me, "clears", org.json.JSONObject().put("everywhere", it)) })
+        }
+        clearsError?.let { Text(it, color = b.signal, fontSize = 13.sp) }
     }
     Spacer(Modifier.height(8.dp))
     Text(stringResource(R.string.devices_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
@@ -1349,26 +1413,11 @@ private fun DeviceSettings(app: App, resumes: Int) {
             dismissButton = { TextButton(onClick = { lower = null }) { Text(stringResource(R.string.link_cancel)) } },
         )
     }
-    unlink?.let { d ->
-        AlertDialog(
-            onDismissRequest = { unlink = null },
-            title = { Text(stringResource(R.string.device_unlink_title, d.optString("name"))) },
-            text = { Text(stringResource(R.string.device_unlink_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    unlink = null
-                    val api = app.api()
-                    app.io.execute {
-                        error = runCatching { api.delete("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}") }
-                            .exceptionOrNull()?.let { ctx.getString(R.string.device_unlink_failed, it.message) }
-                        reload++
-                    }
-                }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
-            },
-            dismissButton = { TextButton(onClick = { unlink = null }) { Text(stringResource(R.string.link_cancel)) } },
-        )
-    }
 }
+
+/** This phone unlinks itself by "this", which needs no read scope and no id (#643). */
+internal fun unlinkPath(d: org.json.JSONObject) =
+    if (d.optBoolean("this")) "/api/v1/devices/this" else "/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}"
 
 /** A sender's kind (docs/SPEC.md section 5.1) in the web's words. */
 internal fun senderKind(kind: String) = when (kind) {
@@ -1942,7 +1991,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     val open = mapOf(
         "subscriptions" to (app.configured && subs != null && !subsGone),
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
-        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && canRead),
+        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && (canRead || rejected)), // rejected: a publish-only phone may still unlink itself (#643)
         "senders" to (app.configured && !rejected && senders.value != null),
     )
     val shown = SETTINGS.filter {
@@ -1999,6 +2048,20 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 Title(R.string.link_phone)
                 Explain(R.string.link_phone_explain)
                 TextButton(onClick = scan) { Text(stringResource(R.string.scan_qr), color = b.ink) }
+            }
+            "client-cert" -> {
+                Title(R.string.client_cert)
+                Explain(R.string.client_cert_explain)
+                val alias by app.clientCert.collectAsState()
+                Text(alias ?: stringResource(R.string.client_cert_none), color = b.body, fontSize = 14.sp)
+                Row {
+                    TextButton(onClick = {
+                        val host = app.serverUrl.toHttpUrlOrNull()
+                        // Android's own picker: the key stays in the key store, clrd only learns its name.
+                        (ctx as? android.app.Activity)?.let { android.security.KeyChain.choosePrivateKeyAlias(it, { a -> if (a != null) app.pickClientCert(a) }, null, null, host?.host, host?.port ?: -1, alias) }
+                    }) { Text(stringResource(R.string.client_cert_pick), color = b.ink) }
+                    if (alias != null) TextButton(onClick = { app.pickClientCert(null) }) { Text(stringResource(R.string.client_cert_remove), color = b.ink) }
+                }
             }
             "battery" -> battery?.let { prompt ->
                 Title(R.string.battery)
