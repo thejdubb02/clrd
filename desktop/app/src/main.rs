@@ -571,10 +571,20 @@ fn light_theme_name(app: &AppHandle, light: bool) {
         };
         DARK.with_borrow_mut(|dark| {
             if !light {
-                // ponytail: put back as the app's own value, so a theme
-                // picked on the desktop after this waits for the next start.
                 if let Some(name) = dark.take() {
-                    settings.set_gtk_theme_name(Some(&name));
+                    // A desktop that hands GTK its theme while running (X11
+                    // XSETTINGS, GNOME on Wayland) gets it back, so a theme
+                    // picked later shows at once (#756). Only settings.ini
+                    // is left, which cannot change while the app runs, so
+                    // its name is put back as is.
+                    let live = gtk::gdk::Screen::default()
+                        .and_then(|s| s.setting("gtk-theme-name"))
+                        .is_some();
+                    if live {
+                        settings.reset_property("gtk-theme-name");
+                    } else {
+                        settings.set_gtk_theme_name(Some(&name));
+                    }
                 }
                 return;
             }

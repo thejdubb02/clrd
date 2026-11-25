@@ -131,6 +131,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Fixed
 
 - Desktop: the tray and app icon has a thin light ring, so it stays easy to see on a dark panel or taskbar as well as a light one (#628).
+- Desktop (Linux): after the window has been made light for a desktop that asks for light, a GTK theme picked on the desktop later now shows at once instead of at the next start, on desktops that hand GTK their theme while running (#756).
 - Desktop (Linux): a desktop that asks for light now gets a light window even when the GTK theme is a dark one by name, such as Adwaita-dark. The dark theme comes back when the desktop asks for dark or states no preference. A theme forced with the `GTK_THEME` variable still wins (#703).
 - Android: the test that checks hostile Markdown renders fast no longer fails on a busy build machine, so a release build is not held up by it (#663).
 - Android: a card that was snoozed and woke up, or was cleared and reopened, while the phone was offline now alerts when the phone catches up, as it did on the devices that were online. Your own Undo stays quiet (#645).
