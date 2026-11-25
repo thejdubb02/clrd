@@ -284,13 +284,17 @@ func (s *Server) statsRoutes() {
 
 // csvCell guards free-text cells against spreadsheet formula prefixes. A
 // leading quote gets one too, so a value already starting with a quote stays
-// distinct from one the guard quoted (#794).
+// distinct from one the guard quoted (#794). A CR is written as \r and a
+// backslash as \\, since many CSV readers fold CR LF into LF (#804).
 func csvCell(v string) string {
-	if len(v) > 0 && strings.ContainsRune("=+-@\t\r'", rune(v[0])) {
+	v = csvEsc.Replace(v)
+	if len(v) > 0 && strings.ContainsRune("=+-@\t'", rune(v[0])) {
 		return "'" + v
 	}
 	return v
 }
+
+var csvEsc = strings.NewReplacer(`\`, `\\`, "\r", `\r`)
 
 // writeCSVRow appends one RFC 4180 CSV line without pulling encoding/csv into the binary.
 func writeCSVRow(b *bytes.Buffer, cols ...string) {

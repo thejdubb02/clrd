@@ -77,6 +77,21 @@ class StackTest {
         assertNull(summary("disk"))
     }
 
+    @Test fun turningFormattingOffRedrawsTheTray() { // #809: rows already showing take the new look at once
+        val n = row("a", "disk").copy(message = "**bold** text")
+        bg { dao.applyAll(listOf(n), 1) }
+        app.tray.reconcile(listOf(n), emptySet())
+        fun text() = shadowOf(nm).getNotification("a", 0).extras.getCharSequence(Notification.EXTRA_TEXT).toString()
+        assertEquals("bold text", text())
+        try {
+            bg { RoomStore(app).settings(org.json.JSONObject("""{"render_formatting":false}""")) }
+            assertEquals("**bold** text", text())
+        } finally {
+            app.prefs.edit().remove("render_formatting").commit()
+            app.formatting.value = true
+        }
+    }
+
     @Test fun swipingTheStackOnlyHidesItsRowsHere() { // #265: a bundle swipe must not clear everywhere
         bg { dao.applyAll(listOf(row("a", "disk"), row("b", "disk")), 1) }
         app.tray.reconcile(listOf(row("a", "disk"), row("b", "disk")), emptySet())

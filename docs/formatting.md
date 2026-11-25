@@ -49,7 +49,7 @@ and default can also be changed in the Android app's Settings.
 | Setting | Default | What it does |
 |---|---|---|
 | `render_formatting` | on | Show Markdown formatting. Off shows the raw text. |
-| `autolink` | on | Turn bare web addresses into links. |
+| `autolink` | on | Turn bare web addresses into links. A written link, `[words](address)` or `<address>`, stays a link either way. With it off, the Android app shows any Markdown markers inside a bare address as typed. |
 | `favicons` | on | Show the site's icon next to a link. |
 | `link_previews` | off | Show a card with the page's title, summary and image. |
 | `topic_previews` | none | Turn link previews on or off for one topic. |

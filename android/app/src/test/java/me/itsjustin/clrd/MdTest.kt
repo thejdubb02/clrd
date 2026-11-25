@@ -75,6 +75,11 @@ class MdTest {
         assertEquals("See the run. Or https://x.example/a_b_c now", a.text)
         assertEquals(listOf("the run" to "https://ci.example/r/1"), a.links())
         assertTrue(a.styled("b").isEmpty()) // nothing inside the address is styled
+        listOf(true, false).forEach { on -> // a written <address> link stays a link and drops its brackets
+            val angle = Md.render("go <https://x.example/a_b> now", autolink = on)
+            assertEquals("go https://x.example/a_b now", angle.text)
+            assertEquals(listOf("https://x.example/a_b" to "https://x.example/a_b"), angle.links())
+        }
         val s = "plain https://x.example/q"
         val plain = Md.render(s, markdown = false, autolink = false)
         assertEquals(s, plain.text)
