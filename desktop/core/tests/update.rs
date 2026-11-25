@@ -136,6 +136,32 @@ fn a_signed_newer_version_is_kept_and_no_sign_in_is_sent() {
     }
 }
 
+/// What `package/feed.sh` made in CI is taken by the updater with the key the
+/// build was given (#719). The feed's own address is not served here, so this
+/// server hands out the installer from the same folder.
+#[test]
+#[ignore = "needs CLRD_RELEASE_DIR and CLRD_RELEASE_PUBKEY from CI"]
+fn a_release_made_by_feed_sh_is_taken() {
+    let dir = PathBuf::from(std::env::var("CLRD_RELEASE_DIR").unwrap());
+    let feed: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("latest.json")).unwrap()).unwrap();
+    let version = feed["version"].as_str().unwrap();
+    let package = &feed["platforms"]["windows-x86_64"];
+    let name = package["url"].as_str().unwrap().rsplit('/').next().unwrap();
+    let installer = std::fs::read(dir.join(name)).unwrap();
+    let server = Server::start();
+    server.feed(version, package["signature"].as_str().unwrap());
+    server.serve("/package", 200, installer.clone());
+    let mut updater = server.updater("release");
+    updater.pubkey = std::env::var("CLRD_RELEASE_PUBKEY").unwrap();
+    updater.target = "windows-x86_64".into();
+    updater.running = "0.0.0".into();
+
+    let update = updater.check().unwrap().expect("an update");
+    assert_eq!(update.version, version);
+    assert_eq!(std::fs::read(&update.file).unwrap(), installer);
+}
+
 #[test]
 fn a_build_with_no_address_or_no_key_never_asks() {
     let server = Server::start();

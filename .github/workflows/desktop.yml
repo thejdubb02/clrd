@@ -14,6 +14,9 @@ on:
       - "desktop/**"
       - ".github/workflows/desktop.yml"
       - ".github/size-budget"
+  # Run by hand to make a signed Windows update set (#719). It is kept as a
+  # workflow file for a few days and published nowhere.
+  workflow_dispatch:
 
 # Same grouping as go.yml: a new push cancels the older run on a branch or
 # pull request, and every commit on main is its own group.
@@ -89,6 +92,11 @@ jobs:
         # makensis packs the installer. Not signed and not published or kept
         # anywhere: this proves it builds and holds its size. Lint runs for
         # the Windows target too, since no other step compiles that code.
+        env:
+          # Only a run by hand builds in an update address and key. Empty is
+          # the same as unset: a build with no updates.
+          CLRD_UPDATE_URL: ${{ github.event_name == 'workflow_dispatch' && vars.CLRD_UPDATE_URL || '' }}
+          CLRD_UPDATE_PUBKEY: ${{ github.event_name == 'workflow_dispatch' && vars.CLRD_UPDATE_PUBKEY || '' }}
         run: |
           sudo apt-get install -y --no-install-recommends nsis lld llvm clang
           rustup target add x86_64-pc-windows-msvc
@@ -107,6 +115,47 @@ jobs:
           grep -q 'app/installer\.nsh' "$CARGO_TARGET_DIR/$win/release/nsis/x64/installer.nsi"
           ../.github/size-check.sh desktop-windows "$CARGO_TARGET_DIR/$win/release/clrd-desktop.exe"
           ../.github/size-check.sh desktop-windows-setup "$CARGO_TARGET_DIR/$win/release/bundle/nsis/"clrd_*_x64-setup.exe
+      - name: sign the update (#719)
+        # Every run signs the installer and writes its feed, so the step
+        # cannot rot. A run by hand signs with the real key, which is only
+        # ever in this step's environment; any other run makes a throwaway
+        # key here. A run by hand never falls back to that one.
+        env:
+          BY_HAND: ${{ github.event_name == 'workflow_dispatch' }}
+          KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.CLRD_UPDATE_KEY || '' }}
+          KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.CLRD_UPDATE_KEY_PASSWORD || '' }}
+          URL: ${{ vars.CLRD_UPDATE_URL }}
+          PUBKEY: ${{ vars.CLRD_UPDATE_PUBKEY }}
+          PACKAGES: ${{ vars.CLRD_UPDATE_PACKAGES }}
+        run: |
+          setup=$(echo "$CARGO_TARGET_DIR"/x86_64-pc-windows-msvc/release/bundle/nsis/clrd_*_x64-setup.exe)
+          if [ "$BY_HAND" = true ]; then
+            [ -n "$KEY" ] && [ -n "$URL" ] && [ -n "$PUBKEY" ] && [ -n "$PACKAGES" ] || {
+              echo "::error::needs the CLRD_UPDATE_KEY secret and the CLRD_UPDATE_URL, CLRD_UPDATE_PUBKEY and CLRD_UPDATE_PACKAGES variables"
+              exit 1
+            }
+            export TAURI_SIGNING_PRIVATE_KEY="$KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$KEY_PASSWORD"
+            echo "$PUBKEY" > "$RUNNER_TEMP/update.pub"
+          else
+            cargo tauri signer generate --ci -f -w "$RUNNER_TEMP/throwaway.key" > /dev/null
+            export TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/throwaway.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+            cp "$RUNNER_TEMP/throwaway.key.pub" "$RUNNER_TEMP/update.pub"
+            PACKAGES=https://example.com/clrd
+          fi
+          rm -rf "$RUNNER_TEMP/update"
+          package/feed.sh "$setup" "$PACKAGES/$(basename "$setup")" "$RUNNER_TEMP/update"
+          rm -f "$RUNNER_TEMP/throwaway.key"
+      - name: the app takes the signed update (#719)
+        # clrd's own updater checks what was just made, against the key the
+        # build was given.
+        run: CLRD_RELEASE_DIR="$RUNNER_TEMP/update" CLRD_RELEASE_PUBKEY="$(cat "$RUNNER_TEMP/update.pub")" cargo test --locked -p clrd-core --test update -- --ignored
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: clrd-windows-update
+          path: ${{ runner.temp }}/update/
+          retention-days: 7
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: clrd-desktop-deb

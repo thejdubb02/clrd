@@ -192,6 +192,17 @@ refused.
 }
 ```
 
+`package/feed.sh` signs an installer and writes that feed beside it. CI runs
+it on every desktop build with a key it makes and throws away, then checks
+the result with the app's own updater. Run by hand (Actions, desktop, Run
+workflow), it builds with the address and key from the repository's
+variables `CLRD_UPDATE_URL`, `CLRD_UPDATE_PUBKEY` and `CLRD_UPDATE_PACKAGES`
+(where the installers are downloaded from), signs with the secret
+`CLRD_UPDATE_KEY` (and `CLRD_UPDATE_KEY_PASSWORD`), and keeps the installer,
+its signature and `latest.json` as a workflow file for a few days. It
+publishes nothing. None of these are set yet, so a run by hand stops with an
+error.
+
 - The app asks at start and every six hours. A newer installer is kept and
   run only when its signature verifies against the key in the build and was
   made for the very version the feed names, so a feed cannot pass an old
