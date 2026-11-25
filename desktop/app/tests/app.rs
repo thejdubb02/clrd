@@ -580,15 +580,21 @@ fetch('/report', { method: 'POST', body: 'open' });
         press(&["Tab", "Tab", "Tab", "Return"]);
         live() > before
     });
-    // A plain start opens the inbox window again, if Try again has not.
-    assert!(app(&bus, &home, &[]).output().unwrap().status.success());
+    // A plain start opens the inbox window again, if Try again has not. It
+    // is dropped while Try again still holds the app, so ask until it opens.
     let opened = || {
         fake.heads()[seen..]
             .iter()
             .find(|h| h.starts_with("GET /app "))
             .cloned()
     };
-    wait_long("the inbox window opens again", || opened().is_some());
+    wait_long("the inbox window opens again", || {
+        assert!(app(&bus, &home, &[]).output().unwrap().status.success());
+        (0..20).any(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            opened().is_some()
+        })
+    });
     let opened = opened().unwrap();
     assert!(opened.contains("clrd_session="), "not signed in: {opened}");
     for old in &before_unlink {
