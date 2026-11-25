@@ -38,6 +38,7 @@ struct Inner {
     slow_session: bool,    // a new session waits for an unlink to start
     hold_dismiss: bool,    // a dismiss waits until this is off again
     unlinked: bool,        // the device removed itself: its token is dead
+    session_path: Option<String>, // where new session cookies go; None is /
     page: String,          // what /app serves to a signed-in window
     reports: Vec<String>,  // what that page posted to /report
 }
@@ -180,6 +181,13 @@ impl Fake {
         self.inner.lock().unwrap().refuse_unlink = on;
     }
 
+    /// New session cookies are for `path` only from now on. One left over
+    /// from before, for all of `/`, is then not replaced by the next and
+    /// shows beside it (#709).
+    pub fn session_path(&self, path: &str) {
+        self.inner.lock().unwrap().session_path = Some(path.into());
+    }
+
     /// A new session is held back until an unlink starts, or for a second
     /// when none does: the gap a session could slip through (#636).
     pub fn slow_session(&self) {
@@ -249,8 +257,9 @@ fn open_routes(
             i.minted += 1;
             let pair = format!("clrd_session=clrd_fakesession{:020}", i.minted);
             i.sessions.push(pair.clone());
+            let path = i.session_path.as_deref().unwrap_or("/");
             let headers = format!(
-                "Content-Type: application/json\r\nSet-Cookie: {pair}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax\r\n"
+                "Content-Type: application/json\r\nSet-Cookie: {pair}; Path={path}; Max-Age=31536000; HttpOnly; SameSite=Lax\r\n"
             );
             send(conn, "200 OK", &headers, "{}");
         }
