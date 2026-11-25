@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -75,7 +77,8 @@ internal fun MessageText(text: AnnotatedString, maxLines: Int, modifier: Modifie
                     var c = down
                     do c = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
                     while (c.pressed && (c.position - down.position).getDistance() <= viewConfiguration.touchSlop)
-                    if (c.pressed) false else { c.consume(); true }
+                    // A lift already consumed is a cancel (a call came in, the window lost focus): it opens nothing.
+                    if (c.pressed || c.isConsumed) false else { c.consume(); true }
                 }
                 when (tapped) {
                     true -> runCatching { uri.openUri(url) } // ours, as the link's own click leaves with the swapped Text
@@ -97,7 +100,7 @@ internal fun MessageText(text: AnnotatedString, maxLines: Int, modifier: Modifie
         val ctx = LocalContext.current
         AlertDialog(
             onDismissRequest = { shown = null },
-            text = { SelectionContainer { Text(url, color = b.body) } },
+            text = { SelectionContainer(Modifier.verticalScroll(rememberScrollState())) { Text(url, color = b.body) } },
             confirmButton = { TextButton({ shown = null; runCatching { uri.openUri(url) } }) { Text(stringResource(R.string.open_link)) } },
             dismissButton = {
                 TextButton({

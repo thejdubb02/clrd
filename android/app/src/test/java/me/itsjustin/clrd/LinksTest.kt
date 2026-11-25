@@ -82,6 +82,13 @@ class LinksTest {
         assertEquals(listOf(url), opened)
     }
 
+    @Test fun aCancelledPressOpensNothing() { // a call comes in while a finger rests on the link
+        card()
+        rule.onNodeWithText("Ticket", substring = true, useUnmergedTree = true).performTouchInput { down(at("Ticket")); cancel() }
+        rule.waitForIdle()
+        assertEquals(emptyList<String>(), opened)
+    }
+
     @Test fun longPressBesideALinkShowsNothing() {
         card()
         rule.onNodeWithText("Ticket", substring = true, useUnmergedTree = true).performTouchInput { longClick(at("See")) }
