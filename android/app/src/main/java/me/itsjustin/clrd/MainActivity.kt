@@ -419,7 +419,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                         items(entries, key = { it.key }) { e ->
                             if (e is Stack) {
                                 val open = e.topic in unfolded
-                                StackCard(e, open, onClear = if (tab == Tab.Cleared) null else { { clearStack(e) } }) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
+                                StackCard(e, open, onClear = if (tab == Tab.Inbox) { { clearStack(e) } } else null) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
                                 return@items
                             }
                             val n = (e as One).n

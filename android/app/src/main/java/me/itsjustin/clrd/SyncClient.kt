@@ -275,26 +275,30 @@ private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via"
  * sending again what its replacement already sent.
  */
 fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }) = synchronized(flushLock) {
-    // Several dismisses at the head of the queue (a stack swiped away, #108) go out as one clear call.
-    // Only the head run, so a later reopen of the same row still lands after its dismiss.
+    // Several dismisses in a row (a stack cleared or swiped away, #108) go out as one clear call,
+    // wherever the run sits in the queue, so actions before and after it keep their order.
     // Only one via per run, so the server logs each clear the way it was made (#267).
-    val head = store.pending()
-    val via = head.firstOrNull()?.let(::viaOf)
-    val run = head.takeWhile { it.action == "dismiss" && viaOf(it) == via }
-    if (run.size > 1 && live()) {
-        val sent = try {
-            val body = JSONObject().put("ids", JSONArray(run.map { it.notifId }))
-            if (!via.isNullOrEmpty()) body.put("via", via)
-            api.post("/api/v1/notifications/clear", body.toString())
-            true
-        } catch (e: HttpError) {
-            if (!e.isPermanent) throw e
-            false // refused as a batch: the loop below sends them one by one
-        }
-        if (sent) run.forEach(store::removePending) // the server's events bring the rows themselves
-    }
-    for (p in store.pending()) {
+    val queue = store.pending()
+    var i = 0
+    var single = 0 // rows before this index go one by one: their batch was refused
+    while (i < queue.size) {
         if (!live()) break
+        val via = viaOf(queue[i])
+        val run = if (i < single) emptyList() else queue.drop(i).takeWhile { it.action == "dismiss" && viaOf(it) == via }
+        if (run.size > 1) {
+            val sent = try {
+                val body = JSONObject().put("ids", JSONArray(run.map { it.notifId }))
+                if (via.isNotEmpty()) body.put("via", via)
+                api.post("/api/v1/notifications/clear", body.toString())
+                true
+            } catch (e: HttpError) {
+                if (!e.isPermanent) throw e
+                false // refused as a batch: send them one by one
+            }
+            if (sent) { run.forEach(store::removePending); i += run.size; continue } // the server's events bring the rows themselves
+            single = i + run.size
+        }
+        val p = queue[i++]
         var mine = true // the row after our own action: the person just tapped it, so no sound
         val answer = try {
             api.action(p).let { body ->

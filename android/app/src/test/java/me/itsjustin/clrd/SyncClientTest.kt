@@ -408,6 +408,18 @@ class SyncClientTest {
         assertTrue(store.queue.isEmpty())
     }
 
+    @Test fun aStackClearBehindAnotherActionStillGoesOutAsOneClear() { // offline snooze, then Clear all, then Undo
+        store.queue += Pending(1, "s", "snooze", """{"until":"2030-01-01T00:00:00Z"}""")
+        store.queue += Pending(2, "a", "dismiss")
+        store.queue += Pending(3, "b", "dismiss")
+        store.queue += Pending(4, "a", "reopen")
+        flushPending(store, Api(http, server.url("/").toString().trimEnd('/'), "tok"))
+        assertEquals(listOf("/api/v1/notifications/s/snooze", "/api/v1/notifications/clear", "/api/v1/notifications/a/reopen"), posts)
+        server.takeRequest()
+        assertEquals("""{"ids":["a","b"]}""", server.takeRequest().body.readUtf8())
+        assertTrue(store.queue.isEmpty())
+    }
+
     @Test fun aClearRunKeepsOneVia() { // #267: each clear call is logged the way it was made
         store.queue += Pending(1, "a", "dismiss", """{"via":"tray_button"}""")
         store.queue += Pending(2, "b", "dismiss", """{"via":"tray_button"}""")
