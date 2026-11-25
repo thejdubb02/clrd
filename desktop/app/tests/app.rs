@@ -263,6 +263,74 @@ say();
     assert_eq!(fake.reports()[3], "false");
 }
 
+#[test]
+fn the_web_appearance_pick_wins_over_the_desktop() {
+    // Picks dark on a light desktop, then light once dark shows, then System
+    // when the test says so.
+    const PICKS: &str = r#"<!doctype html><title>pick</title><script>
+const dark = matchMedia('(prefers-color-scheme: dark)');
+// One at a time, so the reports arrive in the order they were seen.
+let sent = Promise.resolve();
+const say = () => {
+  const body = String(dark.matches);
+  sent = sent.then(() => fetch('/report', { method: 'POST', body }));
+};
+let once = false;
+dark.addEventListener('change', () => {
+  say();
+  if (dark.matches && !once) { once = true; localStorage.setItem('clrd.theme', 'light'); }
+});
+say();
+localStorage.setItem('clrd.theme', 'dark');
+setInterval(async () => {
+  const page = await (await fetch(location.href)).text();
+  if (page.includes('GO ' + 'SYSTEM')) localStorage.removeItem('clrd.theme');
+}, 300);
+</script>"#;
+
+    let fake = Fake::start();
+    fake.set_page(PICKS);
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let scheme = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(2));
+    let portal = portal(&bus, scheme.clone());
+    let _app = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    let kept = home.join("data/org.clrd.desktop/theme");
+    wait_long("dark picked, then light", || fake.reports().len() == 3);
+    assert_eq!(fake.reports(), ["false", "true", "false"]);
+    wait_long("the pick is kept", || {
+        std::fs::read_to_string(&kept).is_ok_and(|pick| pick == "light")
+    });
+
+    // The desktop going dark does not move a Light pick.
+    scheme.store(1, std::sync::atomic::Ordering::Relaxed);
+    zbus::block_on(portal.emit_signal(
+        None::<&str>,
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Settings",
+        "SettingChanged",
+        &(
+            "org.freedesktop.appearance",
+            "color-scheme",
+            zbus::Variant::U32(1),
+        ),
+    ))
+    .unwrap();
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(fake.reports().len(), 3, "the pick stays light");
+
+    // System: the desktop's dark shows.
+    fake.set_page(&format!("{PICKS}<!-- GO SYSTEM -->"));
+    wait_long("System follows the desktop", || fake.reports().len() == 4);
+    assert_eq!(fake.reports()[3], "true");
+    wait_long("System is not kept", || !kept.exists());
+}
+
 /// A desktop that states no preference leaves a dark GTK setup dark.
 #[test]
 fn the_window_keeps_gtks_dark_when_the_desktop_has_no_preference() {
