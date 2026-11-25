@@ -144,6 +144,13 @@ CREATE TABLE IF NOT EXISTS push_subs (
   auth TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+-- Failed Web Push sends per topic, for delivery health in stats (#661).
+CREATE TABLE IF NOT EXISTS push_failures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS push_failures_at ON push_failures (at);
 CREATE TABLE IF NOT EXISTS sessions (
   token_id TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
   parent_id TEXT NOT NULL,
@@ -332,6 +339,7 @@ type Event struct {
 	Only    string `json:"only,omitempty"`
 	Raw     []byte `json:"-"`
 	replied bool   // a reply button was tapped: the "action" hook event
+	woke    bool   // server woke a snoozed notification (wakeSnoozed): never set from client via (#673)
 }
 
 // viaRe bounds the client's label: it is stored and sent to every device.
@@ -503,7 +511,28 @@ func openDB(path string) (*sql.DB, error) {
 			}
 			return err
 		}
-		if _, err := tx.Exec(`UPDATE notifications SET cleared_at = updated_at WHERE state IN (?, ?)`, Dismissed, Resolved); err != nil {
+		// Refine cleared_at from the event log in one pass when events are still
+		// kept: a mark after a clear moves updated_at, so the earliest clear event
+		// after any reopen is more accurate (#661).
+		if _, err := tx.Exec(`WITH
+			reopen AS (
+				SELECT json_extract(data, '$.notification.id') AS id, MAX(seq) AS seq
+				FROM events
+				WHERE type = ? AND json_extract(data, '$.notification.state') NOT IN (?, ?)
+				GROUP BY 1
+			),
+			cleared AS (
+				SELECT json_extract(e.data, '$.notification.id') AS id, MIN(e.created_at) AS at
+				FROM events e
+				LEFT JOIN reopen r ON r.id = json_extract(e.data, '$.notification.id')
+				WHERE e.type = ? AND json_extract(e.data, '$.notification.state') IN (?, ?)
+				  AND e.seq > COALESCE(r.seq, 0)
+				GROUP BY 1
+			)
+			UPDATE notifications
+			SET cleared_at = COALESCE((SELECT at FROM cleared WHERE cleared.id = notifications.id), updated_at)
+			WHERE state IN (?, ?)`,
+			EventState, Dismissed, Resolved, EventState, Dismissed, Resolved, Dismissed, Resolved); err != nil {
 			return err
 		}
 		return tx.Commit()
@@ -1461,6 +1490,7 @@ func (s *Server) wakeSnoozed(ctx context.Context) error {
 		var evs []Event
 		for _, n := range ns {
 			ev, _ := transition(n, Active, &Token{Name: "server"}, "snooze_end", nil)
+			ev.woke = true
 			evs = append(evs, *ev)
 		}
 		return evs, err
@@ -1568,6 +1598,9 @@ func (s *Server) prune(ctx context.Context) error {
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM push_failures WHERE at < ?`, cutoff); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_posts WHERE id NOT IN (SELECT id FROM notifications)`); err != nil {

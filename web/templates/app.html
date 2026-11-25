@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := printf "%s/app" base}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "%s/app/%s" base .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-tkeep="{{range $t, $v := .Snap.TopicKeepClearedDays}}{{$t}}={{$v}};{{end}}" data-sound="{{.Snap.Sound}}" data-swipe-start="{{range .Snap.SwipeStart}}{{.}} {{end}}" data-swipe-end="{{range .Snap.SwipeEnd}}{{.}} {{end}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-ver="{{about.Version}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-tkeep="{{range $t, $v := .Snap.TopicKeepClearedDays}}{{$t}}={{$v}};{{end}}" data-sound="{{.Snap.Sound}}" data-swipe-start="{{range .Snap.SwipeStart}}{{.}} {{end}}" data-swipe-end="{{range .Snap.SwipeEnd}}{{.}} {{end}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -32,6 +32,7 @@
 
   <main id="main" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
     <div class="alert mb-4" data-variant="destructive" role="alert" data-offline hidden>{{template "i-wifi-off"}}<h2>Lost the live connection</h2><section>This page may be out of date. Still trying. <a href="" class="underline">Reload</a></section></div>
+    {{if ne .View "settings"}}{{with about}}<div class="alert mb-4" role="status" data-update-note hidden>{{template "i-book-open"}}<h2>Updated to clrd {{.Version}}</h2><section><div class="mt-2 flex flex-wrap items-center gap-2"><a class="btn" data-variant="outline" data-size="sm" href="{{base}}/app/settings#about" data-update-open>What's new</a><button type="button" class="btn" data-variant="ghost" data-size="sm" data-update-dismiss>Dismiss</button></div></section></div>{{end}}{{end}}
     {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else if eq .View "stats"}}{{template "stats" .}}{{else}}
     <header class="mb-4 flex flex-wrap items-center gap-2 md:min-h-9 md:flex-nowrap">
       <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{.Heading}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
@@ -486,14 +487,14 @@
     -d '{"topic":"test","message":"Hello from clrd"}' \
     {{.Base}}/api/v1/notifications</code></pre>
     </section>
-    {{if .Snap.CanHooks}}<section id="webhooks" data-setting data-keywords="webhook, outgoing, callback, post, integration" class="grid gap-3" data-hooks>
+    {{if .Snap.CanHooks}}<section id="webhooks" data-setting data-keywords="webhook, outgoing, callback, post, integration, discord, github" class="grid gap-3" data-hooks>
       <h3 id="hooks-h" class="text-base font-semibold">Webhooks</h3>
       <p class="text-body text-sm/relaxed">Send a topic's answers to another app as they happen: each dismiss, acknowledge, resolve, snooze or action tap is posted to your URL as JSON. <a class="underline" href="{{base}}/docs/integrations/webhooks-out">How webhooks work</a></p>
       {{range .Snap.Hooks}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-hook="{{.Topic}}/{{.Name}}">
         <div class="grid gap-1">
           <h4 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h4>
           <p class="meta [overflow-wrap:anywhere]">{{.URL}}</p>
-          <p class="meta">Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .Body}} Custom body.{{end}}{{if .HasSecret}} Signed with a secret.{{end}}</p>
+          <p class="meta">{{if eq .Kind "discord"}}Discord. {{else if eq .Kind "github"}}GitHub. {{end}}Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .Body}} Custom body.{{end}}{{if .HasSecret}} Signed with a secret.{{end}}</p>
           {{if not .Enabled}}<p class="text-destructive text-sm" data-hook-off>Turned off after a day of failed deliveries. Fix the receiver, then save it again to turn it back on.</p>
           {{else if .FailingSince}}<p class="text-destructive text-sm">Failing since {{clock .FailingSince}}. It turns off after a day of failures.</p>{{end}}
         </div>
@@ -572,6 +573,7 @@
     <section id="about" data-setting data-keywords="version, what's new, changelog, release, update, build" class="grid gap-3">
       <h3 id="about-h" class="text-base font-semibold">Version</h3>
       <p class="text-body text-sm/relaxed" data-version>This server runs clrd {{.Version}}{{with .Commit}}, build <code>{{.}}</code>{{end}}{{with .Date}} from {{.}}{{end}}.</p>
+      <label class="js-only label"><input type="checkbox" role="switch" class="input" data-whats-new-setting checked> Show What's new after an update</label>
       <details class="text-sm" data-whats-new>
         <summary class="cursor-pointer font-medium">What's new</summary>
         <div class="text-body mt-3 grid gap-5">{{range .History}}
@@ -628,6 +630,13 @@
   </div>
 </dialog>{{end}}
 {{define "hook-fields"}}{{$h := .}}{{$id := print "hk-" .Topic "/" .Name}}
+<div class="grid gap-1.5"><label class="label" for="{{$id}}-kind">Kind</label>
+  <select id="{{$id}}-kind" class="input" name="kind" aria-describedby="{{$id}}-kind-hint">
+    <option value=""{{if eq .Kind ""}} selected{{end}}>Webhook (POST JSON)</option>
+    <option value="discord"{{if eq .Kind "discord"}} selected{{end}}>Discord (post and edit)</option>
+    <option value="github"{{if eq .Kind "github"}} selected{{end}}>GitHub (open and close issues)</option>
+  </select>
+  <p id="{{$id}}-kind-hint" class="meta">Discord takes a Discord webhook URL with no body or secret. GitHub takes <code>https://api.github.com/repos/OWNER/REPO</code> and a token in Secret.</p></div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-url">URL</label>
   <input id="{{$id}}-url" class="input" type="url" name="url" value="{{.URL}}" required maxlength="2048" placeholder="https://" autocomplete="off" spellcheck="false"></div>
 <fieldset class="grid gap-2"><legend class="label mb-1">Send</legend>
@@ -788,7 +797,7 @@
 {{define "stats"}}
 <header class="mb-6 flex min-h-9 flex-wrap items-center gap-2">
   <h1 class="me-auto truncate text-xl font-semibold tracking-tight">Stats</h1>
-  {{with .Snap.Stats}}<nav class="flex gap-1" aria-label="Range">{{$d := .Days}}{{range .Ranges}}<a class="btn" data-size="sm" data-variant="{{if eq . $d}}secondary{{else}}ghost{{end}}" href="{{base}}/app/stats?days={{.}}"{{if eq . $d}} aria-current="page"{{end}}>{{if eq . 1}}24 hours{{else}}{{.}} days{{end}}</a>{{end}}</nav>{{end}}
+  {{with .Snap.Stats}}<nav class="flex gap-1" aria-label="Range">{{$d := .Days}}{{range .Ranges}}<a class="btn" data-size="sm" data-variant="{{if eq . $d}}secondary{{else}}ghost{{end}}" href="{{base}}/app/stats?days={{.}}"{{if eq . $d}} aria-current="page"{{end}}>{{if eq . 1}}24 hours{{else}}{{.}} days{{end}}</a>{{end}}<a class="btn" data-size="sm" data-variant="ghost" href="{{base}}/api/v1/stats?days={{$d}}&amp;format=csv">CSV</a></nav>{{end}}
 </header>
 <div class="grid max-w-3xl gap-4" data-stats data-live="stats">
   {{if not .Snap.CanSenders}}<p class="text-body text-sm">Only an admin token for every topic can see stats.</p>
@@ -813,6 +822,13 @@
     {{else}}<p class="text-body px-4 pb-4 text-sm">None in this range.</p>{{end}}
   </section>
   {{else}}<p class="text-body text-sm">Nothing arrived in this range.</p>{{end}}
+  {{if or .Total .Delivery}}<section class="bg-card rounded-xl border" aria-labelledby="st-deliv">
+    <h2 id="st-deliv" class="px-4 pt-4 text-sm font-medium">Delivery health</h2>
+    <p class="text-body px-4 pt-1 text-sm">Failed outgoing webhook deliveries and Web Push sends per topic.</p>
+    {{if .Delivery}}<table class="table"><thead><tr><th scope="col">Topic</th><th scope="col">Webhooks</th><th scope="col">Web Push</th></tr></thead>
+      <tbody>{{range .Delivery}}<tr><td class="whitespace-normal [overflow-wrap:anywhere]">{{.Topic}}</td><td class="tabular-nums">{{.Webhooks}}</td><td class="tabular-nums">{{.WebPush}}</td></tr>{{end}}</tbody></table>
+    {{else}}<p class="text-body px-4 pb-4 text-sm">No delivery failures in this range.</p>{{end}}
+  </section>{{end}}
   {{end}}{{end}}
 </div>
 {{end}}

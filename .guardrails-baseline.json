@@ -11,6 +11,11 @@
    1
   ],
   [
+   "android/app/src/test/java/me/itsjustin/clrd/DisplayTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/RefusalTest.kt",
+   1
+  ],
+  [
    "android/app/src/test/java/me/itsjustin/clrd/QuietAlarmRulesTest.kt",
    "android/app/src/test/java/me/itsjustin/clrd/SettingsSearchTest.kt",
    1
@@ -53,7 +58,7 @@
   [
    "desktop/app/tests/app.rs",
    "desktop/app/tests/app.rs",
-   1
+   9
   ],
   [
    "desktop/core/tests/notify.rs",
@@ -93,6 +98,11 @@
   [
    "server/mcp/real_test.go",
    "server/session_test.go",
+   1
+  ],
+  [
+   "server/stats_test.go",
+   "server/stats_test.go",
    1
   ],
   [

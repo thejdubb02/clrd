@@ -129,9 +129,10 @@ the variable (or setting it to `on`) and restarting.
 
 ## Discord: post, then edit when cleared
 
-Give a hook `"kind": "discord"` and a Discord webhook URL (channel settings,
+Give a hook `"kind": "discord"` (or pick Discord in Settings > Webhooks) and a Discord webhook URL (channel settings,
 Integrations, Webhooks, Copy Webhook URL). Every new notification on the
-topic is posted to the channel. When it is dismissed, acknowledged,
+topic is posted to the channel (scheduled notifications post when they wake).
+When a notification is updated (same sender ID or `PATCH`) or dismissed, acknowledged,
 resolved, snoozed or answered (pick with `events`), clrd edits that message:
 the title is struck through once it is cleared or resolved, and a small line
 says what happened and on which device, such as "Cleared by pixel-9". A
@@ -145,7 +146,7 @@ curl -X PUT https://clrd.example.com/api/v1/topics/alerts/hooks/discord \
 
 A discord hook takes no `body` or `secret`. Mentions like `@everyone` in a
 message are shown but never ping anyone. If someone deletes the message in
-Discord, the edit is skipped. A scheduled notification is not posted.
+Discord, the edit is skipped.
 The webhook URL holds a token, so treat it like a password: only admins can
 see it, and delivery errors leave it out.
 

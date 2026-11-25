@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import kotlinx.coroutines.flow.MutableStateFlow
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -12,8 +13,24 @@ import java.util.concurrent.TimeUnit
 /** App-wide singletons. Small enough that a DI framework would be the bigger thing. */
 class App : Application() {
     val db by lazy { Room.databaseBuilder(this, Db::class.java, "clrd.db").build() }
+    /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
+    val clientCert by lazy { MutableStateFlow(prefs.getString("client_cert", null)) }
+    /** The server origin the certificate was picked for. A moved server gets no certificate until it is picked again. */
+    private fun origin(u: okhttp3.HttpUrl) = "${u.scheme}://${u.host}:${u.port}"
+    private val certKeys by lazy {
+        ClientCertKeys({ clientCert.value }, {
+            serverUrl.toHttpUrlOrNull()?.takeIf { origin(it) == prefs.getString("client_cert_origin", null) }?.let { it.host to it.port }
+        }) { a ->
+            runCatching { // a removed key or revoked access means no certificate, not a crash
+                val k = android.security.KeyChain.getPrivateKey(this, a)
+                val c = android.security.KeyChain.getCertificateChain(this, a)
+                if (k != null && c != null) k to c else null
+            }.getOrNull()
+        }
+    }
     val http by lazy {
         OkHttpClient.Builder()
+            .sslSocketFactory(certKeys.socketFactory, certKeys.trustManager)
             .pingInterval(45, TimeUnit.SECONDS) // notices a dead connection the server ping alone would not
             .connectTimeout(15, TimeUnit.SECONDS)
             .build()
@@ -77,6 +94,17 @@ class App : Application() {
     var dropCleared: Boolean
         get() = prefs.getBoolean("drop_cleared", false)
         set(v) = prefs.edit().putBoolean("drop_cleared", v).apply()
+
+    /** Picks or removes the client certificate (#152). Open connections used the old one, so they close and sync reconnects. */
+    fun pickClientCert(alias: String?) {
+        prefs.edit().putString("client_cert", alias).putString("client_cert_origin", serverUrl.toHttpUrlOrNull()?.let(::origin)).apply()
+        clientCert.value = alias
+        io.execute {
+            certKeys.renew()
+            http.connectionPool.evictAll()
+            if (configured) SyncService.start(this, restart = true)
+        }
+    }
 
     /** Display, Appearance (#583): "system", "light" or "dark", this phone only. Applies at once through [ClrdTheme]. */
     val appearance by lazy { MutableStateFlow(prefs.getString("appearance", null) ?: "system") }

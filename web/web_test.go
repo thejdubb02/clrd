@@ -63,8 +63,14 @@ func TestPages(t *testing.T) {
 		}
 	}
 	// About (#580): the running version, and its history with inline Markdown.
+	_, inboxBody := get(t, h, "/app")
+	for _, s := range []string{`data-ver="` + clrd.Version() + `"`, `data-update-note hidden`, `Updated to clrd ` + clrd.Version()} {
+		if !strings.Contains(inboxBody, s) {
+			t.Errorf("inbox update note: missing %q", s)
+		}
+	}
 	_, body := get(t, h, "/app/settings")
-	want := []string{`data-version>This server runs clrd ` + clrd.Version(), `id="about"`, `<summary class="cursor-pointer font-medium">What's new</summary>`, `href="` + clrd.FullHistory + `"`}
+	want := []string{`data-version>This server runs clrd ` + clrd.Version(), `id="about"`, `data-whats-new-setting`, `<summary class="cursor-pointer font-medium">What's new</summary>`, `href="` + clrd.FullHistory + `"`}
 	for _, r := range clrd.ParseChangelog(clrd.Changelog) {
 		if r.Date != "" {
 			want = append(want, `>`+r.Version+` <span class="meta">`+r.Date+`</span></h4>`)
@@ -186,7 +192,7 @@ func (readOnly) FormatIgnore(*http.Request, string, string, string, bool) error 
 	return ErrUnauthorized
 }
 
-func (readOnly) SaveHook(*http.Request, string, string, string, []string, *string, string, bool) error {
+func (readOnly) SaveHook(*http.Request, string, string, string, []string, *string, *string, string, bool) error {
 	return ErrUnauthorized
 }
 
@@ -879,5 +885,48 @@ func TestSubscriptions(t *testing.T) {
 	f.Unfiltered = true
 	if _, b := get(t, h, "/app/settings"); !strings.Contains(b, "Not available here") || strings.Contains(b, "data-subs-form") {
 		t.Fatal("a token with no user is offered a list it may not change")
+	}
+}
+
+type hookKindAPI struct {
+	readOnly
+	gotKind **string
+}
+
+func (a hookKindAPI) Snapshot(*http.Request, Query) (Snapshot, error) {
+	return Snapshot{CanHooks: true, Hooks: []Hook{{Topic: "ops", Name: "dc", URL: "https://discord.com/api/webhooks/1/a", Kind: "discord", Enabled: true}}}, nil
+}
+
+func (a hookKindAPI) SaveHook(_ *http.Request, _, _, _ string, _ []string, kind, _ *string, _ string, _ bool) error {
+	*a.gotKind = kind
+	return nil
+}
+
+// Settings > Webhooks shows and submits the webhook kind (#673).
+func TestHookKindForm(t *testing.T) {
+	var got *string
+	h := Handler(hookKindAPI{gotKind: &got}, "")
+	_, body := get(t, h, "/app/settings")
+	for _, want := range []string{`name="kind"`, `<option value="discord" selected>Discord`, "Discord. Sends "} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings webhooks missing %q", want)
+		}
+	}
+	post := func(form url.Values) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/app/hooks", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.ServeHTTP(w, r)
+		if w.Code != 303 {
+			t.Fatalf("POST /app/hooks: %d %s", w.Code, w.Body.String())
+		}
+	}
+	post(url.Values{"topic": {"ops"}, "name": {"dc"}, "url": {"https://discord.com/api/webhooks/1/a"}, "kind": {"discord"}})
+	if got == nil || *got != "discord" {
+		t.Fatalf("submitted kind: %v", got)
+	}
+	post(url.Values{"topic": {"ops"}, "name": {"dc"}, "url": {"https://discord.com/api/webhooks/1/a"}})
+	if got != nil {
+		t.Fatalf("omitted kind should stay nil for stale tabs, got %q", *got)
 	}
 }
