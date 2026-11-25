@@ -131,8 +131,8 @@ impl Os {
 
     pub fn close(&self, os_id: u32) {
         let owner = self.owners.lock().unwrap().remove(&os_id);
-        if let Some(_owner) = owner {
-            let _ = self.call_to(NAME, "CloseNotification", &os_id);
+        if let Some(owner) = owner {
+            let _ = self.call_to(owner.as_str(), "CloseNotification", &os_id);
         }
     }
 
