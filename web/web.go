@@ -265,6 +265,7 @@ func topicApprovals(api API, r *http.Request, topic string) bool {
 type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
+	Detail     string     `json:"detail"` // "Firefox 120 on Linux", to tell same names apart (#765)
 	Kind       string     `json:"kind"` // token, browser, phone or agent
 	Via        string     `json:"via"`
 	ViaID      string     `json:"via_id"`

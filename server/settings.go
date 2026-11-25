@@ -72,6 +72,9 @@ type Settings struct {
 	TopicKeepClearedDays map[string]int `json:"topic_keep_cleared_days"`
 	// ColorRules color matching cards, first match wins (#165, colors.go).
 	ColorRules []ColorRule `json:"color_rules"`
+	// UnlinkIdleBrowsersDays unlinks a signed-in browser unseen this many
+	// days (#765); 0 never does. Stored only once set; reads show the default.
+	UnlinkIdleBrowsersDays *int `json:"unlink_idle_browsers_days"`
 	// Sound is the asking device's own sound (#282), filled on reads and
 	// set with PUT /api/v1/devices/{id}.
 	Sound string `json:"sound,omitempty"`
@@ -92,6 +95,16 @@ func (s *Server) keepCleared(st Settings) time.Duration {
 }
 
 func days(n int) time.Duration { return time.Duration(n) * 24 * time.Hour }
+
+// defaultUnlinkIdleDays is unlink_idle_browsers_days until an admin sets it.
+const defaultUnlinkIdleDays = 30
+
+func unlinkIdleDays(st Settings) int {
+	if st.UnlinkIdleBrowsersDays == nil {
+		return defaultUnlinkIdleDays
+	}
+	return *st.UnlinkIdleBrowsersDays
+}
 
 // prunable picks the cleared notifications prune deletes: final, and last
 // changed before the cutoff. The Settings preview counts the same rows.
@@ -224,6 +237,7 @@ type SettingsPatch struct {
 	TopicKeep        map[string]*int  `json:"topic_keep_cleared_days"`
 	ColorRules       json.RawMessage  `json:"color_rules"` // replaces the whole list; raw so null is refused
 	Sound            *string          `json:"sound"`       // this device's own sound
+	UnlinkIdle       *int             `json:"unlink_idle_browsers_days"`
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -250,6 +264,10 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 	if st.KeepClearedDays == nil { // filled on reads only, so a save never pins CLRD_RETENTION
 		d := int((s.opt.Retention + 24*time.Hour - 1) / (24 * time.Hour))
 		st.KeepClearedDays = &d
+	}
+	if st.UnlinkIdleBrowsersDays == nil {
+		d := defaultUnlinkIdleDays
+		st.UnlinkIdleBrowsersDays = &d
 	}
 	sounds, err := s.deviceSounds(ctx, s.db)
 	st.Sound = soundOf(sounds, tok.ID)
@@ -295,7 +313,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
 		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil ||
-		p.SwipeStart != nil || p.SwipeEnd != nil || p.ColorRules != nil
+		p.SwipeStart != nil || p.SwipeEnd != nil || p.ColorRules != nil || p.UnlinkIdle != nil
 	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews and topic_keep_cleared_days")
 	}
@@ -327,6 +345,14 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	if p.KeepClearedDays != nil {
 		if err := checkKeep("", p.KeepClearedDays); err != nil {
 			return Settings{}, err
+		}
+	}
+	if p.UnlinkIdle != nil { // it signs out everyone's browsers, so a full admin's
+		if err := tok.needFullAdmin(); err != nil {
+			return Settings{}, err
+		}
+		if *p.UnlinkIdle < 0 || *p.UnlinkIdle > maxKeepDays {
+			return Settings{}, errf(400, "bad_request", "unlink_idle_browsers_days must be 0 (never) to %d", maxKeepDays)
 		}
 	}
 	for t, v := range p.TopicKeep { // null drops the override
@@ -405,6 +431,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 		if p.ColorRules != nil {
 			st.ColorRules = colorRules
+		}
+		if p.UnlinkIdle != nil {
+			st.UnlinkIdleBrowsersDays = p.UnlinkIdle
 		}
 		for t, v := range p.TopicKeep {
 			if v == nil {

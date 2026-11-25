@@ -94,14 +94,22 @@ func (s *Server) soundRoutes() {
 	s.api("PUT /api/v1/devices/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var p struct {
 			Sound *string `json:"sound"`
+			Name  *string `json:"name"` // a browser or phone only (#765)
 		}
 		if err := decodeJSON(r, &p); err != nil {
 			return err
 		}
-		if p.Sound == nil {
-			return errf(400, "bad_request", "sound is required")
+		if p.Sound == nil && p.Name == nil {
+			return errf(400, "bad_request", "give sound, name or both")
 		}
-		d, err := s.SetSound(r.Context(), tok, r.PathValue("id"), *p.Sound)
+		var d LinkedDevice
+		var err error
+		if p.Name != nil {
+			d, err = s.Rename(r.Context(), tok, r.PathValue("id"), *p.Name)
+		}
+		if err == nil && p.Sound != nil {
+			d, err = s.SetSound(r.Context(), tok, r.PathValue("id"), *p.Sound)
+		}
 		if err != nil {
 			return err
 		}
