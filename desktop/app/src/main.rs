@@ -640,7 +640,26 @@ fn look(app: &AppHandle) {
             tauri::Theme::Light
         }
     }));
-    light_theme_name(app, dark == Some(false));
+    gtk_look(app, dark);
+}
+
+#[cfg(target_os = "linux")]
+thread_local! {
+    /// GTK's own dark setting (`gtk-application-prefer-dark-theme`) as it was
+    /// before the app chose a theme. Setting no theme turns it off, so it is
+    /// put back by hand when the app takes its choice back (#783).
+    static GTK_DARK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Notes GTK's own dark setting, before the app first chooses a theme.
+#[cfg(target_os = "linux")]
+fn keep_gtk_dark(app: &AppHandle) {
+    use gtk::prelude::GtkSettingsExt;
+    let _ = app.run_on_main_thread(|| {
+        if let Some(settings) = gtk::Settings::default() {
+            GTK_DARK.set(settings.is_gtk_application_prefer_dark_theme());
+        }
+    });
 }
 
 /// A GTK theme that is dark by its name ("Adwaita-dark") keeps the window and
@@ -648,16 +667,27 @@ fn look(app: &AppHandle) {
 /// too. So while the desktop asks for light, the theme of the same name
 /// without "-dark" is used, and the dark name comes back after (#703).
 /// `GTK_THEME`, set by hand for one program, is that person's choice and is
-/// left alone.
+/// left alone. With no theme (`dark` is None), GTK's own dark setting is put
+/// back.
 #[cfg(target_os = "linux")]
-fn light_theme_name(app: &AppHandle, light: bool) {
+fn gtk_look(app: &AppHandle, dark: Option<bool>) {
     use gtk::prelude::GtkSettingsExt;
     thread_local!(static DARK: std::cell::RefCell<Option<String>> = Default::default());
+    let light = dark == Some(false);
     // GTK is only touched on its own thread.
     let _ = app.run_on_main_thread(move || {
         let Some(settings) = gtk::Settings::default() else {
             return;
         };
+        if dark.is_none() {
+            // After the window library's own no-theme step, which turns the
+            // setting off: it is queued already, but this may run before it
+            // (inline when called on this thread). Idle runs after it.
+            let settings = settings.clone();
+            gtk::glib::idle_add_local_once(move || {
+                settings.set_gtk_application_prefer_dark_theme(GTK_DARK.get());
+            });
+        }
         DARK.with_borrow_mut(|dark| {
             if !light {
                 if let Some(name) = dark.take() {
@@ -824,6 +854,7 @@ fn main() {
                     Some("light") => Some(false),
                     _ => None,
                 };
+                keep_gtk_dark(app);
                 look(app);
                 let app = app.clone();
                 clrd_core::theme::follow(move |scheme| {
