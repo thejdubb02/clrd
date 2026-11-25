@@ -394,6 +394,7 @@ type Query struct {
 	Senders bool     // fill Senders (the Senders page, #119)
 	Sender  string   // fill Sender with this one, or ErrNotFound
 	Stats   int      // fill Stats for this many days back (the Stats page, #120); 0 = none
+	ID      string   // fill Items with this one notification, any state, and nothing else, or ErrNotFound (#814)
 }
 
 // Sender is one service or device that publishes (#119), as GET
@@ -1387,12 +1388,18 @@ func Handler(api API, baseURL string) http.Handler {
 				states = []string{}
 			}
 			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings",
-				Senders: view == "senders", Sender: r.PathValue("id")}
+				Senders: view == "senders"}
+			if view == "sender" {
+				q.Sender = r.PathValue("id")
+			}
 			if view == "stats" {
 				q.Stats = statsDays(r.URL.Query().Get("days"))
 			}
 			snap, err := api.Snapshot(r, q)
 			status := 200
+			if view == "gone" {
+				status = http.StatusNotFound
+			}
 			if errors.Is(err, ErrNotFound) {
 				status, err = http.StatusNotFound, nil
 			}
@@ -1423,7 +1430,7 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 			w.Header().Set("Cache-Control", "no-store")
 			c := snap.Counts
-			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender", "stats": "Stats"}
+			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender", "stats": "Stats", "gone": "Not found"}
 			if snap.Sender != nil {
 				titles["sender"] = snap.Sender.Name
 			}
@@ -1462,6 +1469,25 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/senders", app("senders"))
 	mux.HandleFunc("GET /app/stats", app("stats"))
 	mux.HandleFunc("GET /app/senders/{id}", app("sender"))
+	// One notification's own address (#814), as a GitHub issue links it: it
+	// opens the view its state is in now, at its card. Signed out, or gone,
+	// it is the sign-in page or a not found page. A card older than the
+	// newest 500 of its state in its topic is past the page (webLimit).
+	mux.HandleFunc("GET /app/n/{id}", func(w http.ResponseWriter, r *http.Request) {
+		snap, err := api.Snapshot(r, Query{ID: r.PathValue("id")})
+		if err != nil || len(snap.Items) != 1 {
+			app("gone")(w, r)
+			return
+		}
+		n, p := snap.Items[0], "/app"
+		for v, states := range views {
+			if v != "inbox" && slices.Contains(states, n.State) {
+				p += "/" + v
+			}
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		http.Redirect(w, r, p+"?topic="+url.QueryEscape(n.Topic)+"#t-"+url.PathEscape(n.ID), http.StatusSeeOther)
+	})
 	// A sender's rules (#119): save them all, or undo one change, as a plain
 	// form post. The server checks the full admin.
 	mux.HandleFunc("POST /app/senders/{id}", func(w http.ResponseWriter, r *http.Request) {

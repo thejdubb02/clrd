@@ -192,7 +192,8 @@ an agent, clrd is careful about what it opens:
   on a new issue only when the token has push access to the repo, and
   silently drops them otherwise: the issue still opens, unlabelled), and when
   `CLRD_BASE_URL` is set the issue body links back to the notification in your
-  web inbox.
+  web inbox. The link opens it wherever it is now (inbox, snoozed or cleared),
+  until the keep-cleared time removes it.
 - The sender's text goes in a fenced code block it cannot close, under a
   line saying it is data, not instructions. An `@name` in it pings nobody.
 - clrd does not acknowledge or clear the notification itself when the issue
@@ -201,8 +202,10 @@ an agent, clrd is careful about what it opens:
 Pause every GitHub issue hook server-wide without deleting them by setting
 `{"github_hooks_paused": true}` on `PUT /api/v1/settings` (full admin, or via
 the MCP `settings` tool), or delete the hook to stop new issues at once. A
-pause also stops a send already under way, unless its request to GitHub has
-already gone out.
+pause also stops a send already under way, unless it lands in the moment
+between clrd's last check of the pause and GitHub receiving the request:
+that one issue still opens. Closing that gap would mean holding a lock
+across the call to GitHub, so clrd does not.
 Issues waiting when you pause go out after you resume, however long the
 pause, and alerts that arrive while paused never open one. The
 token is write only: the API never shows it again. A scheduled notification

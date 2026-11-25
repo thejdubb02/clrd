@@ -1242,7 +1242,7 @@ and `initialize` reports `version` as `serverInfo.version`.
   never opens a second. The issue title is prefixed with `[clrd <topic>] `,
   and issues carry the `clrd` and `priority:<min|low|default|high|urgent>`
   labels. When `CLRD_BASE_URL` is set, the body links back to the notification
-  in the web inbox. The body puts the sender's text in a fenced block it
+  at `/app/n/{id}`, which finds it in any state until it is pruned. The body puts the sender's text in a fenced block it
   cannot close. Setting `github_hooks_paused: true` in `PUT /api/v1/settings`
   (full admin) pauses every GitHub issue hook server-wide without deleting it
   (#680). Each subscribed state
@@ -1502,6 +1502,9 @@ rules. Its token lives in the OS keychain and is sent only as an
   landing and docs pages.
 - Routes: `/` landing (public), `/docs/*` (public, from `docs/*.md`),
   `/app` inbox (login), `/app/snoozed`, `/app/cleared`, `/app/settings`,
+  `/app/n/{id}` (one notification: redirects to the view its state is in now,
+  at its card; not found, 404, when it is gone or in a topic the token cannot
+  read; #814),
   `/app/ui` (the component guide: every component in every state, no sign-in).
 - Inbox layout per brand: 248 px sidebar (logo, Inbox/Snoozed/Cleared with
   mono counts, TOPICS list, "In sync on N devices" card), cards with priority

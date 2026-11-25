@@ -249,6 +249,20 @@ func (o one) Snapshot(*http.Request, Query) (Snapshot, error) {
 	return Snapshot{Items: []Notification{o.n}}, nil
 }
 
+// A notification's link redirects inside the sub-path to its state's view (#814).
+func TestNotificationLinkRedirect(t *testing.T) {
+	for state, want := range map[string]string{"active": "/clrd/app?", "acknowledged": "/clrd/app?", "snoozed": "/clrd/app/snoozed?", "dismissed": "/clrd/app/cleared?", "resolved": "/clrd/app/cleared?"} {
+		w := httptest.NewRecorder()
+		Handler(one{n: Notification{ID: "n1", Topic: "a b", State: state}}, "https://h.example/clrd").ServeHTTP(w, httptest.NewRequest("GET", "/app/n/n1", nil))
+		if loc := w.Header().Get("Location"); w.Code != 303 || loc != want+"topic=a+b#t-n1" || w.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("%s: %d to %q", state, w.Code, loc)
+		}
+	}
+	if code, body := get(t, Handler(none{}, ""), "/app/n/n1"); code != 404 || !strings.Contains(body, "This notification is gone") {
+		t.Errorf("gone: %d", code)
+	}
+}
+
 type none struct{ readOnly }
 
 func (none) Snapshot(*http.Request, Query) (Snapshot, error) { return Snapshot{}, nil }

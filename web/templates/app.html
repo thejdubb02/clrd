@@ -100,6 +100,8 @@
       </section>
       {{else if eq .View "snoozed"}}<h2 class="text-foreground text-base font-semibold">Nothing snoozed</h2>
       <p>Snooze a notification from its menu in the <a href="{{base}}/app">inbox</a> to hide it until later. It comes back and notifies again at that time.</p>
+      {{else if eq .View "gone"}}<h2 class="text-foreground text-base font-semibold">This notification is gone</h2>
+      <p>Cleared ones are removed after the keep-cleared time, or it is in a topic you cannot see. <a href="{{base}}/app">Open the inbox</a></p>
       {{else}}<h2 class="text-foreground text-base font-semibold">Nothing cleared yet</h2>
       <p>Cleared and resolved notifications stay here for a while, so you can restore one you cleared by mistake.</p>{{end}}
     </div>

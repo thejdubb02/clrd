@@ -1106,7 +1106,7 @@ func TestHooksOutGitHubFollowups(t *testing.T) {
 	if len(bodies) != 2 {
 		t.Fatalf("want 2 opened issues, got %d", len(bodies))
 	}
-	wantLink := "Notification: https://clrd.example.com/clrd/app?topic=ops#t-" + n5["id"].(string)
+	wantLink := "Notification: https://clrd.example.com/clrd/app/n/" + n5["id"].(string) + "\n" // its own page, any state (#814)
 	if bodies[0]["title"] != "[clrd ops] DB down" || fmt.Sprint(bodies[0]["labels"]) != "[clrd priority:urgent]" || !strings.Contains(bodies[0]["body"].(string), wantLink) || strings.Contains(bodies[0]["body"].(string), "user") || strings.Contains(bodies[0]["body"].(string), "pass") {
 		t.Fatalf("priority 5 issue: %+v", bodies[0])
 	}
