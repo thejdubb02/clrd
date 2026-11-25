@@ -9,8 +9,29 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 )
+
+// TestTemplateFuncCap doubles a variable 24 times (16 MB) with each builtin
+// that builds a string: the call past 16 KB fails, so the render does.
+func TestTemplateFuncCap(t *testing.T) {
+	for _, f := range []string{"print", "println", "html", "js", "urlquery"} {
+		src := `{{$a := "x"}}` + strings.Repeat(`{{$a = `+f+` $a $a}}`, 24) + `{{len $a}}`
+		tp := template.Must(template.New("t").Funcs(webhookFuncs(nil)).Parse(src))
+		if out, err := render(tp, "t", nil); err == nil {
+			t.Errorf("%s built %s bytes", f, out)
+		}
+	}
+	tp := template.Must(template.New("t").Funcs(webhookFuncs(nil)).Parse(`{{print "a" "b"}} {{html "<"}}`))
+	if out, err := render(tp, "t", nil); err != nil || out != "ab &lt;" {
+		t.Fatalf("small calls: %q %v", out, err)
+	}
+	src := `{{$a := json "x"}}` + strings.Repeat(`{{$a = json $a}}`, 24) + `{"n": {{len $a}}}`
+	if out, err := renderHookBody(src, `{}`); err == nil {
+		t.Errorf("json built %s", out)
+	}
+}
 
 // TestWebhookBuiltins sends each built-in its fixture (the vendor's own example
 // trimmed by key: octokit/webhooks, sentry-docs, Stripe API docs, Atlassian docs;

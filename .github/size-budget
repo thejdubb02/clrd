@@ -2,5 +2,26 @@
 # clrd stays smaller and lighter than ntfy. Raising a budget is a reviewed
 # one-line change: say in the PR what grew and why it is worth it.
 # Measured 2026-11-20: server 15,593,656, apk 1,945,004.
-server 16500000
-apk 2100000
+# Measured 2026-11-22: server 16,531,640 with Web Push (#164, +45,056).
+# Measured 2026-11-23: server 16,625,848 with version history (#580), after cutting 0.1.0 with a short summary.
+# Measured 2026-11-23: main at 16,658,616; the format check cards (#618) take it to 16,662,712. Raised by 40,000 so the Unreleased changelog, which the binary carries, has room.
+# Measured 2026-11-23: server 16,711,864 with topic subscriptions (#617).
+# Measured 2026-11-23: main at 16,728,248 (already past 16,720,000 once the changelog grew); the web topic subscriptions page (#629) takes it to 16,744,632. Raised by 40,000 for both plus changelog room.
+# Measured 2026-11-23: main at 16,740,536 on cezar1; traffic stats (#120) take it to 16,773,304 (+32,768, after swapping generic sorts for sort.Slice saved 28,672). Raised by 35,000: the feature plus about 20,000 of changelog room.
+# Measured 2026-11-23: main at 16,777,400; Discord webhooks (#166) take it to 16,797,880 (+20,480). Raised by 23,000: the feature plus about 20,000 of changelog room.
+# Measured 2026-11-23: main at 16,826,552 on cezar1 (already past 16,818,000 as the changelog grew); the web Stats page (#120) takes it to 16,855,224 (+28,672). Raised by 58,000: main, the page, and about 20,000 of changelog room.
+# Measured 2026-11-23 (#683): server 16,733,112 not counting CHANGELOG.md (the binary is 16,744,632, main 72ec937 was 16,871,608), after moving the MCP tool list to JSON. Lowered to that plus about two pages.
+# Measured 2026-11-23 (#690) in CI: server 16,265,517 not counting CHANGELOG.md (main was 16,733,112), with docs, static web files and openapi.json stored gzipped (-tags packed). Set to that plus about 10,000.
+# Changelog growth is never a reason to raise this: CI takes CHANGELOG.md off the size, and version_test.go caps it on its own.
+server 16275000
+# Measured 2026-11-23: apk 2,110,792 with card motion (#598), main 2,091,964 (+18,828, after dropping animateItem and reusing two strings).
+apk 2115000
+# The four desktop lines are set about 2% above the measured size.
+# Measured 2026-11-23: desktop 4,416,696 (Linux x86_64 release binary, tray and window, #162).
+desktop 4505000
+# Measured 2026-11-23: desktop-deb 1,439,836 (the Linux .deb, xz, #625).
+desktop-deb 1468000
+# Measured 2026-11-23: desktop-windows 3,096,064 (Windows x86_64 release exe, the web view is the system's WebView2, #719).
+desktop-windows 3158000
+# Measured 2026-11-23: desktop-windows-setup 1,374,021 (the Windows installer, NSIS, lzma, #719).
+desktop-windows-setup 1401000

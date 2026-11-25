@@ -1,0 +1,1525 @@
+[
+ {
+  "description": "Send a notification to a topic. Reusing an id while the previous one is still open updates it instead of making a new one.",
+  "inputSchema": {
+   "properties": {
+    "actions": {
+     "description": "Optional buttons, each with one of reply, url, http or broadcast. Answer buttons: [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]; wait_for_reply returns the tapped one as answer. Add \"text\":true to one reply button to let the human type an answer (at most 1000 characters), returned as text. http and broadcast need the topic's device_actions on (set_topic).",
+     "items": {
+      "properties": {
+       "broadcast": {
+        "description": "Android broadcast: {intent (the app's default if empty), extras}",
+        "type": "object"
+       },
+       "clear": {
+        "description": "Clear the notification after the button runs",
+        "type": "boolean"
+       },
+       "http": {
+        "description": "Request the reader's device sends: {method (POST if empty), url, headers, body}",
+        "type": "object"
+       },
+       "label": {
+        "description": "Button text",
+        "type": "string"
+       },
+       "reply": {
+        "description": "Value returned as answer, unique",
+        "pattern": "^[A-Za-z0-9_-]{1,64}$",
+        "type": "string"
+       },
+       "text": {
+        "description": "On one reply button: the human types an answer, returned by wait_for_reply as text",
+        "type": "boolean"
+       },
+       "url": {
+        "description": "Link to open",
+        "type": "string"
+       }
+      },
+      "required": [
+       "label"
+      ],
+      "type": "object"
+     },
+     "maxItems": 3,
+     "type": "array"
+    },
+    "attachment": {
+     "properties": {
+      "name": {
+       "description": "Optional file name",
+       "type": "string"
+      },
+      "url": {
+       "description": "http(s) URL of the file",
+       "type": "string"
+      }
+     },
+     "required": [
+      "url"
+     ],
+     "type": "object"
+    },
+    "color": {
+     "description": "Optional card color as #RRGGBB, shown as a bar; the user's color_rules (settings) win over it",
+     "pattern": "^#[0-9A-Fa-f]{6}$",
+     "type": "string"
+    },
+    "devices": {
+     "description": "Optional: only these devices alert (names or ids from devices, at most 20); every other reader lists it silently",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "format": {
+     "description": "markdown (default) or text, which is shown exactly as sent",
+     "enum": [
+      "markdown",
+      "text"
+     ],
+     "type": "string"
+    },
+    "icon": {
+     "description": "Optional http(s) image URL shown with the notification; the topic's icon when omitted",
+     "type": "string"
+    },
+    "id": {
+     "description": "Optional stable key (external_id), e.g. disk-build. Use it later with resolve(topic, external_id).",
+     "type": "string"
+    },
+    "live": {
+     "description": "Optional: send only to ntfy streams open now and keep nothing (no inbox, no replay, no buttons to answer)",
+     "type": "boolean"
+    },
+    "message": {
+     "description": "Body text",
+     "type": "string"
+    },
+    "priority": {
+     "description": "1..5, 5 = urgent",
+     "maximum": 5,
+     "minimum": 1,
+     "type": "integer"
+    },
+    "repeat": {
+     "description": "Optional: alert again every this long (1m to 24h, e.g. 5m) until someone acknowledges, snoozes, dismisses or resolves it",
+     "type": "string"
+    },
+    "repeat_times": {
+     "description": "How many times to repeat at most (default 10)",
+     "maximum": 100,
+     "minimum": 1,
+     "type": "integer"
+    },
+    "title": {
+     "description": "Optional title",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic, e.g. infra",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "message"
+   ],
+   "type": "object"
+  },
+  "name": "send"
+ },
+ {
+  "description": "List notifications.",
+  "inputSchema": {
+   "properties": {
+    "state": {
+     "description": "open (default), all, active, acknowledged, snoozed, dismissed or resolved",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Filter by topic",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "name": "list"
+ },
+ {
+  "description": "List the topics this token can read, with how many notifications are open in each.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "topics"
+ },
+ {
+  "description": "Exact number of notifications in each state (active, acknowledged, snoozed, dismissed, resolved), plus inbox (active and acknowledged) and cleared (dismissed and resolved). With keep_cleared_days, also would_remove: how many cleared messages that setting would delete.",
+  "inputSchema": {
+   "properties": {
+    "keep_cleared_days": {
+     "description": "Preview a keep_cleared_days value before setting it, or \"default\" with topic to preview dropping that topic's own value",
+     "type": [
+      "integer",
+      "string"
+     ]
+    },
+    "topic": {
+     "description": "With keep_cleared_days, would_remove counts only this topic, to preview a topic_keep_cleared_days value",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "name": "counts"
+ },
+ {
+  "description": "Find formatting problems in the newest 500 messages, by topic: Markdown sent as plain text, unknown :shortcodes:, no title, very long messages, raw JSON. Each topic has a count and an example per problem, and a prompt that says how to fix the sender. Fix the sending code with it, then send a test message. With by=sender, one group per topic and sending token. Dismissed findings and topics turned off are left out and listed in dismissed and off.",
+  "inputSchema": {
+   "properties": {
+    "by": {
+     "description": "topic (the default) or sender",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Check only this topic",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "name": "format_check"
+ },
+ {
+  "description": "Stop a format_check rule showing for a topic, for one sending token (sender_id from format_check by=sender) or every sender. dismissed=false shows it again. To turn the whole check off for a topic, use set_topic with format_check=false.",
+  "inputSchema": {
+   "properties": {
+    "dismissed": {
+     "description": "false to show it again; default true",
+     "type": "boolean"
+    },
+    "rule": {
+     "description": "Rule id, like no_title",
+     "type": "string"
+    },
+    "sender_id": {
+     "description": "Sending token id, or \"unknown\" for the group with no known sender; leave out for every sender",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "rule"
+   ],
+   "type": "object"
+  },
+  "name": "format_dismiss"
+ },
+ {
+  "description": "Read the server settings, or change them: pass only the fields to change. keep_cleared_days (0 = forever) deletes cleared messages older than that on the next hourly cleanup and needs an admin token; preview it with counts first.",
+  "inputSchema": {
+   "properties": {
+    "autolink": {
+     "description": "Turn web addresses into links",
+     "type": "boolean"
+    },
+    "color_rules": {
+     "description": "Card colors, first match wins, on every device. Replaces the whole list: read settings first and send every rule to keep. A rule matches when all its set fields match. Severity preset: [{\"priority_min\":5,\"color\":\"#DC2626\",\"style\":\"bar\"},{\"priority_min\":4,\"priority_max\":4,\"color\":\"#EA580C\",\"style\":\"bar\"},{\"priority_min\":3,\"priority_max\":3,\"color\":\"#CA8A04\",\"style\":\"bar\"}]",
+     "items": {
+      "properties": {
+       "color": {
+        "description": "#RRGGBB",
+        "pattern": "^#[0-9A-Fa-f]{6}$",
+        "type": "string"
+       },
+       "priority_max": {
+        "description": "Highest priority, inclusive; 0 = no limit",
+        "maximum": 5,
+        "minimum": 0,
+        "type": "integer"
+       },
+       "priority_min": {
+        "description": "Lowest priority, inclusive; 0 = no limit",
+        "maximum": 5,
+        "minimum": 0,
+        "type": "integer"
+       },
+       "style": {
+        "enum": [
+         "bar",
+         "tint",
+         "solid",
+         "gradient"
+        ],
+        "type": "string"
+       },
+       "tag": {
+        "description": "One of its tags; leave out for any",
+        "type": "string"
+       },
+       "title": {
+        "description": "Text in the title, any case",
+        "type": "string"
+       },
+       "topic": {
+        "description": "Topic it landed in; leave out for any",
+        "type": "string"
+       }
+      },
+      "required": [
+       "color",
+       "style"
+      ],
+      "type": "object"
+     },
+     "maxItems": 50,
+     "type": "array"
+    },
+    "favicons": {
+     "description": "Show site icons next to links",
+     "type": "boolean"
+    },
+    "keep_cleared_days": {
+     "description": "Days to keep dismissed and resolved messages, counted from when they were cleared; 0 = forever",
+     "type": "integer"
+    },
+    "link_previews": {
+     "description": "Show link previews",
+     "type": "boolean"
+    },
+    "render_formatting": {
+     "description": "Show Markdown formatting",
+     "type": "boolean"
+    },
+    "snooze_default": {
+     "description": "The snooze time a plain tap uses, one of snooze_intervals",
+     "type": "string"
+    },
+    "snooze_intervals": {
+     "description": "Snooze menu times as durations like 30m or 4h, 1 to 8",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "swipe_end": {
+     "description": "Buttons the opposite swipe (to the right) reveals. Default [ack]",
+     "items": {
+      "enum": [
+       "clear",
+       "snooze",
+       "ack",
+       "resolve"
+      ],
+      "type": "string"
+     },
+     "maxItems": 3,
+     "type": "array"
+    },
+    "swipe_start": {
+     "description": "Buttons a swipe toward the start of the line (to the left) reveals on a card, first nearest the edge. Default [clear, snooze]. Each action at most once across swipe_start and swipe_end",
+     "items": {
+      "enum": [
+       "clear",
+       "snooze",
+       "ack",
+       "resolve"
+      ],
+      "type": "string"
+     },
+     "maxItems": 3,
+     "type": "array"
+    },
+    "topic_keep_cleared_days": {
+     "additionalProperties": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "description": "Per-topic keep_cleared_days, like {\"alerts\": 7}; null drops a topic's own value so it follows keep_cleared_days again",
+     "type": "object"
+    }
+   },
+   "type": "object"
+  },
+  "name": "settings"
+ },
+ {
+  "description": "Get one notification by its server id, with its current state.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Server id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "get"
+ },
+ {
+  "description": "Replace the message of an open notification, keeping its id and state. Use it for progress (step 3 of 10) instead of sending a new one each time.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Server id from send",
+     "type": "string"
+    },
+    "message": {
+     "description": "New body text",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "message"
+   ],
+   "type": "object"
+  },
+  "name": "update"
+ },
+ {
+  "description": "Mark a notification seen, or actioned with a short note and link, so everyone who reads the topic sees you already dealt with it. It does not clear or change it for anyone. Marking again replaces your mark; no mark removes it.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Server id",
+     "type": "string"
+    },
+    "link": {
+     "description": "Optional http(s) URL, e.g. the issue you filed",
+     "type": "string"
+    },
+    "mark": {
+     "description": "seen or actioned; leave out to remove your mark",
+     "type": "string"
+    },
+    "note": {
+     "description": "Optional, at most 200 characters, e.g. filed relay#512",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "mark"
+ },
+ {
+  "description": "Acknowledge a notification by its server id.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Server id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "ack"
+ },
+ {
+  "description": "Resolve (sender clears) a notification by server id, or by topic plus external_id. Clears it from every device.",
+  "inputSchema": {
+   "properties": {
+    "external_id": {
+     "description": "The id given to send",
+     "type": "string"
+    },
+    "id": {
+     "description": "Server id",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic, with external_id",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "name": "resolve"
+ },
+ {
+  "description": "Snooze a notification by server id.",
+  "inputSchema": {
+   "properties": {
+    "for": {
+     "description": "Duration, e.g. 30m or 1h",
+     "type": "string"
+    },
+    "id": {
+     "description": "Server id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "for"
+   ],
+   "type": "object"
+  },
+  "name": "snooze"
+ },
+ {
+  "description": "Block until a human acknowledges or dismisses, or the sender resolves the notification, or the timeout passes. Returns reply = the new state, or timeout, and answer = the reply value when one of send's actions was tapped, plus text = what the human typed when that action has text:true.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Server id from send",
+     "type": "string"
+    },
+    "timeout_s": {
+     "description": "Seconds to wait, default 60, max 600",
+     "type": "number"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "wait_for_reply"
+ },
+ {
+  "description": "List every linked device this token can see: id, name, kind (token, browser or phone), linked and last seen times, who may approve (allowed, ask or denied), and whether it can be unlinked.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "devices"
+ },
+ {
+  "description": "Recent links, sign-ins and unlinks of those devices, newest first, with the device that did each.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "device_log"
+ },
+ {
+  "description": "Unlink a browser or phone by its id from devices. It is signed out at once, with every browser it approved.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Device id from devices",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "unlink"
+ },
+ {
+  "description": "Notification sounds, chosen per device. No arguments lists the valid sound names and the default; devices shows each device's current sound. With id and sound, sets that device's sound.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Device id from devices",
+     "type": "string"
+    },
+    "sound": {
+     "description": "A name from the list, e.g. chime or none",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "name": "sound"
+ },
+ {
+  "description": "Which topics reach this person's devices. No arguments lists every readable topic with subscribed, open and last_at; filtered false means this token has no user and sees every topic. An unsubscribed topic is hidden from their lists, counts and pushes, nothing is cleared, and nobody else sees a difference.",
+  "inputSchema": {
+   "properties": {
+    "for": {
+     "description": "Full admin only: a user id or token id whose topics to read or set",
+     "type": "string"
+    },
+    "new_topics": {
+     "description": "Whether a topic seen for the first time starts subscribed (default true)",
+     "type": "boolean"
+    },
+    "topics": {
+     "additionalProperties": {
+      "type": "boolean"
+     },
+     "description": "Topics to change, like {\"chat\": false, \"infra\": true}",
+     "type": "object"
+    }
+   },
+   "type": "object"
+  },
+  "name": "subscriptions"
+ },
+ {
+  "description": "Ask the user to let this token answer approval requests. devices shows its current approve setting. Posts a Confirm prompt on topic; the setting changes only when an allowed device taps Confirm. Returns the prompt: wait_for_reply on its id gives confirm or reject.",
+  "inputSchema": {
+   "properties": {
+    "approve": {
+     "description": "allowed, or ask (its taps then wait for an allowed device to confirm)",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic for the prompt, default agents; needs publish there",
+     "type": "string"
+    }
+   },
+   "required": [
+    "approve"
+   ],
+   "type": "object"
+  },
+  "name": "request_approve"
+ },
+ {
+  "description": "Dismiss (clear) a notification by its server id. It goes away on every device; reopen undoes it.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Server id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "dismiss"
+ },
+ {
+  "description": "Make a dismissed, acknowledged, snoozed or resolved notification active again, by its server id.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Server id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "reopen"
+ },
+ {
+  "description": "Dismiss every open notification in a topic, or a list of them by server id. Give topic or ids, not both. Returns how many were cleared.",
+  "inputSchema": {
+   "properties": {
+    "ids": {
+     "description": "Server ids to clear",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "topic": {
+     "description": "Topic to clear",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "name": "clear"
+ },
+ {
+  "description": "List silences that have not ended yet.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "silences"
+ },
+ {
+  "description": "Mute a topic, a tag, or a tag in one topic until a set time. Notifications still arrive and sync but do not ring. Give for or until.",
+  "inputSchema": {
+   "properties": {
+    "comment": {
+     "description": "Why, shown in the list",
+     "type": "string"
+    },
+    "for": {
+     "description": "How long, like 2h or 30m",
+     "type": "string"
+    },
+    "tag": {
+     "description": "Tag to mute, in every topic unless topic is set",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic to mute",
+     "type": "string"
+    },
+    "until": {
+     "description": "End time, RFC 3339",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "name": "silence"
+ },
+ {
+  "description": "End a silence now, by its id from silences.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Silence id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "end_silence"
+ },
+ {
+  "description": "Set a topic's icon, its check-in timer, or whether format_check looks at it. With checkin, the topic alerts if nothing arrives for that long (a dead man's switch). \"\" removes the icon or the timer.",
+  "inputSchema": {
+   "properties": {
+    "checkin": {
+     "description": "Duration like 25h, or \"\" for off",
+     "type": "string"
+    },
+    "device_actions": {
+     "description": "true lets senders add http and broadcast actions, which readers' devices run when tapped. Admin only, off by default",
+     "type": "boolean"
+    },
+    "format_check": {
+     "description": "false turns the format check off for this topic, true back on",
+     "type": "boolean"
+    },
+    "icon": {
+     "description": "Image URL, or \"\" to remove",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic"
+   ],
+   "type": "object"
+  },
+  "name": "set_topic"
+ },
+ {
+  "description": "List a topic's incoming webhook templates, saved and built in. A service posts to /{topic}?template={name}.",
+  "inputSchema": {
+   "properties": {
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic"
+   ],
+   "type": "object"
+  },
+  "name": "templates"
+ },
+ {
+  "description": "Save an incoming webhook template: how a service's JSON becomes a notification. Fields other than each and secret are Go templates over the posted JSON, like {{.alert.name}}. Needs title or message unless name is a built-in template.",
+  "inputSchema": {
+   "properties": {
+    "click": {
+     "description": "Link to open",
+     "type": "string"
+    },
+    "each": {
+     "description": "Dotted path to an array: one notification per item",
+     "type": "string"
+    },
+    "id": {
+     "description": "Renders to an external id, so the same id updates one notification",
+     "type": "string"
+    },
+    "message": {
+     "description": "Message template",
+     "type": "string"
+    },
+    "name": {
+     "description": "Template name, used as ?template={name}",
+     "type": "string"
+    },
+    "priority": {
+     "description": "Renders to 1-5 or min, low, default, high, urgent",
+     "type": "string"
+    },
+    "resolve": {
+     "description": "Renders to true to resolve the notification with that id",
+     "type": "string"
+    },
+    "secret": {
+     "description": "Shared secret the service sends; never returned",
+     "type": "string"
+    },
+    "tags": {
+     "description": "Renders to a comma separated list",
+     "type": "string"
+    },
+    "title": {
+     "description": "Title template",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "name"
+   ],
+   "type": "object"
+  },
+  "name": "set_template"
+ },
+ {
+  "description": "Delete a saved incoming webhook template.",
+  "inputSchema": {
+   "properties": {
+    "name": {
+     "description": "Template name",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "name"
+   ],
+   "type": "object"
+  },
+  "name": "delete_template"
+ },
+ {
+  "description": "Dry run an incoming webhook template over a sample payload: returns the notifications a post would publish, stores and sends nothing. Give template to try an unsaved one; otherwise the saved or built-in template named name is used.",
+  "inputSchema": {
+   "properties": {
+    "headers": {
+     "description": "Request headers the service would send, like X-GitHub-Event",
+     "type": "object"
+    },
+    "name": {
+     "description": "Template name",
+     "type": "string"
+    },
+    "payload": {
+     "description": "The JSON a service would post",
+     "type": [
+      "object",
+      "array"
+     ]
+    },
+    "template": {
+     "description": "An unsaved template with the set_template fields",
+     "type": "object"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "name",
+    "payload"
+   ],
+   "type": "object"
+  },
+  "name": "preview_template"
+ },
+ {
+  "description": "List a topic's outgoing webhooks: URLs clrd calls when its notifications are dismissed, acknowledged, resolved, snoozed or an action is tapped. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic"
+   ],
+   "type": "object"
+  },
+  "name": "hooks"
+ },
+ {
+  "description": "Add or replace an outgoing webhook. Saving again turns a failing hook back on. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "body": {
+     "description": "Optional template for the POST body, for receivers like Slack or Discord: Go template over the sync stream event with get, json (quotes a value) and the incoming template functions, e.g. {\"text\": {{json .notification.title}}}. Must render valid JSON. Empty sends the event",
+     "type": "string"
+    },
+    "events": {
+     "description": "Any of dismissed, acknowledged, resolved, snoozed, action; default all",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "kind": {
+     "description": "discord: url is a Discord webhook URL; each new notification is posted there and a state change edits that message to say who cleared it. Takes no body or secret. github: url is https://api.github.com/repos/OWNER/REPO and secret a GitHub token that can write issues; each new notification opens an issue (not for anonymous senders or questions, at most 10 an hour), a state change comments on it, a clear or resolve closes it. Empty for a plain webhook",
+     "type": "string"
+    },
+    "name": {
+     "description": "Hook name",
+     "type": "string"
+    },
+    "secret": {
+     "description": "Signs each call with HMAC-SHA256; never returned",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    },
+    "url": {
+     "description": "http(s) URL to call",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "name",
+    "url"
+   ],
+   "type": "object"
+  },
+  "name": "set_hook"
+ },
+ {
+  "description": "Dry run an outgoing webhook body template: returns the JSON it would POST for an event, sends nothing. Without event a sample resolved notification on the topic is used. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "body": {
+     "description": "The body template, as for set_hook",
+     "type": "string"
+    },
+    "event": {
+     "description": "A sync stream event to render against",
+     "type": "object"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "body"
+   ],
+   "type": "object"
+  },
+  "name": "preview_hook"
+ },
+ {
+  "description": "Which private networks and extra ports outgoing webhooks may reach. Empty by default: public addresses on ports 80 and 443 only. Needs an admin token.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "hook_allow"
+ },
+ {
+  "description": "Let outgoing webhooks reach a receiver on a LAN or another port. A dial passes when the address is public or in a listed network, and the port is 80, 443 or listed. Both lists are required; empty lists turn it off. Refused when the server operator set CLRD_HOOK_ALLOW=off. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "networks": {
+     "description": "CIDR ranges like 192.168.1.0/24, or single addresses",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "ports": {
+     "description": "Ports besides 80 and 443, like 8080",
+     "items": {
+      "type": "integer"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "networks",
+    "ports"
+   ],
+   "type": "object"
+  },
+  "name": "set_hook_allow"
+ },
+ {
+  "description": "Delete an outgoing webhook. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "name": {
+     "description": "Hook name",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "name"
+   ],
+   "type": "object"
+  },
+  "name": "delete_hook"
+ },
+ {
+  "description": "Recent calls of one outgoing webhook, with status and error. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "name": {
+     "description": "Hook name",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic",
+     "type": "string"
+    }
+   },
+   "required": [
+    "topic",
+    "name"
+   ],
+   "type": "object"
+  },
+  "name": "hook_deliveries"
+ },
+ {
+  "description": "List API tokens (never their secrets). Needs an admin token.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "tokens"
+ },
+ {
+  "description": "Create an API token for a phone, script or agent. The secret is in the result once and never again. It starts denied for approval requests; raise it with request_approve or from an allowed device. Limit it with topics, or with grants (per-topic scopes, first match wins), not both. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "grants": {
+     "description": "Per-topic rules, like [{\"topic\":\"home-*\",\"scopes\":[\"publish\"]}]; each grant's scopes must be in scopes",
+     "items": {
+      "properties": {
+       "scopes": {
+        "description": "Scopes on that topic",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "topic": {
+        "description": "Topic or prefix ending in *",
+        "type": "string"
+       }
+      },
+      "required": [
+       "topic",
+       "scopes"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    },
+    "name": {
+     "description": "Who uses it, e.g. backup-job",
+     "type": "string"
+    },
+    "scopes": {
+     "description": "Any of read, publish, admin",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "topics": {
+     "description": "Topics it may use; leave out for every topic",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "name",
+    "scopes"
+   ],
+   "type": "object"
+  },
+  "name": "create_token"
+ },
+ {
+  "description": "Revoke an API token by its id from tokens. Its open streams close at once. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Token id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "revoke_token"
+ },
+ {
+  "description": "Invite an agent: one short single-use string it claims to get its own user and token, held to these topics (read and publish) and denied for approval requests. Returns invite (clrd://agent?...) and url (https form; a GET gives the agent a plain-text guide). Hand either to the agent, privately: whoever claims it first gets the access. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "expires_in": {
+     "description": "How long the invite lives, 1m to 1h, default 15m",
+     "type": "string"
+    },
+    "name": {
+     "description": "The agent's name, unique among users",
+     "type": "string"
+    },
+    "topics": {
+     "description": "Topics it may use; a pattern like home-* is allowed",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "name",
+    "topics"
+   ],
+   "type": "object"
+  },
+  "name": "create_agent_invite"
+ },
+ {
+  "description": "List users: people who own device tokens, each with its grants (null limits nothing). Needs an admin token.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "users"
+ },
+ {
+  "description": "Create a user (a person). Attach tokens with set_token_user; every device of the user then follows its grants. Leave grants out for a user that limits nothing. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "grants": {
+     "description": "Per-topic rules, like [{\"topic\":\"family\",\"scopes\":[\"read\"]}]; read and publish only. null limits nothing, [] is no topic",
+     "items": {
+      "properties": {
+       "scopes": {
+        "description": "read and/or publish",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "topic": {
+        "description": "Topic or pattern with *",
+        "type": "string"
+       }
+      },
+      "required": [
+       "topic",
+       "scopes"
+      ],
+      "type": "object"
+     },
+     "type": [
+      "array",
+      "null"
+     ]
+    },
+    "name": {
+     "description": "The person's name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "type": "object"
+  },
+  "name": "create_user"
+ },
+ {
+  "description": "Set which topics a user's devices may read or publish, first match wins. To share a topic with someone, give their user a grant on it. null limits nothing, [] is no topic. Their open streams reconnect under the new rules. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "grants": {
+     "description": "Per-topic rules, like [{\"topic\":\"family\",\"scopes\":[\"read\"]}]; read and publish only. null limits nothing, [] is no topic",
+     "items": {
+      "properties": {
+       "scopes": {
+        "description": "read and/or publish",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "topic": {
+        "description": "Topic or pattern with *",
+        "type": "string"
+       }
+      },
+      "required": [
+       "topic",
+       "scopes"
+      ],
+      "type": "object"
+     },
+     "type": [
+      "array",
+      "null"
+     ]
+    },
+    "id": {
+     "description": "User id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "grants"
+   ],
+   "type": "object"
+  },
+  "name": "set_user_grants"
+ },
+ {
+  "description": "Delete a user with no tokens attached. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "User id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "delete_user"
+ },
+ {
+  "description": "Attach a typed-in token (and every browser and phone made from it) to a user, or detach it with user \"\". Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Token id",
+     "type": "string"
+    },
+    "user": {
+     "description": "User id, or empty to detach",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "user"
+   ],
+   "type": "object"
+  },
+  "name": "set_token_user"
+ },
+ {
+  "description": "Create a Gotify app key for one topic, for senders built for Gotify (shoutrrr, Watchtower, the gotify CLI). The key is in the result once; it only publishes, only to that topic, only on POST /message. Revoke it with revoke_token and the result's token_id. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "name": {
+     "description": "App name, the title when a message has none",
+     "type": "string"
+    },
+    "priority": {
+     "description": "Gotify priority 0 to 10 for messages that send none; leave out for clrd's default",
+     "type": "integer"
+    },
+    "topic": {
+     "description": "Topic it posts to",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "topic"
+   ],
+   "type": "object"
+  },
+  "name": "create_gotify_app"
+ },
+ {
+  "description": "Create a Pushover app key for one topic, for senders built for Pushover (Apprise, scripts). The key is in the result once, with a user value for senders that require one (clrd never checks it); the key only publishes, only to that topic, only on POST /1/messages.json. Revoke it with revoke_token and the result's token_id. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "name": {
+     "description": "App name, the title when a message has none",
+     "type": "string"
+    },
+    "topic": {
+     "description": "Topic it posts to",
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "topic"
+   ],
+   "type": "object"
+  },
+  "name": "create_pushover_app"
+ },
+ {
+  "description": "Whether ntfy routes take requests with no credentials, and on which topics. Off unless set. Needs an admin token.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "ntfy_anonymous"
+ },
+ {
+  "description": "Set the topics anyone may use with no credentials, on ntfy routes only (the native API always needs a token). Like ntfy's everyone rules, e.g. [{\"topic\":\"up*\",\"scopes\":[\"publish\"]}] for UnifiedPush. An empty list turns it off. Open anonymous streams reconnect under the new rules. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "grants": {
+     "description": "Per-topic rules, first match wins; scopes are read and/or publish, empty to deny",
+     "items": {
+      "properties": {
+       "scopes": {
+        "description": "read, publish, or empty to deny",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "topic": {
+        "description": "Topic or pattern with *",
+        "type": "string"
+       }
+      },
+      "required": [
+       "topic",
+       "scopes"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "grants"
+   ],
+   "type": "object"
+  },
+  "name": "set_ntfy_anonymous"
+ },
+ {
+  "description": "Which other web sites may use the ntfy and Gotify routes from a browser. Empty by default: only clrd's own pages, phones and scripts. Needs an admin token.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "ntfy_origins"
+ },
+ {
+  "description": "Set the web sites (origins like https://ntfy.sh, or \"*\" for any site, as ntfy answers) whose pages may publish and subscribe on the ntfy and Gotify routes from a browser. An empty list allows only clrd's own pages; phones and scripts are never affected. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "origins": {
+     "description": "Origins as scheme://host[:port], or \"*\"",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "origins"
+   ],
+   "type": "object"
+  },
+  "name": "set_ntfy_origins"
+ },
+ {
+  "description": "Every CLRD_* environment setting in effect, defaults filled in. Read only: these change by setting the variable and restarting. Needs an admin token.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "server_env"
+ },
+ {
+  "description": "This server's clrd version, build commit and date, and its recent history (what changed in each version, newest first), with a link to the full history. Any token.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "version"
+ },
+ {
+  "description": "ntfy publish options senders used that clrd accepts but ignores (email, call and the like), with counts, so a migrated sender can be fixed. Needs an admin token.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "ntfy_ignored"
+ },
+ {
+  "description": "Every service or token that has published, most recently heard first: name, kind, webhook template, User-Agent and address hints, first and last seen, message count per topic. Found on its first message, no setup. Needs an admin token without a topic list.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object"
+  },
+  "name": "senders"
+ },
+ {
+  "description": "Traffic numbers for the last days (default 7): total, answered questions, count per priority, count per UTC hour, top topics, senders (top token id) and clearers with how many are still open and the median and p90 time to clear in ms, and flappers (an external id that fired more than once). Answers questions like which services were noisiest this week or which alerts nobody clears. Needs an admin token without a topic list.",
+  "inputSchema": {
+   "properties": {
+    "days": {
+     "description": "How many days back from now, 1 to 366",
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "name": "stats"
+ },
+ {
+  "description": "One sender from senders, by its id, with its recent notifications that are still stored.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Sender id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "sender"
+ },
+ {
+  "description": "Set a sender's rules: pause (accept and drop), mute (store, never alert), a priority floor and cap, routes from the topic it names to other topics, and an alarm when it goes quiet. Only the fields given change; routes, when given, replace them all. Each change is kept and can be undone. Needs an admin token without a topic list.",
+  "inputSchema": {
+   "properties": {
+    "alert_topic": {
+     "description": "Topic for that alarm; \"\" for where its last topic routes",
+     "type": "string"
+    },
+    "expect": {
+     "description": "Raise an urgent alarm when it sends nothing for this long, 1m to 8784h like \"25h\"; \"\" for off",
+     "type": "string"
+    },
+    "id": {
+     "description": "Sender id, or the id of a token that has not published yet",
+     "type": "string"
+    },
+    "muted": {
+     "description": "Store and show, never alert",
+     "type": "boolean"
+    },
+    "paused": {
+     "description": "Drop every publish, answering success",
+     "type": "boolean"
+    },
+    "priority_max": {
+     "description": "1 to 5, 0 for none",
+     "type": "integer"
+    },
+    "priority_min": {
+     "description": "1 to 5, 0 for none",
+     "type": "integer"
+    },
+    "routes": {
+     "additionalProperties": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "description": "Topic it names (or \"*\") to a list of topics, like {\"*\":[\"infra\"]}; [] drops; {} clears every route",
+     "type": "object"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "set_sender"
+ },
+ {
+  "description": "A sender's rule changes, newest first: before, after, who and when.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Sender id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "sender_changes"
+ },
+ {
+  "description": "Put a sender's rules back to how they were before one change from sender_changes; recorded as a new change.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Sender id",
+     "type": "string"
+    },
+    "seq": {
+     "description": "The change's seq",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "id",
+    "seq"
+   ],
+   "type": "object"
+  },
+  "name": "undo_sender_change"
+ }
+]

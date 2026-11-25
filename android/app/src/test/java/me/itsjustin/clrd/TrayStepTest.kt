@@ -82,9 +82,39 @@ class TrayStepTest {
         assertEquals(listOf("yes", "no", null), b.map { it.reply })
     }
 
+    @Test fun aTextActionIsMarkedAndItsAnswerIsRead() { // #153
+        val n = event("active", actions = """[{"label":"Yes","reply":"yes"},{"label":"Other","reply":"other","text":true}]""")
+        assertEquals(listOf(false, true), TrayButton.replies(n).map { it.text })
+        val answered = Notif.fromJson(JSONObject("""{"id":"n1","topic":"t","state":"acknowledged","reply":"other","reply_text":"ship *it*","seq":8}"""))
+        assertEquals("ship *it*", answered.replyText)
+    }
+
+    @Test fun aTypedAnswerIsTrimmedAndOneTo1000Characters() { // #153: code points, as the server counts
+        val body = JSONObject(TrayButton.typed("other", "  a\nb \n", 7)!!)
+        assertEquals(listOf("other", "a\nb", 7L), listOf(body.getString("reply"), body.getString("text"), body.getLong("seq")))
+        assertNull("only spaces", TrayButton.typed("other", " \n\t ", 7))
+        assertEquals("NEL trims, as on the server", "x", JSONObject(TrayButton.typed("other", "\u0085x\u0085", 7)!!).getString("text"))
+        val emoji = "\uD83D\uDE00" // one code point, two chars
+        assertTrue("1000 emoji is 2000 chars but 1000 characters", TrayButton.typed("other", emoji.repeat(1000), 7) != null)
+        assertNull("1001 is too many", TrayButton.typed("other", emoji.repeat(1001), 7))
+    }
+
     @Test fun threeRepliesAtMost() {
         val four = (1..4).joinToString(",", "[", "]") { """{"label":"R$it","reply":"r$it"}""" }
         assertEquals(listOf("R1", "R2", "R3"), labels("active", four))
+    }
+
+    /** #366: an answer approves the whole text, so a text the tray may cut is answered in the app, where it shows in full. */
+    @Test fun aTextTooLongForTheTrayIsAnsweredInTheApp() {
+        val short = event("active", actions = yesNo)
+        val long = short.copy(message = "x".repeat(TrayButton.TRAY_CHARS + 1))
+        val tall = short.copy(message = "-a\n+b\n".repeat(TrayButton.TRAY_LINES))
+        assertEquals(listOf("Yes", "no", "L1"), TrayButton.pick(short).map { it.text() })
+        assertEquals(listOf("L1", "Ack", "Clear"), TrayButton.pick(long).map { it.text() })
+        assertEquals("many short lines, as a diff is", listOf("L1", "Ack", "Clear"), TrayButton.pick(tall).map { it.text() })
+        assertEquals("the app card still offers them", listOf("yes", "no"), TrayButton.replies(long).map { it.reply })
+        val pic = short.copy(attachment = """{"name":"a.png","url":"https://x.example/a.png","type":"image/png","size":1}""")
+        assertEquals("a picture shows the text as a summary only", listOf("L1", "Ack", "Clear"), TrayButton.pick(pic).map { it.text() })
     }
 
     @Test fun anAnsweredOneShowsNoReplies() {

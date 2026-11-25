@@ -14,6 +14,7 @@ const c = new Client({ url: "https://clrd.example.com", token: "clrd_..." });
 const n = await c.send("deploys", "Ship v2?");
 await c.ack(n.id);
 await c.snooze(n.id, "1h");
+await c.mark(n.id, "actioned", { note: "filed #5" }); // others see it; it clears nothing
 await c.list({ topic: "infra" });
 ```
 

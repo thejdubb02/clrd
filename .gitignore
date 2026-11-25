@@ -1,0 +1,4 @@
+# Written by go run ./server/cmd/pack for the packed build (#690).
+/packed/
+/web/packed/
+/server/packed/

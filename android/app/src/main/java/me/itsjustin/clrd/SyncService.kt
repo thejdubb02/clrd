@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.RemoteInput
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
@@ -37,7 +38,7 @@ class SyncService : Service() {
         if (intent?.action == ACTION_RESTART) app.sync?.stop()?.also { app.sync = null }
         if (app.sync == null) {
             app.io.execute { store.reconcile() } // the tray is empty after a reboot; refill it quietly
-            app.sync = SyncClient(app.http, api, store, onStatus = ::status, onSettings = app::saveSettings, onDevices = { app.devicesChanged.value++ }).also { it.start() }
+            app.sync = SyncClient(app.http, api, store, onStatus = ::status, onSettings = store::settings, onDevices = { app.devicesChanged.value++ }).also { it.start() }
         }
         if (netCallback == null) {
             netCallback = object : ConnectivityManager.NetworkCallback() {
@@ -131,6 +132,24 @@ class ActionReceiver : BroadcastReceiver() {
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
         if (intent.action == Tray.ACTION_DISMISS) { // a swipe or Clear all: hide here only, never a clear (#265)
             app.trayHidden += id
+            return
+        }
+        if (intent.action == Tray.ACTION_DEVICE) { // a sender's http or broadcast button (#449)
+            val r = goAsync()
+            DeviceAction.run(ctx, id, intent.getIntExtra(Tray.EXTRA_INDEX, -1), intent.getLongExtra(Tray.EXTRA_SEQ, -1), server) { r.finish() }
+            return
+        }
+        if (intent.action == Tray.ACTION_REPLY && intent.data?.getQueryParameter("text") == "1") { // typed in the tray (#153)
+            val typed = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(Tray.EXTRA_TEXT)?.toString().orEmpty()
+            val body = TrayButton.typed(intent.getStringExtra(Tray.EXTRA_REPLY) ?: return, typed, intent.getLongExtra(Tray.EXTRA_SEQ, 0))
+            val r = goAsync()
+            // Android shows a spinner until the row is posted again: once the answer is saved, or at once if it cannot be sent.
+            val repost = { app.tray.repost(id); r.finish() }
+            if (body != null) app.act(id, "reply", body, server, App.VIA_TRAY_BUTTON, repost)
+            else app.acts.execute {
+                android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, R.string.reply_text_invalid, android.widget.Toast.LENGTH_LONG).show() }
+                repost()
+            }
             return
         }
         val (action, body) = when (intent.action) {

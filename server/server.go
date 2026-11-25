@@ -7,8 +7,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/ecdsa"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,10 +30,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-)
 
-//go:embed openapi.json
-var openapiJSON []byte
+	"github.com/thejdubb02/clrd"
+	"github.com/thejdubb02/clrd/internal/gzfs"
+)
 
 // Options configure a Server. ConfigFromEnv fills them from CLRD_* variables.
 type Options struct {
@@ -47,6 +47,10 @@ type Options struct {
 	// the inbox, /docs and /sitemap.xml are 404, and robots.txt disallows all.
 	HidePublicPages bool
 
+	// LockHookAllow (CLRD_HOOK_ALLOW=off) keeps the webhook allow list empty
+	// and read-only, whatever is saved, so no token can open the LAN (#498).
+	LockHookAllow bool
+
 	Attachments     string // CLRD_ATTACHMENTS, default "attachments" next to DB
 	AttachmentMax   int64  // CLRD_ATTACHMENT_MAX_MB, bytes, default 15 MB
 	AttachmentTotal int64  // CLRD_ATTACHMENT_TOTAL_MB, bytes, default 5000 MB
@@ -58,11 +62,13 @@ type Options struct {
 	// addresses) are the only peers whose X-Forwarded-For is read. Unset,
 	// any loopback or private-network peer is trusted.
 	TrustedProxies []netip.Prefix
+
+	Config string // CLRD_CONFIG, a JSON file of users and tokens applied at every start (#155); unset, none
 }
 
 // ConfigFromEnv reads the spec section 7 environment variables.
 func ConfigFromEnv() (Options, error) {
-	o := Options{Listen: os.Getenv("CLRD_LISTEN"), DB: os.Getenv("CLRD_DB"), BaseURL: os.Getenv("CLRD_BASE_URL")}
+	o := Options{Listen: os.Getenv("CLRD_LISTEN"), DB: os.Getenv("CLRD_DB"), BaseURL: os.Getenv("CLRD_BASE_URL"), Config: os.Getenv("CLRD_CONFIG")}
 	if v := os.Getenv("CLRD_RETENTION"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil || d <= 0 {
@@ -77,6 +83,13 @@ func ConfigFromEnv() (Options, error) {
 		o.HidePublicPages = true
 	default:
 		return o, fmt.Errorf("CLRD_PUBLIC_PAGES: want on or off, got %q", v)
+	}
+	switch v := os.Getenv("CLRD_HOOK_ALLOW"); v {
+	case "", "on":
+	case "off":
+		o.LockHookAllow = true
+	default:
+		return o, fmt.Errorf("CLRD_HOOK_ALLOW: want on or off, got %q", v)
 	}
 	for _, v := range []struct {
 		env string
@@ -160,7 +173,16 @@ func (s *Server) baseFor(r *http.Request) string {
 	if o, err := url.Parse(r.Header.Get("Origin")); err == nil && o.Host == r.Host && (o.Scheme == "https" || o.Scheme == "http") {
 		return o.Scheme + "://" + r.Host
 	}
-	// A GET page has no Origin: trust the proxy's X-Forwarded-Proto (#254).
+	if p := s.reqScheme(r); p != "" {
+		return p + "://" + r.Host
+	}
+	return "http://" + r.Host
+}
+
+// reqScheme is the scheme the client used, when clrd can know it: a trusted
+// proxy's X-Forwarded-Proto (#254), else TLS on this connection. Empty means
+// unknown: plain http here, perhaps behind a TLS proxy that does not say.
+func (s *Server) reqScheme(r *http.Request) string {
 	// The rightmost hop is the one our proxy added, as for X-Forwarded-For.
 	var p string
 	if xfp := r.Header.Values("X-Forwarded-Proto"); len(xfp) > 0 {
@@ -170,13 +192,13 @@ func (s *Server) baseFor(r *http.Request) string {
 	if p == "https" || p == "http" {
 		host, _, _ := net.SplitHostPort(r.RemoteAddr)
 		if ip := net.ParseIP(host); ip != nil && isTrustedProxy(ip, s.opt.TrustedProxies) {
-			return p + "://" + r.Host
+			return p
 		}
 	}
 	if r.TLS != nil {
-		return "https://" + r.Host
+		return "https"
 	}
-	return "http://" + r.Host
+	return ""
 }
 
 // Server is the clrd server. Create it with New, add pages with Mount, then Run.
@@ -190,11 +212,23 @@ type Server struct {
 	mu       sync.Mutex // serialises writes: seq order = delivery order
 	lastMS   int64      // newID state, guarded by mu
 	lastRand [10]byte
-	seq      atomic.Int64 // last committed event seq
-	pruned   atomic.Int64 // events with seq <= pruned are gone
-	epoch    string       // this database's id, sent with every cursor
-	revoked  sync.Map     // token ids deleted while the server runs
-	failing  sync.Map     // background job name -> true while it keeps failing; /healthz reports it
+	liveN    uint32                   // live id counter (live.go), guarded by mu
+	seq      atomic.Int64             // last committed event seq
+	pruned   atomic.Int64             // events with seq <= pruned are gone
+	origins  atomic.Pointer[[]string] // ntfy_origins allow list once read (ntfyorigins.go)
+	epoch    string                   // this database's id, sent with every cursor
+	revoked  sync.Map                 // token ids deleted while the server runs
+	failing  sync.Map                 // background job name -> true while it keeps failing; /healthz reports it
+
+	hookAllow atomic.Pointer[hookAllow]   // webhook LAN and port allow list once read (hookallow.go)
+	hookHTTP  atomic.Pointer[http.Client] // webhook deliveries, replaced when the list changes (hookallow.go)
+
+	// Web Push (webpush.go). pushHTTP has the fetcher's guard only, never
+	// the webhook allow list: any device can name a push endpoint.
+	vapid    *ecdsa.PrivateKey
+	vapidPub string // base64url, uncompressed point
+	pushq    chan Event
+	pushHTTP *http.Client
 
 	seen       sync.Map // token id -> time last written to last_seen_at
 	pwLimit    *limiter // ntfy password attempts per address
@@ -304,8 +338,22 @@ func New(opt Options) (*Server, error) {
 	}
 	s.epoch = strconv.FormatInt(epoch, 36)
 	s.seq.Store(seq)
+	s.liveN = rand.Uint32() // so a restart at the same seq never reuses a live id
 	s.pruned.Store(pruned)
 	s.fetch = newFetcher(filepath.Join(filepath.Dir(opt.DB), "cache"))
+	if opt.LockHookAllow { // set before any read, so the saved list is never loaded
+		s.hookAllow.Store(&hookAllow{Networks: []string{}, Ports: []int{}, Locked: true})
+	}
+	s.hookHTTP.Store(s.newHookClient())
+	if s.vapid, err = loadVAPID(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	pub, _ := s.vapid.PublicKey.ECDH()
+	s.vapidPub = b64.EncodeToString(pub.Bytes())
+	s.pushq = make(chan Event, 256)
+	s.pushHTTP = &http.Client{Transport: s.fetch.client.Transport, Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	s.routesSetup()
 	return s, nil
 }
@@ -338,9 +386,12 @@ func (s *Server) effectiveEnv() map[string]string {
 	for i, p := range o.TrustedProxies {
 		proxies[i] = p.String()
 	}
-	public := "on"
+	public, hookAllow := "on", "on"
 	if o.HidePublicPages {
 		public = "off"
+	}
+	if o.LockHookAllow {
+		hookAllow = "off"
 	}
 	rate := func(n int) string { return strconv.Itoa(max(n, 0)) } // -1 is off, set as 0
 	return map[string]string{
@@ -348,6 +399,7 @@ func (s *Server) effectiveEnv() map[string]string {
 		"CLRD_ATTACHMENTS": o.Attachments, "CLRD_ATTACHMENT_MAX_MB": strconv.FormatInt(o.AttachmentMax>>20, 10),
 		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
 		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
+		"CLRD_CONFIG": o.Config, "CLRD_HOOK_ALLOW": hookAllow,
 	}
 }
 
@@ -408,6 +460,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = &r2
 	}
 	p := r.URL.Path
+	if _, ok := r.Context().Value(senderHintKey{}).(senderHint); !ok { // an in-process call (MCP) keeps its caller's
+		r = r.WithContext(context.WithValue(r.Context(), senderHintKey{}, senderHint{r.UserAgent(), clientIP(r, s.opt.TrustedProxies)}))
+	}
 	var mounted http.Handler
 	for _, m := range s.mounts {
 		if m.prefix == "/" && r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -420,8 +475,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.ContentLength != 0 && mounted == nil && isUpload(r) {
 		// Streamed to disk by the handler, under a longer deadline and the file cap.
+		limit := s.opt.AttachmentMax + maxBody
+		if r.URL.Path == "/1/messages.json" { // Pushover's base64 is a third bigger, and more once form-escaped
+			limit += s.opt.AttachmentMax / 2
+		}
 		http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadTimeout))
-		r.Body = http.MaxBytesReader(w, r.Body, s.opt.AttachmentMax+maxBody)
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+	} else if r.ContentLength > maxBody { // refused by its declared length, before a slow read can time out
+		s.fail(w, errf(413, "too_large", "request body over %d bytes", maxBody))
+		return
 	} else if r.ContentLength != 0 { // read the whole body now, under a deadline
 		rc := http.NewResponseController(w)
 		rc.SetReadDeadline(time.Now().Add(bodyTimeout))
@@ -447,10 +509,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodOptions && !strings.HasPrefix(p, "/api/") {
-		// CORS preflight for the ntfy routes, answered on any path a mount does not own, like ntfy.
-		// "*" does not cover Authorization, so it is named.
+		// CORS preflight for the ntfy routes, answered on any path a mount does not own, like ntfy,
+		// for the sites an admin allowed (ntfyorigins.go). "*" does not cover Authorization, so it is named.
+		if err := s.ntfyCORS(w, r); err != nil {
+			s.fail(w, err)
+			return
+		}
 		h := w.Header()
-		h.Set("Access-Control-Allow-Origin", "*")
 		h.Set("Access-Control-Allow-Methods", "GET, PUT, POST, PATCH, DELETE")
 		h.Set("Access-Control-Allow-Headers", "*, Authorization")
 		w.WriteHeader(http.StatusNoContent)
@@ -461,16 +526,30 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Run listens on Options.Listen and runs the background tickers until ctx ends.
 func (s *Server) Run(ctx context.Context) error {
+	if err := s.applyConfig(ctx); err != nil { // first, so an admin token in it skips the setup link
+		return err
+	}
 	if err := s.bootstrap(ctx); err != nil {
 		return err
 	}
-	go s.every(ctx, "snooze wake", wakeEvery, s.wakeSnoozed)
-	go s.every(ctx, "expiry", wakeEvery, s.expireDue)
-	go s.every(ctx, "repeats", wakeEvery, s.repeatDue)
-	go s.every(ctx, "check-ins", wakeEvery, s.checkins)
-	go s.every(ctx, "prune", time.Hour, s.prune)
-	go s.every(ctx, "cache sweep", time.Hour, s.fetch.sweep)
-	go s.every(ctx, "webhooks out", hookEvery, s.deliverHooks)
+	// Run returns only once every job has stopped, so the caller can close
+	// the database without cutting a write short (#486).
+	jctx, stop := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer func() { stop(); wg.Wait() }()
+	job := func(name string, d time.Duration, fn func(context.Context) error) {
+		wg.Add(1)
+		go func() { defer wg.Done(); s.every(jctx, name, d, fn) }()
+	}
+	job("snooze wake", wakeEvery, s.wakeSnoozed)
+	job("expiry", wakeEvery, s.expireDue)
+	job("repeats", wakeEvery, s.repeatDue)
+	job("check-ins", wakeEvery, s.checkins)
+	job("prune", time.Hour, s.prune)
+	job("cache sweep", time.Hour, s.fetch.sweep)
+	job("webhooks out", hookEvery, s.deliverHooks)
+	wg.Add(1)
+	go func() { defer wg.Done(); s.pushLoop(jctx) }()
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx }} // ends open streams on shutdown
 	errc := make(chan error, 1)
@@ -555,6 +634,15 @@ func (s *Server) failStatus(w http.ResponseWriter, err error) (int, string, stri
 	return status, code, msg
 }
 
+// writeNotif is writeJSON for a notification tok acted on: a copy, silenced
+// as tok's stream gets it (forReader), so a client caching the reply keeps
+// the same answer (#588). The copy leaves the committed event untouched.
+func writeNotif(w http.ResponseWriter, status int, tok *Token, n *Notification) {
+	c := *n
+	forReader(tok, &c)
+	writeJSON(w, status, &c)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -585,7 +673,16 @@ func (s *Server) routesSetup() {
 	})
 	s.route("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write(openapiJSON)
+		w.Header().Add("Vary", "Accept-Encoding")
+		if !gzfs.Serve(w, r, apiDoc, "openapi.json") {
+			http.ServeFileFS(w, r, apiDoc, "openapi.json")
+		}
+		return nil
+	})
+	// Public: only what the binary carries, which is all in the repo (#580).
+	s.route("GET /api/v1/version", func(w http.ResponseWriter, r *http.Request) error {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write(clrd.VersionJSON())
 		return err
 	})
 	s.route("GET /setup", s.handleSetup)
@@ -596,8 +693,12 @@ func (s *Server) routesSetup() {
 	s.route("DELETE /api/v1/session", s.handleSignOut)
 	s.pairRoutes()
 	s.linkRoutes()
+	s.agentRoutes()
 	s.deviceRoutes()
+	s.pushRoutes()
+	s.userRoutes()
 	s.soundRoutes()
+	s.subsRoutes()
 	s.approveRoutes()
 
 	s.api("POST /api/v1/notifications", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -621,7 +722,7 @@ func (s *Server) routesSetup() {
 		seq := s.CurrentSeq() // before the query, so a ws?since=seq misses nothing
 		limit, _ := strconv.Atoi(q.Get("limit"))
 		ns, err := s.List(r.Context(), tok, ListQuery{Topics: splitList(q.Get("topic")), State: q.Get("state"),
-			Q: q.Get("q"), Before: q.Get("before"), Limit: limit})
+			Q: q.Get("q"), Before: q.Get("before"), Limit: limit, All: subscribedAll(r)})
 		if err != nil {
 			return err
 		}
@@ -633,7 +734,7 @@ func (s *Server) routesSetup() {
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, n)
+		writeNotif(w, 200, tok, n)
 		return nil
 	})
 	s.api("PATCH /api/v1/notifications/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -647,7 +748,7 @@ func (s *Server) routesSetup() {
 		if err != nil {
 			return err
 		}
-		writeJSON(w, 200, n)
+		writeNotif(w, 200, tok, n)
 		return nil
 	})
 	for _, action := range []string{"ack", "snooze", "dismiss", "resolve", "reopen"} {
@@ -666,25 +767,28 @@ func (s *Server) routesSetup() {
 				if until, err = snoozeUntil(in.For, in.Until); err != nil {
 					return err
 				}
+			} else if action == "reopen" && err == nil {
+				until = in.Until // #473: Undo of a Clear brings a snoozed row back snoozed
 			}
 			n, err := s.Act(r.Context(), tok, r.PathValue("id"), action, cleanVia(in.Via, "api"), until)
 			if err != nil {
 				return err
 			}
-			writeJSON(w, 200, n)
+			writeNotif(w, 200, tok, n)
 			return nil
 		})
 	}
 	s.api("POST /api/v1/notifications/{id}/reply", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var in struct {
 			Reply string `json:"reply"`
+			Text  string `json:"text"`
 			Seq   int64  `json:"seq"`
 			Via   string `json:"via"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		n, err := s.Reply(r.Context(), tok, r.PathValue("id"), in.Reply, cleanVia(in.Via, "api"), in.Seq)
+		n, err := s.Reply(r.Context(), tok, r.PathValue("id"), in.Reply, in.Text, cleanVia(in.Via, "api"), in.Seq)
 		if err != nil {
 			return err
 		}
@@ -692,7 +796,30 @@ func (s *Server) routesSetup() {
 		if n.ID != r.PathValue("id") { // an ask device: the confirm prompt, waiting for an allowed one
 			code = 202
 		}
-		writeJSON(w, code, n)
+		writeNotif(w, code, tok, n)
+		return nil
+	})
+	s.api("POST /api/v1/notifications/{id}/mark", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		var in struct{ Mark, Note, Link string }
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if in.Mark == "" {
+			return errf(400, "bad_request", "mark must be seen or actioned")
+		}
+		n, err := s.SetMark(r.Context(), tok, r.PathValue("id"), in.Mark, in.Note, in.Link)
+		if err != nil {
+			return err
+		}
+		writeNotif(w, 200, tok, n)
+		return nil
+	})
+	s.api("DELETE /api/v1/notifications/{id}/mark", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		n, err := s.SetMark(r.Context(), tok, r.PathValue("id"), "", "", "")
+		if err != nil {
+			return err
+		}
+		writeNotif(w, 200, tok, n)
 		return nil
 	})
 	s.api("POST /api/v1/notifications/clear", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -712,6 +839,10 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("GET /api/v1/topics", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		tok, err := s.viewed(r.Context(), tok, subscribedAll(r))
+		if err != nil {
+			return err
+		}
 		ts, err := s.Topics(r.Context(), tok)
 		if err != nil {
 			return err
@@ -752,6 +883,10 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("GET /api/v1/counts", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		tok, err := s.viewed(r.Context(), tok, subscribedAll(r))
+		if err != nil {
+			return err
+		}
 		c, err := s.Counts(r.Context(), tok)
 		if err != nil {
 			return err
@@ -778,14 +913,21 @@ func (s *Server) routesSetup() {
 			Icon        *string `json:"icon"`
 			Checkin     *string `json:"checkin"`
 			FormatCheck *bool   `json:"format_check"` // false turns the format check off for the topic (#320)
+			// DeviceActions lets publishers add http and broadcast actions (#401). Admin only.
+			DeviceActions *bool `json:"device_actions"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
 		}
-		if in.Icon == nil && in.Checkin == nil && in.FormatCheck == nil { // a missing key must not wipe anything
-			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it), "checkin" (like "25h", or "" for off) or "format_check" (true or false)`)
+		if in.Icon == nil && in.Checkin == nil && in.FormatCheck == nil && in.DeviceActions == nil { // a missing key must not wipe anything
+			return errf(400, "bad_request", `body needs "icon" (a URL, or "" to remove it), "checkin" (like "25h", or "" for off), "format_check" or "device_actions" (true or false)`)
 		}
 		topic, out := r.PathValue("topic"), map[string]any{"topic": r.PathValue("topic")}
+		if in.DeviceActions != nil { // checked first, so a publisher's mixed body changes nothing
+			if err := tok.need(ScopeAdmin, topic); err != nil {
+				return err
+			}
+		}
 		if in.Icon != nil { // checked before the timer changes, so a bad icon changes nothing
 			if err := checkImageURL("icon", *in.Icon); err != nil {
 				return err
@@ -817,6 +959,12 @@ func (s *Server) routesSetup() {
 			}
 			out["format_check"] = *in.FormatCheck
 		}
+		if in.DeviceActions != nil {
+			if err := s.SetTopicDeviceActions(r.Context(), tok, topic, *in.DeviceActions); err != nil {
+				return err
+			}
+			out["device_actions"] = *in.DeviceActions
+		}
 		writeJSON(w, 200, out)
 		return nil
 	})
@@ -841,6 +989,7 @@ func (s *Server) routesSetup() {
 			Topics  []string `json:"topics"`
 			Grants  []Grant  `json:"grants"`
 			Approve string   `json:"approve"`
+			User    string   `json:"user"` // the person it belongs to (#143)
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
@@ -853,7 +1002,7 @@ func (s *Server) routesSetup() {
 		if in.Approve != "" && in.Approve != ApproveDenied {
 			return errf(400, "bad_request", "a new token starts denied; raise it with PUT /api/v1/devices/{id}/approve")
 		}
-		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants, Approve: ApproveDenied})
+		t, raw, err := s.createToken(r.Context(), &Token{Name: in.Name, Scopes: in.Scopes, Topics: in.Topics, Grants: in.Grants, Approve: ApproveDenied, User: in.User})
 		if err != nil {
 			return err
 		}
@@ -903,10 +1052,14 @@ func (s *Server) routesSetup() {
 	s.webhookRoutes()
 	s.hookOutRoutes()
 	s.silenceRoutes()
+	s.senderRoutes()
+	s.statsRoutes()
 	s.ntfyRoutes()
 	s.gotifyAppRoutes()
 	s.pushoverRoutes()
 	s.ntfyAnonymousRoutes()
+	s.ntfyOriginRoutes()
+	s.hookAllowRoutes()
 }
 
 // snoozeUntil reads {"for":"1h"} or {"until":"RFC3339"}.

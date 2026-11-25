@@ -120,11 +120,18 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return snap, err
 	}
 	snap.Counts = counts
+	if snap.MarkID, err = a.s.MarkAuthor(ctx, tok); err != nil {
+		return snap, err
+	}
 	ds, err := a.s.Settings(ctx, tok)
 	if err != nil {
 		return snap, err
 	}
 	snap.SnoozeIntervals, snap.SnoozeDefault = ds.SnoozeIntervals, ds.SnoozeDefault
+	snap.SwipeStart, snap.SwipeEnd = ds.SwipeStart, ds.SwipeEnd
+	if err := convert(ds.ColorRules, &snap.ColorRules); err != nil {
+		return snap, err
+	}
 	snap.KeepClearedDays = *ds.KeepClearedDays // Settings fills it from CLRD_RETENTION when unset
 	snap.TopicKeepClearedDays = ds.TopicKeepClearedDays
 	snap.Formatting, snap.Autolink, snap.Favicons = ds.RenderFormatting, ds.Autolink, ds.Favicons
@@ -134,6 +141,22 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	for _, st := range q.States {
 		want[st] = true
 	}
+	// Topic subscriptions (SPEC 2.3): one topic's page shows it even when
+	// unsubscribed, with a banner; every other view is filtered.
+	subs, err := a.s.Subscriptions(ctx, tok)
+	if err != nil {
+		return snap, err
+	}
+	snap.Filtered = subs.Filtered
+	snap.NewTopics = subs.NewTopics == nil || *subs.NewTopics
+	for _, t := range subs.Topics {
+		snap.Unsubscribed = snap.Unsubscribed || (t.Topic == q.Topic && !t.Subscribed)
+	}
+	if q.Devices {
+		if err := convert(subs.Topics, &snap.SubTopics); err != nil {
+			return snap, err
+		}
+	}
 	var topics []string
 	if q.Topic != "" {
 		topics = []string{q.Topic}
@@ -142,7 +165,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		if !want[st] {
 			continue
 		}
-		rows, err := a.s.List(ctx, tok, server.ListQuery{State: st, Topics: topics, Q: q.Q, Limit: webLimit})
+		rows, err := a.s.List(ctx, tok, server.ListQuery{State: st, Topics: topics, Q: q.Q, Limit: webLimit, All: q.Topic != ""})
 		if err != nil {
 			return snap, err
 		}
@@ -158,7 +181,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		return snap, err
 	}
 	for _, t := range tc {
-		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon, Silence: tok.MaySilence(t.Topic)})
+		snap.Topics = append(snap.Topics, web.Topic{Name: t.Topic, Open: t.Open, Icon: t.Icon, Silence: tok.MaySilence(t.Topic), Approvals: t.Approvals})
 	}
 	// Every page's sync indicator (#295). An admin sees every device; anyone
 	// else only their own (#245), so a reader never learns other people's devices.
@@ -169,9 +192,63 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	if err := convert(devs, &snap.Linked); err != nil {
 		return snap, err
 	}
-	// Who may approve (#329): only an allowed token on every topic may change it, as SetApprove checks.
+	// Who may approve (#329): the server sets it on this token's own row (#433).
 	for _, d := range devs {
-		snap.CanApprove = snap.CanApprove || d.This && d.Approve == server.ApproveAllowed && len(tok.Topics) == 0 && len(tok.Grants) == 0
+		snap.CanApprove = snap.CanApprove || d.CanApprove
+	}
+	// Senders (#119): a full admin only, the same check as the API's.
+	snap.CanSenders = tok.Has(server.ScopeAdmin) && len(tok.Topics) == 0 && len(tok.Grants) == 0
+	if q.Senders && snap.CanSenders {
+		ss, err := a.s.Senders(ctx, tok)
+		if err != nil {
+			return snap, err
+		}
+		if err := convert(ss, &snap.Senders); err != nil {
+			return snap, err
+		}
+	}
+	// Stats (#120): the same full admin check as GET /api/v1/stats.
+	if q.Stats > 0 && snap.CanSenders {
+		to := time.Now()
+		st, err := a.s.Stats(ctx, tok, to.Add(-time.Duration(q.Stats)*24*time.Hour), to)
+		if err != nil {
+			return snap, err
+		}
+		if err := convert(st, &snap.Stats); err != nil {
+			return snap, err
+		}
+		snap.Stats.Days = q.Stats
+		ss, err := a.s.Senders(ctx, tok) // a sender row per top token: its name
+		if err != nil {
+			return snap, err
+		}
+		names := map[string]string{}
+		for _, s := range ss {
+			names[s.TokenID] = s.Name
+		}
+		for i, g := range snap.Stats.Senders {
+			snap.Stats.Senders[i].Name = names[g.Key]
+		}
+	}
+	if q.Sender != "" && snap.CanSenders {
+		// Changes before rules: an edit landing between the two reads then
+		// makes the form's base_seq stale (refused), never its rules (#543).
+		cs, err := a.s.SenderChanges(ctx, tok, q.Sender)
+		if err != nil {
+			return snap, err
+		}
+		sd, err := a.s.Sender(ctx, tok, q.Sender)
+		if code, _ := server.PublicError(err); err != nil && code == http.StatusNotFound {
+			return snap, web.ErrNotFound
+		} else if err != nil {
+			return snap, err
+		}
+		if err := convert(sd, &snap.Sender); err != nil {
+			return snap, err
+		}
+		if err := convert(cs, &snap.Sender.Changes); err != nil {
+			return snap, err
+		}
 	}
 	if q.Devices {
 		evs, err := a.s.DeviceLog(ctx, tok)
@@ -194,7 +271,8 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			}
 			for i, g := range snap.Format {
 				snap.Format[i].CanFix = tok.MaySilence(g.Topic) // the same publish check
-				if g.SenderID != "" && seen[g.SenderID] == "" {
+				// "unknown" has no token to name, so it keeps its prompt (#391).
+				if g.SenderID != "" && g.SenderID != "unknown" && seen[g.SenderID] == "" {
 					snap.Format[i].Sender, snap.Format[i].Prompt = "", ""
 				}
 			}
@@ -216,6 +294,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		}
 		// Offer the form only if some silence would be accepted: a topic list
 		// with only read grants publishes nowhere.
+		snap.CanInvite = a.s.MayInvite(ctx, tok)
 		snap.CanSilence = tok.MaySilence("")
 		for _, t := range snap.Topics {
 			snap.CanSilence = snap.CanSilence || t.Silence
@@ -231,6 +310,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			}
 			snap.CanTemplates, snap.BuiltinTemplates = true, server.BuiltinTemplates()
 		}
+		snap.CanKeep = tok.Has(server.ScopeAdmin) // a keep deletes data, so it needs admin
 		// Webhooks are admin only (#238): anyone else gets no hook URLs at all.
 		if hooks, err := a.s.OutHooks(ctx, tok, ""); err == nil {
 			snap.CanHooks = true
@@ -296,6 +376,15 @@ func (a webAPI) FormatIgnore(r *http.Request, topic, rule, senderID string, on b
 	return webError(a.s.SetFormatIgnore(r.Context(), tok, topic, rule, senderID, on))
 }
 
+func (a webAPI) SetSubscriptions(r *http.Request, newTopics *bool, topics map[string]bool) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.SetSubscriptions(r.Context(), tok, newTopics, topics, "", "")
+	return webError(err)
+}
+
 func (a webAPI) EndSilence(r *http.Request, id string) error {
 	tok := a.s.Authenticate(r)
 	if tok == nil {
@@ -308,12 +397,22 @@ func (a webAPI) EndSilence(r *http.Request, id string) error {
 	return webError(err)
 }
 
-func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []string, secret string, clearSecret bool) error {
+func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []string, body *string, secret string, clearSecret bool) error {
+	h := server.OutHook{URL: url, Events: events, Secret: secret}
+	if body != nil {
+		h.Body = *body
+	}
 	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	return webError(a.s.SaveHook(r.Context(), tok, topic, name, server.OutHook{URL: url, Events: events, Secret: secret}, !clearSecret))
+	hooks, _ := a.s.OutHooks(r.Context(), tok, topic) // the form has no kind: keep the saved one (#166)
+	for _, o := range hooks {
+		if o.Name == name {
+			h.Kind = o.Kind
+		}
+	}
+	return webError(a.s.SaveHook(r.Context(), tok, topic, name, h, !clearSecret, body == nil))
 }
 
 func (a webAPI) SaveTemplate(r *http.Request, t web.Template, secret string, clearSecret bool) error {
@@ -324,6 +423,31 @@ func (a webAPI) SaveTemplate(r *http.Request, t web.Template, secret string, cle
 	h := server.Webhook{Each: t.Each, Title: t.Title, Message: t.Message, Priority: t.Priority, Tags: t.Tags,
 		Click: t.Click, ID: t.ID, Resolve: t.Resolve, Secret: secret}
 	return webError(a.s.SaveTemplate(r.Context(), tok, t.Topic, t.Name, h, !clearSecret))
+}
+
+func (a webAPI) SetSenderRules(r *http.Request, id string, rules web.SenderRules, base int64) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	patch, err := json.Marshal(struct {
+		web.SenderRules
+		BaseSeq int64 `json:"base_seq"`
+	}{rules, base})
+	if err != nil {
+		return err
+	}
+	_, err = a.s.SetSenderRules(r.Context(), tok, id, patch)
+	return webError(err)
+}
+
+func (a webAPI) UndoSenderChange(r *http.Request, id string, seq int64) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.UndoSenderChange(r.Context(), tok, id, seq)
+	return webError(err)
 }
 
 func (a webAPI) DeleteTemplate(r *http.Request, topic, name string) error {
@@ -350,11 +474,20 @@ func (a webAPI) DeleteHook(r *http.Request, topic, name string) error {
 	return webError(err)
 }
 
-func (a webAPI) Reply(r *http.Request, id, reply string, seq int64) error {
+func (a webAPI) Reply(r *http.Request, id, reply, text string, seq int64) error {
 	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	_, err := a.s.Reply(r.Context(), tok, id, reply, "web_form", seq)
+	_, err := a.s.Reply(r.Context(), tok, id, reply, text, "web_form", seq)
 	return webError(err) // the page shows why: not allowed, its own request, or answered already
+}
+
+func (a webAPI) Mark(r *http.Request, id, mark, note, link string) error {
+	tok := a.s.Authenticate(r) // checks Origin on a cookie POST
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	_, err := a.s.SetMark(r.Context(), tok, id, mark, note, link)
+	return webError(err) // the page shows why: a long note or a link that is not http
 }

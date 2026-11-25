@@ -1,0 +1,115 @@
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    # server/** only here, not on pull requests: a server change that breaks
+    # the desktop shows up when it lands, without slowing every server PR.
+    paths:
+      - "desktop/**"
+      - "server/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+      - ".github/size-budget"
+
+# Same grouping as go.yml: a new push cancels the older run on a branch or
+# pull request, and every commit on main is its own group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: ubicloud-standard-4
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      # Three build jobs at most: this runner is shared with other projects.
+      CARGO_BUILD_JOBS: "3"
+    steps:
+      - uses: actions/checkout@v4
+      - name: system packages
+        # OpenSSL headers for the OS TLS the app links to, and a C linker.
+        # dbus-daemon is for the notification tests, which start a private
+        # bus of their own and never touch a real session. gnome-keyring is
+        # the real keychain the token tests store into, on that same bus.
+        # The app links the system's web view and tray libraries, and its
+        # test runs the real binary on a virtual screen (xvfb, with xauth).
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev dbus-daemon gnome-keyring libwebkit2gtk-4.1-dev libayatana-appindicator3-dev xvfb xauth xdotool desktop-file-utils
+      - name: rust toolchain
+        # rustup itself is pinned by checksum; the compiler version comes
+        # from desktop/rust-toolchain.toml, which cargo installs on first use.
+        run: |
+          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            v=1.29.3
+            curl -fsSL -o "$RUNNER_TEMP/rustup-init" "https://static.rust-lang.org/rustup/archive/$v/x86_64-unknown-linux-gnu/rustup-init"
+            echo "b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55  $RUNNER_TEMP/rustup-init" | sha256sum -c -
+            chmod +x "$RUNNER_TEMP/rustup-init"
+            "$RUNNER_TEMP/rustup-init" -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          # Outside the checkout, so a run reuses the last build of the crates.
+          # Beside this runner's checkout, never shared with another: cargo
+          # names a build by the path inside the workspace and trusts it
+          # while the sources are older, so a second checkout would take
+          # another branch's newer build of the core for its own. Within one
+          # checkout git gives every file it changes a new time.
+          echo "CARGO_TARGET_DIR=${GITHUB_WORKSPACE%/*}/desktop-target" >> "$GITHUB_ENV"
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: against the real server
+        # The other tests use a fake server; this one keeps the fake honest.
+        run: |
+          (cd .. && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd)
+          CLRD_BIN="$RUNNER_TEMP/clrd" cargo test --locked --test real_server -- --ignored
+      - name: size (#298)
+        # The whole Linux app is this one file: the page and the icon are
+        # inside it, and the web view is the system's.
+        run: |
+          cargo build --locked --release -p clrd-desktop
+          ../.github/size-check.sh desktop "$CARGO_TARGET_DIR/release/clrd-desktop"
+      - name: package (.deb)
+        # Built and checked on every run so it cannot rot. Not published
+        # anywhere: it stays a workflow file for a few days.
+        run: |
+          deb=$(package/deb.sh "$CARGO_TARGET_DIR/release/clrd-desktop" "$RUNNER_TEMP/deb")
+          ../.github/size-check.sh desktop-deb "$deb"
+      - name: Windows installer (#719)
+        # Cross-built here, since CI runs on these Linux runners only: the
+        # Windows SDK comes through cargo-xwin, the linker is lld, and
+        # makensis packs the installer. Not signed and not published or kept
+        # anywhere: this proves it builds and holds its size. Lint runs for
+        # the Windows target too, since no other step compiles that code.
+        run: |
+          sudo apt-get install -y --no-install-recommends nsis lld llvm clang
+          rustup target add x86_64-pc-windows-msvc
+          cargo install --locked cargo-xwin --version 0.24.1
+          cargo install --locked tauri-cli --version 2.12.6
+          # The Windows SDK, about 1 GB, kept beside the checkout between runs.
+          export XWIN_CACHE_DIR="${GITHUB_WORKSPACE%/*}/xwin"
+          win=x86_64-pc-windows-msvc
+          cargo xwin clippy --locked --all-targets --target $win -- -D warnings
+          # The build folder outlives a run: an installer left from an older
+          # version would be a second match for the size check below.
+          rm -rf "$CARGO_TARGET_DIR/$win/release/bundle"
+          (cd app && cargo tauri build --runner cargo-xwin --target $win -- --locked)
+          # The start-with-Windows step is in the installer that was built.
+          # What it does was run by hand under Wine: nothing here can run it.
+          grep -q 'app/installer\.nsh' "$CARGO_TARGET_DIR/$win/release/nsis/x64/installer.nsi"
+          ../.github/size-check.sh desktop-windows "$CARGO_TARGET_DIR/$win/release/clrd-desktop.exe"
+          ../.github/size-check.sh desktop-windows-setup "$CARGO_TARGET_DIR/$win/release/bundle/nsis/"clrd_*_x64-setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clrd-desktop-deb
+          path: ${{ runner.temp }}/deb/*.deb
+          retention-days: 7
+          if-no-files-found: error

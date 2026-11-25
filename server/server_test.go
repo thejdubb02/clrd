@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,9 +11,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // newTest starts a server on a temp database and returns it with an admin token.
@@ -22,8 +27,15 @@ func newTest(t *testing.T) (*Server, *httptest.Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(s)
-	t.Cleanup(func() { ts.Close(); s.Close() })
+	// ts.Close does not wait for hijacked WebSocket handlers, so they could
+	// still use the database while the temp dir goes. Wait for every handler.
+	var wg sync.WaitGroup
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wg.Add(1)
+		defer wg.Done()
+		s.ServeHTTP(w, r)
+	}))
+	t.Cleanup(func() { ts.Close(); wg.Wait(); s.Close() })
 	return s, ts, mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
 }
 
@@ -57,6 +69,40 @@ func call(t *testing.T, ts *httptest.Server, method, path, tok string, body any)
 	out := map[string]any{}
 	json.NewDecoder(res.Body).Decode(&out)
 	return res.StatusCode, out
+}
+
+// #473: Undo of a Clear on a snoozed row is one change, so no device sees it active in between.
+func TestReopenWithUntilLandsSnoozed(t *testing.T) {
+	_, ts, admin := newTest(t)
+	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "x"})
+	id := n["id"].(string)
+	until := time.Now().Add(time.Hour).UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano)
+	call(t, ts, "POST", "/api/v1/notifications/"+id+"/dismiss", admin, nil)
+	code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reopen", admin, map[string]any{"until": until})
+	if code != 200 || n["state"] != "snoozed" || n["snooze_until"] != until || n["seq"] != 3.0 {
+		t.Fatalf("reopen with until: %d %v", code, n)
+	}
+	call(t, ts, "POST", "/api/v1/notifications/"+id+"/dismiss", admin, nil)
+	past := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+	if code, n := call(t, ts, "POST", "/api/v1/notifications/"+id+"/reopen", admin, map[string]any{"until": past}); code != 200 || n["state"] != "active" {
+		t.Fatalf("reopen with a past until: %d %v", code, n)
+	}
+}
+
+// #693: a retried action that changed nothing says so.
+func TestActionSaysChanged(t *testing.T) {
+	_, ts, admin := newTest(t)
+	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "infra", "message": "x"})
+	if _, ok := n["changed"]; ok {
+		t.Fatalf("publish answer carries changed: %v", n)
+	}
+	u := "/api/v1/notifications/" + n["id"].(string) + "/dismiss"
+	if _, n := call(t, ts, "POST", u, admin, nil); n["changed"] != true {
+		t.Fatalf("first dismiss: %v", n)
+	}
+	if _, n := call(t, ts, "POST", u, admin, nil); n["changed"] != false || n["seq"] != 2.0 {
+		t.Fatalf("repeated dismiss: %v", n)
+	}
 }
 
 func TestPublishUpsertAndStates(t *testing.T) {
@@ -377,6 +423,33 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 	}
 }
 
+// openapi.json reads the same in both builds; only the packed one sends its
+// stored gzip, and only to a client that takes it (#690).
+func TestOpenAPIEncoding(t *testing.T) {
+	s, _, _ := newTest(t)
+	want, _ := os.ReadFile("openapi.json")
+	for ae, gz := range map[string]bool{"gzip": true, "deflate, gzip": true, "": false, "gzip; q=0.0": false} {
+		gz = gz && packedBuild
+		r := httptest.NewRequest("GET", "/openapi.json", nil)
+		r.Header.Set("Accept-Encoding", ae)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		body := w.Body.Bytes()
+		if gz {
+			z, err := gzip.NewReader(bytes.NewReader(body))
+			if err != nil {
+				t.Fatalf("%q: %v", ae, err)
+			}
+			body, _ = io.ReadAll(z)
+		}
+		h := w.Header()
+		if w.Code != 200 || h.Get("Content-Type") != "application/json" || h.Get("Vary") != "Accept-Encoding" ||
+			(h.Get("Content-Encoding") == "gzip") != gz || h.Get("Content-Length") != strconv.Itoa(w.Body.Len()) || !bytes.Equal(body, want) {
+			t.Errorf("%q: %d %v, body equal %v", ae, w.Code, h, bytes.Equal(body, want))
+		}
+	}
+}
+
 // #253: an admin reads the settings in effect, and creates a token with grants.
 func TestServerEnvAndGrantsOverAPI(t *testing.T) {
 	s, ts, admin := newTest(t)
@@ -387,7 +460,7 @@ func TestServerEnvAndGrantsOverAPI(t *testing.T) {
 	code, out := call(t, ts, "GET", "/api/v1/server", admin, nil)
 	env, _ := out["env"].(map[string]any)
 	if code != 200 || env["CLRD_RATE_TOKEN"] != "60" || env["CLRD_BASE_URL"] != "" || env["CLRD_PUBLIC_PAGES"] != "on" ||
-		env["CLRD_RETENTION"] != "720h0m0s" || env["CLRD_DB"] != s.DBPath() || len(env) != 11 {
+		env["CLRD_RETENTION"] != "720h0m0s" || env["CLRD_DB"] != s.DBPath() || len(env) != 13 || env["CLRD_HOOK_ALLOW"] != "on" {
 		t.Fatalf("server settings: %d %v", code, out)
 	}
 	s2, err := New(Options{DB: filepath.Join(t.TempDir(), "c.db"), BaseURL: "https://u:pw@clrd.example.com/c", RateToken: -1})
@@ -600,6 +673,18 @@ func TestReplyStaleAfterPrune(t *testing.T) {
 	if code := reply(old); code != 409 {
 		t.Errorf("tap on the old card after a prune: want 409, got %d", code)
 	}
+	// #452: a mark after the prune moves the seq, not the question.
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/mark", admin, map[string]any{"mark": "seen"}); code != 200 {
+		t.Fatalf("mark: %d", code)
+	}
+	if code := reply(old); code != 409 {
+		t.Errorf("tap on the old card after a mark: want 409, got %d", code)
+	}
+	s.db.Exec(`UPDATE notifications SET qseq = 0`) // an upgrade that stopped before the fill
+	if code := reply(cur); code != 409 {
+		t.Errorf("tap with qseq unfilled: want 409, got %d", code)
+	}
+	s.db.Exec(`UPDATE notifications SET qseq = ?`, cur)
 	if code := reply(cur); code != 200 {
 		t.Errorf("tap on the current card: want 200, got %d", code)
 	}

@@ -24,6 +24,12 @@ class App : Application() {
     val io = Executors.newSingleThreadExecutor()
     /** User actions only, and they never wait on the network, so a tray tap is saved within its goAsync() deadline. */
     val acts = Executors.newSingleThreadExecutor()
+    /** Typed answers the server refused, by notification id, so the reply box opens with them again (#153). */
+    val drafts = java.util.concurrent.ConcurrentHashMap<String, String>()
+    /** Typed answers refused because the question changed (409), counted by notification id, so a reply box open on it closes (#516). */
+    val changed = androidx.compose.runtime.mutableStateMapOf<String, Int>()
+    /** The Send box's send in flight, kept here so a rotation does not forget it (#523). */
+    val sender by lazy { Sender { io.execute(it) } }
     /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
     private val sends = Executors.newSingleThreadExecutor()
     private var sendNotBefore = 0L // System.nanoTime(); a busy server's Retry-After, touched only on [sends]
@@ -43,6 +49,7 @@ class App : Application() {
     /** Bumped on every server or token switch. A store made before the bump is fenced off. */
     @Volatile var configGen = 0
 
+
     var serverUrl: String
         get() = prefs.getString("url", "").orEmpty()
         set(v) = prefs.edit().putString("url", v.trim().trimEnd('/')).apply()
@@ -53,10 +60,23 @@ class App : Application() {
         get() = prefs.getStringSet("muted", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("muted", v).apply()
 
-    /** Stack tray notifications by topic (#108). On by default: it is how Android groups anyway. */
+    /**
+     * Stack by topic (#108), in the tray and the app's list. Off until a person turns it on (#465), as on the web;
+     * a phone that never touched it reads the default, so it moves to off, and a stored choice is kept.
+     */
     var stack: Boolean
-        get() = prefs.getBoolean("stack", true)
+        get() = prefs.getBoolean("stack", false)
         set(v) = prefs.edit().putBoolean("stack", v).apply()
+
+    /** Remove cleared items from this phone as soon as they are cleared (#151). Off by default; the server keeps its own copy either way. */
+    /** A swipe all the way across runs the first button it shows (#161). Off out of the box: a swipe only shows the buttons. */
+    var fastSwipe: Boolean
+        get() = prefs.getBoolean("fast_swipe", false)
+        set(v) = prefs.edit().putBoolean("fast_swipe", v).apply()
+
+    var dropCleared: Boolean
+        get() = prefs.getBoolean("drop_cleared", false)
+        set(v) = prefs.edit().putBoolean("drop_cleared", v).apply()
 
     /** This phone's notification sound (docs/SPEC.md section 2.2). Unset means the phone's own default. Change it with [saveSound]. */
     val sound: String get() = Sounds.known(prefs.getString("sound", null))
@@ -64,13 +84,15 @@ class App : Application() {
     /**
      * Switches the sound: new channels first, then the choice, then the old channels go and the tray is
      * reposted quietly onto the new ones (a post to a missing channel is dropped). Call on [io].
+     * True when the change took the Urgent channel's Do Not Disturb pass with it.
      */
-    fun saveSound(name: String) = synchronized(configLock) {
+    fun saveSound(name: String): Boolean = synchronized(configLock) {
         val s = Sounds.known(name)
-        tray.createChannels(s)
+        val dropped = tray.createChannels(s)
         prefs.edit().putString("sound", s).commit()
         soundNow.value = s
         RoomStore(this).reconcile()
+        dropped
     }
 
     /** [sound] for Settings to follow, so a change from the server or an agent shows while it is open. */
@@ -112,7 +134,7 @@ class App : Application() {
      */
     private fun serverSound(name: String) {
         if (soundPending != null) io.execute { pushSound() }
-        else if (Sounds.known(name) != sound) saveSound(name)
+        else if (Sounds.known(name) != sound && saveSound(name)) tray.dndNotice() // not picked here, so Settings' note may go unseen (#380)
     }
 
     /**
@@ -126,7 +148,73 @@ class App : Application() {
     /** The shared snooze times, as the server last sent them (every connect sends them). */
     val snooze by lazy { MutableStateFlow(prefs.getString("snooze", null)?.let { runCatching { Snooze.from(org.json.JSONObject(it)) }.getOrNull() } ?: Snooze()) }
 
-    /** Keeps the snooze part of a server `settings` message. */
+    /** The buttons a swipe on a card shows (#161), as the server last sent them; the defaults until it does. */
+    val swipes by lazy { MutableStateFlow(Swipes.parse(prefs.getString("swipes", null))) }
+
+    /** This token got 403 changing [swipes], so Settings shows them read-only. In memory: a token's grants can widen. */
+    val swipesLocked = MutableStateFlow(false)
+
+    /**
+     * Sends [next] from Settings (#161). It shows at once; the server's settings message confirms it to every device.
+     * Null when the server took it or the token may not change it ([swipesLocked]), else why not. Call on [io].
+     */
+    fun saveSwipes(next: Swipes, api: Api = api()): String? {
+        swipes.value = next
+        return try {
+            api.put("/api/v1/settings", next.json())
+            prefs.edit().putString("swipes", next.json()).apply() // the server has it: a restart before its echo keeps it
+            null
+        } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
+            // Back to what the server last said. Under the lock a settings message cannot land between the read and the write (#568).
+            synchronized(configLock) { swipes.value = Swipes.parse(prefs.getString("swipes", null)) }
+            if (e is HttpError && e.code == 403) { swipesLocked.value = true; null } else (e as? HttpError)?.message ?: getString(R.string.sound_no_connection)
+        }
+    }
+
+    /** This account's topic subscriptions (#617), as the server last sent them; null from a server without them. */
+    internal val subs by lazy { MutableStateFlow(Subs.of(prefs.getString("subs", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() })) }
+
+    /** `GET /api/v1/subscriptions`; null from a server without the route. Call on [io]. */
+    internal fun loadSubs(api: Api = api()): SubsList? = try {
+        SubsList.from(org.json.JSONObject(api.get("/api/v1/subscriptions")))
+    } catch (e: HttpError) { if (e.code == 404) null else throw e }
+
+    /**
+     * Sends only the fields in [body]; the reply is the new set. The server then sends every device of this
+     * account its settings and a reset, which drops or brings back the topic's cards and tray entries. Call on [io].
+     */
+    internal fun putSubs(body: org.json.JSONObject, api: Api = api()): SubsList =
+        SubsList.from(org.json.JSONObject(api.put("/api/v1/subscriptions", body.toString())))
+
+    /** Subscribes this account to [topic] or not, on every device. Null when the server took it, else why not. Call on [io]. */
+    fun subscribe(topic: String, on: Boolean, api: Api = api()): String? = try {
+        putSubs(topicBody(topic, on), api); null
+    } catch (e: Exception) { (e as? HttpError)?.message ?: getString(R.string.sound_no_connection) }
+
+    /** The `by_id` this phone's marks get on the current server, "" until a `ready` says (#451). */
+    val markId by lazy { MutableStateFlow(prefs.getString("mark_id", "").orEmpty()) }
+
+    /**
+     * Sets this phone's mark on a card, or removes it when [kind] is null (#451). Sent now, not queued: a mark
+     * changes no state, and the person sees at once why one was refused. [done] gets null or the reason, on the main thread.
+     */
+    fun mark(id: String, kind: String?, note: String, link: String, done: (String?) -> Unit) {
+        val (store, api) = synchronized(configLock) { RoomStore(this) to api() }
+        io.execute {
+            val err = try {
+                val path = "/api/v1/notifications/$id/mark"
+                val out = if (kind == null) api.delete(path)
+                else api.post(path, JSONObject().put("mark", kind).put("note", note).put("link", link).toString())
+                store.apply(listOf(Notif.fromJson(JSONObject(out))), 0, quiet = true) // the card shows it now, the stream's copy changes nothing
+                null
+            } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
+                (e as? HttpError)?.message ?: getString(R.string.mark_no_connection)
+            }
+            android.os.Handler(mainLooper).post { done(err) }
+        }
+    }
+
+    /** Keeps a server `settings` message. The sync client calls it through [RoomStore.settings], so an old server's message is dropped. */
     fun saveSettings(o: org.json.JSONObject) {
         if (o.has("sound")) serverSound(o.optString("sound"))
         if (o.has("keep_cleared_days")) { // the server's keep for cleared rows (#261): drop what it deleted
@@ -135,6 +223,15 @@ class App : Application() {
             prefs.edit().putString("keep", keep.toString()).apply()
             io.execute { pruneCleared() }
         }
+        if (o.has("swipe_start") || o.has("swipe_end")) { // the buttons a swipe shows (#161); an older server sends neither
+            val w = Swipes.from(o, Swipes.parse(prefs.getString("swipes", null)))
+            prefs.edit().putString("swipes", w.json()).apply()
+            swipes.value = w
+        }
+        // Every settings message is the whole view, so no subscriptions object means a server without them (#617).
+        val sub = o.optJSONObject("subscriptions")
+        prefs.edit().apply { if (sub == null) remove("subs") else putString("subs", sub.toString()) }.apply()
+        subs.value = Subs.of(sub)
         val s = Snooze.from(o) ?: return
         prefs.edit().putString("snooze", s.json()).apply()
         snooze.value = s
@@ -150,8 +247,11 @@ class App : Application() {
         val topics = k.optJSONObject("topics") ?: org.json.JSONObject()
         val own = topics.keys().asSequence().toList()
         val dao = db.dao()
-        dao.prune(before(k.optInt("days", KEEP_DAYS)), own)
-        own.forEach { dao.pruneTopic(it, before(topics.optInt(it, KEEP_DAYS))) }
+        if (dropCleared) dao.dropCleared() else {
+            dao.prune(before(k.optInt("days", KEEP_DAYS)), own)
+            own.forEach { dao.pruneTopic(it, before(topics.optInt(it, KEEP_DAYS))) }
+        }
+        dao.pruneAnswers()
     }
 
     val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
@@ -163,6 +263,9 @@ class App : Application() {
 
     /** Bumped when the stream sends the device list again, so Settings reads it fresh (#345). */
     val devicesChanged = MutableStateFlow(0)
+
+    /** Bumped on a reset and when an action's answer is for a topic this phone does not keep, so a topic read without subscribing reloads (#624). */
+    val outside = MutableStateFlow(0)
 
     /** Saves the server and token from Settings or a scanned link. Call on [io]. */
     fun saveServer(newUrl: String, newToken: String) {
@@ -178,8 +281,12 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
+                swipes.value = Swipes()
+                swipesLocked.value = false // another token may change them
+                markId.value = ""
+                subs.value = null // the new token's own set arrives with its settings message
                 tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
                 token = newToken
@@ -215,6 +322,20 @@ class App : Application() {
     fun act(id: String, action: String, body: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) =
         actAll(listOf(id), action, body, server, via, done)
 
+    /** One action on several rows from the inbox, such as a stack's Clear (#360): the dismisses go out as one clear call. */
+    fun act(ids: List<String>, action: String, via: String = VIA_APP) = actAll(ids, action, "{}", null, via) {}
+
+    /** Undo of a Clear (#425): rows come back as they were, so a snoozed one is snoozed again until its old time. */
+    fun undoClear(rows: List<Notif>) {
+        val now = System.currentTimeMillis()
+        val (snoozed, rest) = rows.partition { it.state == Notif.SNOOZED && (it.snoozeUntil ?: 0) > now }
+        if (rest.isNotEmpty()) act(rest.map { it.id }, "reopen")
+        snoozed.forEach {
+            val body = JSONObject().put("until", java.time.Instant.ofEpochMilli(it.snoozeUntil!!).toString()).toString()
+            act(it.id, "reopen", body) // #473: one change, never active in between. No follow-up snooze (#508): it could undo another device's ack
+        }
+    }
+
     /**
      * Rows swiped out of the shade (#265). A swipe, a stack swipe or Clear all only hides them on this
      * phone; clearing happens in the app, the web or the API. A new alert for one shows it again.
@@ -223,9 +344,25 @@ class App : Application() {
         get() = prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
 
-    /** [act] for several rows at once, saved in one transaction; queued dismisses go out as one clear call. */
-    fun actAll(ids: List<String>, action: String, rawBody: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) {
-        val body = JSONObject(rawBody).put("via", via).toString()
+    /** The app is on screen (#598): only then may a change move a card. */
+    @Volatile var front = false
+
+    /** Rows changed live while the app was in front, by id (#598). The inbox moves only these, and only while fresh. */
+    val moved = java.util.concurrent.ConcurrentHashMap<String, Moved>()
+
+    fun moving(rows: List<Pair<String, Moved>>) {
+        if (!front) return
+        val now = android.os.SystemClock.uptimeMillis()
+        moved.values.removeIf { now - it.at > FRESH_MS }
+        rows.forEach { (id, m) -> moved[id] = m.copy(at = now) }
+    }
+
+    private fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
+        val json = JSONObject(rawBody)
+        val until = if (action == "snooze" || action == "reopen") snoozeEnd(json) else null
+        // #508: a snooze sent late (offline) ends when this phone and its Undo say; see snoozeWire
+        if (action == "snooze" && until != null) json.put(ENDS, until)
+        val body = json.put("via", via).toString()
         val gen = configGen // read now, not when the save runs
         acts.execute {
             try {
@@ -233,7 +370,7 @@ class App : Application() {
                     "dismiss" -> Notif.DISMISSED
                     "snooze" -> Notif.SNOOZED
                     "ack", "reply" -> Notif.ACKNOWLEDGED
-                    "reopen" -> Notif.ACTIVE
+                    "reopen" -> if (until != null) Notif.SNOOZED else Notif.ACTIVE
                     else -> null
                 }
                 synchronized(configLock) {
@@ -243,8 +380,10 @@ class App : Application() {
                     val saved = db.runInTransaction<List<String>> {
                         // A stack swipe may also fire each row's own delete intent: those rows are cleared already.
                         ids.filterNot { action == "dismiss" && dao.get(it)?.state == Notif.DISMISSED }.onEach { id ->
+                            if (local != null) moving(listOf(id to Moved(0, false, local, null))) // before Room shows it (#598)
                             dao.addPending(Pending(notifId = id, action = action, body = body))
-                            if (local != null) dao.setState(id, local)
+                            if (until != null && local == Notif.SNOOZED) dao.snooze(id, until, action == "reopen")
+                            else if (local != null) dao.setState(id, local)
                         }
                     }
                     if (local == Notif.DISMISSED || local == Notif.SNOOZED) saved.forEach { tray.apply(TrayStep.Cancel(it)) }
@@ -279,6 +418,7 @@ class App : Application() {
         // How an action was made, sent as "via" (docs/SPEC.md).
         const val VIA_APP = "app"
         const val VIA_TRAY_BUTTON = "tray_button"
+        const val VIA_APP_BULK = "app_bulk"
         /** The most days of cleared history this phone keeps, whatever the server keeps. */
         const val KEEP_DAYS = 7
     }
@@ -294,9 +434,20 @@ class RoomStore(private val app: App) : Store {
 
     override fun lastSeq() = dao.lastSeq() ?: 0
 
-    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean) = ifMine {
+    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
-        val kept = dao.applyAll(notifs, seq)
+        // A row fetched outside the stream (seq 0, such as a queued action's answer) is not filtered by the server:
+        // one from a topic unsubscribed meanwhile must not come back after the reset dropped it (#617).
+        val subs = app.subs.value
+        val (keep, out) = if (seq == 0L && subs?.filtered == true) notifs.partition { subs.subscribed(it.topic) } else notifs.toList() to emptyList<Notif>()
+        if (out.isNotEmpty()) app.outside.value++
+        val saved = dao.applyAll(keep, seq, answer)
+        // #500: a live repeat Room dropped (our own mark's answer got in first) still rings the newer row, if that one shows unacked.
+        // Only when the newer row differs by marks alone (#504): after a Clear and Undo it is a new state, and an Undo stays quiet.
+        // And never when the repeat is older than this phone's own state change: when it made every change the rows can match (#550).
+        val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } && n.seq >= (dao.answerOf(n.id) ?: 0) }.mapNotNull { n ->
+            dao.get(n.id)?.takeIf { it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt, silenced = n.silenced) == n }
+        }
         val muted = app.muted
         val waiting = waiting()
         val acting = dao.pending().filter { it.action == "reopen" }.map { it.notifId }.toSet() // our own reopen's event may beat its answer here
@@ -313,15 +464,21 @@ class RoomStore(private val app: App) : Store {
         app.pruneCleared()
     }
 
+    override fun live(notifs: Collection<Notif>, arrive: Boolean) = ifMine { app.moving(notifs.map { it.id to Moved(0, arrive, it.state, it.stateBy) }) }
+
     override fun replaceAll(open: List<Notif>, seq: Long, epoch: String) = ifMine {
         val waiting = waiting()
         val sameDb = epoch.isEmpty() || app.epoch.isEmpty() || epoch == app.epoch
         app.tray.reconcile(dao.replaceAll(open, seq, sameDb).filter { it.id !in waiting }, app.muted)
         if (epoch.isNotEmpty()) app.epoch = epoch
+        app.outside.value++
     }
 
     override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here
     override fun saveEpoch(epoch: String) = ifMine { app.epoch = epoch }
+    /** A settings message, kept only while this is still the server in Settings: one already in hand at a switch would undo the reset (#568). */
+    fun settings(o: org.json.JSONObject) = ifMine { app.saveSettings(o) }
+    override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { app.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
     /**
@@ -330,13 +487,22 @@ class RoomStore(private val app: App) : Store {
      */
     /** Says it plainly, whether the tap came from the app or the tray (#330). */
     override fun replyOutcome(p: Pending, outcome: String) = ifMine {
+        dao.told(p.key) // before the message: a restart after it may cost the message, never repeat it
         val text = when (outcome) {
             "confirm" -> R.string.reply_sent_to_confirm
             "approve_denied" -> R.string.reply_approve_denied
             "own_request" -> R.string.reply_own_request
+            "bad_request" -> R.string.reply_text_refused
             else -> R.string.reply_changed
         }
-        android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show() }
+        // A refused typed answer (400, 403) is kept for the reply box (#153); a changed question drops it.
+        val typed = runCatching { JSONObject(p.body).optString("text") }.getOrDefault("")
+        if (outcome == "bad_request" || outcome == "approve_denied" || outcome == "own_request") { if (typed.isNotEmpty()) app.drafts[p.notifId] = typed }
+        else app.drafts.remove(p.notifId)
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            if (outcome == "conflict") app.changed[p.notifId] = (app.changed[p.notifId] ?: 0) + 1 // Compose state, so on the main thread
+            android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun removePending(p: Pending) = ifMine {

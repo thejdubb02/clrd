@@ -32,18 +32,20 @@ on:
       - ".github/workflows/integrations.yml"
   workflow_dispatch:
 
-# A new push cancels the older run on the same branch or pull request, so
-# main runs only its newest commit (#379). Publishing lives in fdroid.yml.
+# A new push cancels the older run on the same branch or pull request. On
+# main each commit is its own group, so no run there is ever cancelled: a
+# rerun of an older commit cannot cancel the newest (#379, #402).
+# Publishing lives in fdroid.yml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
   guides:
-    runs-on: [self-hosted, cezar1]
+    runs-on: ubicloud-standard-2
     timeout-minutes: 30
-    # This job's own container label. cezar1 runs two jobs at once, so clean
-    # up must never touch the other job's tool containers (#190, #192).
+    # This job's own container label, so clean up never touches another job's
+    # tool containers on a shared machine (#190, #192).
     env:
       RUN_ID: clrd-it-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -51,7 +53,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: false
       - name: build
         run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
       # Pulled up front so a cold pull does not eat a case's 5 minute limit.

@@ -64,6 +64,15 @@ export class Client {
     return this.#req("POST", `/api/v1/notifications/${e(id)}/snooze`, { for: duration });
   }
 
+  /** Your mark on a notification, "seen" or "actioned". Everyone who reads the topic sees it; it clears nothing. */
+  mark(id, mark, { note, link } = {}) {
+    return this.#req("POST", `/api/v1/notifications/${e(id)}/mark`, { mark, note, link });
+  }
+
+  unmark(id) {
+    return this.#req("DELETE", `/api/v1/notifications/${e(id)}/mark`);
+  }
+
   get(id) {
     return this.#req("GET", `/api/v1/notifications/${e(id)}`);
   }
@@ -90,5 +99,7 @@ export const resolve = (...a) => c().resolve(...a);
 export const ack = (...a) => c().ack(...a);
 export const dismiss = (...a) => c().dismiss(...a);
 export const snooze = (...a) => c().snooze(...a);
+export const mark = (...a) => c().mark(...a);
+export const unmark = (...a) => c().unmark(...a);
 export const get = (...a) => c().get(...a);
 export const list = (...a) => c().list(...a);

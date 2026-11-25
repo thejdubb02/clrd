@@ -90,3 +90,16 @@ func TestPreviewsOn(t *testing.T) {
 		t.Error("default ignored")
 	}
 }
+
+func TestFormatCards(t *testing.T) {
+	f := []FormatFinding{{Rule: "no_title", Count: 1}}
+	s := Snapshot{Format: []FormatTopic{
+		{Topic: "a", SenderID: "1", Findings: f},
+		{Topic: "b", SenderID: "1", Findings: f, CanFix: true},
+		{Topic: "a", SenderID: "2", Findings: append(f, FormatFinding{Rule: "long_body"}), CanFix: true},
+	}}
+	c := s.FormatCards()
+	if len(c) != 2 || c[0].Topic != "a" || len(c[0].Groups) != 2 || c[0].Findings != 3 || !c[0].CanFix || c[1].Topic != "b" || c[1].Findings != 1 {
+		t.Errorf("cards: %+v", c)
+	}
+}

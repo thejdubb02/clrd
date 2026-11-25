@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -74,6 +75,10 @@ func TestWebOnRealServer(t *testing.T) {
 	}
 	if _, body := get("/app/cleared"); !strings.Contains(body, "disk full") {
 		t.Fatal("cleared misses the dismissed notification")
+	}
+	// Stats (#120): the server's numbers, with the sender shown by name.
+	if code, body := get("/app/stats?days=1"); code != 200 || !strings.Contains(body, "data-total>2</strong>") || !strings.Contains(body, ">phone</td>") {
+		t.Fatalf("stats: %d, want both notifications counted and sent by phone", code)
 	}
 }
 
@@ -155,6 +160,108 @@ func TestSignInLink(t *testing.T) {
 		if code != 401 || u.RequestURI() != "/app?error=token" || !strings.Contains(body, `role="alert"`) {
 			t.Errorf("auth=%q: %d at %s, want the sign-in error without the token in the URL", auth, code, u.RequestURI())
 		}
+	}
+}
+
+// TestDeviceActionsShown checks that http and broadcast actions reach the card
+// through the real server as text, without headers or body (#450).
+func TestDeviceActionsShown(t *testing.T) {
+	_, ts, raw := realServer(t)
+	for _, r := range [][3]string{
+		{"PUT", "/api/v1/topics/ops", `{"device_actions":true}`},
+		{"POST", "/api/v1/notifications", `{"topic":"ops","message":"m","actions":[{"label":"Off","http":{"method":"PUT","url":"https://lamp.example.com/off","headers":{"X-Key":"hidden-head"},"body":"hidden-body"}},{"label":"Ping","broadcast":{"intent":"io.example.PING"}}]}`},
+	} {
+		req, _ := http.NewRequest(r[0], ts.URL+r[1], strings.NewReader(r[2]))
+		req.Header.Set("Authorization", "Bearer "+raw)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("%s %s: %d", r[0], r[1], res.StatusCode)
+		}
+	}
+	_, body, _ := fetch(t, browser(), ts.URL+"/app?auth="+base64.RawURLEncoding.EncodeToString([]byte("Bearer "+raw)))
+	for _, want := range []string{"Off</span> runs on a phone: PUT https://lamp.example.com/off<", "Ping</span> runs on a phone: Android broadcast io.example.PING<"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page misses %q", want)
+		}
+	}
+	if strings.Contains(body, "hidden-") {
+		t.Error("page shows the request's headers or body")
+	}
+}
+
+// A signed-in browser sets, changes and removes its own mark with the card's
+// plain form (#451). Its session token is a child, so its marks are the top
+// token's: the page must know that to offer Remove, and only for its own.
+func TestMarkForm(t *testing.T) {
+	s, ts, raw := realServer(t)
+	_, stew, err := s.CreateToken(context.Background(), "stew", "", []string{"admin"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := func(tok, method, path, body string) {
+		t.Helper()
+		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("%s %s: %d", method, path, res.StatusCode)
+		}
+	}
+	api(raw, "POST", "/api/v1/notifications", `{"topic":"ops","message":"disk full"}`)
+	c := browser()
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	_, page = submit(t, c, ts.URL, page, raw, "")
+	m := regexp.MustCompile(`data-id="([^"]+)"`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatal("no card")
+	}
+	api(stew, "POST", "/api/v1/notifications/"+m[1]+"/mark", `{"mark":"seen"}`)
+	post := func(c *http.Client, v url.Values) (int, string) {
+		t.Helper()
+		v.Set("id", m[1])
+		req, _ := http.NewRequest("POST", ts.URL+"/app/mark", strings.NewReader(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", ts.URL)
+		res, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(b)
+	}
+	if code, body := post(c, url.Values{"mark": {"actioned"}, "link": {"javascript:alert(1)"}}); code != 400 || !strings.Contains(body, "Not marked: link") {
+		t.Errorf("a script link: %d %q, want 400 with the reason", code, body)
+	}
+	if code, page := post(c, url.Values{"mark": {"actioned"}, "note": {" filed #1 "}, "link": {"https://x.example/1"}, "next": {"/app"}}); code != 200 ||
+		!strings.Contains(page, `data-mark="actioned">phone actioned: filed #1 <a`) || !strings.Contains(page, `data-mark="seen">stew seen<`) ||
+		!strings.Contains(page, `Marked actioned`) || !strings.Contains(page, `name="note" maxlength="200" placeholder="Note (optional)" value="filed #1"`) ||
+		strings.Count(page, "Remove my mark") != 1 {
+		t.Errorf("after marking: %d, page has no own mark with Remove", code)
+	}
+	other := browser()
+	_, page, _ = fetch(t, other, ts.URL+"/app")
+	_, page = submit(t, other, ts.URL, page, stew, "")
+	if !strings.Contains(page, "phone actioned: filed #1") || !strings.Contains(page, "Marked seen") || strings.Count(page, "Remove my mark") != 1 || strings.Contains(page, `value="filed #1"`) {
+		t.Error("another reader sees the mark but may only remove its own")
+	}
+	if code, _ := post(c, url.Values{"note": {"x"}}); code != 400 {
+		t.Errorf("a post with no mark field: %d, want 400 and the mark kept", code)
+	}
+	if code, _ := post(c, url.Values{"mark": {""}, "link": {"javascript:x"}, "note": {strings.Repeat("n", 999)}}); code != 200 {
+		t.Errorf("Remove with a bad draft link and note: %d, want it removed", code)
+	}
+	n, _ := s.Get(context.Background(), mustTok(t, s, raw), m[1])
+	if len(n.Marks) != 1 || n.Marks[0].By != "stew" {
+		t.Errorf("after Remove: %+v, want only stew's mark", n.Marks)
 	}
 }
 
@@ -365,21 +472,45 @@ func TestDeviceFamily(t *testing.T) {
 // TestFormatCheckSettings: Settings lists a topic with format problems, the
 // count per rule and its fix prompt, and shows nothing while there are none (#308).
 func TestFormatCheckSettings(t *testing.T) {
-	_, ts, raw := realServer(t)
+	s, ts, raw := realServer(t)
 	c := browser()
 	_, page, _ := fetch(t, c, ts.URL+"/app")
 	if code, _ := submit(t, c, ts.URL, page, raw, "laptop"); code != 200 {
 		t.Fatalf("sign in: %d", code)
 	}
+	defer func() { // #391: a group with no known sender keeps its label and prompt
+		db, err := sql.Open("sqlite", s.DBPath())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if _, err := db.Exec(`UPDATE notifications SET sender = '' WHERE message = 'build failed'`); err != nil {
+			t.Fatal(err)
+		}
+		_, body, _ := fetch(t, c, ts.URL+"/app/settings")
+		if !strings.Contains(body, "Unknown sender</span>") || strings.Count(body, "data-format-prompt") != 5 { // ci and the three topics below
+			t.Errorf("unknown sender group: want its label and a prompt per group")
+		}
+	}()
 	if code, body, _ := fetch(t, c, ts.URL+"/app/settings"); code != 200 || !strings.Contains(body, "Linked devices") || strings.Contains(body, "data-format-check") {
 		t.Errorf("settings with no messages: %d, want the page without the format section", code)
 	}
 	publish(t, ts, raw, "ci", "build failed")
 	publish(t, ts, raw, "ci", "build passed")
 	_, body, _ := fetch(t, c, ts.URL+"/app/settings")
-	for _, want := range []string{"data-format-check", "ci <span", "2 of the last 2 messages", "No title: 2</span>", `topic &#34;ci&#34;`, "Dismiss for this sender", "Stop checking ci"} {
+	for _, want := range []string{"data-format-check", `data-format-card="ci" open`, "1 finding<", "2 of the last 2 messages", ">No title</span><span class=\"badge\" data-variant=\"outline\">2</span>", `topic &#34;ci&#34;`, "Dismiss for this sender", "Stop checking ci"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings page lacks %q", want)
+		}
+	}
+	// Past three topics every card starts collapsed (#618).
+	for _, topic := range []string{"t1", "t2", "t3"} {
+		publish(t, ts, raw, topic, "x")
+	}
+	_, cards, _ := fetch(t, c, ts.URL+"/app/settings")
+	for _, topic := range []string{"ci", "t1", "t2", "t3"} {
+		if !strings.Contains(cards, `data-format-card="`+topic+`"`) || strings.Contains(cards, `data-format-card="`+topic+`" open`) {
+			t.Errorf("four topics: want card %s shown and collapsed", topic)
 		}
 	}
 }
@@ -421,5 +552,62 @@ func TestHidePublicPages(t *testing.T) {
 		if path == "/robots.txt" && !strings.Contains(string(body), "Disallow: /\n") {
 			t.Errorf("robots.txt: %q", body)
 		}
+	}
+}
+
+// Topic subscriptions (#617) through the real store: a signed-in browser
+// unsubscribes from a topic, the inbox drops it, its own page still shows it
+// with the banner, Settings lists it switched off, and Subscribe brings it back.
+func TestSubscriptionsOnRealServer(t *testing.T) {
+	_, ts, raw := realServer(t)
+	c := browser()
+	publish(t, ts, raw, "home", "disk full")
+	publish(t, ts, raw, "work", "deploy done")
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	if code, _ := submit(t, c, ts.URL, page, raw, "laptop"); code != 200 {
+		t.Fatalf("sign in: %d", code)
+	}
+	post := func(v url.Values) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", ts.URL+"/app/subscriptions", strings.NewReader(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", ts.URL)
+		res, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("post %v: %d %s", v, res.StatusCode, b)
+		}
+	}
+	get := func(path string) string {
+		t.Helper()
+		_, body, _ := fetch(t, c, ts.URL+path)
+		return body
+	}
+	post(url.Values{"topic": {"work"}, "subscribe": {"0"}, "next": {"/app"}})
+	if body := get("/app"); strings.Contains(body, "deploy done") || !strings.Contains(body, "disk full") {
+		t.Error("inbox: want home only after unsubscribing from work")
+	}
+	if body := get("/app?topic=work"); !strings.Contains(body, "deploy done") || !strings.Contains(body, "data-unsub-banner") {
+		t.Error("work page: want the card and the not-subscribed banner")
+	}
+	if body := get("/app?topic=home"); strings.Contains(body, "data-unsub-banner") {
+		t.Error("home page: banner on a subscribed topic")
+	}
+	if body := get("/app/settings"); !strings.Contains(body, `value="0:work"`) || !strings.Contains(body, `value="1:home"`) {
+		t.Error("settings: want work off and home on")
+	}
+	// A question marks its topic (#623): its card warns before Unsubscribe.
+	publish(t, ts, raw, "deploys", `ship?","actions":[{"label":"Yes","reply":"yes"}],"title":"Ship`)
+	if body := get("/app"); !strings.Contains(body, `data-unsub="deploys" data-approvals`) || strings.Contains(body, `data-unsub="home" data-approvals`) {
+		t.Error("inbox: want the warning on deploys only")
+	}
+	// The Settings list sends only what changed: home stays on.
+	post(url.Values{"was": {"1:home", "0:work"}, "on": {"home", "work"}})
+	if body := get("/app"); !strings.Contains(body, "deploy done") {
+		t.Error("inbox: work missing after subscribing again")
 	}
 }

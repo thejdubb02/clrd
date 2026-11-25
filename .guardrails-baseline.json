@@ -1,13 +1,63 @@
 {
  "jscpd": [
   [
-   ".github/workflows/go.yml",
-   ".github/workflows/sdk.yml",
+   "android/app/src/test/java/me/itsjustin/clrd/CardRowTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/RevealRowTest.kt",
+   1
+  ],
+  [
+   "android/app/src/test/java/me/itsjustin/clrd/DeviceActionTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/ReplyOutcomeTest.kt",
+   1
+  ],
+  [
+   "android/app/src/test/java/me/itsjustin/clrd/QuietAlarmRulesTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/SettingsSearchTest.kt",
+   1
+  ],
+  [
+   "android/app/src/test/java/me/itsjustin/clrd/ReplyOutcomeTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/StackTest.kt",
+   1
+  ],
+  [
+   "android/app/src/test/java/me/itsjustin/clrd/RulesSummaryTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/SnoozeSwitchTest.kt",
+   1
+  ],
+  [
+   "android/app/src/test/java/me/itsjustin/clrd/SettingsSearchTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/SubsTest.kt",
+   2
+  ],
+  [
+   "android/app/src/test/java/me/itsjustin/clrd/SoundSyncTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/StackTest.kt",
+   1
+  ],
+  [
+   "android/app/src/test/java/me/itsjustin/clrd/SoundSyncTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/SwipesTest.kt",
    1
   ],
   [
    "android/app/src/test/java/me/itsjustin/clrd/StackTest.kt",
    "android/app/src/test/java/me/itsjustin/clrd/TrayRaceTest.kt",
+   1
+  ],
+  [
+   "android/app/src/test/java/me/itsjustin/clrd/SubsTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/SwipesTest.kt",
+   1
+  ],
+  [
+   "desktop/app/tests/app.rs",
+   "desktop/app/tests/app.rs",
+   1
+  ],
+  [
+   "desktop/core/tests/notify.rs",
+   "desktop/core/tests/notify.rs",
    1
   ],
   [
@@ -18,6 +68,21 @@
   [
    "server/files_test.go",
    "server/server_test.go",
+   1
+  ],
+  [
+   "server/gotifyimport.go",
+   "server/ntfyimport.go",
+   1
+  ],
+  [
+   "server/live_test.go",
+   "server/ntfy_test.go",
+   1
+  ],
+  [
+   "server/marks_test.go",
+   "server/marks_test.go",
    1
   ],
   [

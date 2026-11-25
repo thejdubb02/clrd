@@ -59,6 +59,10 @@ type Settings struct {
 	// ("30m", "4h"). SnoozeDefault is one of them: a plain tap uses it.
 	SnoozeIntervals []string `json:"snooze_intervals"`
 	SnoozeDefault   string   `json:"snooze_default"`
+	// SwipeStart and SwipeEnd are the buttons a swipe toward the start or
+	// end of the line reveals (#161), first nearest the screen edge.
+	SwipeStart []string `json:"swipe_start"`
+	SwipeEnd   []string `json:"swipe_end"`
 	// KeepClearedDays is how long a dismissed or resolved notification is
 	// kept, counted from when it was cleared; 0 keeps it forever. Stored
 	// only once set; until then CLRD_RETENTION decides, and reads show
@@ -66,9 +70,14 @@ type Settings struct {
 	KeepClearedDays *int `json:"keep_cleared_days"`
 	// TopicKeepClearedDays overrides KeepClearedDays for one topic (#262).
 	TopicKeepClearedDays map[string]int `json:"topic_keep_cleared_days"`
+	// ColorRules color matching cards, first match wins (#165, colors.go).
+	ColorRules []ColorRule `json:"color_rules"`
 	// Sound is the asking device's own sound (#282), filled on reads and
 	// set with PUT /api/v1/devices/{id}.
 	Sound string `json:"sound,omitempty"`
+	// Subscriptions is the asking device's owner's topic set (#617, subs.go),
+	// filled on reads only.
+	Subscriptions *SubSettings `json:"subscriptions,omitempty"`
 }
 
 // maxKeepDays is the longest keep_cleared_days a number can ask for (100 years).
@@ -157,9 +166,46 @@ func checkSnooze(list []string, def string) error {
 	return nil
 }
 
+// swipeActions are the buttons a swipe can reveal.
+var swipeActions = []string{"clear", "snooze", "ack", "resolve"}
+
+// swipeList reads one swipe key from a PUT body: an array of 0 to 3 names
+// from swipeActions. Repeats across both sides are checked by checkSwipe.
+func swipeList(key string, raw json.RawMessage) ([]string, error) {
+	bad := errf(400, "bad_request", "%s must be a list of 0 to 3 of: %s", key, strings.Join(swipeActions, ", "))
+	var list []string
+	if string(raw) == "null" || json.Unmarshal(raw, &list) != nil || len(list) > 3 {
+		return nil, bad
+	}
+	for _, v := range list {
+		if !slices.Contains(swipeActions, v) {
+			return nil, errf(400, "bad_request", "%s: unknown action %q, use one of: %s", key, v, strings.Join(swipeActions, ", "))
+		}
+	}
+	return list, nil
+}
+
+// checkSwipe refuses a button listed twice across both sides.
+func checkSwipe(start, end []string) error {
+	seen := map[string]string{}
+	for _, side := range []struct {
+		key  string
+		list []string
+	}{{"swipe_start", start}, {"swipe_end", end}} {
+		for _, v := range side.list {
+			if k, ok := seen[v]; ok {
+				return errf(400, "bad_request", "%s: %q is already in %s; each action may appear once across swipe_start and swipe_end", side.key, v, k)
+			}
+			seen[v] = side.key
+		}
+	}
+	return nil
+}
+
 func defaultSettings() Settings {
 	return Settings{RenderFormatting: true, Autolink: true, Favicons: true, TopicPreviews: map[string]bool{},
-		TopicKeepClearedDays: map[string]int{}, SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h"}
+		TopicKeepClearedDays: map[string]int{}, SnoozeIntervals: []string{"1h", "4h"}, SnoozeDefault: "1h",
+		SwipeStart: []string{"clear", "snooze"}, SwipeEnd: []string{"ack"}, ColorRules: []ColorRule{}}
 }
 
 // SettingsPatch is a PUT body: only the fields given change. A topic
@@ -172,9 +218,12 @@ type SettingsPatch struct {
 	TopicPreviews    map[string]*bool `json:"topic_previews"`
 	SnoozeIntervals  []string         `json:"snooze_intervals"`
 	SnoozeDefault    *string          `json:"snooze_default"`
+	SwipeStart       json.RawMessage  `json:"swipe_start"` // raw so null is refused, not read as "not given"
+	SwipeEnd         json.RawMessage  `json:"swipe_end"`
 	KeepClearedDays  *int             `json:"keep_cleared_days"`
 	TopicKeep        map[string]*int  `json:"topic_keep_cleared_days"`
-	Sound            *string          `json:"sound"` // this device's own sound
+	ColorRules       json.RawMessage  `json:"color_rules"` // replaces the whole list; raw so null is refused
+	Sound            *string          `json:"sound"`       // this device's own sound
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -197,12 +246,16 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 			delete(st.TopicKeepClearedDays, t)
 		}
 	}
+	st.ColorRules = slices.DeleteFunc(st.ColorRules, func(r ColorRule) bool { return r.Topic != "" && !tok.Allows(r.Topic) })
 	if st.KeepClearedDays == nil { // filled on reads only, so a save never pins CLRD_RETENTION
 		d := int((s.opt.Retention + 24*time.Hour - 1) / (24 * time.Hour))
 		st.KeepClearedDays = &d
 	}
 	sounds, err := s.deviceSounds(ctx, s.db)
 	st.Sound = soundOf(sounds, tok.ID)
+	if err == nil {
+		st.Subscriptions, err = s.subSettings(ctx, tok)
+	}
 	return st, err
 }
 
@@ -227,6 +280,9 @@ func (s *Server) loadSettings(ctx context.Context, q interface {
 	if st.TopicKeepClearedDays == nil {
 		st.TopicKeepClearedDays = map[string]int{}
 	}
+	if st.ColorRules == nil {
+		st.ColorRules = []ColorRule{}
+	}
 	return st, nil
 }
 
@@ -238,9 +294,25 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		return Settings{}, err
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
-		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil
+		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil ||
+		p.SwipeStart != nil || p.SwipeEnd != nil || p.ColorRules != nil
 	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews and topic_keep_cleared_days")
+	}
+	var swipeStart, swipeEnd []string
+	for _, f := range []struct {
+		key string
+		raw json.RawMessage
+		to  *[]string
+	}{{"swipe_start", p.SwipeStart, &swipeStart}, {"swipe_end", p.SwipeEnd, &swipeEnd}} {
+		if f.raw == nil {
+			continue
+		}
+		list, err := swipeList(f.key, f.raw)
+		if err != nil {
+			return Settings{}, err
+		}
+		*f.to = list
 	}
 	// A keep deletes data, so it needs admin (on the topic, for an override).
 	checkKeep := func(topic string, v *int) error {
@@ -271,6 +343,13 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 		if !tok.Allows(t) {
 			return Settings{}, errf(403, "forbidden", "token may not use topic %q", t)
+		}
+	}
+	var colorRules []ColorRule
+	if p.ColorRules != nil {
+		var err error
+		if colorRules, err = colorRuleList(p.ColorRules); err != nil {
+			return Settings{}, err
 		}
 	}
 	if p.Sound != nil && !slices.Contains(soundNames, *p.Sound) { // checked now, set once the rest is saved
@@ -312,8 +391,20 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		if p.SnoozeIntervals != nil || p.SnoozeDefault != nil {
 			err = checkSnooze(st.SnoozeIntervals, st.SnoozeDefault)
 		}
+		if p.SwipeStart != nil {
+			st.SwipeStart = swipeStart
+		}
+		if p.SwipeEnd != nil {
+			st.SwipeEnd = swipeEnd
+		}
+		if err == nil && (p.SwipeStart != nil || p.SwipeEnd != nil) {
+			err = checkSwipe(st.SwipeStart, st.SwipeEnd) // against the pair the PUT leaves
+		}
 		if p.KeepClearedDays != nil {
 			st.KeepClearedDays = p.KeepClearedDays
+		}
+		if p.ColorRules != nil {
+			st.ColorRules = colorRules
 		}
 		for t, v := range p.TopicKeep {
 			if v == nil {

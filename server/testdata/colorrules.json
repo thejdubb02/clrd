@@ -1,0 +1,20 @@
+{
+  "_comment": "Color rules (#165, docs/SPEC.md Color rules). Every client runs these cases: rules, then each notification and the look it must get. Empty color and style mean no color.",
+  "rules": [
+    {"topic": "gatus", "priority_min": 5, "color": "#DC2626", "style": "solid"},
+    {"topic": "gatus", "priority_min": 4, "priority_max": 4, "color": "#EA580C", "style": "tint"},
+    {"tag": "discord", "color": "#7C3AED", "style": "gradient"},
+    {"title": "BACKUP", "color": "#2563EB", "style": "bar"},
+    {"topic": "gatus", "priority_min": 3, "priority_max": 3, "color": "#CA8A04", "style": "bar"}
+  ],
+  "cases": [
+    {"n": {"topic": "gatus", "priority": 5, "tags": [], "title": "api down", "color": ""}, "color": "#DC2626", "style": "solid"},
+    {"n": {"topic": "gatus", "priority": 4, "tags": [], "title": "slow", "color": ""}, "color": "#EA580C", "style": "tint"},
+    {"n": {"topic": "gatus", "priority": 3, "tags": [], "title": "slow", "color": ""}, "color": "#CA8A04", "style": "bar"},
+    {"n": {"topic": "gatus", "priority": 2, "tags": [], "title": "fine", "color": ""}, "color": "", "style": ""},
+    {"n": {"topic": "chat", "priority": 3, "tags": ["x", "discord"], "title": "hi", "color": "#00FF00"}, "color": "#7C3AED", "style": "gradient"},
+    {"n": {"topic": "gatus", "priority": 3, "tags": [], "title": "Nightly backup failed", "color": ""}, "color": "#2563EB", "style": "bar"},
+    {"n": {"topic": "infra", "priority": 3, "tags": [], "title": "disk", "color": "#0EA5E9"}, "color": "#0EA5E9", "style": "bar"},
+    {"n": {"topic": "infra", "priority": 3, "tags": [], "title": "disk", "color": ""}, "color": "", "style": ""}
+  ]
+}

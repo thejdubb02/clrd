@@ -1,14 +1,14 @@
 /* clrd tokens on shadcn names, so Basecoat components take the brand.
-   Replaces Basecoat's base.css (zinc palette, .dark class). Dark follows the
-   system setting; there is no toggle. Values: docs/SPEC.md section 10. */
+   Replaces Basecoat's base.css (zinc palette, .dark class). Dark is the .dark class on
+   <html>, set before first paint by static/theme.js (#583). Values: docs/SPEC.md section 10. */
 
-@custom-variant dark (@media (prefers-color-scheme: dark));
+@custom-variant dark (&:where(.dark, .dark *));
 
 @font-face { font-family: "Geist"; src: url("../assets/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Geist Mono"; src: url("../assets/fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --radius: 0.5rem;
   --background: #F5F3EE;          /* paper */
   --foreground: #0F1114;          /* ink */
@@ -51,46 +51,45 @@
   --check-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%235B6470" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
 }
 
-@media (prefers-color-scheme: dark) {
-  /* Paper and ink swap. Accents lift where the light value fails contrast on ink. */
-  :root {
-    --background: #0F1114;
-    --foreground: #F5F3EE;
-    --card: #171A1E;
-    --card-foreground: #F5F3EE;
-    --popover: #1C2025;
-    --popover-foreground: #F5F3EE;
-    --primary: #F5F3EE;
-    --primary-foreground: #0F1114;
-    --secondary: #22262B;
-    --secondary-foreground: #F5F3EE;
-    --muted: #22262B;
-    --muted-foreground: #98A1AC;
-    --accent: #22262B;
-    --accent-foreground: #F5F3EE;
-    --destructive: #F97316;
-    --border: #2C3036;
-    --input: #34393F;
-    --ring: #3DDC97;
-    --clear: #3DDC97;
-    --clear-foreground: #0F1114;
-    --body: #C9CED4;
-    --sidebar: #0F1114;
-    --sidebar-foreground: #F5F3EE;
-    --sidebar-primary: #F5F3EE;
-    --sidebar-primary-foreground: #0F1114;
-    --sidebar-accent: #22262B;
-    --sidebar-accent-foreground: #F5F3EE;
-    --sidebar-border: #2C3036;
-    --sidebar-ring: #3DDC97;
-    --chip-active-bg: #3A1C0F; --chip-active: #FDBA8C;
-    --chip-ack-bg: #24282D;    --chip-ack: #C9CED4;
-    --chip-res-bg: #0F3326;    --chip-res: #7FE3B6;
-    --chip-snz-bg: #382A10;    --chip-snz: #F2C66D;
-    --chevron-down-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
-    --chevron-down-icon-50: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
-    --check-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
-  }
+/* Paper and ink swap. Accents lift where the light value fails contrast on ink. */
+:root.dark {
+  color-scheme: dark;
+  --background: #0F1114;
+  --foreground: #F5F3EE;
+  --card: #171A1E;
+  --card-foreground: #F5F3EE;
+  --popover: #1C2025;
+  --popover-foreground: #F5F3EE;
+  --primary: #F5F3EE;
+  --primary-foreground: #0F1114;
+  --secondary: #22262B;
+  --secondary-foreground: #F5F3EE;
+  --muted: #22262B;
+  --muted-foreground: #98A1AC;
+  --accent: #22262B;
+  --accent-foreground: #F5F3EE;
+  --destructive: #F97316;
+  --border: #2C3036;
+  --input: #34393F;
+  --ring: #3DDC97;
+  --clear: #3DDC97;
+  --clear-foreground: #0F1114;
+  --body: #C9CED4;
+  --sidebar: #0F1114;
+  --sidebar-foreground: #F5F3EE;
+  --sidebar-primary: #F5F3EE;
+  --sidebar-primary-foreground: #0F1114;
+  --sidebar-accent: #22262B;
+  --sidebar-accent-foreground: #F5F3EE;
+  --sidebar-border: #2C3036;
+  --sidebar-ring: #3DDC97;
+  --chip-active-bg: #3A1C0F; --chip-active: #FDBA8C;
+  --chip-ack-bg: #24282D;    --chip-ack: #C9CED4;
+  --chip-res-bg: #0F3326;    --chip-res: #7FE3B6;
+  --chip-snz-bg: #382A10;    --chip-snz: #F2C66D;
+  --chevron-down-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  --chevron-down-icon-50: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  --check-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2398A1AC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
 }
 
 @theme {

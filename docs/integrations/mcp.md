@@ -14,7 +14,7 @@ Tools:
 
 | Tool | Arguments | Does |
 |---|---|---|
-| `send` | `topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?` | Publish. `format` is `markdown` (default) or `text`. `icon` is an http(s) image URL. `attachment` links a file, `{"url":"https://...","name":"report.pdf"}`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`. `repeat` (`"5m"`, 1m to 24h) alerts again on that schedule until someone acts on it, at most `repeat_times` more times (default 10); see [Repeat until acknowledged](../repeat.md). |
+| `send` | `topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?, live?, devices?` | Publish. `format` is `markdown` (default) or `text`. `icon` is an http(s) image URL. `attachment` links a file, `{"url":"https://...","name":"report.pdf"}`. `id` is your stable key (`external_id`). `actions` adds up to 3 answer buttons, `[{"label":"Yes","reply":"yes"}]`; one of them may add `"text": true` to take a typed answer (at most 1000 characters). `repeat` (`"5m"`, 1m to 24h) alerts again on that schedule until someone acts on it, at most `repeat_times` more times (default 10); see [Repeat until acknowledged](../repeat.md). `live` sends only to ntfy streams open now and keeps nothing. `devices` (names or ids from `devices`, at most 20) makes only those devices alert; every other reader lists it silently. |
 | `list` | `topic?, state?` | List, default `open`. |
 | `topics` | none | Topics the token can read, with how many are open in each. |
 | `format_check` | `topic?, by?` | Topics whose newest messages are hard to read (Markdown sent as plain text, unknown `:shortcodes:`, no title, very long, raw JSON), each with a prompt that says how to fix the sender. `by: "sender"` splits each topic by sending token. Advice only. See [Message formatting](../formatting.md#format-check). |
@@ -26,11 +26,13 @@ Tools:
 | `ack` | `id` | Acknowledge by server id. |
 | `resolve` | `id` or `topic + external_id` | Clear it everywhere. |
 | `snooze` | `id, for` | Snooze, e.g. `for: "1h"`. |
-| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped. Default 60 s, max 600 s. |
+| `mark` | `id, mark?, note?, link?` | Mark it `seen` or `actioned` (note and link optional) so everyone on the topic sees you handled it. Clears nothing. No `mark` removes yours. |
+| `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped, and `text` when that button has `"text": true`. Default 60 s, max 600 s. |
 | `devices` | none | Every linked device this token can see: name, kind (token, browser or phone), how it was linked, last seen. Never a secret. |
 | `device_log` | none | The last 200 links, sign-ins and unlinks, newest first. |
 | `unlink` | `id` | Sign out a browser or phone from `devices` at once. Unlinking a phone also signs out the browsers it approved. |
 | `sound` | `id?, sound?` | Notification sounds, one choice per device. No arguments lists the valid names and the default (`default`, the device's own sound). With `id` from `devices` and `sound`, sets that device's sound; an unknown name is refused with the list. `devices` shows each device's current sound. |
+| `subscriptions` | `topics?, new_topics?, for?` | Which topics reach your devices. No arguments lists every topic you can read and whether it is subscribed. `topics: {"chat": false}` unsubscribes chat without clearing anything; `new_topics: false` makes topics that appear later start unsubscribed. A full admin adds `for` (a user id or token id) to set someone else's. A token with no user has no choices to store and is refused. |
 | `request_approve` | `approve, topic?` | Ask the user to let this token answer approval requests (`allowed`, or `ask`). Posts a Confirm prompt on `topic` (default `agents`); the setting changes only when an allowed device taps Confirm. `wait_for_reply` on the returned id gives `confirm` or `reject`. |
 | `dismiss` | `id` | Clear it on every device. `reopen` undoes it. |
 | `reopen` | `id` | Make it active again. |
@@ -44,18 +46,29 @@ Tools:
 | `delete_template` | `topic, name` | Delete a saved template. |
 | `preview_template` | `topic, name, payload, headers?, template?` | Dry run a template over a sample payload: returns the notifications a post would make, publishes nothing. `template` tries an unsaved one. |
 | `hooks` | `topic` | Outgoing webhooks: URLs clrd calls when a notification is dismissed, acknowledged, resolved, snoozed or a button tapped. Admin. |
-| `set_hook` | `topic, name, url, events?, secret?` | Add or replace one. `events` defaults to all; `secret` signs each call. Saving again turns a failing hook back on. Admin. |
+| `set_hook` | `topic, name, url, events?, secret?, body?` | Add or replace one. `events` defaults to all; `secret` signs each call; `body` is an optional template for the POST body. Saving again turns a failing hook back on. Admin. |
 | `delete_hook` | `topic, name` | Delete one. Admin. |
 | `hook_deliveries` | `topic, name` | Its recent calls, with status and error. Admin. |
+| `preview_hook` | `topic, body, event?` | Dry run a body template: returns the JSON it would POST, sends nothing. Without `event`, a sample resolved notification is used. Admin. |
+| `hook_allow` | none | Private networks and extra ports webhooks may reach. Empty by default. Admin. |
+| `set_hook_allow` | `networks, ports` | Let webhooks reach these networks (like `192.168.1.0/24` or one address) and ports besides 80 and 443. A dial passes when the address is public or listed and the port is 80, 443 or listed. Empty lists turn it off. Refused when the operator locked it with `CLRD_HOOK_ALLOW=off`. Admin. |
 | `tokens` | none | API tokens, never their secrets. Admin. |
 | `create_gotify_app` | `name, topic, priority?` | Gotify app key for one topic, for shoutrrr, Watchtower and the gotify CLI; the key is in the result once. It only publishes, only to that topic, only on `POST /message`. Admin. |
 | `create_pushover_app` | `name, topic` | Pushover app key for one topic, for Apprise and scripts; the key is in the result once, with a `user` value clrd never checks. It only publishes, only to that topic, only on `POST /1/messages.json`. Admin. |
 | `create_token` | `name, scopes, topics? or grants?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. It starts denied for approval requests, whoever makes it; raise it from an allowed device or with `request_approve`. Admin. |
 | `revoke_token` | `id` | Revoke a token; its streams close at once. Admin. |
+| `create_agent_invite` | `name, topics, expires_in?` | One single-use invite (15m default, 1m to 1h) that gives another agent its own user and token on those topics; see [Agent invite](agent-invite.md). Admin. |
 | `server_env` | none | Every `CLRD_*` setting in effect, defaults filled in. Read only: those change by setting the variable and restarting. Admin. |
 | `ntfy_anonymous` | none | Whether ntfy routes take requests with no credentials, and on which topics. Admin. |
 | `set_ntfy_anonymous` | `grants` | Topics anyone may read or publish on ntfy routes with no credentials, like ntfy's everyone rules; an empty list turns it off. Admin. |
+| `ntfy_origins` | none | Which other web sites may use the ntfy and Gotify routes from a browser. Empty by default. Admin. |
+| `set_ntfy_origins` | `origins` | Web sites (like `https://ntfy.sh`, or `*` for any) whose pages may publish and subscribe on the ntfy and Gotify routes; an empty list allows only clrd's own pages. Admin. |
 | `ntfy_ignored` | none | ntfy publish options senders used that clrd accepts but ignores, with counts. Admin. |
+| `senders` | none | Every service or token that has published, last heard first: kind, webhook template, User-Agent and address, first and last seen, count per topic. Found on its first message. Admin with no topic limit. |
+| `sender` | `id` | One sender from `senders`, with its recent notifications still stored. Admin with no topic limit. |
+| `set_sender` | `id`, `paused`, `muted`, `priority_min`, `priority_max`, `routes`, `expect`, `alert_topic` | Pause, mute, clamp the priority of, or reroute one sender's publishes (`routes` like `{"up": ["infra", "ops"]}`), or get an urgent alarm when it sends nothing for `expect` (like `"25h"`). Changes only the fields given; logged. Admin with no topic limit. |
+| `sender_changes` | `id` | Every rule change on one sender, newest first, with who made it. Admin with no topic limit. |
+| `undo_sender_change` | `id`, `seq` | Put a sender's rules back as they were before that change. Admin with no topic limit. |
 
 With an admin token an agent can set up every feature from this list; only
 the `CLRD_*` environment settings need a restart, so `server_env` just reads
@@ -78,6 +91,22 @@ wait_for_reply {"id": "<id from send>", "timeout_s": 600}
 
 The first tap wins; a second phone gets told it is already answered. A plain
 ack (no button) has no `answer`, and dismiss means no.
+
+To let the human type an answer, mark one button `"text": true`:
+
+```json
+send {"topic": "agents", "message": "When should I deploy?", "id": "deploy-2",
+      "actions": [{"label": "Now", "reply": "now"}, {"label": "Other", "reply": "other", "text": true}]}
+wait_for_reply {"id": "<id from send>", "timeout_s": 600}
+-> {"reply": "acknowledged", "answer": "other", "text": "after 5pm", "by": "pixel-9", "notification": {...}}
+```
+
+The text is plain, trimmed, 1 to 1000 characters, and follows the same device
+rules as a tap (a denied device cannot answer, an ask device needs a confirm,
+and the sender never answers its own question). The Android app types it in
+a reply box on the card or inline in the tray, and the web inbox in a text box
+on the card. Any other client sends it as `text` on
+`POST /api/v1/notifications/{id}/reply`.
 
 `update` needs `publish` on the topic and works until the notification is
 dismissed or resolved. It refuses a notification with answer buttons

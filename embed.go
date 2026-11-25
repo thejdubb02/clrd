@@ -1,9 +1,18 @@
-// Package clrd holds the files shared by every surface: the docs and the brand
-// assets. They live at the repo root, and go:embed cannot reach above a
-// package directory, so they are embedded here and imported by web.
+//go:build !packed
+
+// Package clrd holds the files shared by every surface: the docs, the brand
+// assets and the changelog (version.go). They live at the repo root, and
+// go:embed cannot reach above a package directory, so they are embedded here.
+// The release build (-tags packed) stores docs gzipped: embed_packed.go.
 package clrd
 
-import "embed"
+import (
+	"embed"
+	"io/fs"
+)
 
-//go:embed docs assets
-var Files embed.FS
+//go:embed docs assets CHANGELOG.md
+var files embed.FS
+
+// Files reads the same in both builds.
+var Files fs.FS = files

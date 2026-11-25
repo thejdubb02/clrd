@@ -271,12 +271,11 @@ func TestSetApprove(t *testing.T) {
 	}
 }
 
-// TestApproveMigration: on upgrade, linked browsers and phones keep working
-// (allowed) and plain tokens start denied, once only (#187).
-func TestApproveMigration(t *testing.T) {
-	ctx := context.Background()
+// reopener returns a func that opens the same database file each call, for
+// upgrade tests that change the schema and start again.
+func reopener(t *testing.T) func() *Server {
 	db := filepath.Join(t.TempDir(), "clrd.db")
-	open := func() *Server {
+	return func() *Server {
 		t.Helper()
 		s, err := New(Options{DB: db, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 		if err != nil {
@@ -284,6 +283,13 @@ func TestApproveMigration(t *testing.T) {
 		}
 		return s
 	}
+}
+
+// TestApproveMigration: on upgrade, linked browsers and phones keep working
+// (allowed) and plain tokens start denied, once only (#187).
+func TestApproveMigration(t *testing.T) {
+	ctx := context.Background()
+	open := reopener(t)
 	s := open()
 	tok, _, err := s.CreateToken(ctx, "laptop", ApproveAllowed, []string{ScopeAdmin}, nil)
 	if err != nil {
@@ -560,5 +566,15 @@ func TestMintNeverAboveMaker(t *testing.T) {
 		if len(kids) != 4 {
 			t.Fatalf("%s maker: made %d of 4 kinds: %v", level, len(kids), kids)
 		}
+	}
+}
+
+// #349: a token revoked after it signed in gets 401, not 500.
+func TestApproveRevokedMidRequest(t *testing.T) {
+	s, _, _ := newTest(t)
+	gone := &Token{ID: "tok_gone", Name: "gone", Scopes: []string{ScopePublish, ScopeRead}}
+	_, err := s.AskApprove(context.Background(), gone, "agents", ApproveAllowed)
+	if code, _, _ := errorStatus(err); code != 401 {
+		t.Fatalf("want 401, got %d (%v)", code, err)
 	}
 }

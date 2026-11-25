@@ -134,11 +134,20 @@ func (s *Server) publishLimit(tok *Token, topic string) error {
 			return retryAfter(wait, "this token is publishing too fast, try again later")
 		}
 	}
+	if err := s.topicTake(topic); err != nil {
+		if s.tokLimit != nil {
+			s.tokLimit.give(tok.ID)
+		}
+		return err
+	}
+	return nil
+}
+
+// topicTake spends only the topic's allowance: a route target, whose
+// sender already paid for the publish under the topic it named.
+func (s *Server) topicTake(topic string) error {
 	if s.topicLimit != nil {
-		if wait := s.topicLimit.take(topic, now); wait > 0 {
-			if s.tokLimit != nil {
-				s.tokLimit.give(tok.ID)
-			}
+		if wait := s.topicLimit.take(topic, time.Now()); wait > 0 {
 			return retryAfter(wait, "this topic is getting too many messages, try again later")
 		}
 	}

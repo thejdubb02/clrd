@@ -1,0 +1,6 @@
+{
+  "identifier": "device",
+  "description": "The bundled This computer page may call the app's commands. There is no remote entry on purpose: the window that shows the server's page gets nothing.",
+  "windows": ["device"],
+  "permissions": ["allow-state", "allow-start", "allow-cancel", "allow-unlink", "allow-retry", "allow-set-close-clears", "allow-updates", "allow-set-auto-update", "allow-check-update"]
+}

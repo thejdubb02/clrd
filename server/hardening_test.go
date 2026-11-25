@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,18 @@ func TestSlowBodyTimesOut(t *testing.T) {
 	res, err := http.ReadResponse(bufio.NewReader(c), nil)
 	if err != nil || res.StatusCode != 408 {
 		t.Fatalf("stalled body: %v %v", res, err)
+	}
+	// A body declared too large is refused by its length, not timed out (#507).
+	c2, err := net.Dial("tcp", ts.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	io.WriteString(c2, "POST /api/v1/notifications HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer "+admin+
+		"\r\nContent-Type: application/json\r\nContent-Length: "+strconv.Itoa(maxBody+1)+"\r\n\r\n{")
+	c2.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if res, err := http.ReadResponse(bufio.NewReader(c2), nil); err != nil || res.StatusCode != 413 {
+		t.Fatalf("stalled huge body: %v %v", res, err)
 	}
 	// A normal body still works, and a large one is refused.
 	if code, _ := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "ok"}); code != 201 && code != 200 {
@@ -93,6 +106,47 @@ func TestOriginChecksScheme(t *testing.T) {
 		if err != nil || res.StatusCode != want {
 			t.Fatalf("origin %s: want %d, got %v %v", origin, want, res.StatusCode, err)
 		}
+	}
+}
+
+// #430: the scheme must match when clrd knows it, and a proxy that rewrites
+// Host still passes when the page's origin is CLRD_BASE_URL.
+func TestSameOriginSchemeAndBase(t *testing.T) {
+	s, _, _ := newTest(t)
+	check := func(remote, xfp, host, origin string) bool {
+		r, _ := http.NewRequest("POST", "http://"+host+"/api/v1/session", nil)
+		r.RemoteAddr = remote
+		if xfp != "" {
+			r.Header.Set("X-Forwarded-Proto", xfp)
+		}
+		r.Header.Set("Origin", origin)
+		return s.sameOrigin(r)
+	}
+	proxy, direct := "127.0.0.1:5000", "203.0.113.9:5000"
+	for _, c := range []struct {
+		remote, xfp, host, origin string
+		want                      bool
+	}{
+		{proxy, "http", "a.example", "https://a.example", false}, // an https page on an http endpoint
+		{proxy, "https", "a.example", "http://a.example", false},
+		{proxy, "https", "a.example", "https://a.example", true},
+		{direct, "http", "a.example", "https://a.example", true}, // an untrusted peer's header is ignored
+		{direct, "", "a.example", "https://a.example", true},     // unknown: maybe a TLS proxy
+		{direct, "", "a.example", "http://a.example", true},
+		{direct, "", "a.example", "ftp://a.example", false},
+		{proxy, "https", "127.0.0.1:8080", "https://clrd.example", false},
+	} {
+		if got := check(c.remote, c.xfp, c.host, c.origin); got != c.want {
+			t.Errorf("%+v: got %v", c, got)
+		}
+	}
+	s.opt.BaseURL, s.baseSet = "https://clrd.example", true
+	if !check(proxy, "https", "127.0.0.1:8080", "https://clrd.example") || check(proxy, "https", "127.0.0.1:8080", "http://clrd.example") ||
+		check(direct, "", "a.example", "http://a.example") {
+		t.Fatal("base URL origin")
+	}
+	if s.opt.BaseURL = "https://clrd.example:443"; !check(proxy, "https", "127.0.0.1:8080", "https://clrd.example") {
+		t.Fatal("base URL with its default port")
 	}
 }
 

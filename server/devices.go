@@ -13,7 +13,8 @@ import (
 
 // Linked devices (issue #246): every device, unlink from another device, and
 // a log of links, sign-ins and unlinks. A full admin sees every token. Anyone
-// else sees the devices under their own top token: the token typed in, every
+// else sees the devices under their own top tokens (every one of their user,
+// #143): the token typed in, every
 // browser signed in with it, every phone linked from one of those, and the
 // browsers those phones approved. Only linked devices (browsers and phones)
 // can be unlinked here; typed-in tokens are managed with /api/v1/tokens.
@@ -22,7 +23,7 @@ import (
 type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
-	Kind       string     `json:"kind"`             // token, browser or phone
+	Kind       string     `json:"kind"`             // token, browser, phone or agent
 	Via        string     `json:"via,omitempty"`    // the token or device it hangs under: revoking that one signs this one out too
 	ViaID      string     `json:"via_id,omitempty"` // its id, since names can repeat
 	LinkedAt   time.Time  `json:"linked_at"`
@@ -31,6 +32,9 @@ type LinkedDevice struct {
 	CanUnlink  bool       `json:"can_unlink"`
 	Sound      string     `json:"sound"`   // one of GET /api/v1/sounds
 	Approve    string     `json:"approve"` // allowed, ask or denied: may it answer approval requests (#187)
+	// CanApprove is true on the asker's own row when it may change who
+	// approves (#329, #433): allowed, and on every topic, as SetApprove checks.
+	CanApprove bool `json:"can_approve"`
 	// Live sync state (#300): connected has a stream open now, caught_up has
 	// one past its replay, synced_seq is the last event seq the server sent it.
 	Connected bool  `json:"connected"`
@@ -110,10 +114,16 @@ func (s *Server) deviceRoutes() {
 		return nil
 	})
 	s.api("DELETE /api/v1/devices/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		if err := tok.need(ScopeRead, ""); err != nil {
-			return err
+		id := r.PathValue("id")
+		if id == "this" { // the asker itself, whose id it may not know (#609)
+			id = tok.ID
 		}
-		if err := s.Unlink(r.Context(), tok, r.PathValue("id")); err != nil {
+		if id != tok.ID { // a device may always unlink itself, whatever its scope (#609)
+			if err := tok.need(ScopeRead, ""); err != nil {
+				return err
+			}
+		}
+		if err := s.Unlink(r.Context(), tok, id); err != nil {
 			return err
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -135,6 +145,40 @@ func topIn(ctx context.Context, q querier, id string) (string, error) {
 type querier interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+// targets resolves a publish's devices (names, any case, or token ids) to
+// the ids of every token that may read topic and matches (#82). A name on
+// several devices targets them all; one that matches none is refused, so a
+// typo never silences everyone. Empty is every device.
+func (s *Server) targets(ctx context.Context, topic string, want []string) ([]string, error) {
+	out := []string{}
+	if len(want) == 0 {
+		return out, nil
+	}
+	if len(want) > 20 {
+		return nil, errf(400, "bad_request", "devices: at most 20")
+	}
+	toks, err := s.Tokens(ctx, time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range want {
+		hit := false
+		byID := slices.ContainsFunc(toks, func(t *Token) bool { return t.ID == w }) // an id never also matches a device named like it
+		for _, t := range toks {
+			if (t.ID == w || !byID && strings.EqualFold(t.Name, w)) && s.withUser(ctx, t) == nil && t.may(ScopeRead, topic) {
+				hit = true
+				if !slices.Contains(out, t.ID) {
+					out = append(out, t.ID)
+				}
+			}
+		}
+		if !hit {
+			return nil, errf(400, "bad_request", "devices: %q is not a device that may read %q", w, topic)
+		}
+	}
+	return out, nil
 }
 
 // Devices lists the devices tok may see, oldest first.
@@ -174,19 +218,17 @@ func (s *Server) device(ctx context.Context, q querier, tok *Token, id string) (
 // transaction (#299).
 func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDevice, error) {
 	all := tok.needFullAdmin() == nil
-	top, err := topIn(ctx, q, tok.ID)
-	if err != nil {
-		return nil, err
-	}
 	sounds, err := s.deviceSounds(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, `WITH RECURSIVE k(id) AS
-	  (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve
-	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id
-	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, top, all)
+	// The agents my invites made (#454) are mine too, with what hangs under them.
+	rows, err := q.QueryContext(ctx, `WITH RECURSIVE `+topsSQL+`, k(id) AS
+	  (SELECT id FROM tops UNION SELECT t.id FROM tokens t JOIN people u ON u.id = t.user_id WHERE u.kind = 'agent' AND u.owner IN tops
+	   UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
+	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve, COALESCE(u.kind, '')
+	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id LEFT JOIN people u ON u.id = t.user_id
+	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, tok.ID, all)
 	if err != nil {
 		return nil, err
 	}
@@ -198,10 +240,12 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 		var seen sql.NullInt64
 		var phone sql.NullBool
 		var via, viaID sql.NullString
-		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via, &viaID, &d.Approve); err != nil {
+		var kind string
+		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via, &viaID, &d.Approve, &kind); err != nil {
 			return nil, err
 		}
-		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid
+		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid || kind == "agent"
+		d.CanApprove = d.This && d.Approve == ApproveAllowed && len(tok.Topics) == 0 && len(tok.Grants) == 0
 		d.Sound = soundOf(sounds, d.ID)
 		d.Connected, d.CaughtUp, d.SyncedSeq = s.hub.status(d.ID)
 		if seen.Valid {
@@ -209,7 +253,9 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 			d.LastSeenAt = &v
 		}
 		d.Kind = "token"
-		if phone.Valid {
+		if kind == "agent" {
+			d.Kind = "agent"
+		} else if phone.Valid {
 			d.Kind = "browser"
 			if phone.Bool {
 				d.Kind = "phone"
@@ -237,11 +283,20 @@ func (s *Server) Unlink(ctx context.Context, tok *Token, id string) error {
 		}
 		ctx = context.WithoutCancel(ctx)
 		top, err := s.topOf(ctx, id) // before the delete, which drops the sessions rows
+		var user string
+		if err == nil && d.Kind == "agent" { // logged where it was linked, and its user goes with it
+			err = s.db.QueryRowContext(ctx, `SELECT p.owner, p.id FROM tokens t JOIN people p ON p.id = t.user_id WHERE t.id = ?`, id).Scan(&top, &user)
+		}
 		if err != nil {
 			return err
 		}
 		if err := s.DeleteToken(ctx, id); err != nil {
 			return err
+		}
+		if user != "" {
+			if _, err := s.db.ExecContext(ctx, `DELETE FROM people WHERE id = ? AND NOT EXISTS (SELECT 1 FROM tokens WHERE user_id = ?)`, user, user); err != nil {
+				s.log.Warn("drop agent user", "err", err)
+			}
 		}
 		s.logDevice(ctx, top, "unlinked", d.Name, id, tok.Name)
 		return nil
@@ -252,12 +307,8 @@ func (s *Server) Unlink(ctx context.Context, tok *Token, id string) error {
 // DeviceLog is the newest log lines tok may see, newest first.
 func (s *Server) DeviceLog(ctx context.Context, tok *Token) ([]DeviceEvent, error) {
 	all := tok.needFullAdmin() == nil
-	top, err := s.topOf(ctx, tok.ID)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT at, action, device, device_id, by_name FROM device_log
-	  WHERE ? OR owner = ? ORDER BY id DESC LIMIT ?`, all, top, maxDeviceLog)
+	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE `+topsSQL+` SELECT at, action, device, device_id, by_name FROM device_log
+	  WHERE ? OR owner IN tops ORDER BY id DESC LIMIT ?`, tok.ID, all, maxDeviceLog)
 	if err != nil {
 		return nil, err
 	}

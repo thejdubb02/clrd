@@ -11,6 +11,28 @@ import (
 	"github.com/coder/websocket"
 )
 
+// Issue #609: a device linked from a publish-only token unlinks itself with
+// DELETE /api/v1/devices/this, but still cannot unlink anyone else.
+func TestUnlinkSelfWithoutRead(t *testing.T) {
+	s, ts, _ := newTest(t)
+	typed := mkToken(t, s, "script", []string{ScopePublish}, nil)
+	phone := linkPhone(t, ts, typed)
+	other := linkPhone(t, ts, typed)
+	otherID := s.lookupToken(context.Background(), other).ID
+	if code, _ := call(t, ts, "DELETE", "/api/v1/devices/"+otherID, phone, nil); code != 403 {
+		t.Fatalf("publish-only phone unlinking another: %d, want 403", code)
+	}
+	if code, out := call(t, ts, "DELETE", "/api/v1/devices/this", phone, nil); code != 204 {
+		t.Fatalf("publish-only phone unlinking itself: %d %v", code, out)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", phone, map[string]any{"topic": "t", "message": "m"}); code != 401 {
+		t.Fatalf("unlinked phone publishing: %d, want 401", code)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications", other, map[string]any{"topic": "t", "message": "m"}); code/100 != 2 {
+		t.Fatalf("other phone after the first unlinked itself: %d", code)
+	}
+}
+
 // Issue #246: the full device list, unlink from another device and the log.
 func TestUnlinkDevice(t *testing.T) {
 	s, ts, admin := newTest(t)
@@ -199,9 +221,9 @@ func TestDeviceLiveStatus(t *testing.T) {
 func TestDeviceStatusTwoStreams(t *testing.T) {
 	var h hub
 	h.subs = map[chan Event]*stream{}
-	one, st := h.subscribe("tok")
+	one, st := h.subscribe("tok", false)
 	st.ready.Store(true)
-	two, _ := h.subscribe("tok") // still replaying
+	two, _ := h.subscribe("tok", false) // still replaying
 	if c, up, _ := h.status("tok"); !c || !up {
 		t.Fatalf("one of two caught up: connected %v caught up %v", c, up)
 	}
@@ -212,5 +234,32 @@ func TestDeviceStatusTwoStreams(t *testing.T) {
 	h.unsubscribe(two)
 	if c, _, _ := h.status("tok"); c {
 		t.Fatal("connected with no stream")
+	}
+}
+
+// #433: the asker's own row says if it may change who approves, as SetApprove checks.
+func TestCanApproveOnOwnRow(t *testing.T) {
+	s, ts, admin := newTest(t)
+	limited := mkToken(t, s, "limited", []string{ScopeRead, ScopeAdmin}, []string{"home"})
+	own := func(tok string) map[string]any {
+		t.Helper()
+		_, out := call(t, ts, "GET", "/api/v1/devices?all=1", tok, nil)
+		for _, d := range out["devices"].([]any) {
+			if m := d.(map[string]any); m["this"] == true {
+				return m
+			}
+		}
+		t.Fatalf("no own row: %v", out)
+		return nil
+	}
+	if d := own(admin); d["approve"] != "allowed" || d["can_approve"] != true {
+		t.Fatalf("allowed full token: %v", d)
+	}
+	if d := own(limited); d["approve"] != "allowed" || d["can_approve"] != false {
+		t.Fatalf("allowed token limited to a topic: %v", d)
+	}
+	id := own(admin)["id"].(string)
+	if code, d := call(t, ts, "PUT", "/api/v1/devices/"+id+"/approve", admin, map[string]any{"approve": "ask"}); code != 200 || d["can_approve"] != false {
+		t.Fatalf("lowering itself: %d %v", code, d)
 	}
 }

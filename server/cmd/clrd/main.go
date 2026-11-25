@@ -3,12 +3,16 @@
 //	clrd [serve]
 //	clrd token create --name pixel-9 --scope read,publish [--topics a,b]
 //	clrd token list
+//	clrd agent invite --name bot --topics a,b [--expires 15m]
 //	clrd import ntfy --auth-file user.db --cache-file cache.db --attachment-dir DIR --default-access deny-all [--clear-older-than 72h] [--dry-run]
 //	clrd health
 package main
 
 import (
+	"bytes"
+	"cmp"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -59,8 +63,10 @@ func run(args []string) error {
 		return health(opt)
 	case "import":
 		return importCmd(opt, args)
+	case "agent":
+		return agentCmd(opt, args)
 	}
-	return fmt.Errorf("unknown command %q (want serve, token, import or health; see clrd help)", cmd)
+	return fmt.Errorf("unknown command %q (want serve, token, agent, import or health; see clrd help)", cmd)
 }
 
 const usage = `clrd: self-hosted notifications. Dismiss once, gone everywhere.
@@ -68,6 +74,7 @@ const usage = `clrd: self-hosted notifications. Dismiss once, gone everywhere.
   clrd [serve]                 run the server (no settings needed)
   clrd token create [--name me] [--scope read,publish|admin] [--topics a,b] [--approve allowed|ask]
   clrd token list
+  clrd agent invite --name bot --topics a,b [--expires 15m]   (CLRD_TOKEN: an admin token; CLRD_URL: the server)
   clrd import ntfy --auth-file user.db --cache-file cache.db --default-access deny-all [--dry-run]
   clrd import gotify --db gotify.db [--clear-older-than 720h] [--dry-run]
   clrd health                  exit 0 if the local server answers /healthz
@@ -175,13 +182,60 @@ func importGotify(opt server.Options, args []string) error {
 }
 
 // health is for container health checks (distroless has no curl).
-func health(opt server.Options) error {
-	listen := opt.Listen
-	if listen == "" {
-		listen = ":8080"
+// agentCmd makes an agent invite (#454) on the running server, since codes
+// live in its memory: CLRD_TOKEN is an admin token, CLRD_URL the server
+// (default this box's listen address).
+func agentCmd(opt server.Options, args []string) error {
+	if len(args) == 0 || args[0] != "invite" {
+		return fmt.Errorf("want agent invite")
 	}
+	fs := flag.NewFlagSet("agent invite", flag.ContinueOnError)
+	name := fs.String("name", "", "the agent's name, shown in the user and device lists")
+	topics := fs.String("topics", "", "comma list of topics it may read and publish")
+	expires := fs.String("expires", "", "how long the invite lasts, 1m to 1h (default 15m)")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	base := strings.TrimRight(os.Getenv("CLRD_URL"), "/")
+	if base == "" {
+		base = localURL(opt)
+	}
+	body, _ := json.Marshal(map[string]any{"name": *name, "topics": split(*topics), "expires_in": *expires})
+	req, err := http.NewRequest("POST", base+"/api/v1/agents/invite", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("CLRD_TOKEN"))
+	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	var out struct {
+		Invite    string    `json:"invite"`
+		URL       string    `json:"url"`
+		ExpiresAt time.Time `json:"expires_at"`
+		Error     string    `json:"error"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil || res.StatusCode != 201 {
+		return fmt.Errorf("invite: %s %s", res.Status, out.Error)
+	}
+	fmt.Fprintf(os.Stderr, "Single use, expires %s. Hand it over privately:\n", out.ExpiresAt.Format(time.RFC3339))
+	fmt.Println(out.Invite)
+	fmt.Println(out.URL)
+	return nil
+}
+
+// localURL is this box's server, from its listen address.
+func localURL(opt server.Options) string {
+	listen := cmp.Or(opt.Listen, ":8080")
+	return "http://127.0.0.1" + listen[strings.LastIndex(listen, ":"):]
+}
+
+func health(opt server.Options) error {
 	c := http.Client{Timeout: 3 * time.Second}
-	res, err := c.Get("http://127.0.0.1" + listen[strings.LastIndex(listen, ":"):] + "/healthz")
+	res, err := c.Get(localURL(opt) + "/healthz")
 	if err != nil {
 		return err
 	}

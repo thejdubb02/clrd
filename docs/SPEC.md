@@ -15,6 +15,7 @@ own server. There is no public instance and no default server.
 | `server/` | server | Go package `github.com/thejdubb02/clrd/server`, binary in `server/cmd/clrd`. |
 | `web/` | web | Inbox app and landing/docs pages, embedded in the binary via `embed`. |
 | `android/` | android | Kotlin app, Gradle, F-Droid ready. |
+| `desktop/` | desktop | Tray app for Windows and Linux (#162): Rust, Tauri 2. Section 8.1. |
 | `sdk/python`, `sdk/js`, `sdk/go` | integrations | Thin clients over the REST API. |
 | `server/mcp/` | integrations | MCP server mounted at `/mcp`. |
 | `plugins/`, `.claude-plugin/` | integrations | Agent plugins: `plugins/claude-code`, listed by the repo's Claude Code marketplace. |
@@ -44,9 +45,11 @@ A **notification**:
   "tags": ["backup"],
   "click": "https://...",      // optional
   "icon": "https://.../disk.png", // optional http(s) image URL, max 2048; "" if none
+  "color": "#0EA5E9",          // optional sender color, #RRGGBB; "" if none (and in old events). Color rules win over it (section 2.1)
   "attachment": {"name": "report.pdf", "url": "/api/v1/files/9f2c...", "type": "application/pdf", "size": 48213}, // or null
   "actions": [{"label": "Open draft", "url": "https://..."}, {"label": "Yes", "reply": "yes"}],
   "reply": "",                 // the reply action tapped, "" until someone answers
+  "reply_text": "",            // what was typed with a text reply action, plain text; "" for none
   "state": "active",
   "state_by": "pixel-9",       // device name that made the last change
   "state_by_id": "k3j9x2m1q8wz", // that device's token id ("" for the server); names can repeat, ids cannot
@@ -56,9 +59,26 @@ A **notification**:
   "updated_at": "2026-11-19T05:00:00Z",
   "seq": 48211,                // seq of the last event that touched it
   "silenced": false,           // a silence matched when that event was written: show, do not alert
-  "repeat": null               // or {"every": "5m", "left": 8, "count": 2, "next": "<RFC3339>" or null}
+  "repeat": null,              // or {"every": "5m", "left": 8, "count": 2, "next": "<RFC3339>" or null}
+  "marks": [],                 // who saw or actioned it, below; never null
+  "devices": [],               // token ids it alerts on, [] for every device; never null. Missing in old events = []
+  "requested_topic": "up",     // only when a sender route moved it: the topic it was sent to (section 5.1)
+  "changed": true              // only in the answer to ack, snooze, dismiss, resolve or reopen: false when it already had that state (#693)
 }
 ```
+
+**Marks:** anyone who may read a topic (a person, or an agent with its own
+token) can mark one of its notifications `seen`, or `actioned` with an
+optional `note` (at most 200 characters) and `link` (http or https), with
+`POST /api/v1/notifications/{id}/mark`. Each mark is
+`{"by":"stew","by_id":"...","mark":"actioned","note":"filed relay#512","link":"https://...","at":"<RFC3339>"}`.
+A mark never changes the state, so it clears and hides nothing for anyone;
+everyone who reads the topic sees it on the card. There is one mark per
+author: a token attached to a person marks as that person (`by_id` is the
+person's id), any other token as the token its device tree starts from.
+Setting it again replaces it; only the author changes or removes it. A mark
+writes a `mark` event (section 3) and moves `updated_at`. A publish that
+updates the row by `external_id` keeps its marks.
 
 **Emoji (#306):** `title` and `message` are sent with common GitHub and
 Slack shortcodes shown as the emoji (`:warning:` becomes ⚠️), and a tag that
@@ -89,12 +109,43 @@ as emoji but leave the tag emoji out, since ntfy apps add those themselves.
 **Silences:** a silence mutes a topic, a tag, or a tag within a topic until a
 set time (`POST /api/v1/silences`). Notifications still arrive, sync and show;
 the server sets `silenced: true` on every event it writes while a silence
-matches (publish, update, snooze wake, check-in), and clients must show those
+matches (publish, update, snooze wake, check-in), and on every publish from a
+muted sender (section 5.1), and clients must show those
 without sound or vibration (the web inbox and the Android app do). A silence mutes every priority, 5 included. It
 ends by itself; `DELETE` ends it early. Events logged before a server upgrade
 may omit `silenced`: treat missing as `false`. ntfy subscribers get a silenced
 message at priority 1. Quiet hours on one device are a client setting, not a
 silence.
+
+**Chosen devices (#82):** `"devices": ["pixel-9", "k3j9x2m1q8wz"]` on publish
+alerts only those devices. Each entry is a device name (any case) or token
+id, as `GET /api/v1/devices` and MCP `devices` list them, and must match at
+least one device that may read the topic, else 400 (so a typo never silences
+everyone); a name on several devices picks them all; at most 20 entries.
+The server stores the matching token ids in `devices`. Every other reader
+still gets the notification, lists it and syncs its state as usual, but the
+copy sent to it carries `silenced: true`, so it shows without sound (ntfy
+subscribers get priority 1). `GET /api/v1/notifications` and
+`GET /api/v1/notifications/{id}` answer the same way for the token asking, so
+a client rebuilding from the list after a reset alerts exactly where the
+stream would have (#588). Only that copy changes: the row, the event log
+and outgoing webhooks keep the stored value. The list holds through state
+changes, and a re-alert to a device not on it is silenced like the first
+(clients already never alert on a silenced `repeat`); an update by `external_id` replaces it,
+and an update without `devices` alerts everyone again. Live publishes take
+it too. An entry equal to a token id picks only that token, never a device
+named like it. The reply's `devices` shows a publisher the ids of the readers
+it picked; ids are labels, not credentials (`state_by_id` shows them too).
+Native JSON publishes (with or without an upload) and MCP `send` take it;
+the ntfy, Gotify, Pushover and incoming webhook doors have no such field.
+
+**Live:** `"live": true` on publish (ntfy's `Cache: no`) sends the message to
+the ntfy streams open right now and stores nothing: no row, no event, no seq,
+no hook. It is never replayed, so a reconnect sees nothing, and native and
+MCP streams never get it. The reply carries `live: true` and a 12 character
+`id` starting with `l`; ntfy's `since=<that id>` replays what was stored after
+it. A live publish with `snooze_until`, `repeat`, `expires`, `external_id`,
+`status` or an uploaded file is a 400.
 
 **Repeat:** `"repeat": "5m"` on publish (1m to 24h) re-alerts while the row
 stays `active`, up to `repeat_times` (1 to 100, default 10). Each re-alert is
@@ -115,10 +166,68 @@ shows 3). Tapping one posts it to `/api/v1/notifications/{id}/reply`, which
 sets `reply`, sets the state to `acknowledged` with `state_by` = the device,
 and logs one `state` event. A device sends the `seq` it showed with the tap;
 if the notification changed since (a new question under the same key), the tap
-gets 409. An `acknowledged` notification with a non-empty `reply` is answered,
+gets 409. A mark or a re-alert does not change the question, so it never
+refuses a tap, even after older events are pruned (#452). An `acknowledged` notification with a non-empty `reply` is answered,
 and `state_by` is who tapped. The first answer wins: a second one gets 409.
 Any later state change except dismiss and resolve (reopen, snooze, a plain
 ack) clears `reply`. Reply actions are not sent to ntfy subscribers.
+
+**Typed answers** (#153): a reply action with `"text": true`, as in
+`{"label":"Other","reply":"other","text":true}`, is answered with typed text
+instead of a plain tap. At most one reply action per notification has it, and
+only a reply action may (400 otherwise). Senders that never set `text` see no
+change. The client contract:
+
+- Show a text box for the action with `text: true`; its other reply actions
+  stay plain buttons. Send `{"reply":"other","text":"...","seq":N}` to the
+  reply route. The server trims spaces and line breaks at both ends and keeps
+  the ones inside. The text must be 1 to 1000 characters (Unicode code
+  points, not bytes) after trimming.
+- 400 `bad_request`: no text for a text action, text for a plain one, or over
+  1000 characters. Keep what was typed and show the error. A client that
+  does not know `text` and taps the action gets this 400 too, so it answers
+  nothing by mistake.
+- 403 `approve_denied` (this device may not answer) and 403 `own_request`
+  (the token tree that sent it): the same rules as a tap (section 4). Show
+  why; nothing changed.
+- 409 `conflict`: already answered, cleared, or the question changed since
+  `seq`. Drop the text box and show the current row.
+- 202: this device is ask. The body is the confirm prompt; the question stays
+  unanswered until an allowed device confirms. The prompt's message ends with
+  `Answer: <text>` and its `format` is `text`, so the typed text is never
+  rendered as markdown. The same text again returns the same prompt; other
+  text edits that same prompt (an `updated` event, new `seq`), so a confirm
+  sent with the `seq` it showed before the edit gets 409.
+- 200: answered. The row has `reply`, `reply_text` and state `acknowledged`,
+  in one `state` event, like a tap.
+
+Every device shows `reply_text` on an answered row as plain text, never
+markdown or HTML. It is cleared together with `reply` (a new question,
+reopen, snooze, a plain ack) and kept on dismiss and resolve. Hooks get it in
+the event body like any other field. `reply_text` is in every notification
+JSON, `""` when there is none.
+
+**Device actions** (#401, ntfy's `http` and `broadcast` buttons) are a third
+and fourth kind: `{"label":"Off","http":{"method":"PUT","url":"https://...",
+"headers":{...},"body":"..."},"clear":true}` is a request the reader's device
+sends when tapped (method one of GET, POST, PUT, PATCH, DELETE, HEAD, POST if
+empty; an http(s) URL of at most 2048 characters; at most 10 headers of at most
+1024 characters each, no line breaks; a body of at most 4096 bytes), and
+`{"label":"Ping","broadcast":{"intent":"...","extras":{...}}}` is an Android
+broadcast (at most 10 extras). `clear` asks the device to clear the
+notification after the button runs. Because any publisher could make every
+reader's device call any address, a topic takes them only after an admin turns
+`device_actions` on (`PUT /api/v1/topics/{topic}`); off by default. With it off
+the native API answers 403 and a ntfy publish drops them silently. Turning it
+off keeps what was already published, and once the switch answers, no publish
+still in flight keeps one. Readers, ntfy subscribers and outgoing
+webhooks get the whole action, headers and body included, so do not put a
+secret there that a reader of the topic must not see. ntfy apps run device
+actions, and so does clrd's Android app, as tray buttons (a broadcast with no
+intent sends ntfy's `io.heckel.ntfy.USER_ACTION`, and `clear` applies only when
+the button worked). The web inbox never runs them: it shows each one under the
+card as text (the label and the method and URL, or the broadcast intent),
+without headers or body (#450).
 
 **Icons:** `icon` is an absolute `http` or `https` URL with a host (at most
 2048 characters); anything else is a 400. Clients load it straight from that
@@ -210,6 +319,54 @@ keep in use. With `&topic=T`, `would_remove` counts only topic T, to preview
 its own value (the state counts stay over every readable topic).
 `keep_cleared_days=default` previews dropping a topic's value: it counts
 against the global keep exactly, `CLRD_RETENTION` to the hour when unset.
+
+Swipe buttons (#161): `swipe_start` and `swipe_end` choose the
+buttons a swipe on a card reveals, on every client, like
+`{"swipe_start": ["clear", "snooze"], "swipe_end": ["ack"]}` (those are the
+defaults, and what the Android app shows today). `swipe_start` is what a
+swipe toward the start of the line reveals (a swipe to the left, or to the
+right in a right-to-left language) and `swipe_end` is the opposite swipe (to
+the right, or to the left in a right-to-left language). The buttons appear in
+the space the card slides away from, and the first entry sits nearest the
+screen edge on that side. Each value is a JSON array of 0 to 3 strings from
+`clear`, `snooze`, `ack` and `resolve`; an empty array means that swipe opens
+nothing. A string may appear once across both lists, checked against the pair
+the PUT would leave (a side not in the body keeps its stored list). Anything
+else gets 400 naming the key: `null`, a value that is not an array, an entry
+that is not a string, an unknown name, more than 3 entries or a repeat; a
+rejected PUT changes no field. A client skips a button the card cannot take
+(Ack on a card already acknowledged, Snooze outside the Inbox, Resolve without
+scope publish on the card's topic) and any action it has no control for, and
+the device's own "Full swipe acts" switch runs the first button left on that
+side. Clear stays undoable from either side. Reads need scope read; a token
+limited to some topics or carrying per-topic grants cannot change them (403),
+as with the four switches. The web inbox shows them on a touch screen only (mouse and keyboard keep
+the card's own buttons) and has no Resolve control, so it skips Resolve.
+
+Color rules (#165): `color_rules` is a list of up to 50 rules that color
+cards on every client, like `{"color_rules": [{"topic": "gatus",
+"priority_min": 4, "color": "#DC2626", "style": "tint"}]}`. Default `[]`, so a
+new server shows no colors. Each rule has `topic` (the topic the card landed
+in, after any reroute), `tag` (one of its tags, exact), `priority_min` and
+`priority_max` (the stored priority, 1 to 5, inclusive; 0 means no limit),
+`title` (text found anywhere in the title, any case), `color` (`#RRGGBB`,
+nothing else, since clients put it in CSS) and `style` (`bar`, a stripe on
+the card's edge; `tint`, a light wash of the color; `solid`, a filled card
+with text in a readable contrast; `gradient`, the color fading across the
+card). An empty field matches anything. Every client runs the same match:
+the first rule whose set fields all match wins; with no match a card with a
+sender `color` (section 2) shows it as `bar`; otherwise it has no color. A
+client that does not know a style draws `bar`. `server/testdata/colorrules.json`
+holds cases every client's matcher must pass. A PUT replaces the whole list
+(read first, send every rule to keep; `[]` clears it, `null` is a 400); a bad rule, or a field of the wrong type, is a 400
+naming its index and field and changes nothing. Only a token with no topic
+list and no per-topic grants may change it (403 otherwise); a limited token reads only rules with no
+topic or a topic it may read or publish to. Presets are client shortcuts that write
+ordinary rules: Severity is priority 5 `#DC2626`, 4 `#EA580C`, 3 `#CA8A04`,
+all `bar`; By topic writes one `bar` rule per topic. Not built yet: matching
+by sender (a notification carries no public sender field) and ntfy-style
+per-topic display defaults.
+
 Every change goes to every open
 WebSocket and SSE stream as a `settings` message (section 3).
 
@@ -277,6 +434,127 @@ says so when that overrides its choice). Browsers block sound until the page
 has had a click or key press; the web inbox then shows a hint instead of an
 error.
 
+## 2.3 Subscriptions (#617)
+
+A person chooses which topics reach their devices. An unsubscribed topic
+shows no card, rings no tray or system notification and adds to no count or
+badge on any of that person's devices. It is a view filter on the server, not
+a state: unsubscribing clears, dismisses or deletes nothing, and nobody else
+sees a difference (other users, ntfy subscribers, scripts on their own
+token, outgoing webhooks, silences and the sender all work as before). Access still wins:
+subscribing to a topic you cannot read is a 403 and never shows it.
+
+**Whose.** Subscriptions belong to an owner: the user, for a token attached to
+a user (section 4), and otherwise the typed-in token at the top of the tree
+(the browsers signed in with it and the phones and desktops linked from it
+share its set). Attaching or detaching a token moves its devices to the new
+owner's set and counts as a change of that set (see Sync); the old rows stay
+with the old owner.
+
+**Who is filtered.** The filter applies to devices: browsers signed in through
+`/api/v1/session` or by a phone, phones and desktops linked by a code, and
+any token attached to a user. A typed-in token with no user is never
+filtered, because it is usually a script and is often also the token a
+browser signed in with. It reads `"filtered":false` with no topics, and a
+PUT on it is a 409, since no user holds its choices; the browsers and
+phones made from it read and change their tree's set. So a
+phone set up by pasting such a token shows every topic; link it, or attach
+the token to a user, to have it follow subscriptions. A script on a token
+attached to a user follows that user's subscriptions; give it its own token
+with no user, or have it send `subscribed=all`, to see every topic.
+
+**Defaults.** With no setup every topic is subscribed, so nothing changes for
+anyone until they unsubscribe. `new_topics` (default `true`) says what a
+topic with no row for this owner is. Setting it to `false` first writes a
+`true` row for every topic that has no row yet, has stored notifications or
+topic settings, and any of the owner's tokens can read today; existing rows
+are kept as they are, so no existing topic changes. After that, a topic
+seen for the first time, by a new publish or a new pattern grant, starts
+unsubscribed. Setting it back to `true` changes no row.
+
+**What the filter covers.** For a filtered token, these leave out unsubscribed
+topics unless the request asks for `subscribed=all`: the notification list
+and search, `GET /api/v1/counts`, `GET /api/v1/topics`, the WebSocket, SSE
+and `GET /api/v1/events` (replay and live; a WebSocket `?topics=` list is
+narrowed further, never widened), Web Push, and the server-rendered inbox
+pages. `subscribed=all` on the list, counts, topics and streams shows every
+readable topic, which is how a client browses an unsubscribed topic without
+subscribing; clients that know nothing of subscriptions never send it, so
+they get the filtered view. Getting one notification by id and every state
+route (ack, snooze, dismiss, resolve, reply, mark) work on an unsubscribed
+topic as on any other; each keeps its own scope checks, so subscriptions
+never grant a route anything. An approval request, a check-in alarm or a quiet alarm on an
+unsubscribed topic is hidden like any other message, so unsubscribing from
+the approval topic (`agents` by default) also hides approval prompts; the
+Topics page says so on that topic. Events the filter leaves out still move a
+stream's `synced_seq` and the `ready` seq, as for topics a token cannot
+read.
+
+**Sync.** The owner's set is part of the per-device settings view
+(section 2.1): `"subscriptions":{"filtered":true,"new_topics":true,"topics":{"chat":false}}`
+in `GET /api/v1/settings` and in every `settings` stream message, with only
+the topics that have a row and that this token can read. `filtered` is
+false for a token that is never filtered (see Who is filtered); then
+`topics` is empty and `new_topics` is left out. A topic is
+subscribed when `topics[t]` is true, or it has no row and `new_topics` is
+true. Every change appends an event of type `subscriptions` that only the
+owner's filtered devices receive (it moves the seq like any event; clients
+ignore the type, as section 3 says for unknown types). Each open stream of
+those devices then gets the new `settings` message, then `{"type":"reset"}`
+and `ready` (section 3), so every client, old ones included, reloads what
+it shows: the open list, or for a view browsing an unsubscribed topic, that
+topic with `subscribed=all`. Cards of an unsubscribed topic leave that
+device and its Android tray, and the still open ones of a resubscribed
+topic come back, quietly, as after an offline catch-up. A browser system
+notification already shown stays until it is closed, as it does today
+after a clear. A filtered device that connects with a `since` older than
+the seq of its owner's last `subscriptions` event gets `reset` (and
+`GET /api/v1/events` a 410 `reset`), so a device that was offline during
+the change catches up the same way. A typed-in token with no user is not
+filtered, so only an attach or detach resets it, never its browsers
+changing the set.
+
+**API and MCP.** `GET /api/v1/subscriptions` returns
+`{"filtered":true,"new_topics":true,"topics":[{"topic":"chat","subscribed":false,"open":2,"last_at":"RFC3339"|null,"approvals":false}]}`,
+every topic the token can read, subscribed or not, sorted by name. With
+`"filtered":false` (a typed-in token with no user) `topics` is empty,
+`new_topics` is left out and a PUT answers 409 `conflict`: the token has no
+user to store topic choices for.
+`PUT /api/v1/subscriptions` takes `{"new_topics"?:bool,"topics"?:{"chat":false,"infra":true}}`
+(`new_topics` or `topics` or both, at most 500 topics in one call; a name outside the
+topic pattern is a 400 naming it, a topic the token cannot read is a 403
+naming it, and nothing is changed when any entry fails) and returns the same
+shape as GET. Scope read. An optional `"request_id"` (up to 64 letters,
+digits, `-` or `_`) tags the change: GET and PUT answers carry the
+`request_id` of the set's last change, left out when it had none or its
+event has been pruned from the log, so a tab
+that reloads mid-request can tell its own change from another device's
+before offering Undo (#702). An optional `"if_request_id"` (same form)
+applies the change only while the set's last change is still that request;
+otherwise it is a 409 and nothing changes, so an Undo cannot reverse a
+change another device made in between (#716). Any token of the owner may change the owner's set,
+and a full admin may add `?for=<user id or token id>` to read or set another
+owner's set (an invited agent is its own user, so this is how an admin agent
+sets a person's topics). A user id, or the id of any typed-in token,
+names its owner; for a typed-in token with no user that is the token
+itself, which is not filtered, so to set the set its browsers and phones
+share, name one of them. The MCP tool is `subscriptions(topics?,
+new_topics?, for?)`: no arguments reads, arguments change those fields.
+`GET /api/v1/topics` also gains `subscribed` and `last_at` on each topic.
+Both also carry `approvals` on each topic (#623): true once any message
+that waits for an answer (a reply action, as `/mcp/approve` sends, or a
+confirm prompt) has been sent to it, and it stays true after that message
+is gone. Clients warn before unsubscribing from a topic with `approvals`
+(or `agents`), since an agent's request there would go unseen.
+
+**Clients.** The web and Android apps add a Topics page (a switch per topic,
+last message time, open count, search), Unsubscribe in a card's menu and on
+a stack header, and a way to open an unsubscribed topic (`subscribed=all`
+with `topic=`) without subscribing. When `filtered` is false they show the
+Topics page as not available on this token. Android's device-only muted topics stay
+as they are: muted still shows the card and only stops the pop-up. Per-device
+overrides are a later issue.
+
 ## 3. Events and sync
 
 Every change is an append-only **event** with a global, gap-free, monotonic
@@ -287,8 +565,10 @@ the row change):
 {"seq": 48212, "type": "state", "notification": { ...full notification... }}
 ```
 
-`type` is `created`, `updated`, `state` or `repeat` (section 2). Clients
-ignore types they do not know. A `state` event also carries `"via"`, how
+`type` is `created`, `updated`, `state`, `repeat` or `mark` (section 2), or
+`subscriptions` (section 2.3, only to the devices it concerns).
+A `mark` event never alerts: clients update the card quietly, and the ntfy
+stream and hooks leave it out. Clients ignore types they do not know. A `state` event also carries `"via"`, how
 the change was made (section 5), when the server knows it. Clients only
 need the full
 notification in the event; they never merge diffs.
@@ -297,11 +577,30 @@ Clients store the highest `seq` they applied. On (re)connect they ask for
 everything after it. That is the whole sync model: no client clocks, no
 conflict resolution, last write on the server wins.
 
+**Alerts on catch-up (#589).** A client may keep only the last event per
+notification while it replays, so a phone that was offline does not buzz for
+things already cleared elsewhere. It must still remember, per notification,
+whether any replayed event hid it (`snoozed`, `dismissed` or `resolved`). When
+the last one shows it again (a snooze that ended, a reopen), that is a fresh
+show and alerts as it did on the devices that were online, even if the card
+was showing on this device before it went offline. The client keeps the
+sequence of the event that showed it again, so it can tell a reopen made
+elsewhere from this device's own action (an Undo it sent, matched against its
+pending actions and the answers it got back), which stays quiet. A replayed
+`repeat` or `mark` may carry an earlier show forward but never makes one: on
+its own it never alerts, and it never brings back a card this phone's tray hid
+by a swipe. A replay the client saves quietly (too long, or no `ready` in
+time) stays quiet. This applies to clients that alert
+on events (the Android and desktop trays); the web inbox plays nothing on
+catch-up (section 10.1).
+
 ### WebSocket `GET /api/v1/ws?since=<seq>&topics=a,b`
 
 1. Server sends every event with `seq > since` (replay), then the display
    settings `{"type":"settings","settings":{...}}` (section 2.1), then
-   `{"type":"ready","seq":<current>,"epoch":"<id>"}`.
+   `{"type":"ready","seq":<current>,"epoch":"<id>","mark_id":"<by_id>"}`.
+   `mark_id` is the `by_id` this token's marks get (section 2, "Marks"), so
+   a client can tell its own mark on a card.
 2. Then live events as they happen, and a new `settings` message whenever a
    device changes the settings. When a device in this token's list (the one
    `GET /api/v1/devices?all=1` shows, section 6) connects, finishes its replay
@@ -311,7 +610,8 @@ conflict resolution, last write on the server wins.
    list once after `ready`, then apply these. Clients ignore
    message types they do not know.
 3. Server pings every 30 s; client reconnects with backoff and its last seq.
-4. If `since` is older than retention, server sends `{"type":"reset"}` and the
+4. If `since` is older than retention, or older than the owner's last
+   subscription change (section 2.3), server sends `{"type":"reset"}` and the
    client fetches `GET /api/v1/notifications?state=open` fresh.
 
 After `reset` the server sends `ready` with the current seq and carries on
@@ -342,7 +642,10 @@ WebSocket (events, `settings`, `ready`, `reset`), one per `data:` line, and
 honours `Last-Event-ID` (`settings` and `reset` carry no `id:`).
 
 Browsers cannot set headers on a WebSocket, so the WebSocket and SSE accept
-the session cookie (same-origin only) as well as a Bearer token.
+the session cookie (same-origin only) as well as a Bearer token. Same origin
+means the page's scheme and host equal `CLRD_BASE_URL`'s, or this request's
+host and, when clrd knows it (TLS, or a trusted proxy's X-Forwarded-Proto),
+scheme.
 
 ## 4. Auth
 
@@ -351,10 +654,13 @@ the session cookie (same-origin only) as well as a Bearer token.
   Tokens imported from ntfy keep their `tk_...` value (also stored hashed) and
   work everywhere a `clrd_` token does.
 - **Per-topic grants:** a token may instead carry an ordered list of grants,
-  each a topic pattern (`*` matches any run of characters; matching ignores
-  case, as in ntfy) and the scopes it
+  each a topic pattern (`*` matches any run of characters) and the scopes it
   gives there (`read`, `publish`, both, or none, which denies). For a topic the
-  first grant whose pattern matches decides; no match means no access. The
+  first grant whose pattern matches decides; no match means no access.
+  Matching ignores case, as in ntfy, but topics are case-sensitive, so a grant
+  that matches only in another case never allows: a deny on `secret` also
+  denies `SECRET`, while a grant for `home` is skipped for `HOME` and a later
+  grant decides. The
   token's own scopes are the ceiling: a grant never adds a scope the token
   lacks, and a grant never holds `admin`. A write-only grant (`publish` only)
   lets the token publish to the topic but not list, get, stream, download
@@ -363,6 +669,32 @@ the session cookie (same-origin only) as well as a Bearer token.
   own devices in the device list (itself and what was linked from it). A browser signed in with it gets the same grants.
   Grants come from `clrd import ntfy` (ntfy's access control list, rules in
   ntfy's own order) or from `grants` on `POST /api/v1/tokens`.
+- **Users (people):** a user is one person and owns many device tokens. Off
+  until a full admin makes one: a token with no user works exactly as above.
+  A user has a name and, optionally, grants (same rules as a token's). A
+  token belongs to a user when it is attached (`user` on `POST
+  /api/v1/tokens`, or `PUT /api/v1/tokens/{id}/user` with `{"user":"<id>"}`,
+  `""` to detach); every browser or phone signed in or linked from it belongs
+  to the same user. Access is worked out from the user on every request, so
+  a new or existing device follows a later change to the user's grants. When
+  the user has grants, they replace the device's own topics and grants (an
+  empty list is no topic), and the device's own scopes stay the ceiling. A
+  grant never gives admin, and a token holding `admin` keeps its own access
+  whatever its user's grants. A user with no grants (`null`) limits nothing:
+  devices keep their own access. Topics are shared between users by giving
+  the other user a grant (read, publish or both); there is no other sharing.
+  All of a user's devices are "mine" for the device list, the device log and
+  sender names in the format check; the #187 `own_request` rule stays with
+  the token tree, so a person can still answer a request their own agent
+  sent. Only a full admin uses `GET`/`POST /api/v1/users`, `PUT
+  /api/v1/users/{id}` (`{"grants":[...]}` or `{"grants":null}`), `DELETE
+  /api/v1/users/{id}` (409 while tokens are attached) and the attach route.
+  A change to a user's grants, or attaching or detaching a token, closes the
+  open streams of that user's devices so they reconnect under the new rules.
+  A stream reads its access again once it is subscribed, so a change made
+  while it is still starting is never missed.
+  A device whose user cannot be read is refused (401), never let through.
+  These are separate from the ntfy password users below.
 - Bootstrap: first start with no users prints a one-time admin setup URL to the log.
   `clrd token create --name pixel-9 --scope read,publish` on the CLI.
 - Basic auth (`user:token`) and `?auth=` query param accepted for ntfy-client compatibility.
@@ -444,6 +776,34 @@ the session cookie (same-origin only) as well as a Bearer token.
   `clrd://link?server=<base>&code=<code>`. Link codes share the pairing
   expiry and single use; they have their own cap of 64, so waiting public
   sign-ins cannot crowd them out.
+- **Agent invite (#454):** one short string enrolls an agent as a user of
+  kind `agent`. `POST /api/v1/agents/invite` `{name, topics, expires_in?}`
+  from a person's browser or phone (a session token, not one of an agent) or
+  a full admin token (so agents with admin can provision agents); a typed-in
+  non-admin token or anything of an agent gets 403. `topics` is 1 to 64
+  names. Each gets the `read` and `publish` the creator holds on it, never
+  more; a topic with neither is 403. Only a full admin may name a pattern
+  (`ops-*`). `expires_in` is 1m to 1h, default 15m. A name a user already
+  has is 409. Answer 201 `{code, invite, url, expires_at, name, grants}`:
+  `invite` is `clrd://agent?code=<code>&server=<base>`, `url` is
+  `<base>/agent#<code>` (after `#`, so the code never reaches a request
+  line or a proxy log, #463). The agent posts `POST /api/v1/agents/claim`
+  `{code}` (no auth): 200 `{token, user, name, guide}` once, where `guide`
+  is `{server, grants, publish, notification, events, mcp, approve_request,
+  approve, limits: {publish_per_minute, attachment_max_bytes}}`. The claim
+  makes the user (grants as in the invite) and its own token (`read`,
+  `publish`, approve `denied`) in one transaction. The code is spent by the
+  first claim, even one that fails (a name taken since: 409); after that, or
+  once expired or unknown, 410 `gone`. `GET /agent` is the guide as plain
+  text with the claim command, the same for every invite (the server never
+  sees the code); it spends nothing and holds no token. Invites share the pairing store: single use,
+  their own cap of 64, held in memory, so a restart drops them. The agent
+  shows in the creator's device list (kind `agent`, can unlink) and in
+  `GET /api/v1/users` (`kind`, `last_seen_at`). Unlinking it revokes the
+  token, ends its streams and drops its user. Access is fixed at claim: a
+  later change to the creator does not change the agent; an admin changes it
+  with `PUT /api/v1/users/{id}`. The agent's own request for approve rights
+  goes to a person (`request_approve`); it cannot answer its own requests.
 - Setup: with no admin token in the database the server logs
   `<CLRD_BASE_URL>/setup?code=<one-time code>`. Opening it shows a form; posting
   it creates an admin token, shows it once and signs the browser in.
@@ -488,13 +848,17 @@ Codes: `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found`
 `rate_limited` 429 (with `Retry-After` in seconds), `busy` 429 (pairing,
 linking), `internal` 500.
 
-Notifications always carry every field: `""` for unset strings, `[]` for
-`tags` and `actions`, `null` for `snooze_until`. List returns
+Notifications always carry every field except `requested_topic` and
+`changed`: `""` for unset strings, `[]` for `tags` and `actions`, `null` for
+`snooze_until`. List returns
 `{"notifications":[...],"seq":<current>,"epoch":"<id>"}`, newest first; page with
 `before=<last id>`; `limit` defaults to 100, max 500. Fetch the list, then open
 the WebSocket with `since=<seq>` from that response. Setting the state a
 notification already has returns it unchanged with no new event (two phones
-dismissing at once is normal). Reopening a dismissed row whose `external_id`
+dismissing at once is normal), with `"changed": false` so a client retrying an
+action does not take the row's seq as its own change (#693). Any answer that
+wrote an event says `"changed": true`, including a snooze that sets a new
+`until`. The ntfy endpoints answer in ntfy's format, without this field. Reopening a dismissed row whose `external_id`
 has since been reused returns 409.
 
 Topic names: `[A-Za-z0-9_-]{1,64}`. Reserved (the server and mounted pages
@@ -509,11 +873,13 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | GET | `/api/v1/notifications/{id}` | One. |
 | PATCH | `/api/v1/notifications/{id}` | Body `{"message":"..."}`: replace the message of an open notification in place (same id and state, an `updated` event). Scope publish on its topic; 409 once dismissed or resolved, or if it has reply buttons (a tap answers the text shown; link buttons are fine). |
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
-| POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`: answer with one of its reply actions (section 2). 400 if not one of them, 409 if already answered or final, 403 `approve_denied` from a device not allowed to approve, 403 `own_request` from the token tree that sent it, 202 with a confirm prompt from an ask device (section 4). |
+| POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`, plus `"text"` for a text action and optional `"seq"`, `"via"`: answer with one of its reply actions (section 2). 400 if not one of them, or the text is missing, not wanted or over 1000 characters, 409 if already answered or final, 403 `approve_denied` from a device not allowed to approve, 403 `own_request` from the token tree that sent it, 202 with a confirm prompt from an ask device (section 4). |
 | POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. |
+| POST | `/api/v1/notifications/{id}/mark` | Body `{"mark":"seen"\|"actioned","note"?,"link"?}`: set your mark (section 2). Scope read on its topic. Changes no state. |
+| DELETE | `/api/v1/notifications/{id}/mark` | Remove your own mark. |
 | POST | `/api/v1/notifications/{id}/dismiss` | User clears it. |
 | POST | `/api/v1/notifications/{id}/resolve` | Sender clears it. |
-| POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). |
+| POST | `/api/v1/notifications/{id}/reopen` | Undo a dismiss (powers the Undo toast, 30 s window not enforced by server). Optional `{"until": RFC3339}` in the future lands it snoozed until then in one change, for undoing a Clear on a snoozed row; a past `until` is a plain reopen. |
 | POST | `/api/v1/notifications/clear` | Bulk dismiss, body `{"topic":"infra"}` or `{"ids":[...]}`. |
 
 Every state change above (ack, reply, snooze, dismiss, resolve, reopen, clear,
@@ -532,43 +898,57 @@ and via. Values clients send today:
 | `tray_button` | A button on an Android tray notification (Ack, Snooze, Clear, a reply) |
 | `web` | The web inbox, one notification |
 | `web_bulk` | The web inbox's Clear all or a stack's Clear |
+| `app_bulk` | The Android app's Clear on a stack |
+| `desktop_button` | The Clear button on a desktop system notification (section 8.1) |
+| `desktop_close` | Closing a desktop system notification, only with "closing clears everywhere" on (section 8.1) |
 | `web_form` | The web inbox's buttons with scripts off |
 | `mcp` | An agent through the MCP endpoint |
 | `ntfy` | An ntfy-compatible clear or delete |
 | `api` | Anything else (scripts, older clients) |
 
 The server's own changes use `snooze_end`, `expired`, `checkin` (a late
-check-in resolved by the next message), `publish` (a publish with `status
+check-in resolved by the next message), `quiet` (a sender's quiet alarm
+resolved by its next publish or a rule change, section 5.1), `publish` (a publish with `status
 resolved`) and `ntfy_import`.
 
 | Method | Path | Does |
 |---|---|---|
 | GET | `/api/v1/counts` | Exact counts of what the token can read: `{"active":3,"acknowledged":1,"snoozed":2,"dismissed":640,"resolved":12,"inbox":4,"cleared":652}`. `inbox` is active plus acknowledged, `cleared` is dismissed plus resolved. |
-| GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":""}]}`. |
-| GET | `/api/v1/format-check?topic=&by=` | Format check (#308), advice only. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). `by=sender` (#320) groups by topic and sending token (the top of its token tree, as kept for #187), adding `sender_id` and `sender` (the token name) to each group and naming the token in the prompt; only a full admin, or the token the sender belongs to (as in Linked devices, #245), gets `sender` and the prompt, anyone else gets both blank (#406); the default `by=topic` leaves both out. Returns `{"checked":N,"problems":N,"topics":[{"topic","sender_id"?,"sender"?,"checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}],"off":["topic"],"dismissed":[{"topic","rule","sender_id"}]}`, only groups with findings, in topic then sender_id order; topics in `off` are not checked or counted, and a dismissed rule does not count for that topic and sender (`sender_id` "" means every sender); `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters, with anything that looks like a secret (a value after `password=`, `token:`, `Bearer` and the like, the password in `user:pass@host`, a run of 20+ letters and digits) shown as `[hidden]`; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
-| POST | `/api/v1/format-check/dismiss` | Body `{"topic","rule","sender_id"?,"dismissed"?}` (#320): stop `rule` counting in `topic` for that sending token, or every sender without `sender_id`. `"dismissed":false` undoes it. Unknown rule is a 400. Scope publish on the topic. Nothing is dismissed until set. |
-| PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. `{"format_check":false}` leaves the topic out of the format check, `true` (the default) puts it back (#320). A body with none of these keys is a 400. Scope publish on the topic. |
+| GET | `/api/v1/topics` | Topics with open counts and icon: `{"topics":[{"topic":"infra","open":2,"icon":"","approvals":false}]}`. `approvals` marks a topic that has carried a message waiting for an answer (section 2.3). |
+| GET/PUT | `/api/v1/subscriptions` | Which topics reach this owner's devices (section 2.3). GET lists every readable topic with `subscribed`, `open` and `last_at`, plus `filtered` and `new_topics`; PUT takes `{"new_topics"?,"topics"?:{"chat":false}}`. Scope read; `?for=` is full admin only. |
+| GET | `/api/v1/format-check?topic=&by=` | Format check (#308), advice only. Plain string rules over the newest 500 notifications the token can read (in `topic` when given): `markdown_as_text` (format `text` with a `**bold**` pair, `](http`, a code fence or a `# ` heading), `unknown_shortcode` (a `:name:` with a letter that is not in the emoji table, outside code; `12:30:45` never counts), `no_title`, `long_body` (over 2000 characters), `json_dump` (the whole message is a valid JSON object or array). `by=sender` (#320) groups by topic and sending token (the top of its token tree, as kept for #187), adding `sender_id` (`"unknown"` for messages with no known sending token, #391) and `sender` (the token name) to each group and naming the token in the prompt; only a full admin, or the token the sender belongs to (as in Linked devices, #245), gets `sender` and the prompt, anyone else gets both blank (#406); the default `by=topic` leaves both out. Returns `{"checked":N,"problems":N,"topics":[{"topic","sender_id"?,"sender"?,"checked","problems","findings":[{"rule","count","example_id","example","fix"}],"prompt"}],"off":["topic"],"dismissed":[{"topic","rule","sender_id"}]}`, only groups with findings, in topic then sender_id order; topics in `off` are not checked or counted, and a dismissed rule does not count for that topic and sender (`sender_id` "" means every sender); `problems` counts messages with at least one finding; `example` is the newest hit's title and first 200 characters, with anything that looks like a secret (a value after `password=`, `token:`, `Bearer` and the like, the password in `user:pass@host`, a run of 20+ letters and digits) shown as `[hidden]`; `prompt` is text for the user's agent to fix the sender and holds `$CLRD_TOKEN`, never a token. |
+| POST | `/api/v1/format-check/dismiss` | Body `{"topic","rule","sender_id"?,"dismissed"?}` (#320): stop `rule` counting in `topic` for that sending token (`"unknown"` for the group with no known sender), or every sender without `sender_id`. `"dismissed":false` undoes it. Unknown rule is a 400. Scope publish on the topic. Nothing is dismissed until set. |
+| PUT | `/api/v1/topics/{topic}` | Body `{"icon":"https://..."}` sets the topic's icon; `""` removes it. `{"checkin":"25h"}` makes the topic expect a message at least that often (1m to 8784h, `""` for off): when one is late the server publishes an urgent notification with external_id `clrd-checkin`, and the next message to the topic resolves it. `{"format_check":false}` leaves the topic out of the format check, `true` (the default) puts it back (#320). `{"device_actions":true}` lets senders add `http` and `broadcast` actions (section 2, #401), `false` (the default) refuses them; this key needs scope admin on the topic, and a body with it and a token without admin changes nothing. A body with none of these keys is a 400. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/templates` | The topic's saved webhook templates (secret hidden, `has_secret` shown) and the built-in names. Scope publish on the topic. |
 | PUT | `/api/v1/topics/{topic}/templates/{name}` | Save a webhook template (section 5). Replaces the whole template; under a built-in name it overrides only the fields given. Scope publish on the topic. |
 | DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
 | POST | `/api/v1/topics/{topic}/templates/{name}/preview` | Dry run: `{payload, headers?, template?}` returns `{notifications}`, what a post of payload would publish, through the same render path, without storing or sending anything and without the secret check. `template` previews an unsaved one. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/hooks` | The topic's outgoing webhooks (secret hidden, `has_secret` shown). Admin. |
-| PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret"}`, replaces and turns it back on) or remove an outgoing webhook. Admin. |
+| PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret","body"}`, replaces and turns it back on; `body` is an optional template, #239; `"kind": "discord"` posts and edits Discord messages, #166; `"kind": "github"` opens and closes GitHub issues, #168) or remove an outgoing webhook. Admin. |
 | GET | `/api/v1/topics/{topic}/hooks/{name}/deliveries` | The last 100 deliveries, newest first. Admin. |
+| POST | `/api/v1/topics/{topic}/hooks/preview` | Dry run a body template (`{"body","event"?}`, a sample event without one): returns `{"body"}` as a delivery would send it, sends nothing. Admin. |
+| GET/PUT | `/api/v1/hooks/allow` | Private networks and extra ports outgoing webhooks may reach: `{"networks":["192.168.1.0/24"],"ports":[8080]}`, both empty by default, plus `"locked"` (true under `CLRD_HOOK_ALLOW=off`, when PUT is 403 `locked`). PUT needs both fields (`[]` for none), at most 64 of each; a bare address is a single-address network. Full admin. |
 | GET | `/api/v1/silences` | Scope read. Active silences on topics this token may read, plus those with no topic: `{"silences":[{"id","topic","tag","until","comment","created_by","created_at"}]}`. |
 | POST | `/api/v1/silences` | Body `{"topic","tag","for":"8h"}` or `"until":"RFC3339"` instead of `for` (exactly one, at most 8784h ahead), optional `comment`. Needs `topic`, `tag` or both. Returns 201 and the silence. Scope publish on the topic; no topic (every topic) needs a token without a topic list. |
 | DELETE | `/api/v1/silences/{id}` | End a silence early. Same scope as creating it. 204. |
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
-| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,via_id,linked_at,last_seen_at,this,can_unlink,sound,approve,connected,caught_up,synced_seq}]}`; `kind` is `token`, `browser` or `phone`. `via` and `via_id` are the name and id of the token or device it hangs under (absent for a token), `approve` is its setting from "Who may approve" in section 4. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
+| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,via_id,linked_at,last_seen_at,this,can_unlink,sound,approve,can_approve,connected,caught_up,synced_seq}]}`; `kind` is `token`, `browser` or `phone`. `via` and `via_id` are the name and id of the token or device it hangs under (absent for a token), `approve` is its setting from "Who may approve" in section 4. `can_approve` is true only on the caller's own row (`this`), when the caller may change who approves: `approve` is `allowed` and the token is on every topic. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
 | GET | `/api/v1/devices/log` | The last 200 links, sign-ins and unlinks for the same devices, newest first: `{events:[{at,action,device,device_id,by}]}`. |
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
 | PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
-| DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. |
+| DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. Needs `read`, except that a device may always unlink itself, whatever its scopes (#609); `{id}` = `this` means the asking device, so it need not look up its own id. |
 | POST | `/api/v1/devices/approve-request` | Body `{"approve":"allowed"}` or `ask`, `topic` optional (default `agents`, needs publish there): the calling device asks to raise its own setting (section 4). 202 with a confirm prompt on that topic; a repeat returns the same open prompt; 400 unless it is a raise. |
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. It starts denied for approval requests (section 4); `approve` other than `denied` is 400. |
+| GET | `/api/v1/stats` | Traffic numbers for notifications created in `[from, to)` (unix ms; `to` defaults to now, `from` to `days` back, default 7, at most 366): `total`, `answered`, count per `priorities`, count per UTC hour in `hours`, and the top 50 `topics`, `senders` (top token id) and `cleared_by` (who cleared), each with `open`, `cleared` and the median and p90 time from publish to first clear in ms, plus `flappers` (an external id that fired more than once). Read from stored rows, so cleared messages past the keep-cleared setting are not counted. Admin with no topic limit (#120). The web Stats page (`/app/stats`, `days` 1, 7, 30 or 90) shows the same numbers. |
+| GET | `/api/v1/senders` | Every sender, most recently heard first (section 5.1). Admin with no topic limit. |
+| GET | `/api/v1/senders/{id}` | One sender with `recent`, its last notifications still stored (section 5.1). 404 for an unknown id. |
+| PUT | `/api/v1/senders/{id}` | Change a sender's `rules` (section 5.1). Returns the Sender. |
+| GET | `/api/v1/senders/{id}/changes` | `{changes:[SenderChange]}`, newest first (section 5.1). |
+| POST | `/api/v1/senders/{id}/changes/{seq}/undo` | Put the rules back as they were before that change (section 5.1). Returns the Sender. |
+| GET | `/api/v1/version` | No token. Version, build commit and date, and the recent history (section 5.2). |
 | GET | `/api/v1/server` | Admin. The section 7 settings in effect, defaults filled in: `{"env":{"CLRD_LISTEN":":8080",...}}`, each written the way its variable takes it (`CLRD_BASE_URL` empty when unset, a password in it shown as `xxxxx`; `0` for a rate limit that is off). Read only; no secrets. |
 | GET | `/healthz` | `{"ok":true,"seq":N}`; 503 with `"ok":false,"failing":["snooze wake"]` while a background job (snooze wake, prune) has failed 3 times in a row. |
 | POST/DELETE | `/api/v1/session` | Web sign-in and sign-out (section 4). |
@@ -581,11 +961,157 @@ By external id (what scripts and monitors use):
 | POST | `/{topic}/{external_id}/resolve` | Resolve the open row with that key. 404 if none. |
 | POST | `/{topic}/{external_id}/ack` | Same, ack. |
 
+### 5.1 Senders (#119)
+
+A sender is everything that publishes under one token tree: the token typed
+in, and every browser or phone signed in under it (the same top token as
+`sender_id` in section 2.1). It appears on its first stored notification,
+with nothing to set up, so after a move from ntfy or Gotify the list already
+shows every service still talking. A person's own web app or phone counts
+when it publishes, as kind `person`. clrd's own alerts (missed check-ins,
+webhooks turned off) are no sender. A publish that stores nothing (`live`, or
+`status: resolved`) is not counted. Anonymous ntfy publishers share one
+token, so each client address is its own sender, at most 500 of them; the one
+heard from longest ago goes first.
+
+`GET /api/v1/senders` (admin with no topic limit; the list names every token
+and its address) returns `{senders:[Sender]}`, last heard first:
+
+| Field | Meaning |
+|---|---|
+| `id` | The sender id: its top token id, or `anonymous-` and 12 hex digits for an anonymous address |
+| `token_id` | The top token id; `""` for anonymous. Rename, rotate and revoke go through `/api/v1/tokens` with it; revoking it removes the sender |
+| `name` | The token's name, `anonymous` for anonymous |
+| `kind` | `token`, `person` (a token owned by a user), `ntfy_user`, `gotify_app`, `pushover_app` or `anonymous` |
+| `template` | The webhook template (`?template=`) it last posted through, `""` if none ever |
+| `user_agent`, `address` | From its last publish: hints, never checked. `address` is the client IP (behind a trusted proxy, the forwarded one; IPv6 as its /64) |
+| `first_seen`, `last_seen` | RFC 3339 |
+| `count` | Stored publishes, an update by `external_id` included; it outlives the rows themselves |
+| `topics` | `{topic: count}` of the same publishes |
+
+`GET /api/v1/senders/{id}` returns one Sender plus `recent`: up to its last
+10 notifications, newest first, that are still stored (full notifications,
+section 2). A row updated again by `external_id` shows once. 404 for an unknown id.
+
+Every Sender also carries `rules`, `{}` until someone sets one:
+
+| Rule | Effect on its publishes |
+|---|---|
+| `paused` | Accepted with the usual 2xx and dropped: nothing stored, no file kept, still counted in `count` and `last_seen`. Pause covers publishing only; acks and other changes it makes still apply |
+| `muted` | Stored and synced, but `silenced` (section 2), so no sound or tray alert |
+| `priority_min`, `priority_max` | Priority clamped into the range, 1 to 5; `0` means no limit. Min above max is 400 |
+| `routes` | `{topic: [topics]}`: a publish to the key topic lands in each listed topic instead. Key `*` matches any topic with no route of its own. An empty list drops the publish like `paused` |
+| `expect`, `alert_topic` | Nothing on its publishes: an urgent alarm when the sender goes quiet that long, see the silence alarm below |
+
+A routed notification keeps the topic it was sent to as `requested_topic`
+(section 2), and the sender is counted once, under that topic. Each target
+gets its own copy, and its own copy of any file. The publisher's answer is the
+first target's notification. A route is applied by the server on the
+sender's behalf, so its targets need no grant on the sender's token. The
+sender's rate limit is spent once; each target topic spends its own topic
+limit. An error on a later target (a full topic included) is logged and
+skipped. The routes apply to `status:
+resolved` too, so a resolve follows the alert to its targets. One gap: change
+a route while an alert is open and its resolve goes to the new targets and
+finds nothing in the old one.
+
+`PUT /api/v1/senders/{id}` (admin with no topic limit) takes any of the rule
+fields and changes only those; `routes`, when present, replaces the whole map.
+A bad topic is 400, an unknown id 404. An optional `base_seq` is the `seq`
+of the newest change the caller saw (0 for none); if a newer change exists
+the request is 409 and changes nothing. Rules can be set on a token that has
+not published yet (its id from `/api/v1/tokens`); it then shows with `count`
+0 and a zero `first_seen`. Each change is logged: `GET
+/api/v1/senders/{id}/changes` returns `{changes:[{seq, before, after, by,
+by_id, at}]}`, newest first, with `before` and `after` the full rules. `POST
+/api/v1/senders/{id}/changes/{seq}/undo` sets the rules back to that change's
+`before`, and is logged as a change itself. Revoking the token removes the
+sender, its rules and its log.
+
+The web inbox shows the list at `/app/senders` and one sender at
+`/app/senders/{id}`, where a form sets every rule above (an `expect` or `alert_topic` the server
+refuses comes back with its message by that field) and each change
+has an Undo button, for the same admins only; anyone
+else gets 403. The form sends `base_seq`, so saving a page drawn before a
+newer change is refused rather than undoing that change. The Android app
+lists them in Settings with the same rules (the silence alarm's `expect` and
+`alert_topic` below included), change log and Undo, for the same admins, and
+sends one field per change; for anyone else the section stays hidden.
+
+The silence alarm: `expect` (a duration, 1m to 8784h, like `"25h"`; `""`
+for off) makes the server watch the sender. When it has sent nothing,
+stored or dropped by its rules, for that long, the server publishes an urgent
+notification (priority 5, title "<name> went quiet") with external_id
+`clrd-quiet-{id}`, in `alert_topic` if set, else in the first topic its last
+publish routes to, else in that topic itself. A sender that has never
+published and has no `alert_topic` raises nothing. A live publish (`Cache:
+no`) and a `status: resolved` publish are not counted (as for `count`), so
+they do not keep the alarm away. The sender shows the alarm's topic as
+`alarm` until its next publish resolves it (reason `quiet`); a change to
+`expect` or `alert_topic` resolves it too and starts the wait over, and
+revoking the sender's token resolves it for good. One
+alarm at a time: clearing it by hand raises no new one until the sender
+publishes or the rule changes, and the next can only come a full `expect`
+after that. Publishers cannot create a notification with an external_id
+starting `clrd-quiet-` (400). The alarm counts as a message in its topic, so
+it resets that topic's own check-in.
+
+### 5.2 Version and history (#580)
+
+One project version for the server, web, Android and desktop apps: the
+newest dated heading in `CHANGELOG.md` (`## 0.1.0 - 2026-11-23`). It is
+`0.0.0` until the first version is cut. Cut one with
+`go run ./server/cmd/cutversion 0.1.0` (date defaults to today, UTC): it
+moves everything under `## Unreleased` into a new dated section and leaves
+`## Unreleased` in place, empty, for the next entry. With
+`-summary-file F` (before the version), the short hand-written text in `F`
+(`###` sections with `-` items, like Unreleased) becomes the version's
+section, and the full entries go to `CHANGELOG-archive.md` under the same
+heading. A version is cut with each deploy batch, so Unreleased stays small.
+
+The binary embeds `CHANGELOG.md`, so it carries the recent history and the
+repo carries all of it. A test fails when the embedded file is over 96,000
+bytes. When a cut leaves it over 90,000 bytes, the script moves the oldest
+versions into `CHANGELOG-archive.md` at the repo root (not embedded), keeping
+the newest 10 when they fit under 96,000 and always the newest one.
+
+`GET /api/v1/version` needs no token, on public and private servers alike,
+and answers only from the binary (nothing about the server, its config or
+its data):
+
+```json
+{"version":"0.1.0","commit":"<git commit, 40 hex>","date":"2026-11-23T10:00:00Z",
+ "history":[{"version":"Unreleased","date":"","changes":[{"section":"Added","items":["Server: ..."]}]},
+            {"version":"0.1.0","date":"2026-11-23","changes":[...]}],
+ "full_history":"https://github.com/thejdubb02/clrd/blob/main/CHANGELOG.md"}
+```
+
+- `commit` and `date` (RFC 3339, UTC) are when the binary was built, set at
+  build time (`docs/self-host.md`); a `go build` inside a git checkout fills
+  them from the commit. A build with neither has `""` for both.
+- `history` is newest first. `Unreleased` comes first only when it has
+  entries (what this binary has beyond the last version); a version's `date`
+  is `YYYY-MM-DD`. Each version lists its sections (`Added`, `Changed`,
+  `Fixed`, `Removed`, `Security`) in the order they first appear, a section
+  repeated under one version merged into the first. Every field is always
+  present; arrays are `[]`, never `null`.
+- Each item is one line of inline Markdown (code spans, links), wrapped lines
+  joined with a space.
+- Views of the history (the web, apps, `/docs/changelog`) end with a link to
+  `full_history`, where older versions are.
+
+`/docs/changelog` renders the same file; a private server hides it with the
+rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
+and `initialize` reports `version` as `serverInfo.version`.
+
 ### ntfy compatibility (must pass ntfy's own client behaviour)
 
 - `PUT|POST /{topic}` with the body as the message. Headers `X-Title`/`Title`/`t`,
   `X-Priority`/`Priority`/`p` (1-5 or min/low/default/high/urgent),
-  `X-Tags`/`Tags`, `X-Click`, `X-Actions`, `X-Delay`, `X-Icon` (sets `icon`; a
+  `X-Tags`/`Tags`, `X-Click`, `X-Actions` (JSON or the short form, where
+  a quoted value keeps its spaces and `\"` or `\'` is the quote itself;
+  `view`, `http` and `broadcast`, the last two only on a topic with
+  `device_actions` on, else dropped; `copy` is dropped), `X-Delay`, `X-Icon` (sets `icon`; a
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
   is dropped), `X-Filename`/`Filename`/`File`/`f` (with it, the body is the
   file and the message comes from `X-Message`/`Message`/`m`, default "You
@@ -608,8 +1134,11 @@ By external id (what scripts and monitors use):
   that have not fired yet, as a `message` at their delivery time, as ntfy
   does; a notification snoozed until later counts too, since a delay is a
   snooze. Output in ntfy's message format so the ntfy Android app and ntfy CLI
-  work unchanged. The ntfy routes answer any origin (CORS); no cookie is read
-  there, so this grants nothing a token holder could not already do.
+  work unchanged. Pages on other web sites are refused on the ntfy and Gotify
+  routes (requests, preflight and WebSocket) unless an admin allows their
+  origin with `PUT /api/v1/ntfy/origins` (or `*`, ntfy's own behaviour);
+  requests with no Origin (phones, scripts) and clrd's own pages always pass
+  (#374).
 - Webhook-friendly: `GET /{topic}/publish?message=...` and `/{topic}/trigger`.
 - Alertmanager/Grafana/Gatus: a payload with `status: resolved` and a stable
   key (alert fingerprint / `X-Id`) resolves instead of creating. Mapping in `docs/integrations/`.
@@ -624,11 +1153,34 @@ By external id (what scripts and monitors use):
   `X-Markdown` / `?markdown=` work as on any ntfy publish (section 2.1).
   Docs: `docs/integrations/custom-webhooks.md`.
 - Webhooks out: a topic's outgoing webhook POSTs the sync stream event
-  (section 3) on dismissed, acknowledged, resolved, snoozed and `action` (a
+  (section 3), or its `body` template rendered against that event (the
+  incoming template functions plus `json`; must render valid JSON, 16 KB at
+  most, or the try fails unsent), on dismissed, acknowledged, resolved, snoozed and `action` (a
   reply tapped), with `X-Clrd-Event`, `X-Clrd-Delivery` and, with a secret,
   `X-Clrd-Signature: sha256=<hex HMAC>`. Same address guard as the favicon
-  fetcher. Non-2xx retries 8 times from 30 s, doubling; 24 h of failures turns
-  it off with a notification on the topic. Docs:
+  fetcher, on a connection pool of its own, unless an admin lists networks
+  and ports with `PUT /api/v1/hooks/allow` (#237): a dial then passes when
+  the address is public or in a listed network and the port is 80, 443 or
+  listed. `CLRD_HOOK_ALLOW=off` (section 7) locks the list empty: saved
+  entries are ignored at send time, GET adds `"locked": true` and PUT is 403
+  `locked`. Non-2xx is tried again from 30 s, doubling, 8 tries in all; 24 h of failures turns
+  it off with a notification on the topic. Each try uses the hook's URL,
+  secret and body saved at that moment. A hook with `"kind": "discord"`
+  (#166; no body or secret) instead posts each new, unscheduled notification to
+  its Discord webhook URL with `?wait=true`, keeps the message id, and on each
+  subscribed state change PATCHes that message: title struck through when
+  dismissed or resolved, plus a status line such as "Cleared by pixel-9". A
+  discord hook sends its deliveries one at a time in order; an edit of a
+  message that was never posted, or was deleted (404), is done, not retried.
+  A hook with `"kind": "github"` (#168; url
+  `https://api.github.com/repos/OWNER/REPO`, secret a token sent as
+  `Authorization: Bearer`, no body) opens an issue per new, unscheduled
+  notification, except from an anonymous sender or for a question (a confirm
+  prompt or a reply button), at most 10 an hour per hook. The issue body puts
+  the sender's text in a fenced block it cannot close. Each subscribed state
+  change comments with the status line; dismissed and resolved first close
+  the issue. A deleted issue (410) is done; any other error is retried.
+  Delivery errors never carry the URL. Docs:
   `docs/integrations/webhooks-out.md`.
 
 Full ntfy parity checklist lives in issue #2; tick it off there.
@@ -686,29 +1238,34 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?, live?, devices?)`, `list(topic?, state?)`,
 `topics()`, `counts(keep_cleared_days?, topic?)`, `format_check(topic?, by?)`, `format_dismiss(topic, rule, sender_id?, dismissed?)` (the format
 check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
 `ack(id)`, `resolve(id | topic+external_id)`, `snooze(id, for)`,
+`mark(id, mark?, note?, link?)` (no `mark` removes yours),
 `wait_for_reply(id, timeout_s)` (blocks until the notification is acked,
 dismissed or an action is tapped; returns which, so an agent can ask a human
 "yes?" and wait). `actions` takes `[{"label":"Yes","reply":"yes"}]`; when one
 is tapped, `wait_for_reply` returns `answer` (the `reply` value) next to
-`reply` (the state). `wait_for_reply` waits at most 600 s. `devices()`,
+`reply` (the state). One action may set `"text": true` (see Typed answers);
+its answer also returns `text`, what the human typed. `wait_for_reply` waits at most 600 s; on a timeout it
+returns the notification only while the token can still read it. `devices()`,
 `device_log()` and `unlink(id)` are the device list, its log and unlink,
 `sound(id?, sound?)` lists the sound names or sets one device's sound,
 and `request_approve(approve, topic?)` is `POST /api/v1/devices/approve-request`,
 from section 5. Setup tools, each one REST call: path arguments go in the URL,
 the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dismiss(id)`, `reopen(id)`, `clear(topic | ids)`, `silences()`,
 `silence(topic?, tag?, for | until, comment?)`, `end_silence(id)`,
-`set_topic(topic, icon?, checkin?, format_check?)`, `templates(topic)`,
+`set_topic(topic, icon?, checkin?, format_check?, device_actions?)`, `templates(topic)`,
 `set_template(topic, name, ...)`, `delete_template(topic, name)`,
 `preview_template(topic, name, payload, headers?, template?)`, and, admin
-only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?)`,
-`delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
+only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?, body?)`,
+`preview_hook(topic, body, event?)`, `hook_allow()`, `set_hook_allow(networks, ports)`, `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
-`server_env()` (`GET /api/v1/server`) and `ntfy_ignored()`.
+`create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
+`subscriptions(topics?, new_topics?, for?)` (section 2.3), `server_env()` (`GET /api/v1/server`), `version()` (`GET /api/v1/version`, section 5.2, any token), `ntfy_ignored()`, `senders()` and
+`sender(id)` (section 5.1).
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
 `PermissionRequest` hook body, sends an Allow / Deny notification, waits, and
@@ -745,6 +1302,21 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   address, and whose `X-Forwarded-Proto` sets the scheme of links built from
   the request when `CLRD_BASE_URL` is unset. Unset, any loopback or
   private-network peer is trusted.
+  `CLRD_HOOK_ALLOW` (`on`; `off` locks the webhook allow list of section 5
+  empty, whatever is saved, and no token can change it).
+  `CLRD_CONFIG` (unset): a JSON file `{"users": [...], "tokens": [...]}`
+  applied at every start (#155). A user is `name` and `grants` as on the
+  API; a user named like an agent stops the start, since it would take the
+  agent over. A token is `name`, `secret` (`clrd_` and 20 or more characters in all; `"$NAME"` reads
+  the environment variable), `scopes`, `topics`, `grants`, `approve` and
+  `user` (a user name in the file), and is matched by the hash of its
+  secret, so one made on the API is taken over. A user made on the API is
+  managed by the file while listed. Rows the file made and no longer lists
+  are removed, with their sessions, and a changed token drops its sessions;
+  rows made on the API are not. A dropped user made on the API, or one a
+  token made on the API still points at, goes back to the API as it is, with
+  a warning in the log, instead of stopping the start (#440). Unknown fields
+  or a bad entry stop the start and change nothing.
   An upload may take up to 10 minutes; other request bodies get 30 s.
 - Snooze wake-ups: a ticker every 15 s.
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.
@@ -763,10 +1335,85 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   clearing happens in the app, the web or the API (#265). A new alert for a hidden item shows it
   again. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR are deliberate taps and do sync.
 - Incoming `dismissed`/`resolved` event -> `NotificationManager.cancel(tag)`. That is the headline feature.
-- Inbox screen per the brand board: filter pills by topic, swipe to clear with green reveal, tabs Inbox, Snoozed, Cleared, Settings.
+- Inbox screen per the brand board: filter pills by topic, a swipe that reveals round buttons (by default Clear and Snooze to the left, Ack to the right; the settings `swipe_start` and `swipe_end` in section 2.1 choose them, and Settings sets them on the server, read-only for a token that gets 403; a card skips a button it cannot take, like Ack on an acknowledged card or Resolve, which the app has no button for yet) and changes nothing until one is tapped (#161; a "Full swipe acts" setting, off by default, lets a swipe all the way across run the first button, the one nearest the edge), tabs Inbox, Snoozed, Cleared, Settings.
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.
 - `fastlane/metadata/android/` for F-Droid. Reproducible build, no proprietary deps.
 - UnifiedPush distributor support is a later issue, not v0.
+
+## 8.1 Desktop
+
+The tray app for Windows and Linux (#162), in `desktop/`. A Rust core holds
+the WebSocket and follows section 3 like any other client; the window loads
+the server's own `/app`. It links through the device link flow in section 4
+and is a linked device like any other, under the same Allowed, Ask and Denied
+rules. Its token lives in the OS keychain and is sent only as an
+`Authorization` header.
+
+- The window is signed in without the token: the core asks
+  `POST /api/v1/session` for a session and the app puts that cookie into the
+  web view's cookie store itself, for the server's host only, HttpOnly, and
+  with no expiry so the web view keeps it in memory and never writes it to
+  disk. The token never reaches the page, a URL or a file.
+- The server's page gets no native commands. Only the app's own bundled
+  "This computer" page (link, unlink, status) may call the core. The window
+  stays on the server's origin; any other address opens in the system
+  browser.
+- Unlinking ends the window session (`DELETE /api/v1/session`), revokes the
+  device on the server and removes the token from the
+  keychain.
+- One copy runs per sign-in session. Starting it again opens the window of
+  the one already running, and hands it the `clrd://` link it was started
+  with. On Linux the lock is a name on the session bus. On Windows it is a
+  named pipe whose name carries the sign-in session's number; a later start
+  writes its link only to a pipe served from its own session. If the lock
+  cannot be taken or reached, the app starts anyway.
+- Each open notification = one system notification.
+- Closing a system notification (its close button, or the desktop's own
+  clear) only hides it on that computer and sends nothing, the same rule as
+  the Android tray (#265). On Linux only `NotificationClosed` with reason 2
+  (closed by the user) counts as a close; reason 1 (expired) and reason 3
+  (closed by the app itself) never send anything, in any setting. On Windows
+  only a toast's `Dismissed` event with reason `UserCanceled` counts;
+  `TimedOut` leaves the toast in the notification centre, still open, and
+  `ApplicationHidden` is the app's own close.
+- On Windows a notification is a toast, shown under the app id on the Start
+  menu shortcut the installer makes (`org.clrd.desktop`), with the clrd id as
+  its tag. A build with no such shortcut shows none and still syncs. A toast
+  holds text only: the sender's `click` address is never put in it, and a
+  click only opens the window. A clear from elsewhere removes it from the
+  notification centre too. Not handled: a click on a toast while the app is
+  not running (a start removes the toasts an earlier run left). Not yet seen
+  on a Windows computer: any of this, and whether a click, the Clear button
+  or a close on a toast in the notification centre is reported at all.
+- The Clear button on a system notification is a deliberate click and does
+  sync: it dismisses with `via: "desktop_button"`.
+- "Closing clears everywhere" is a setting on that computer, off by default.
+  With it on, a close by the user dismisses with `via: "desktop_close"`.
+  The switch is on the app's This computer page. It belongs to the computer,
+  not the link: it is kept across restarts and across Unlink, and counts from
+  the next close on.
+- The window follows the desktop's light or dark setting, at start and at
+  each change, so the inbox's System appearance is the desktop's. On Linux
+  that is the settings portal's `color-scheme`; a desktop with no portal
+  keeps the GTK theme's answer. On Windows it is the "app mode" colour
+  setting, which the window library reads and follows by itself.
+- An incoming `dismissed` or `resolved` event from any device always closes
+  the system notification.
+- Updates (Windows, #719). The update address and a minisign public key are
+  build inputs (`CLRD_UPDATE_URL`, `CLRD_UPDATE_PUBKEY`); a build without
+  both never asks and shows no update settings. The address serves the JSON
+  feed Tauri's updater uses (`version`, and under `platforms` a
+  `windows-x86_64` entry with `url` and `signature`). An installer runs only
+  when its signature verifies against the built-in key, its signed comment
+  carries `version:` equal to the feed's version, and that version is newer
+  than the running one. The requests carry no token and no session.
+  "Update automatically" is a setting on that computer, on by default; off,
+  the app asks nothing by itself and Check for updates still works. An empty
+  file `no-auto-update` in the app's data folder is the off state, so a setup
+  script can set it. A machine policy wins over it: the DWORD `AutoUpdate`
+  under `HKLM\Software\Policies\clrd` (0 off, any other number on) is the
+  switch for every user while it is there, and the user cannot change it. The app asks at start and every six hours, and does not
+  start the installer for the same version twice by itself.
 
 ## 9. Web
 
@@ -786,7 +1433,86 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `web/ui/build.sh` writes `web/static/app.css`, which is committed so a plain
   `go build` still works. CI rebuilds it and fails if it drifted. Icons are
   Lucide, inlined as SVG partials in `web/templates/icons.html`.
-- Web Push (VAPID) for browser notifications is a later issue.
+- Web Push (#164). The
+  server makes a VAPID key pair on first start and keeps it in the
+  database. A signed-in device subscribes with its token:
+  `GET /api/v1/push` gives `public_key` (pass it as `applicationServerKey`)
+  and `subscribed`; `PUT /api/v1/push` takes the browser's PushSubscription
+  JSON (`endpoint` must be https); `DELETE /api/v1/push` stops it. One
+  subscription per device, and revoking the device drops it. All three need
+  scope read.
+- What pushes: exactly what would ring that device in the open inbox. A new
+  notification, a repeat, or a snooze ending, while active and not silenced,
+  on a topic the device may read, and only to the chosen devices when the
+  notification names any. State changes (clear, ack, resolve) do not push.
+  Live publishes never push, since they are never stored.
+- Payload (encrypted per RFC 8291, `aes128gcm`): JSON
+  `{type, via, seq, id, topic, title, message, priority, tags, click, icon}`,
+  empty fields left out. A message too long for one 4 KB push is cut to fit;
+  if it still does not fit, only `{type, via, seq, id, topic}` is sent and
+  the page fetches the rest. Headers: `TTL: 86400`, `Urgency` high for
+  priority 4 and 5, low for 1 and 2, `Topic` the notification id so a
+  newer push replaces an older one waiting in the push service.
+- The push service answering 404 or 410 drops the subscription. Other
+  failures are logged, not retried. Push endpoints get the same guard as
+  link fetches (ports 80 and 443, no private addresses), so a subscription
+  cannot point the server at the local network.
+- The web inbox (Settings, Browser notifications) registers its worker,
+  `static/sw.js`, only when the user turns notifications on there, and asks
+  for permission only on that tap. Nothing changes for a browser that never
+  opts in. A site the browser blocks, or a subscription one side lost, is
+  tidied to off on both sides at the next Settings load. The worker shows
+  every push (fetching the notification by id when only the short form
+  came), and a tap opens or focuses the inbox. The system notification only
+  signals: closing it changes nothing on the server. Browsers allow Web Push
+  only over HTTPS (or on localhost).
+
+## 9.1 Settings layout (#575, web and Android)
+
+Settings is one page in six sections. Both clients use these names, in this
+order. A client leaves out a setting it does not have; it never renames one or
+moves it to another section. Each setting has a plain label, a one-line
+description and the keywords below. Its id is the anchor on web
+(`/app/settings#sound`) and the key Android uses to scroll to it.
+
+Search sits at the top. It matches when the typed text, trimmed and ignoring
+case, appears in the label, the description or a keyword. Matching settings
+show under their section name; a section with no match hides. Nothing
+matching shows "No settings match" with the typed text and a way to clear it.
+Search only ever lists what this device can open: a setting the signed-in
+token may not use is left out of the page, not greyed in the results. With
+JavaScript off the web page shows every section and no search box.
+
+| Section | Id | Label | Keywords | Where |
+|---|---|---|---|---|
+| Notifications | `sound` | Sound | sound, chime, ring, audio, volume | both |
+| Notifications | `push` | Browser notifications | push, system notification, pop up, desktop, alert | web |
+| Notifications | `topics` | Topics | subscribe, unsubscribe, follow, hide, topic | both |
+| Notifications | `silences` | Silences | mute, quiet, quiet hours, do not disturb, pause | web |
+| Notifications | `subscriptions` | Topics | subscribe, unsubscribe, topic, follow, new topics | Android |
+| Notifications | `muted-topics` | Muted topics | mute, topic, pop up, quiet | Android |
+| Notifications | `battery` | Battery | battery, background, delayed, killed, optimization | Android |
+| Inbox | `stack` | Stack by topic | group, fold, bundle, collapse | both |
+| Inbox | `swipe` | Swipe buttons | swipe, gesture, slide, buttons | both |
+| Inbox | `full-swipe` | Full swipe acts | swipe, fast, gesture, one move | Android |
+| Inbox | `snooze` | Snooze times | later, remind, postpone, default time | both |
+| Inbox | `keep-cleared` | Cleared messages | delete, keep, retention, history, days | web |
+| Inbox | `drop-cleared` | Remove cleared items | hide, cleared tab, remove | Android |
+| Display | `formatting` | Message text | markdown, formatting, links, preview, site icons | web |
+| Display | `topic-icons` | Topic icons | icon, image, avatar, picture | web |
+| Display | `format` | Message format check | format, markdown check, broken, warning | web, only with findings |
+| Display | `appearance` | Appearance | theme, dark mode, light mode, colors, system | web: System, Light or Dark, kept per browser |
+| Devices | `server` | Server | server, address, url, token, sign in, log in | Android |
+| Devices | `devices` | Linked devices | phone, browser, unlink, sign out, approve, may approve, activity | both |
+| Devices | `link-phone` | Link a phone | qr, scan, pair, code, add phone | web shows the code, Android scans it |
+| Devices | `add-agent` | Add an agent | agent, ai, bot, invite, mcp, token | web, admin only |
+| Integrations | `senders` | Senders | sender, rules, bot, agent, allow | both, only where the token may manage senders |
+| Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
+| Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
+| Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
+| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version and What's new, the history in section 5.2 |
+
+The Android version line stays at the foot of the page, outside the sections.
 
 ## 10. Brand tokens
 
@@ -798,10 +1524,10 @@ Fonts: Geist (UI), Geist Mono (meta, ids, code). Self-host the font files; no Go
 | paper | `#F5F3EE` | light bg |
 | surface | `#FFFFFF` | cards |
 | line | `#DEDAD1` | 1px hairlines |
-| slate | `#5B6470` | quiet text |
+| slate | `#5B6470` (dark mode `#98A1AC`) | quiet text |
 | body | `#3D444D` | body copy |
 | clear | `#0B7A55` (dark mode `#3DDC97`) | done, Clear button |
-| signal | `#C2410C` | urgent only |
+| signal | `#C2410C` (dark mode `#F97316`) | urgent only |
 | snooze | `#B7791F` | waiting |
 
 State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
@@ -809,8 +1535,8 @@ State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
 `#F7EBD3`/`#7A4D0B`, dismissed outline `#DEDAD1`/`#5B6470`.
 
 Rules: no gradients, flat fills, 1px hairlines, radius 6 (chips, inputs), 8
-(buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. Dark
-mode swaps paper and ink, same accents. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
+(buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. A user's color rules (section 2.1) color their own cards, gradient included; clrd's own chrome keeps these rules. Dark
+mode swaps paper and ink, and accents use the lighter dark mode values above where given. Each app offers System (the default, follows the device), Light and Dark in Display, Appearance. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
 
 Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every surface uses one file). The three lines end on one circle around the disc, so every gap to the disc is the same:
 
@@ -822,10 +1548,53 @@ Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every su
 </svg>
 ```
 
+### 10.1 Motion
+
+One set of values for every client, so a clear or an arrival looks the same on
+the web, Android and the desktop. Two curves only, nothing that overshoots or
+bounces:
+
+- Ease out `cubic-bezier(.2, .7, .2, 1)`: things coming in (the green wash, an
+  arriving card).
+- Ease in out `cubic-bezier(.4, 0, .2, 1)`: things going away (the slide, the
+  gap closing).
+
+**Clearing.** Every way a card leaves plays the same steps: a swipe, the Clear
+button, Clear all, a clear or other change from another device, and a snooze or
+resolve that takes it out of the view. The clear is sent at once; the motion is
+only what the screen shows.
+
+| Step | Value |
+|---|---|
+| Green wash across the card, from the inline start | 420ms, ease out |
+| Check mark draws in, with the reason | 260ms, starts 180ms in |
+| Hold, so the reason can be read | 1400ms from the start |
+| Slide away, toward the swipe (inline end when not swiped), fading out | 100% of the card width, 200ms, ease in out |
+| Cards below close the gap | 200ms, ease in out |
+| Clear all: each card's slide starts a little after the one above it | 40ms per card, at most 8 steps (320ms) |
+
+**Arriving.** A new card slides in from just above its place and fades in, then
+gives one small wiggle.
+
+| Step | Value |
+|---|---|
+| Slide in and fade in | 8px, 180ms, ease out |
+| Wiggle, once | rotate to 1deg, then -1deg, then rest, 320ms, ease in out, starts when the slide ends |
+
+It plays only for a card that arrives live (a new message, a repeat, or a
+snooze ending) while the page or app is in front and the card is on screen.
+Nothing plays on first load, on catch-up after a reconnect, or for cards that
+arrived while the person was away. In a burst every new card slides in and
+only the newest wiggles.
+
+**Reduced motion.** With the system's reduce motion setting on, none of this
+plays: a cleared card shows its reason for the same hold, then goes, and a new
+card simply appears.
+
 ## 11. Rules for every thread
 
 - Public repo: no secrets, no internal hostnames or IPs, no em dashes, en dashes or the ellipsis character in anything committed.
 - Stay in your own directories. A spec change goes in its own commit with a reason.
 - Work on your branch, open a PR to `main`, tests green. Never force-push `main`.
-- CI only on `runs-on: [self-hosted, cezar1]`.
+- CI on `runs-on: ubicloud-standard-2` (`-4` for the desktop job), the Android and F-Droid jobs included.
 - File follow-ups as GitHub issues on `thejdubb02/clrd`.
