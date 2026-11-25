@@ -148,6 +148,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Server: pausing GitHub issue hooks (`github_hooks_paused`) now also stops a send already under way, and issues waiting out a pause longer than `CLRD_RETENTION` are no longer dropped, so they all go out on resume (#796).
 - Server: deleting an outgoing webhook no longer erases its past delivery failures from Stats, and the Stats CSV export quotes a value that starts with `'`, so `-disk` and `'-disk` no longer read back the same (#794).
 - Server: with "Clears everywhere" off, MCP `wait_for_reply` now returns `dismissed` when the caller clears the notification for itself during the wait, as it already did after; a web push no longer reaches a device that hid the card while the push waited to send; and a big clear on one such device no longer makes your other devices' live streams drop and reconnect (#777).
 - Server and web: "Unlink devices unused for 7 days" unlinks only the devices it counted, and it and the idle sweep check each device again as they unlink it, so one used, given web push or signed in under in the meantime stays. A browser signing in again no longer loses a lower approve setting saved at the same moment. `POST /api/v1/devices/tidy` takes an optional `devices` list (#773).
