@@ -128,14 +128,13 @@ jobs:
           KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && secrets.CLRD_UPDATE_KEY_PASSWORD || '' }}
           URL: ${{ vars.CLRD_UPDATE_URL }}
           PUBKEY: ${{ vars.CLRD_UPDATE_PUBKEY }}
-          PACKAGES: ${{ vars.CLRD_UPDATE_PACKAGES }}
         run: |
           setup=$(echo "$CARGO_TARGET_DIR"/x86_64-pc-windows-msvc/release/bundle/nsis/clrd_*_x64-setup.exe)
           if [ "$BY_HAND" = true ]; then
             # The test below serves the installer itself, so it cannot catch
-            # a bad address: both have to be https here.
-            [ -n "$KEY" ] && [ -n "$PUBKEY" ] && [ "${URL#https://}" != "$URL" ] && [ "${PACKAGES#https://}" != "$PACKAGES" ] || {
-              echo "::error::needs the CLRD_UPDATE_KEY secret, the CLRD_UPDATE_PUBKEY variable, and https addresses in CLRD_UPDATE_URL and CLRD_UPDATE_PACKAGES"
+            # a bad address: it has to be https here.
+            [ -n "$KEY" ] && [ -n "$PUBKEY" ] && [ "${URL#https://}" != "$URL" ] || {
+              echo "::error::needs the CLRD_UPDATE_KEY secret, the CLRD_UPDATE_PUBKEY variable, and an https address in CLRD_UPDATE_URL"
               exit 1
             }
             export TAURI_SIGNING_PRIVATE_KEY="$KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$KEY_PASSWORD"
@@ -144,10 +143,11 @@ jobs:
             cargo tauri signer generate --ci -f -w "$RUNNER_TEMP/throwaway.key" > /dev/null
             export TAURI_SIGNING_PRIVATE_KEY="$(cat "$RUNNER_TEMP/throwaway.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
             cp "$RUNNER_TEMP/throwaway.key.pub" "$RUNNER_TEMP/update.pub"
-            PACKAGES=https://example.com/clrd
+            URL=https://example.com/clrd/latest.json
           fi
           rm -rf "$RUNNER_TEMP/update"
-          package/feed.sh "$setup" "$PACKAGES/$(basename "$setup")" "$RUNNER_TEMP/update"
+          # The installer sits beside the feed: one address to choose.
+          package/feed.sh "$setup" "${URL%/*}/$(basename "$setup")" "$RUNNER_TEMP/update"
           rm -f "$RUNNER_TEMP/throwaway.key"
       - name: the app takes the signed update (#719)
         # clrd's own updater checks what was just made, against the key the

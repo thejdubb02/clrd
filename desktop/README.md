@@ -196,8 +196,9 @@ refused.
 it on every desktop build with a key it makes and throws away, then checks
 the result with the app's own updater. Run by hand on `main` (Actions,
 desktop, Run workflow), it builds with the address and key from the repository's
-variables `CLRD_UPDATE_URL`, `CLRD_UPDATE_PUBKEY` and `CLRD_UPDATE_PACKAGES`
-(where the installers are downloaded from), signs with the secret
+variables `CLRD_UPDATE_URL` and `CLRD_UPDATE_PUBKEY` (the installer is served
+from the same folder as the feed, so the address is the one choice), signs
+with the secret
 `CLRD_UPDATE_KEY` (and `CLRD_UPDATE_KEY_PASSWORD`), and keeps the installer,
 its signature and `latest.json` as a workflow file for a few days. It
 publishes nothing. None of these are set yet, so a run by hand stops with an
