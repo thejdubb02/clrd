@@ -223,7 +223,8 @@ class App : Application() {
         get() = prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
 
-    private fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
+    /** [act] for several rows at once, saved in one transaction; queued dismisses go out as one clear call. */
+    fun actAll(ids: List<String>, action: String, rawBody: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) {
         val body = JSONObject(rawBody).put("via", via).toString()
         val gen = configGen // read now, not when the save runs
         acts.execute {

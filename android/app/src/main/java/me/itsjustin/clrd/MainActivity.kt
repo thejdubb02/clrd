@@ -368,6 +368,16 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
             }
         }
     }
+    // Clear all on a stack: one batched clear, one Undo, as on the web (#108).
+    val clearStack: (Stack) -> Unit = { st ->
+        val ids = st.rows.map { it.id }
+        app.actAll(ids, "dismiss")
+        scope.launch {
+            if (snackbar.showSnackbar(ctx.getString(R.string.cleared_everywhere), ctx.getString(R.string.undo), duration = androidx.compose.material3.SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                app.actAll(ids, "reopen")
+            }
+        }
+    }
 
     Scaffold(
         containerColor = b.paper,
@@ -409,7 +419,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                         items(entries, key = { it.key }) { e ->
                             if (e is Stack) {
                                 val open = e.topic in unfolded
-                                StackCard(e, open) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
+                                StackCard(e, open, onClear = if (tab == Tab.Cleared) null else { { clearStack(e) } }) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
                                 return@items
                             }
                             val n = (e as One).n
@@ -663,7 +673,7 @@ internal fun stacked(rows: List<Notif>, open: Set<String>): List<Entry> = rows.g
 }
 
 @Composable
-private fun StackCard(s: Stack, open: Boolean, onToggle: () -> Unit) {
+private fun StackCard(s: Stack, open: Boolean, onClear: (() -> Unit)?, onToggle: () -> Unit) {
     val b = LocalBrand.current
     val top = s.rows.maxOf { it.priority }
     Surface(
@@ -680,6 +690,7 @@ private fun StackCard(s: Stack, open: Boolean, onToggle: () -> Unit) {
                 Text(pluralStringResource(R.plurals.tray_stack, s.rows.size, s.rows.size), style = Mono, color = b.slate)
             }
             TextButton(onClick = onToggle) { Text(stringResource(if (open) R.string.stack_hide else R.string.stack_show), color = b.ink) }
+            if (onClear != null) TextButton(onClick = onClear) { Text(stringResource(R.string.stack_clear), color = b.clear, fontWeight = FontWeight.SemiBold) }
         }
     }
 }

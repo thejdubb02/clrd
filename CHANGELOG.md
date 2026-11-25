@@ -120,6 +120,9 @@ Fixed, Removed, Security), as one line a user can understand.
 
 ### Added
 
+- Android: a stack in the app's list has Clear all, as on the web. It clears
+  every notification in the stack on all devices in one call, with Undo. (#108)
+
 - Web: a card's snooze menu offers "Silence <topic> for 1 hour", which mutes
   the whole topic in one tap, with or without JavaScript. It shows only where
   your device may silence that topic (#326).
