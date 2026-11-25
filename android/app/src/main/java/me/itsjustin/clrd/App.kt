@@ -565,7 +565,9 @@ class RoomStore(private val app: App) : Store {
         var reload = false
         ifMine {
             val was = app.subs.value?.filtered == true
+            val fmt = app.formatting.value
             app.saveSettings(o)
+            if (fmt != app.formatting.value) app.tray.reconcile(dao.openNow().filter { it.id !in waiting() }, app.muted) // #809: quietly, in the new look
             val now = app.subs.value?.filtered == true
             if (!was && now) app.prefs.edit().putBoolean(FOLLOW_RELOAD, true).apply()
             reload = now && app.prefs.getBoolean(FOLLOW_RELOAD, false)

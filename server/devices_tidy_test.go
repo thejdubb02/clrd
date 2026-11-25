@@ -239,7 +239,7 @@ func TestTidyRechecksEachRow(t *testing.T) {
 	a, _ := browserIn(t, s, ts, typed, "")
 	b, _ := browserIn(t, s, ts, typed, "")
 	c, _ := browserIn(t, s, ts, typed, "")
-	_, mc := browserIn(t, s, ts, typed, "")
+	me, mc := browserIn(t, s, ts, typed, "")
 	for _, id := range []string{a, b, c} {
 		age(t, s, id, 10)
 	}
@@ -250,11 +250,28 @@ func TestTidyRechecksEachRow(t *testing.T) {
 
 	cutoff := time.Now().Add(-days(7))
 	s.db.Exec(`INSERT INTO push_subs (endpoint, token_id, p256dh, auth, created_at) VALUES ('https://push.example/1', ?, 'k', 'a', 0)`, b)
-	if ok, err := s.unlinkIfIdle(ctx, b, cutoff, false, "test"); err != nil || ok || !exists(s, b) {
+	if ok, err := s.unlinkIfIdle(ctx, b, cutoff, false, me, "test"); err != nil || ok || !exists(s, b) {
 		t.Fatalf("row with web push: ok %v, err %v", ok, err)
 	}
-	if ok, err := s.unlinkIfIdle(ctx, c, cutoff, false, "test"); err != nil || !ok || exists(s, c) {
+	// #805: a caller revoked mid-tidy unlinks nothing more.
+	if ok, err := s.unlinkIfIdle(ctx, c, cutoff, false, "revoked-caller", "test"); err != nil || ok || !exists(s, c) {
+		t.Fatalf("caller gone: ok %v, err %v", ok, err)
+	}
+	if ok, err := s.unlinkIfIdle(ctx, c, cutoff, false, me, "test"); err != nil || !ok || exists(s, c) {
 		t.Fatalf("idle row: ok %v, err %v", ok, err)
+	}
+}
+
+// #805: a device whose stream opened after the idle list was read is still in
+// that list, but Tidy must not count it, since the real unlink skips it.
+func TestTidyableSkipsConnected(t *testing.T) {
+	d := LinkedDevice{ID: "x", Kind: "browser", CanUnlink: true}
+	if !tidyable(d, []string{"x"}, nil) {
+		t.Fatal("idle browser not taken")
+	}
+	d.Connected = true
+	if tidyable(d, []string{"x"}, nil) {
+		t.Fatal("connected browser taken")
 	}
 }
 
