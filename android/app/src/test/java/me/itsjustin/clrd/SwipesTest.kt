@@ -134,7 +134,7 @@ class SwipesTest {
 
     @Test fun theLabelsFollowTheGesturesInRightToLeft() { // #568: a start swipe goes right there
         rule.setContent { CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { SettingsScreen(app, null, 0) {} } }
-        rule.onNodeWithTag("settings-search").performTextReplacement("swipe")
+        rule.onNodeWithTag("settings-search").performTextReplacement("gesture")
         fun top(id: Int) = rule.onNodeWithText(app.getString(id)).fetchSemanticsNode().boundsInRoot.top
         assertTrue(top(R.string.swipe_right) < top(R.string.swipe_left)) // the start side is listed first
     }
