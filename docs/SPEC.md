@@ -1211,10 +1211,12 @@ and `initialize` reports `version` as `serverInfo.version`.
   `locked`. Non-2xx is tried again from 30 s, doubling, 8 tries in all; 24 h of failures turns
   it off with a notification on the topic. Each try uses the hook's URL,
   secret and body saved at that moment. A hook with `"kind": "discord"`
-  (#166; no body or secret) instead posts each new, unscheduled notification to
+  (#166, #673; no body or secret) instead posts each new active notification
+  (and each scheduled notification when it wakes) to
   its Discord webhook URL with `?wait=true`, keeps the message id, and on each
-  subscribed state change PATCHes that message: title struck through when
-  dismissed or resolved, plus a status line such as "Cleared by pixel-9". A
+  notification update or subscribed state change PATCHes that message: title
+  struck through when dismissed or resolved, plus a status line such as
+  "Cleared by pixel-9". A
   discord hook sends its deliveries one at a time in order; an edit of a
   message that was never posted, or was deleted (404), is done, not retried.
   A hook with `"kind": "github"` (#168; url

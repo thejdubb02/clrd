@@ -552,6 +552,119 @@ func TestHooksOutDiscord(t *testing.T) {
 	}
 }
 
+// Discord follow-ups (#673): scheduled notifications post on wake (never twice),
+// notification updates re-edit the Discord message (keeping acknowledged status),
+// and SaveHook with keepSecret/keepBody handles kind changes safely.
+func TestHooksOutDiscordFollowups(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	type hit struct {
+		method, path string
+		content      string
+	}
+	var mu sync.Mutex
+	var hits []hit
+	dc, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		hits = append(hits, hit{r.Method, r.URL.Path, fmt.Sprint(body["content"])})
+		n := len(hits)
+		mu.Unlock()
+		if r.Method == "POST" {
+			fmt.Fprintf(w, `{"id":"m%d"}`, n)
+		}
+	})
+	if code, _ := call(t, ts, "PUT", "/api/v1/topics/ops/hooks/dc", admin, map[string]any{"url": dc.URL + "/api/webhooks/1/tok", "kind": "discord"}); code != 200 {
+		t.Fatalf("save discord hook: %d", code)
+	}
+
+	// 1. Scheduled notification does not post while snoozed, posts once on wake,
+	//    and snoozing + waking again does not post a second message.
+	soon := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	code, sched := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{
+		"topic": "ops", "title": "Backup", "message": "starting", "external_id": "bk-1", "snooze_until": soon,
+	})
+	if code != 200 {
+		t.Fatalf("publish scheduled: %d", code)
+	}
+	sid := sched["id"].(string)
+	s.deliverHooks(ctx)
+	if len(hits) != 0 {
+		t.Fatalf("scheduled notification posted before wake: %+v", hits)
+	}
+	// Update while still scheduled: skipped cleanly, wake posts the latest text.
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{
+		"topic": "ops", "title": "Backup", "message": "ready", "external_id": "bk-1",
+	})
+	s.deliverHooks(ctx)
+	if len(hits) != 0 {
+		t.Fatalf("updated scheduled notification posted before wake: %+v", hits)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET snooze_until = 1 WHERE id = ?`, sid); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.wakeSnoozed(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.deliverHooks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].method != "POST" || hits[0].content != "**Backup**\nready" {
+		t.Fatalf("after wake: %+v", hits)
+	}
+	// Snooze the already-posted notification, then wake it again: must not double-post.
+	call(t, ts, "POST", "/api/v1/notifications/"+sid+"/snooze", admin, map[string]any{"for": "1h"})
+	s.deliverHooks(ctx)
+	if _, err := s.db.Exec(`UPDATE notifications SET snooze_until = 1 WHERE id = ?`, sid); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.wakeSnoozed(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s.deliverHooks(ctx)
+	if len(hits) != 2 || hits[1].method != "PATCH" {
+		t.Fatalf("snooze + wake posted a second time: %+v", hits)
+	}
+
+	// 2. Updating a posted notification (upsert by external_id, then PATCH)
+	//    re-edits the Discord message, keeping Acknowledged status when acknowledged.
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{
+		"topic": "ops", "title": "Backup", "message": "50% done", "external_id": "bk-1",
+	})
+	s.deliverHooks(ctx)
+	if len(hits) != 3 || hits[2].method != "PATCH" || hits[2].path != "/api/webhooks/1/tok/messages/m1" || hits[2].content != "**Backup**\n50% done" {
+		t.Fatalf("upsert edit: %+v", hits)
+	}
+	call(t, ts, "POST", "/api/v1/notifications/"+sid+"/ack", admin, nil)
+	s.deliverHooks(ctx)
+	call(t, ts, "PATCH", "/api/v1/notifications/"+sid, admin, map[string]any{"message": "90% done"})
+	s.deliverHooks(ctx)
+	if len(hits) != 5 || hits[4].method != "PATCH" || !strings.HasPrefix(hits[4].content, "**Backup**\n90% done\n-# Acknowledged by ") {
+		t.Fatalf("patch edit while acknowledged: %+v", hits)
+	}
+
+	// 3. Web form SaveHook (keepSecret=true, keepBody=true) kind rules.
+	if err := s.SaveHook(ctx, serverToken, "ops", "plain", OutHook{URL: dc.URL + "/p", Body: `{"x":1}`, Secret: "s3cr3t"}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	// Switching a signed/templated hook to discord drops secret and body.
+	if err := s.SaveHook(ctx, serverToken, "ops", "plain", OutHook{URL: dc.URL + "/d", Kind: "discord"}, true, true); err != nil {
+		t.Fatalf("switch to discord: %v", err)
+	}
+	hs, _ := s.OutHooks(ctx, serverToken, "ops")
+	for _, h := range hs {
+		if h.Name == "plain" && (h.Kind != "discord" || h.HasSecret || h.Body != "") {
+			t.Fatalf("switched discord hook kept secret or body: %+v", h)
+		}
+	}
+	// Creating a new github hook via web form without a secret is refused.
+	if err := s.SaveHook(ctx, serverToken, "ops", "newgh", OutHook{URL: githubAPI + "o/r", Kind: "github"}, true, true); err == nil {
+		t.Fatal("new github hook without secret was allowed with keepSecret=true")
+	}
+}
+
 func TestHooksOutGitHub(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()

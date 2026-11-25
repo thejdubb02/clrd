@@ -71,7 +71,7 @@ var githubAPI = "https://api.github.com/repos/"
 // queueHooks adds a delivery for every enabled hook on the event's topic that
 // subscribes to it. Runs inside write's transaction.
 func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
-	if n := e.Notification; e.Type == EventCreated && n.State == Active { // a scheduled send posts nothing (#166)
+	if n := e.Notification; e.Type == EventCreated && n.State == Active { // a scheduled send posts on wake for discord (#673)
 		// An issue may start a coding agent (#168): never from an anonymous
 		// sender, never for a question someone must answer, and capped.
 		issue := !strings.HasPrefix(n.sender, anonymousID) && !n.asks()
@@ -82,8 +82,25 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, issue, ms(t.Add(-time.Hour)), githubPerHour)
 		return err
 	}
+	if e.Type == EventUpdated { // re-edit an already-posted Discord message with the new text (#673)
+		n := e.Notification
+		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
+			SELECT h.topic, h.name, ?, 'updated', ?, ?, ? FROM hooks_out h
+			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'`,
+			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic)
+		return err
+	}
 	if e.Type != EventState {
 		return nil
+	}
+	if n := e.Notification; n.State == Active && e.Via == "snooze_end" { // scheduled send wakes: post to Discord if never posted (#673)
+		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
+			SELECT h.topic, h.name, ?, 'posted', ?, ?, ? FROM hooks_out h
+			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
+			  AND NOT EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
+			  AND NOT EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND json_extract(d.body, '$.notification.id') = ?)`,
+			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, n.ID)
+		return err
 	}
 	ev, alt := e.Notification.State, e.Notification.State
 	if e.replied {
@@ -473,7 +490,11 @@ func discordText(n *Notification, event string) string {
 	if len(text) > 1900 {
 		text = append(text[:1897], []rune("...")...)
 	}
-	if st := []rune(hookStatus(n, event)); len(st) > 0 {
+	stEvent := event
+	if event == "updated" {
+		stEvent = n.State
+	}
+	if st := []rune(hookStatus(n, stEvent)); len(st) > 0 {
 		return string(text) + "\n-# " + string(st[:min(len(st), 90)])
 	}
 	return string(text)
@@ -617,8 +638,20 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	if h.Kind != "" && h.Body != "" || h.Kind == "discord" && h.Secret != "" {
 		return errf(400, "bad_request", "a %s webhook takes no body or secret: it sends its own message", h.Kind)
 	}
-	if h.Kind == "github" && h.Secret == "" && !keepSecret {
-		return errf(400, "bad_request", "a github webhook needs a GitHub token in secret, one that can write issues")
+	if h.Kind == "discord" {
+		keepSecret, keepBody = false, false // changing a signed/templated hook to discord drops both (#673)
+	}
+	if h.Kind == "github" {
+		keepBody = false
+		if h.Secret == "" {
+			var has int
+			if keepSecret {
+				_ = s.db.QueryRowContext(ctx, `SELECT count(*) FROM hooks_out WHERE topic = ? AND name = ? AND kind = 'github' AND secret != ''`, topic, name).Scan(&has)
+			}
+			if has == 0 {
+				return errf(400, "bad_request", "a github webhook needs a GitHub token in secret, one that can write issues")
+			}
+		}
 	}
 	// The token goes out as is, so only to GitHub: a new url cannot carry a kept token elsewhere.
 	if h.Kind == "github" && !strings.HasPrefix(h.URL, githubAPI) {
