@@ -107,7 +107,9 @@ as emoji but leave the tag emoji out, since ntfy apps add those themselves.
   it alone the real notification again (a reopen changes the shared state
   only when that is final). A real clear made elsewhere still reaches it and
   ends the hide, so a later reopen by anyone shows it there again.
-  Changing the option follows the rules of `PUT /api/v1/devices/{id}/approve`.
+  Changing the option follows the rules of `PUT /api/v1/devices/{id}/approve`,
+  and as with approve a browser or phone signed in or linked with a token
+  starts with that token's option (and keeps the option of a row it replaces).
 - `acknowledged` keeps it in the inbox, stops repeat alerting, shows "Acknowledged on <device>".
 - `snoozed` hides it until `snooze_until`; then the server moves it back to
   `active` with a new event (and re-notifies).
@@ -335,6 +337,12 @@ keep in use. With `&topic=T`, `would_remove` counts only topic T, to preview
 its own value (the state counts stay over every readable topic).
 `keep_cleared_days=default` previews dropping a topic's value: it counts
 against the global keep exactly, `CLRD_RETENTION` to the hour when unset.
+`unlink_idle_browsers_days` (default 30, 0 never, at most 36500; setting it
+needs an admin token with no topic list) unlinks, in the hourly sweep, every
+signed-in browser not used for that many days, each with a device log line by
+"unused for N days". It never touches a phone, a token typed in or an agent,
+nor a browser with a stream open, web push, or a browser signed in under it
+(#765).
 
 Swipe buttons (#161): `swipe_start` and `swipe_end` choose the
 buttons a swipe on a card reveals, on every client, like
@@ -748,7 +756,20 @@ scheme.
   browsers signed in: the 21st sign-in revokes the one used least recently.
   Phones linked under a token have their own cap of 20, so browser sign-ins
   never sign a phone out.
-  `DELETE /api/v1/session` revokes
+- **A device that links again replaces its own row (#765).** Sign-in, setup,
+  the pair claim and the link claim take an optional `install`: an id the
+  browser or app keeps for itself (16 to 64 of `A-Z a-z 0-9 _ -`; anything
+  else is ignored). When a new row is made, an older row with the same
+  `install`, under the same parent, of the same kind (browser or phone) is that
+  device linked before: the browsers signed in under it move under the new row,
+  its web push moves too, and the old row is revoked with a device log line.
+  Never by name. Per the #187 guard rails the new row's `approve` is the lower
+  of the token's and the old row's, so a relink never raises it. A per-device
+  sound is not carried over. Each row also keeps `detail`, the browser and
+  system from the User-Agent ("Firefox 120 on Linux") or the link claim's
+  optional `detail` ("Pixel 8, Android 15"), so rows of one name can be told
+  apart.
+- `DELETE /api/v1/session` revokes
   the browser's token and clears the cookie. The cookie works on `/api/v1/*`
   only, never on the ntfy-style GET publish webhooks.
 - **Sign in with a phone (pairing):** a signed-out browser posts
@@ -951,11 +972,12 @@ resolved`) and `ntfy_import`.
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
-| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,kind,via,via_id,linked_at,last_seen_at,this,can_unlink,sound,approve,can_approve,clears_everywhere,connected,caught_up,synced_seq}]}`; `kind` is `token`, `browser` or `phone`. `via` and `via_id` are the name and id of the token or device it hangs under (absent for a token), `approve` is its setting from "Who may approve" in section 4, `clears_everywhere` its "Clears apply everywhere" option (section 2, true by default). `can_approve` is true only on the caller's own row (`this`), when the caller may change who approves: `approve` is `allowed` and the token is on every topic. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
+| GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,detail,kind,via,via_id,linked_at,last_seen_at,this,can_unlink,sound,approve,clears_everywhere,can_approve,connected,caught_up,synced_seq}]}`; `detail` is the browser and system or what the app sent (section 4, absent when unknown); `kind` is `token`, `browser` or `phone`. `via` and `via_id` are the name and id of the token or device it hangs under (absent for a token), `approve` is its setting from "Who may approve" in section 4, `clears_everywhere` its "Clears apply everywhere" option (section 2, true by default). `can_approve` is true only on the caller's own row (`this`), when the caller may change who approves: `approve` is `allowed` and the token is on every topic. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
 | GET | `/api/v1/devices/log` | The last 200 links, sign-ins and unlinks for the same devices, newest first: `{events:[{at,action,device,device_id,by}]}`. |
 | GET | `/api/v1/sounds` | Valid notification sound names: `{sounds:[...],default:"default"}`. |
-| PUT | `/api/v1/devices/{id}` | Set one device's sound: `{sound:"chime"}`, a name from `/api/v1/sounds`. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
+| PUT | `/api/v1/devices/{id}` | Rename a browser or phone, `{name:"Work laptop"}` (403 for a typed-in token or agent, 400 when empty), set its sound, `{sound:"chime"}`, a name from `/api/v1/sounds`, or both. Same device list and 404 as DELETE; a token limited to some topics gets 403; an unknown name gets 400 listing the valid ones. Returns the device. The device list (`?all=1`) shows each device's `sound`, and `GET /api/v1/settings` and the settings stream message show the asking device's own `sound` (`PUT /api/v1/settings {sound}` sets it). |
 | DELETE | `/api/v1/devices/{id}` | Unlink a browser or phone from that list: it is signed out at once and its WebSocket closes. Unlinking a phone also signs out the browsers it approved. A typed-in token gives 403 (revoke it with `/api/v1/tokens`); a device outside the list gives 404. Needs `read`, except that a device may always unlink itself, whatever its scopes (#609); `{id}` = `this` means the asking device, so it need not look up its own id. |
+| POST | `/api/v1/devices/tidy` | Body `{"days":7,"dry_run":true}`, both optional (days 1 to 36500, default 7). Unlinks the browsers and phones in that list unused for `days`, as DELETE does, never the caller, a typed-in token or an agent, nor a device with a stream open, web push or a browser signed in under it. `dry_run` only counts. Returns `{count, devices, dry_run}` (`devices` the ids). Needs `read` (#765). |
 | POST | `/api/v1/devices/approve-request` | Body `{"approve":"allowed"}` or `ask`, `topic` optional (default `agents`, needs publish there): the calling device asks to raise its own setting (section 4). 202 with a confirm prompt on that topic; a repeat returns the same open prompt; 400 unless it is a raise. |
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | PUT | `/api/v1/devices/{id}/clears` | Body `{"everywhere":false}` or `true`: whether that device's clears reach every device (section 2, "Clears apply everywhere"). Same rules and errors as `/approve`: 403 `approve_denied` when the caller is not allowed, 403 `forbidden` from a token limited to some topics, 404 outside the device list, 400 without `everywhere`. Returns the device. |
@@ -1425,7 +1447,10 @@ rules. Its token lives in the OS keychain and is sent only as an
   build inputs (`CLRD_UPDATE_URL`, `CLRD_UPDATE_PUBKEY`); a build without
   both never asks and shows no update settings. The address serves the JSON
   feed Tauri's updater uses (`version`, and under `platforms` a
-  `windows-x86_64` entry with `url` and `signature`). An installer runs only
+  `windows-x86_64` entry with `url` and `signature`). Official builds use
+  this repo's GitHub Releases: the feed is `latest.json` on the newest
+  release, and each installer's `url` names its own release (tag `v` and
+  the version). An installer runs only
   when its signature verifies against the built-in key, its signed comment
   carries `version:` equal to the feed's version, and that version is newer
   than the running one. The requests carry no token and no session.

@@ -227,4 +227,29 @@ func TestSetClearsGate(t *testing.T) {
 	if code, _ := call(t, ts, "PUT", "/api/v1/devices/"+s.lookupToken(ctx, full).ID+"/clears", full, map[string]any{}); code != 400 {
 		t.Fatalf("no everywhere: %d", code)
 	}
+
+	// A browser signed in with ask's token inherits its option, cannot turn
+	// it back on itself, and keeps it when it signs in again.
+	everywhere := func(id string) any {
+		_, l := call(t, ts, "GET", "/api/v1/devices?all=1", admin, nil)
+		for _, d := range l["devices"].([]any) {
+			if d.(map[string]any)["id"] == id {
+				return d.(map[string]any)["clears_everywhere"]
+			}
+		}
+		return nil
+	}
+	b1, c1 := browserIn(t, s, ts, ask, installA)
+	if everywhere(b1) != false {
+		t.Fatalf("browser did not inherit: %v", everywhere(b1))
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/devices/"+b1+"/clears", c1.Value, map[string]any{"everywhere": true}); code != 403 {
+		t.Fatalf("ask browser turned it back on: %d", code)
+	}
+	// Token back on: the new row still takes the old row's off.
+	call(t, ts, "PUT", "/api/v1/devices/"+s.lookupToken(ctx, ask).ID+"/clears", admin, map[string]any{"everywhere": true})
+	b2, _ := browserIn(t, s, ts, ask, installA)
+	if exists(s, b1) || everywhere(b2) != false {
+		t.Fatalf("relink lost the replaced row's option: %v", everywhere(b2))
+	}
 }

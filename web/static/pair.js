@@ -6,6 +6,16 @@
   const fetch = (u, o) => window.fetch(u.startsWith('/') ? B + u : u, o);
   const post =(url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 
+  // This browser's own id, sent at sign-in so signing in again replaces its
+  // old row in the device list instead of adding one (#765).
+  let install = '';
+  try {
+    // getRandomValues, unlike randomUUID, works on a plain-http LAN address too.
+    install = localStorage.getItem('clrd-install') || [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem('clrd-install', install);
+  } catch { /* no storage: each sign-in is a new row, as before */ }
+  for (const i of document.querySelectorAll('input[name="install"]')) i.value = install;
+
   // On click, make a code at url and show its QR, then run step every 1.5 s
   // until it returns true or the code expires. step gets the code and stop.
   const qrFlow = (box, url, waiting, step) => {
@@ -51,7 +61,7 @@
   const pair = document.querySelector('[data-pair]');
   if (pair) {
     const { msg } = qrFlow(pair, '/api/v1/pair', 'Waiting for your phone. The code works for 2 minutes.', async (code, stop) => {
-      const c = await post('/api/v1/pair/claim', { code });
+      const c = await post('/api/v1/pair/claim', { code, install });
       if (c.status === 200) { msg.textContent = 'Approved. Signing in.'; location.reload(); return true; }
       if (c.status === 410) { stop((await c.json()).error || 'The code expired.'); return true; }
     });

@@ -36,6 +36,7 @@ type pairing struct {
 	// Pair and link codes share this map and its cap, never each other's routes.
 	owner    *Token
 	approved bool
+	dev      deviceInfo // the phone's, bound on its first claim with the secret (#765)
 	// invite is set on an agent invite (agents.go): its own kind.
 	invite *invite
 	ttl    time.Duration // 0 is pairTTL
@@ -172,7 +173,8 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) error {
 		return errf(403, "forbidden", "sign-in must come from this site")
 	}
 	var in struct {
-		Code string `json:"code"`
+		Code    string `json:"code"`
+		Install string `json:"install"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
@@ -197,7 +199,7 @@ func (s *Server) handlePairClaim(w http.ResponseWriter, r *http.Request) error {
 	if p.denied {
 		return errf(410, "gone", "the sign-in was denied")
 	}
-	if _, err := s.startSession(w, r, p.approver, p.name); err != nil {
+	if _, err := s.startSession(w, r, p.approver, p.name, in.Install); err != nil {
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{Name: pairCookie, Path: s.Path("/api/v1/pair"), MaxAge: -1})

@@ -18,6 +18,16 @@ func localClears(ctx context.Context, q querier) (map[string]bool, error) {
 	return m, settingJSON(ctx, q, localClearsKey, &m)
 }
 
+// inheritClears makes device to keep its clears local when device from
+// does: a session signed in or linked with a token, or the row it replaces,
+// passes its option on, as with approve. One statement, so a racing
+// SetClears is never lost.
+func inheritClears(ctx context.Context, db *sql.DB, from, to string) error {
+	_, err := db.ExecContext(ctx, `UPDATE settings SET value = json_set(value, '$."' || ? || '"', json('true'))
+		WHERE key = ? AND json_extract(value, '$."' || ? || '"')`, to, localClearsKey, from)
+	return err
+}
+
 // SetClears sets where device id's clears apply, under the rules of
 // SetApprove: tok is allowed, not limited to some topics, and sees the device.
 func (s *Server) SetClears(ctx context.Context, tok *Token, id string, everywhere bool) (LinkedDevice, error) {

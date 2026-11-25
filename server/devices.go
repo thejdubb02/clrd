@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -23,6 +24,7 @@ import (
 type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
+	Detail     string     `json:"detail,omitempty"` // "Chrome 131 on Windows", to tell rows of one name apart (#765)
 	Kind       string     `json:"kind"`             // token, browser, phone or agent
 	Via        string     `json:"via,omitempty"`    // the token or device it hangs under: revoking that one signs this one out too
 	ViaID      string     `json:"via_id,omitempty"` // its id, since names can repeat
@@ -55,7 +57,7 @@ func (s *Server) devicesMsg(ctx context.Context, tok *Token) ([]byte, string, er
 	}
 	var key strings.Builder
 	for _, d := range ds {
-		fmt.Fprintf(&key, "%s %t %t %s %t,", d.ID, d.Connected, d.CaughtUp, d.Approve, d.ClearsEverywhere)
+		fmt.Fprintf(&key, "%s %t %t %s %t %q,", d.ID, d.Connected, d.CaughtUp, d.Approve, d.ClearsEverywhere, d.Name)
 	}
 	msg, err := json.Marshal(struct {
 		Type    string         `json:"type"`
@@ -114,6 +116,29 @@ func (s *Server) deviceRoutes() {
 			return err
 		}
 		writeJSON(w, 200, map[string]any{"events": es})
+		return nil
+	})
+	// One-click tidy (#765): unlink my browsers and phones unseen for days
+	// (default 7) that nothing still uses. dry_run only counts them.
+	s.api("POST /api/v1/devices/tidy", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		if err := tok.need(ScopeRead, ""); err != nil {
+			return err
+		}
+		in := struct {
+			Days   int  `json:"days"`
+			DryRun bool `json:"dry_run"`
+		}{Days: 7}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		if in.Days < 1 || in.Days > maxKeepDays {
+			return errf(400, "bad_request", "days must be 1 to %d", maxKeepDays)
+		}
+		ids, err := s.Tidy(r.Context(), tok, in.Days, in.DryRun)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, map[string]any{"count": len(ids), "devices": ids, "dry_run": in.DryRun})
 		return nil
 	})
 	s.api("DELETE /api/v1/devices/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
@@ -189,6 +214,37 @@ func (s *Server) Devices(ctx context.Context, tok *Token) ([]LinkedDevice, error
 	return s.devices(ctx, s.db, tok)
 }
 
+// Rename names a browser or phone in tok's list (#765). A token typed in is
+// named on its own page, an agent where it was invited.
+func (s *Server) Rename(ctx context.Context, tok *Token, id, name string) (LinkedDevice, error) {
+	var d LinkedDevice
+	if err := tok.need(ScopeRead, ""); err != nil {
+		return d, err
+	}
+	if strings.TrimSpace(name) == "" {
+		return d, errf(400, "bad_request", "name must not be empty")
+	}
+	name = deviceName(name, "") // cleaned and cut as at sign-in
+	tx, d, err := s.deviceTx(ctx, tok, id)
+	if tx != nil {
+		defer tx.Rollback()
+	}
+	if err == nil && d.Kind != "browser" && d.Kind != "phone" {
+		err = errf(403, "forbidden", "only a browser or phone is renamed here; a token typed in is renamed with /api/v1/tokens")
+	}
+	if err == nil {
+		if _, err = tx.ExecContext(ctx, `UPDATE tokens SET name = ? WHERE id = ?`, name, id); err == nil {
+			err = tx.Commit()
+		}
+		d.Name = name
+	}
+	s.mu.Unlock()
+	if err == nil {
+		s.devicesChanged.fire()
+	}
+	return d, err
+}
+
 // deviceTx locks s.mu, opens a transaction (unlinks wait for its commit) and
 // finds device id in tok's device list, which must hold tok itself too, else
 // 404. The caller rolls back and unlocks s.mu, also on error (#299).
@@ -233,7 +289,7 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 	rows, err := q.QueryContext(ctx, `WITH RECURSIVE `+topsSQL+`, k(id) AS
 	  (SELECT id FROM tops UNION SELECT t.id FROM tokens t JOIN people u ON u.id = t.user_id WHERE u.kind = 'agent' AND u.owner IN tops
 	   UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  SELECT t.id, t.name, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve, COALESCE(u.kind, '')
+	  SELECT t.id, t.name, t.detail, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve, COALESCE(u.kind, '')
 	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id LEFT JOIN people u ON u.id = t.user_id
 	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, tok.ID, all)
 	if err != nil {
@@ -248,7 +304,7 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 		var phone sql.NullBool
 		var via, viaID sql.NullString
 		var kind string
-		if err := rows.Scan(&d.ID, &d.Name, &created, &seen, &phone, &via, &viaID, &d.Approve, &kind); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Detail, &created, &seen, &phone, &via, &viaID, &d.Approve, &kind); err != nil {
 			return nil, err
 		}
 		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid || kind == "agent"
@@ -309,6 +365,95 @@ func (s *Server) Unlink(ctx context.Context, tok *Token, id string) error {
 		return nil
 	}
 	return errf(404, "not_found", "device not found")
+}
+
+// idleSince lists the browsers (and phones, unless browsersOnly) last seen
+// before cutoff that nothing still uses: no stream open now, no web push,
+// nothing signed in under them (#765). Never a token typed in, never an agent.
+func (s *Server) idleSince(ctx context.Context, cutoff time.Time, browsersOnly bool) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT t.id FROM tokens t JOIN sessions s ON s.token_id = t.id
+	  LEFT JOIN people u ON u.id = t.user_id
+	  WHERE COALESCE(t.last_seen_at, t.created_at) < ? AND (s.phone = 0 OR NOT ?) AND COALESCE(u.kind, '') != 'agent'
+	    AND NOT EXISTS (SELECT 1 FROM push_subs p WHERE p.token_id = t.id)
+	    AND NOT EXISTS (SELECT 1 FROM sessions c WHERE c.parent_id = t.id)
+	  ORDER BY t.created_at, t.rowid`, ms(cutoff), browsersOnly)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if live, _, _ := s.hub.status(id); !live {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
+}
+
+// Tidy unlinks tok's browsers and phones idle for n days (see idleSince),
+// never tok itself, and returns their ids; dryRun only lists them.
+func (s *Server) Tidy(ctx context.Context, tok *Token, n int, dryRun bool) ([]string, error) {
+	idle, err := s.idleSince(ctx, time.Now().Add(-days(n)), false)
+	if err != nil {
+		return nil, err
+	}
+	ds, err := s.Devices(ctx, tok)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, d := range ds {
+		if d.This || !d.CanUnlink || d.Kind == "agent" || !slices.Contains(idle, d.ID) {
+			continue
+		}
+		if !dryRun {
+			if err := s.Unlink(ctx, tok, d.ID); err != nil && !isNotFound(err) {
+				return out, err
+			}
+		}
+		out = append(out, d.ID)
+	}
+	return out, nil
+}
+
+// unlinkIdle is the background sweep (#765): browsers unseen for the
+// unlink_idle_browsers_days setting are unlinked, each with a device log
+// line. Phones and tokens typed in are never swept.
+func (s *Server) unlinkIdle(ctx context.Context) error {
+	st, err := s.loadSettings(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	n := unlinkIdleDays(st)
+	if n == 0 {
+		return nil
+	}
+	ids, err := s.idleSince(ctx, time.Now().Add(-days(n)), true)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		var name string
+		top, err := s.topOf(ctx, id)
+		if err == nil {
+			err = s.db.QueryRowContext(ctx, `SELECT name FROM tokens WHERE id = ?`, id).Scan(&name)
+		}
+		if err == nil {
+			err = s.DeleteToken(ctx, id)
+		}
+		if errors.Is(err, sql.ErrNoRows) || isNotFound(err) {
+			continue // gone already
+		}
+		if err != nil {
+			return err
+		}
+		s.logDevice(ctx, top, "unlinked", name, id, fmt.Sprintf("unused for %d days", n))
+	}
+	return nil
 }
 
 // DeviceLog is the newest log lines tok may see, newest first.
