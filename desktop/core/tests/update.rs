@@ -149,6 +149,9 @@ fn a_release_made_by_feed_sh_is_taken() {
     let url = &mut feed["platforms"]["windows-x86_64"]["url"];
     let name = url.as_str().unwrap().rsplit('/').next().unwrap().to_owned();
     let installer = std::fs::read(dir.join(&name)).unwrap();
+    // Each installer is served from its own GitHub release.
+    let wanted = format!("/releases/download/v{version}/{name}");
+    assert!(url.as_str().unwrap().ends_with(&wanted), "{url} is not {wanted}");
     let server = Server::start();
     // The feed exactly as feed.sh wrote it, only pointed at this server.
     *url = format!("{}/package", server.base).into();
