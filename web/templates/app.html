@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := printf "%s/app" base}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "%s/app/%s" base .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-tkeep="{{range $t, $v := .Snap.TopicKeepClearedDays}}{{$t}}={{$v}};{{end}}" data-sound="{{.Snap.Sound}}" data-swipe-start="{{range .Snap.SwipeStart}}{{.}} {{end}}" data-swipe-end="{{range .Snap.SwipeEnd}}{{.}} {{end}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-ver="{{about.Version}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-tkeep="{{range $t, $v := .Snap.TopicKeepClearedDays}}{{$t}}={{$v}};{{end}}" data-sound="{{.Snap.Sound}}" data-swipe-start="{{range .Snap.SwipeStart}}{{.}} {{end}}" data-swipe-end="{{range .Snap.SwipeEnd}}{{.}} {{end}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -32,6 +32,7 @@
 
   <main id="main" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
     <div class="alert mb-4" data-variant="destructive" role="alert" data-offline hidden>{{template "i-wifi-off"}}<h2>Lost the live connection</h2><section>This page may be out of date. Still trying. <a href="" class="underline">Reload</a></section></div>
+    {{if ne .View "settings"}}{{with about}}<div class="alert mb-4" role="status" data-update-note hidden>{{template "i-book-open"}}<h2>Updated to clrd {{.Version}}</h2><section><div class="mt-2 flex flex-wrap items-center gap-2"><a class="btn" data-variant="outline" data-size="sm" href="{{base}}/app/settings#about" data-update-open>What's new</a><button type="button" class="btn" data-variant="ghost" data-size="sm" data-update-dismiss>Dismiss</button></div></section></div>{{end}}{{end}}
     {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else if eq .View "stats"}}{{template "stats" .}}{{else}}
     <header class="mb-4 flex flex-wrap items-center gap-2 md:min-h-9 md:flex-nowrap">
       <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{.Heading}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
@@ -572,6 +573,7 @@
     <section id="about" data-setting data-keywords="version, what's new, changelog, release, update, build" class="grid gap-3">
       <h3 id="about-h" class="text-base font-semibold">Version</h3>
       <p class="text-body text-sm/relaxed" data-version>This server runs clrd {{.Version}}{{with .Commit}}, build <code>{{.}}</code>{{end}}{{with .Date}} from {{.}}{{end}}.</p>
+      <label class="js-only label"><input type="checkbox" role="switch" class="input" data-whats-new-setting checked> Show What's new after an update</label>
       <details class="text-sm" data-whats-new>
         <summary class="cursor-pointer font-medium">What's new</summary>
         <div class="text-body mt-3 grid gap-5">{{range .History}}
