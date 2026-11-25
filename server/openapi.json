@@ -1552,7 +1552,7 @@
    "put": {
     "summary": "Subscribe or unsubscribe topics",
     "tags": ["settings"],
-    "description": "Scope read. Only the topics given change; no data is cleared and other readers are untouched. new_topics false first subscribes every topic that exists now, so only later topics start unsubscribed. 403 for a topic the token cannot read, 409 for a token with no user to store the choices for.",
+    "description": "Scope read. Only the topics given change; no data is cleared and other readers are untouched. new_topics false first subscribes every topic that exists now, so only later topics start unsubscribed. 403 for a topic the token cannot read, 409 for a typed-in token with no user, unless the request sends subscribed=mine (an app following its own set, #764).",
     "parameters": [{"name": "for", "in": "query", "schema": {"type": "string"}}],
     "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {
      "new_topics": {"type": "boolean"},

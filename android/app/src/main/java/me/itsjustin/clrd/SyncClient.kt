@@ -73,7 +73,7 @@ class SyncClient(
     private val api: Api,
     private val store: Store,
     private val onStatus: (Status) -> Unit = {},
-    private val onSettings: (JSONObject) -> Unit = {},
+    private val onSettings: (JSONObject) -> Boolean = { false },
     private val onDevices: () -> Unit = {},
     private val baseDelayMs: Long = 1_000,
     private val flushRetryMs: Long = 30_000,
@@ -236,7 +236,8 @@ class SyncClient(
                 onDevices() // changes while offline send no devices message; the server expects a reload on ready
             }
             "reset" -> reset()
-            "settings" -> o.optJSONObject("settings")?.let(onSettings) // sent on every connect and on every change
+            // Sent on every connect and on every change. True means the phone began following a set, so reload what it shows (#764).
+            "settings" -> o.optJSONObject("settings")?.let { if (onSettings(it)) reset() }
             "devices" -> onDevices() // a linked device connected, dropped or had its approve setting changed (#345)
             // Unknown types (pings, future additions) are ignored on purpose.
         }

@@ -42,6 +42,7 @@ class SyncClientTest {
     /** Body of GET /api/v1/notifications/{id}, or null for 404. */
     private var current: (String) -> String? = { null }
     private val gets = CopyOnWriteArrayList<String>()
+    private val wsPaths = CopyOnWriteArrayList<String>()
     /** How many GETs of a row fail with 503 before they answer. */
     @Volatile private var getFails = 0
 
@@ -53,6 +54,7 @@ class SyncClientTest {
                     path.startsWith("/api/v1/ws") -> {
                         wsAt += System.nanoTime()
                         wsSince += request.requestUrl!!.queryParameter("since")!!
+                        wsPaths += path
                         val n = wsSince.size
                         wsResponse() ?: MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                             override fun onOpen(webSocket: WebSocket, response: Response) { serverSockets += webSocket; onConnect(n, webSocket) }
@@ -107,7 +109,7 @@ class SyncClientTest {
 
     private fun start(replayQuietMs: Long = 5_000) {
         val api = Api(http, server.url("/").toString().trimEnd('/'), "tok")
-        client = SyncClient(http, api, store, onStatus = { statuses += it }, onSettings = { settings += it.toString() }, onDevices = { devices++ }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
+        client = SyncClient(http, api, store, onStatus = { statuses += it }, onSettings = { settings += it.toString(); "\"filtered\":true" in it.toString() }, onDevices = { devices++ }, baseDelayMs = 20, flushRetryMs = 50, replayQuietMs = replayQuietMs)
             .also { it.start() }
     }
 
@@ -143,6 +145,21 @@ class SyncClientTest {
         start()
         await { SyncClient.Status.CONNECTED in statuses }
         assertEquals(Snooze("2h", listOf("15m", "2h")), Snooze.from(org.json.JSONObject(settings.single())))
+    }
+
+    /** #764: a phone that begins following its topic choices reloads, so cards of a topic it no longer shows leave. */
+    @Test fun followingASetReloadsWhatThePhoneHolds() {
+        store.rows["hidden"] = notif("hidden", "active", 1)
+        open = { """{"notifications":[${notifJson("shown", "active", 9)}],"seq":9}""" }
+        onConnect = { n, ws ->
+            if (n == 1) ws.send("""{"type":"settings","settings":{"subscriptions":{"filtered":true,"topics":{"t":false}}}}""")
+            ws.send("""{"type":"ready","seq":9}""")
+        }
+        start()
+        await { wsSince.size >= 2 }
+        assertEquals(setOf("shown"), store.rows.keys)
+        assertTrue(lists.single(), lists.single().contains("subscribed=mine"))
+        assertTrue(wsPaths.all { "subscribed=mine" in it })
     }
 
     @Test fun liveEventAfterReadyIsAppliedAtOnce() {
@@ -263,7 +280,7 @@ class SyncClientTest {
         assertEquals(Api.PAGE + 1, store.rows.size)
         assertTrue(!store.rows.containsKey("stale") && store.rows.containsKey("last"))
         assertEquals(2, lists.size)
-        assertTrue(lists[1], lists[1].endsWith("before=p${Api.PAGE}"))
+        assertTrue(lists[1], lists[1].contains("before=p${Api.PAGE}&"))
         assertEquals("50", wsSince[1]) // seq from the first page, read by the server before its query
     }
 

@@ -62,6 +62,7 @@ type Token struct {
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	view       *view      // its subscriptions filter once loaded (subs.go); nil until then
 	union      []*Token   // set: may what any of these may (an admin's ?for=<user>, subs.go)
+	follow     bool       // subscribed=mine: a typed-in token with no user follows its own set (#764)
 }
 
 // limited reports whether the token is held to some topics.

@@ -130,6 +130,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: a phone set up by pasting a token now follows the topics you unsubscribed from on the web. Before, it kept showing cards of those topics, so a clear on the web looked like it never reached the phone. After the update the phone drops them on its own; nothing to set up. Scripts using the same token still see every topic (#764).
 - Web: a new card on a busy or slow device still slides in and wiggles, instead of skipping it when the page could not draw in time (#714).
 - Desktop: the tray and app icon has a thin light ring, so it stays easy to see on a dark panel or taskbar as well as a light one (#628).
 - Desktop (Linux): a desktop that asks for light now gets a light window even when the GTK theme is a dark one by name, such as Adwaita-dark. The dark theme comes back when the desktop asks for dark or states no preference. A theme forced with the `GTK_THEME` variable still wins (#703).

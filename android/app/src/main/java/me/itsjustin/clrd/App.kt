@@ -487,7 +487,11 @@ class RoomStore(private val app: App) : Store {
     override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here
     override fun saveEpoch(epoch: String) = ifMine { app.epoch = epoch }
     /** A settings message, kept only while this is still the server in Settings: one already in hand at a switch would undo the reset (#568). */
-    fun settings(o: org.json.JSONObject) = ifMine { app.saveSettings(o) }
+    fun settings(o: org.json.JSONObject): Boolean {
+        var began = false
+        ifMine { val was = app.subs.value?.filtered == true; app.saveSettings(o); began = !was && app.subs.value?.filtered == true }
+        return began // now following a set it did not before (#764): what this phone holds may include topics it no longer shows
+    }
     override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { app.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
