@@ -130,6 +130,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web: a new card on a busy or slow device still slides in and wiggles, instead of skipping it when the page could not draw in time (#714).
 - Desktop: the tray and app icon has a thin light ring, so it stays easy to see on a dark panel or taskbar as well as a light one (#628).
 - Desktop (Linux): a desktop that asks for light now gets a light window even when the GTK theme is a dark one by name, such as Adwaita-dark. The dark theme comes back when the desktop asks for dark or states no preference. A theme forced with the `GTK_THEME` variable still wins (#703).
 - Android: the test that checks hostile Markdown renders fast no longer fails on a busy build machine, so a release build is not held up by it (#663).
