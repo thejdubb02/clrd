@@ -503,9 +503,11 @@ fn set_close_clears(app: AppHandle, on: bool) -> Result<(), String> {
 
 #[tauri::command(async)]
 fn start(app: AppHandle, link: String, plain_ok: bool) -> Result<bool, String> {
+    // The local folder, not the roaming one: two computers on one roaming
+    // Windows profile are two devices.
     let install = app
         .path()
-        .app_data_dir()
+        .app_local_data_dir()
         .map(|dir| clrd_core::link::install_id(&dir));
     app.state::<Shell>()
         .device
