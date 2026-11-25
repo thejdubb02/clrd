@@ -261,6 +261,18 @@ func TestNotificationLinkRedirect(t *testing.T) {
 	if code, body := get(t, Handler(none{}, ""), "/app/n/n1"); code != 404 || !strings.Contains(body, "This notification is gone") {
 		t.Errorf("gone: %d", code)
 	}
+	if code, body := get(t, Handler(failing{}, ""), "/app/n/n1"); code != 502 || strings.Contains(body, "This notification is gone") {
+		t.Errorf("a failed lookup: %d, want 502, not a false not found", code)
+	}
+}
+
+type failing struct{ none }
+
+func (failing) Snapshot(_ *http.Request, q Query) (Snapshot, error) {
+	if q.ID != "" {
+		return Snapshot{}, io.ErrUnexpectedEOF
+	}
+	return Snapshot{}, nil
 }
 
 type none struct{ readOnly }

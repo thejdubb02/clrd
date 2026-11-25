@@ -1475,6 +1475,11 @@ func Handler(api API, baseURL string) http.Handler {
 	// newest 500 of its state in its topic is past the page (webLimit).
 	mux.HandleFunc("GET /app/n/{id}", func(w http.ResponseWriter, r *http.Request) {
 		snap, err := api.Snapshot(r, Query{ID: r.PathValue("id")})
+		if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrUnauthorized) {
+			log.Printf("web: notification link: %v", err)
+			http.Error(w, "could not load the notification", http.StatusBadGateway)
+			return
+		}
 		if err != nil || len(snap.Items) != 1 {
 			app("gone")(w, r)
 			return
