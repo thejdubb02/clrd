@@ -503,7 +503,13 @@ fn set_close_clears(app: AppHandle, on: bool) -> Result<(), String> {
 
 #[tauri::command(async)]
 fn start(app: AppHandle, link: String, plain_ok: bool) -> Result<bool, String> {
-    app.state::<Shell>().device.start(&link, plain_ok)
+    let install = app
+        .path()
+        .app_data_dir()
+        .map(|dir| clrd_core::link::install_id(&dir));
+    app.state::<Shell>()
+        .device
+        .start(&link, plain_ok, &install.unwrap_or_default())
 }
 
 #[tauri::command(async)]

@@ -166,20 +166,23 @@ fn nothing_is_asked_for_without_a_keychain_or_over_plain_http_unasked() {
     let bus = Bus::start();
     let device = Device::new(Ok(Keychain::new(bus.connect())), "test desktop");
     assert!(!device.view().error.is_empty());
-    assert!(device.start(&link, true).is_err());
+    assert!(device.start(&link, true, "").is_err());
     // No bus at all.
     let device = Device::new(Err("no keychain here".into()), "test desktop");
     assert_eq!(device.view().error, "no keychain here");
-    assert_eq!(device.start(&link, true), Err("no keychain here".into()));
+    assert_eq!(
+        device.start(&link, true, ""),
+        Err("no keychain here".into())
+    );
 
     // Plain http to another computer waits for a yes; not a link is an error.
     assert_eq!(
-        device.start("http://192.168.1.5:8080/link?c=abc123", false),
+        device.start("http://192.168.1.5:8080/link?c=abc123", false, ""),
         Ok(false)
     );
     assert_eq!(device.view().error, "");
     assert!(device
-        .start("https://clrd.example.com/pair?c=abc123", true)
+        .start("https://clrd.example.com/pair?c=abc123", true, "")
         .is_err());
 
     assert_eq!(fake.requests(), Vec::<String>::new());
