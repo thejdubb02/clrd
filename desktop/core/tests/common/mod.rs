@@ -34,7 +34,7 @@ struct Inner {
     version: Option<String>, // None: a server from before /api/v1/version
     minted: u32,
     sessions: Vec<String>, // window sessions that still work, as `name=value`
-    refuse_unlink: bool,   // the device list answers 403 (#609)
+    refuse_unlink: bool,   // unlinking this device answers 403 (#609)
     slow_session: bool,    // a new session waits for an unlink to start
     hold_dismiss: bool,    // a dismiss waits until this is off again
     unlinked: bool,        // the device removed itself: its token is dead
@@ -174,8 +174,8 @@ impl Fake {
         self.inner.lock().unwrap().sessions.clone()
     }
 
-    /// Whether the device list answers 403 from now on, as it does for a
-    /// token without the read scope.
+    /// Whether unlinking this device answers 403 from now on, as an older
+    /// server does for a token without the read scope.
     pub fn refuse_unlink(&self, on: bool) {
         self.inner.lock().unwrap().refuse_unlink = on;
     }
@@ -316,7 +316,7 @@ fn serve(mut conn: TcpStream, inner: Arc<Mutex<Inner>>) {
         let unlinking = |i: &Inner| {
             i.requests
                 .iter()
-                .any(|r| r.starts_with("GET /api/v1/devices "))
+                .any(|r| r.starts_with("DELETE /api/v1/devices/this "))
         };
         while !unlinking(&inner.lock().unwrap()) && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(10));
@@ -386,17 +386,10 @@ fn serve(mut conn: TcpStream, inner: Arc<Mutex<Inner>>) {
     }
 
     let mut i = inner.lock().unwrap();
-    if path == "/api/v1/devices" && method == "GET" {
+    if path == "/api/v1/devices/this" && method == "DELETE" {
         if i.refuse_unlink {
             return respond(&mut conn, "403 Forbidden", r#"{"error":"forbidden"}"#);
         }
-        return respond(
-            &mut conn,
-            "200 OK",
-            r#"{"devices":[{"id":"other"},{"id":"d1","this":true}]}"#,
-        );
-    }
-    if path == "/api/v1/devices/d1" && method == "DELETE" {
         // The token dies, and every window session under it.
         i.unlinked = true;
         i.sessions.clear();
