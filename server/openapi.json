@@ -1130,6 +1130,10 @@
           "maximum": 36500,
           "description": "Signed-in browsers unseen this many days are unlinked on their own, each with a device log line. 0 never. Needs an admin token with no topic list."
          },
+         "github_hooks_paused": {
+          "type": "boolean",
+          "description": "Server-wide off switch that pauses every outgoing GitHub issue hook without deleting it. Needs an admin token with no topic list."
+         },
          "sound": {
           "type": "string",
           "description": "The asking device's own notification sound, a name from GET /api/v1/sounds. Needs a token with no topic list."
@@ -7082,6 +7086,10 @@
      "unlink_idle_browsers_days": {
       "type": "integer",
       "description": "Signed-in browsers unseen this many days are unlinked on their own (phones and typed-in tokens never). 0 never. Default 30."
+     },
+     "github_hooks_paused": {
+      "type": "boolean",
+      "description": "When true, every outgoing GitHub issue hook is paused server-wide. Default false."
      },
      "sound": {
       "type": "string",

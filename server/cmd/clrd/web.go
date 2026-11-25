@@ -397,7 +397,7 @@ func (a webAPI) EndSilence(r *http.Request, id string) error {
 	return webError(err)
 }
 
-func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []string, body *string, secret string, clearSecret bool) error {
+func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []string, kind, body *string, secret string, clearSecret bool) error {
 	h := server.OutHook{URL: url, Events: events, Secret: secret}
 	if body != nil {
 		h.Body = *body
@@ -406,10 +406,17 @@ func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []stri
 	if tok == nil {
 		return web.ErrUnauthorized
 	}
-	hooks, _ := a.s.OutHooks(r.Context(), tok, topic) // the form has no kind: keep the saved one (#166)
-	for _, o := range hooks {
-		if o.Name == name {
-			h.Kind = o.Kind
+	if kind != nil {
+		h.Kind = *kind
+	} else {
+		hooks, err := a.s.OutHooks(r.Context(), tok, topic) // a tab from before the kind field keeps the saved one (#673)
+		if err != nil {
+			return webError(err)
+		}
+		for _, o := range hooks {
+			if o.Name == name {
+				h.Kind = o.Kind
+			}
 		}
 	}
 	return webError(a.s.SaveHook(r.Context(), tok, topic, name, h, !clearSecret, body == nil))

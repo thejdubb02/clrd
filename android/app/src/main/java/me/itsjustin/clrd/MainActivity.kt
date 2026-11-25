@@ -753,8 +753,13 @@ internal fun Card(n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), 
             }
             if (n.message.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                val favicons by App.of(LocalContext.current).favicons.collectAsState()
-                val text = remember(n.message, n.format, b, favicons) { Md.render(n.message, n.isMarkdown, link = b.clear, muted = b.slate, icons = favicons) }
+                val app = App.of(LocalContext.current)
+                val favicons by app.favicons.collectAsState()
+                val formatting by app.formatting.collectAsState()
+                val autolink by app.autolink.collectAsState()
+                val text = remember(n.message, n.format, b, favicons, formatting, autolink) {
+                    Md.render(n.message, n.isMarkdown && formatting, link = b.clear, muted = b.slate, icons = favicons, autolink = autolink)
+                }
                 val body = @Composable { MessageText(text, maxLines = if (open) Int.MAX_VALUE else 6, modifier = Modifier.padding(end = 8.dp)) }
                 // Open text can be selected and copied; links open in the browser.
                 if (open) SelectionContainer { body() } else body()
@@ -1277,8 +1282,10 @@ private fun DeviceSettings(app: App, resumes: Int) {
     var lower by remember { mutableStateOf<Pair<org.json.JSONObject, String>?>(null) }
     // The server decides (docs/SPEC.md "Who may approve"): a refusal shows as the error line.
     var busy by remember { mutableStateOf(false) } // a change is on its way; the menu waits for the fresh list
+    val pending = remember { java.util.concurrent.atomic.AtomicInteger() } // changes not yet sent, so a reload queued before one keeps the controls off (#777)
     val change: (org.json.JSONObject, String, org.json.JSONObject) -> Unit = { d, what, body ->
         busy = true
+        pending.incrementAndGet()
         val api = app.api()
         app.io.execute {
             val out = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/$what", body.toString()) }
@@ -1288,6 +1295,7 @@ private fun DeviceSettings(app: App, resumes: Int) {
             }
             val e = out.exceptionOrNull()?.let { refusal(ctx, it) }
             if (what == "clears") { clearsError = e; error = null } else { error = e; clearsError = null }
+            pending.decrementAndGet()
             reload++
         }
     }
@@ -1301,7 +1309,8 @@ private fun DeviceSettings(app: App, resumes: Int) {
             val refused = got.exceptionOrNull() as? HttpError
             if (refused?.isAuth == true) devices = null // a signed-out phone shows no old list
             closed = refused?.code == 403
-            busy = false
+            // checked on the main thread, where a tap sets busy, so a tap between the check and the write is not lost
+            android.os.Handler(android.os.Looper.getMainLooper()).post { busy = pending.get() > 0 }
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices/log")), "events") }.getOrNull()?.let { log = it }
         }
     }
@@ -1967,6 +1976,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     var stack by remember { mutableStateOf(app.stack) }
     var drop by remember { mutableStateOf(app.dropCleared) }
     var fast by remember { mutableStateOf(app.fastSwipe) }
+    var shade by remember { mutableStateOf(app.shadeClears) }
     var query by rememberSaveable { mutableStateOf("") }
     val topics by app.db.dao().topics().collectAsState(emptyList())
     val status by app.status.collectAsState()
@@ -2104,6 +2114,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 Explain(R.string.appearance_explain)
                 AppearancePicker(app)
             }
+            "shade-clears" -> Toggle(R.string.shade_clears, R.string.shade_clears_explain, shade) { on -> shade = on; app.shadeClears = on }
             "full-swipe" -> Toggle(R.string.fast_swipe, R.string.fast_swipe_explain, fast) { on -> fast = on; app.fastSwipe = on }
             "swipe" -> SwipeSettings(app)
             "sound" -> SoundSettings(app, resumes)

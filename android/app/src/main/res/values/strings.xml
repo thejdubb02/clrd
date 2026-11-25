@@ -117,6 +117,8 @@
     <string name="stack">Stack by topic</string>
     <string name="drop_cleared">Remove cleared items</string>
     <string name="drop_cleared_explain">A cleared item also leaves this phone once the server has the clear, so the Cleared tab stays empty. The server keeps its copy, and the web inbox still shows it.</string>
+    <string name="shade_clears">Swipe clears everywhere</string>
+    <string name="shade_clears_explain">Swiping a notification out of the shade only hides it on this phone. Turn this on and swiping one away clears it on every device. Swiping a group away or tapping Clear all still only hides them here.</string>
     <string name="fast_swipe">Full swipe acts</string>
     <string name="fast_swipe_explain">A swipe on a card shows its buttons, and nothing happens until you tap one. Turn this on and a swipe all the way across runs the first button on that side, the one nearest the edge. A clear can still be undone.</string>
     <string name="swipe_settings">Swipe buttons</string>

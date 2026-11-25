@@ -129,9 +129,10 @@ the variable (or setting it to `on`) and restarting.
 
 ## Discord: post, then edit when cleared
 
-Give a hook `"kind": "discord"` and a Discord webhook URL (channel settings,
+Give a hook `"kind": "discord"` (or pick Discord in Settings > Webhooks) and a Discord webhook URL (channel settings,
 Integrations, Webhooks, Copy Webhook URL). Every new notification on the
-topic is posted to the channel. When it is dismissed, acknowledged,
+topic is posted to the channel (scheduled notifications post when they wake).
+When a notification is updated (same sender ID or `PATCH`) or dismissed, acknowledged,
 resolved, snoozed or answered (pick with `events`), clrd edits that message:
 the title is struck through once it is cleared or resolved, and a small line
 says what happened and on which device, such as "Cleared by pixel-9". A
@@ -145,7 +146,7 @@ curl -X PUT https://clrd.example.com/api/v1/topics/alerts/hooks/discord \
 
 A discord hook takes no `body` or `secret`. Mentions like `@everyone` in a
 message are shown but never ping anyone. If someone deletes the message in
-Discord, the edit is skipped. A scheduled notification is not posted.
+Discord, the edit is skipped.
 The webhook URL holds a token, so treat it like a password: only admins can
 see it, and delivery errors leave it out.
 
@@ -177,12 +178,18 @@ an agent, clrd is careful about what it opens:
 - Never two issues for one alert. The issue body starts with a hidden
   `<!-- clrd ... -->` line, and clrd looks for it among the repo's newest
   issues before it opens one, so a retry after a lost reply finds the first.
+- Issue titles are prefixed with `[clrd <topic>] `, issues carry the `clrd`
+  and `priority:<min|low|default|high|urgent>` labels, and when
+  `CLRD_BASE_URL` is set the issue body links back to the notification in your
+  web inbox.
 - The sender's text goes in a fenced code block it cannot close, under a
   line saying it is data, not instructions. An `@name` in it pings nobody.
 - clrd does not acknowledge or clear the notification itself when the issue
   opens; it stays as it was on every device.
 
-Delete the hook to stop new issues at once. The
+Pause every GitHub issue hook server-wide without deleting them by setting
+`{"github_hooks_paused": true}` on `PUT /api/v1/settings` (full admin, or via
+the MCP `settings` tool), or delete the hook to stop new issues at once. The
 token is write only: the API never shows it again. A scheduled notification
 does not open an issue.
 
