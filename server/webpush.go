@@ -206,11 +206,21 @@ func (s *Server) sendPushes(ctx context.Context, e Event) {
 	}
 	rows.Close()
 	n := e.Notification
+	hid := map[string]bool{} // devices that cleared it for themselves (#767)
+	if rows, err := s.db.QueryContext(ctx, `SELECT token_id FROM hidden WHERE notification_id = ?`, n.ID); err == nil {
+		for rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil {
+				hid[id] = true
+			}
+		}
+		rows.Close()
+	}
 	body := pushPayload(e)
 	sem := make(chan struct{}, 8)
 	var wg sync.WaitGroup
 	for _, p := range subs {
-		if len(n.Devices) > 0 && !slices.Contains(n.Devices, p.tokenID) {
+		if len(n.Devices) > 0 && !slices.Contains(n.Devices, p.tokenID) || hid[p.tokenID] {
 			continue
 		}
 		// Take the slot first so the check is fresh when the send starts.

@@ -243,6 +243,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (owner TEXT NOT NULL, topic TEXT NOT NU
 -- seq is the owner's last subscriptions event, so a device behind it gets reset;
 -- moved is the last attach or detach only, all an unfiltered token resets on (#635).
 CREATE TABLE IF NOT EXISTS sub_owners (owner TEXT PRIMARY KEY, new_topics INTEGER NOT NULL, seq INTEGER NOT NULL, moved INTEGER NOT NULL DEFAULT 0);
+-- Notifications a device cleared for itself alone (#767, clears.go).
+CREATE TABLE IF NOT EXISTS hidden (token_id TEXT NOT NULL, notification_id TEXT NOT NULL, PRIMARY KEY (token_id, notification_id));
 `
 
 // Action is a button on a notification: a link (URL), an answer (Reply)
@@ -324,7 +326,10 @@ type Event struct {
 	Notification *Notification `json:"notification"`
 	// Via says how a state change was made (docs/SPEC.md section 5 lists the values), so a
 	// report like "the phone cleared it and I did not" can be answered from the log (#265).
-	Via     string `json:"via,omitempty"`
+	Via string `json:"via,omitempty"`
+	// Only is the one token this event is for: a clear that stays on that
+	// device (clears.go). It changes no shared state and fires no hook or push.
+	Only    string `json:"only,omitempty"`
 	Raw     []byte `json:"-"`
 	replied bool   // a reply button was tapped: the "action" hook event
 }
@@ -735,15 +740,25 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 			return nil, err
 		}
 		e.Seq, _ = res.LastInsertId()
-		e.Notification.Seq, e.Notification.UpdatedAt = e.Seq, t
-		if err := saveNotification(tx, e.Notification, e.Type); err != nil {
-			return nil, err
+		if e.Only == "" { // one device's copy keeps the row's seq, so a tap on it is not refused as stale
+			e.Notification.Seq, e.Notification.UpdatedAt = e.Seq, t
+			if err := saveNotification(tx, e.Notification, e.Type); err != nil {
+				return nil, err
+			}
 		}
 		if e.Raw, err = json.Marshal(e); err != nil {
 			return nil, errf(400, "bad_request", "cannot encode notification: %v", err)
 		}
 		if _, err := tx.Exec(`UPDATE events SET data = ? WHERE seq = ?`, string(e.Raw), e.Seq); err != nil {
 			return nil, err
+		}
+		if e.Only != "" {
+			continue
+		}
+		if e.Notification.Final() { // a real clear ends every device's own hide of it (#767)
+			if _, err := tx.Exec(`DELETE FROM hidden WHERE notification_id = ?`, e.Notification.ID); err != nil {
+				return nil, err
+			}
 		}
 		if err := queueHooks(tx, e, t); err != nil {
 			return nil, err
@@ -759,7 +774,9 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 		}
 		s.seq.Store(e.Seq)
 		s.hub.publish(e)
-		s.queuePush(e)
+		if e.Only == "" {
+			s.queuePush(e)
+		}
 	}
 	return evs, nil
 }
@@ -1190,6 +1207,12 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 			return nil, err
 		}
 		out = n
+		if !byKey { // a clear that stays on this device (#767)
+			if v, evs, err := s.clearLocal(ctx, tx, tok, n, action, via); err != nil || v != nil {
+				out, changed = v, len(evs) > 0
+				return evs, err
+			}
+		}
 		if reopenSnoozed && n.Final() {
 			n.State = Active // the reopen half; transition then snoozes it
 		}
@@ -1403,9 +1426,23 @@ func (s *Server) Clear(ctx context.Context, tok *Token, topic string, ids []stri
 		if err != nil {
 			return nil, err
 		}
+		local, err := localClears(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
 		var evs []Event
 		for _, n := range ns {
 			if tok.need(ScopeRead, n.Topic) != nil {
+				continue
+			}
+			if local[tok.ID] { // stays on this device (#767)
+				ev, err := hide(ctx, tx, tok, n, via)
+				if err != nil {
+					return nil, err
+				}
+				if ev != nil {
+					evs = append(evs, *ev)
+				}
 				continue
 			}
 			ev, _ := transition(n, Dismissed, tok, via, nil)
@@ -1534,6 +1571,9 @@ func (s *Server) prune(ctx context.Context) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_posts WHERE id NOT IN (SELECT id FROM notifications)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM hidden WHERE notification_id NOT IN (SELECT id FROM notifications)`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM silences WHERE until_ms < ?`, ms(time.Now())); err != nil {
@@ -1672,6 +1712,8 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 		where = append(where, `id < ?`)
 		args = append(args, lq.Before)
 	}
+	where = append(where, notHidden)
+	args = append(args, tok.ID)
 	if lq.Limit <= 0 {
 		lq.Limit = 100
 	}
@@ -1693,6 +1735,9 @@ func (s *Server) Get(ctx context.Context, tok *Token, id string) (*Notification,
 	}
 	if err := tok.need(ScopeRead, n.Topic); err != nil {
 		return nil, err
+	}
+	if isHidden(ctx, s.db, tok, n) { // as this device cleared it (#767)
+		n = hiddenView(tok, n)
 	}
 	forReader(tok, n)
 	return n, nil
@@ -1723,8 +1768,8 @@ func (s *Server) Topics(ctx context.Context, tok *Token) ([]TopicCount, error) {
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT topic, SUM(open), MAX(icon), MAX(da), MAX(ap), MAX(at) FROM (
-		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AS open, '' AS icon, 0 AS da, 0 AS ap, created_at AS at FROM notifications
-		UNION ALL SELECT topic, 0, icon, device_actions, approvals, NULL FROM topics) GROUP BY topic ORDER BY topic`)
+		SELECT topic, state IN ('active', 'acknowledged', 'snoozed') AND `+notHidden+` AS open, '' AS icon, 0 AS da, 0 AS ap, created_at AS at FROM notifications
+		UNION ALL SELECT topic, 0, icon, device_actions, approvals, NULL FROM topics) GROUP BY topic ORDER BY topic`, tok.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1759,7 +1804,7 @@ func (s *Server) Counts(ctx context.Context, tok *Token) (map[string]int, error)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, state, COUNT(*) FROM notifications GROUP BY topic, state`)
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, state, COUNT(*) FROM notifications WHERE `+notHidden+` GROUP BY topic, state`, tok.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1969,6 +2014,11 @@ func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Eve
 			var d struct{ Notification struct{ Devices []string } }
 			json.Unmarshal(e.Raw, &d)
 			e.Notification.Devices = d.Notification.Devices
+		}
+		if strings.Contains(data, `"only":"`) { // a clear for one device (clears.go)
+			var o struct{ Only string }
+			json.Unmarshal(e.Raw, &o)
+			e.Only = o.Only
 		}
 		out = append(out, e)
 	}

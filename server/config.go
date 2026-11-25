@@ -210,5 +210,10 @@ func dropTokens(ctx context.Context, tx *sql.Tx, seed string, args ...any) ([]st
 		}
 		ids = append(ids, id)
 	}
-	return ids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	_, err = tx.ExecContext(ctx, `DELETE FROM hidden WHERE token_id NOT IN (SELECT id FROM tokens)`) // what they cleared for themselves (#767)
+	return ids, err
 }
