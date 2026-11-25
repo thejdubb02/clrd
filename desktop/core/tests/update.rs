@@ -143,14 +143,16 @@ fn a_signed_newer_version_is_kept_and_no_sign_in_is_sent() {
 #[ignore = "needs CLRD_RELEASE_DIR and CLRD_RELEASE_PUBKEY from CI"]
 fn a_release_made_by_feed_sh_is_taken() {
     let dir = PathBuf::from(std::env::var("CLRD_RELEASE_DIR").unwrap());
-    let feed: serde_json::Value =
+    let mut feed: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("latest.json")).unwrap()).unwrap();
-    let version = feed["version"].as_str().unwrap();
-    let package = &feed["platforms"]["windows-x86_64"];
-    let name = package["url"].as_str().unwrap().rsplit('/').next().unwrap();
-    let installer = std::fs::read(dir.join(name)).unwrap();
+    let version = feed["version"].as_str().unwrap().to_owned();
+    let url = &mut feed["platforms"]["windows-x86_64"]["url"];
+    let name = url.as_str().unwrap().rsplit('/').next().unwrap().to_owned();
+    let installer = std::fs::read(dir.join(&name)).unwrap();
     let server = Server::start();
-    server.feed(version, package["signature"].as_str().unwrap());
+    // The feed exactly as feed.sh wrote it, only pointed at this server.
+    *url = format!("{}/package", server.base).into();
+    server.serve("/feed", 200, feed.to_string());
     server.serve("/package", 200, installer.clone());
     let mut updater = server.updater("release");
     updater.pubkey = std::env::var("CLRD_RELEASE_PUBKEY").unwrap();
