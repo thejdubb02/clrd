@@ -283,8 +283,8 @@ func (s *Server) statsRoutes() {
 }
 
 // csvCell guards free-text cells against spreadsheet formula prefixes. A
-// leading quote is escaped too, so dropping one leading quote reads any cell
-// back (#794).
+// leading quote gets one too, so a value already starting with a quote stays
+// distinct from one the guard quoted (#794).
 func csvCell(v string) string {
 	if len(v) > 0 && strings.ContainsRune("=+-@\t\r'", rune(v[0])) {
 		return "'" + v
