@@ -61,7 +61,8 @@ var hookKinds = []string{"", "discord", "github"}
 // githubPerHour caps the issues one github hook opens: a flapping alert must
 // not bury a repo, or start a coding agent a hundred times. Deliveries still
 // pending count at any age, so a retry stall that clears cannot open more
-// than this in the hour after (#680).
+// than this in the hour after; one that failed in the hour counts too, as its
+// last try may have opened an issue whose reply was lost (#680).
 const githubPerHour = 10
 
 // githubAPI is where a github hook may point, so its token goes only there. Tests swap it.
@@ -77,7 +78,7 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
 			SELECT topic, name, ?, 'posted', ?, ?, ? FROM hooks_out h WHERE topic = ? AND enabled = 1 AND (kind = 'discord'
 			OR kind = 'github' AND ? AND (SELECT count(*) FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name
-			AND d.event = 'posted' AND (d.status = 'pending' OR d.status = 'ok' AND d.updated_at > ?)) < ?)`,
+			AND d.event = 'posted' AND (d.status = 'pending' OR d.updated_at > ?)) < ?)`,
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, issue, ms(t.Add(-time.Hour)), githubPerHour)
 		return err
 	}
@@ -369,11 +370,12 @@ func githubMark(hook string, n *Notification) string {
 // githubFind looks among the repo's newest issues for one starting with mark
 // and returns its number, or "" with the status of the look. Anything but a
 // clean 200 is a failed look, retried later, never a reason to open another.
-// ponytail: one page of 100, newest first, since the alert; a repo opening
-// more than that between a lost reply and its retry gets a duplicate.
+// ponytail: one page of 50, newest first, since the alert (50 bodies of the
+// largest size still fit hookReplyMax); a repo opening more than that between
+// a lost reply and its retry gets a duplicate.
 func (s *Server) githubFind(ctx context.Context, u url.URL, secret, mark string, since time.Time) (string, int, error) {
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/issues"
-	u.RawQuery = url.Values{"state": {"all"}, "sort": {"created"}, "direction": {"desc"}, "per_page": {"100"},
+	u.RawQuery = url.Values{"state": {"all"}, "sort": {"created"}, "direction": {"desc"}, "per_page": {"50"},
 		"since": {since.Add(-10 * time.Minute).UTC().Format(time.RFC3339)}}.Encode() // clocks drift
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
