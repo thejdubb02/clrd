@@ -1506,6 +1506,7 @@ JavaScript off the web page shows every section and no search box.
 | Devices | `server` | Server | server, address, url, token, sign in, log in | Android |
 | Devices | `devices` | Linked devices | phone, browser, unlink, sign out, approve, may approve, activity | both |
 | Devices | `link-phone` | Link a phone | qr, scan, pair, code, add phone | web shows the code, Android scans it |
+| Devices | `client-cert` | Client certificate | certificate, mtls, mutual tls, tls, key | Android: picked from the Android key store, offered only to the server's own host |
 | Devices | `add-agent` | Add an agent | agent, ai, bot, invite, mcp, token | web, admin only |
 | Integrations | `senders` | Senders | sender, rules, bot, agent, allow | both, only where the token may manage senders |
 | Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |

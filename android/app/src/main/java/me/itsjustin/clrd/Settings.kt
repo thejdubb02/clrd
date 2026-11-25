@@ -20,6 +20,7 @@ internal val SETTINGS = listOf(
     Setting(R.string.section_devices, "server", R.string.server, R.string.server_explain, listOf("server", "address", "url", "token", "sign in", "log in")),
     Setting(R.string.section_devices, "devices", R.string.devices_title, R.string.devices_explain, listOf("phone", "browser", "unlink", "sign out", "approve", "may approve", "activity")),
     Setting(R.string.section_devices, "link-phone", R.string.link_phone, R.string.link_phone_explain, listOf("qr", "scan", "pair", "code", "add phone")),
+    Setting(R.string.section_devices, "client-cert", R.string.client_cert, R.string.client_cert_explain, listOf("certificate", "mtls", "mutual tls", "tls", "key")),
     Setting(R.string.section_integrations, "senders", R.string.senders_title, R.string.senders_explain, listOf("sender", "rules", "bot", "agent", "allow")),
 )
 

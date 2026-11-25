@@ -169,6 +169,13 @@ Using your own certificate authority? Install its CA certificate on the phone
 (Settings, Security, Encryption and credentials, Install a certificate, CA
 certificate). The Android app trusts CAs installed that way.
 
+Server behind mutual TLS (a client certificate at the proxy)? Install the
+certificate on the phone (same screen, VPN and app user certificate), then in
+the app pick it under Settings, Devices, Client certificate. The key stays in
+Android's key store, and clrd offers it only to your clrd server, never to a
+site a message links to. Picking needs the phone's own dialog, so an agent
+cannot set it over the API.
+
 Caddy (handles certificates and WebSockets on its own):
 
 ```

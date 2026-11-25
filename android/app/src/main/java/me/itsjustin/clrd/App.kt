@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.room.Room
 import kotlinx.coroutines.flow.MutableStateFlow
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -12,8 +13,19 @@ import java.util.concurrent.TimeUnit
 /** App-wide singletons. Small enough that a DI framework would be the bigger thing. */
 class App : Application() {
     val db by lazy { Room.databaseBuilder(this, Db::class.java, "clrd.db").build() }
+    /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
+    val clientCert by lazy { MutableStateFlow(prefs.getString("client_cert", null)) }
     val http by lazy {
+        val keys = ClientCertKeys({ clientCert.value }, { serverUrl.toHttpUrlOrNull()?.host }) { a ->
+            runCatching { // a removed key or revoked access means no certificate, not a crash
+                val k = android.security.KeyChain.getPrivateKey(this, a)
+                val c = android.security.KeyChain.getCertificateChain(this, a)
+                if (k != null && c != null) k to c else null
+            }.getOrNull()
+        }
+        val (tls, trust) = keys.tls()
         OkHttpClient.Builder()
+            .sslSocketFactory(tls.socketFactory, trust)
             .pingInterval(45, TimeUnit.SECONDS) // notices a dead connection the server ping alone would not
             .connectTimeout(15, TimeUnit.SECONDS)
             .build()
@@ -77,6 +89,16 @@ class App : Application() {
     var dropCleared: Boolean
         get() = prefs.getBoolean("drop_cleared", false)
         set(v) = prefs.edit().putBoolean("drop_cleared", v).apply()
+
+    /** Picks or removes the client certificate (#152). Open connections used the old one, so they close and sync reconnects. */
+    fun pickClientCert(alias: String?) {
+        clientCert.value = alias
+        prefs.edit().putString("client_cert", alias).apply()
+        io.execute {
+            http.connectionPool.evictAll()
+            if (configured) SyncService.start(this, restart = true)
+        }
+    }
 
     /** This phone's notification sound (docs/SPEC.md section 2.2). Unset means the phone's own default. Change it with [saveSound]. */
     val sound: String get() = Sounds.known(prefs.getString("sound", null))
