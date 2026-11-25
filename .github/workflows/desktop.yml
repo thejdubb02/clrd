@@ -95,8 +95,8 @@ jobs:
         env:
           # Only a run by hand builds in an update address and key. Empty is
           # the same as unset: a build with no updates.
-          CLRD_UPDATE_URL: ${{ github.event_name == 'workflow_dispatch' && vars.CLRD_UPDATE_URL || '' }}
-          CLRD_UPDATE_PUBKEY: ${{ github.event_name == 'workflow_dispatch' && vars.CLRD_UPDATE_PUBKEY || '' }}
+          CLRD_UPDATE_URL: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && vars.CLRD_UPDATE_URL || '' }}
+          CLRD_UPDATE_PUBKEY: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && vars.CLRD_UPDATE_PUBKEY || '' }}
         run: |
           sudo apt-get install -y --no-install-recommends nsis lld llvm clang
           rustup target add x86_64-pc-windows-msvc
@@ -119,19 +119,23 @@ jobs:
         # Every run signs the installer and writes its feed, so the step
         # cannot rot. A run by hand signs with the real key, which is only
         # ever in this step's environment; any other run makes a throwaway
-        # key here. A run by hand never falls back to that one.
+        # key here. A run by hand never falls back to that one. Only a run by
+        # hand on main gets the key: on another branch this step runs that
+        # branch's feed.sh, which could read it.
         env:
-          BY_HAND: ${{ github.event_name == 'workflow_dispatch' }}
-          KEY: ${{ github.event_name == 'workflow_dispatch' && secrets.CLRD_UPDATE_KEY || '' }}
-          KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.CLRD_UPDATE_KEY_PASSWORD || '' }}
+          BY_HAND: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+          KEY: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && secrets.CLRD_UPDATE_KEY || '' }}
+          KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && secrets.CLRD_UPDATE_KEY_PASSWORD || '' }}
           URL: ${{ vars.CLRD_UPDATE_URL }}
           PUBKEY: ${{ vars.CLRD_UPDATE_PUBKEY }}
           PACKAGES: ${{ vars.CLRD_UPDATE_PACKAGES }}
         run: |
           setup=$(echo "$CARGO_TARGET_DIR"/x86_64-pc-windows-msvc/release/bundle/nsis/clrd_*_x64-setup.exe)
           if [ "$BY_HAND" = true ]; then
-            [ -n "$KEY" ] && [ -n "$URL" ] && [ -n "$PUBKEY" ] && [ -n "$PACKAGES" ] || {
-              echo "::error::needs the CLRD_UPDATE_KEY secret and the CLRD_UPDATE_URL, CLRD_UPDATE_PUBKEY and CLRD_UPDATE_PACKAGES variables"
+            # The test below serves the installer itself, so it cannot catch
+            # a bad address: both have to be https here.
+            [ -n "$KEY" ] && [ -n "$PUBKEY" ] && [ "${URL#https://}" != "$URL" ] && [ "${PACKAGES#https://}" != "$PACKAGES" ] || {
+              echo "::error::needs the CLRD_UPDATE_KEY secret, the CLRD_UPDATE_PUBKEY variable, and https addresses in CLRD_UPDATE_URL and CLRD_UPDATE_PACKAGES"
               exit 1
             }
             export TAURI_SIGNING_PRIVATE_KEY="$KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$KEY_PASSWORD"
@@ -150,7 +154,7 @@ jobs:
         # build was given.
         run: CLRD_RELEASE_DIR="$RUNNER_TEMP/update" CLRD_RELEASE_PUBKEY="$(cat "$RUNNER_TEMP/update.pub")" cargo test --locked -p clrd-core --test update -- --ignored
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         with:
           name: clrd-windows-update
           path: ${{ runner.temp }}/update/

@@ -194,8 +194,8 @@ refused.
 
 `package/feed.sh` signs an installer and writes that feed beside it. CI runs
 it on every desktop build with a key it makes and throws away, then checks
-the result with the app's own updater. Run by hand (Actions, desktop, Run
-workflow), it builds with the address and key from the repository's
+the result with the app's own updater. Run by hand on `main` (Actions,
+desktop, Run workflow), it builds with the address and key from the repository's
 variables `CLRD_UPDATE_URL`, `CLRD_UPDATE_PUBKEY` and `CLRD_UPDATE_PACKAGES`
 (where the installers are downloaded from), signs with the secret
 `CLRD_UPDATE_KEY` (and `CLRD_UPDATE_KEY_PASSWORD`), and keeps the installer,
