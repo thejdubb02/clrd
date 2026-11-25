@@ -654,7 +654,8 @@
   // Topic subscriptions (SPEC 2.3). A change reloads the page, so Undo
   // rides in sessionStorage, written before the PUT so a reply that lands
   // mid-reload still offers it. The new page checks the change landed (#649)
-  // and is still the owner's last one, tagged with this tab's request id (#702).
+  // and is still the owner's last one, tagged with this tab's request id (#702);
+  // Undo sends it as if_request_id so a later change elsewhere refuses it (#716).
   const subsPut = body => fetch('/api/v1/subscriptions', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
   const subsWhy = async r => r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   const approvalsOff = t => confirm(`Agents send their approval requests to ${t}. Unsubscribe, and those requests stop reaching you. Unsubscribe anyway?`);
@@ -668,9 +669,9 @@
       // the PUT never landed, or another device changed the set since
       if (s.request_id !== id || !(s.topics || []).some(x => x.topic === t && !x.subscribed)) return;
       say(`Unsubscribed from ${t}`, async () => {
-        const r = await subsPut({ topics: { [t]: true } });
-        if (r && r.ok) return location.reload();
-        say(await subsWhy(r));
+        const r = await subsPut({ topics: { [t]: true }, if_request_id: id });
+        if (r && (r.ok || r.status === 401)) return location.reload();
+        say(r && r.status === 409 ? 'Changed on another device.' : await subsWhy(r));
       });
     }, () => {});
   }
