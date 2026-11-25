@@ -111,7 +111,7 @@ mod os {
                     .deserialize()?;
                 let rule = zbus::MatchRule::builder()
                     .msg_type(zbus::message::Type::Signal)
-                    .sender(owner.as_str())
+                    // TEMP break: .sender(owner.as_str())
                     .interface(PROMPT)
                     .member("Completed")
                     .path(prompt.as_str())
