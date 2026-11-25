@@ -171,19 +171,32 @@ pub fn install_id(dir: &std::path::Path) -> String {
             && s.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     };
-    if let Ok(id) = std::fs::read_to_string(&file) {
-        if valid(id.trim()) {
-            return id.trim().to_string();
-        }
+    let read = || {
+        let id = std::fs::read_to_string(&file).unwrap_or_default();
+        Some(id.trim().to_string()).filter(|id| valid(id))
+    };
+    if let Some(id) = read() {
+        return id;
     }
+    // A broken file goes, and the new id is written only if no other start
+    // wrote one meanwhile: two links at once still send the same id.
+    let _ = std::fs::remove_file(&file);
     let mut raw = [0u8; 16];
     if getrandom::fill(&mut raw).is_err() {
         return String::new();
     }
     let id: String = raw.iter().map(|b| format!("{b:02x}")).collect();
-    match std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&file, &id)) {
+    let made = std::fs::create_dir_all(dir).and_then(|()| {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&file)?;
+        f.write_all(id.as_bytes())
+    });
+    match made {
         Ok(()) => id,
-        Err(_) => String::new(),
+        Err(_) => read().unwrap_or_default(),
     }
 }
 
