@@ -275,7 +275,7 @@ impl Sink for Notifier {
         let os_id = {
             let mut shown = self.0.shown.lock().unwrap();
             shown.hidden.remove(id);
-            shown.clearing.remove(id);
+            // TEMP break: shown.clearing.remove(id);
             shown.open.remove(id).map(|e| e.0)
         };
         if let Some(os_id) = os_id {
