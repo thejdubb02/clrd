@@ -38,7 +38,11 @@ opens the window of the one already running. (A Windows computer that lets
 one account sign in twice at once runs one copy in each.) The window follows the
 system's light or dark setting on both. Neither has run on a Windows
 computer yet: the one-copy check has passed under Wine, and the light or dark
-part on Windows is the window library's own and has not been seen.
+part on Windows is the window library's own and has not been seen. On
+Linux, a desktop that asks for light also gets light over a GTK theme that
+is dark by name (such as Adwaita-dark); a theme forced with `GTK_THEME` is
+left as it is. GNOME's Light style states no preference, so there the GTK
+theme decides.
 
 On Windows, notifications are toasts, with the same rules as on Linux: the
 Clear button clears everywhere, closing one only hides it on this computer
