@@ -704,7 +704,7 @@ func TestHooksOutGitHub(t *testing.T) {
 // GitHub issue hook follow-ups (#680): priority labels, [clrd topic] title
 // prefix, notification link when CLRD_BASE_URL is set, and github_hooks_paused.
 func TestHooksOutGitHubFollowups(t *testing.T) {
-	s, err := New(Options{DB: filepath.Join(t.TempDir(), "gh.db"), BaseURL: "https://clrd.example.com"})
+	s, err := New(Options{DB: filepath.Join(t.TempDir(), "gh.db"), BaseURL: "https://user:pass@clrd.example.com/clrd?ignored=1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -750,16 +750,17 @@ func TestHooksOutGitHubFollowups(t *testing.T) {
 		t.Fatalf("save dc: %d", code)
 	}
 
-	// 1. Priority labels, [clrd topic] title prefix (with and without title), and notification link.
+	// 1. Priority labels, [clrd topic] title prefix (with and without title,
+	//    stripping leading newlines/CR), and credential-free notification link.
 	_, n5 := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "DB down", "message": "unreachable", "priority": 5})
-	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "quiet note\nline 2", "priority": 1})
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "\nquiet note\r\nline 2", "priority": 1})
 	s.deliverHooks(ctx)
 	s.deliverHooks(ctx)
 	if len(bodies) != 2 {
 		t.Fatalf("want 2 opened issues, got %d", len(bodies))
 	}
-	wantLink := "Notification: https://clrd.example.com/app?topic=ops#t-" + n5["id"].(string)
-	if bodies[0]["title"] != "[clrd ops] DB down" || fmt.Sprint(bodies[0]["labels"]) != "[clrd priority:urgent]" || !strings.Contains(bodies[0]["body"].(string), wantLink) {
+	wantLink := "Notification: https://clrd.example.com/clrd/app?topic=ops#t-" + n5["id"].(string)
+	if bodies[0]["title"] != "[clrd ops] DB down" || fmt.Sprint(bodies[0]["labels"]) != "[clrd priority:urgent]" || !strings.Contains(bodies[0]["body"].(string), wantLink) || strings.Contains(bodies[0]["body"].(string), "user") || strings.Contains(bodies[0]["body"].(string), "pass") {
 		t.Fatalf("priority 5 issue: %+v", bodies[0])
 	}
 	if bodies[1]["title"] != "[clrd ops] quiet note" || fmt.Sprint(bodies[1]["labels"]) != "[clrd priority:min]" {
@@ -789,9 +790,11 @@ func TestHooksOutGitHubFollowups(t *testing.T) {
 	if code, st := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"github_hooks_paused": true}); code != 200 || st["github_hooks_paused"] != true {
 		t.Fatalf("pause: %d %v", code, st)
 	}
-	// Publish another while paused: must not queue for GitHub, must still deliver to Discord.
+	// Publish and dismiss another while paused: must not queue post or state-change
+	// deliveries for GitHub, must still deliver to Discord.
 	dcBefore := dcHits
-	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "While paused", "message": "skipped"})
+	_, pausedNotif := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "While paused", "message": "skipped"})
+	call(t, ts, "POST", "/api/v1/notifications/"+pausedNotif["id"].(string)+"/dismiss", admin, nil)
 	s.deliverHooks(ctx)
 	s.deliverHooks(ctx)
 	if len(bodies) != 2 {
@@ -799,6 +802,11 @@ func TestHooksOutGitHubFollowups(t *testing.T) {
 	}
 	if dcHits <= dcBefore {
 		t.Fatalf("discord hook did not deliver while github hooks paused: before=%d after=%d", dcBefore, dcHits)
+	}
+	var ghPending int
+	s.db.QueryRow(`SELECT count(*) FROM hook_deliveries WHERE name = 'gh' AND status = 'pending'`).Scan(&ghPending)
+	if ghPending != 1 {
+		t.Fatalf("expected only 1 pending pre-pause github delivery (no state-change pileup), got %d", ghPending)
 	}
 	// Unpause: only the pre-pause pending issue delivers; the while-paused alert was not queued.
 	if code, st := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"github_hooks_paused": false}); code != 200 || st["github_hooks_paused"] != false {

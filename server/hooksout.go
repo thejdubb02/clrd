@@ -111,8 +111,11 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 	}
 	_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
 		SELECT h.topic, h.name, ?, ?, ?, ?, ? FROM hooks_out h
-		WHERE h.topic = ? AND h.enabled = 1 AND EXISTS (SELECT 1 FROM json_each(h.events) WHERE value IN (?, ?))`,
-		e.Seq, ev, string(e.Raw), ms(t), ms(t), e.Notification.Topic, ev, alt)
+		WHERE h.topic = ? AND h.enabled = 1 AND EXISTS (SELECT 1 FROM json_each(h.events) WHERE value IN (?, ?))
+		  AND (h.kind = ''
+		    OR EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
+		    OR EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND json_extract(d.body, '$.notification.id') = ?))`,
+		e.Seq, ev, string(e.Raw), ms(t), ms(t), e.Notification.Topic, ev, alt, e.Notification.ID, e.Notification.ID)
 	return err
 }
 
@@ -328,8 +331,9 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 		}
 		baseURL := ""
 		if s.baseSet {
-			if bu, err := url.Parse(s.opt.BaseURL); err == nil {
-				baseURL = strings.TrimSuffix(bu.Redacted(), "/")
+			if bu, err := url.Parse(s.opt.BaseURL); err == nil && (bu.Scheme == "http" || bu.Scheme == "https") && bu.Host != "" {
+				bu.User, bu.RawQuery, bu.Fragment = nil, "", ""
+				baseURL = strings.TrimSuffix(bu.String(), "/")
 			}
 		}
 		reqs = githubReqs(*u, n, j.event, remote, mark, baseURL)
@@ -457,11 +461,16 @@ func githubPriorityLabel(p int) string {
 func githubReqs(u url.URL, n *Notification, event, remote, mark, baseURL string) []hookReq {
 	u.Path, u.RawQuery = strings.TrimSuffix(u.Path, "/")+"/issues", ""
 	if event == "posted" {
-		subject := n.Title
+		subject := strings.TrimSpace(n.Title)
 		if subject == "" {
-			subject = strings.SplitN(n.Message, "\n", 2)[0]
+			subject = strings.TrimSpace(n.Message)
 		}
-		title := []rune("[clrd " + n.Topic + "] " + subject)
+		subject = strings.TrimSpace(strings.SplitN(strings.ReplaceAll(subject, "\r", "\n"), "\n", 2)[0])
+		rawTitle := "[clrd " + n.Topic + "]"
+		if subject != "" {
+			rawTitle += " " + subject
+		}
+		title := []rune(rawTitle)
 		text := []rune(strings.TrimSpace(n.Title + "\n\n" + n.Message))
 		link := "\n\n"
 		if baseURL != "" {
