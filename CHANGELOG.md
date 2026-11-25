@@ -128,6 +128,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Desktop (Linux): a desktop that asks for light now gets a light window even when the GTK theme is a dark one by name, such as Adwaita-dark. The dark theme comes back when the desktop asks for dark or states no preference. A theme forced with the `GTK_THEME` variable still wins (#703).
 - Android: the test that checks hostile Markdown renders fast no longer fails on a busy build machine, so a release build is not held up by it (#663).
 - Android: a card that was snoozed and woke up, or was cleared and reopened, while the phone was offline now alerts when the phone catches up, as it did on the devices that were online. Your own Undo stays quiet (#645).
 - Android: Clear on a card no longer wraps onto three lines on a common phone. Share and Copy now sit in the card's More menu, and on a narrow screen or with large text Ack and then Snooze move there too, so Clear always shows whole (#734).
