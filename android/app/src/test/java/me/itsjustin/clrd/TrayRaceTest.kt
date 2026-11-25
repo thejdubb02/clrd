@@ -129,6 +129,17 @@ class TrayRaceTest {
         assertEquals(Notification.GROUP_ALERT_SUMMARY, tray("b")!!.groupAlertBehavior)
     }
 
+    @Test fun aShowAfterAHideInTheReplayRings() { // #589: snoozed and woken while offline, active over active here
+        val store = RoomStore(app)
+        val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1), row("c", Notif.ACTIVE, 1)), 1) }
+        bg { dao.answered("b", 3) } // b's reopen was this phone's own Undo
+        bg { store.apply(listOf(row("a", Notif.ACTIVE, 3), row("b", Notif.ACTIVE, 3), row("c", Notif.ACTIVE, 3)), 3, shown = mapOf("a" to 3L, "b" to 3L)) }
+        assertTrue(!once("a"))
+        assertTrue(once("b"))
+        assertTrue(once("c")) // no hide in the replay: an update stays quiet
+    }
+
     @Test fun aRepeatBehindOurOwnMarkStillRings() { // #500: the mark's answer (seq 5) lands before the repeat (seq 4)
         val store = RoomStore(app)
         val once = { id: String -> tray(id)!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0 }
