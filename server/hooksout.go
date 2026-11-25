@@ -95,13 +95,23 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 	if e.Type != EventState {
 		return nil
 	}
-	if n := e.Notification; n.State == Active && e.Via == "snooze_end" { // scheduled send wakes: post to Discord if never posted (#673)
-		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
+	if n := e.Notification; n.State == Active && e.woke { // server woke a snoozed notification (#673)
+		// Scheduled notification never posted yet: post it now.
+		if _, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
 			SELECT h.topic, h.name, ?, 'posted', ?, ?, ? FROM hooks_out h
 			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
 			  AND NOT EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
 			  AND NOT EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND json_extract(d.body, '$.notification.id') = ?)`,
-			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, n.ID)
+			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, n.ID); err != nil {
+			return err
+		}
+		// Already-posted notification that was snoozed: edit it to drop the Snoozed status line.
+		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
+			SELECT h.topic, h.name, ?, 'updated', ?, ?, ? FROM hooks_out h
+			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
+			  AND (EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
+			    OR EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND d.seq < ? AND json_extract(d.body, '$.notification.id') = ?))`,
+			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, e.Seq, n.ID)
 		return err
 	}
 	ev, alt := e.Notification.State, e.Notification.State

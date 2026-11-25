@@ -332,6 +332,7 @@ type Event struct {
 	Only    string `json:"only,omitempty"`
 	Raw     []byte `json:"-"`
 	replied bool   // a reply button was tapped: the "action" hook event
+	woke    bool   // server woke a snoozed notification (wakeSnoozed): never set from client via (#673)
 }
 
 // viaRe bounds the client's label: it is stored and sent to every device.
@@ -1461,6 +1462,7 @@ func (s *Server) wakeSnoozed(ctx context.Context) error {
 		var evs []Event
 		for _, n := range ns {
 			ev, _ := transition(n, Active, &Token{Name: "server"}, "snooze_end", nil)
+			ev.woke = true
 			evs = append(evs, *ev)
 		}
 		return evs, err

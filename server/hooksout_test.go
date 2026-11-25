@@ -614,9 +614,13 @@ func TestHooksOutDiscordFollowups(t *testing.T) {
 	if len(hits) != 1 || hits[0].method != "POST" || hits[0].content != "**Backup**\nready" {
 		t.Fatalf("after wake: %+v", hits)
 	}
-	// Snooze the already-posted notification, then wake it again: must not double-post.
+	// Snooze the already-posted notification, then wake it again: must not
+	// double-post, and must edit the message to drop the Snoozed status line.
 	call(t, ts, "POST", "/api/v1/notifications/"+sid+"/snooze", admin, map[string]any{"for": "1h"})
 	s.deliverHooks(ctx)
+	if len(hits) != 2 || hits[1].method != "PATCH" || !strings.Contains(hits[1].content, "-# Snoozed by ") {
+		t.Fatalf("after snooze: %+v", hits)
+	}
 	if _, err := s.db.Exec(`UPDATE notifications SET snooze_until = 1 WHERE id = ?`, sid); err != nil {
 		t.Fatal(err)
 	}
@@ -624,8 +628,21 @@ func TestHooksOutDiscordFollowups(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.deliverHooks(ctx)
-	if len(hits) != 2 || hits[1].method != "PATCH" {
-		t.Fatalf("snooze + wake posted a second time: %+v", hits)
+	if len(hits) != 3 || hits[2].method != "PATCH" || hits[2].content != "**Backup**\nready" {
+		t.Fatalf("after wake from snooze: want PATCH without Snoozed status, got %+v", hits)
+	}
+
+	// A client passing via="snooze_end" on reopen must not spoof a server wake
+	// and post an old notification that predated the hook.
+	if _, err := s.db.Exec(`INSERT INTO notifications (id, topic, title, message, format, priority, state, created_at, updated_at) VALUES ('old1', 'ops', 'Old', 'msg', 'text', 3, 'dismissed', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/notifications/old1/reopen", admin, map[string]any{"via": "snooze_end"}); code != 200 {
+		t.Fatalf("reopen old1: %d", code)
+	}
+	s.deliverHooks(ctx)
+	if len(hits) != 3 {
+		t.Fatalf("client via=snooze_end on reopen posted to Discord: %+v", hits[3:])
 	}
 
 	// 2. Updating a posted notification (upsert by external_id, then PATCH)
@@ -634,14 +651,14 @@ func TestHooksOutDiscordFollowups(t *testing.T) {
 		"topic": "ops", "title": "Backup", "message": "50% done", "external_id": "bk-1",
 	})
 	s.deliverHooks(ctx)
-	if len(hits) != 3 || hits[2].method != "PATCH" || hits[2].path != "/api/webhooks/1/tok/messages/m1" || hits[2].content != "**Backup**\n50% done" {
+	if len(hits) != 4 || hits[3].method != "PATCH" || hits[3].path != "/api/webhooks/1/tok/messages/m1" || hits[3].content != "**Backup**\n50% done" {
 		t.Fatalf("upsert edit: %+v", hits)
 	}
 	call(t, ts, "POST", "/api/v1/notifications/"+sid+"/ack", admin, nil)
 	s.deliverHooks(ctx)
 	call(t, ts, "PATCH", "/api/v1/notifications/"+sid, admin, map[string]any{"message": "90% done"})
 	s.deliverHooks(ctx)
-	if len(hits) != 5 || hits[4].method != "PATCH" || !strings.HasPrefix(hits[4].content, "**Backup**\n90% done\n-# Acknowledged by ") {
+	if len(hits) != 6 || hits[5].method != "PATCH" || !strings.HasPrefix(hits[5].content, "**Backup**\n90% done\n-# Acknowledged by ") {
 		t.Fatalf("patch edit while acknowledged: %+v", hits)
 	}
 
@@ -653,11 +670,21 @@ func TestHooksOutDiscordFollowups(t *testing.T) {
 	if err := s.SaveHook(ctx, serverToken, "ops", "plain", OutHook{URL: dc.URL + "/d", Kind: "discord"}, true, true); err != nil {
 		t.Fatalf("switch to discord: %v", err)
 	}
-	hs, _ := s.OutHooks(ctx, serverToken, "ops")
+	hs, err := s.OutHooks(ctx, serverToken, "ops")
+	if err != nil {
+		t.Fatalf("OutHooks after switch to discord: %v", err)
+	}
+	found := false
 	for _, h := range hs {
-		if h.Name == "plain" && (h.Kind != "discord" || h.HasSecret || h.Body != "") {
-			t.Fatalf("switched discord hook kept secret or body: %+v", h)
+		if h.Name == "plain" {
+			found = true
+			if h.Kind != "discord" || h.HasSecret || h.Body != "" {
+				t.Fatalf("switched discord hook kept secret or body: %+v", h)
+			}
 		}
+	}
+	if !found {
+		t.Fatalf("hook %q missing after switch to discord: %+v", "plain", hs)
 	}
 	// Creating a new github hook via web form without a secret is refused.
 	if err := s.SaveHook(ctx, serverToken, "ops", "newgh", OutHook{URL: githubAPI + "o/r", Kind: "github"}, true, true); err == nil {
@@ -670,11 +697,21 @@ func TestHooksOutDiscordFollowups(t *testing.T) {
 	if err := s.SaveHook(ctx, serverToken, "ops", "gh1", OutHook{URL: dc.URL + "/plain", Kind: ""}, true, true); err != nil {
 		t.Fatalf("switch github to plain: %v", err)
 	}
-	hs, _ = s.OutHooks(ctx, serverToken, "ops")
+	hs, err = s.OutHooks(ctx, serverToken, "ops")
+	if err != nil {
+		t.Fatalf("OutHooks after switch to plain: %v", err)
+	}
+	found = false
 	for _, h := range hs {
-		if h.Name == "gh1" && (h.Kind != "" || h.HasSecret) {
-			t.Fatalf("switched plain hook leaked GitHub token: %+v", h)
+		if h.Name == "gh1" {
+			found = true
+			if h.Kind != "" || h.HasSecret {
+				t.Fatalf("switched plain hook leaked GitHub token: %+v", h)
+			}
 		}
+	}
+	if !found {
+		t.Fatalf("hook %q missing after switch to plain: %+v", "gh1", hs)
 	}
 }
 
