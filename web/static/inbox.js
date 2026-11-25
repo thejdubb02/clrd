@@ -1158,6 +1158,21 @@
     say(r ? `Not changed: ${(await r.json().catch(() => ({}))).error || r.status}.` : 'Could not reach the server. Nothing changed.');
   });
 
+  // Whether a device's clears apply everywhere (#767), beside who may approve.
+  document.addEventListener('change', async e => {
+    const c = e.target.closest('[data-clears]');
+    if (!c) return;
+    c.disabled = true;
+    const r = await fetch(`/api/v1/devices/${encodeURIComponent(c.dataset.clears)}/clears`, {
+      method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ everywhere: c.checked }),
+    }).catch(() => null);
+    c.disabled = false;
+    if (r && r.status === 401) return location.reload();
+    if (r && r.ok) { c.blur(); say(`${c.dataset.name}: clears ${c.checked ? 'apply everywhere' : 'stay on that device'}.`); return refresh(); }
+    c.checked = !c.checked;
+    say(r ? `Not changed: ${(await r.json().catch(() => ({}))).error || r.status}.` : 'Could not reach the server. Nothing changed.');
+  });
+
   // Send a notification from this browser, with its own token (#150).
   const sendBox = $('#send');
   if (sendBox) {

@@ -251,7 +251,7 @@ func (s *Server) SetApprove(ctx context.Context, tok *Token, id, approve string)
 	return d, err
 }
 
-// approveGate is what SetApprove checks before it looks at any device.
+// approveGate is what SetApprove (and SetClears) checks before it looks at any device.
 func approveGate(tok *Token, approve string) error {
 	if err := tok.need(ScopeRead, ""); err != nil {
 		return err

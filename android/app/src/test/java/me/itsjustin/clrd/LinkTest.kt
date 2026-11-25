@@ -93,7 +93,7 @@ class LinkTest {
         try {
             val http = OkHttpClient()
             val base = server.url("/clrd/").toString()
-            assertEquals(Claim.Waiting, linkClaim(http, base, code, "s".repeat(43), "Pixel"))
+            assertEquals(Claim.Waiting, linkClaim(http, base, code, "s".repeat(43), "Pixel", "0123456789abcdef0123", "Pixel 8, Android 15"))
             assertEquals(Claim.Approved("clrd_test"), linkClaim(http, base, code, "s".repeat(43), "Pixel"))
             assertEquals(Claim.Gone, linkClaim(http, base, code, "s".repeat(43), "Pixel"))
             val err = runCatching { linkClaim(http, base, code, "s".repeat(43), "Pixel") }.exceptionOrNull()
@@ -106,6 +106,8 @@ class LinkTest {
             assertEquals(code, body.getString("code"))
             assertEquals("s".repeat(43), body.getString("secret"))
             assertEquals("Pixel", body.getString("name"))
+            assertEquals("0123456789abcdef0123", body.getString("install")) // linking again replaces this phone's row (#769)
+            assertEquals("Pixel 8, Android 15", body.getString("detail"))
         } finally {
             server.shutdown()
         }
