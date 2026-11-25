@@ -83,10 +83,13 @@ class MdTest {
 
     @Test fun hostileInputFinishesFast() {
         val junk = "*_[~+`".repeat(800) + "\n" + "**".repeat(2000) + "\n" + "<u>".repeat(1000) + "\n" + "*a ".repeat(2000)
+        val nested = "**_~~++".repeat(500) + "x" + "++~~_**".repeat(500)
+        Md.render("warm *up*") // class loading and JIT are not the parser
         val t = System.nanoTime()
         Md.render(junk)
-        Md.render("**_~~++" .repeat(500) + "x" + "++~~_**".repeat(500))
-        assertTrue("took ${(System.nanoTime() - t) / 1_000_000} ms", System.nanoTime() - t < 2_000_000_000L)
+        Md.render(nested)
+        // A loaded build box once took 4.7 s here; catastrophic backtracking takes minutes, so 10 s still catches it.
+        assertTrue("took ${(System.nanoTime() - t) / 1_000_000} ms", System.nanoTime() - t < 10_000_000_000L)
     }
 
     @Test fun trayKeepsOnlyBoldAndItalic() {
