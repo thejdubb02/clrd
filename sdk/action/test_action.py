@@ -66,6 +66,10 @@ class ActionTest(unittest.TestCase):
             self.assertEqual(r.returncode == 0, ok, f"{status}: {r.stdout}{r.stderr}")
             self.assertEqual(Fake.hits, ["/ci/build-1/resolve"])
 
+    def test_readme_links_repo(self):
+        readme = pathlib.Path(__file__).with_name("README.md").read_text()
+        self.assertIn("https://github.com/thejdubb02/clrd", readme)
+
 
 if __name__ == "__main__":
     unittest.main()

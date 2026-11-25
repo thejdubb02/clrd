@@ -102,6 +102,7 @@ Sitemap: {{.}}/sitemap.xml
       <p id="device-hint">Shown in your device list and when this browser clears something.</p>
     </div>
     <input type="hidden" name="next" value="{{.Path}}">
+    <input type="hidden" name="install">
     <button class="btn w-full" data-variant="primary" data-size="lg" type="submit">Sign in</button>
   </form>
   <p class="text-muted-foreground text-sm">Make a token with <code>clrd token create --name laptop --scope read</code>. <a href="{{base}}/docs/spec">How sign-in works</a></p>

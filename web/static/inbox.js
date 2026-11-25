@@ -658,7 +658,8 @@
   // Topic subscriptions (SPEC 2.3). A change reloads the page, so Undo
   // rides in sessionStorage, written before the PUT so a reply that lands
   // mid-reload still offers it. The new page checks the change landed (#649)
-  // and is still the owner's last one, tagged with this tab's request id (#702).
+  // and is still the owner's last one, tagged with this tab's request id (#702);
+  // Undo sends it as if_request_id so a later change elsewhere refuses it (#716).
   const subsPut = body => fetch('/api/v1/subscriptions', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
   const subsWhy = async r => r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   const approvalsOff = t => confirm(`Agents send their approval requests to ${t}. Unsubscribe, and those requests stop reaching you. Unsubscribe anyway?`);
@@ -672,9 +673,9 @@
       // the PUT never landed, or another device changed the set since
       if (s.request_id !== id || !(s.topics || []).some(x => x.topic === t && !x.subscribed)) return;
       say(`Unsubscribed from ${t}`, async () => {
-        const r = await subsPut({ topics: { [t]: true } });
-        if (r && r.ok) return location.reload();
-        say(await subsWhy(r));
+        const r = await subsPut({ topics: { [t]: true }, if_request_id: id });
+        if (r && (r.ok || r.status === 401)) return location.reload();
+        say(r && r.status === 409 ? 'Changed on another device.' : await subsWhy(r));
       });
     }, () => {});
   }
@@ -1115,6 +1116,28 @@
       status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not unlinked (${r.status}).` : 'Not unlinked: no connection.';
     });
   }
+
+  // Rename a browser or phone, and tidy the ones unused for a week (#765).
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-rename], [data-tidy]');
+    if (!b) return;
+    const status = $('[data-tidy-status]');
+    let r;
+    if (b.dataset.rename) {
+      const name = prompt('New name', b.dataset.name);
+      if (!name || !name.trim() || name === b.dataset.name) return;
+      r = await fetch(`/api/v1/devices/${encodeURIComponent(b.dataset.rename)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null);
+    } else {
+      const tidy = dry => fetch('/api/v1/devices/tidy', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days: 7, dry_run: dry }) }).catch(() => null);
+      r = await tidy(true);
+      const n = r && r.ok ? (await r.json()).count : -1;
+      if (n === 0) { status.textContent = 'Nothing unused for 7 days.'; return; }
+      if (n > 0 && !confirm(`Unlink ${n} ${n === 1 ? 'device' : 'devices'} unused for 7 days? They are signed out at once.`)) return;
+      if (n > 0) r = await tidy(false);
+    }
+    if (r && r.ok) return location.reload();
+    status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not done (${r.status}).` : 'Not done: no connection.';
+  });
 
   // Who may approve, per device, in Settings (#329). The page offers no
   // raise for this browser or what it hangs under; lowering one of those

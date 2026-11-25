@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -97,6 +98,10 @@ func (s *Server) handleLinkClaim(w http.ResponseWriter, r *http.Request) error {
 		Code   string `json:"code"`
 		Secret string `json:"secret"`
 		Name   string `json:"name"`
+		// Optional (#765): the app's own install id, and a short line such
+		// as "Pixel 8, Android 15" to tell phones of one name apart.
+		Install string `json:"install"`
+		Detail  string `json:"detail"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		return err
@@ -108,6 +113,10 @@ func (s *Server) handleLinkClaim(w http.ResponseWriter, r *http.Request) error {
 	p := s.pairingLocked(in.Code, kindLink)
 	if p != nil && p.secret == "" {
 		p.secret, p.name = in.Secret, deviceName(in.Name, "")
+		p.dev.install = installID(in.Install)
+		if strings.TrimSpace(in.Detail) != "" {
+			p.dev.detail = deviceName(in.Detail, "") // cleaned and cut as a name is
+		}
 	}
 	if p == nil || subtle.ConstantTimeCompare([]byte(in.Secret), []byte(p.secret)) != 1 {
 		s.pairMu.Unlock()
@@ -125,7 +134,7 @@ func (s *Server) handleLinkClaim(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	_, raw, err := s.childToken(ctx, p.owner, parent, p.name, true)
+	_, raw, err := s.linkDevice(ctx, p.owner, parent, p.name, true, p.dev)
 	if err != nil {
 		return err
 	}
