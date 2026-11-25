@@ -110,6 +110,9 @@ as emoji but leave the tag emoji out, since ntfy apps add those themselves.
   Changing the option follows the rules of `PUT /api/v1/devices/{id}/approve`,
   and as with approve a browser or phone signed in or linked with a token
   starts with that token's option (and keeps the option of a row it replaces).
+  The web Devices page sets it for any device; the Android app shows a
+  switch for its own phone under Settings, Devices, and a refusal from the
+  server (`approve_denied`) shows beside it in plain words.
 - `acknowledged` keeps it in the inbox, stops repeat alerting, shows "Acknowledged on <device>".
 - `snoozed` hides it until `snooze_until`; then the server moves it back to
   `active` with a new event (and re-notifies).
