@@ -531,6 +531,16 @@ func TestWaitLocalClear(t *testing.T) {
 	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "dismissed" {
 		t.Fatalf("wait after own local clear: %v", got)
 	}
+	// Shown again at once: the clear still counts, from its event.
+	id3, _ := call("send", map[string]any{"topic": "agents", "message": "undo?"})["id"].(string)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		s.Act(ctx, agent, id3, "dismiss", "app", nil)
+		s.Act(ctx, agent, id3, "reopen", "app", nil)
+	}()
+	if got := call("wait_for_reply", map[string]any{"id": id3, "timeout_s": 5}); got["reply"] != "dismissed" {
+		t.Fatalf("wait over own clear and reopen: %v", got)
+	}
 	id2, _ := call("send", map[string]any{"topic": "agents", "message": "again?"})["id"].(string)
 	go func() {
 		time.Sleep(50 * time.Millisecond)

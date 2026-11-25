@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -269,18 +270,20 @@ func TestWebPushHiddenWhileWaiting(t *testing.T) {
 		w.WriteHeader(201)
 	}))
 	defer svc.Close()
+	var once sync.Once
+	defer once.Do(func() { close(release) }) // before Close, which waits for the handlers
 	s.pushHTTP = svc.Client()
 	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
 	auth := make([]byte, 16)
 	rand.Read(auth)
-	var last string
-	for i := range 9 { // eight fill every slot; the ninth waits
+	waiting := map[string]string{} // endpoint path to token id, until its send starts
+	for i := range 9 {             // eight fill every slot; the ninth waits
 		tok := mkToken(t, s, fmt.Sprintf("p%d", i), []string{ScopeRead}, nil)
 		sub := map[string]any{"endpoint": fmt.Sprintf("%s/sub/%d", svc.URL, i), "keys": map[string]any{"p256dh": b64.EncodeToString(ua.PublicKey().Bytes()), "auth": b64.EncodeToString(auth)}}
 		if code, _ := call(t, ts, "PUT", "/api/v1/push", tok, sub); code != 204 {
 			t.Fatalf("subscribe %d: %d", i, code)
 		}
-		last = s.lookupToken(ctx, tok).ID
+		waiting[fmt.Sprintf("/sub/%d", i)] = s.lookupToken(ctx, tok).ID
 	}
 	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m"})
 	e := <-s.pushq
@@ -288,13 +291,16 @@ func TestWebPushHiddenWhileWaiting(t *testing.T) {
 	go func() { s.sendPushes(ctx, e); close(done) }()
 	for range 8 {
 		select {
-		case <-arrived:
+		case p := <-arrived:
+			delete(waiting, p)
 		case <-time.After(5 * time.Second):
 			t.Fatal("eight sends did not start")
 		}
 	}
-	s.db.Exec(`INSERT INTO hidden (token_id, notification_id) VALUES (?, ?)`, last, n["id"])
-	close(release)
+	for _, id := range waiting { // the one still waiting for a slot
+		s.db.Exec(`INSERT INTO hidden (token_id, notification_id) VALUES (?, ?)`, id, n["id"])
+	}
+	once.Do(func() { close(release) })
 	<-done
 	if len(arrived) != 0 {
 		t.Fatalf("pushed to %v after it hid the card", <-arrived)

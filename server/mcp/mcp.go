@@ -502,6 +502,18 @@ func (h *Handler) wait(r *http.Request, id string, a map[string]any) (any, error
 	}
 }
 
+// self is the caller's token id: its own row in the device list.
+func (h *Handler) self(r *http.Request) string {
+	out, _ := h.api(r, "GET", "/api/v1/devices?all=1", nil)
+	ds, _ := out["devices"].([]any)
+	for _, d := range ds {
+		if m, _ := d.(map[string]any); m["this"] == true {
+			return str(m, "id")
+		}
+	}
+	return ""
+}
+
 func replied(state string) bool { return state != server.Active && state != server.Snoozed } // snoozed = "ask me later"
 
 // watch reads the notification, then follows its events until a reply or the
@@ -518,6 +530,7 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 		return answered(map[string]any{"reply": st, "by": n["state_by"], "notification": n}, st, str(n, "reply"), str(n, "reply_text")), nil
 	}
 	var last any = n
+	var me string // the caller's token id, read at its first local clear event
 	for {
 		select {
 		case <-r.Context().Done():
@@ -541,8 +554,13 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 			if x == nil || x.ID != str(n, "id") {
 				continue
 			}
-			if e.Only != "" { // one device cleared it for itself: the read shows whether that was the caller (#777)
-				return h.watch(r, id, evs)
+			if e.Only != "" { // one device cleared it for itself: a reply only when that is the caller (#777)
+				if me == "" {
+					me = h.self(r)
+				}
+				if e.Only != me {
+					continue
+				}
 			}
 			last = x
 			if !replied(x.State) {
