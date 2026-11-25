@@ -356,7 +356,7 @@ var topicRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Reserved topic names: the server and mounted pages own these paths.
 var reserved = map[string]bool{"api": true, "app": true, "assets": true, "docs": true, "healthz": true,
-	"login": true, "logout": true, "mcp": true, "metrics": true, "setup": true, "static": true, "v1": true}
+	"login": true, "logout": true, "mcp": true, "setup": true, "static": true, "v1": true}
 
 func validTopic(t string) error {
 	if t == "" {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -386,5 +387,46 @@ func TestMetrics(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("/metrics missing %q in:\n%s", want, body)
 		}
+	}
+
+	// Topic name "metrics" stays valid for existing configs and publishers even
+	// when CLRD_METRICS=on: GET /metrics does not collide with POST /metrics or
+	// GET /metrics/json (#661).
+	cfgPath := filepath.Join(t.TempDir(), "cfg.json")
+	cfg := `{"tokens":[{"name":"m-pub","secret":"clrd_metrics_topic_token_1234","scopes":["publish","read"],"topics":["metrics"]}]}`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sm, err := New(Options{DB: filepath.Join(t.TempDir(), "mc.db"), Config: cfgPath, Metrics: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sm.Close() })
+	if err := sm.applyConfig(context.Background()); err != nil {
+		t.Fatalf("config token for topic 'metrics' failed: %v", err)
+	}
+	tsm := httptest.NewServer(sm)
+	t.Cleanup(tsm.Close)
+	mAdmin := mkToken(t, sm, "admin", []string{ScopeAdmin}, nil)
+	if c, _ := call(t, tsm, "POST", "/api/v1/notifications", "clrd_metrics_topic_token_1234", map[string]any{"topic": "metrics", "message": "api pub"}); c != 200 {
+		t.Fatalf("native publish to topic 'metrics': %d", c)
+	}
+	ntfyReq, _ := http.NewRequest("POST", tsm.URL+"/metrics", strings.NewReader("ntfy pub"))
+	ntfyReq.Header.Set("Authorization", "Bearer clrd_metrics_topic_token_1234")
+	ntfyResp, err := http.DefaultClient.Do(ntfyReq)
+	if err != nil || ntfyResp.StatusCode != 200 {
+		t.Fatalf("ntfy POST /metrics: %v %v", err, ntfyResp)
+	}
+	ntfyResp.Body.Close()
+	mReq, _ := http.NewRequest("GET", tsm.URL+"/metrics", nil)
+	mReq.Header.Set("Authorization", "Bearer "+mAdmin)
+	mResp, err := http.DefaultClient.Do(mReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mRaw, _ := io.ReadAll(mResp.Body)
+	mResp.Body.Close()
+	if mResp.StatusCode != 200 || !strings.Contains(string(mRaw), `clrd_notifications_topic_open{topic="metrics"} 2`) {
+		t.Fatalf("GET /metrics after publishing to topic 'metrics': %d %s", mResp.StatusCode, mRaw)
 	}
 }
