@@ -239,22 +239,20 @@ class App : Application() {
      * Null when the server took it or the token may not change it ([swipesLocked]), else why not. Call on [io].
      */
     fun saveSwipes(next: Swipes, api: Api = api()): String? {
-        swipes.value = next
         // On success the server has it: a restart before its echo keeps it.
-        return putSettings(api, next.json(), { prefs.edit().putString("swipes", next.json()).apply() }) { swipes.value = Swipes.parse(prefs.getString("swipes", null)) }
+        return putSettings(api, next.json(), { swipes.value = next }, { prefs.edit().putString("swipes", next.json()).apply() }) { swipes.value = Swipes.parse(prefs.getString("swipes", null)) }
     }
 
     /** Sends one display switch from Settings (#107), like [saveSwipes]. A formatting change redraws the shade at once, quietly. Call on [io]. */
     fun saveDisplay(key: String, on: Boolean, api: Api = api()): String? {
         val (flow, default) = display.getValue(key)
         fun set(v: Boolean) { if (flow.value != v) { flow.value = v; if (key == "render_formatting") RoomStore(this).reconcile() } }
-        set(on)
-        return putSettings(api, org.json.JSONObject().put(key, on).toString(), { prefs.edit().putBoolean(key, on).apply() }) { set(prefs.getBoolean(key, default)) }
+        return putSettings(api, org.json.JSONObject().put(key, on).toString(), { set(on) }, { prefs.edit().putBoolean(key, on).apply() }) { set(prefs.getBoolean(key, default)) }
     }
 
-    /** PUTs [body]; null when the server took it or this token may not change it ([swipesLocked]), else why not. */
-    private fun putSettings(api: Api, body: String, keep: () -> Unit, undo: () -> Unit): String? = try {
-        val rev = settingsRev.value
+    /** Shows [body] at once and PUTs it; null when the server took it or this token may not change it ([swipesLocked]), else why not. */
+    private fun putSettings(api: Api, body: String, show: () -> Unit, keep: () -> Unit, undo: () -> Unit): String? = try {
+        val rev = synchronized(configLock) { show(); settingsRev.value } // no settings message between the two
         api.put("/api/v1/settings", body)
         // A settings message that landed meanwhile is newer than this reply (#818): keep it, not what was sent.
         synchronized(configLock) { if (settingsRev.value == rev) keep(); settingsRev.value++ }

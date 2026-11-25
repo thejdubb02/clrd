@@ -141,17 +141,18 @@ class PreviewTest {
 
     @Test fun anOpenCardAsksAgainAfterASave() { // #818: the first ask beat the switch to the server
         onIo { app.saveSettings(JSONObject("""{"link_previews":true}""")) }
-        var on = false
+        val on = java.util.concurrent.atomic.AtomicBoolean()
+        val refused = java.util.concurrent.atomic.AtomicInteger()
         server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
             override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = when (request.requestUrl!!.encodedPath) {
-                "/api/v1/settings" -> { on = true; MockResponse().setBody("{}") }
-                "/api/v1/preview" -> if (on) MockResponse().setBody("""{"title":"Now on"}""") else MockResponse().setResponseCode(403)
+                "/api/v1/settings" -> { on.set(true); MockResponse().setBody("{}") }
+                "/api/v1/preview" -> if (on.get()) MockResponse().setBody("""{"title":"Now on"}""") else { refused.incrementAndGet(); MockResponse().setResponseCode(403) }
                 else -> MockResponse().setResponseCode(404)
             }
         }
         rule.setContent { Card(row("See https://x.example/d")) }
         rule.onNodeWithText("T").performClick()
-        rule.waitUntil(5_000) { previews() > 0 }
+        rule.waitUntil(5_000) { refused.get() > 0 } // the first ask was answered "off" before the save
         rule.onNodeWithTag("preview").assertDoesNotExist()
         onIo { app.saveDisplay("link_previews", true) }
         rule.waitUntil(5_000) { rule.onAllNodesWithTagCount("preview") == 1 }
