@@ -110,6 +110,9 @@ as emoji but leave the tag emoji out, since ntfy apps add those themselves.
   Changing the option follows the rules of `PUT /api/v1/devices/{id}/approve`,
   and as with approve a browser or phone signed in or linked with a token
   starts with that token's option (and keeps the option of a row it replaces).
+  The web Devices page sets it for any device; the Android app shows a
+  switch for its own phone under Settings, Devices, and a refusal from the
+  server (`approve_denied`) shows beside it in plain words.
 - `acknowledged` keeps it in the inbox, stops repeat alerting, shows "Acknowledged on <device>".
 - `snoozed` hides it until `snooze_until`; then the server moves it back to
   `active` with a new event (and re-notifies).
@@ -1144,6 +1147,9 @@ its data):
   joined with a space.
 - Views of the history (the web, apps, `/docs/changelog`) end with a link to
   `full_history`, where older versions are.
+- After an update to a new version, the web inbox shows a small, dismissible
+  What's new note on the first open (quiet on a browser's first visit ever),
+  linking to Settings, About; each browser can turn the note off in Settings.
 
 `/docs/changelog` renders the same file; a private server hides it with the
 rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
@@ -1557,12 +1563,13 @@ JavaScript off the web page shows every section and no search box.
 | Devices | `server` | Server | server, address, url, token, sign in, log in | Android |
 | Devices | `devices` | Linked devices | phone, browser, unlink, sign out, approve, may approve, activity | both |
 | Devices | `link-phone` | Link a phone | qr, scan, pair, code, add phone | web shows the code, Android scans it |
+| Devices | `client-cert` | Client certificate | certificate, mtls, mutual tls, tls, key | Android: picked from the Android key store, offered only to the server origin (host and port) it was picked for |
 | Devices | `add-agent` | Add an agent | agent, ai, bot, invite, mcp, token | web, admin only |
 | Integrations | `senders` | Senders | sender, rules, bot, agent, allow | both, only where the token may manage senders |
 | Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
 | Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
 | Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
-| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version and What's new, the history in section 5.2 |
+| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2) |
 
 The Android version line stays at the foot of the page, outside the sections.
 
