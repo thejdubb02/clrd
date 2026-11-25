@@ -182,6 +182,14 @@ func TestClearsLocal(t *testing.T) {
 	if hooks() != 2 {
 		t.Fatalf("B's clear fired %d hooks", hooks())
 	}
+	// B's real clear ended A's hide: A reopening it reopens it for all, and
+	// A's own stream shows it again.
+	if _, n := call(t, ts, "POST", "/api/v1/notifications/"+id1+"/reopen", a, nil); n["state"] != Active || state(b, id1) != Active {
+		t.Fatalf("reopen after a real clear: %v", n)
+	}
+	if gid, st := notifOf(nextNotif(t, linesA)); gid != id1 || st != Active {
+		t.Fatalf("A's stream after reopen: %s %s", gid, st)
+	}
 }
 
 // #767: the setting follows the rules of who may approve.

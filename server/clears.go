@@ -163,7 +163,11 @@ func (h hiddenSet) passes(tok *Token, e Event) bool {
 		}
 		return true
 	}
-	return !h[n.ID] || n.Final()
+	if n.Final() { // a real clear ends every hide of it (write drops the rows)
+		delete(h, n.ID)
+		return true
+	}
+	return !h[n.ID]
 }
 
 func (s *Server) clearsRoutes() {

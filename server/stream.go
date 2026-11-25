@@ -196,6 +196,11 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 	// filtering an earlier event by a later set, nor a later one by an older.
 	resync := func() (int64, error) {
 		head := s.seq.Load()
+		h, err := s.hiddenOf(ctx, tok) // a hide up to head is skipped with the rest, so read it here (#767)
+		if err != nil {
+			return 0, err
+		}
+		hid = h
 		if subs == nil {
 			return head, nil
 		}

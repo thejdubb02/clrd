@@ -745,6 +745,11 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 		if e.Only != "" {
 			continue
 		}
+		if e.Notification.Final() { // a real clear ends every device's own hide of it (#767)
+			if _, err := tx.Exec(`DELETE FROM hidden WHERE notification_id = ?`, e.Notification.ID); err != nil {
+				return nil, err
+			}
+		}
 		if err := queueHooks(tx, e, t); err != nil {
 			return nil, err
 		}
