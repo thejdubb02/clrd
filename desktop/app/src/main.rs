@@ -577,9 +577,20 @@ fn light_theme_name(app: &AppHandle, light: bool) {
                     // picked later shows at once (#756). Only settings.ini
                     // is left, which cannot change while the app runs, so
                     // its name is put back as is.
-                    let live = gtk::gdk::Screen::default()
-                        .and_then(|s| s.setting("gtk-theme-name"))
-                        .is_some();
+                    // Called directly: gdk-rs's `Screen::setting` passes an
+                    // untyped value, which GDK on X11 never fills.
+                    let live = gtk::gdk::Screen::default().is_some_and(|screen| {
+                        use gtk::glib::translate::{ToGlibPtr, ToGlibPtrMut};
+                        let mut value = gtk::glib::Value::from_type(gtk::glib::Type::STRING);
+                        // SAFETY: a live screen, a static name and a string value.
+                        unsafe {
+                            gtk::gdk::ffi::gdk_screen_get_setting(
+                                screen.to_glib_none().0,
+                                c"gtk-theme-name".as_ptr(),
+                                value.to_glib_none_mut().0,
+                            ) != 0
+                        }
+                    });
                     if live {
                         settings.reset_property("gtk-theme-name");
                     } else {
