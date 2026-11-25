@@ -1282,7 +1282,9 @@ private fun DeviceSettings(app: App, resumes: Int) {
         app.io.execute {
             val got = runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices?all=1")), "devices") }
             got.getOrNull()?.let { devices = it }
-            closed = (got.exceptionOrNull() as? HttpError)?.code == 403
+            val refused = got.exceptionOrNull() as? HttpError
+            if (refused?.isAuth == true) devices = null // a signed-out phone shows no old list
+            closed = refused?.code == 403
             busy = false
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices/log")), "events") }.getOrNull()?.let { log = it }
         }
@@ -1959,7 +1961,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     val open = mapOf(
         "subscriptions" to (app.configured && subs != null && !subsGone),
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
-        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && canRead),
+        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && (canRead || rejected)), // rejected: a publish-only phone may still unlink itself (#643)
         "senders" to (app.configured && !rejected && senders.value != null),
     )
     val shown = SETTINGS.filter {
