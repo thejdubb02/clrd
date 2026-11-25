@@ -562,19 +562,35 @@ func TestHooksOutGitHub(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var hits []hit
+	var opened []map[string]any // newest first, as GitHub lists them
+	lose := false
 	gh, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
 		h := hit{method: r.Method, path: r.URL.Path, auth: r.Header.Get("Authorization")}
 		json.NewDecoder(r.Body).Decode(&h.body)
 		mu.Lock()
-		hits = append(hits, h)
-		mu.Unlock()
+		defer mu.Unlock()
 		switch {
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/issues"): // the look before each open (#680)
+			if h.auth != "Bearer ghtok" || r.URL.Query().Get("state") != "all" {
+				w.WriteHeader(401)
+				return
+			}
+			json.NewEncoder(w).Encode(opened)
+			return
 		case strings.HasSuffix(r.URL.Path, "/issues"):
+			hits = append(hits, h)
+			opened = append([]map[string]any{{"number": 7 + len(opened), "body": h.body["body"]}}, opened...)
+			if lose {
+				w.WriteHeader(502) // the issue is made, the answer is lost
+				return
+			}
 			w.WriteHeader(201)
 			w.Write([]byte(`{"id": 123456789, "number": 7}`))
 		case strings.Contains(r.URL.Path, "/issues/8"):
+			hits = append(hits, h)
 			w.WriteHeader(410) // someone deleted the issue
 		default:
+			hits = append(hits, h)
 			w.Write([]byte(`{}`))
 		}
 	})
@@ -651,5 +667,33 @@ func TestHooksOutGitHub(t *testing.T) {
 	s.db.QueryRow(`SELECT count(*) FROM hook_deliveries WHERE name = 'gh' AND event = 'posted'`).Scan(&queued)
 	if queued != githubPerHour {
 		t.Fatalf("%d issues queued in an hour", queued)
+	}
+	// A stall older than an hour still holds its place: once it clears, no
+	// more than githubPerHour open in the next hour (#680).
+	s.db.Exec(`UPDATE hook_deliveries SET updated_at = 0`)
+	for i := range 3 {
+		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": fmt.Sprint("late ", i)})
+	}
+	s.db.QueryRow(`SELECT count(*) FROM hook_deliveries WHERE name = 'gh' AND event = 'posted' AND status = 'pending'`).Scan(&queued)
+	if queued != githubPerHour {
+		t.Fatalf("%d issues pending after a stall", queued)
+	}
+
+	// A lost reply is not a second issue: the retry finds the first by its mark (#680).
+	s.db.Exec(`DELETE FROM hook_deliveries WHERE status = 'pending'`)
+	mu.Lock()
+	hits, lose = nil, true
+	mu.Unlock()
+	_, c2 := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "message": "lost"})
+	s.deliverHooks(ctx)
+	mu.Lock()
+	lose = false
+	mu.Unlock()
+	s.db.Exec(`UPDATE hook_deliveries SET next_at = 0`)
+	s.deliverHooks(ctx)
+	var remote string
+	s.db.QueryRow(`SELECT remote_id FROM hook_posts WHERE id = ?`, c2["id"]).Scan(&remote)
+	if len(hits) != 1 || remote != fmt.Sprint(6+len(opened)) || !strings.HasPrefix(hits[0].body["body"].(string), githubMark("gh", &Notification{Topic: "ops", ID: c2["id"].(string)})) {
+		t.Fatalf("want one issue, kept as %d; got %q and %+v", 6+len(opened), remote, hits)
 	}
 }
