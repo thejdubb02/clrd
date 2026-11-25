@@ -906,7 +906,7 @@ has since been reused returns 409.
 
 Topic names: `[A-Za-z0-9_-]{1,64}`. Reserved (the server and mounted pages
 own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
-`logout`, `mcp`, `setup`, `static`, `v1`.
+`logout`, `mcp`, `metrics`, `setup`, `static`, `v1`.
 
 | Method | Path | Does |
 |---|---|---|

@@ -241,8 +241,10 @@ func (s *Server) sendPushes(ctx context.Context, e Event) {
 			code, err := s.push(ctx, p, body, n)
 			switch {
 			case err != nil:
-				s.log.Warn("web push", "device", p.tokenID, "err", err)
-				s.recordPushFailure(ctx, n.Topic)
+				if ctx.Err() == nil {
+					s.log.Warn("web push", "device", p.tokenID, "err", err)
+					s.recordPushFailure(ctx, n.Topic)
+				}
 			case code == 404 || code == 410: // the browser dropped it
 				s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM push_subs WHERE endpoint = ? AND token_id = ? AND auth = ?`, p.endpoint, p.tokenID, p.auth)
 			case code < 200 || code > 299:

@@ -510,19 +510,26 @@ func openDB(path string) (*sql.DB, error) {
 			}
 			return err
 		}
-		// Refine cleared_at from the event log when events are still kept:
-		// a mark after a clear moves updated_at, so the earliest clear event
+		// Refine cleared_at from the event log in one pass when events are still
+		// kept: a mark after a clear moves updated_at, so the earliest clear event
 		// after any reopen is more accurate (#661).
-		if _, err := tx.Exec(`UPDATE notifications SET cleared_at = COALESCE(
-			(SELECT MIN(e.created_at) FROM events e
-			 WHERE e.type = ?
-			   AND json_extract(e.data, '$.notification.id') = notifications.id
-			   AND json_extract(e.data, '$.notification.state') IN (?, ?)
-			   AND e.seq > COALESCE((SELECT MAX(r.seq) FROM events r
-			     WHERE r.type = ?
-			       AND json_extract(r.data, '$.notification.id') = notifications.id
-			       AND json_extract(r.data, '$.notification.state') NOT IN (?, ?)), 0)),
-			updated_at)
+		if _, err := tx.Exec(`WITH
+			reopen AS (
+				SELECT json_extract(data, '$.notification.id') AS id, MAX(seq) AS seq
+				FROM events
+				WHERE type = ? AND json_extract(data, '$.notification.state') NOT IN (?, ?)
+				GROUP BY 1
+			),
+			cleared AS (
+				SELECT json_extract(e.data, '$.notification.id') AS id, MIN(e.created_at) AS at
+				FROM events e
+				LEFT JOIN reopen r ON r.id = json_extract(e.data, '$.notification.id')
+				WHERE e.type = ? AND json_extract(e.data, '$.notification.state') IN (?, ?)
+				  AND e.seq > COALESCE(r.seq, 0)
+				GROUP BY 1
+			)
+			UPDATE notifications
+			SET cleared_at = COALESCE((SELECT at FROM cleared WHERE cleared.id = notifications.id), updated_at)
 			WHERE state IN (?, ?)`,
 			EventState, Dismissed, Resolved, EventState, Dismissed, Resolved, Dismissed, Resolved); err != nil {
 			return err

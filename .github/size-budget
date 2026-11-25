@@ -14,7 +14,8 @@
 # Measured 2026-11-23 (#690) in CI: server 16,265,517 not counting CHANGELOG.md (main was 16,733,112), with docs, static web files and openapi.json stored gzipped (-tags packed). Set to that plus about 10,000.
 # Changelog growth is never a reason to raise this: CI takes CHANGELOG.md off the size, and version_test.go caps it on its own.
 # Measured 2026-11-25 (#776) in CI: server 16,280,448 not counting CHANGELOG.md, with per-device local clears (#767). Raised by 15,000: the feature plus about 10,000 of room.
-server 16290000
+# Measured 2026-11-25 (#661): server with delivery health, inline CSV export, and optional Prometheus /metrics. Raised to cover the feature plus about 10,000 of room.
+server 16320000
 # Measured 2026-11-23: apk 2,110,792 with card motion (#598), main 2,091,964 (+18,828, after dropping animateItem and reusing two strings).
 apk 2115000
 # The four desktop lines are set about 2% above the measured size.

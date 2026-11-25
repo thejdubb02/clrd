@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/csv"
 	"fmt"
 	"net/http"
 	"slices"
@@ -152,7 +151,7 @@ func (s *Server) Stats(ctx context.Context, tok *Token, from, to time.Time) (*St
 		return a.Count > b.Count || a.Count == b.Count && a.Topic+"\x00"+a.ExternalID < b.Topic+"\x00"+b.ExternalID
 	})
 	st.Flappers = st.Flappers[:min(len(st.Flappers), statsTop)]
-	deliv, err := s.deliveryFailures(ctx, ms(from), ms(to))
+	deliv, err := s.deliveryFailures(ctx, ms(from), ms(to), statsTop)
 	if err != nil {
 		return nil, err
 	}
@@ -161,8 +160,8 @@ func (s *Server) Stats(ctx context.Context, tok *Token, from, to time.Time) (*St
 }
 
 // deliveryFailures counts failed outgoing webhook deliveries and Web Push
-// sends per topic in [fromMS, toMS), worst first (#661).
-func (s *Server) deliveryFailures(ctx context.Context, fromMS, toMS int64) ([]StatsDelivery, error) {
+// sends per topic in [fromMS, toMS), worst first (#661). limit <= 0 keeps all.
+func (s *Server) deliveryFailures(ctx context.Context, fromMS, toMS int64, limit int) ([]StatsDelivery, error) {
 	byTopic := map[string]*StatsDelivery{}
 	get := func(topic string) *StatsDelivery {
 		d := byTopic[topic]
@@ -214,7 +213,10 @@ func (s *Server) deliveryFailures(ctx context.Context, fromMS, toMS int64) ([]St
 		a, b := out[i].Webhooks+out[i].WebPush, out[j].Webhooks+out[j].WebPush
 		return a > b || a == b && out[i].Topic < out[j].Topic
 	})
-	return out[:min(len(out), statsTop)], nil
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 // top sorts groups by count, keeps the first statsTop and fills their clear times.
@@ -288,45 +290,60 @@ func csvCell(v string) string {
 	return v
 }
 
+// writeCSVRow appends one RFC 4180 CSV line without pulling encoding/csv into the binary.
+func writeCSVRow(b *bytes.Buffer, cols ...string) {
+	for i, c := range cols {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		if strings.ContainsAny(c, ",\"\r\n") {
+			b.WriteByte('"')
+			b.WriteString(strings.ReplaceAll(c, `"`, `""`))
+			b.WriteByte('"')
+		} else {
+			b.WriteString(c)
+		}
+	}
+	b.WriteByte('\n')
+}
+
 // writeStatsCSV writes st in one flat CSV table with a section column (#661).
 func writeStatsCSV(w http.ResponseWriter, st *Stats) {
 	var buf bytes.Buffer
-	cw := csv.NewWriter(&buf)
-	cw.Write([]string{"section", "key", "detail", "count", "open", "cleared", "clear_median_ms", "clear_p90_ms"})
-	cw.Write([]string{"summary", "total", "", strconv.Itoa(st.Total), "", "", "", ""})
-	cw.Write([]string{"summary", "answered", "", strconv.Itoa(st.Answered), "", "", "", ""})
+	writeCSVRow(&buf, "section", "key", "detail", "count", "open", "cleared", "clear_median_ms", "clear_p90_ms")
+	writeCSVRow(&buf, "summary", "total", "", strconv.Itoa(st.Total), "", "", "", "")
+	writeCSVRow(&buf, "summary", "answered", "", strconv.Itoa(st.Answered), "", "", "", "")
 	pkeys := make([]string, 0, len(st.Priorities))
 	for k := range st.Priorities {
 		pkeys = append(pkeys, k)
 	}
 	sort.Strings(pkeys)
 	for _, k := range pkeys {
-		cw.Write([]string{"priority", k, "", strconv.Itoa(st.Priorities[k]), "", "", "", ""})
+		writeCSVRow(&buf, "priority", k, "", strconv.Itoa(st.Priorities[k]), "", "", "", "")
 	}
 	for _, h := range st.Hours {
-		cw.Write([]string{"hour", fromMS(h.At).UTC().Format(time.RFC3339), "", strconv.Itoa(h.Count), "", "", "", ""})
+		writeCSVRow(&buf, "hour", fromMS(h.At).UTC().Format(time.RFC3339), "", strconv.Itoa(h.Count), "", "", "", "")
 	}
 	writeGroups := func(sec string, gs []*StatsGroup) {
 		for _, g := range gs {
-			cw.Write([]string{sec, csvCell(g.Key), "", strconv.Itoa(g.Count), strconv.Itoa(g.Open), strconv.Itoa(g.Cleared),
-				strconv.FormatInt(g.ClearMedianMS, 10), strconv.FormatInt(g.ClearP90MS, 10)})
+			writeCSVRow(&buf, sec, csvCell(g.Key), "", strconv.Itoa(g.Count), strconv.Itoa(g.Open), strconv.Itoa(g.Cleared),
+				strconv.FormatInt(g.ClearMedianMS, 10), strconv.FormatInt(g.ClearP90MS, 10))
 		}
 	}
 	writeGroups("topic", st.Topics)
 	writeGroups("sender", st.Senders)
 	writeGroups("cleared_by", st.ClearedBy)
 	for _, f := range st.Flappers {
-		cw.Write([]string{"flapper", csvCell(f.Topic), csvCell(f.ExternalID), strconv.Itoa(f.Count), "", "", "", ""})
+		writeCSVRow(&buf, "flapper", csvCell(f.Topic), csvCell(f.ExternalID), strconv.Itoa(f.Count), "", "", "", "")
 	}
 	for _, d := range st.Delivery {
 		if d.Webhooks > 0 {
-			cw.Write([]string{"delivery_webhook", csvCell(d.Topic), "", strconv.Itoa(d.Webhooks), "", "", "", ""})
+			writeCSVRow(&buf, "delivery_webhook", csvCell(d.Topic), "", strconv.Itoa(d.Webhooks), "", "", "", "")
 		}
 		if d.WebPush > 0 {
-			cw.Write([]string{"delivery_web_push", csvCell(d.Topic), "", strconv.Itoa(d.WebPush), "", "", "", ""})
+			writeCSVRow(&buf, "delivery_web_push", csvCell(d.Topic), "", strconv.Itoa(d.WebPush), "", "", "", "")
 		}
 	}
-	cw.Flush()
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="clrd-stats.csv"`)
 	w.WriteHeader(200)
@@ -415,7 +432,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) error {
 	rows.Close()
 
 	to := now()
-	deliv, err := s.deliveryFailures(ctx, ms(to.Add(-24*time.Hour)), ms(to))
+	deliv, err := s.deliveryFailures(ctx, ms(to.Add(-24*time.Hour)), ms(to)+1, 0)
 	if err != nil {
 		return err
 	}

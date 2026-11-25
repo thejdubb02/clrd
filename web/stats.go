@@ -116,8 +116,10 @@ func (s Stats) Bars() []Bar {
 	}
 	counts := make([]int, n)
 	for _, h := range s.Hours {
-		if i := int((h.At - start) / step); i >= 0 && i < n {
-			counts[i] += h.Count
+		if h.At >= start {
+			if i := int((h.At - start) / step); i < n {
+				counts[i] += h.Count
+			}
 		}
 	}
 	top := max(slices.Max(counts), 1)
