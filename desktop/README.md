@@ -166,8 +166,8 @@ Official builds will take updates from this repo's GitHub Releases: the feed
 is `latest.json` on the newest release
 (`https://github.com/thejdubb02/clrd/releases/latest/download/latest.json`),
 and each installer is downloaded from its own release, tagged `v` and its
-version. No release is published yet, so a build from this tree never asks
-anywhere and shows no update settings. Like the installer, the update step has not been
+version. A build from this tree without that address and a public key never
+asks anywhere and shows no update settings; no release and no key exist yet. Like the installer, the update step has not been
 run on a Windows computer yet; the checks below are proven by tests on Linux.
 
 A build is given two things when it is compiled, and both are needed:
