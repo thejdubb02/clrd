@@ -554,6 +554,43 @@ fn retry(app: AppHandle) {
     refresh_tray(&app);
 }
 
+/// A GTK theme that is dark by its name ("Adwaita-dark") keeps the window and
+/// its page dark whatever the dark setting says: the web view reads the name
+/// too. So while the desktop asks for light, the theme of the same name
+/// without "-dark" is used, and the dark name comes back after (#703).
+/// `GTK_THEME`, set by hand for one program, is that person's choice and is
+/// left alone.
+#[cfg(target_os = "linux")]
+fn light_theme_name(app: &AppHandle, light: bool) {
+    use gtk::prelude::GtkSettingsExt;
+    thread_local!(static DARK: std::cell::RefCell<Option<String>> = Default::default());
+    // GTK is only touched on its own thread.
+    let _ = app.run_on_main_thread(move || {
+        let Some(settings) = gtk::Settings::default() else {
+            return;
+        };
+        DARK.with_borrow_mut(|dark| {
+            if !light {
+                // ponytail: put back as the app's own value, so a theme
+                // picked on the desktop after this waits for the next start.
+                if let Some(name) = dark.take() {
+                    settings.set_gtk_theme_name(Some(&name));
+                }
+                return;
+            }
+            let name = settings.gtk_theme_name().unwrap_or_default();
+            // The same two endings the web view looks for.
+            if let Some(base) = name
+                .strip_suffix("-dark")
+                .or_else(|| name.strip_suffix("-Dark"))
+            {
+                settings.set_gtk_theme_name(Some(base));
+                *dark = Some(name.to_string());
+            }
+        });
+    });
+}
+
 /// How this computer shows in the server's device list.
 fn computer_name() -> String {
     let name = std::fs::read_to_string("/etc/hostname")
@@ -678,6 +715,7 @@ fn main() {
                         } else {
                             tauri::Theme::Light
                         }));
+                        light_theme_name(&app, !dark);
                     }
                     // No preference: GTK's own choice stands. Setting none
                     // here would turn GTK's dark off, so it is only done to
@@ -685,6 +723,7 @@ fn main() {
                     _ => {
                         if set.swap(false, Ordering::Relaxed) {
                             app.set_theme(None);
+                            light_theme_name(&app, false);
                         }
                     }
                 });
