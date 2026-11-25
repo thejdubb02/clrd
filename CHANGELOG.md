@@ -124,6 +124,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Changed
 
 - Desktop: Unlink is one call to the server, `DELETE /api/v1/devices/this`, so it works whatever the computer's token may do (#643).
+- Android: the phone unlinks itself with `DELETE /api/v1/devices/this`. A phone linked with a publish-only token, which cannot see Linked devices, now gets an "Unlink this phone" button in Settings, Devices (#643).
 - Android: a stack's Clear all shows only in the inbox, as on the web. The Snoozed tab no longer offers to clear a whole stack of snoozed notifications at once (#108).
 - Server: the release binary stores its docs, web files and API description gzipped, so it is about 500 KB smaller, and browsers get the web app's scripts, its stylesheet and the API description compressed (#690). Building from source: run `go run ./server/cmd/pack`, then build with `-tags packed`.
 - Server and Android: five of the six built-in sounds are stored at the lowest sample rate that still holds every tone they play, so they sound the same and take 51 KB less in the server and the app (#690).
