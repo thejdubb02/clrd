@@ -18,11 +18,14 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Android: a "Swipe clears everywhere" setting, off by default. With it on, swiping one notification out of the shade clears it on every device; swiping a group away or Clear all on several still only hides them on the phone (#271).
 - Android: Settings, Devices has a "Clears everywhere" switch for this phone. Turn it off and clearing a notification on the phone hides it there only. Only an allowed device can change it; a phone that is not allowed is told so beside the switch (#767).
 - Android: Settings, Devices, Client certificate picks a certificate installed on the phone for a server behind mutual TLS. The key stays in Android's key store and is offered only to the clrd server address it was picked for, never to a site a message links to (#152).
 - Server and web: each device has "Clears everywhere", on by default. Turn it off and clearing a notification on that device hides it there only, while your other devices keep it; Undo brings it back. Set it in Settings, Devices, or with `PUT /api/v1/devices/{id}/clears` (#767).
 - Server and web: a browser that signs in again replaces its own row in Linked devices instead of adding a new one, keeping any lower approve setting the old row had. Each browser and phone row also shows what it is (for example "Firefox 120 on Linux"), a Rename button names it, and "Unlink devices unused for 7 days" tidies old rows in one click. Linked browsers unused for 30 days now unlink on their own (setting `unlink_idle_browsers_days`, 0 turns it off); on upgrade, browsers already unused that long unlink within the hour. The phone and desktop apps do not send their install id yet, so they still add a row when they link again (#765).
 - Android: linking the same phone again replaces its row in Linked devices instead of adding a second one, and the row shows the model and Android version (for example "Pixel 8, Android 15") (#769).
+- GitHub issue hooks: issue titles now carry a `[clrd <topic>]` prefix, priority maps to `clrd` and `priority:*` labels, the issue body links back to the notification when `CLRD_BASE_URL` is set, and full admins can pause all GitHub issue hooks server-wide with `github_hooks_paused` in `PUT /api/v1/settings` (#680).
+- Discord webhooks: Settings > Webhooks now has a Kind selector (plain webhook, Discord or GitHub), scheduled notifications post to Discord when they wake, and updating a notification in place re-edits its Discord message (#673).
 - Stats: `GET /api/v1/stats` and the web Stats page now show failed outgoing webhook and Web Push deliveries per topic, export the same numbers as CSV (`?format=csv`), and `CLRD_METRICS=on` exposes optional Prometheus metrics at `GET /metrics` for full admins (off by default) (#661).
 - Desktop (Linux): the title bar and the This computer page follow the Appearance pick in the inbox (Dark, Light or System), not only the desktop's own setting. The pick is kept for the next start (#760).
 - Web: the first open after the server moves to a new version shows a small, dismissible What's new note linking to Settings, About, with a per-browser switch in Settings to turn it off (#580).
@@ -146,6 +149,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Fixed
 
 - Server: deleting an outgoing webhook no longer erases its past delivery failures from Stats, and the Stats CSV export quotes a value that starts with `'`, so `-disk` and `'-disk` no longer read back the same (#794).
+- Android: the formatting and web address link switches in Settings now apply on the phone too, in the inbox and the notifications, instead of only on the web inbox (#107).
+- Android: in Settings, the Clears everywhere switch and the device menus stay off until a change has reached the server, so a quick second tap no longer sends it twice (#777).
 - Android: when a cleared card leaves the list, the space under it now closes with it in one smooth move, as on the web, instead of snapping shut at the end (#726).
 - Desktop (Linux): with GTK set to prefer dark and no desktop preference, picking Light and then System in Appearance turns the window dark again at once, instead of only after a restart (#783).
 - Desktop (Linux): a clear that arrives just after the notification service restarted no longer closes another app's notification that took the old one's number (#601).

@@ -942,6 +942,7 @@ and via. Values clients send today:
 |---|---|
 | `app` | The Android app's inbox (a tap or swipe in the app) |
 | `tray_button` | A button on an Android tray notification (Ack, Snooze, Clear, a reply) |
+| `tray_swipe` | A lone swipe of an Android tray notification, only with "Swipe clears everywhere" on (section 8) |
 | `web` | The web inbox, one notification |
 | `web_bulk` | The web inbox's Clear all or a stack's Clear |
 | `app_bulk` | The Android app's Clear on a stack |
@@ -1218,10 +1219,12 @@ and `initialize` reports `version` as `serverInfo.version`.
   `locked`. Non-2xx is tried again from 30 s, doubling, 8 tries in all; 24 h of failures turns
   it off with a notification on the topic. Each try uses the hook's URL,
   secret and body saved at that moment. A hook with `"kind": "discord"`
-  (#166; no body or secret) instead posts each new, unscheduled notification to
+  (#166, #673; no body or secret) instead posts each new active notification
+  (and each scheduled notification when it wakes) to
   its Discord webhook URL with `?wait=true`, keeps the message id, and on each
-  subscribed state change PATCHes that message: title struck through when
-  dismissed or resolved, plus a status line such as "Cleared by pixel-9". A
+  notification update or subscribed state change PATCHes that message: title
+  struck through when dismissed or resolved, plus a status line such as
+  "Cleared by pixel-9". A
   discord hook sends its deliveries one at a time in order; an edit of a
   message that was never posted, or was deleted (404), is done, not retried.
   A hook with `"kind": "github"` (#168; url
@@ -1232,8 +1235,13 @@ and `initialize` reports `version` as `serverInfo.version`.
   count at any age). The issue body starts with a hidden mark
   `<!-- clrd TOPIC/HOOK/ID -->` (query-escaped); before opening, clrd lists
   the repo's newest issues and adopts one with that mark, so a lost reply
-  never opens a second. The body puts the sender's text in a fenced block it
-  cannot close. Each subscribed state
+  never opens a second. The issue title is prefixed with `[clrd <topic>] `,
+  and issues carry the `clrd` and `priority:<min|low|default|high|urgent>`
+  labels. When `CLRD_BASE_URL` is set, the body links back to the notification
+  in the web inbox. The body puts the sender's text in a fenced block it
+  cannot close. Setting `github_hooks_paused: true` in `PUT /api/v1/settings`
+  (full admin) pauses every GitHub issue hook server-wide without deleting it
+  (#680). Each subscribed state
   change comments with the status line; dismissed and resolved first close
   the issue. A deleted issue (410) is done; any other error is retried.
   Delivery errors never carry the URL. Docs:
@@ -1391,7 +1399,10 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   Swiping a system notification away (one, a stack, or the shade's Clear all) only hides it on
   that phone and sends nothing: the system notification says there is something to see, and
   clearing happens in the app, the web or the API (#265). A new alert for a hidden item shows it
-  again. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR are deliberate taps and do sync.
+  again. The phone's own "Swipe clears everywhere" setting (off by default, #271) makes a lone
+  swipe a clear, sent with `via` `tray_swipe`: Android sends the same delete for a swipe, a stack or
+  bundle swipe and Clear all, so the app waits one second and clears only when no other row left the
+  shade within one second of it. A stack swipe and Clear all on several rows still only hide. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR are deliberate taps and do sync.
 - Incoming `dismissed`/`resolved` event -> `NotificationManager.cancel(tag)`. That is the headline feature.
 - Inbox screen per the brand board: filter pills by topic, a swipe that reveals round buttons (by default Clear and Snooze to the left, Ack to the right; the settings `swipe_start` and `swipe_end` in section 2.1 choose them, and Settings sets them on the server, read-only for a token that gets 403; a card skips a button it cannot take, like Ack on an acknowledged card or Resolve, which the app has no button for yet) and changes nothing until one is tapped (#161; a "Full swipe acts" setting, off by default, lets a swipe all the way across run the first button, the one nearest the edge), tabs Inbox, Snoozed, Cleared, Settings.
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.

@@ -200,7 +200,7 @@ func (f *Fake) FormatIgnore(r *http.Request, topic, rule, senderID string, on bo
 	return nil
 }
 
-func (f *Fake) SaveHook(*http.Request, string, string, string, []string, *string, string, bool) error {
+func (f *Fake) SaveHook(*http.Request, string, string, string, []string, *string, *string, string, bool) error {
 	return nil
 }
 
