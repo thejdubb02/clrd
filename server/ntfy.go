@@ -778,7 +778,7 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		for _, t := range topics {
 			args = append(args, t)
 		}
-		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE type != ? AND topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
+		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE type != ? AND data NOT LIKE '%"only":"%' AND topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
 		if err != nil || seq == nil {
 			return cur, err
 		}

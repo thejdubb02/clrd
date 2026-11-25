@@ -528,6 +528,8 @@ fetch('/report', { method: 'POST', body: 'open' });
 
     // First against a server that refuses the removal: the page then offers
     // Try again, which only works once Unlink has finished and let go.
+    let before_unlink = fake.sessions();
+    assert!(!before_unlink.is_empty(), "the inbox window is signed in");
     fake.refuse_unlink(true);
     wait_long("the keychain forgets the link", || {
         // No more keys once the app has asked the server: the page changes
@@ -555,6 +557,11 @@ fetch('/report', { method: 'POST', body: 'open' });
     })
     .unwrap();
     fake.refuse_unlink(false);
+    // Unlink must also take the window's cookie out of the web view (#709).
+    // New sessions go to /app only from here, so a cookie left over for all
+    // of / is not replaced by the next one and rides along beside it.
+    fake.session_path("/app");
+    let seen = fake.heads().len();
     let live = || {
         let all = fake.requests();
         all.iter().filter(|r| r.contains("/api/v1/ws")).count()
@@ -573,6 +580,35 @@ fetch('/report', { method: 'POST', body: 'open' });
         press(&["Tab", "Tab", "Tab", "Return"]);
         live() > before
     });
+    // A plain start opens the inbox window again, if Try again has not. It
+    // is dropped while Try again still holds the app, so ask until it opens.
+    let opened = || {
+        fake.heads()[seen..]
+            .iter()
+            .find(|h| h.starts_with("GET /app "))
+            .cloned()
+    };
+    wait_long("the inbox window opens again", || {
+        assert!(app(&bus, &home, &[]).output().unwrap().status.success());
+        (0..20).any(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            opened().is_some()
+        })
+    });
+    let opened = opened().unwrap();
+    assert!(opened.contains("clrd_session="), "not signed in: {opened}");
+    for old in &before_unlink {
+        assert!(
+            !opened.contains(old.as_str()),
+            "the cookie from before Unlink is still in the web view: {opened}"
+        );
+    }
+    // The page back on top, for the last Unlink.
+    assert!(app(&bus, &home, &["clrd://x"])
+        .output()
+        .unwrap()
+        .status
+        .success());
 
     wait_long("the server is told of the unlink", || {
         press(&unlink);

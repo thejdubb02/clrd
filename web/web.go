@@ -276,6 +276,8 @@ type LinkedDevice struct {
 	CanUnlink  bool       `json:"can_unlink"`
 	Connected  bool       `json:"connected"` // has a stream open now (#300)
 	CaughtUp   bool       `json:"caught_up"` // one of its streams is past replay
+	// ClearsEverywhere: its clears reach every device; off, they hide on it alone (#767).
+	ClearsEverywhere bool `json:"clears_everywhere"`
 }
 
 // Live is a device connected and caught up. The browser viewing the page
