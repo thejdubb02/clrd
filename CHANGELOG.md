@@ -148,6 +148,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Server and web: "Unlink devices unused for 7 days" unlinks only the devices it counted, and it and the idle sweep check each device again as they unlink it, so one used, given web push or signed in under in the meantime stays. A browser signing in again no longer loses a lower approve setting saved at the same moment. `POST /api/v1/devices/tidy` takes an optional `devices` list (#773).
 - Android: the formatting and web address link switches in Settings now apply on the phone too, in the inbox and the notifications, instead of only on the web inbox (#107).
 - Android: in Settings, the Clears everywhere switch and the device menus stay off until a change has reached the server, so a quick second tap no longer sends it twice (#777).
 - Android: when a cleared card leaves the list, the space under it now closes with it in one smooth move, as on the web, instead of snapping shut at the end (#726).

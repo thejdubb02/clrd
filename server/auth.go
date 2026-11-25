@@ -317,6 +317,12 @@ func (s *Server) listTokens(ctx context.Context, q string, args ...any) ([]*Toke
 
 // DeleteToken revokes a token and every web session signed in with it.
 func (s *Server) DeleteToken(ctx context.Context, id string) error {
+	return s.deleteTokenIf(ctx, id, `SELECT ?`, id)
+}
+
+// deleteTokenIf is DeleteToken, but only while seed, run in the same
+// transaction, still returns id; otherwise not_found and nothing changes.
+func (s *Server) deleteTokenIf(ctx context.Context, id, seed string, args ...any) error {
 	var gone []string
 	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
 		// A revoked sender never speaks again: its quiet alarm ends now, before
@@ -325,7 +331,7 @@ func (s *Server) DeleteToken(ctx context.Context, id string) error {
 		if err != nil {
 			return nil, err
 		}
-		if gone, err = dropTokens(ctx, tx, `SELECT ?`, id); err != nil {
+		if gone, err = dropTokens(ctx, tx, seed, args...); err != nil {
 			return nil, err
 		}
 		if len(gone) == 0 {
@@ -629,45 +635,69 @@ func (s *Server) replaceInstall(ctx context.Context, st *Token, parentID string,
 	if dev.install == "" {
 		return nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT t.id, t.approve FROM sessions s JOIN tokens t ON t.id = s.token_id
-	  WHERE s.parent_id = ? AND s.phone = ? AND t.install = ? AND t.rowid < (SELECT rowid FROM tokens WHERE id = ?)`,
-		parentID, phone, dev.install, st.ID) // only older rows: two racing sign-ins never drop each other
+	// One transaction (#773): an approve lowered on the old row while this
+	// runs is either carried over or waits, never lost with the row.
+	var gone []string
+	var approve string
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		var err error
+		gone = nil
+		if approve, err = approveOf(ctx, tx, st.ID); err != nil { // as stored now: the new row may be lowered already
+			return nil, err
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT t.id, t.approve FROM sessions s JOIN tokens t ON t.id = s.token_id
+		  WHERE s.parent_id = ? AND s.phone = ? AND t.install = ? AND t.rowid < (SELECT rowid FROM tokens WHERE id = ?)`,
+			parentID, phone, dev.install, st.ID) // only older rows: two racing sign-ins never drop each other
+		if err != nil {
+			return nil, err
+		}
+		type row struct{ id, approve string }
+		var old []row
+		for rows.Next() {
+			var o row
+			if err := rows.Scan(&o.id, &o.approve); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			old = append(old, o)
+		}
+		rows.Close()
+		var evs []Event
+		for _, o := range old {
+			if approveRank[o.approve] < approveRank[approve] {
+				if _, err := tx.ExecContext(ctx, `UPDATE tokens SET approve = ? WHERE id = ?`, o.approve, st.ID); err != nil {
+					return nil, err
+				}
+				approve = o.approve
+			}
+			if err := inheritClears(ctx, tx, o.id, st.ID); err != nil {
+				return nil, err
+			}
+			// What hung under the old row now hangs under the new one, so
+			// dropping it signs nothing else out; so does its web push.
+			if _, err := tx.ExecContext(ctx, `UPDATE sessions SET parent_id = ? WHERE parent_id = ?`, st.ID, o.id); err != nil {
+				return nil, err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE OR IGNORE push_subs SET token_id = ? WHERE token_id = ?`, st.ID, o.id); err != nil {
+				return nil, err
+			}
+			e, err := endQuiet(ctx, tx, o.id)
+			if err != nil {
+				return nil, err
+			}
+			g, err := dropTokens(ctx, tx, `SELECT ?`, o.id)
+			if err != nil {
+				return nil, err
+			}
+			evs, gone = append(evs, e...), append(gone, g...)
+		}
+		return evs, nil
+	})
 	if err != nil {
 		return err
 	}
-	type row struct{ id, approve string }
-	var old []row
-	for rows.Next() {
-		var o row
-		if err := rows.Scan(&o.id, &o.approve); err != nil {
-			rows.Close()
-			return err
-		}
-		old = append(old, o)
-	}
-	rows.Close()
-	for _, o := range old {
-		if approveRank[o.approve] < approveRank[st.Approve] {
-			if _, err := s.db.ExecContext(ctx, `UPDATE tokens SET approve = ? WHERE id = ?`, o.approve, st.ID); err != nil {
-				return err
-			}
-			st.Approve = o.approve
-		}
-		if err := inheritClears(ctx, s.db, o.id, st.ID); err != nil {
-			return err
-		}
-		// What hung under the old row now hangs under the new one, so
-		// dropping it signs nothing else out; so does its web push.
-		if _, err := s.db.ExecContext(ctx, `UPDATE sessions SET parent_id = ? WHERE parent_id = ?`, st.ID, o.id); err != nil {
-			return err
-		}
-		if _, err := s.db.ExecContext(ctx, `UPDATE OR IGNORE push_subs SET token_id = ? WHERE token_id = ?`, st.ID, o.id); err != nil {
-			return err
-		}
-		if err := s.DeleteToken(ctx, o.id); err != nil && !isNotFound(err) {
-			return err
-		}
-	}
+	st.Approve = approve
+	s.revokeAll(gone)
 	return nil
 }
 

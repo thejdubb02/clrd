@@ -230,6 +230,34 @@ func TestTidyAndRename(t *testing.T) {
 	}
 }
 
+// #773: tidy unlinks only the ids a dry run showed, and each delete checks
+// again, so a row that gained web push after it was picked stays.
+func TestTidyRechecksEachRow(t *testing.T) {
+	s, ts, _ := newTest(t)
+	ctx := context.Background()
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	a, _ := browserIn(t, s, ts, typed, "")
+	b, _ := browserIn(t, s, ts, typed, "")
+	c, _ := browserIn(t, s, ts, typed, "")
+	_, mc := browserIn(t, s, ts, typed, "")
+	for _, id := range []string{a, b, c} {
+		age(t, s, id, 10)
+	}
+	_, out := call(t, ts, "POST", "/api/v1/devices/tidy", mc.Value, map[string]any{"days": 7, "devices": []string{a}})
+	if out["count"] != float64(1) || exists(s, a) || !exists(s, b) || !exists(s, c) {
+		t.Fatalf("tidy with devices: %v", out)
+	}
+
+	cutoff := time.Now().Add(-days(7))
+	s.db.Exec(`INSERT INTO push_subs (endpoint, token_id, p256dh, auth, created_at) VALUES ('https://push.example/1', ?, 'k', 'a', 0)`, b)
+	if ok, err := s.unlinkIfIdle(ctx, b, cutoff, false, "test"); err != nil || ok || !exists(s, b) {
+		t.Fatalf("row with web push: ok %v, err %v", ok, err)
+	}
+	if ok, err := s.unlinkIfIdle(ctx, c, cutoff, false, "test"); err != nil || !ok || exists(s, c) {
+		t.Fatalf("idle row: ok %v, err %v", ok, err)
+	}
+}
+
 func TestUnlinkIdleSetting(t *testing.T) {
 	s, ts, admin := newTest(t)
 	_, st := call(t, ts, "GET", "/api/v1/settings", admin, nil)
