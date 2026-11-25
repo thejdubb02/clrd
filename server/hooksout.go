@@ -293,8 +293,13 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 		go func() {
 			defer func() { <-sem; wg.Done() }()
 			code, sendErr := s.sendHook(ctx, j)
-			if ctx.Err() != nil || errors.Is(sendErr, errGitHubPaused) {
-				return // shutting down, or paused mid-batch: try again later
+			if ctx.Err() != nil {
+				return // shutting down: try again next start
+			}
+			if j.kind == "github" && (sendErr != nil || code < 200 || code > 299) {
+				if p, _ := githubHooksPaused(ctx, s.db); p {
+					return // paused mid-send: this try does not count (#796)
+				}
 			}
 			errs[i] = s.recordHook(ctx, j, code, sendErr)
 		}()

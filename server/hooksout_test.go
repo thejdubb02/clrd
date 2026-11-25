@@ -1039,14 +1039,25 @@ func TestHooksOutGitHubPauseHolds(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()
 	s.fetch.allow = func(netip.Addr, string) bool { return true }
-	var pauseOnFind atomic.Bool
-	var posts atomic.Int64
+	var pauseOnFind, findFails atomic.Bool
+	var posts, closes atomic.Int64
 	gh, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			if pauseOnFind.Load() { // the pause lands mid-send, after the batch read
 				s.db.Exec(`UPDATE settings SET value = json_set(value, '$.github_hooks_paused', json('true')) WHERE key = 'display'`)
 			}
+			if findFails.Load() {
+				w.WriteHeader(502)
+				return
+			}
 			w.Write([]byte(`[]`))
+			return
+		}
+		if r.Method == "PATCH" {
+			closes.Add(1)
+		}
+		if !strings.HasSuffix(r.URL.Path, "/issues") {
+			w.Write([]byte(`{}`))
 			return
 		}
 		n := posts.Add(1)
@@ -1072,7 +1083,7 @@ func TestHooksOutGitHubPauseHolds(t *testing.T) {
 
 	// 1. Paused between the batch read and the POST: nothing opens, and the
 	//    delivery waits untouched for the resume.
-	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "A", "message": "a"})
+	_, na := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "A", "message": "a"})
 	pauseOnFind.Store(true)
 	if err := s.deliverHooks(ctx); err != nil {
 		t.Fatal(err)
@@ -1084,37 +1095,56 @@ func TestHooksOutGitHubPauseHolds(t *testing.T) {
 	if n, a := pending(); posts.Load() != 0 || n != 1 || a != 0 {
 		t.Fatalf("paused mid-batch: posts=%d pending=%d attempts=%d", posts.Load(), n, a)
 	}
+	// The same when the lookup itself fails after the pause lands.
+	setPaused(false)
+	pauseOnFind.Store(true)
+	findFails.Store(true)
+	s.deliverHooks(ctx)
+	pauseOnFind.Store(false)
+	findFails.Store(false)
+	if n, a := pending(); posts.Load() != 0 || n != 1 || a != 0 {
+		t.Fatalf("paused mid-batch, lookup failed: posts=%d pending=%d attempts=%d", posts.Load(), n, a)
+	}
 	setPaused(false)
 	s.deliverHooks(ctx)
 	if n, _ := pending(); posts.Load() != 1 || n != 0 {
 		t.Fatalf("after resume: posts=%d pending=%d", posts.Load(), n)
 	}
 
-	// 2. A delivery paused past retention is kept, and still kept by a prune
-	//    after the resume; an old finished one goes as before.
+	// 2. Deliveries paused past retention are kept, and still kept by a prune
+	//    after the resume; an old finished one goes as before. A's queued
+	//    close keeps A's issue number though A itself is pruned.
+	call(t, ts, "POST", "/api/v1/notifications/"+na["id"].(string)+"/dismiss", admin, nil)
 	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "B", "message": "b"})
 	setPaused(true)
 	s.opt.Retention = 7 * 24 * time.Hour
-	if _, err := s.db.Exec(`UPDATE hook_deliveries SET updated_at = ? WHERE name = 'gh'`, ms(time.Now().Add(-60*24*time.Hour))); err != nil {
+	old := ms(time.Now().Add(-60 * 24 * time.Hour))
+	if _, err := s.db.Exec(`UPDATE hook_deliveries SET updated_at = ? WHERE name = 'gh'`, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET updated_at = ? WHERE id = ?`, old, na["id"]); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.prune(ctx); err != nil {
 		t.Fatal(err)
 	}
-	var all int
+	var all, notes, mapped int
 	s.db.QueryRow(`SELECT count(*) FROM hook_deliveries WHERE name = 'gh'`).Scan(&all)
-	if n, _ := pending(); n != 1 || all != 1 {
-		t.Fatalf("prune while paused: pending=%d all=%d, want the pending one only", n, all)
+	s.db.QueryRow(`SELECT count(*) FROM notifications WHERE id = ?`, na["id"]).Scan(&notes)
+	s.db.QueryRow(`SELECT count(*) FROM hook_posts WHERE id = ?`, na["id"]).Scan(&mapped)
+	if n, _ := pending(); n != 2 || all != 2 || notes != 0 || mapped != 1 {
+		t.Fatalf("prune while paused: pending=%d all=%d, want the 2 pending only; A kept=%d, A's issue kept=%d", n, all, notes, mapped)
 	}
 	setPaused(false)
 	if err := s.prune(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := pending(); n != 1 {
+	if n, _ := pending(); n != 2 {
 		t.Fatalf("prune after resume dropped the backlog: pending=%d", n)
 	}
+	s.deliverHooks(ctx) // one github delivery a tick per hook
 	s.deliverHooks(ctx)
-	if posts.Load() != 2 {
-		t.Fatalf("backlog after resume: posts=%d", posts.Load())
+	if posts.Load() != 2 || closes.Load() != 1 {
+		t.Fatalf("backlog after resume: posts=%d closes=%d", posts.Load(), closes.Load())
 	}
 }

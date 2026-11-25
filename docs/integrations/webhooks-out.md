@@ -192,7 +192,8 @@ an agent, clrd is careful about what it opens:
 Pause every GitHub issue hook server-wide without deleting them by setting
 `{"github_hooks_paused": true}` on `PUT /api/v1/settings` (full admin, or via
 the MCP `settings` tool), or delete the hook to stop new issues at once. A
-pause also stops a send already under way that has not opened its issue yet.
+pause also stops a send already under way, unless its request to GitHub has
+already gone out.
 Issues waiting when you pause go out after you resume, however long the
 pause, and alerts that arrive while paused never open one. The
 token is write only: the API never shows it again. A scheduled notification
