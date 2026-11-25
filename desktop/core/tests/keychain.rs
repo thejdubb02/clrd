@@ -135,3 +135,163 @@ fn an_entry_that_stays_and_cannot_be_read_is_an_error() {
     let _service = ghost(&bus, 2);
     assert!(Keychain::new(bus.connect()).load().is_err());
 }
+
+/// What a fake keyring was asked, in order.
+type Log = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
+
+const ENTRY: &str = "/org/freedesktop/secrets/collection/login/1";
+
+/// A keyring that locks its one entry by itself, not only the whole
+/// keyring. With `ask`, every unlock asks the user in a dialog.
+struct Locked {
+    log: Log,
+    ask: bool,
+}
+
+#[zbus::interface(name = "org.freedesktop.Secret.Service")]
+impl Locked {
+    fn open_session(
+        &self,
+        _algorithm: String,
+        _input: zbus::OwnedVariant,
+    ) -> (zbus::Variant<'static>, zbus::OwnedObjectPath) {
+        self.log.lock().unwrap().push("open".into());
+        ("".into(), "/session".try_into().unwrap())
+    }
+
+    fn unlock(
+        &self,
+        objects: Vec<zbus::OwnedObjectPath>,
+    ) -> (Vec<zbus::OwnedObjectPath>, zbus::OwnedObjectPath) {
+        let names: Vec<&str> = objects.iter().map(|o| o.as_str()).collect();
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("unlock {}", names.join(" ")));
+        let prompt = if self.ask { "/prompt" } else { "/" };
+        (vec![], prompt.try_into().unwrap())
+    }
+}
+
+struct Session(Log);
+
+#[zbus::interface(name = "org.freedesktop.Secret.Session")]
+impl Session {
+    fn close(&self) {
+        self.0.lock().unwrap().push("close".into());
+    }
+}
+
+/// An unlock dialog that stays open.
+struct Prompt(Log);
+
+#[zbus::interface(name = "org.freedesktop.Secret.Prompt")]
+impl Prompt {
+    fn prompt(&self, _window: String) {
+        self.0.lock().unwrap().push("prompt".into());
+    }
+}
+
+struct Collection;
+
+#[zbus::interface(name = "org.freedesktop.Secret.Collection")]
+impl Collection {
+    fn search_items(
+        &self,
+        _attributes: std::collections::HashMap<String, String>,
+    ) -> Vec<zbus::OwnedObjectPath> {
+        vec![ENTRY.try_into().unwrap()]
+    }
+}
+
+struct Item;
+
+#[zbus::interface(name = "org.freedesktop.Secret.Item")]
+impl Item {
+    #[allow(clippy::type_complexity)]
+    fn get_secret(
+        &self,
+        session: zbus::OwnedObjectPath,
+    ) -> ((zbus::OwnedObjectPath, Vec<u8>, Vec<u8>, String),) {
+        let secret = format!("https://clrd.example.com\n{TOKEN}").into_bytes();
+        ((session, vec![], secret, "text/plain".into()),)
+    }
+
+    fn delete(&self) -> zbus::OwnedObjectPath {
+        "/".try_into().unwrap()
+    }
+}
+
+fn locked(bus: &Bus, ask: bool) -> (zbus::Connection, Log) {
+    let log = Log::default();
+    let service = zbus::block_on(
+        zbus::connection::Builder::address(bus.1.as_str())
+            .name("org.freedesktop.secrets")
+            .serve_at(
+                "/org/freedesktop/secrets",
+                Locked {
+                    log: log.clone(),
+                    ask,
+                },
+            )
+            .serve_at("/session", Session(log.clone()))
+            .serve_at("/prompt", Prompt(log.clone()))
+            .serve_at("/org/freedesktop/secrets/aliases/default", Collection)
+            .serve_at(ENTRY, Item)
+            .build(),
+    )
+    .unwrap();
+    (service, log)
+}
+
+/// The entry is unlocked as well as the keyring, and each session that was
+/// opened is closed again (#608).
+#[test]
+fn each_entry_is_unlocked_too_and_each_session_closed() {
+    let bus = Bus::start();
+    let (_service, log) = locked(&bus, false);
+    let keys = Keychain::new(bus.connect());
+    assert_eq!(keys.load().unwrap().map(|l| l.token), Some(TOKEN.into()));
+    keys.clear().unwrap();
+    let default = "unlock /org/freedesktop/secrets/aliases/default".to_string();
+    let entry = format!("unlock {ENTRY}");
+    let close = "close".to_string();
+    let open = "open".to_string();
+    assert_eq!(
+        *log.lock().unwrap(),
+        [open, default.clone(), entry.clone(), close, default, entry]
+    );
+}
+
+/// Only the keyring can say its unlock dialog is done, and the wait for it
+/// ends when the keyring goes away mid-dialog (#608).
+#[test]
+fn only_the_keyring_ends_an_unlock_and_its_going_away_does_too() {
+    let bus = Bus::start();
+    let (service, log) = locked(&bus, true);
+    let keys = Keychain::new(bus.connect());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || tx.send(keys.load()).unwrap());
+    wait("the dialog is up", || {
+        log.lock().unwrap().iter().any(|l| l == "prompt")
+    });
+
+    // Another program on the bus saying the dialog is done is not heard.
+    let other = bus.connect();
+    zbus::block_on(other.emit_signal(
+        None::<&str>,
+        "/prompt",
+        "org.freedesktop.Secret.Prompt",
+        "Completed",
+        &(false, zbus::Variant::from("")),
+    ))
+    .unwrap();
+    let wait_for = std::time::Duration::from_secs(1);
+    assert!(rx.recv_timeout(wait_for).is_err(), "a stranger ended it");
+
+    zbus::block_on(service.release_name("org.freedesktop.secrets")).unwrap();
+    let got = rx
+        .recv_timeout(5 * wait_for)
+        .expect("still waiting after the keyring went away");
+    assert!(got.is_err());
+}
