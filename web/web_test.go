@@ -63,8 +63,14 @@ func TestPages(t *testing.T) {
 		}
 	}
 	// About (#580): the running version, and its history with inline Markdown.
+	_, inboxBody := get(t, h, "/app")
+	for _, s := range []string{`data-ver="` + clrd.Version() + `"`, `data-update-note hidden`, `Updated to clrd ` + clrd.Version()} {
+		if !strings.Contains(inboxBody, s) {
+			t.Errorf("inbox update note: missing %q", s)
+		}
+	}
 	_, body := get(t, h, "/app/settings")
-	want := []string{`data-version>This server runs clrd ` + clrd.Version(), `id="about"`, `<summary class="cursor-pointer font-medium">What's new</summary>`, `href="` + clrd.FullHistory + `"`}
+	want := []string{`data-version>This server runs clrd ` + clrd.Version(), `id="about"`, `data-whats-new-setting`, `<summary class="cursor-pointer font-medium">What's new</summary>`, `href="` + clrd.FullHistory + `"`}
 	for _, r := range clrd.ParseChangelog(clrd.Changelog) {
 		if r.Date != "" {
 			want = append(want, `>`+r.Version+` <span class="meta">`+r.Date+`</span></h4>`)

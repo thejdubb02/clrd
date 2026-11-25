@@ -1125,6 +1125,9 @@ its data):
   joined with a space.
 - Views of the history (the web, apps, `/docs/changelog`) end with a link to
   `full_history`, where older versions are.
+- After an update to a new version, the web inbox shows a small, dismissible
+  What's new note on the first open (quiet on a browser's first visit ever),
+  linking to Settings, About; each browser can turn the note off in Settings.
 
 `/docs/changelog` renders the same file; a private server hides it with the
 rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
@@ -1543,7 +1546,7 @@ JavaScript off the web page shows every section and no search box.
 | Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
 | Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
 | Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
-| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version and What's new, the history in section 5.2 |
+| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2) |
 
 The Android version line stays at the foot of the page, outside the sections.
 

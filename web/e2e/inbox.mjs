@@ -2044,6 +2044,40 @@ try {
     assert.deepEqual(await groups(), order, 'Clear did not bring every section back');
     await ctx.close();
 
+    // After-update What's new note (#580): quiet on first open ever, shows when
+    // the server version moves forward, dismissible, opens What's new in Settings,
+    // and can be turned off per browser in Settings.
+    const uctx = await browser.newContext();
+    assert.ok((await uctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'whatsnew' } })).ok(), 'whatsnew sign-in');
+    const up = await uctx.newPage();
+    await up.goto(base + '/app');
+    const note = up.locator('[data-update-note]');
+    assert.equal(await note.isVisible(), false, 'update note showed on first visit ever');
+    const curVer = await up.locator('[data-inbox]').getAttribute('data-ver');
+    assert.equal(await up.evaluate(() => localStorage.getItem('clrd.seen_version')), curVer, 'first visit did not record seen version');
+    await up.evaluate(() => localStorage.setItem('clrd.seen_version', '0.0.1'));
+    await up.reload();
+    await note.waitFor({ state: 'visible' });
+    assert.match(await note.textContent(), new RegExp(`Updated to clrd ${curVer.replaceAll('.', '\\.')}`), 'update note missed running version');
+    await note.getByRole('button', { name: 'Dismiss' }).click();
+    await note.waitFor({ state: 'hidden' });
+    await up.reload();
+    assert.equal(await note.isVisible(), false, 'update note came back after Dismiss');
+    await up.evaluate(() => localStorage.setItem('clrd.seen_version', '0.0.1'));
+    await up.reload();
+    await note.waitFor({ state: 'visible' });
+    await note.getByRole('link', { name: "What's new" }).click();
+    await up.locator('[data-whats-new][open]').waitFor();
+    await up.goto(base + '/app');
+    assert.equal(await note.isVisible(), false, 'update note stayed after opening What\'s new');
+    await up.goto(base + '/app/settings');
+    await up.locator('[data-whats-new-setting]').uncheck();
+    await up.evaluate(() => localStorage.setItem('clrd.seen_version', '0.0.1'));
+    await up.goto(base + '/app');
+    assert.equal(await note.isVisible(), false, 'update note showed while turned off in Settings');
+    await uctx.close();
+    console.log("ok: after-update What's new note shows on a new version, dismisses, opens Settings About and obeys its Settings switch");
+
     // #591: a search typed while pair.js still loads finds Link a phone once pair.js shows it.
     const lctx = await browser.newContext();
     assert.ok((await lctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'search-late' } })).ok(), 'late sign-in');

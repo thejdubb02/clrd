@@ -189,6 +189,38 @@
   }
   addEventListener('storage', e => { if (e.key === 'clrd.stack') { stacking = e.newValue === '1'; restack(); tidy(); } });
 
+  // After-update What's new note (#580): per browser in localStorage.
+  // First open ever records the version quietly; a newer version shows the
+  // note until dismissed, opened, or turned off in Settings.
+  const ver = shell.dataset.ver;
+  const note = $('[data-update-note]'), wnSw = $('[data-whats-new-setting]');
+  const getLS = k => { try { return localStorage.getItem(k); } catch { return null; } };
+  const setLS = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
+  if (wnSw) {
+    wnSw.checked = getLS('clrd.whatsnew') !== '0';
+    wnSw.addEventListener('change', () => {
+      setLS('clrd.whatsnew', wnSw.checked ? null : '0');
+      if (!wnSw.checked && ver) setLS('clrd.seen_version', ver);
+    });
+    addEventListener('storage', e => { if (e.key === 'clrd.whatsnew') wnSw.checked = e.newValue !== '0'; });
+  }
+  if (location.hash === '#about') {
+    const d = $('[data-whats-new]');
+    if (d) d.open = true;
+    if (ver) setLS('clrd.seen_version', ver);
+  }
+  if (ver) {
+    const seen = getLS('clrd.seen_version');
+    if (!seen || getLS('clrd.whatsnew') === '0') setLS('clrd.seen_version', ver);
+    else if (seen !== ver && note) {
+      note.hidden = false;
+      const done = () => { setLS('clrd.seen_version', ver); note.hidden = true; };
+      note.querySelector('[data-update-dismiss]')?.addEventListener('click', done);
+      note.querySelector('[data-update-open]')?.addEventListener('click', done);
+      addEventListener('storage', e => { if ((e.key === 'clrd.seen_version' && e.newValue === ver) || (e.key === 'clrd.whatsnew' && e.newValue === '0')) note.hidden = true; });
+    }
+  }
+
   // Settings search (#575): match the typed text in a setting's label, its
   // description or its keywords; hide the rest. Enter goes to the first match.
   const sq = $('[data-settings-q]');
