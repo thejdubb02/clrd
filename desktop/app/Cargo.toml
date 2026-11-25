@@ -20,6 +20,10 @@ tauri = { version = "2.12", default-features = false, features = ["wry", "x11", 
 # tray crate ends the whole app when it is missing. Already in the build (the
 # tray crate loads the library with it), so it adds nothing to the binary.
 libloading = "0.7"
+# Sets the GTK theme's name when the desktop asks for light (#703). Already in
+# the build (the window library is made of it), so it adds nothing to the
+# binary. Pinned to that same copy: a second one would not see GTK started.
+gtk = "=0.18.2"
 
 [build-dependencies]
 # Compiles the page, the icon and the command allow list into the binary.

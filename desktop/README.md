@@ -38,7 +38,11 @@ opens the window of the one already running. (A Windows computer that lets
 one account sign in twice at once runs one copy in each.) The window follows the
 system's light or dark setting on both. Neither has run on a Windows
 computer yet: the one-copy check has passed under Wine, and the light or dark
-part on Windows is the window library's own and has not been seen.
+part on Windows is the window library's own and has not been seen. On
+Linux, a desktop that asks for light also gets light over a GTK theme that
+is dark by name (such as Adwaita-dark); a theme forced with `GTK_THEME` is
+left as it is. GNOME's Light style states no preference, so there the GTK
+theme decides.
 
 On Windows, notifications are toasts, with the same rules as on Linux: the
 Clear button clears everywhere, closing one only hides it on this computer
@@ -187,6 +191,18 @@ refused.
   }
 }
 ```
+
+`package/feed.sh` signs an installer and writes that feed beside it. CI runs
+it on every desktop build with a key it makes and throws away, then checks
+the result with the app's own updater. Run by hand on `main` (Actions,
+desktop, Run workflow), it builds with the address and key from the repository's
+variables `CLRD_UPDATE_URL` and `CLRD_UPDATE_PUBKEY` (the installer is served
+from the same folder as the feed, so the address is the one choice), signs
+with the secret
+`CLRD_UPDATE_KEY` (and `CLRD_UPDATE_KEY_PASSWORD`), and keeps the installer,
+its signature and `latest.json` as a workflow file for a few days. It
+publishes nothing. None of these are set yet, so a run by hand stops with an
+error.
 
 - The app asks at start and every six hours. A newer installer is kept and
   run only when its signature verifies against the key in the build and was
