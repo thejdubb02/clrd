@@ -433,6 +433,9 @@ class App : Application() {
     }
 }
 
+/** Set when this phone starts following a topic set (#764), cleared once a full reload lands. */
+private const val FOLLOW_RELOAD = "follow_reload"
+
 /** [Store] backed by Room, driving the tray. */
 class RoomStore(private val app: App) : Store {
     private val dao = app.db.dao()
@@ -481,13 +484,26 @@ class RoomStore(private val app: App) : Store {
         val sameDb = epoch.isEmpty() || app.epoch.isEmpty() || epoch == app.epoch
         app.tray.reconcile(dao.replaceAll(open, seq, sameDb).filter { it.id !in waiting }, app.muted)
         if (epoch.isNotEmpty()) app.epoch = epoch
+        app.prefs.edit().remove(FOLLOW_RELOAD).apply() // what it holds is the followed set now (#764)
         app.outside.value++
     }
 
     override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here
     override fun saveEpoch(epoch: String) = ifMine { app.epoch = epoch }
     /** A settings message, kept only while this is still the server in Settings: one already in hand at a switch would undo the reset (#568). */
-    fun settings(o: org.json.JSONObject) = ifMine { app.saveSettings(o) }
+    fun settings(o: org.json.JSONObject): Boolean {
+        var reload = false
+        ifMine {
+            val was = app.subs.value?.filtered == true
+            app.saveSettings(o)
+            val now = app.subs.value?.filtered == true
+            if (!was && now) app.prefs.edit().putBoolean(FOLLOW_RELOAD, true).apply()
+            reload = now && app.prefs.getBoolean(FOLLOW_RELOAD, false)
+        }
+        // Now following a set it did not before (#764): what this phone holds may include topics it no longer
+        // shows. The mark stays until a reload lands, so a failed one is tried again on the next connect.
+        return reload
+    }
     override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { app.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
