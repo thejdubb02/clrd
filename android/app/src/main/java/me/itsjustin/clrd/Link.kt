@@ -84,9 +84,17 @@ fun claimRetries(e: Exception): Boolean = e !is HttpError || e.code >= 500 || e.
 fun deviceName(ctx: Context): String =
     Settings.Global.getString(ctx.contentResolver, Settings.Global.DEVICE_NAME)?.takeIf { it.isNotBlank() } ?: Build.MODEL
 
-/** A random id made once per install and sent when linking, so linking again replaces this phone's row instead of adding one (#769). Kept across sign-outs; uninstall clears it, and it never leaves the phone in a backup. */
-fun installId(app: App): String = synchronized(app.prefs) {
-    app.prefs.getString("install_id", null) ?: UUID.randomUUID().toString().also { app.prefs.edit().putString("install_id", it).apply() }
+/**
+ * The install id sent when linking, so linking again replaces this phone's row instead of adding one (#769).
+ * One random secret is made per install (kept across sign-outs, cleared on uninstall, never in a backup); each
+ * server gets its own id hashed from it, so two unrelated servers cannot match up the same phone.
+ */
+fun installId(app: App, server: String): String {
+    val seed = synchronized(app.prefs) {
+        app.prefs.getString("install_seed", null) ?: UUID.randomUUID().toString().also { app.prefs.edit().putString("install_seed", it).apply() }
+    }
+    val h = MessageDigest.getInstance("SHA-256").digest("$seed ${server.trimEnd('/')}".toByteArray())
+    return h.take(16).joinToString("") { "%02x".format(it) }
 }
 
 /** The line under the name in the device list that tells two phones of one name apart, for example "Pixel 8, Android 15". */

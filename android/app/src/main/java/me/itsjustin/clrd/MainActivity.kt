@@ -233,7 +233,7 @@ class MainActivity : ComponentActivity() {
         val waiting = PairUi.Waiting(link, linkCheck(secret))
         pair.value = waiting
         val name = deviceName(this)
-        val install = installId(app)
+        val install = installId(app, link.server)
         val detail = deviceDetail()
         thread(isDaemon = true) {
             val deadline = System.nanoTime() + LINK_TTL_NS
