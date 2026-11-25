@@ -93,29 +93,41 @@ impl Os {
             5.. => 2,
             _ => 1,
         };
-        let mut hints: HashMap<&str, Variant<'_>> = HashMap::new();
-        hints.insert("urgency", urgency.into());
-        hints.insert("suppress-sound", (!alert).into());
         let body = if self.markup() {
             escape(&n.message)
         } else {
             n.message.clone()
         };
         let actions = ["default", "Open", "clear", "Clear"];
+        let summary = summary(n);
         // -1: the service decides how long it stays up.
-        self.call(
-            "Notify",
-            &(
+        let args = |replaces: u32| {
+            let hints: HashMap<&str, Variant<'_>> = HashMap::from([
+                ("urgency", urgency.into()),
+                ("suppress-sound", (!alert).into()),
+            ]);
+            let actions = &actions[..];
+            (
                 "clrd",
                 replaces,
                 "",
-                summary(n),
-                &body,
-                &actions[..],
+                summary,
+                body.as_str(),
+                actions,
                 hints,
                 -1i32,
-            ),
-        )
+            )
+        };
+        // An update goes to the run that showed the old one: a later run may
+        // have given that id to another app (#791). That run gone, or the id
+        // already closed, it shows as new.
+        let owner = self.owners.lock().unwrap().get(&replaces).cloned();
+        match owner {
+            Some(owner) if replaces != 0 => self
+                .call_to(owner.as_str(), "Notify", &args(replaces))
+                .or_else(|_| self.call("Notify", &args(0))),
+            _ => self.call("Notify", &args(0)),
+        }
         .and_then(|reply| {
             let os_id = reply.body().deserialize::<u32>()?;
             if let Some(owner) = reply.header().sender() {
@@ -156,19 +168,31 @@ fn listen(
     })) {
         let header = msg.header();
         let body = msg.body();
+        let from = header.sender().map(|s| s.as_str());
+        // Another run showed what we hold under this id: an old run that is
+        // still up says nothing about what a later run gave the same id (#791).
+        // A close from the run that showed it also drops the id, under the
+        // same lock, so a Notify that records a new owner meanwhile keeps it.
+        let ours = |id: &u32, closed: bool| {
+            let mut owners = owners.lock().unwrap();
+            let ours = owners.get(id).is_none_or(|o| Some(o.as_str()) == from);
+            if ours && closed {
+                owners.remove(id);
+            }
+            ours
+        };
         let signal = match header.member().map(|m| m.as_str()) {
-            Some("NotificationClosed") => body.deserialize::<(u32, u32)>().ok().map(|(id, why)| {
-                // Gone from the run that showed it: nothing left to close.
-                let mut owners = owners.lock().unwrap();
-                let from = header.sender().map(|s| s.as_str());
-                if owners.get(&id).map(|o| o.as_str()) == from {
-                    owners.remove(&id);
-                }
-                Signal::Closed(id, why == BY_USER && close_clears.load(Ordering::Relaxed))
-            }),
+            Some("NotificationClosed") => body
+                .deserialize::<(u32, u32)>()
+                .ok()
+                .filter(|(id, _)| ours(id, true))
+                .map(|(id, why)| {
+                    Signal::Closed(id, why == BY_USER && close_clears.load(Ordering::Relaxed))
+                }),
             Some("ActionInvoked") => body
                 .deserialize::<(u32, String)>()
                 .ok()
+                .filter(|(id, _)| ours(id, false))
                 .map(|(id, key)| Signal::Action(id, key)),
             _ => None,
         };
