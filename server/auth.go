@@ -525,13 +525,16 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) error {
 // scopes, topics and grants as parent, its own name in the device list and in
 // state_by, revocable alone, and revoked with its parent.
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, parent *Token, name, install string) (*Token, error) {
-	if err := s.endSession(r); err != nil {
-		return nil, err
-	}
+	// Link first, so a sign-in again from this browser finds its old row by
+	// install and keeps a lowered approve (#765); then end what is left of
+	// the old cookie's row, never the token this sign-in hangs under.
 	st, raw, err := s.linkDevice(context.WithoutCancel(r.Context()), parent, parent.ID, deviceName(name, r.UserAgent()), false,
 		deviceInfo{installID(install), deviceDetail(r.UserAgent())})
 	if err != nil {
 		return nil, err
+	}
+	if err := s.endSession(r, parent.ID); err != nil {
+		s.log.Warn("end old session", "err", err)
 	}
 	s.setCookie(w, r, raw, 365*24*3600)
 	return st, nil
@@ -623,7 +626,8 @@ func (s *Server) replaceInstall(ctx context.Context, st *Token, parentID string,
 		return nil
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT t.id, t.approve FROM sessions s JOIN tokens t ON t.id = s.token_id
-	  WHERE s.parent_id = ? AND s.phone = ? AND t.install = ? AND t.id != ?`, parentID, phone, dev.install, st.ID)
+	  WHERE s.parent_id = ? AND s.phone = ? AND t.install = ? AND t.rowid < (SELECT rowid FROM tokens WHERE id = ?)`,
+		parentID, phone, dev.install, st.ID) // only older rows: two racing sign-ins never drop each other
 	if err != nil {
 		return err
 	}
@@ -692,7 +696,7 @@ func (s *Server) capSessions(ctx context.Context, parent string, phone bool) {
 
 // endSession revokes the token in this browser's cookie, only when sign-in
 // minted it. Cookies set before #30 hold a real token; keep those.
-func (s *Server) endSession(r *http.Request) error {
+func (s *Server) endSession(r *http.Request, keep string) error {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return nil
@@ -700,7 +704,7 @@ func (s *Server) endSession(r *http.Request) error {
 	var id string
 	err = s.db.QueryRowContext(r.Context(), `SELECT token_id FROM sessions JOIN tokens ON id = token_id WHERE hash = ?`,
 		hashToken(c.Value)).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) || err == nil && id == keep {
 		return nil
 	}
 	if err == nil {
@@ -771,7 +775,7 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) error {
 	if !s.sameOrigin(r) {
 		return errf(403, "forbidden", "sign-out must come from this site")
 	}
-	if err := s.endSession(r); err != nil {
+	if err := s.endSession(r, ""); err != nil {
 		return err // keep the cookie so a retry can still revoke its token
 	}
 	s.setCookie(w, r, "", -1)

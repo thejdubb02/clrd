@@ -86,6 +86,26 @@ func TestRelinkReplacesOwnRow(t *testing.T) {
 	}
 }
 
+// Signing in again while still signed in (the old cookie sent along) keeps
+// the old row's lower approve too: the old cookie is not ended first.
+func TestRelinkWithOldCookieKeepsLowerApprove(t *testing.T) {
+	s, ts, _ := newTest(t)
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	oldID, oldC := browserIn(t, s, ts, typed, installA)
+	s.db.Exec(`UPDATE tokens SET approve = 'denied' WHERE id = ?`, oldID)
+	code, _, c := signIn(t, ts, `{"token":"`+typed+`","install":"`+installA+`"}`, firefoxLinux, oldC)
+	if code != 200 || c == nil {
+		t.Fatalf("sign in: %d", code)
+	}
+	newID := s.lookupToken(context.Background(), c.Value).ID
+	if exists(s, oldID) {
+		t.Fatal("old row stayed")
+	}
+	if a := column(t, s, "approve", newID); a != "denied" {
+		t.Fatalf("approve = %q, want the old row's lower denied", a)
+	}
+}
+
 // An old row raised above its token never lifts the new row past the token.
 func TestRelinkNeverRaisesApprove(t *testing.T) {
 	s, ts, _ := newTest(t)

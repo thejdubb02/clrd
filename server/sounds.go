@@ -104,11 +104,13 @@ func (s *Server) soundRoutes() {
 		}
 		var d LinkedDevice
 		var err error
-		if p.Name != nil {
-			d, err = s.Rename(r.Context(), tok, r.PathValue("id"), *p.Name)
-		}
-		if err == nil && p.Sound != nil {
+		// Sound first: a bad sound name then changes nothing. The sound is
+		// allowed on its own, so a refused rename after it leaves no harm.
+		if p.Sound != nil {
 			d, err = s.SetSound(r.Context(), tok, r.PathValue("id"), *p.Sound)
+		}
+		if err == nil && p.Name != nil {
+			d, err = s.Rename(r.Context(), tok, r.PathValue("id"), *p.Name)
 		}
 		if err != nil {
 			return err

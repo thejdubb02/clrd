@@ -10,7 +10,8 @@
   // old row in the device list instead of adding one (#765).
   let install = '';
   try {
-    install = localStorage.getItem('clrd-install') || crypto.randomUUID();
+    // getRandomValues, unlike randomUUID, works on a plain-http LAN address too.
+    install = localStorage.getItem('clrd-install') || [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
     localStorage.setItem('clrd-install', install);
   } catch { /* no storage: each sign-in is a new row, as before */ }
   for (const i of document.querySelectorAll('input[name="install"]')) i.value = install;
