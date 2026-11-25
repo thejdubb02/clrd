@@ -6,8 +6,9 @@ use crate::engine::Notification;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use zbus::export::futures_core::Stream;
+use zbus::names::OwnedUniqueName;
 use zbus::{block_on, Connection, MessageStream, Variant};
 
 const NAME: &str = "org.freedesktop.Notifications";
@@ -17,6 +18,11 @@ const BY_USER: u32 = 2;
 
 pub struct Os {
     conn: Connection,
+    /// Which run of the service showed each id: its own name on the bus,
+    /// which no later run gets. A close goes there, so after a restart it
+    /// fails instead of closing whatever the new run shows under that id
+    /// (#601).
+    owners: Mutex<HashMap<u32, OwnedUniqueName>>,
 }
 
 impl Os {
@@ -40,10 +46,20 @@ impl Os {
             MessageStream::for_match_rule(rule, &conn, std::num::NonZero::new(4096)).await
         })?;
         std::thread::spawn(move || listen(stream, close_clears, tx));
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            owners: Mutex::default(),
+        })
     }
 
     fn call<B>(&self, method: &str, body: &B) -> zbus::Result<zbus::Message>
+    where
+        B: serde::Serialize + zbus::DynamicType,
+    {
+        self.call_to(NAME, method, body)
+    }
+
+    fn call_to<B>(&self, to: &str, method: &str, body: &B) -> zbus::Result<zbus::Message>
     where
         B: serde::Serialize + zbus::DynamicType,
     {
@@ -51,7 +67,7 @@ impl Os {
         // holds the caller for the bus's own reply timeout.
         block_on(
             self.conn
-                .call_method(Some(NAME), PATH, Some(NAME), method, body),
+                .call_method(Some(to), PATH, Some(NAME), method, body),
         )
     }
 
@@ -99,11 +115,24 @@ impl Os {
                 -1i32,
             ),
         )
-        .and_then(|reply| reply.body().deserialize::<u32>())
+        .and_then(|reply| {
+            let os_id = reply.body().deserialize::<u32>()?;
+            if let Some(owner) = reply.header().sender() {
+                let mut owners = self.owners.lock().unwrap();
+                // What an earlier run showed went with it.
+                owners.retain(|_, o| o.as_str() == owner.as_str());
+                owners.remove(&replaces);
+                owners.insert(os_id, owner.to_owned().into());
+            }
+            Ok(os_id)
+        })
     }
 
     pub fn close(&self, os_id: u32) {
-        let _ = self.call("CloseNotification", &os_id);
+        let owner = self.owners.lock().unwrap().remove(&os_id);
+        if let Some(owner) = owner {
+            let _ = self.call_to(owner.as_str(), "CloseNotification", &os_id);
+        }
     }
 
     /// Ends the signal thread.
