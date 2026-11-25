@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -253,5 +254,49 @@ func TestWebPush(t *testing.T) {
 	s.db.QueryRow(`SELECT COUNT(*) FROM push_subs`).Scan(&left)
 	if left != 0 {
 		t.Fatalf("revoked token kept %d subscriptions", left)
+	}
+}
+
+// TestWebPushHiddenWhileWaiting: a device that hides the card while its send
+// waits for a slot gets no push (#777).
+func TestWebPushHiddenWhileWaiting(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	arrived, release := make(chan string, 9), make(chan struct{})
+	svc := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		arrived <- r.URL.Path
+		<-release
+		w.WriteHeader(201)
+	}))
+	defer svc.Close()
+	s.pushHTTP = svc.Client()
+	ua, _ := ecdh.P256().GenerateKey(rand.Reader)
+	auth := make([]byte, 16)
+	rand.Read(auth)
+	var last string
+	for i := range 9 { // eight fill every slot; the ninth waits
+		tok := mkToken(t, s, fmt.Sprintf("p%d", i), []string{ScopeRead}, nil)
+		sub := map[string]any{"endpoint": fmt.Sprintf("%s/sub/%d", svc.URL, i), "keys": map[string]any{"p256dh": b64.EncodeToString(ua.PublicKey().Bytes()), "auth": b64.EncodeToString(auth)}}
+		if code, _ := call(t, ts, "PUT", "/api/v1/push", tok, sub); code != 204 {
+			t.Fatalf("subscribe %d: %d", i, code)
+		}
+		last = s.lookupToken(ctx, tok).ID
+	}
+	_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m"})
+	e := <-s.pushq
+	done := make(chan struct{})
+	go func() { s.sendPushes(ctx, e); close(done) }()
+	for range 8 {
+		select {
+		case <-arrived:
+		case <-time.After(5 * time.Second):
+			t.Fatal("eight sends did not start")
+		}
+	}
+	s.db.Exec(`INSERT INTO hidden (token_id, notification_id) VALUES (?, ?)`, last, n["id"])
+	close(release)
+	<-done
+	if len(arrived) != 0 {
+		t.Fatalf("pushed to %v after it hid the card", <-arrived)
 	}
 }
