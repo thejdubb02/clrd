@@ -1976,6 +1976,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     var stack by remember { mutableStateOf(app.stack) }
     var drop by remember { mutableStateOf(app.dropCleared) }
     var fast by remember { mutableStateOf(app.fastSwipe) }
+    var shade by remember { mutableStateOf(app.shadeClears) }
     var query by rememberSaveable { mutableStateOf("") }
     val topics by app.db.dao().topics().collectAsState(emptyList())
     val status by app.status.collectAsState()
@@ -2113,6 +2114,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 Explain(R.string.appearance_explain)
                 AppearancePicker(app)
             }
+            "shade-clears" -> Toggle(R.string.shade_clears, R.string.shade_clears_explain, shade) { on -> shade = on; app.shadeClears = on }
             "full-swipe" -> Toggle(R.string.fast_swipe, R.string.fast_swipe_explain, fast) { on -> fast = on; app.fastSwipe = on }
             "swipe" -> SwipeSettings(app)
             "sound" -> SoundSettings(app, resumes)

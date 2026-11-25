@@ -126,12 +126,16 @@ class ActionReceiver : BroadcastReceiver() {
         val server = intent.getStringExtra(Tray.EXTRA_SERVER) // null on items posted before it was added: the current server
         val app = App.of(ctx)
         if (intent.action == Tray.ACTION_DISMISS_STACK) { // a stack swiped away: hide here only (#265)
-            app.trayHidden += intent.getStringArrayExtra(Tray.EXTRA_IDS).orEmpty()
+            val ids = intent.getStringArrayExtra(Tray.EXTRA_IDS).orEmpty()
+            app.trayHidden += ids
+            app.leftShade(maxOf(ids.size, 2)) // a stack is never a lone swipe, and its rows only hide
             return
         }
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
-        if (intent.action == Tray.ACTION_DISMISS) { // a swipe or Clear all: hide here only, never a clear (#265)
+        if (intent.action == Tray.ACTION_DISMISS) { // a swipe or Clear all: hide here only (#265), unless a lone swipe clears (#271)
             app.trayHidden += id
+            app.leftShade(1)
+            if (app.shadeClears) app.swiped(id, server)
             return
         }
         if (intent.action == Tray.ACTION_DEVICE) { // a sender's http or broadcast button (#449)

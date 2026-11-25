@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Android: a "Swipe clears everywhere" setting, off by default. With it on, swiping one notification out of the shade clears it on every device; swiping a group away or Clear all on several still only hides them on the phone (#271).
 - Android: Settings, Devices has a "Clears everywhere" switch for this phone. Turn it off and clearing a notification on the phone hides it there only. Only an allowed device can change it; a phone that is not allowed is told so beside the switch (#767).
 - Android: Settings, Devices, Client certificate picks a certificate installed on the phone for a server behind mutual TLS. The key stays in Android's key store and is offered only to the clrd server address it was picked for, never to a site a message links to (#152).
 - Server and web: each device has "Clears everywhere", on by default. Turn it off and clearing a notification on that device hides it there only, while your other devices keep it; Undo brings it back. Set it in Settings, Devices, or with `PUT /api/v1/devices/{id}/clears` (#767).

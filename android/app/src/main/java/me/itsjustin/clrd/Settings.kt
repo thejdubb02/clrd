@@ -10,6 +10,7 @@ internal val SETTINGS = listOf(
     Setting(R.string.section_notifications, "sound", R.string.sound, R.string.sound_explain, listOf("sound", "chime", "ring", "audio", "volume")),
     Setting(R.string.section_notifications, "subscriptions", R.string.subs_title, R.string.subs_explain, listOf("subscribe", "unsubscribe", "topic", "follow", "new topics")),
     Setting(R.string.section_notifications, "muted-topics", R.string.topics, R.string.topics_explain, listOf("mute", "topic", "pop up", "quiet")),
+    Setting(R.string.section_notifications, "shade-clears", R.string.shade_clears, R.string.shade_clears_explain, listOf("swipe", "shade", "tray", "clear everywhere", "dismiss")),
     Setting(R.string.section_notifications, "battery", R.string.battery, R.string.battery_explain, listOf("battery", "background", "delayed", "killed", "optimization")),
     Setting(R.string.section_inbox, "stack", R.string.stack, R.string.stack_explain, listOf("group", "fold", "bundle", "collapse")),
     Setting(R.string.section_inbox, "swipe", R.string.swipe_settings, R.string.swipe_explain, listOf("swipe", "gesture", "slide", "buttons")),
