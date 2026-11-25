@@ -539,6 +539,37 @@ func openDB(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("add cleared_at column: %w", err)
 	}
+	// hook_failures: failed webhook deliveries per topic for stats (#794). A
+	// trigger copies each one as it fails, so deleting a hook and its delivery
+	// log keeps its past failures. An upgrade copies the failures already kept.
+	if err := func() error {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`CREATE TABLE hook_failures (id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL, at INTEGER NOT NULL)`); err != nil {
+			if strings.Contains(err.Error(), "already exists") {
+				return nil
+			}
+			return err
+		}
+		for _, q := range []string{
+			`CREATE INDEX hook_failures_at ON hook_failures (at)`,
+			`CREATE TRIGGER hook_failed AFTER UPDATE OF status ON hook_deliveries
+				WHEN NEW.status = 'failed' AND OLD.status != 'failed'
+				BEGIN INSERT INTO hook_failures (topic, at) VALUES (NEW.topic, NEW.updated_at); END`,
+			`INSERT INTO hook_failures (topic, at) SELECT topic, updated_at FROM hook_deliveries WHERE status = 'failed'`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	}(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("add hook_failures table: %w", err)
+	}
 	for _, c := range []string{"body", "kind"} {
 		if _, err := db.Exec(`ALTER TABLE hooks_out ADD COLUMN ` + c + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column") {
@@ -1598,8 +1629,10 @@ func (s *Server) prune(ctx context.Context) error {
 	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM push_failures WHERE at < ?`, cutoff); err != nil {
-		return err
+	for _, t := range []string{"push_failures", "hook_failures"} {
+		if _, err := tx.Exec(`DELETE FROM `+t+` WHERE at < ?`, cutoff); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(`DELETE FROM hook_posts WHERE id NOT IN (SELECT id FROM notifications)`); err != nil {
 		return err

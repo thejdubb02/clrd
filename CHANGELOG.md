@@ -145,6 +145,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Server: deleting an outgoing webhook no longer erases its past delivery failures from Stats, and the Stats CSV export quotes a value that starts with `'`, so `-disk` and `'-disk` no longer read back the same (#794).
 - Android: when a cleared card leaves the list, the space under it now closes with it in one smooth move, as on the web, instead of snapping shut at the end (#726).
 - Desktop (Linux): with GTK set to prefer dark and no desktop preference, picking Light and then System in Appearance turns the window dark again at once, instead of only after a restart (#783).
 - Desktop (Linux): a clear that arrives just after the notification service restarted no longer closes another app's notification that took the old one's number (#601).

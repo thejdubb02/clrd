@@ -171,7 +171,7 @@ func (s *Server) deliveryFailures(ctx context.Context, fromMS, toMS int64, limit
 		}
 		return d
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, COUNT(*) FROM hook_deliveries WHERE status = 'failed' AND updated_at >= ? AND updated_at < ? GROUP BY topic`, fromMS, toMS)
+	rows, err := s.db.QueryContext(ctx, `SELECT topic, COUNT(*) FROM hook_failures WHERE at >= ? AND at < ? GROUP BY topic`, fromMS, toMS)
 	if err != nil {
 		return nil, err
 	}
@@ -282,9 +282,11 @@ func (s *Server) statsRoutes() {
 	s.route("GET /metrics", s.handleMetrics)
 }
 
-// csvCell guards free-text cells against spreadsheet formula prefixes.
+// csvCell guards free-text cells against spreadsheet formula prefixes. A
+// leading quote is escaped too, so dropping one leading quote reads any cell
+// back (#794).
 func csvCell(v string) string {
-	if len(v) > 0 && strings.ContainsRune("=+-@\t\r", rune(v[0])) {
+	if len(v) > 0 && strings.ContainsRune("=+-@\t\r'", rune(v[0])) {
 		return "'" + v
 	}
 	return v
