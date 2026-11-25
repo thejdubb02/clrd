@@ -407,8 +407,7 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 		if j.event == "posted" {
 			// A send whose reply was lost may have opened the issue: look first (#680).
 			if found, code, err := s.githubFind(ctx, *u, j.secret, mark, n.CreatedAt); found != "" {
-				_, err = s.db.ExecContext(context.WithoutCancel(ctx), `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id) VALUES (?, ?, ?, ?)`, j.topic, j.name, n.ID, found)
-				return 200, err
+				return 200, s.keepPost(ctx, j, n.ID, found)
 			} else if err != nil || code != 200 {
 				return code, err
 			}
@@ -466,9 +465,19 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 		if m.ID == "" {
 			return 0, fmt.Errorf("no id in the reply: is this a %s URL?", j.kind)
 		}
-		_, err = s.db.ExecContext(context.WithoutCancel(ctx), `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id) VALUES (?, ?, ?, ?)`, j.topic, j.name, n.ID, m.ID)
+		err = s.keepPost(ctx, j, n.ID, m.ID)
 	}
 	return code, err
+}
+
+// keepPost records the remote message or issue id, but only while the hook
+// still has the URL and kind it was sent with: a save during the send moved
+// it to another channel, where that id means nothing (#795).
+func (s *Server) keepPost(ctx context.Context, j hookJob, id, remote string) error {
+	_, err := s.db.ExecContext(context.WithoutCancel(ctx), `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id)
+		SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ? AND kind = ?)`,
+		j.topic, j.name, id, remote, j.topic, j.name, j.url, j.kind)
+	return err
 }
 
 type hookReq struct {

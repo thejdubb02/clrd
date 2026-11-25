@@ -725,11 +725,15 @@ func TestHooksOutDiscordNewURLWake(t *testing.T) {
 	s.fetch.allow = func(netip.Addr, string) bool { return true }
 	var mu sync.Mutex
 	var hits []string
+	var during func() // runs inside a send, before the reply
 	dc, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		hits = append(hits, r.Method+" "+r.URL.Path)
-		n := len(hits)
+		n, f := len(hits), during
 		mu.Unlock()
+		if f != nil {
+			f()
+		}
 		if r.Method == "POST" {
 			fmt.Fprintf(w, `{"id":"m%d"}`, n)
 		}
@@ -780,6 +784,25 @@ func TestHooksOutDiscordNewURLWake(t *testing.T) {
 	wake(id)
 	if len(hits) != 5 || hits[3] != "PATCH /api/webhooks/2/tok/messages/m3" || hits[4] != "PATCH /api/webhooks/2/tok/messages/m3" {
 		t.Fatalf("same URL resaved, snooze and wake: %v, want two PATCHes of m3", hits)
+	}
+	// A save that moves the hook while a post is out: the old channel's
+	// message id must not be kept for the new URL.
+	mu.Lock()
+	during = func() {
+		if err := s.SaveHook(ctx, serverToken, "ops", "dc", OutHook{URL: dc.URL + "/api/webhooks/3/tok", Kind: "discord"}, false, false); err != nil {
+			t.Error(err)
+		}
+	}
+	mu.Unlock()
+	code, live := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Disk"})
+	if code != 200 {
+		t.Fatalf("publish: %d", code)
+	}
+	s.deliverHooks(ctx)
+	var kept int
+	s.db.QueryRow(`SELECT count(*) FROM hook_posts WHERE id = ?`, live["id"]).Scan(&kept)
+	if len(hits) != 6 || hits[5] != "POST /api/webhooks/2/tok" || kept != 0 {
+		t.Fatalf("moved during a post: %v, kept %d message ids, want the old id dropped", hits, kept)
 	}
 }
 
