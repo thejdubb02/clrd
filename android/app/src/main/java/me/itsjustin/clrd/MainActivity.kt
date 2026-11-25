@@ -519,7 +519,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                             Arrive(came && !still, { e.key == ms.wiggle }) {
                             if (e is Stack) {
                                 val open = e.topic in unfolded
-                                StackCard(e, open, if (tab == Tab.Cleared) null else ({ clearAll(e.rows) }), { topicMenu(e.topic) }) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
+                                StackCard(e, open, if (tab == Tab.Inbox) ({ clearAll(e.rows) }) else null, { topicMenu(e.topic) }) { unfolded = if (open) unfolded - e.topic else unfolded + e.topic }
                                 return@Arrive
                             }
                             val n = (e as One).n

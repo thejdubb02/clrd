@@ -1,8 +1,8 @@
 {
  "jscpd": [
   [
-   ".github/workflows/go.yml",
-   ".github/workflows/sdk.yml",
+   "android/app/src/test/java/me/itsjustin/clrd/CardRowTest.kt",
+   "android/app/src/test/java/me/itsjustin/clrd/RevealRowTest.kt",
    1
   ],
   [
