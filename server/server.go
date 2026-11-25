@@ -546,6 +546,7 @@ func (s *Server) Run(ctx context.Context) error {
 	job("repeats", wakeEvery, s.repeatDue)
 	job("check-ins", wakeEvery, s.checkins)
 	job("prune", time.Hour, s.prune)
+	job("unlink idle browsers", time.Hour, s.unlinkIdle)
 	job("cache sweep", time.Hour, s.fetch.sweep)
 	job("webhooks out", hookEvery, s.deliverHooks)
 	wg.Add(1)
@@ -613,6 +614,7 @@ func (s *Server) api(pattern string, h func(http.ResponseWriter, *http.Request, 
 		if tok == nil {
 			return errf(401, "unauthorized", noToken)
 		}
+		tok.follow = r.URL.Query().Get("subscribed") == "mine" // an app asks to follow its own set (#764, subs.go)
 		return h(w, r, tok)
 	})
 }

@@ -412,7 +412,7 @@ class TrayRaceTest {
             bg { RoomStore(app).apply(listOf(row("a", Notif.ACTIVE, 1), row("b", Notif.ACTIVE, 1)), 1) }
             app.act(listOf("a", "b"), "dismiss", App.VIA_APP_BULK)
             val r = server.takeRequest(10, TimeUnit.SECONDS)!!
-            assertEquals("/api/v1/notifications/clear", r.path)
+            assertEquals("/api/v1/notifications/clear", r.bare)
             assertEquals("""{"ids":["a","b"],"via":"app_bulk"}""", r.body.readUtf8())
             assertTrue(bg { dao.openNow().none { it.state == Notif.ACTIVE } })
         } finally {

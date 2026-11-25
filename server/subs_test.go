@@ -25,7 +25,12 @@ type frame struct {
 // opened and gate (run on each message before it is handed over) as hooks.
 func followSubs(t *testing.T, s *Server, raw string, since int64, opened func() error, gate func(frame)) chan frame {
 	t.Helper()
-	c := *s.lookupToken(context.Background(), raw)
+	return followTok(t, s, *s.lookupToken(context.Background(), raw), since, opened, gate)
+}
+
+// followTok is followSubs for a token the test set up, such as one asking with subscribed=mine.
+func followTok(t *testing.T, s *Server, c Token, since int64, opened func() error, gate func(frame)) chan frame {
+	t.Helper()
 	c.view = &view{}
 	ctx, cancel := context.WithCancel(context.Background())
 	out, done := make(chan frame, 100), make(chan struct{})
@@ -564,5 +569,53 @@ func TestTopicApprovalsUpgrade(t *testing.T) {
 	ts, err := s.Topics(context.Background(), s.lookupToken(context.Background(), raw))
 	if err != nil || len(ts) != 2 || !ts[0].Approvals || ts[1].Approvals {
 		t.Fatalf("after upgrade: %v %+v", err, ts)
+	}
+}
+
+// An app holding a typed-in token with no user follows that token's own set
+// when it asks with subscribed=mine; a request that does not ask is
+// unfiltered, and asking never shows more than the token may read (#764).
+func TestSubscribedMine(t *testing.T) {
+	s, ts, admin := newTest(t)
+	for _, topic := range []string{"chat", "infra"} {
+		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": topic, "message": "m"})
+	}
+	phone := mkToken(t, s, "phone", []string{ScopeRead}, nil)
+	if code, out := call(t, ts, "PUT", "/api/v1/subscriptions", childOf(t, s, phone), map[string]any{"topics": map[string]any{"chat": false}}); code != 200 {
+		t.Fatalf("browser unsubscribe: %d %v", code, out)
+	}
+	if _, out := call(t, ts, "GET", "/api/v1/notifications", phone, nil); topicsOf(out) != "infra,chat" {
+		t.Fatalf("not asked: want every topic, got %v", topicsOf(out))
+	}
+	if _, out := call(t, ts, "GET", "/api/v1/notifications?subscribed=mine", phone, nil); topicsOf(out) != "infra" {
+		t.Fatalf("asked: want the set, got %v", topicsOf(out))
+	}
+	if _, out := call(t, ts, "GET", "/api/v1/settings?subscribed=mine", phone, nil); out["subscriptions"].(map[string]any)["filtered"] != true {
+		t.Fatalf("asked: settings not filtered: %v", out["subscriptions"])
+	}
+	// A phone that was away when the set changed catches up by a reset.
+	if code, _ := call(t, ts, "GET", "/api/v1/events?since=1", phone, nil); code != 200 {
+		t.Fatalf("not asked: stale since got %d, want 200", code)
+	}
+	if code, _ := call(t, ts, "GET", "/api/v1/events?since=1&subscribed=mine", phone, nil); code != 410 {
+		t.Fatalf("asked: stale since got %d, want 410 reset", code)
+	}
+	// The stream asked the same way follows the set too, live.
+	c := *s.lookupToken(context.Background(), phone)
+	c.follow = true
+	fs := followTok(t, s, c, s.seq.Load(), nil, nil)
+	for _, topic := range []string{"chat", "infra"} {
+		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": topic, "message": "live"})
+	}
+	if seen := untilFrame(t, fs, func(f frame) bool { return f.Notification != nil }); seen[len(seen)-1].Notification.Topic != "infra" {
+		t.Fatalf("asked: stream sent an unsubscribed topic: %+v", seen[len(seen)-1].Notification)
+	}
+	// It may change the set it follows, as its browsers do.
+	if code, out := call(t, ts, "PUT", "/api/v1/subscriptions?subscribed=mine", phone, map[string]any{"topics": map[string]any{"chat": true}}); code != 200 || subOf(out, "chat") != "true" {
+		t.Fatalf("asked: put %d %v", code, out)
+	}
+	narrow := mkToken(t, s, "narrow", []string{ScopeRead}, []string{"infra"})
+	if _, out := call(t, ts, "GET", "/api/v1/notifications?subscribed=mine", narrow, nil); strings.Contains(topicsOf(out), "chat") {
+		t.Fatalf("asking showed more than the token reads: %v", topicsOf(out))
 	}
 }

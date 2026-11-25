@@ -503,7 +503,13 @@ fn set_close_clears(app: AppHandle, on: bool) -> Result<(), String> {
 
 #[tauri::command(async)]
 fn start(app: AppHandle, link: String, plain_ok: bool) -> Result<bool, String> {
-    app.state::<Shell>().device.start(&link, plain_ok)
+    let install = app
+        .path()
+        .app_data_dir()
+        .map(|dir| clrd_core::link::install_id(&dir));
+    app.state::<Shell>()
+        .device
+        .start(&link, plain_ok, &install.unwrap_or_default())
 }
 
 #[tauri::command(async)]
@@ -571,10 +577,31 @@ fn light_theme_name(app: &AppHandle, light: bool) {
         };
         DARK.with_borrow_mut(|dark| {
             if !light {
-                // ponytail: put back as the app's own value, so a theme
-                // picked on the desktop after this waits for the next start.
                 if let Some(name) = dark.take() {
-                    settings.set_gtk_theme_name(Some(&name));
+                    // A desktop that hands GTK its theme while running (X11
+                    // XSETTINGS, GNOME on Wayland) gets it back, so a theme
+                    // picked later shows at once (#756). Only settings.ini
+                    // is left, which cannot change while the app runs, so
+                    // its name is put back as is.
+                    // Called directly: gdk-rs's `Screen::setting` passes an
+                    // untyped value, which GDK on X11 never fills.
+                    let live = gtk::gdk::Screen::default().is_some_and(|screen| {
+                        use gtk::glib::translate::{ToGlibPtr, ToGlibPtrMut};
+                        let mut value = gtk::glib::Value::from_type(gtk::glib::Type::STRING);
+                        // SAFETY: a live screen, a static name and a string value.
+                        unsafe {
+                            gtk::gdk::ffi::gdk_screen_get_setting(
+                                screen.to_glib_none().0,
+                                c"gtk-theme-name".as_ptr(),
+                                value.to_glib_none_mut().0,
+                            ) != 0
+                        }
+                    });
+                    if live {
+                        settings.reset_property("gtk-theme-name");
+                    } else {
+                        settings.set_gtk_theme_name(Some(&name));
+                    }
                 }
                 return;
             }

@@ -64,13 +64,15 @@ func (v *view) changedBy(e Event) bool {
 	return v != nil && v.filtered && e.Notification.Topic == subMark+v.owner
 }
 
-// ownerOf is whose set tok follows, and whether it follows it at all.
+// ownerOf is whose set tok follows, and whether it follows it at all. A
+// typed-in token with no user follows its own only when the request asks
+// (subscribed=mine), so scripts and SDKs see every topic (#764).
 func (s *Server) ownerOf(ctx context.Context, tok *Token) (string, bool, error) {
 	if tok.User != "" {
 		return "u:" + tok.User, true, nil
 	}
 	top, err := s.topOf(ctx, tok.ID)
-	return "t:" + top, top != tok.ID, err
+	return "t:" + top, top != tok.ID || tok.follow, err
 }
 
 // withView is tok with its view loaded fresh; all is subscribed=all.

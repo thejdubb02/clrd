@@ -85,7 +85,7 @@ class SwipesTest {
         val next = Swipes(listOf("snooze"), listOf("ack", "clear"))
         assertNull(onIo { app.saveSwipes(next) })
         val r = server.takeRequest(5, TimeUnit.SECONDS)!!
-        assertEquals("PUT /api/v1/settings", "${r.method} ${r.path}")
+        assertEquals("PUT /api/v1/settings", "${r.method} ${r.bare}")
         val body = JSONObject(r.body.readUtf8())
         assertEquals("""["snooze"]""", body.getJSONArray("swipe_start").toString())
         assertEquals("""["ack","clear"]""", body.getJSONArray("swipe_end").toString())
