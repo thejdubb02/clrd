@@ -1428,7 +1428,10 @@ rules. Its token lives in the OS keychain and is sent only as an
   build inputs (`CLRD_UPDATE_URL`, `CLRD_UPDATE_PUBKEY`); a build without
   both never asks and shows no update settings. The address serves the JSON
   feed Tauri's updater uses (`version`, and under `platforms` a
-  `windows-x86_64` entry with `url` and `signature`). An installer runs only
+  `windows-x86_64` entry with `url` and `signature`). Official builds use
+  this repo's GitHub Releases: the feed is `latest.json` on the newest
+  release, and each installer's `url` names its own release (tag `v` and
+  the version). An installer runs only
   when its signature verifies against the built-in key, its signed comment
   carries `version:` equal to the feed's version, and that version is newer
   than the running one. The requests carry no token and no session.
