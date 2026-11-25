@@ -78,6 +78,45 @@ func githubHooksPaused(ctx context.Context, q querier) (bool, error) {
 	return v.Valid && v.Int64 != 0, err
 }
 
+// githubPauseTransition records when a pause starts and shifts github hooks'
+// failing_since forward by the pause duration on resume, so time spent paused
+// does not count toward hookDisableAfter (#680).
+func githubPauseTransition(ctx context.Context, tx *sql.Tx, wasPaused, nowPaused bool) error {
+	if wasPaused == nowPaused {
+		return nil
+	}
+	at := ms(now())
+	if nowPaused {
+		_, err := tx.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('github_hooks_paused_at', ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, strconv.FormatInt(at, 10))
+		return err
+	}
+	var raw string
+	err := tx.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'github_hooks_paused_at'`).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM settings WHERE key = 'github_hooks_paused_at'`); err != nil {
+		return err
+	}
+	pausedAt, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil
+	}
+	if delta := at - pausedAt; delta > 0 {
+		if _, err := tx.ExecContext(ctx, `UPDATE hooks_out
+			SET failing_since = CASE WHEN failing_since < ? THEN failing_since + ? ELSE ? END
+			WHERE kind = 'github' AND enabled = 1 AND failing_since IS NOT NULL`,
+			pausedAt, delta, at); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // queueHooks adds a delivery for every enabled hook on the event's topic that
 // subscribes to it. Runs inside write's transaction.
 func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {

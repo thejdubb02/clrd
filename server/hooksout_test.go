@@ -817,4 +817,55 @@ func TestHooksOutGitHubFollowups(t *testing.T) {
 	if len(bodies) != 3 || bodies[2]["title"] != "[clrd ops] Before pause" {
 		t.Fatalf("after unpause: %+v", bodies)
 	}
+
+	// 4. Time spent paused does not count toward the 24h auto-disable window (#680).
+	// Seed a failing github hook with 1h of unpaused failure, pause it for 30h,
+	// unpause, and fail one retry: it must stay enabled (only 1h unpaused, < 24h).
+	deadHook := "/api/v1/topics/ops/hooks/ghdead"
+	if code, _ := call(t, ts, "PUT", deadHook, admin, map[string]any{"url": githubAPI + "o/dead", "kind": "github", "secret": "ghtok"}); code != 200 {
+		t.Fatalf("save ghdead: %d", code)
+	}
+	// Point ghdead at a failing URL via status 500 on /repos/o/dead by using a closed server URL prefix.
+	badSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(500) }))
+	t.Cleanup(badSrv.Close)
+	githubAPI = badSrv.URL + "/repos/"
+	if code, _ := call(t, ts, "PUT", deadHook, admin, map[string]any{"url": badSrv.URL + "/repos/o/dead", "kind": "github", "secret": "ghtok"}); code != 200 {
+		t.Fatalf("save ghdead 500: %d", code)
+	}
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Flake", "message": "err"})
+	s.deliverHooks(ctx)
+	if code, _ := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"github_hooks_paused": true}); code != 200 {
+		t.Fatalf("pause for window test: %d", code)
+	}
+	// Backdate both failing_since (31h ago) and paused_at (30h ago): 1h failing before a 30h pause.
+	tNow := time.Now()
+	if _, err := s.db.Exec(`UPDATE hooks_out SET failing_since = ? WHERE topic = 'ops' AND name = 'ghdead'`, ms(tNow.Add(-31*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE settings SET value = ? WHERE key = 'github_hooks_paused_at'`, fmt.Sprint(ms(tNow.Add(-30*time.Hour)))); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/settings", admin, map[string]any{"github_hooks_paused": false}); code != 200 {
+		t.Fatalf("unpause after 30h: %d", code)
+	}
+	if _, err := s.db.Exec(`UPDATE hook_deliveries SET next_at = 0 WHERE name = 'ghdead' AND status = 'pending'`); err != nil {
+		t.Fatal(err)
+	}
+	s.deliverHooks(ctx)
+	hs, err := s.OutHooks(ctx, serverToken, "ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundDead := false
+	for _, h := range hs {
+		if h.Name == "ghdead" {
+			foundDead = true
+			if !h.Enabled {
+				t.Fatalf("ghdead was disabled after 1h unpaused + 30h paused failure: %+v", h)
+			}
+		}
+	}
+	if !foundDead {
+		t.Fatalf("ghdead missing from OutHooks: %+v", hs)
+	}
 }

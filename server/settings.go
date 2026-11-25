@@ -398,6 +398,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	}
 	defer tx.Rollback()
 	st, err := s.loadSettings(ctx, tx)
+	wasGitHubPaused := st.GitHubHooksPaused
 	if err == nil {
 		for _, f := range []struct {
 			from *bool
@@ -459,7 +460,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		raw, _ := json.Marshal(st)
 		if _, err = tx.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('display', ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(raw)); err == nil {
-			err = tx.Commit()
+			if err = githubPauseTransition(ctx, tx, wasGitHubPaused, st.GitHubHooksPaused); err == nil {
+				err = tx.Commit()
+			}
 		}
 	}
 	s.mu.Unlock()
