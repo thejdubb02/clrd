@@ -554,7 +554,6 @@ fn retry(app: AppHandle) {
     refresh_tray(&app);
 }
 
-/// How this computer shows in the server's device list.
 /// A GTK theme that is dark by its name ("Adwaita-dark") keeps the window and
 /// its page dark whatever the dark setting says: the web view reads the name
 /// too. So while the desktop asks for light, the theme of the same name
@@ -592,6 +591,7 @@ fn light_theme_name(app: &AppHandle, light: bool) {
     });
 }
 
+/// How this computer shows in the server's device list.
 fn computer_name() -> String {
     let name = std::fs::read_to_string("/etc/hostname")
         .ok()
