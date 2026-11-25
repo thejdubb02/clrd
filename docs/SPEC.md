@@ -105,7 +105,8 @@ as emoji but leave the tag emoji out, since ntfy apps add those themselves.
   more events for it; it stays hidden
   there through edits and repeats until that device reopens it, which sends
   it alone the real notification again (a reopen changes the shared state
-  only when that is final). A real clear made elsewhere still reaches it.
+  only when that is final). A real clear made elsewhere still reaches it and
+  ends the hide, so a later reopen by anyone shows it there again.
   Changing the option follows the rules of `PUT /api/v1/devices/{id}/approve`.
 - `acknowledged` keeps it in the inbox, stops repeat alerting, shows "Acknowledged on <device>".
 - `snoozed` hides it until `snooze_until`; then the server moves it back to
