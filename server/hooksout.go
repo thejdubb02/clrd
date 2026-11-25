@@ -165,12 +165,13 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 		return nil
 	}
 	if n := e.Notification; n.State == Active && e.woke { // server woke a snoozed notification (#673)
-		// Scheduled notification never posted yet: post it now.
+		// Scheduled notification never posted yet: post it now. A done post
+		// counts only through hook_posts, which a new URL clears (#795).
 		if _, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
 			SELECT h.topic, h.name, ?, 'posted', ?, ?, ? FROM hooks_out h
 			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
 			  AND NOT EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
-			  AND NOT EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND json_extract(d.body, '$.notification.id') = ?)`,
+			  AND NOT EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND json_extract(d.body, '$.notification.id') = ?)`,
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, n.ID); err != nil {
 			return err
 		}
