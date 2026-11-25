@@ -105,6 +105,18 @@ class PreviewTest {
         rule.onNodeWithTag("preview").assertDoesNotExist()
     }
 
+    @Test fun anotherAccountDoesNotGetACachedPreview() {
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = MockResponse().setBody("""{"title":"Mine"}""")
+        }
+        assertEquals("Mine", onIo { LinkPreview.load(app, "https://x.example/c", "alerts") }?.title)
+        onIo { LinkPreview.load(app, "https://x.example/c", "alerts") }
+        assertEquals(1, server.requestCount) // the same account asks once
+        app.token = "someone-else"
+        onIo { LinkPreview.load(app, "https://x.example/c", "alerts") }
+        assertEquals(2, server.requestCount)
+    }
+
     @Test fun onlyADataImageIsUsed() {
         assertNull(LinkPreview.picture("https://x.example/p.png"))
         assertNull(LinkPreview.picture("data:image/png,raw")) // not base64

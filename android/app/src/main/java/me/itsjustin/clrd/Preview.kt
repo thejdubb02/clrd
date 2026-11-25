@@ -37,7 +37,8 @@ import org.json.JSONObject
 /** A link preview (#107, docs/formatting.md): the server fetched the page, so the phone never contacts the site. */
 internal data class LinkPreview(val url: String, val title: String, val description: String, val site: String, val image: Bitmap?) {
     companion object {
-        private val cache = LruCache<String, LinkPreview>(32)
+        // Sized by bytes: a few full-width pictures, not 32 of them (each can be several MB).
+        private val cache = object : LruCache<String, LinkPreview>(16 shl 20) { override fun sizeOf(key: String, p: LinkPreview) = (p.image?.byteCount ?: 0) + 1024 }
 
         /** The first web link in a rendered message, as the web inbox picks it. */
         fun firstLink(text: AnnotatedString) = text.getLinkAnnotations(0, text.length)
@@ -45,7 +46,7 @@ internal data class LinkPreview(val url: String, val title: String, val descript
 
         /** The server's preview of [url] for [topic], or null when it has none (off, no title, no connection). Call off the main thread. */
         fun load(app: App, url: String, topic: String): LinkPreview? {
-            val key = "$topic $url"
+            val key = "${app.serverUrl} ${app.token.hashCode()} $topic $url" // another server or account never sees this one's
             cache.get(key)?.let { return it }
             val o = runCatching { JSONObject(app.api().get("/api/v1/preview?url=" + Uri.encode(url) + "&topic=" + Uri.encode(topic))) }.getOrNull() ?: return null
             val title = o.optString("title")
