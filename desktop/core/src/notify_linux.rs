@@ -121,7 +121,14 @@ impl Os {
         // An update goes to the run that showed the old one: a later run may
         // have given that id to another app (#791). That run gone, or the id
         // already closed, it shows as new.
-        self.call("Notify", &args(replaces)).and_then(|reply| {
+        let owner = self.owners.lock().unwrap().get(&replaces).cloned();
+        match owner {
+            Some(owner) if replaces != 0 => self
+                .call_to(owner.as_str(), "Notify", &args(replaces))
+                .or_else(|_| self.call("Notify", &args(0))),
+            _ => self.call("Notify", &args(0)),
+        }
+        .and_then(|reply| {
             let os_id = reply.body().deserialize::<u32>()?;
             if let Some(owner) = reply.header().sender() {
                 let mut owners = self.owners.lock().unwrap();
@@ -185,6 +192,7 @@ fn listen(
             Some("ActionInvoked") => body
                 .deserialize::<(u32, String)>()
                 .ok()
+                .filter(|(id, _)| ours(id, false))
                 .map(|(id, key)| Signal::Action(id, key)),
             _ => None,
         };
