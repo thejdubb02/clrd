@@ -509,11 +509,11 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
                     if (shown.isEmpty() && ms.ghosts.isEmpty()) Empty(tab) else LazyColumn(
                         state = list,
                         // Room under the last card for the Send button on the inbox.
-                        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, if (tab == Tab.Inbox) 88.dp else 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        // Each card carries the 10 dp below it, so a leaving card closes its gap as it shrinks (#726).
+                        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, if (tab == Tab.Inbox) 78.dp else 6.dp),
                     ) {
                         items(ms.shown(entries), key = { if (it is Ghost) "gone\u0000" + it.entry.key else (it as Entry).key }) { e ->
-                          Box {
+                          Box(if (e is Ghost) Modifier else Modifier.padding(bottom = CARD_GAP)) {
                             if (e is Ghost) {
                                 Gone(e, still, { ms.ghosts.remove(e); swept++ }) { why ->
                                     when (val g = e.entry) { is Stack -> StackCard(g, false, null, {}, gone = why) {}; is One -> Card(g.n, end = { why() }) }

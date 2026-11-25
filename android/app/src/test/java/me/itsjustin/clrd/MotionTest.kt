@@ -1,6 +1,13 @@
 package me.itsjustin.clrd
 
 import android.os.SystemClock
+import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
@@ -98,13 +105,17 @@ class MotionTest {
     @Test fun aLeavingCardSaysWhyThenGoes() {
         var done = 0L
         rule.mainClock.autoAdvance = false
-        rule.setContent { Gone(Ghost(One(n("a")), 0, 0, mark(), 1, SystemClock.uptimeMillis()), false, { done = rule.mainClock.currentTime }) { why -> why() } }
+        rule.setContent { Gone(Ghost(One(n("a")), 0, 0, mark(), 1, SystemClock.uptimeMillis()), false, { done = rule.mainClock.currentTime }) { why -> Box(Modifier.height(50.dp)) { why() } } }
         val start = rule.mainClock.currentTime
         rule.mainClock.advanceTimeBy(1000)
         rule.onNodeWithText("Cleared").assertExists()
         assertEquals(0L, done)
+        // #726: the gap under the card is part of it, so it closes with the card instead of snapping away after
+        val gone = rule.onNodeWithTag("gone")
+        gone.assertHeightIsEqualTo(50.dp + CARD_GAP)
         rule.mainClock.advanceTimeBy(1000)
         assertTrue("done at ${done - start}", done - start in HOLD_MS + SLIDE_MS + GAP_MS..HOLD_MS + SLIDE_MS + GAP_MS + 100)
+        gone.assertHeightIsEqualTo(0.dp)
     }
 
     @Test fun withRemoveAnimationsItStillHoldsButDoesNotSlide() {
@@ -114,6 +125,8 @@ class MotionTest {
         val start = rule.mainClock.currentTime
         rule.mainClock.advanceTimeBy(500)
         rule.onNodeWithText("Resolved by Ops").assertExists()
+        // #726: the reason is drawn in full during the hold, not see-through
+        assertEquals(1f, rule.onNode(SemanticsMatcher.keyIsDefined(ReasonAlpha)).fetchSemanticsNode().config[ReasonAlpha])
         rule.mainClock.advanceTimeBy(1500)
         assertTrue("done at ${done - start}", done - start in HOLD_MS..HOLD_MS + 50)
     }
