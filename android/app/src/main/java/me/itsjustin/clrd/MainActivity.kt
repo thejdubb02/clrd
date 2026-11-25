@@ -1304,7 +1304,8 @@ private fun DeviceSettings(app: App, resumes: Int) {
             val refused = got.exceptionOrNull() as? HttpError
             if (refused?.isAuth == true) devices = null // a signed-out phone shows no old list
             closed = refused?.code == 403
-            busy = pending.get() > 0
+            // checked on the main thread, where a tap sets busy, so a tap between the check and the write is not lost
+            android.os.Handler(android.os.Looper.getMainLooper()).post { busy = pending.get() > 0 }
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices/log")), "events") }.getOrNull()?.let { log = it }
         }
     }
