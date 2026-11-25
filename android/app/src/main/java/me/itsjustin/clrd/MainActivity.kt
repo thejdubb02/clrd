@@ -1279,8 +1279,12 @@ private fun DeviceSettings(app: App, resumes: Int) {
         busy = true
         val api = app.api()
         app.io.execute {
-            val e = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/$what", body.toString()) }
-                .exceptionOrNull()?.let { refusal(ctx, it) }
+            val out = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/$what", body.toString()) }
+            // The server answers with the device: show it at once, so a failed reload never leaves the old value up.
+            out.getOrNull()?.let { r -> runCatching { org.json.JSONObject(r) }.getOrNull() }?.let { nd ->
+                devices = devices?.map { o -> if (o.optString("id") != nd.optString("id")) o else org.json.JSONObject(o.toString()).also { c -> nd.keys().forEach { k -> if (k != "this") c.put(k, nd.get(k)) } } }
+            }
+            val e = out.exceptionOrNull()?.let { refusal(ctx, it) }
             if (what == "clears") { clearsError = e; error = null } else { error = e; clearsError = null }
             reload++
         }
