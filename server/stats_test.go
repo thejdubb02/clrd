@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -319,6 +320,27 @@ func TestStatsDeliveryAndCSV(t *testing.T) {
 	// A value starting with a quote stays apart from one the guard quoted (#794).
 	if csvCell("-disk") == csvCell("'-disk") || csvCell("'-disk") != "''-disk" {
 		t.Fatalf("csvCell collision: %q %q", csvCell("-disk"), csvCell("'-disk"))
+	}
+	// Line breaks and backslashes survive a CSV reader that folds CR LF (#804).
+	vals := []string{"a\r\nb", "a\nb", "a\rb", `a\rb`, `a\\rb`, "\r=x", `C:\x`}
+	var cb bytes.Buffer
+	for _, v := range vals {
+		writeCSVRow(&cb, csvCell(v))
+	}
+	back, err := csv.NewReader(&cb).ReadAll()
+	if err != nil || len(back) != len(vals) {
+		t.Fatalf("csv readback: %v %v", err, back)
+	}
+	seen := map[string]bool{}
+	unesc := strings.NewReplacer(`\\`, `\`, `\r`, "\r")
+	for i, r := range back {
+		if seen[r[0]] {
+			t.Errorf("csv collision on %q: %q", vals[i], r[0])
+		}
+		seen[r[0]] = true
+		if got := unesc.Replace(strings.TrimPrefix(r[0], "'")); got != vals[i] {
+			t.Errorf("csv decode %q: got %q", vals[i], got)
+		}
 	}
 	// Bad format is refused.
 	if c, _ := call(t, ts, "GET", q+"&format=xml", admin, nil); c != 400 {
