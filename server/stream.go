@@ -186,13 +186,22 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 	if tok = s.tokenWhere(ctx, `id = ?`, tok.ID); tok == nil {
 		return errRevoked
 	}
-	tok.follow = follow // the request's subscribed=mine, not stored on the row (#764)
+	tok.follow = follow              // the request's subscribed=mine, not stored on the row (#764)
+	hid, err := s.hiddenOf(ctx, tok) // after subscribing, so a hide since is in the set or still to come
+	if err != nil {
+		return err
+	}
 	// resync reads the view and returns a seq it covers: the head before the
 	// read, or the view's own change if newer. Everything up to it is in what
 	// a client reads after a reset, so the stream goes on from there, never
 	// filtering an earlier event by a later set, nor a later one by an older.
 	resync := func() (int64, error) {
 		head := s.seq.Load()
+		h, err := s.hiddenOf(ctx, tok) // a hide up to head is skipped with the rest, so read it here (#767)
+		if err != nil {
+			return 0, err
+		}
+		hid = h
 		if subs == nil {
 			return head, nil
 		}
@@ -280,7 +289,7 @@ replay:
 				st.seq.Store(since)
 				continue replay
 			}
-			if visible(tok, topics, e.Notification.Topic) {
+			if visible(tok, topics, e.Notification.Topic) && hid.passes(tok, e) {
 				if err := send(rawFor(tok, e), e.Seq); err != nil {
 					return err
 				}
@@ -398,7 +407,7 @@ replay:
 				}
 				continue
 			}
-			if visible(tok, topics, e.Notification.Topic) {
+			if visible(tok, topics, e.Notification.Topic) && hid.passes(tok, e) {
 				if err := send(rawFor(tok, e), e.Seq); err != nil {
 					return err
 				}
@@ -527,6 +536,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 	if err != nil {
 		return err
 	}
+	hid, err := s.hiddenOf(r.Context(), tok)
+	if err != nil {
+		return err
+	}
 	topics := splitList(r.URL.Query().Get("topics"))
 	out := []json.RawMessage{}
 	next := since
@@ -534,7 +547,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 		if tok.view.changedBy(e) { // the set changed within this page: start over
 			return errReset
 		}
-		if visible(tok, topics, e.Notification.Topic) {
+		if visible(tok, topics, e.Notification.Topic) && hid.passes(tok, e) {
 			out = append(out, rawFor(tok, e))
 		}
 		next = e.Seq

@@ -538,7 +538,7 @@ func (h *Handler) watch(r *http.Request, id string, evs <-chan server.Event) (ma
 			// stream is not filtered by token, but the read proved this id is
 			// visible.
 			x := e.Notification
-			if x == nil || x.ID != str(n, "id") {
+			if x == nil || x.ID != str(n, "id") || e.Only != "" { // Only: one device cleared it for itself
 				continue
 			}
 			last = x

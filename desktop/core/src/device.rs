@@ -314,8 +314,8 @@ impl Device {
             return;
         };
         let server = Server::new(&linked.base, &linked.token);
-        // First and by itself: a token without the read scope cannot unlink
-        // (#609), and the window session must not outlive the link here.
+        // First and by itself: the window session must not outlive the link
+        // here, even when the server cannot be told about the unlink.
         if !linked.session.is_empty() {
             let _ = server.end_session(&linked.session);
         }

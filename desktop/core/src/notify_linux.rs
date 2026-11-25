@@ -6,8 +6,9 @@ use crate::engine::Notification;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use zbus::export::futures_core::Stream;
+use zbus::names::OwnedUniqueName;
 use zbus::{block_on, Connection, MessageStream, Variant};
 
 const NAME: &str = "org.freedesktop.Notifications";
@@ -17,7 +18,14 @@ const BY_USER: u32 = 2;
 
 pub struct Os {
     conn: Connection,
+    /// Which run of the service showed each id: its own name on the bus,
+    /// which no later run gets. A close goes there, so after a restart it
+    /// fails instead of closing whatever the new run shows under that id
+    /// (#601). An id leaves when it is closed, by us or by the service.
+    owners: Owners,
 }
+
+type Owners = Arc<Mutex<HashMap<u32, OwnedUniqueName>>>;
 
 impl Os {
     pub fn new(
@@ -39,11 +47,20 @@ impl Os {
             // queue is spare room.
             MessageStream::for_match_rule(rule, &conn, std::num::NonZero::new(4096)).await
         })?;
-        std::thread::spawn(move || listen(stream, close_clears, tx));
-        Ok(Self { conn })
+        let owners = Owners::default();
+        let gone = owners.clone();
+        std::thread::spawn(move || listen(stream, gone, close_clears, tx));
+        Ok(Self { conn, owners })
     }
 
     fn call<B>(&self, method: &str, body: &B) -> zbus::Result<zbus::Message>
+    where
+        B: serde::Serialize + zbus::DynamicType,
+    {
+        self.call_to(NAME, method, body)
+    }
+
+    fn call_to<B>(&self, to: &str, method: &str, body: &B) -> zbus::Result<zbus::Message>
     where
         B: serde::Serialize + zbus::DynamicType,
     {
@@ -51,7 +68,7 @@ impl Os {
         // holds the caller for the bus's own reply timeout.
         block_on(
             self.conn
-                .call_method(Some(NAME), PATH, Some(NAME), method, body),
+                .call_method(Some(to), PATH, Some(NAME), method, body),
         )
     }
 
@@ -99,11 +116,24 @@ impl Os {
                 -1i32,
             ),
         )
-        .and_then(|reply| reply.body().deserialize::<u32>())
+        .and_then(|reply| {
+            let os_id = reply.body().deserialize::<u32>()?;
+            if let Some(owner) = reply.header().sender() {
+                let mut owners = self.owners.lock().unwrap();
+                // What an earlier run showed went with it.
+                owners.retain(|_, o| o.as_str() == owner.as_str());
+                owners.remove(&replaces);
+                owners.insert(os_id, owner.to_owned().into());
+            }
+            Ok(os_id)
+        })
     }
 
     pub fn close(&self, os_id: u32) {
-        let _ = self.call("CloseNotification", &os_id);
+        let owner = self.owners.lock().unwrap().remove(&os_id);
+        if let Some(owner) = owner {
+            let _ = self.call_to(owner.as_str(), "CloseNotification", &os_id);
+        }
     }
 
     /// Ends the signal thread.
@@ -115,7 +145,12 @@ impl Os {
 /// Reads the service's signals until the bus connection ends, and hands them
 /// on at once: a close is judged by the setting as it was when the user
 /// closed it, however long the ones before it take to handle (#685).
-fn listen(mut stream: MessageStream, close_clears: Arc<AtomicBool>, tx: mpsc::Sender<Signal>) {
+fn listen(
+    mut stream: MessageStream,
+    owners: Owners,
+    close_clears: Arc<AtomicBool>,
+    tx: mpsc::Sender<Signal>,
+) {
     while let Some(Ok(msg)) = block_on(std::future::poll_fn(|cx| {
         Pin::new(&mut stream).poll_next(cx)
     })) {
@@ -123,6 +158,12 @@ fn listen(mut stream: MessageStream, close_clears: Arc<AtomicBool>, tx: mpsc::Se
         let body = msg.body();
         let signal = match header.member().map(|m| m.as_str()) {
             Some("NotificationClosed") => body.deserialize::<(u32, u32)>().ok().map(|(id, why)| {
+                // Gone from the run that showed it: nothing left to close.
+                let mut owners = owners.lock().unwrap();
+                let from = header.sender().map(|s| s.as_str());
+                if owners.get(&id).map(|o| o.as_str()) == from {
+                    owners.remove(&id);
+                }
                 Signal::Closed(id, why == BY_USER && close_clears.load(Ordering::Relaxed))
             }),
             Some("ActionInvoked") => body

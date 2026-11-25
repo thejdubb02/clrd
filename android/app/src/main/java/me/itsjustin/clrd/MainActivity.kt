@@ -235,13 +235,15 @@ class MainActivity : ComponentActivity() {
         val waiting = PairUi.Waiting(link, linkCheck(secret))
         pair.value = waiting
         val name = deviceName(this)
+        val install = installId(app, link.server)
+        val detail = deviceDetail()
         thread(isDaemon = true) {
             val deadline = System.nanoTime() + LINK_TTL_NS
             var outcome: Claim = Claim.Gone
             var error: Exception? = null
             while (pair.value === waiting && System.nanoTime() < deadline) {
                 try {
-                    outcome = linkClaim(app.http, link.server, link.code, secret, name)
+                    outcome = linkClaim(app.http, link.server, link.code, secret, name, install, detail)
                     error = null
                     if (outcome != Claim.Waiting) break
                 } catch (e: Exception) {

@@ -102,8 +102,8 @@ sealed interface Claim {
  * Claims link [code] on [server] for this phone. No Authorization header: [server] came from a scan,
  * and this phone's token (if it has one) belongs to the server it is set up with.
  */
-fun linkClaim(http: OkHttpClient, server: String, code: String, secret: String, name: String): Claim {
-    val body = JSONObject().put("code", code).put("secret", secret).put("name", name).toString()
+fun linkClaim(http: OkHttpClient, server: String, code: String, secret: String, name: String, install: String = "", detail: String = ""): Claim {
+    val body = JSONObject().put("code", code).put("secret", secret).put("name", name).put("install", install).put("detail", detail).toString()
     val req = Request.Builder().url(server.trimEnd('/') + "/api/v1/link/claim").post(body.toRequestBody("application/json".toMediaType())).build()
     return http.newCall(req).execute().use { r ->
         val text = r.body?.string().orEmpty()
