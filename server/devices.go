@@ -125,8 +125,9 @@ func (s *Server) deviceRoutes() {
 			return err
 		}
 		in := struct {
-			Days   int  `json:"days"`
-			DryRun bool `json:"dry_run"`
+			Days    int      `json:"days"`
+			DryRun  bool     `json:"dry_run"`
+			Devices []string `json:"devices"` // only these, as a dry run listed them (#773)
 		}{Days: 7}
 		if err := decodeJSON(r, &in); err != nil {
 			return err
@@ -134,7 +135,7 @@ func (s *Server) deviceRoutes() {
 		if in.Days < 1 || in.Days > maxKeepDays {
 			return errf(400, "bad_request", "days must be 1 to %d", maxKeepDays)
 		}
-		ids, err := s.Tidy(r.Context(), tok, in.Days, in.DryRun)
+		ids, err := s.Tidy(r.Context(), tok, in.Days, in.DryRun, in.Devices)
 		if err != nil {
 			return err
 		}
@@ -371,12 +372,7 @@ func (s *Server) Unlink(ctx context.Context, tok *Token, id string) error {
 // before cutoff that nothing still uses: no stream open now, no web push,
 // nothing signed in under them (#765). Never a token typed in, never an agent.
 func (s *Server) idleSince(ctx context.Context, cutoff time.Time, browsersOnly bool) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT t.id FROM tokens t JOIN sessions s ON s.token_id = t.id
-	  LEFT JOIN people u ON u.id = t.user_id
-	  WHERE COALESCE(t.last_seen_at, t.created_at) < ? AND (s.phone = 0 OR NOT ?) AND COALESCE(u.kind, '') != 'agent'
-	    AND NOT EXISTS (SELECT 1 FROM push_subs p WHERE p.token_id = t.id)
-	    AND NOT EXISTS (SELECT 1 FROM sessions c WHERE c.parent_id = t.id)
-	  ORDER BY t.created_at, t.rowid`, ms(cutoff), browsersOnly)
+	rows, err := s.db.QueryContext(ctx, idleSQL+` ORDER BY t.created_at, t.rowid`, ms(cutoff), browsersOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -394,10 +390,44 @@ func (s *Server) idleSince(ctx context.Context, cutoff time.Time, browsersOnly b
 	return out, rows.Err()
 }
 
+// idleSQL picks the rows idleSince lists, given cutoff and browsersOnly.
+const idleSQL = `SELECT t.id FROM tokens t JOIN sessions s ON s.token_id = t.id
+	  LEFT JOIN people u ON u.id = t.user_id
+	  WHERE COALESCE(t.last_seen_at, t.created_at) < ? AND (s.phone = 0 OR NOT ?) AND COALESCE(u.kind, '') != 'agent'
+	    AND NOT EXISTS (SELECT 1 FROM push_subs p WHERE p.token_id = t.id)
+	    AND NOT EXISTS (SELECT 1 FROM sessions c WHERE c.parent_id = t.id)`
+
+// unlinkIfIdle unlinks id, logged by by, only while it is still idle since
+// cutoff: the delete itself checks again (#773), so a browser that came back,
+// added web push or gained a child since it was picked stays. false if it did.
+func (s *Server) unlinkIfIdle(ctx context.Context, id string, cutoff time.Time, browsersOnly bool, by string) (bool, error) {
+	if live, _, _ := s.hub.status(id); live {
+		return false, nil // a stream signs in first, so the delete's own check sees it too
+	}
+	var name string
+	top, err := s.topOf(ctx, id)
+	if err == nil {
+		err = s.db.QueryRowContext(ctx, `SELECT name FROM tokens WHERE id = ?`, id).Scan(&name)
+	}
+	if err == nil {
+		err = s.deleteTokenIf(ctx, id, idleSQL+` AND t.id = ?`, ms(cutoff), browsersOnly, id)
+	}
+	if errors.Is(err, sql.ErrNoRows) || isNotFound(err) {
+		return false, nil // gone already, or no longer idle
+	}
+	if err != nil {
+		return false, err
+	}
+	s.logDevice(ctx, top, "unlinked", name, id, by)
+	return true, nil
+}
+
 // Tidy unlinks tok's browsers and phones idle for n days (see idleSince),
-// never tok itself, and returns their ids; dryRun only lists them.
-func (s *Server) Tidy(ctx context.Context, tok *Token, n int, dryRun bool) ([]string, error) {
-	idle, err := s.idleSince(ctx, time.Now().Add(-days(n)), false)
+// never tok itself, and returns their ids; dryRun only lists them. A non-nil
+// only narrows it to those ids, the ones a dry run showed (#773).
+func (s *Server) Tidy(ctx context.Context, tok *Token, n int, dryRun bool, only []string) ([]string, error) {
+	cutoff := time.Now().Add(-days(n))
+	idle, err := s.idleSince(ctx, cutoff, false)
 	if err != nil {
 		return nil, err
 	}
@@ -407,12 +437,16 @@ func (s *Server) Tidy(ctx context.Context, tok *Token, n int, dryRun bool) ([]st
 	}
 	out := []string{}
 	for _, d := range ds {
-		if d.This || !d.CanUnlink || d.Kind == "agent" || !slices.Contains(idle, d.ID) {
+		if d.This || !d.CanUnlink || d.Kind == "agent" || !slices.Contains(idle, d.ID) || only != nil && !slices.Contains(only, d.ID) {
 			continue
 		}
 		if !dryRun {
-			if err := s.Unlink(ctx, tok, d.ID); err != nil && !isNotFound(err) {
+			ok, err := s.unlinkIfIdle(context.WithoutCancel(ctx), d.ID, cutoff, false, tok.Name)
+			if err != nil {
 				return out, err
+			}
+			if !ok {
+				continue
 			}
 		}
 		out = append(out, d.ID)
@@ -432,26 +466,15 @@ func (s *Server) unlinkIdle(ctx context.Context) error {
 	if n == 0 {
 		return nil
 	}
-	ids, err := s.idleSince(ctx, time.Now().Add(-days(n)), true)
+	cutoff := time.Now().Add(-days(n))
+	ids, err := s.idleSince(ctx, cutoff, true)
 	if err != nil {
 		return err
 	}
 	for _, id := range ids {
-		var name string
-		top, err := s.topOf(ctx, id)
-		if err == nil {
-			err = s.db.QueryRowContext(ctx, `SELECT name FROM tokens WHERE id = ?`, id).Scan(&name)
-		}
-		if err == nil {
-			err = s.DeleteToken(ctx, id)
-		}
-		if errors.Is(err, sql.ErrNoRows) || isNotFound(err) {
-			continue // gone already
-		}
-		if err != nil {
+		if _, err := s.unlinkIfIdle(ctx, id, cutoff, true, fmt.Sprintf("unused for %d days", n)); err != nil {
 			return err
 		}
-		s.logDevice(ctx, top, "unlinked", name, id, fmt.Sprintf("unused for %d days", n))
 	}
 	return nil
 }

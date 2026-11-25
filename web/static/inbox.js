@@ -1160,12 +1160,12 @@
       if (!name || !name.trim() || name === b.dataset.name) return;
       r = await fetch(`/api/v1/devices/${encodeURIComponent(b.dataset.rename)}`, { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null);
     } else {
-      const tidy = dry => fetch('/api/v1/devices/tidy', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days: 7, dry_run: dry }) }).catch(() => null);
+      const tidy = (dry, devices) => fetch('/api/v1/devices/tidy', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days: 7, dry_run: dry, devices }) }).catch(() => null);
       r = await tidy(true);
-      const n = r && r.ok ? (await r.json()).count : -1;
+      const seen = r && r.ok ? await r.json() : { count: -1 }, n = seen.count;
       if (n === 0) { status.textContent = 'Nothing unused for 7 days.'; return; }
       if (n > 0 && !confirm(`Unlink ${n} ${n === 1 ? 'device' : 'devices'} unused for 7 days? They are signed out at once.`)) return;
-      if (n > 0) r = await tidy(false);
+      if (n > 0) r = await tidy(false, seen.devices); // only those counted (#773)
     }
     if (r && r.ok) return location.reload();
     status.textContent = r ? (await r.json().catch(() => ({}))).error || `Not done (${r.status}).` : 'Not done: no connection.';
