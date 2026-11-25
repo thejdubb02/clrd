@@ -75,6 +75,9 @@ type Settings struct {
 	// UnlinkIdleBrowsersDays unlinks a signed-in browser unseen this many
 	// days (#765); 0 never does. Stored only once set; reads show the default.
 	UnlinkIdleBrowsersDays *int `json:"unlink_idle_browsers_days"`
+	// GitHubHooksPaused pauses every outgoing GitHub issue hook server-wide
+	// without deleting them (#680). Off (false) by default.
+	GitHubHooksPaused bool `json:"github_hooks_paused"`
 	// Sound is the asking device's own sound (#282), filled on reads and
 	// set with PUT /api/v1/devices/{id}.
 	Sound string `json:"sound,omitempty"`
@@ -224,20 +227,21 @@ func defaultSettings() Settings {
 // SettingsPatch is a PUT body: only the fields given change. A topic
 // mapped to null drops its override.
 type SettingsPatch struct {
-	RenderFormatting *bool            `json:"render_formatting"`
-	Autolink         *bool            `json:"autolink"`
-	Favicons         *bool            `json:"favicons"`
-	LinkPreviews     *bool            `json:"link_previews"`
-	TopicPreviews    map[string]*bool `json:"topic_previews"`
-	SnoozeIntervals  []string         `json:"snooze_intervals"`
-	SnoozeDefault    *string          `json:"snooze_default"`
-	SwipeStart       json.RawMessage  `json:"swipe_start"` // raw so null is refused, not read as "not given"
-	SwipeEnd         json.RawMessage  `json:"swipe_end"`
-	KeepClearedDays  *int             `json:"keep_cleared_days"`
-	TopicKeep        map[string]*int  `json:"topic_keep_cleared_days"`
-	ColorRules       json.RawMessage  `json:"color_rules"` // replaces the whole list; raw so null is refused
-	Sound            *string          `json:"sound"`       // this device's own sound
-	UnlinkIdle       *int             `json:"unlink_idle_browsers_days"`
+	RenderFormatting  *bool            `json:"render_formatting"`
+	Autolink          *bool            `json:"autolink"`
+	Favicons          *bool            `json:"favicons"`
+	LinkPreviews      *bool            `json:"link_previews"`
+	TopicPreviews     map[string]*bool `json:"topic_previews"`
+	SnoozeIntervals   []string         `json:"snooze_intervals"`
+	SnoozeDefault     *string          `json:"snooze_default"`
+	SwipeStart        json.RawMessage  `json:"swipe_start"` // raw so null is refused, not read as "not given"
+	SwipeEnd          json.RawMessage  `json:"swipe_end"`
+	KeepClearedDays   *int             `json:"keep_cleared_days"`
+	TopicKeep         map[string]*int  `json:"topic_keep_cleared_days"`
+	ColorRules        json.RawMessage  `json:"color_rules"` // replaces the whole list; raw so null is refused
+	Sound             *string          `json:"sound"`       // this device's own sound
+	UnlinkIdle        *int             `json:"unlink_idle_browsers_days"`
+	GitHubHooksPaused *bool            `json:"github_hooks_paused"`
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -313,7 +317,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 	}
 	global := p.RenderFormatting != nil || p.Autolink != nil || p.Favicons != nil || p.LinkPreviews != nil ||
 		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil ||
-		p.SwipeStart != nil || p.SwipeEnd != nil || p.ColorRules != nil || p.UnlinkIdle != nil
+		p.SwipeStart != nil || p.SwipeEnd != nil || p.ColorRules != nil || p.UnlinkIdle != nil || p.GitHubHooksPaused != nil
 	if global && tok.limited() {
 		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews and topic_keep_cleared_days")
 	}
@@ -353,6 +357,11 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 		if *p.UnlinkIdle < 0 || *p.UnlinkIdle > maxKeepDays {
 			return Settings{}, errf(400, "bad_request", "unlink_idle_browsers_days must be 0 (never) to %d", maxKeepDays)
+		}
+	}
+	if p.GitHubHooksPaused != nil { // pauses every GitHub hook server-wide, so a full admin's (#680)
+		if err := tok.needFullAdmin(); err != nil {
+			return Settings{}, err
 		}
 	}
 	for t, v := range p.TopicKeep { // null drops the override
@@ -434,6 +443,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		}
 		if p.UnlinkIdle != nil {
 			st.UnlinkIdleBrowsersDays = p.UnlinkIdle
+		}
+		if p.GitHubHooksPaused != nil {
+			st.GitHubHooksPaused = *p.GitHubHooksPaused
 		}
 		for t, v := range p.TopicKeep {
 			if v == nil {
