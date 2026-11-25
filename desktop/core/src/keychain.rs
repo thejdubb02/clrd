@@ -96,7 +96,7 @@ mod os {
                 return Ok(());
             }
             let err = |e: zbus::Error| format!("keychain: {e}");
-            let (mut done, mut gone) = block_on(async {
+            let (owner, mut done, mut gone) = block_on(async {
                 let owner: String = self
                     .0
                     .call_method(
@@ -125,10 +125,19 @@ mod os {
                     .arg(0, NAME)
                     .build()?;
                 let gone = MessageStream::for_match_rule(rule, &self.0, None).await?;
-                Ok::<_, zbus::Error>((done, gone))
+                Ok::<_, zbus::Error>((owner, done, gone))
             })
             .map_err(err)?;
-            self.call::<_, ()>(prompt.as_str(), PROMPT, "Prompt", &"")?;
+            // To the owner we listen to, not the name: a keyring started in
+            // its place must not get the call while its Completed is ignored.
+            block_on(self.0.call_method(
+                Some(owner.as_str()),
+                prompt.as_str(),
+                Some(PROMPT),
+                "Prompt",
+                &"",
+            ))
+            .map_err(err)?;
             let msg = block_on(std::future::poll_fn(|cx| {
                 match Pin::new(&mut done).poll_next(cx) {
                     Poll::Pending => Pin::new(&mut gone).poll_next(cx).map(|_| None),

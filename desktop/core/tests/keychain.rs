@@ -288,6 +288,13 @@ fn only_the_keyring_ends_an_unlock_and_its_going_away_does_too() {
     .unwrap();
     let wait_for = std::time::Duration::from_secs(1);
     assert!(rx.recv_timeout(wait_for).is_err(), "a stranger ended it");
+    let unlocks = log
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|l| l.starts_with("unlock"))
+        .count();
+    assert_eq!(unlocks, 1, "a stranger ended the first dialog");
 
     zbus::block_on(service.release_name("org.freedesktop.secrets")).unwrap();
     let got = rx
