@@ -22,15 +22,30 @@ func (s *Server) deviceSounds(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }) (map[string]string, error) {
 	m := map[string]string{}
+	return m, settingJSON(ctx, q, "sounds", &m)
+}
+
+// settingJSON reads settings row key into v; a missing row leaves v as it is.
+func settingJSON(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, key string, v any) error {
 	var raw string
-	err := q.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'sounds'`).Scan(&raw)
+	err := q.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return m, nil
+		return nil
 	}
 	if err == nil {
-		err = json.Unmarshal([]byte(raw), &m)
+		err = json.Unmarshal([]byte(raw), v)
 	}
-	return m, err
+	return err
+}
+
+// putSettingJSON writes v as settings row key inside tx.
+func putSettingJSON(ctx context.Context, tx *sql.Tx, key string, v any) error {
+	raw, _ := json.Marshal(v)
+	_, err := tx.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, string(raw))
+	return err
 }
 
 func soundOf(m map[string]string, id string) string {
@@ -70,9 +85,7 @@ func (s *Server) SetSound(ctx context.Context, tok *Token, id, sound string) (Li
 		} else {
 			m[id] = sound
 		}
-		raw, _ := json.Marshal(m)
-		if _, err = tx.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('sounds', ?)
-			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(raw)); err == nil {
+		if err = putSettingJSON(ctx, tx, "sounds", m); err == nil {
 			err = tx.Commit()
 		}
 	}

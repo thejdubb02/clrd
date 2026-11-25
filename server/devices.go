@@ -35,6 +35,9 @@ type LinkedDevice struct {
 	// CanApprove is true on the asker's own row when it may change who
 	// approves (#329, #433): allowed, and on every topic, as SetApprove checks.
 	CanApprove bool `json:"can_approve"`
+	// ClearsEverywhere: its clears reach every device (the default); off,
+	// they hide the notification on this device alone (#767, clears.go).
+	ClearsEverywhere bool `json:"clears_everywhere"`
 	// Live sync state (#300): connected has a stream open now, caught_up has
 	// one past its replay, synced_seq is the last event seq the server sent it.
 	Connected bool  `json:"connected"`
@@ -52,7 +55,7 @@ func (s *Server) devicesMsg(ctx context.Context, tok *Token) ([]byte, string, er
 	}
 	var key strings.Builder
 	for _, d := range ds {
-		fmt.Fprintf(&key, "%s %t %t %s,", d.ID, d.Connected, d.CaughtUp, d.Approve)
+		fmt.Fprintf(&key, "%s %t %t %s %t,", d.ID, d.Connected, d.CaughtUp, d.Approve, d.ClearsEverywhere)
 	}
 	msg, err := json.Marshal(struct {
 		Type    string         `json:"type"`
@@ -222,6 +225,10 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 	if err != nil {
 		return nil, err
 	}
+	local, err := localClears(ctx, q)
+	if err != nil {
+		return nil, err
+	}
 	// The agents my invites made (#454) are mine too, with what hangs under them.
 	rows, err := q.QueryContext(ctx, `WITH RECURSIVE `+topsSQL+`, k(id) AS
 	  (SELECT id FROM tops UNION SELECT t.id FROM tokens t JOIN people u ON u.id = t.user_id WHERE u.kind = 'agent' AND u.owner IN tops
@@ -246,7 +253,7 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 		}
 		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid || kind == "agent"
 		d.CanApprove = d.This && d.Approve == ApproveAllowed && len(tok.Topics) == 0 && len(tok.Grants) == 0
-		d.Sound = soundOf(sounds, d.ID)
+		d.Sound, d.ClearsEverywhere = soundOf(sounds, d.ID), !local[d.ID]
 		d.Connected, d.CaughtUp, d.SyncedSeq = s.hub.status(d.ID)
 		if seen.Valid {
 			v := fromMS(seen.Int64)

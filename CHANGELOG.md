@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Server and web: each device has "Clears apply everywhere", on by default. Turn it off and clearing a notification on that device hides it there only, while your other devices keep it; Undo brings it back. Set it in Settings, Devices, or with `PUT /api/v1/devices/{id}/clears` (#767).
 - SDKs: the JavaScript client and GitHub Action READMEs link to the source repository on GitHub (#586).
 - Android: a link in a message shows only its words, with the site's icon beside it (fetched through your server, as on the web) or a plain link icon. A tap opens it; a long press shows the full address with Open and Copy. The site icons follow the `favicons` setting (#107).
 - Desktop (Windows): an administrator can set "Update automatically" for every user of a computer with the registry number `AutoUpdate` under `HKLM\Software\Policies\clrd` (0 off, 1 on). The switch then shows that answer and is greyed out. Only in builds made with an update address (#725).
