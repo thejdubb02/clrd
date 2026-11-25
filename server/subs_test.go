@@ -25,7 +25,12 @@ type frame struct {
 // opened and gate (run on each message before it is handed over) as hooks.
 func followSubs(t *testing.T, s *Server, raw string, since int64, opened func() error, gate func(frame)) chan frame {
 	t.Helper()
-	c := *s.lookupToken(context.Background(), raw)
+	return followTok(t, s, *s.lookupToken(context.Background(), raw), since, opened, gate)
+}
+
+// followTok is followSubs for a token the test set up, such as one asking with subscribed=mine.
+func followTok(t *testing.T, s *Server, c Token, since int64, opened func() error, gate func(frame)) chan frame {
+	t.Helper()
 	c.view = &view{}
 	ctx, cancel := context.WithCancel(context.Background())
 	out, done := make(chan frame, 100), make(chan struct{})
@@ -595,12 +600,22 @@ func TestSubscribedMine(t *testing.T) {
 	if code, _ := call(t, ts, "GET", "/api/v1/events?since=1&subscribed=mine", phone, nil); code != 410 {
 		t.Fatalf("asked: stale since got %d, want 410 reset", code)
 	}
+	// The stream asked the same way follows the set too, live.
+	c := *s.lookupToken(context.Background(), phone)
+	c.follow = true
+	fs := followTok(t, s, c, s.seq.Load(), nil, nil)
+	for _, topic := range []string{"chat", "infra"} {
+		call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": topic, "message": "live"})
+	}
+	if seen := untilFrame(t, fs, func(f frame) bool { return f.Notification != nil }); seen[len(seen)-1].Notification.Topic != "infra" {
+		t.Fatalf("asked: stream sent an unsubscribed topic: %+v", seen[len(seen)-1].Notification)
+	}
 	// It may change the set it follows, as its browsers do.
 	if code, out := call(t, ts, "PUT", "/api/v1/subscriptions?subscribed=mine", phone, map[string]any{"topics": map[string]any{"chat": true}}); code != 200 || subOf(out, "chat") != "true" {
 		t.Fatalf("asked: put %d %v", code, out)
 	}
 	narrow := mkToken(t, s, "narrow", []string{ScopeRead}, []string{"infra"})
-	if _, out := call(t, ts, "GET", "/api/v1/notifications?subscribed=mine", narrow, nil); topicsOf(out) != "infra" {
+	if _, out := call(t, ts, "GET", "/api/v1/notifications?subscribed=mine", narrow, nil); strings.Contains(topicsOf(out), "chat") {
 		t.Fatalf("asking showed more than the token reads: %v", topicsOf(out))
 	}
 }
