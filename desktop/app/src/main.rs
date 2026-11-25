@@ -275,6 +275,8 @@ fn make_main(app: &AppHandle, base: &str, set_cookie: String) -> Result<(), Stri
     }
 
     let here = origin.clone();
+    #[cfg(target_os = "linux")]
+    let me = app.clone();
     let window = WebviewWindowBuilder::new(
         app,
         "main",
@@ -283,6 +285,11 @@ fn make_main(app: &AppHandle, base: &str, set_cookie: String) -> Result<(), Stri
     .title("clrd")
     .inner_size(1000.0, 720.0)
     .on_navigation(move |url| {
+        #[cfg(target_os = "linux")]
+        if url.scheme() == "clrd-theme" {
+            picked(&me, url.path());
+            return false;
+        }
         let stays = url.as_str() == "about:blank" || same_origin(url, &here);
         if !stays {
             open_outside(url.as_str());
@@ -292,9 +299,10 @@ fn make_main(app: &AppHandle, base: &str, set_cookie: String) -> Result<(), Stri
     .on_new_window(|url, _| {
         open_outside(url.as_str());
         NewWindowResponse::Deny
-    })
-    .build()
-    .map_err(|e| e.to_string())?;
+    });
+    #[cfg(target_os = "linux")]
+    let window = window.initialization_script(TELL_PICK);
+    let window = window.build().map_err(|e| e.to_string())?;
     let signed_in = window
         .set_cookie(cookie)
         .and_then(|()| window.navigate(start));
@@ -560,6 +568,80 @@ fn retry(app: AppHandle) {
     refresh_tray(&app);
 }
 
+/// Tells the app the web Appearance pick (#760) by a navigation the window
+/// turns away, so the page still gets no way to call the app. Checked once a
+/// second because a change in the same tab fires no event.
+#[cfg(target_os = "linux")]
+const TELL_PICK: &str = r#"if (/^https?:$/.test(location.protocol)) addEventListener('load', () => {
+  let last;
+  const tell = () => {
+    let pick = null;
+    try { pick = localStorage.getItem('clrd.theme'); } catch {}
+    pick = pick === 'dark' || pick === 'light' ? pick : 'system';
+    if (pick !== last) { last = pick; location.href = 'clrd-theme:' + pick; }
+  };
+  tell();
+  setInterval(tell, 1000);
+});"#;
+
+/// What the windows show: the desktop's scheme (1 dark, 2 light, 0 no
+/// preference), the web pick (none is System), and whether the app chose a
+/// theme itself, which is all it ever takes back.
+#[cfg(target_os = "linux")]
+static LOOK: Mutex<(u32, Option<bool>, bool)> = Mutex::new((0, None, false));
+
+/// The web pick, kept so a start from the tray knows it before the window
+/// opens.
+#[cfg(target_os = "linux")]
+fn picked(app: &AppHandle, word: &str) {
+    let pick = match word {
+        "dark" => Some(true),
+        "light" => Some(false),
+        "system" => None,
+        _ => return,
+    };
+    if std::mem::replace(&mut LOOK.lock().unwrap().1, pick) == pick {
+        return;
+    }
+    if let Ok(dir) = app.path().app_data_dir() {
+        let file = dir.join("theme");
+        let _ = match pick {
+            Some(dark) => std::fs::write(file, if dark { "dark" } else { "light" }),
+            None => std::fs::remove_file(file),
+        };
+    }
+    look(app);
+}
+
+/// The pick wins; with System the desktop's word does. With neither, GTK's
+/// own choice stands: setting none would turn GTK's dark off, so it is only
+/// done to take back a choice the app made.
+#[cfg(target_os = "linux")]
+fn look(app: &AppHandle) {
+    let dark = {
+        let mut look = LOOK.lock().unwrap();
+        let (os, pick, set) = &mut *look;
+        let dark = pick.or(match os {
+            1 => Some(true),
+            2 => Some(false),
+            _ => None,
+        });
+        if dark.is_none() && !std::mem::take(set) {
+            return;
+        }
+        *set = dark.is_some();
+        dark
+    };
+    app.set_theme(dark.map(|dark| {
+        if dark {
+            tauri::Theme::Dark
+        } else {
+            tauri::Theme::Light
+        }
+    }));
+    light_theme_name(app, dark == Some(false));
+}
+
 /// A GTK theme that is dark by its name ("Adwaita-dark") keeps the window and
 /// its page dark whatever the dark setting says: the web view reads the name
 /// too. So while the desktop asks for light, the theme of the same name
@@ -727,32 +809,25 @@ fn main() {
                     std::thread::sleep(std::time::Duration::from_secs(6 * 60 * 60));
                 });
             }
-            // The windows and their pages go dark when the desktop does. A
-            // desktop that is not dark, or says nothing, is left as it was:
-            // only a dark this app set itself is taken back.
+            // The windows and their title bars go light or dark with the web
+            // Appearance pick, or with the desktop when the pick is System.
             #[cfg(target_os = "linux")]
             {
-                let (app, set) = (app.clone(), AtomicBool::new(false));
-                clrd_core::theme::follow(move |scheme| match scheme {
-                    1 | 2 => {
-                        set.store(true, Ordering::Relaxed);
-                        let dark = scheme == 1;
-                        app.set_theme(Some(if dark {
-                            tauri::Theme::Dark
-                        } else {
-                            tauri::Theme::Light
-                        }));
-                        light_theme_name(&app, !dark);
-                    }
-                    // No preference: GTK's own choice stands. Setting none
-                    // here would turn GTK's dark off, so it is only done to
-                    // take back a choice made above.
-                    _ => {
-                        if set.swap(false, Ordering::Relaxed) {
-                            app.set_theme(None);
-                            light_theme_name(&app, false);
-                        }
-                    }
+                let kept = app
+                    .path()
+                    .app_data_dir()
+                    .ok()
+                    .and_then(|dir| std::fs::read_to_string(dir.join("theme")).ok());
+                LOOK.lock().unwrap().1 = match kept.as_deref().map(str::trim) {
+                    Some("dark") => Some(true),
+                    Some("light") => Some(false),
+                    _ => None,
+                };
+                look(app);
+                let app = app.clone();
+                clrd_core::theme::follow(move |scheme| {
+                    LOOK.lock().unwrap().0 = scheme;
+                    look(&app);
                 });
             }
             // Started by hand, or with no tray to reach it by: show a window.
