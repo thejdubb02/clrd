@@ -101,6 +101,7 @@ jobs:
           License: Apache-2.0
           SourceCode: https://github.com/thejdubb02/clrd
           IssueTracker: https://github.com/thejdubb02/clrd/issues
+          Changelog: https://github.com/thejdubb02/clrd/blob/main/CHANGELOG.md
           Categories:
             - Connectivity
           EOF

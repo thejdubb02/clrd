@@ -121,6 +121,11 @@ class T(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(clrd.main(["resolve", "infra", "k"]), 1)
 
+    def test_readme_links_repo(self):
+        from pathlib import Path
+        readme = (Path(__file__).with_name("README.md")).read_text(encoding="utf-8")
+        self.assertIn("(https://github.com/thejdubb02/clrd)", readme)
+
 
 if __name__ == "__main__":
     unittest.main()
