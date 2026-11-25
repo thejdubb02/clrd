@@ -446,8 +446,12 @@
     arrived = [];
     inn.forEach(c => c.classList.add('is-arriving'));
     inn.at(-1)?.classList.add('is-newest'); // a burst wiggles only the newest
-    // Done after 500ms, so reopening a stack later never plays it again.
-    setTimeout(() => inn.forEach(unarrive), 520);
+    // Done once its animations have played, so reopening a stack later never
+    // plays them again. Not a timer: a busy page can draw no frame in 500ms (#714).
+    // A move restarts them, so wait again on any that started meanwhile.
+    const anims = c => c.getAnimations().filter(a => a.animationName);
+    const settle = c => { const run = anims(c); Promise.allSettled(run.map(a => a.finished)).then(() => anims(c).some(a => !run.includes(a)) ? settle(c) : unarrive(c)); };
+    inn.forEach(settle);
     const s = selected();
     if (s) select(s, false); else selId = null;
     tidy();

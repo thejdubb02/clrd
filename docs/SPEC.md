@@ -1177,8 +1177,12 @@ and `initialize` reports `version` as `serverInfo.version`.
   `https://api.github.com/repos/OWNER/REPO`, secret a token sent as
   `Authorization: Bearer`, no body) opens an issue per new, unscheduled
   notification, except from an anonymous sender or for a question (a confirm
-  prompt or a reply button), at most 10 an hour per hook. The issue body puts
-  the sender's text in a fenced block it cannot close. Each subscribed state
+  prompt or a reply button), at most 10 an hour per hook (pending deliveries
+  count at any age). The issue body starts with a hidden mark
+  `<!-- clrd TOPIC/HOOK/ID -->` (query-escaped); before opening, clrd lists
+  the repo's newest issues and adopts one with that mark, so a lost reply
+  never opens a second. The body puts the sender's text in a fenced block it
+  cannot close. Each subscribed state
   change comments with the status line; dismissed and resolved first close
   the issue. A deleted issue (410) is done; any other error is retried.
   Delivery errors never carry the URL. Docs:

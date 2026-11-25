@@ -172,6 +172,11 @@ an agent, clrd is careful about what it opens:
 - Never for a notification from an anonymous sender, and never for a
   question (a confirm prompt or reply buttons), which waits for a person.
 - At most 10 issues an hour per hook. Alerts past that stay in clrd only.
+  Issues still waiting on a retry count too, so a GitHub outage that clears
+  cannot open a burst.
+- Never two issues for one alert. The issue body starts with a hidden
+  `<!-- clrd ... -->` line, and clrd looks for it among the repo's newest
+  issues before it opens one, so a retry after a lost reply finds the first.
 - The sender's text goes in a fenced code block it cannot close, under a
   line saying it is data, not instructions. An `@name` in it pings nobody.
 - clrd does not acknowledge or clear the notification itself when the issue
