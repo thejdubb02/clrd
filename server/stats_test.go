@@ -110,6 +110,37 @@ func TestClearedAt(t *testing.T) {
 	}
 }
 
+// reopenAfter runs each statement on s, closes it and opens the database
+// again, as an upgrade from an older schema would.
+func reopenAfter(t *testing.T, s *Server, open func() *Server, stmts ...string) *Server {
+	t.Helper()
+	for _, q := range stmts {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+	return open()
+}
+
+// An upgrade copies webhook failures already in the delivery log, once (#794).
+func TestHookFailuresUpgrade(t *testing.T) {
+	open := reopener(t)
+	s := open()
+	if _, err := s.db.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, status, next_at, updated_at)
+		VALUES ('t', 'h', 1, 'dismissed', '{}', 'failed', 0, 42), ('t', 'h', 2, 'dismissed', '{}', 'ok', 0, 43)`); err != nil {
+		t.Fatal(err)
+	}
+	s = reopenAfter(t, s, open, `DROP TRIGGER hook_failed`, `DROP TABLE hook_failures`)
+	s = reopenAfter(t, s, open)
+	defer s.Close()
+	var n int
+	var at int64
+	if err := s.db.QueryRow(`SELECT COUNT(*), MAX(at) FROM hook_failures WHERE topic = 't'`).Scan(&n, &at); err != nil || n != 1 || at != 42 {
+		t.Fatalf("hook_failures after upgrade: %v %d %d, want 1 at 42", err, n, at)
+	}
+}
+
 // An upgrade fills cleared_at for rows already cleared.
 func TestClearedAtUpgrade(t *testing.T) {
 	open := reopener(t)
@@ -123,11 +154,7 @@ func TestClearedAtUpgrade(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE notifications SET state = 'dismissed', updated_at = 42 WHERE id = ?`, n.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`ALTER TABLE notifications DROP COLUMN cleared_at`); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	s = open()
+	s = reopenAfter(t, s, open, `ALTER TABLE notifications DROP COLUMN cleared_at`)
 	defer s.Close()
 	var v int64
 	if err := s.db.QueryRow(`SELECT cleared_at FROM notifications WHERE id = ?`, n.ID).Scan(&v); err != nil || v != 42 {
@@ -199,11 +226,7 @@ func TestClearedAtUpgradeFromEvents(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE notifications SET updated_at = 600 WHERE id = ?`, n2.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`ALTER TABLE notifications DROP COLUMN cleared_at`); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	s = open()
+	s = reopenAfter(t, s, open, `ALTER TABLE notifications DROP COLUMN cleared_at`)
 	defer s.Close()
 	var c1, c2 int64
 	if err := s.db.QueryRow(`SELECT cleared_at FROM notifications WHERE id = ?`, n1.ID).Scan(&c1); err != nil || c1 != 100 {
@@ -256,10 +279,13 @@ func TestStatsDeliveryAndCSV(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Seed failed and ok webhook deliveries, plus Web Push failures inside and outside the range.
+	// Deliveries fail the way the sender does it: pending, then updated to failed.
 	for _, q := range []string{
-		fmt.Sprintf(`INSERT INTO hook_deliveries (topic, name, seq, event, body, status, next_at, updated_at) VALUES ('alerts', 'h1', 1, 'dismissed', '{}', 'failed', 0, %d)`, base+3000),
-		fmt.Sprintf(`INSERT INTO hook_deliveries (topic, name, seq, event, body, status, next_at, updated_at) VALUES ('alerts', 'h1', 2, 'dismissed', '{}', 'failed', 0, %d)`, base+4000),
+		`INSERT INTO hooks_out (topic, name, url, events) VALUES ('alerts', 'h1', 'https://hook.test/', '[]')`,
+		fmt.Sprintf(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at) VALUES ('alerts', 'h1', 1, 'dismissed', '{}', 0, %d)`, base+3000),
+		fmt.Sprintf(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at) VALUES ('alerts', 'h1', 2, 'dismissed', '{}', 0, %d)`, base+4000),
 		fmt.Sprintf(`INSERT INTO hook_deliveries (topic, name, seq, event, body, status, next_at, updated_at) VALUES ('alerts', 'h1', 3, 'dismissed', '{}', 'ok', 0, %d)`, base+5000),
+		`UPDATE hook_deliveries SET status = 'failed' WHERE seq IN (1, 2)`,
 		fmt.Sprintf(`INSERT INTO push_failures (topic, at) VALUES ('alerts', %d)`, base+3500),
 		fmt.Sprintf(`INSERT INTO push_failures (topic, at) VALUES ('ops', %d)`, base+3600),
 		fmt.Sprintf(`INSERT INTO push_failures (topic, at) VALUES ('ops', %d)`, base-1000),
@@ -282,6 +308,17 @@ func TestStatsDeliveryAndCSV(t *testing.T) {
 	if d0["topic"] != "alerts" || d0["webhooks"] != 2.0 || d0["web_push"] != 1.0 ||
 		d1["topic"] != "ops" || d1["webhooks"] != 0.0 || d1["web_push"] != 1.0 {
 		t.Fatalf("delivery order/counts: %v", deliv)
+	}
+	// Deleting the hook and its delivery log keeps its past failures (#794).
+	if c, _ := call(t, ts, "DELETE", "/api/v1/topics/alerts/hooks/h1", admin, nil); c != 200 && c != 204 {
+		t.Fatalf("delete hook: %d", c)
+	}
+	if _, st = call(t, ts, "GET", q, admin, nil); st["delivery"].([]any)[0].(map[string]any)["webhooks"] != 2.0 {
+		t.Fatalf("delivery after hook delete: %v", st["delivery"])
+	}
+	// A value starting with a quote stays apart from one the guard quoted (#794).
+	if csvCell("-disk") == csvCell("'-disk") || csvCell("'-disk") != "''-disk" {
+		t.Fatalf("csvCell collision: %q %q", csvCell("-disk"), csvCell("'-disk"))
 	}
 	// Bad format is refused.
 	if c, _ := call(t, ts, "GET", q+"&format=xml", admin, nil); c != 400 {

@@ -101,11 +101,6 @@
    1
   ],
   [
-   "server/stats_test.go",
-   "server/stats_test.go",
-   1
-  ],
-  [
    "web/ui/basecoat/components/input.css",
    "web/ui/basecoat/nova.css",
    1
