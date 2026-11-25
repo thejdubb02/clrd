@@ -70,6 +70,17 @@ class MdTest {
         assertTrue(Md.render("ftp://x.example/f mailto:a@b.example").links().isEmpty())
     }
 
+    @Test fun autolinkOffLeavesBareAddressesAsText() {
+        val a = Md.render("See [the run](https://ci.example/r/1). Or https://x.example/a_b_c *now*", autolink = false)
+        assertEquals("See the run. Or https://x.example/a_b_c now", a.text)
+        assertEquals(listOf("the run" to "https://ci.example/r/1"), a.links())
+        assertTrue(a.styled("b").isEmpty()) // nothing inside the address is styled
+        val s = "plain https://x.example/q"
+        val plain = Md.render(s, markdown = false, autolink = false)
+        assertEquals(s, plain.text)
+        assertTrue(plain.links().isEmpty())
+    }
+
     @Test fun textFormatIsShownAsSent() {
         val s = "**raw** *stars* _x_ see https://x.example/a?b=1\nand https://y.example."
         val a = Md.render(s, markdown = false)

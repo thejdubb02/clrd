@@ -80,6 +80,17 @@ class SwipesTest {
         assertEquals(Swipes(listOf("ack"), emptyList()), Swipes.parse(app.prefs.getString("swipes", null))) // offline after a restart
     }
 
+    @Test fun displaySettingsFollowTheServer() { // #107
+        assertTrue(app.formatting.value && app.autolink.value) // on out of the box
+        onIo { app.saveSettings(JSONObject("""{"render_formatting":false,"autolink":false}""")) }
+        assertFalse(app.formatting.value || app.autolink.value)
+        assertFalse(app.prefs.getBoolean("render_formatting", true) || app.prefs.getBoolean("autolink", true)) // offline after a restart
+        onIo { app.saveSettings(JSONObject("""{"swipe_start":[]}""")) } // a message without them keeps them
+        assertFalse(app.formatting.value || app.autolink.value)
+        onIo { app.saveServer(app.serverUrl, "other-token") }
+        assertTrue(app.formatting.value && app.autolink.value) // another server's choice is its own
+    }
+
     @Test fun aSaveSendsBothSides() {
         server.enqueue(MockResponse().setBody("{}"))
         val next = Swipes(listOf("snooze"), listOf("ack", "clear"))
