@@ -21,3 +21,5 @@ await c.list({ topic: "infra" });
 Errors throw `ClrdError` with `.status` and `.code`.
 
 Tests: `npm test`
+
+Source: [github.com/thejdubb02/clrd](https://github.com/thejdubb02/clrd)

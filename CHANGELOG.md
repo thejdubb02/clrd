@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- SDKs: the JavaScript client and GitHub Action READMEs link to the source repository on GitHub (#586).
 - Desktop (Windows): an administrator can set "Update automatically" for every user of a computer with the registry number `AutoUpdate` under `HKLM\Software\Policies\clrd` (0 off, 1 on). The switch then shows that answer and is greyed out. Only in builds made with an update address (#725).
 - Android: cards move as on the web. A card cleared, snoozed or resolved while you look (here or on another device) shows a green wash and why, holds, then slides away and the list closes the gap; Clear all goes top to bottom. A new message drops in and the newest gives a small wiggle. Nothing moves on first load, on catch-up, or with Remove animations on (#598).
 - Server: a subscriptions change can carry `if_request_id`, so it applies only while the set's last change is still that request; otherwise it is refused with 409 and nothing changes, so an Undo never reverses another device's change (#716).
