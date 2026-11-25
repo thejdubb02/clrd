@@ -155,6 +155,9 @@ class App : Application() {
     /** The buttons a swipe on a card shows (#161), as the server last sent them; the defaults until it does. */
     val swipes by lazy { MutableStateFlow(Swipes.parse(prefs.getString("swipes", null))) }
 
+    /** The favicons setting (#107): a site icon beside each link on a card. On until the server says otherwise. */
+    val favicons by lazy { MutableStateFlow(prefs.getBoolean("favicons", true)) }
+
     /** This token got 403 changing [swipes], so Settings shows them read-only. In memory: a token's grants can widen. */
     val swipesLocked = MutableStateFlow(false)
 
@@ -232,6 +235,11 @@ class App : Application() {
             prefs.edit().putString("swipes", w.json()).apply()
             swipes.value = w
         }
+        if (o.has("favicons")) {
+            val f = o.optBoolean("favicons", true)
+            prefs.edit().putBoolean("favicons", f).apply()
+            favicons.value = f
+        }
         // Every settings message is the whole view, so no subscriptions object means a server without them (#617).
         val sub = o.optJSONObject("subscriptions")
         prefs.edit().apply { if (sub == null) remove("subs") else putString("subs", sub.toString()) }.apply()
@@ -285,9 +293,10 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").remove("favicons").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
                 swipes.value = Swipes()
+                favicons.value = true
                 swipesLocked.value = false // another token may change them
                 markId.value = ""
                 subs.value = null // the new token's own set arrives with its settings message
@@ -428,6 +437,9 @@ class App : Application() {
     }
 }
 
+/** Set when this phone starts following a topic set (#764), cleared once a full reload lands. */
+private const val FOLLOW_RELOAD = "follow_reload"
+
 /** [Store] backed by Room, driving the tray. */
 class RoomStore(private val app: App) : Store {
     private val dao = app.db.dao()
@@ -476,13 +488,26 @@ class RoomStore(private val app: App) : Store {
         val sameDb = epoch.isEmpty() || app.epoch.isEmpty() || epoch == app.epoch
         app.tray.reconcile(dao.replaceAll(open, seq, sameDb).filter { it.id !in waiting }, app.muted)
         if (epoch.isNotEmpty()) app.epoch = epoch
+        app.prefs.edit().remove(FOLLOW_RELOAD).apply() // what it holds is the followed set now (#764)
         app.outside.value++
     }
 
     override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here
     override fun saveEpoch(epoch: String) = ifMine { app.epoch = epoch }
     /** A settings message, kept only while this is still the server in Settings: one already in hand at a switch would undo the reset (#568). */
-    fun settings(o: org.json.JSONObject) = ifMine { app.saveSettings(o) }
+    fun settings(o: org.json.JSONObject): Boolean {
+        var reload = false
+        ifMine {
+            val was = app.subs.value?.filtered == true
+            app.saveSettings(o)
+            val now = app.subs.value?.filtered == true
+            if (!was && now) app.prefs.edit().putBoolean(FOLLOW_RELOAD, true).apply()
+            reload = now && app.prefs.getBoolean(FOLLOW_RELOAD, false)
+        }
+        // Now following a set it did not before (#764): what this phone holds may include topics it no longer
+        // shows. The mark stays until a reload lands, so a failed one is tried again on the next connect.
+        return reload
+    }
     override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { app.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one

@@ -750,8 +750,9 @@ internal fun Card(n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), 
             }
             if (n.message.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                val text = remember(n.message, n.format, b) { Md.render(n.message, n.isMarkdown, link = b.clear, muted = b.slate) }
-                val body = @Composable { Text(text, color = b.body, fontSize = 15.sp, maxLines = if (open) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 8.dp)) }
+                val favicons by App.of(LocalContext.current).favicons.collectAsState()
+                val text = remember(n.message, n.format, b, favicons) { Md.render(n.message, n.isMarkdown, link = b.clear, muted = b.slate, icons = favicons) }
+                val body = @Composable { MessageText(text, maxLines = if (open) Int.MAX_VALUE else 6, modifier = Modifier.padding(end = 8.dp)) }
                 // Open text can be selected and copied; links open in the browser.
                 if (open) SelectionContainer { body() } else body()
             }
@@ -815,7 +816,7 @@ private fun Attached(f: Attachment) {
 
 /** The picture at [url], or null while it loads, when there is none, or when it fails. */
 @Composable
-private fun rememberPicture(url: String, px: Int): ImageBitmap? {
+internal fun rememberPicture(url: String, px: Int): ImageBitmap? {
     if (url.isEmpty()) return null
     val images = App.of(LocalContext.current).images
     var bmp by remember(url) { mutableStateOf(images.cached(url, px)) }

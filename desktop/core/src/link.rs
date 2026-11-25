@@ -160,6 +160,95 @@ pub enum Claim {
     Gone,
 }
 
+/// This computer's own id, made once and kept in `dir` (#770). A link with
+/// the id of an earlier one is this computer linked again, and the server
+/// replaces that device's row instead of adding a second (SPEC section 4).
+/// Empty when it cannot be kept: linking works without one.
+pub fn install_id(dir: &std::path::Path) -> String {
+    let file = dir.join("install-id");
+    let valid = |s: &str| {
+        (16..=64).contains(&s.len())
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    };
+    let read = || {
+        let id = std::fs::read_to_string(&file).unwrap_or_default();
+        Some(id.trim().to_string()).filter(|id| valid(id))
+    };
+    if let Some(id) = read() {
+        return id;
+    }
+    // A broken file goes, and the new id is written only if no other start
+    // wrote one meanwhile: two links at once still send the same id.
+    let _ = std::fs::remove_file(&file);
+    let mut raw = [0u8; 16];
+    if getrandom::fill(&mut raw).is_err() {
+        return String::new();
+    }
+    let id: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+    let made = std::fs::create_dir_all(dir).and_then(|()| {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&file)?;
+        f.write_all(id.as_bytes())
+    });
+    match made {
+        Ok(()) => id,
+        Err(_) => read().unwrap_or_default(),
+    }
+}
+
+/// The system, as the device list shows it under the name:
+/// "Fedora Linux 41 (Workstation Edition)", "Windows 11".
+#[cfg(not(windows))]
+pub fn detail() -> String {
+    let text = std::fs::read_to_string("/etc/os-release")
+        .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
+        .unwrap_or_default();
+    text.lines()
+        .find_map(|l| l.strip_prefix("PRETTY_NAME="))
+        .map(|v| v.trim().trim_matches(|c| c == '"' || c == '\'').trim())
+        .filter(|v| !v.is_empty())
+        .unwrap_or("Linux")
+        .to_string()
+}
+
+/// The system, as the device list shows it under the name: "Windows 11".
+/// Windows 11 still says 10 in its version number; its build is 22000 or
+/// later.
+#[cfg(windows)]
+pub fn detail() -> String {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+    let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let key = wide("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion");
+    let name = wide("CurrentBuildNumber");
+    let mut buf = [0u16; 16];
+    let mut size = std::mem::size_of_val(&buf) as u32;
+    // SAFETY: both names end in a zero, and `size` is the byte length of
+    // `buf`, which the call fills with a string that ends in a zero.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    let build: u32 = String::from_utf16_lossy(&buf[..end]).parse().unwrap_or(0);
+    match (status, build) {
+        (0, 22000..) => "Windows 11",
+        (0, 1..) => "Windows 10",
+        _ => "Windows",
+    }
+    .to_string()
+}
+
 /// A link being claimed.
 pub struct Link {
     url: String,
@@ -169,15 +258,22 @@ pub struct Link {
 }
 
 impl Link {
-    /// `name` is how this computer shows in the device list.
-    pub fn start(target: &Target, name: &str) -> Result<Link, Error> {
+    /// `name` is how this computer shows in the device list. `install` is
+    /// from [`install_id`]; the server ignores an empty one.
+    pub fn start(target: &Target, name: &str, install: &str) -> Result<Link, Error> {
         let mut raw = [0u8; 32];
         getrandom::fill(&mut raw).map_err(retry)?;
         let secret: String = raw.iter().map(|b| format!("{b:02x}")).collect();
         Ok(Link {
             url: format!("{}/api/v1/link/claim", target.base),
             check: check(&secret),
-            body: serde_json::json!({"code": target.code, "secret": secret, "name": name}),
+            body: serde_json::json!({
+                "code": target.code,
+                "secret": secret,
+                "name": name,
+                "install": install,
+                "detail": detail(),
+            }),
             http: agent(Duration::from_secs(30)),
         })
     }
@@ -214,6 +310,25 @@ impl Link {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_install_id_is_made_once_and_kept() {
+        let dir = std::env::temp_dir().join(format!("clrd-install-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let first = install_id(&dir.join("app"));
+        assert_eq!(first.len(), 32);
+        assert_eq!(install_id(&dir.join("app")), first);
+        // A file someone broke is made again, not sent.
+        std::fs::write(dir.join("app/install-id"), "no good").unwrap();
+        let again = install_id(&dir.join("app"));
+        assert_eq!(again.len(), 32);
+        assert_ne!(again, first);
+        // A folder that cannot be made: no id, and linking still works.
+        std::fs::write(dir.join("file"), "").unwrap();
+        assert_eq!(install_id(&dir.join("file/app")), "");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!detail().is_empty());
+    }
 
     #[test]
     fn sha256_matches_the_published_vectors() {

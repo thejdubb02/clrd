@@ -227,7 +227,7 @@ func TestSessionForRevokedParent(t *testing.T) {
 	}
 	r := httptest.NewRequest("POST", "/api/v1/session", nil)
 	w := httptest.NewRecorder()
-	if st, err := s.startSession(w, r, parent, ""); err == nil || st != nil || len(w.Result().Cookies()) != 0 {
+	if st, err := s.startSession(w, r, parent, "", ""); err == nil || st != nil || len(w.Result().Cookies()) != 0 {
 		t.Fatalf("session for a revoked parent: %v %v", st, err)
 	}
 	if ids := tokenIDs(t, ts, admin); len(ids) != 1 {

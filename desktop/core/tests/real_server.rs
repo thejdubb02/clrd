@@ -188,7 +188,7 @@ fn this_computer_links_through_the_keychain_and_unlinks() {
     let url = made["url"].as_str().unwrap();
     let code = link::parse(url).unwrap().code;
     // The server is on this computer, so plain http needs no yes.
-    assert_eq!(device.start(url, false), Ok(true));
+    assert_eq!(device.start(url, false, ""), Ok(true));
     let seen = as_browser(&base, &browser, "GET", &format!("/api/v1/link/{code}"));
     assert_eq!(seen["check"], device.view().check.as_str());
     assert_eq!(device.poll(), None, "not approved yet");
@@ -241,10 +241,10 @@ fn link_sign_in_unlink() {
     assert_eq!(target.base, base);
     let code = target.code.clone();
 
-    let mine = Link::start(&target, "test desktop").unwrap();
+    let mine = Link::start(&target, "test desktop", "").unwrap();
     assert!(matches!(mine.claim().unwrap(), Claim::Waiting));
     // Someone who copied the link too late gets nothing.
-    let thief = Link::start(&target, "thief").unwrap();
+    let thief = Link::start(&target, "thief", "").unwrap();
     assert!(matches!(thief.claim().unwrap(), Claim::Gone));
     // The browser shows the number this app shows.
     let seen = as_browser("GET", &format!("/api/v1/link/{code}"));
@@ -283,4 +283,47 @@ fn link_sign_in_unlink() {
     assert_eq!(window(&second), 401);
     assert!(device.list_open().is_err());
     assert!(device.session("test desktop", None).is_err());
+}
+
+/// Linking this computer again replaces its row instead of adding one, and
+/// the row says what system it is (#770).
+#[test]
+#[ignore = "needs CLRD_BIN, the path of a built clrd server"]
+fn linking_again_replaces_this_computers_row() {
+    let (_server, base, browser) = serve();
+    let as_browser = |method: &str, path: &str| as_browser(&base, &browser, method, path);
+    let link = |install: &str| {
+        let made = as_browser("POST", "/api/v1/link");
+        let target = link::parse(made["url"].as_str().unwrap()).unwrap();
+        let mine = Link::start(&target, "test desktop", install).unwrap();
+        assert!(matches!(mine.claim().unwrap(), Claim::Waiting));
+        as_browser("POST", &format!("/api/v1/link/{}/approve", target.code));
+        let Claim::Approved(token) = mine.claim().unwrap() else {
+            panic!("approved");
+        };
+        Server::new(&base, &token)
+    };
+    let rows = || {
+        let all = as_browser("GET", "/api/v1/devices?all=1");
+        all["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|d| d["name"] == "test desktop")
+            .map(|d| d["detail"].as_str().unwrap_or_default().to_string())
+            .collect::<Vec<_>>()
+    };
+
+    let first = link("test-install-0123456789");
+    first.list_open().unwrap();
+    // The server tidies and shortens the line, so only check it came.
+    let detail = rows();
+    assert!(detail.len() == 1 && !detail[0].is_empty(), "{detail:?}");
+    let second = link("test-install-0123456789");
+    second.list_open().unwrap();
+    assert_eq!(rows(), detail, "one row, not two");
+    assert!(first.list_open().is_err(), "the old link is revoked");
+    // With no id, as before: a second row.
+    link("");
+    assert_eq!(rows().len(), 2);
 }

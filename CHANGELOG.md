@@ -18,6 +18,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Desktop: linking the same computer again replaces its row in Linked devices instead of adding a second one, and the row shows its system (for example "Fedora Linux 41" or "Windows 11") (#770).
+- Server and web: a browser that signs in again replaces its own row in Linked devices instead of adding a new one, keeping any lower approve setting the old row had. Each browser and phone row also shows what it is (for example "Firefox 120 on Linux"), a Rename button names it, and "Unlink devices unused for 7 days" tidies old rows in one click. Linked browsers unused for 30 days now unlink on their own (setting `unlink_idle_browsers_days`, 0 turns it off); on upgrade, browsers already unused that long unlink within the hour. The phone app does not send its install id yet, so it still adds a row when it links again (#765).
+- SDKs: the JavaScript client and GitHub Action READMEs link to the source repository on GitHub (#586).
+- Android: a link in a message shows only its words, with the site's icon beside it (fetched through your server, as on the web) or a plain link icon. A tap opens it; a long press shows the full address with Open and Copy. The site icons follow the `favicons` setting (#107).
 - Desktop (Windows): an administrator can set "Update automatically" for every user of a computer with the registry number `AutoUpdate` under `HKLM\Software\Policies\clrd` (0 off, 1 on). The switch then shows that answer and is greyed out. Only in builds made with an update address (#725).
 - Android: cards move as on the web. A card cleared, snoozed or resolved while you look (here or on another device) shows a green wash and why, holds, then slides away and the list closes the gap; Clear all goes top to bottom. A new message drops in and the newest gives a small wiggle. Nothing moves on first load, on catch-up, or with Remove animations on (#598).
 - Server: a subscriptions change can carry `if_request_id`, so it applies only while the set's last change is still that request; otherwise it is refused with 409 and nothing changes, so an Undo never reverses another device's change (#716).
@@ -116,6 +120,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 - Android: a stack's Clear all shows only in the inbox, as on the web. The Snoozed tab no longer offers to clear a whole stack of snoozed notifications at once (#108).
 - Server: the release binary stores its docs, web files and API description gzipped, so it is about 500 KB smaller, and browsers get the web app's scripts, its stylesheet and the API description compressed (#690). Building from source: run `go run ./server/cmd/pack`, then build with `-tags packed`.
+- Server and Android: five of the six built-in sounds are stored at the lowest sample rate that still holds every tone they play, so they sound the same and take 51 KB less in the server and the app (#690).
 - Android: unsubscribing asks first for any topic the server marks as
   carrying approval requests, from the Topics page or a card's menu, not
   only for "agents" (#623). With an older server, "agents" still asks.
@@ -129,6 +134,12 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: a phone set up by pasting a token now follows the topics you unsubscribed from on the web. Before, it kept showing cards of those topics, so a clear on the web looked like it never reached the phone. After the update the phone drops them on its own; nothing to set up. Scripts using the same token still see every topic (#764).
+- Web: Undo after an Unsubscribe sends `if_request_id`, so if another device changed topic subscriptions before the click, the server refuses it and the page shows "Changed on another device." instead of reversing their choice (#716).
+- GitHub issue hooks: one alert never opens two issues. A retry after GitHub's answer was lost, or after a long alert whose answer was too big to read, now finds the issue already opened. The limit of 10 issues an hour also holds after an outage clears (#680).
+- Web: a new card on a busy or slow device still slides in and wiggles, instead of skipping it when the page could not draw in time (#714).
+- Desktop: the tray and app icon has a thin light ring, so it stays easy to see on a dark panel or taskbar as well as a light one (#628).
+- Desktop (Linux): after the window has been made light for a desktop that asks for light, a GTK theme picked on the desktop later now shows at once instead of at the next start, on desktops that hand GTK their theme while running (#756).
 - Desktop (Linux): a desktop that asks for light now gets a light window even when the GTK theme is a dark one by name, such as Adwaita-dark. The dark theme comes back when the desktop asks for dark or states no preference. A theme forced with the `GTK_THEME` variable still wins (#703).
 - Android: the test that checks hostile Markdown renders fast no longer fails on a busy build machine, so a release build is not held up by it (#663).
 - Android: a card that was snoozed and woke up, or was cleared and reopened, while the phone was offline now alerts when the phone catches up, as it did on the devices that were online. Your own Undo stays quiet (#645).

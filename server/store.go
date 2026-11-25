@@ -533,6 +533,16 @@ func openDB(path string) (*sql.DB, error) {
 			return nil, fmt.Errorf("add people column: %w", err)
 		}
 	}
+	// Devices (#765): install is the id a browser or app keeps for itself, so
+	// linking again replaces its own row; detail is a short "Chrome 131,
+	// Windows 10" from the user agent, to tell rows of one name apart.
+	for _, c := range []string{`install TEXT NOT NULL DEFAULT ''`, `detail TEXT NOT NULL DEFAULT ''`} {
+		if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN ` + c); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("add tokens column: %w", err)
+		}
+	}
 	// Rows the CLRD_CONFIG file made (#155): only these does a start remove.
 	for _, t := range []string{"tokens", "people"} {
 		if _, err := db.Exec(`ALTER TABLE ` + t + ` ADD COLUMN config INTEGER NOT NULL DEFAULT 0`); err != nil &&

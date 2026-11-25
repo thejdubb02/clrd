@@ -171,8 +171,9 @@ impl Device {
     /// Starts linking from a pasted link. `Ok(false)` means nothing was
     /// sent: the link is plain `http://`, so the token would cross the
     /// network unencrypted, and the user has to say that is fine
-    /// (`plain_ok`) first.
-    pub fn start(&self, text: &str, plain_ok: bool) -> Result<bool, String> {
+    /// (`plain_ok`) first. `install` is this computer's id from
+    /// [`link::install_id`].
+    pub fn start(&self, text: &str, plain_ok: bool, install: &str) -> Result<bool, String> {
         let done = |r: Result<bool, String>| {
             let mut i = self.inner.lock().unwrap();
             i.error = r.clone().err().unwrap_or_default();
@@ -197,7 +198,7 @@ impl Device {
         if let Err(e) = self.keys().and_then(Keychain::load) {
             return done(Err(e));
         }
-        let link = match Link::start(&target, &self.name) {
+        let link = match Link::start(&target, &self.name, install) {
             Ok(link) => link,
             Err(e) => return done(Err(e.to_string())),
         };

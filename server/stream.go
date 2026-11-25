@@ -182,10 +182,11 @@ func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics
 	}()
 	// Access as it is now: a grant change between sign-in and subscribe
 	// dropped no stream of ours, and any later one drops this (#428).
-	subs := tok.view
+	subs, follow := tok.view, tok.follow
 	if tok = s.tokenWhere(ctx, `id = ?`, tok.ID); tok == nil {
 		return errRevoked
 	}
+	tok.follow = follow // the request's subscribed=mine, not stored on the row (#764)
 	// resync reads the view and returns a seq it covers: the head before the
 	// read, or the view's own change if newer. Everything up to it is in what
 	// a client reads after a reset, so the stream goes on from there, never

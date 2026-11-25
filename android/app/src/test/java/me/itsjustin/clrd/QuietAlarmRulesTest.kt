@@ -55,7 +55,7 @@ class QuietAlarmRulesTest {
         rule.onNodeWithTag("rule-expect").performScrollTo().performTextReplacement(" 25h ")
         rule.onNodeWithText("Save quiet alarm").performScrollTo().performClick()
         val r = server.takeRequest(5, TimeUnit.SECONDS)!!
-        assertEquals("PUT /api/v1/senders/s1", "${r.method} ${r.path}")
+        assertEquals("PUT /api/v1/senders/s1", "${r.method} ${r.bare}")
         assertEquals("""{"expect":"25h"}""", r.body.readUtf8()) // not paused, not the alarm topic
         rule.waitUntil(5000) { changed == 1 }
     }

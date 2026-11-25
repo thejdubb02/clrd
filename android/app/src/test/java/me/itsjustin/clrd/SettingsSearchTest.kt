@@ -40,9 +40,9 @@ class SettingsSearchTest {
         app.status.value = SyncClient.Status.OFFLINE
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
-                request.path == "/api/v1/settings" && !reads -> { settingsAsked = true; MockResponse().setResponseCode(403).setBody("""{"error":"forbidden"}""") }
-                request.path == "/api/v1/senders" && !admin -> { sendersAsked = true; MockResponse().setResponseCode(403).setBody("""{"error":"forbidden"}""") }
-                request.path == "/api/v1/senders" -> MockResponse().setBody("""{"senders":[]}""")
+                request.bare == "/api/v1/settings" && !reads -> { settingsAsked = true; MockResponse().setResponseCode(403).setBody("""{"error":"forbidden"}""") }
+                request.bare == "/api/v1/senders" && !admin -> { sendersAsked = true; MockResponse().setResponseCode(403).setBody("""{"error":"forbidden"}""") }
+                request.bare == "/api/v1/senders" -> MockResponse().setBody("""{"senders":[]}""")
                 else -> MockResponse().setBody("{}")
             }
         }

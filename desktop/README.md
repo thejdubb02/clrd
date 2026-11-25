@@ -162,8 +162,12 @@ been seen on a Windows computer.
 
 ## Updates on Windows
 
-There is no update address yet, so a build from this tree never asks anywhere
-and shows no update settings. Like the installer, the update step has not been
+Official builds will take updates from this repo's GitHub Releases: the feed
+is `latest.json` on the newest release
+(`https://github.com/thejdubb02/clrd/releases/latest/download/latest.json`),
+and each installer is downloaded from its own release, tagged `v` and its
+version. A build from this tree without that address and a public key never
+asks anywhere and shows no update settings; no release and no key exist yet. Like the installer, the update step has not been
 run on a Windows computer yet; the checks below are proven by tests on Linux.
 
 A build is given two things when it is compiled, and both are needed:
@@ -191,6 +195,17 @@ refused.
   }
 }
 ```
+
+`package/feed.sh` signs an installer and writes that feed beside it. CI runs
+it on every desktop build with a key it makes and throws away, then checks
+the result with the app's own updater. Run by hand on `main` (Actions,
+desktop, Run workflow), it builds with the GitHub Releases feed address and
+the key in the repository variable `CLRD_UPDATE_PUBKEY`, points the feed at
+the installer on release `v` plus its version, signs with the secret
+`CLRD_UPDATE_KEY` (and `CLRD_UPDATE_KEY_PASSWORD`), and keeps the installer,
+its signature and `latest.json` as a workflow file for a few days. It
+publishes nothing. None of these are set yet, so a run by hand stops with an
+error.
 
 - The app asks at start and every six hours. A newer installer is kept and
   run only when its signature verifies against the key in the build and was

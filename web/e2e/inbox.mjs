@@ -1110,7 +1110,8 @@ try {
 
     await sp.evaluate(() => { window.blockSound = true; });
     await arrive();
-    await sp.getByText('Sound is blocked until you click or press a key on this page.').waitFor();
+    // The notice hides after 6s, which a throttled page can pass before the card shows (#714).
+    await sp.getByText('Sound is blocked until you click or press a key on this page.').waitFor({ state: 'attached' });
     await pick('ding');
     await sp.evaluate(() => { window.blockSound = true; });
     await sp.getByRole('button', { name: 'Play', exact: true }).click();
@@ -1589,12 +1590,27 @@ try {
     await dp.waitForTimeout(300); // the check has answered; give a wrong toast time to show
     assert.equal(await dp.locator('[data-toast]', { hasText: 'Unsubscribed from' }).count(), 0, "Undo offered for another device's Unsubscribe");
     await Promise.all([dp.waitForEvent('load'), put(other, { drafts2: true })]);
-    // One that did land still offers it.
+    // One that did land still offers it. Hold off the live reload on the new
+    // page so Undo can race another device turning the topic on and off (#716).
+    await dp.routeWebSocket(/\/api\/v1\/ws/, () => {});
     await dp.locator('article.card', { hasText: 'Leave me' }).locator('[data-unsub]').dispatchEvent('click');
     await dp.locator('[data-toast]', { hasText: 'Unsubscribed from drafts2' }).waitFor();
+    assert.ok((await put(other, { drafts2: true }, 'other-on')).ok(), 'other device resubscribes');
+    assert.ok((await put(other, { drafts2: false }, 'other-off')).ok(), 'other device unsubscribes');
+    await dp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
+    await dp.locator('[data-toast]', { hasText: 'Changed on another device' }).waitFor();
+    const after = await (await other.request.get(base + '/api/v1/subscriptions')).json();
+    assert.equal(after.request_id, 'other-off', 'Undo overwrote another device');
+    assert.equal(after.topics.find(x => x.topic === 'drafts2').subscribed, false, 'Undo turned drafts2 back on');
+    // When nothing changed in between, Undo still brings the topic back.
     assert.ok((await put(other, { drafts2: true })).ok(), 'subscribe again');
+    await dp.reload();
+    await dp.locator('article.card', { hasText: 'Leave me' }).locator('[data-unsub]').dispatchEvent('click');
+    await dp.locator('[data-toast]', { hasText: 'Unsubscribed from drafts2' }).waitFor();
+    await Promise.all([dp.waitForEvent('load'), dp.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click()]);
+    await dp.locator('article.card', { hasText: 'Leave me' }).waitFor();
     await ctx.close(); await other.close();
-    console.log('ok: a subscriptions change keeps a half-typed answer, and Undo shows only for an Unsubscribe that landed');
+    console.log('ok: a subscriptions change keeps a half-typed answer, and Undo shows only for an Unsubscribe that landed and refuses a stale one');
   }
 
   // Format check in Settings (#320, #618): one card per topic with a group per
@@ -2171,7 +2187,8 @@ try {
       // Start times in on-screen order: two whose delays both passed before a
       // frame start in the same frame, so only a later card starting earlier is wrong (#632).
       const order = top.map(t => [t, at[t]]);
-      assert.ok(order.every(([, t], i) => i === 0 || t >= order[i - 1][1]), `Clear all slid out of order: ${order}`);
+      // Events of one frame carry stamps up to a fraction of a ms apart in either order (#714).
+      assert.ok(order.every(([, t], i) => i === 0 || t >= order[i - 1][1] - 1), `Clear all slid out of order: ${order}`);
       // 40ms a card, so 200ms from first to last; a busy machine can only fire the first one late.
       assert.ok(order.at(-1)[1] - order[0][1] >= 80, `Clear all did not stagger: ${order}`);
       await mp.locator('article.card').first().waitFor({ state: 'detached' }); // Clear all done folding

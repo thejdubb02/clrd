@@ -9,6 +9,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -16,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * The Markdown subset from docs/SPEC.md section 2.1, drawn as styled text: bold, italic, underline (`<u>` or `++`),
@@ -52,16 +54,27 @@ object Md {
     private val NUMBER = Regex("""^(\s*)(\d{1,9}[.)])\s+(.*)""")
     private val QUOTE = Regex("""^>\s?(.*)""")
     private const val MAX_DEPTH = 4
+    const val ICON = "icon:"
 
-    /** [src] drawn as Markdown, or exactly as sent when [markdown] is false. */
-    fun render(src: String, markdown: Boolean = true, link: Color = Color.Unspecified, muted: Color = Color.Unspecified): AnnotatedString {
+    /** The site a link goes to, which names its icon's inline content; null when it has none. */
+    fun host(url: String) = url.toHttpUrlOrNull()?.host
+
+    /**
+     * [src] drawn as Markdown, or exactly as sent when [markdown] is false. With [icons], each link has an inline
+     * content slot before it, named "icon:" and its [host], for the site's icon (the favicons setting, #107).
+     */
+    fun render(src: String, markdown: Boolean = true, link: Color = Color.Unspecified, muted: Color = Color.Unspecified, icons: Boolean = false): AnnotatedString {
         val linkStyle = TextLinkStyles(SpanStyle(color = link, textDecoration = TextDecoration.Underline))
+        val linked: AnnotatedString.Builder.(String, String) -> Unit = { url, label ->
+            if (icons) host(url)?.let { appendInlineContent(ICON + it, "\u200B") }
+            withLink(LinkAnnotation.Url(url, linkStyle)) { append(label) }
+        }
         if (!markdown) return buildAnnotatedString {
             var at = 0
             for (m in BARE.findAll(src)) {
                 append(src, at, m.range.first)
                 val url = bareUrl(m.value)
-                withLink(LinkAnnotation.Url(url, linkStyle)) { append(url) }
+                linked(url, url)
                 at = m.range.first + url.length
             }
             append(src, at, src.length)
@@ -83,26 +96,26 @@ object Md {
                 val quote = QUOTE.matchEntire(line)
                 when {
                     fence -> withStyle(code) { append(line) }
-                    heading != null -> withStyle(BOLD) { inline(heading.groupValues[1], linkStyle, code, 0) }
+                    heading != null -> withStyle(BOLD) { inline(heading.groupValues[1], linked, code, 0) }
                     bullet != null -> {
                         append(bullet.groupValues[1] + "\u2022 ")
-                        inline(bullet.groupValues[2], linkStyle, code, 0)
+                        inline(bullet.groupValues[2], linked, code, 0)
                     }
                     number != null -> {
                         append(number.groupValues[1] + number.groupValues[2] + " ")
-                        inline(number.groupValues[3], linkStyle, code, 0)
+                        inline(number.groupValues[3], linked, code, 0)
                     }
                     quote != null -> withStyle(SpanStyle(color = muted, fontStyle = FontStyle.Italic)) {
                         append("| ")
-                        inline(quote.groupValues[1], linkStyle, code, 0)
+                        inline(quote.groupValues[1], linked, code, 0)
                     }
-                    else -> inline(line, linkStyle, code, 0)
+                    else -> inline(line, linked, code, 0)
                 }
             }
         }
     }
 
-    private fun AnnotatedString.Builder.inline(s: String, linkStyle: TextLinkStyles, code: SpanStyle, depth: Int) {
+    private fun AnnotatedString.Builder.inline(s: String, linked: AnnotatedString.Builder.(String, String) -> Unit, code: SpanStyle, depth: Int) {
         if (depth >= MAX_DEPTH) {
             append(s)
             return
@@ -112,13 +125,13 @@ object Md {
             append(s, at, m.range.first)
             at = m.range.last + 1
             val g = m.groups
-            fun nest(style: SpanStyle, inner: String) = withStyle(style) { inline(inner, linkStyle, code, depth + 1) }
+            fun nest(style: SpanStyle, inner: String) = withStyle(style) { inline(inner, linked, code, depth + 1) }
             when {
                 g[1] != null -> withStyle(code) { append(g[1]!!.value) }
-                g[2] != null -> withLink(LinkAnnotation.Url(g[3]!!.value, linkStyle)) { append(g[2]!!.value) }
+                g[2] != null -> linked(g[3]!!.value, g[2]!!.value)
                 g[4] != null -> {
                     val url = bareUrl(g[4]!!.value)
-                    withLink(LinkAnnotation.Url(url, linkStyle)) { append(url) }
+                    linked(url, url)
                     at = m.range.first + url.length
                 }
                 g[5] != null -> nest(BOLD, g[5]!!.value)
