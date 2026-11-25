@@ -806,6 +806,65 @@ func TestHooksOutDiscordNewURLWake(t *testing.T) {
 	}
 }
 
+// Adding ?wait=true to a Discord hook's URL keeps its message ids, so the next
+// wake edits the message; a new thread_id is another channel and posts (#816).
+func TestHooksOutDiscordWaitKeepsPosts(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	var mu sync.Mutex
+	var hits []string
+	dc, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits = append(hits, r.Method+" "+r.URL.Path)
+		n := len(hits)
+		mu.Unlock()
+		if r.Method == "POST" {
+			fmt.Fprintf(w, `{"id":"m%d"}`, n)
+		}
+	})
+	save := func(rest string) {
+		t.Helper()
+		if err := s.SaveHook(ctx, serverToken, "ops", "dc", OutHook{URL: dc.URL + "/api/webhooks/1/tok" + rest, Kind: "discord"}, false, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cycle := func(id string) { // snooze, then wake: the wake posts or edits
+		t.Helper()
+		call(t, ts, "POST", "/api/v1/notifications/"+id+"/snooze", admin, map[string]any{"for": "1h"})
+		s.deliverHooks(ctx)
+		s.db.Exec(`UPDATE notifications SET snooze_until = 1 WHERE id = ?`, id)
+		if err := s.wakeSnoozed(ctx); err != nil {
+			t.Fatal(err)
+		}
+		s.deliverHooks(ctx)
+	}
+	save("")
+	code, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Disk"})
+	if code != 200 {
+		t.Fatalf("publish: %d", code)
+	}
+	s.deliverHooks(ctx)
+	id := n["id"].(string)
+	save("?wait=true")
+	var url string
+	s.db.QueryRow(`SELECT url FROM hooks_out WHERE name = 'dc'`).Scan(&url)
+	if strings.Contains(url, "wait") {
+		t.Fatalf("saved url %q, want wait left out", url)
+	}
+	cycle(id)
+	for _, h := range hits[1:] {
+		if h != "PATCH /api/webhooks/1/tok/messages/m1" {
+			t.Fatalf("after adding wait: %v, want only PATCHes of m1", hits)
+		}
+	}
+	save("?thread_id=9")
+	cycle(id)
+	if last := hits[len(hits)-1]; last != "POST /api/webhooks/1/tok" {
+		t.Fatalf("after a new thread_id: %v, want a POST", hits)
+	}
+}
+
 func TestHooksOutGitHub(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()

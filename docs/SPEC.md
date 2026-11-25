@@ -1227,6 +1227,10 @@ and `initialize` reports `version` as `serverInfo.version`.
   "Cleared by pixel-9". A
   discord hook sends its deliveries one at a time in order; an edit of a
   message that was never posted, or was deleted (404), is done, not retried.
+  A discord hook's URL is saved without `wait`, and a save that changes only
+  `wait` keeps its message ids; any other URL or kind change clears them
+  (#816). A post whose reply is lost has no id, so a retry or a later wake
+  posts again (a webhook cannot list messages to check first).
   A hook with `"kind": "github"` (#168; url
   `https://api.github.com/repos/OWNER/REPO`, secret a token sent as
   `Authorization: Bearer`, no body) opens an issue per new, unscheduled

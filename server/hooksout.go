@@ -485,6 +485,20 @@ type hookReq struct {
 	body        any
 }
 
+// discordURL drops wait from a Discord webhook URL: clrd sets it on each post
+// itself, so a hook saved with or without it is the same channel and keeps its
+// message ids. thread_id stays: another thread is another channel (#816).
+func discordURL(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || !u.Query().Has("wait") {
+		return s
+	}
+	q := u.Query()
+	q.Del("wait")
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 func discordReqs(u url.URL, n *Notification, event, remote string) []hookReq {
 	method, q := "POST", u.Query()
 	if event == "posted" {
@@ -788,6 +802,7 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	}
 	if h.Kind == "discord" {
 		keepSecret, keepBody = false, false // changing a signed/templated hook to discord drops both (#673)
+		h.URL = discordURL(h.URL)
 	}
 	if h.Kind == "github" {
 		keepBody = false
@@ -817,9 +832,15 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 		AND EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND kind != ?)`, topic, name, topic, name, h.Kind); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?
-		AND NOT EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ? AND kind = ?)`, topic, name, topic, name, h.URL, h.Kind); err != nil {
-		return err
+	var oldURL, oldKind string
+	_ = tx.QueryRowContext(ctx, `SELECT url, kind FROM hooks_out WHERE topic = ? AND name = ?`, topic, name).Scan(&oldURL, &oldKind)
+	if oldKind == "discord" {
+		oldURL = discordURL(oldURL) // a hook saved before #816 may still carry wait
+	}
+	if oldURL != h.URL || oldKind != h.Kind {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?`, topic, name); err != nil {
+			return err
+		}
 	}
 	// Saving again turns a hook back on and starts a fresh failure streak.
 	// Keep an existing secret only when the kind stays the same, so switching
