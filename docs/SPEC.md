@@ -942,6 +942,7 @@ and via. Values clients send today:
 |---|---|
 | `app` | The Android app's inbox (a tap or swipe in the app) |
 | `tray_button` | A button on an Android tray notification (Ack, Snooze, Clear, a reply) |
+| `tray_swipe` | A lone swipe of an Android tray notification, only with "Swipe clears everywhere" on (section 8) |
 | `web` | The web inbox, one notification |
 | `web_bulk` | The web inbox's Clear all or a stack's Clear |
 | `app_bulk` | The Android app's Clear on a stack |
@@ -1391,7 +1392,10 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   Swiping a system notification away (one, a stack, or the shade's Clear all) only hides it on
   that phone and sends nothing: the system notification says there is something to see, and
   clearing happens in the app, the web or the API (#265). A new alert for a hidden item shows it
-  again. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR are deliberate taps and do sync.
+  again. The phone's own "Swipe clears everywhere" setting (off by default, #271) makes a lone
+  swipe a clear, sent with `via` `tray_swipe`: Android sends the same delete for a swipe, a stack or
+  bundle swipe and Clear all, so the app waits one second and clears only when no other row left the
+  shade within one second of it. A stack swipe and Clear all on several rows still only hide. Buttons ACK, SNOOZE (for `snooze_default`), CLEAR are deliberate taps and do sync.
 - Incoming `dismissed`/`resolved` event -> `NotificationManager.cancel(tag)`. That is the headline feature.
 - Inbox screen per the brand board: filter pills by topic, a swipe that reveals round buttons (by default Clear and Snooze to the left, Ack to the right; the settings `swipe_start` and `swipe_end` in section 2.1 choose them, and Settings sets them on the server, read-only for a token that gets 403; a card skips a button it cannot take, like Ack on an acknowledged card or Resolve, which the app has no button for yet) and changes nothing until one is tapped (#161; a "Full swipe acts" setting, off by default, lets a swipe all the way across run the first button, the one nearest the edge), tabs Inbox, Snoozed, Cleared, Settings.
 - Settings: server URL + token (QR scan of a pairing URL later), per-topic mute.

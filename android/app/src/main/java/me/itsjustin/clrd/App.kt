@@ -86,6 +86,29 @@ class App : Application() {
         set(v) = prefs.edit().putBoolean("stack", v).apply()
 
     /** Remove cleared items from this phone as soon as they are cleared (#151). Off by default; the server keeps its own copy either way. */
+    /** A lone swipe in the shade clears everywhere (#271). Off out of the box: a swipe only hides it here (#265). */
+    var shadeClears: Boolean
+        get() = prefs.getBoolean("shade_clears", false)
+        set(v) = prefs.edit().putBoolean("shade_clears", v).apply()
+
+    /** When rows left the shade, uptime ms, so a lone swipe can be told from a stack, a bundle or Clear all (#271). */
+    private val leftShade = ArrayList<Long>()
+
+    /** Rows left the shade now: a stack swipe, or a swipe or Clear all on one row. Counted toward a burst either way. */
+    fun leftShade(count: Int) = synchronized(leftShade) { repeat(count) { leftShade += android.os.SystemClock.uptimeMillis() } }
+
+    /**
+     * One row swiped out of the shade with "Swipe clears everywhere" on (#271): Android sends the same delete for a
+     * swipe, a bundle swipe and Clear all, so it waits [LONE_MS] and clears only if no other row left near it.
+     */
+    fun swiped(id: String, server: String?, r: android.content.BroadcastReceiver.PendingResult) {
+        val at = android.os.SystemClock.uptimeMillis()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val alone = synchronized(leftShade) { leftShade.removeAll { it < at - LONE_MS }; lone(leftShade, at) }
+            if (alone) act(id, "dismiss", "{}", server, VIA_TRAY_SWIPE) { r.finish() } else r.finish()
+        }, LONE_MS)
+    }
+
     /** A swipe all the way across runs the first button it shows (#161). Off out of the box: a swipe only shows the buttons. */
     var fastSwipe: Boolean
         get() = prefs.getBoolean("fast_swipe", false)
@@ -459,6 +482,8 @@ class App : Application() {
         // How an action was made, sent as "via" (docs/SPEC.md).
         const val VIA_APP = "app"
         const val VIA_TRAY_BUTTON = "tray_button"
+        const val VIA_TRAY_SWIPE = "tray_swipe"
+        const val LONE_MS = 1000L
         const val VIA_APP_BULK = "app_bulk"
         /** The most days of cleared history this phone keeps, whatever the server keeps. */
         const val KEEP_DAYS = 7
@@ -578,3 +603,6 @@ class RoomStore(private val app: App) : Store {
     /** A queued dismiss or snooze that has not reached the server yet wins over what the server last said. */
     private fun waiting() = dao.pending().filter { it.action == "dismiss" || it.action == "snooze" }.map { it.notifId }.toSet()
 }
+
+/** True when [at] is the only time in [times] within [App.LONE_MS] either side: a lone swipe, not a burst (#271). */
+internal fun lone(times: List<Long>, at: Long) = times.count { kotlin.math.abs(it - at) <= App.LONE_MS } == 1
