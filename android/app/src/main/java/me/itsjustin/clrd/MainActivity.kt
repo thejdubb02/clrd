@@ -1277,8 +1277,10 @@ private fun DeviceSettings(app: App, resumes: Int) {
     var lower by remember { mutableStateOf<Pair<org.json.JSONObject, String>?>(null) }
     // The server decides (docs/SPEC.md "Who may approve"): a refusal shows as the error line.
     var busy by remember { mutableStateOf(false) } // a change is on its way; the menu waits for the fresh list
+    val pending = remember { java.util.concurrent.atomic.AtomicInteger() } // changes not yet sent, so a reload queued before one keeps the controls off (#777)
     val change: (org.json.JSONObject, String, org.json.JSONObject) -> Unit = { d, what, body ->
         busy = true
+        pending.incrementAndGet()
         val api = app.api()
         app.io.execute {
             val out = runCatching { api.put("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}/$what", body.toString()) }
@@ -1288,6 +1290,7 @@ private fun DeviceSettings(app: App, resumes: Int) {
             }
             val e = out.exceptionOrNull()?.let { refusal(ctx, it) }
             if (what == "clears") { clearsError = e; error = null } else { error = e; clearsError = null }
+            pending.decrementAndGet()
             reload++
         }
     }
@@ -1301,7 +1304,8 @@ private fun DeviceSettings(app: App, resumes: Int) {
             val refused = got.exceptionOrNull() as? HttpError
             if (refused?.isAuth == true) devices = null // a signed-out phone shows no old list
             closed = refused?.code == 403
-            busy = false
+            // checked on the main thread, where a tap sets busy, so a tap between the check and the write is not lost
+            android.os.Handler(android.os.Looper.getMainLooper()).post { busy = pending.get() > 0 }
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices/log")), "events") }.getOrNull()?.let { log = it }
         }
     }

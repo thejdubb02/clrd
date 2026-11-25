@@ -145,6 +145,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Android: in Settings, the Clears everywhere switch and the device menus stay off until a change has reached the server, so a quick second tap no longer sends it twice (#777).
 - Android: when a cleared card leaves the list, the space under it now closes with it in one smooth move, as on the web, instead of snapping shut at the end (#726).
 - Desktop (Linux): with GTK set to prefer dark and no desktop preference, picking Light and then System in Appearance turns the window dark again at once, instead of only after a restart (#783).
 - Desktop (Linux): a clear that arrives just after the notification service restarted no longer closes another app's notification that took the old one's number (#601).
