@@ -269,7 +269,12 @@ fn the_web_appearance_pick_wins_over_the_desktop() {
     // when the test says so.
     const PICKS: &str = r#"<!doctype html><title>pick</title><script>
 const dark = matchMedia('(prefers-color-scheme: dark)');
-const say = () => fetch('/report', { method: 'POST', body: String(dark.matches) });
+// One at a time, so the reports arrive in the order they were seen.
+let sent = Promise.resolve();
+const say = () => {
+  const body = String(dark.matches);
+  sent = sent.then(() => fetch('/report', { method: 'POST', body }));
+};
 let once = false;
 dark.addEventListener('change', () => {
   say();

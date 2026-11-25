@@ -618,20 +618,19 @@ fn picked(app: &AppHandle, word: &str) {
 /// done to take back a choice the app made.
 #[cfg(target_os = "linux")]
 fn look(app: &AppHandle) {
-    let dark = {
-        let mut look = LOOK.lock().unwrap();
-        let (os, pick, set) = &mut *look;
-        let dark = pick.or(match os {
-            1 => Some(true),
-            2 => Some(false),
-            _ => None,
-        });
-        if dark.is_none() && !std::mem::take(set) {
-            return;
-        }
-        *set = dark.is_some();
-        dark
-    };
+    // Held until both are queued, so two callers on different threads queue
+    // them in the order they decided. Neither waits on the GTK thread.
+    let mut look = LOOK.lock().unwrap();
+    let (os, pick, set) = &mut *look;
+    let dark = pick.or(match os {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
+    });
+    if dark.is_none() && !std::mem::take(set) {
+        return;
+    }
+    *set = dark.is_some();
     app.set_theme(dark.map(|dark| {
         if dark {
             tauri::Theme::Dark
