@@ -717,6 +717,95 @@ func TestHooksOutDiscordFollowups(t *testing.T) {
 	}
 }
 
+// A Discord hook moved to a new URL posts a woken notification there: the
+// old channel's done post must not block it (#795).
+func TestHooksOutDiscordNewURLWake(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	var mu sync.Mutex
+	var hits []string
+	var during func() // runs inside a send, before the reply
+	dc, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits = append(hits, r.Method+" "+r.URL.Path)
+		n, f := len(hits), during
+		mu.Unlock()
+		if f != nil {
+			f()
+		}
+		if r.Method == "POST" {
+			fmt.Fprintf(w, `{"id":"m%d"}`, n)
+		}
+	})
+	save := func(path string) {
+		t.Helper()
+		if err := s.SaveHook(ctx, serverToken, "ops", "dc", OutHook{URL: dc.URL + path, Kind: "discord"}, false, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wake := func(id string) {
+		t.Helper()
+		if _, err := s.db.Exec(`UPDATE notifications SET snooze_until = 1 WHERE id = ?`, id); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.wakeSnoozed(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.deliverHooks(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snooze := func(id string) {
+		t.Helper()
+		call(t, ts, "POST", "/api/v1/notifications/"+id+"/snooze", admin, map[string]any{"for": "1h"})
+		s.deliverHooks(ctx)
+	}
+	save("/api/webhooks/1/tok")
+	soon := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	code, sched := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Backup", "snooze_until": soon})
+	if code != 200 {
+		t.Fatalf("publish scheduled: %d", code)
+	}
+	id := sched["id"].(string)
+	wake(id)
+	snooze(id)
+	if want := []string{"POST /api/webhooks/1/tok", "PATCH /api/webhooks/1/tok/messages/m1"}; fmt.Sprint(hits) != fmt.Sprint(want) {
+		t.Fatalf("first channel: %v, want %v", hits, want)
+	}
+	save("/api/webhooks/2/tok")
+	wake(id)
+	if len(hits) != 3 || hits[2] != "POST /api/webhooks/2/tok" {
+		t.Fatalf("after moving the hook, wake: %v, want a POST to the new URL", hits)
+	}
+	// Saving the same URL again keeps the message: the next wake edits it.
+	save("/api/webhooks/2/tok")
+	snooze(id)
+	wake(id)
+	if len(hits) != 5 || hits[3] != "PATCH /api/webhooks/2/tok/messages/m3" || hits[4] != "PATCH /api/webhooks/2/tok/messages/m3" {
+		t.Fatalf("same URL resaved, snooze and wake: %v, want two PATCHes of m3", hits)
+	}
+	// A save that moves the hook while a post is out: the old channel's
+	// message id must not be kept for the new URL.
+	mu.Lock()
+	during = func() {
+		if err := s.SaveHook(ctx, serverToken, "ops", "dc", OutHook{URL: dc.URL + "/api/webhooks/3/tok", Kind: "discord"}, false, false); err != nil {
+			t.Error(err)
+		}
+	}
+	mu.Unlock()
+	code, live := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "ops", "title": "Disk"})
+	if code != 200 {
+		t.Fatalf("publish: %d", code)
+	}
+	s.deliverHooks(ctx)
+	var kept int
+	s.db.QueryRow(`SELECT count(*) FROM hook_posts WHERE id = ?`, live["id"]).Scan(&kept)
+	if len(hits) != 6 || hits[5] != "POST /api/webhooks/2/tok" || kept != 0 {
+		t.Fatalf("moved during a post: %v, kept %d message ids, want the old id dropped", hits, kept)
+	}
+}
+
 func TestHooksOutGitHub(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()
