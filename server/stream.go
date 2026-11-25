@@ -87,6 +87,9 @@ func (h *hub) publish(e Event) {
 		if e.Notification.Live && !st.live {
 			continue
 		}
+		if e.Only != "" && st.tok != "" && e.Only != st.tok { // another device's own clear: never fill this buffer with it (#777)
+			continue
+		}
 		select {
 		case ch <- e:
 		default:

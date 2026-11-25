@@ -253,3 +253,17 @@ func TestSetClearsGate(t *testing.T) {
 		t.Fatalf("relink lost the replaced row's option: %v", everywhere(b2))
 	}
 }
+
+// TestHubOnlyFiltered: another device's own clears never fill a stream's
+// buffer, so a big bulk local clear cannot drop it (#777).
+func TestHubOnlyFiltered(t *testing.T) {
+	h := &hub{subs: map[chan Event]*stream{}}
+	a, _ := h.subscribe("a", false)
+	for range 300 {
+		h.publish(Event{Notification: &Notification{ID: "n"}, Only: "b"})
+	}
+	h.publish(Event{Notification: &Notification{ID: "n"}, Only: "a"})
+	if len(h.subs) != 1 || len(a) != 1 {
+		t.Fatalf("subs %d, buffered %d: want a kept with its own event only", len(h.subs), len(a))
+	}
+}

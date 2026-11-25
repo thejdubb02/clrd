@@ -481,3 +481,72 @@ func TestApproveHook(t *testing.T) {
 		t.Fatalf("too long to show must go back to the agent: %d %v", code, dec)
 	}
 }
+
+// TestWaitLocalClear: the caller's own local clear (#767) is its reply,
+// whether it came before the wait or during it, as get shows it; another
+// device's never is (#777).
+func TestWaitLocalClear(t *testing.T) {
+	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	agent, raw, err := s.CreateToken(ctx, "agent", "allowed", []string{"read", "publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone, _, err := s.CreateToken(ctx, "pixel-9", "allowed", []string{"read"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tok := range []*server.Token{agent, phone} {
+		if _, err := s.SetClears(ctx, tok, tok.ID, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := New(s)
+	call := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
+		code, out := rpc(t, h, "Bearer "+raw, string(b))
+		res, _ := out["result"].(map[string]any)
+		if code != 200 || res == nil || res["isError"] == true {
+			t.Fatalf("%s: http %d %v", name, code, out)
+		}
+		var v map[string]any
+		json.Unmarshal([]byte(res["content"].([]any)[0].(map[string]any)["text"].(string)), &v)
+		return v
+	}
+	id, _ := call("send", map[string]any{"topic": "agents", "message": "deploy?"})["id"].(string)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		s.Act(ctx, phone, id, "dismiss", "app", nil)
+		time.Sleep(50 * time.Millisecond)
+		s.Act(ctx, agent, id, "dismiss", "app", nil)
+	}()
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "dismissed" || got["by"] != "agent" {
+		t.Fatalf("wait during own local clear: %v", got)
+	}
+	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "dismissed" {
+		t.Fatalf("wait after own local clear: %v", got)
+	}
+	// Shown again at once: the clear still counts, from its event.
+	id3, _ := call("send", map[string]any{"topic": "agents", "message": "undo?"})["id"].(string)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		s.Act(ctx, agent, id3, "dismiss", "app", nil)
+		s.Act(ctx, agent, id3, "reopen", "app", nil)
+	}()
+	if got := call("wait_for_reply", map[string]any{"id": id3, "timeout_s": 5}); got["reply"] != "dismissed" {
+		t.Fatalf("wait over own clear and reopen: %v", got)
+	}
+	id2, _ := call("send", map[string]any{"topic": "agents", "message": "again?"})["id"].(string)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		s.Act(ctx, phone, id2, "dismiss", "app", nil)
+	}()
+	if got := call("wait_for_reply", map[string]any{"id": id2, "timeout_s": 0.3}); got["reply"] != "timeout" {
+		t.Fatalf("another device's local clear ended the wait: %v", got)
+	}
+}
