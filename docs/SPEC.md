@@ -1501,7 +1501,7 @@ JavaScript off the web page shows every section and no search box.
 | Display | `formatting` | Message text | markdown, formatting, links, preview, site icons | web |
 | Display | `topic-icons` | Topic icons | icon, image, avatar, picture | web |
 | Display | `format` | Message format check | format, markdown check, broken, warning | web, only with findings |
-| Display | `appearance` | Appearance | theme, dark mode, light mode, colors, system | web: System, Light or Dark, kept per browser |
+| Display | `appearance` | Appearance | theme, dark mode, light mode, colors, system | both: System, Light or Dark, kept per browser or phone |
 | Devices | `server` | Server | server, address, url, token, sign in, log in | Android |
 | Devices | `devices` | Linked devices | phone, browser, unlink, sign out, approve, may approve, activity | both |
 | Devices | `link-phone` | Link a phone | qr, scan, pair, code, add phone | web shows the code, Android scans it |

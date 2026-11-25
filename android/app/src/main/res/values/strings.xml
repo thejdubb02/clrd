@@ -271,6 +271,12 @@
     <string name="battery">Battery</string>
     <string name="section_notifications">Notifications</string>
     <string name="section_inbox">Inbox</string>
+    <string name="section_display">Display</string>
+    <string name="appearance">Appearance</string>
+    <string name="appearance_explain">Light or dark colors on this phone. System follows the phone\'s own setting.</string>
+    <string name="appearance_system">System</string>
+    <string name="appearance_light">Light</string>
+    <string name="appearance_dark">Dark</string>
     <string name="section_devices">Devices</string>
     <string name="section_integrations">Integrations</string>
     <string name="settings_search">Search settings</string>
