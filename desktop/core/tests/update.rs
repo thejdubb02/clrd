@@ -106,6 +106,7 @@ impl Server {
             running: "0.1.0".into(),
             target: "test-os".into(),
             dir,
+            policy: None,
         }
     }
 }
@@ -173,6 +174,33 @@ fn switched_off_the_timer_asks_nothing_and_the_button_still_works() {
     assert!(updater.check().unwrap().is_some());
     updater.set_auto(true).unwrap();
     assert!(updater.background().is_some());
+}
+
+/// What the administrator set is the switch (#725): the user's file does not
+/// count either way, and the user cannot change it.
+#[test]
+fn the_administrators_policy_wins_over_the_users_switch() {
+    let server = Server::start();
+    server.feed("0.2.0", GOOD_SIG);
+    server.serve("/package", 200, GOOD);
+    let mut updater = server.updater("policy");
+
+    updater.policy = Some(false);
+    assert!(!updater.auto());
+    assert!(updater.background().is_none());
+    assert!(server.paths().is_empty(), "off by policy asks nothing");
+    assert!(updater.set_auto(true).is_err());
+
+    updater.policy = None;
+    updater.set_auto(false).unwrap();
+    updater.policy = Some(true);
+    assert!(updater.auto());
+    assert!(updater.set_auto(false).is_err());
+    assert!(updater.background().is_some());
+
+    // The policy lifted: the user's own choice is as they left it.
+    updater.policy = None;
+    assert!(!updater.auto());
 }
 
 /// An installer that could not even start (the kept file is no program)

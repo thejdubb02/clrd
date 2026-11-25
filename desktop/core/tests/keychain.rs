@@ -61,3 +61,77 @@ fn with_no_keychain_nothing_is_stored_and_it_says_so() {
     assert!(keys.load().is_err());
     assert!(keys.clear().is_err());
 }
+
+/// A keyring that only opens and unlocks.
+struct Service;
+
+#[zbus::interface(name = "org.freedesktop.Secret.Service")]
+impl Service {
+    fn open_session(
+        &self,
+        _algorithm: String,
+        _input: zbus::OwnedVariant,
+    ) -> (zbus::Variant<'static>, zbus::OwnedObjectPath) {
+        ("".into(), "/session".try_into().unwrap())
+    }
+
+    fn unlock(
+        &self,
+        objects: Vec<zbus::OwnedObjectPath>,
+    ) -> (Vec<zbus::OwnedObjectPath>, zbus::OwnedObjectPath) {
+        (objects, "/".try_into().unwrap())
+    }
+}
+
+/// Its searches name an entry that is not there: for the first `0` searches,
+/// then none.
+struct Ghost(std::sync::atomic::AtomicU32);
+
+#[zbus::interface(name = "org.freedesktop.Secret.Collection")]
+impl Ghost {
+    fn search_items(
+        &self,
+        _attributes: std::collections::HashMap<String, String>,
+    ) -> Vec<zbus::OwnedObjectPath> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let left = self.0.load(Relaxed);
+        if left == 0 {
+            return vec![];
+        }
+        self.0.store(left - 1, Relaxed);
+        vec!["/org/freedesktop/secrets/collection/login/2"
+            .try_into()
+            .unwrap()]
+    }
+}
+
+fn ghost(bus: &Bus, searches: u32) -> zbus::Connection {
+    zbus::block_on(
+        zbus::connection::Builder::address(bus.1.as_str())
+            .name("org.freedesktop.secrets")
+            .serve_at("/org/freedesktop/secrets", Service)
+            .serve_at(
+                "/org/freedesktop/secrets/aliases/default",
+                Ghost(searches.into()),
+            )
+            .build(),
+    )
+    .unwrap()
+}
+
+/// Another process unlinks between this one's search and its read (#733):
+/// that reads as not linked, not as a broken keychain.
+#[test]
+fn an_entry_removed_under_a_read_is_nothing() {
+    let bus = Bus::start();
+    let _service = ghost(&bus, 1);
+    assert_eq!(Keychain::new(bus.connect()).load(), Ok(None));
+}
+
+/// An entry that is still listed and cannot be read stays an error.
+#[test]
+fn an_entry_that_stays_and_cannot_be_read_is_an_error() {
+    let bus = Bus::start();
+    let _service = ghost(&bus, 2);
+    assert!(Keychain::new(bus.connect()).load().is_err());
+}

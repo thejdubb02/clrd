@@ -85,8 +85,8 @@ $('sure-yes').addEventListener('click', () => {
 async function updates(note) {
   const has = await invoke('updates').catch(() => null);
   $('updates').hidden = !has;
-  if (has) [$('version').textContent, $('auto-update').checked] = has;
-  $('update-note').textContent = note || '';
+  if (has) [$('version').textContent, $('auto-update').checked, $('auto-update').disabled] = has;
+  $('update-note').textContent = note || (has && has[2] ? "Set by this computer's administrator." : '');
 }
 $('auto-update').addEventListener('change', async (e) => {
   updates(await invoke('set_auto_update', { on: e.target.checked }).then(() => '', String));

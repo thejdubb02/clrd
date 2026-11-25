@@ -95,4 +95,12 @@ class StackTest {
         assertNull(shadowOf(nm).getNotification("a", 0))
         assertNull(summary("disk"))
     }
+
+    @Test fun clearAllOnAListStackClearsEveryRowEverywhere() { // in the app list, unlike a shade swipe
+        bg { dao.applyAll(listOf(row("a", "disk"), row("b", "disk"), row("c", "cpu")), 1) }
+        app.act(listOf("a", "b"), "dismiss")
+        app.acts.submit {}.get(10, TimeUnit.SECONDS)
+        assertEquals(listOf("a" to "dismiss", "b" to "dismiss"), bg { dao.pending() }.map { it.notifId to it.action })
+        assertEquals(listOf(Notif.DISMISSED, Notif.DISMISSED, Notif.ACTIVE), bg { listOf("a", "b", "c").map { dao.get(it)!!.state } })
+    }
 }

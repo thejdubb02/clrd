@@ -434,7 +434,7 @@ class RoomStore(private val app: App) : Store {
 
     override fun lastSeq() = dao.lastSeq() ?: 0
 
-    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean) = ifMine {
+    override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean, shown: Map<String, Long>) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
         // A row fetched outside the stream (seq 0, such as a queued action's answer) is not filtered by the server:
         // one from a topic unsubscribed meanwhile must not come back after the reset dropped it (#617).
@@ -457,7 +457,8 @@ class RoomStore(private val app: App) : Store {
                 when {
                     step !is TrayStep.Show -> step
                     quiet || n.id in acting -> step.copy(silent = true)
-                    else -> step.copy(again = again && !step.silent)
+                    // #589: a show after a hide in the replay rings like a new one, unless it is this phone's own change.
+                    else -> step.copy(again = !step.silent && (again || (shown[n.id] ?: 0) > (dao.answerOf(n.id) ?: 0)))
                 },
             )
         }

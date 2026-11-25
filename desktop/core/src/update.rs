@@ -31,6 +31,38 @@ const TRIED: &str = "update-tried";
 /// or an administrator does it.
 const NO_AUTO: &str = "no-auto-update";
 
+/// What this computer's administrator set for every user (#725): the number
+/// (DWORD) `AutoUpdate` under `HKLM\Software\Policies\clrd`. 0 is off, any
+/// other number is on, and with no such number the switch is the user's.
+#[cfg(windows)]
+pub fn policy() -> Option<bool> {
+    use windows_sys::Win32::System::Registry::{
+        RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD,
+    };
+    let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let (key, name) = (wide("Software\\Policies\\clrd"), wide("AutoUpdate"));
+    let (mut value, mut size) = (0u32, 4u32);
+    // SAFETY: both names end in a zero, and `value` has the four bytes that
+    // `size` says and that the asked-for type fills.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&raw mut value).cast(),
+            &mut size,
+        )
+    };
+    (status == 0).then_some(value != 0)
+}
+
+#[cfg(not(windows))]
+pub fn policy() -> Option<bool> {
+    None
+}
+
 pub struct Updater {
     /// Where the feed is. Empty: this build has no updates.
     pub url: String,
@@ -42,6 +74,8 @@ pub struct Updater {
     pub target: String,
     /// The app's own folder: the verified installer and [`TRIED`] live here.
     pub dir: PathBuf,
+    /// What [`policy`] said. Set, it is the switch, whatever the user chose.
+    pub policy: Option<bool>,
 }
 
 /// A newer version, downloaded and verified.
@@ -74,12 +108,21 @@ impl Updater {
         self.fetch("")
     }
 
-    /// The "Update automatically" switch. On unless [`NO_AUTO`] is there.
+    /// The "Update automatically" switch: what the administrator set, or
+    /// else on unless [`NO_AUTO`] is there.
     pub fn auto(&self) -> bool {
-        !self.dir.join(NO_AUTO).exists()
+        self.policy
+            .unwrap_or_else(|| !self.dir.join(NO_AUTO).exists())
     }
 
+    /// Refused while the administrator set it: the user's choice would not
+    /// count, and must not come back by itself when the policy is lifted.
     pub fn set_auto(&self, on: bool) -> std::io::Result<()> {
+        if self.policy.is_some() {
+            return Err(std::io::Error::other(
+                "this computer's administrator set it",
+            ));
+        }
         let file = self.dir.join(NO_AUTO);
         match if on {
             std::fs::remove_file(file)

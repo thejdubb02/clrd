@@ -18,16 +18,15 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, cezar1]
+    runs-on: ubicloud-standard-2
     defaults:
       run:
         working-directory: android
-    env:
-      ANDROID_HOME: /opt/android-sdk
-      # Gradle 8 cannot run on the newer JDK that is now the runner default; the app builds with 17.
-      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
     steps:
       - uses: actions/checkout@v4
+      # Gradle 8 cannot run on the newer JDK that is the runner default; the app builds with 17.
+      # The runner image ships the Android SDK and sets ANDROID_HOME itself.
+      - run: echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
       - run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug assembleRelease
       - name: size budget
         run: ../.github/size-check.sh apk app/build/outputs/apk/release/app-release-unsigned.apk

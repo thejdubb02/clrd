@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Desktop (Windows): an administrator can set "Update automatically" for every user of a computer with the registry number `AutoUpdate` under `HKLM\Software\Policies\clrd` (0 off, 1 on). The switch then shows that answer and is greyed out. Only in builds made with an update address (#725).
 - Android: cards move as on the web. A card cleared, snoozed or resolved while you look (here or on another device) shows a green wash and why, holds, then slides away and the list closes the gap; Clear all goes top to bottom. A new message drops in and the newest gives a small wiggle. Nothing moves on first load, on catch-up, or with Remove animations on (#598).
 - Server: a subscriptions change can carry `if_request_id`, so it applies only while the set's last change is still that request; otherwise it is refused with 409 and nothing changes, so an Undo never reverses another device's change (#716).
 - Server: a subscriptions change can carry a `request_id`, and the subscriptions list says which request made the last change, so the web can offer Undo only for its own Unsubscribe (#702).
@@ -112,6 +113,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Changed
 
+- Android: a stack's Clear all shows only in the inbox, as on the web. The Snoozed tab no longer offers to clear a whole stack of snoozed notifications at once (#108).
 - Server: the release binary stores its docs, web files and API description gzipped, so it is about 500 KB smaller, and browsers get the web app's scripts, its stylesheet and the API description compressed (#690). Building from source: run `go run ./server/cmd/pack`, then build with `-tags packed`.
 - Android: unsubscribing asks first for any topic the server marks as
   carrying approval requests, from the Topics page or a card's menu, not
@@ -127,6 +129,9 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Fixed
 
 - Web: a new card on a busy or slow device still slides in and wiggles, instead of skipping it when the page could not draw in time (#714).
+- Android: the test that checks hostile Markdown renders fast no longer fails on a busy build machine, so a release build is not held up by it (#663).
+- Android: a card that was snoozed and woke up, or was cleared and reopened, while the phone was offline now alerts when the phone catches up, as it did on the devices that were online. Your own Undo stays quiet (#645).
+- Android: Clear on a card no longer wraps onto three lines on a common phone. Share and Copy now sit in the card's More menu, and on a narrow screen or with large text Ack and then Snooze move there too, so Clear always shows whole (#734).
 - Desktop (Linux, build from source): flipping "Closing clears everywhere" no longer changes what happens to a notification you closed just before, while the app was still busy with an earlier clear. Each close follows the setting as it was when you closed it (#685).
 - Desktop (build from source): a notification that was snoozed and woke up, or was dismissed and reopened, while the computer was offline now alerts when the app catches up, as it did on the devices that were online (#646).
 - Android: Settings shows Snooze times and Linked devices only once the

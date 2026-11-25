@@ -35,13 +35,12 @@ concurrency:
 
 jobs:
   browser:
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-2
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: false
       - name: app.css matches its source
         run: web/ui/check.sh
       - name: upload app.css builds that differed

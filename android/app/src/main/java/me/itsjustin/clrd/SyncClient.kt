@@ -23,8 +23,10 @@ interface Store {
      * [quiet] posts to the tray without a sound (part of a replay that is not finished).
      * [again] is a live `repeat` event: an active row alerts again even while it is showing.
      * [answer] is the server's row after it took this phone's own queued action (a state change, never a mark).
+     * [shown] (#589): cards a replay hid and then showed again, with the seq of the show. A fresh alert, even
+     * while showing, unless that show is this phone's own change.
      */
-    fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false, again: Boolean = false, answer: Boolean = false)
+    fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean = false, again: Boolean = false, answer: Boolean = false, shown: Map<String, Long> = emptyMap())
 
     /**
      * Said just before [apply] for a live event, never for a replay (#598): the inbox may move these cards.
@@ -94,6 +96,9 @@ class SyncClient(
     private val buffer = LinkedHashMap<String, Notif>()
     private val marks = LinkedHashMap<String, Notif>() // replayed marks on cards not in [buffer]: saved quietly with it, after `ready` checks the epoch
     private var bufferSeq = 0L
+    // #589: cards a buffered event hid, and the seq of the event that showed each one again (a fresh alert on `ready`).
+    private val hid = HashSet<String>()
+    private val shown = HashMap<String, Long>()
     private var replayQuiet = false // part of this replay was already saved quietly, so the rest is too
 
     /** Runs on the sync thread unless stopped. Once stop() has run, calls are dropped, never thrown. */
@@ -153,6 +158,8 @@ class SyncClient(
         replaying = true
         buffer.clear()
         marks.clear()
+        hid.clear()
+        shown.clear()
         replayQuiet = false
         bufferSeq = 0 // or a silent new socket would save the dropped replay's cursor with none of its rows
         ws = http.newWebSocket(api.wsRequest(store.lastSeq()), object : WebSocketListener() {
@@ -188,6 +195,11 @@ class SyncClient(
                 val n = Notif.fromJson(o.getJSONObject("notification"))
                 val seq = o.optLong("seq", n.seq)
                 if (replaying) {
+                    when {
+                        n.state == Notif.SNOOZED || n.state == Notif.DISMISSED || n.state == Notif.RESOLVED -> { hid += n.id; shown -= n.id }
+                        // Only the event that brings it back is the show: a later edit or repeat carries it forward.
+                        n.state == Notif.ACTIVE && n.id in hid && o.optString("type") != "repeat" -> { hid -= n.id; shown[n.id] = seq }
+                    }
                     buffer.remove(n.id) // re-insert so order follows the latest event
                     buffer[n.id] = n
                     bufferSeq = maxOf(bufferSeq, seq)
@@ -243,9 +255,11 @@ class SyncClient(
             marks.clear()
         }
         if (buffer.isEmpty() && bufferSeq <= store.lastSeq()) return
-        store.apply(buffer.values.toList(), bufferSeq, quiet)
+        store.apply(buffer.values.toList(), bufferSeq, quiet, shown = if (quiet) emptyMap() else shown.toMap())
         if (quiet && buffer.isNotEmpty()) replayQuiet = true
         buffer.clear()
+        hid.clear()
+        shown.clear()
     }
 
     /**
