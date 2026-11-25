@@ -594,13 +594,13 @@ func TestHooksOutDiscordFollowups(t *testing.T) {
 	if len(hits) != 0 {
 		t.Fatalf("scheduled notification posted before wake: %+v", hits)
 	}
-	// Update while still scheduled: skipped cleanly, wake posts the latest text.
+	// Update while still scheduled: queues nothing (never resets failing_since),
+	// and wake posts the latest text.
 	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{
 		"topic": "ops", "title": "Backup", "message": "ready", "external_id": "bk-1",
 	})
-	s.deliverHooks(ctx)
-	if len(hits) != 0 {
-		t.Fatalf("updated scheduled notification posted before wake: %+v", hits)
+	if ds, _ := s.HookDeliveries(ctx, serverToken, "ops", "dc", 10); len(ds) != 0 {
+		t.Fatalf("updating unposted scheduled notification queued deliveries: %+v", ds)
 	}
 	if _, err := s.db.Exec(`UPDATE notifications SET snooze_until = 1 WHERE id = ?`, sid); err != nil {
 		t.Fatal(err)
@@ -662,6 +662,19 @@ func TestHooksOutDiscordFollowups(t *testing.T) {
 	// Creating a new github hook via web form without a secret is refused.
 	if err := s.SaveHook(ctx, serverToken, "ops", "newgh", OutHook{URL: githubAPI + "o/r", Kind: "github"}, true, true); err == nil {
 		t.Fatal("new github hook without secret was allowed with keepSecret=true")
+	}
+	// Switching a github hook to a plain webhook drops the GitHub token even with keepSecret=true.
+	if err := s.SaveHook(ctx, serverToken, "ops", "gh1", OutHook{URL: githubAPI + "o/r", Kind: "github", Secret: "ghp_secret"}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveHook(ctx, serverToken, "ops", "gh1", OutHook{URL: dc.URL + "/plain", Kind: ""}, true, true); err != nil {
+		t.Fatalf("switch github to plain: %v", err)
+	}
+	hs, _ = s.OutHooks(ctx, serverToken, "ops")
+	for _, h := range hs {
+		if h.Name == "gh1" && (h.Kind != "" || h.HasSecret) {
+			t.Fatalf("switched plain hook leaked GitHub token: %+v", h)
+		}
 	}
 }
 

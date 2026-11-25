@@ -82,12 +82,14 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, issue, ms(t.Add(-time.Hour)), githubPerHour)
 		return err
 	}
-	if e.Type == EventUpdated { // re-edit an already-posted Discord message with the new text (#673)
+	if e.Type == EventUpdated { // re-edit an already-posted (or pending-post) Discord message with the new text (#673)
 		n := e.Notification
 		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
 			SELECT h.topic, h.name, ?, 'updated', ?, ?, ? FROM hooks_out h
-			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'`,
-			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic)
+			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
+			  AND (EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
+			    OR EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND json_extract(d.body, '$.notification.id') = ?))`,
+			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, n.ID)
 		return err
 	}
 	if e.Type != EventState {
@@ -98,7 +100,7 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 			SELECT h.topic, h.name, ?, 'posted', ?, ?, ? FROM hooks_out h
 			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
 			  AND NOT EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
-			  AND NOT EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND json_extract(d.body, '$.notification.id') = ?)`,
+			  AND NOT EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND json_extract(d.body, '$.notification.id') = ?)`,
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, n.ID)
 		return err
 	}
@@ -227,7 +229,7 @@ func (s *Server) sendHook(ctx context.Context, j hookJob) (int, error) {
 	if j.kind != "" {
 		return s.sendPost(ctx, j)
 	}
-	if j.event == "posted" {
+	if j.event == "posted" || j.event == "updated" {
 		return 204, nil // queued under another kind: a plain hook gets state changes only
 	}
 	if j.tmpl != "" {
@@ -643,38 +645,47 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	}
 	if h.Kind == "github" {
 		keepBody = false
-		if h.Secret == "" {
-			var has int
-			if keepSecret {
-				_ = s.db.QueryRowContext(ctx, `SELECT count(*) FROM hooks_out WHERE topic = ? AND name = ? AND kind = 'github' AND secret != ''`, topic, name).Scan(&has)
-			}
-			if has == 0 {
-				return errf(400, "bad_request", "a github webhook needs a GitHub token in secret, one that can write issues")
-			}
-		}
 	}
 	// The token goes out as is, so only to GitHub: a new url cannot carry a kept token elsewhere.
 	if h.Kind == "github" && !strings.HasPrefix(h.URL, githubAPI) {
 		return errf(400, "bad_request", "a github webhook url is %sOWNER/REPO", githubAPI)
 	}
 	events, _ := json.Marshal(h.Events)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if h.Kind == "github" && h.Secret == "" {
+		var has int
+		if keepSecret {
+			_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM hooks_out WHERE topic = ? AND name = ? AND kind = 'github' AND secret != ''`, topic, name).Scan(&has)
+		}
+		if has == 0 {
+			return errf(400, "bad_request", "a github webhook needs a GitHub token in secret, one that can write issues")
+		}
+	}
 	// A new URL or kind is another channel: the old message ids mean nothing
 	// there, and deliveries queued for the old kind were never checked for it.
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM hook_deliveries WHERE topic = ? AND name = ? AND status = 'pending'
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hook_deliveries WHERE topic = ? AND name = ? AND status = 'pending'
 		AND EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND kind != ?)`, topic, name, topic, name, h.Kind); err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?
+	if _, err := tx.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?
 		AND NOT EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ? AND kind = ?)`, topic, name, topic, name, h.URL, h.Kind); err != nil {
 		return err
 	}
 	// Saving again turns a hook back on and starts a fresh failure streak.
-	_, err := s.db.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret, body, kind) VALUES (?, ?, ?, ?, ?, ?, ?)
+	// Keep an existing secret only when the kind stays the same, so switching
+	// github -> plain never carries a GitHub token to an arbitrary URL (#673).
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret, body, kind) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(topic, name) DO UPDATE SET url = excluded.url, events = excluded.events, kind = excluded.kind,
-		secret = CASE WHEN ? AND excluded.secret = '' THEN hooks_out.secret ELSE excluded.secret END,
+		secret = CASE WHEN ? AND excluded.secret = '' AND hooks_out.kind = excluded.kind THEN hooks_out.secret ELSE excluded.secret END,
 		body = CASE WHEN ? AND excluded.body = '' THEN hooks_out.body ELSE excluded.body END, enabled = 1, failing_since = NULL`,
-		topic, name, h.URL, string(events), h.Secret, h.Body, h.Kind, keepSecret, keepBody)
-	return err
+		topic, name, h.URL, string(events), h.Secret, h.Body, h.Kind, keepSecret, keepBody); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteHook removes a hook and its delivery log.

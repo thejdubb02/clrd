@@ -409,7 +409,10 @@ func (a webAPI) SaveHook(r *http.Request, topic, name, url string, events []stri
 	if kind != nil {
 		h.Kind = *kind
 	} else {
-		hooks, _ := a.s.OutHooks(r.Context(), tok, topic) // a tab from before the kind field keeps the saved one (#673)
+		hooks, err := a.s.OutHooks(r.Context(), tok, topic) // a tab from before the kind field keeps the saved one (#673)
+		if err != nil {
+			return webError(err)
+		}
 		for _, o := range hooks {
 			if o.Name == name {
 				h.Kind = o.Kind
