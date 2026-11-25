@@ -61,14 +61,16 @@ object Md {
 
     /**
      * [src] drawn as Markdown, or exactly as sent when [markdown] is false. With [icons], each link has an inline
-     * content slot before it, named "icon:" and its [host], for the site's icon (the favicons setting, #107).
+     * content slot before it, named "icon:" and its [host], for the site's icon (the favicons setting, #107). With
+     * [autolink] off, a bare web address stays text; a written `[words](address)` link is still a link.
      */
-    fun render(src: String, markdown: Boolean = true, link: Color = Color.Unspecified, muted: Color = Color.Unspecified, icons: Boolean = false): AnnotatedString {
+    fun render(src: String, markdown: Boolean = true, link: Color = Color.Unspecified, muted: Color = Color.Unspecified, icons: Boolean = false, autolink: Boolean = true): AnnotatedString {
         val linkStyle = TextLinkStyles(SpanStyle(color = link, textDecoration = TextDecoration.Underline))
         val linked: AnnotatedString.Builder.(String, String) -> Unit = { url, label ->
             if (icons) host(url)?.let { appendInlineContent(ICON + it, "\u200B") }
             withLink(LinkAnnotation.Url(url, linkStyle)) { append(label) }
         }
+        if (!markdown && !autolink) return AnnotatedString(src)
         if (!markdown) return buildAnnotatedString {
             var at = 0
             for (m in BARE.findAll(src)) {
@@ -96,26 +98,26 @@ object Md {
                 val quote = QUOTE.matchEntire(line)
                 when {
                     fence -> withStyle(code) { append(line) }
-                    heading != null -> withStyle(BOLD) { inline(heading.groupValues[1], linked, code, 0) }
+                    heading != null -> withStyle(BOLD) { inline(heading.groupValues[1], linked, code, 0, autolink) }
                     bullet != null -> {
                         append(bullet.groupValues[1] + "\u2022 ")
-                        inline(bullet.groupValues[2], linked, code, 0)
+                        inline(bullet.groupValues[2], linked, code, 0, autolink)
                     }
                     number != null -> {
                         append(number.groupValues[1] + number.groupValues[2] + " ")
-                        inline(number.groupValues[3], linked, code, 0)
+                        inline(number.groupValues[3], linked, code, 0, autolink)
                     }
                     quote != null -> withStyle(SpanStyle(color = muted, fontStyle = FontStyle.Italic)) {
                         append("| ")
-                        inline(quote.groupValues[1], linked, code, 0)
+                        inline(quote.groupValues[1], linked, code, 0, autolink)
                     }
-                    else -> inline(line, linked, code, 0)
+                    else -> inline(line, linked, code, 0, autolink)
                 }
             }
         }
     }
 
-    private fun AnnotatedString.Builder.inline(s: String, linked: AnnotatedString.Builder.(String, String) -> Unit, code: SpanStyle, depth: Int) {
+    private fun AnnotatedString.Builder.inline(s: String, linked: AnnotatedString.Builder.(String, String) -> Unit, code: SpanStyle, depth: Int, autolink: Boolean) {
         if (depth >= MAX_DEPTH) {
             append(s)
             return
@@ -125,10 +127,11 @@ object Md {
             append(s, at, m.range.first)
             at = m.range.last + 1
             val g = m.groups
-            fun nest(style: SpanStyle, inner: String) = withStyle(style) { inline(inner, linked, code, depth + 1) }
+            fun nest(style: SpanStyle, inner: String) = withStyle(style) { inline(inner, linked, code, depth + 1, autolink) }
             when {
                 g[1] != null -> withStyle(code) { append(g[1]!!.value) }
                 g[2] != null -> linked(g[3]!!.value, g[2]!!.value)
+                g[4] != null && !autolink -> append(g[4]!!.value) // whole match as text, so nothing inside it is styled
                 g[4] != null -> {
                     val url = bareUrl(g[4]!!.value)
                     linked(url, url)
@@ -153,7 +156,7 @@ object Md {
     }
 
     /** For the system notification: the text without markers, with bold and italic only (docs/SPEC.md, issue #107). */
-    fun tray(src: String, markdown: Boolean): CharSequence {
+    fun tray(src: String, markdown: Boolean): CharSequence { // links do not show in the tray, so autolink does not matter here
         if (!markdown) return src
         val a = render(src)
         val out = SpannableString(a.text)
