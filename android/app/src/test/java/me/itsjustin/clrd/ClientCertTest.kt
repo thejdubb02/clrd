@@ -6,8 +6,10 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.cert.CertificateFactory
@@ -18,10 +20,13 @@ import javax.net.ssl.SSLContext
 /**
  * Client certificates (#152): the picked key reaches the clrd server and no other host. The fixtures in
  * resources/mtls are a throwaway test CA, server and client, made for this test and trusted nowhere else.
+ * The server's certificate names localhost and 127.0.0.1.
  */
 class ClientCertTest {
     private val server = MockWebServer()
     private var alias: String? = null
+    private var origin: Pair<String, Int>? = null
+    private var lookups = 0
 
     private fun p12(name: String) = KeyStore.getInstance("PKCS12").apply { load(ClientCertTest::class.java.getResourceAsStream("/mtls/$name.p12"), "test".toCharArray()) }
     private val client = p12("client")
@@ -30,20 +35,20 @@ class ClientCertTest {
         setCertificateEntry("ca", CertificateFactory.getInstance("X.509").generateCertificate(ClientCertTest::class.java.getResourceAsStream("/mtls/ca.pem")))
     }
 
-    private fun http(host: String): OkHttpClient {
-        val keys = ClientCertKeys({ alias }, { host }) { a ->
-            (client.getKey(a, "test".toCharArray()) as PrivateKey) to client.getCertificateChain(a).map { it as X509Certificate }.toTypedArray()
-        }
-        val (tls, trust) = keys.tls(ca)
-        return OkHttpClient.Builder().sslSocketFactory(tls.socketFactory, trust)
-            .dns(object : okhttp3.Dns { override fun lookup(hostname: String) = listOf(java.net.InetAddress.getByName("127.0.0.1")) }) // the server listens on IPv4 only
-            .build()
+    private val keys = ClientCertKeys({ alias }, { origin }, ca) { a ->
+        lookups++
+        (client.getKey(a, "test".toCharArray()) as PrivateKey) to client.getCertificateChain(a).map { it as X509Certificate }.toTypedArray()
     }
+    private val http = OkHttpClient.Builder().sslSocketFactory(keys.socketFactory, keys.trustManager)
+        .dns(object : okhttp3.Dns { override fun lookup(hostname: String) = listOf(java.net.InetAddress.getByName("127.0.0.1")) }) // every name is this machine; the server listens on IPv4 only
+        .build()
+
+    private fun call(host: String) = http.newCall(Request.Builder().url("https://$host:${server.port}/").build()).execute().use { assertEquals(200, it.code) }
 
     /** The peer certificates the server saw on one request to [host]. */
-    private fun sent(serverHost: String, host: String): Int {
+    private fun sent(host: String): Int {
         server.enqueue(MockResponse().setBody("ok"))
-        http(serverHost).newCall(Request.Builder().url("https://$host:${server.port}/").build()).execute().use { assertEquals(200, it.code) }
+        call(host)
         return server.takeRequest().handshake!!.peerCertificates.size
     }
 
@@ -56,15 +61,42 @@ class ClientCertTest {
 
     @After fun tearDown() = server.shutdown()
 
-    @Test fun noPickSendsNoCertificate() = assertEquals(0, sent("localhost", "localhost"))
+    private fun pick(host: String = "localhost") {
+        alias = "client"
+        origin = host to server.port
+    }
+
+    @Test fun noPickSendsNoCertificate() = assertEquals(0, sent("localhost"))
 
     @Test fun thePickReachesTheServer() {
-        alias = "client"
-        assertTrue(sent("localhost", "localhost") > 0)
+        pick()
+        assertTrue(sent("localhost") > 0)
     }
 
     @Test fun anotherHostNeverSeesIt() {
+        pick()
+        assertEquals(0, sent("127.0.0.1")) // same machine, but not the host it was picked for
+    }
+
+    @Test fun anotherPortNeverSeesIt() {
         alias = "client"
-        assertEquals(0, sent("localhost", "127.0.0.1")) // same machine, but not the server's name
+        origin = "localhost" to server.port + 1
+        assertEquals(0, sent("localhost"))
+    }
+
+    @Test fun aServerNotNamedInItsCertificateNeverSeesIt() {
+        pick("clrd.test") // trusted CA, but the certificate does not name this host
+        server.enqueue(MockResponse().setBody("ok"))
+        assertThrows(IOException::class.java) { call("clrd.test") }
+        assertEquals(0, lookups) // refused before the key was ever used
+    }
+
+    @Test fun removingItStopsItAtOnce() {
+        pick()
+        assertTrue(sent("localhost") > 0)
+        alias = null
+        keys.renew()
+        http.connectionPool.evictAll()
+        assertEquals(0, sent("localhost")) // a resumed session would still carry the old certificate
     }
 }

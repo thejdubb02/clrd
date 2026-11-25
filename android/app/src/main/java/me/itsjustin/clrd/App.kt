@@ -15,17 +15,22 @@ class App : Application() {
     val db by lazy { Room.databaseBuilder(this, Db::class.java, "clrd.db").build() }
     /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
     val clientCert by lazy { MutableStateFlow(prefs.getString("client_cert", null)) }
-    val http by lazy {
-        val keys = ClientCertKeys({ clientCert.value }, { serverUrl.toHttpUrlOrNull()?.host }) { a ->
+    /** The server origin the certificate was picked for. A moved server gets no certificate until it is picked again. */
+    private fun origin(u: okhttp3.HttpUrl) = "${u.scheme}://${u.host}:${u.port}"
+    private val certKeys by lazy {
+        ClientCertKeys({ clientCert.value }, {
+            serverUrl.toHttpUrlOrNull()?.takeIf { origin(it) == prefs.getString("client_cert_origin", null) }?.let { it.host to it.port }
+        }) { a ->
             runCatching { // a removed key or revoked access means no certificate, not a crash
                 val k = android.security.KeyChain.getPrivateKey(this, a)
                 val c = android.security.KeyChain.getCertificateChain(this, a)
                 if (k != null && c != null) k to c else null
             }.getOrNull()
         }
-        val (tls, trust) = keys.tls()
+    }
+    val http by lazy {
         OkHttpClient.Builder()
-            .sslSocketFactory(tls.socketFactory, trust)
+            .sslSocketFactory(certKeys.socketFactory, certKeys.trustManager)
             .pingInterval(45, TimeUnit.SECONDS) // notices a dead connection the server ping alone would not
             .connectTimeout(15, TimeUnit.SECONDS)
             .build()
@@ -92,9 +97,10 @@ class App : Application() {
 
     /** Picks or removes the client certificate (#152). Open connections used the old one, so they close and sync reconnects. */
     fun pickClientCert(alias: String?) {
+        prefs.edit().putString("client_cert", alias).putString("client_cert_origin", serverUrl.toHttpUrlOrNull()?.let(::origin)).apply()
         clientCert.value = alias
-        prefs.edit().putString("client_cert", alias).apply()
         io.execute {
+            certKeys.renew()
             http.connectionPool.evictAll()
             if (configured) SyncService.start(this, restart = true)
         }
