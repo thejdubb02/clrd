@@ -1628,7 +1628,10 @@ func (s *Server) prune(ctx context.Context) error {
 			}
 		}
 	}
-	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ?`, cutoff); err != nil {
+	// A github delivery waiting out github_hooks_paused stays, however long the pause (#796).
+	if _, err := tx.Exec(`DELETE FROM hook_deliveries WHERE updated_at < ? AND NOT (? AND status = 'pending'
+		AND EXISTS (SELECT 1 FROM hooks_out h WHERE h.topic = hook_deliveries.topic AND h.name = hook_deliveries.name AND h.kind = 'github'))`,
+		cutoff, st.GitHubHooksPaused); err != nil {
 		return err
 	}
 	for _, t := range []string{"push_failures", "hook_failures"} {
@@ -1636,7 +1639,10 @@ func (s *Server) prune(ctx context.Context) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`DELETE FROM hook_posts WHERE id NOT IN (SELECT id FROM notifications)`); err != nil {
+	// A pending delivery still needs its issue or message id to edit (#796).
+	if _, err := tx.Exec(`DELETE FROM hook_posts WHERE id NOT IN (SELECT id FROM notifications)
+		AND NOT EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.status = 'pending' AND d.topic = hook_posts.topic
+		AND d.name = hook_posts.name AND json_extract(d.body, '$.notification.id') = hook_posts.id)`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM hidden WHERE notification_id NOT IN (SELECT id FROM notifications)`); err != nil {

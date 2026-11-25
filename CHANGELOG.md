@@ -148,6 +148,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Server: pausing GitHub issue hooks (`github_hooks_paused`) now also stops a send already under way, and issues waiting out a pause longer than `CLRD_RETENTION` are no longer dropped, so they all go out on resume (#796).
 - Android: turning Markdown formatting on or off now redraws the notifications already in the shade at once, without a sound; and a link written as `<https://...>` shows without its brackets and stays a link even with automatic links off (#809).
 - Server: deleting an outgoing webhook no longer erases its past delivery failures from Stats, and the Stats CSV export quotes a value that starts with `'`, so `-disk` and `'-disk` no longer read back the same (#794).
 - Server: the Stats CSV export writes a carriage return in a text cell as `\r` and a backslash as `\\`, so an external id with a CR LF line break no longer reads back the same as one with a bare LF (#804).

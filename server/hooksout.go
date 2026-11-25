@@ -68,6 +68,10 @@ const githubPerHour = 10
 // githubAPI is where a github hook may point, so its token goes only there. Tests swap it.
 var githubAPI = "https://api.github.com/repos/"
 
+// errGitHubPaused skips a github send when the pause came after its batch was
+// picked: the delivery stays pending, untouched, for the resume (#796).
+var errGitHubPaused = errors.New("github hooks paused")
+
 // githubHooksPaused reports the server-wide off switch for github hooks (#680).
 func githubHooksPaused(ctx context.Context, q querier) (bool, error) {
 	var v sql.NullInt64
@@ -89,6 +93,12 @@ func githubPauseTransition(ctx context.Context, tx *sql.Tx, wasPaused, nowPaused
 	if nowPaused {
 		_, err := tx.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES ('github_hooks_paused_at', ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, strconv.FormatInt(at, 10))
+		return err
+	}
+	// prune kept these while paused; restart their clock so it does not drop
+	// the backlog before one send a tick drains it (#796).
+	if _, err := tx.ExecContext(ctx, `UPDATE hook_deliveries SET updated_at = ? WHERE status = 'pending'
+		AND EXISTS (SELECT 1 FROM hooks_out h WHERE h.topic = hook_deliveries.topic AND h.name = hook_deliveries.name AND h.kind = 'github')`, at); err != nil {
 		return err
 	}
 	var raw string
@@ -286,6 +296,11 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return // shutting down: try again next start
 			}
+			if j.kind == "github" && (sendErr != nil || code < 200 || code > 299) {
+				if p, _ := githubHooksPaused(ctx, s.db); p {
+					return // paused mid-send: this try does not count (#796)
+				}
+			}
 			errs[i] = s.recordHook(ctx, j, code, sendErr)
 		}()
 	}
@@ -405,6 +420,13 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 			}
 		}
 		reqs = githubReqs(*u, n, j.event, remote, mark, baseURL)
+		// The batch read the pause before githubFind's round trip: read it
+		// again last thing, so a pause stops a send already picked (#796).
+		if paused, err := githubHooksPaused(ctx, s.db); err != nil {
+			return 0, err
+		} else if paused {
+			return 0, errGitHubPaused
+		}
 	}
 	var code int
 	var resp []byte

@@ -179,7 +179,9 @@ an agent, clrd is careful about what it opens:
   `<!-- clrd ... -->` line, and clrd looks for it among the repo's newest
   issues before it opens one, so a retry after a lost reply finds the first.
 - Issue titles are prefixed with `[clrd <topic>] `, issues carry the `clrd`
-  and `priority:<min|low|default|high|urgent>` labels, and when
+  and `priority:<min|low|default|high|urgent>` labels (GitHub sets labels
+  on a new issue only when the token has push access to the repo, and
+  silently drops them otherwise: the issue still opens, unlabelled), and when
   `CLRD_BASE_URL` is set the issue body links back to the notification in your
   web inbox.
 - The sender's text goes in a fenced code block it cannot close, under a
@@ -189,7 +191,11 @@ an agent, clrd is careful about what it opens:
 
 Pause every GitHub issue hook server-wide without deleting them by setting
 `{"github_hooks_paused": true}` on `PUT /api/v1/settings` (full admin, or via
-the MCP `settings` tool), or delete the hook to stop new issues at once. The
+the MCP `settings` tool), or delete the hook to stop new issues at once. A
+pause also stops a send already under way, unless its request to GitHub has
+already gone out.
+Issues waiting when you pause go out after you resume, however long the
+pause, and alerts that arrive while paused never open one. The
 token is write only: the API never shows it again. A scheduled notification
 does not open an issue.
 
