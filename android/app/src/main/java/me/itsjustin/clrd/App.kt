@@ -106,6 +106,10 @@ class App : Application() {
         }
     }
 
+    /** Display, Appearance (#583): "system", "light" or "dark", this phone only. Applies at once through [ClrdTheme]. */
+    val appearance by lazy { MutableStateFlow(prefs.getString("appearance", null) ?: "system") }
+    fun pickAppearance(v: String) { appearance.value = v; prefs.edit().putString("appearance", v).apply() }
+
     /** This phone's notification sound (docs/SPEC.md section 2.2). Unset means the phone's own default. Change it with [saveSound]. */
     val sound: String get() = Sounds.known(prefs.getString("sound", null))
 

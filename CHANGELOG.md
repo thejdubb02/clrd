@@ -34,6 +34,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Server: the answer to ack, snooze, dismiss, resolve or reopen says `"changed": false` when it changed nothing (the notification already had that state), so an app retrying an action does not mistake it for its own change (#693).
 - Web: a Stats page for admins, with notifications per hour or day, priorities, top topics and senders, how fast each gets cleared, and repeat alerts, over 24 hours, 7, 30 or 90 days (#120).
 - Web: Settings, Appearance picks System, Light or Dark for this browser. It applies at once on every page with no flash, and System still follows the device (#583).
+- Android: Settings, Display, Appearance picks System, Light or Dark for this phone. It applies at once, status bar icons included, and System still follows the phone (#583).
 - Web: Settings has an About section with the version this server runs and
   a What's new list of what changed in each version, read from the
   changelog built into the binary (#580).
@@ -139,6 +140,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Desktop (Linux): with GTK set to prefer dark and no desktop preference, picking Light and then System in Appearance turns the window dark again at once, instead of only after a restart (#783).
 - Desktop (Linux): a clear that arrives just after the notification service restarted no longer closes another app's notification that took the old one's number (#601).
 - Desktop (Linux): after the notification service restarts, an update to a clrd notification no longer replaces another app's notification that got the same number, and a button pressed on a notification from before the restart no longer acts on a different one (#791).
 - Desktop (Linux): if the keyring quits while its unlock dialog is open, clrd stops waiting and says so instead of hanging. Keyrings that lock each entry on its own are now unlocked entry by entry, and only the keyring itself can end the wait for its dialog (#608).

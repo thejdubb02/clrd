@@ -1,6 +1,11 @@
 package me.itsjustin.clrd
 
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -61,8 +66,16 @@ val Mono = TextStyle(fontFamily = GeistMono, fontSize = 12.sp)
 val Wordmark = TextStyle(fontFamily = Geist, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, letterSpacing = (-0.05).em)
 
 @Composable
-fun ClrdTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun ClrdTheme(appearance: String = "system", content: @Composable () -> Unit) {
+    val dark = when (appearance) { "light" -> false; "dark" -> true; else -> isSystemInDarkTheme() }
+    // The status and navigation bar icons follow the pick too, not the phone's own mode. Scrims are the library's defaults.
+    val act = LocalContext.current as? ComponentActivity
+    LaunchedEffect(act, dark) {
+        act?.enableEdgeToEdge(
+            SystemBarStyle.auto(0, 0) { dark },
+            SystemBarStyle.auto(0xE6FFFFFF.toInt(), 0x801B1B1B.toInt()) { dark },
+        )
+    }
     val b = if (dark) DarkBrand else LightBrand
     val scheme = (if (dark) darkColorScheme() else lightColorScheme()).copy(
         primary = b.clear, onPrimary = b.paper, background = b.paper, onBackground = b.ink,

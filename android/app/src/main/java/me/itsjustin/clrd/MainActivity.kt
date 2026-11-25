@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -195,7 +196,8 @@ class MainActivity : ComponentActivity() {
         // Not again after rotation or from recents: the code was used already and would read as expired.
         if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handlePair(intent)
         setContent {
-            ClrdTheme {
+            val look by app.appearance.collectAsState()
+            ClrdTheme(look) {
                 Home(app, battery.value, resumes.value, ::scan)
                 PairDialog(pair.value, { pair.value = it }, ::approvePair, ::claimLink)
             }
@@ -1891,6 +1893,19 @@ private fun soundLabel(name: String) = when (name) {
     else -> R.string.sound_soft
 }
 
+/** Display, Appearance (#583): System, Light or Dark, applied at once. */
+@Composable
+internal fun AppearancePicker(app: App) {
+    val b = LocalBrand.current
+    val look by app.appearance.collectAsState()
+    listOf("system" to R.string.appearance_system, "light" to R.string.appearance_light, "dark" to R.string.appearance_dark).forEach { (v, label) ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().selectable(look == v, role = Role.RadioButton) { app.pickAppearance(v) }) {
+            RadioButton(selected = look == v, onClick = null)
+            Text(stringResource(label), color = b.ink, modifier = Modifier.padding(start = 12.dp))
+        }
+    }
+}
+
 /** Settings in the sections of docs/SPEC.md section 9.1, with search at the top (#575). */
 @Composable
 internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
@@ -2035,6 +2050,11 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 drop = on
                 app.dropCleared = on
                 app.io.execute { app.pruneCleared() }
+            }
+            "appearance" -> {
+                Title(R.string.appearance)
+                Explain(R.string.appearance_explain)
+                AppearancePicker(app)
             }
             "full-swipe" -> Toggle(R.string.fast_swipe, R.string.fast_swipe_explain, fast) { on -> fast = on; app.fastSwipe = on }
             "swipe" -> SwipeSettings(app)
