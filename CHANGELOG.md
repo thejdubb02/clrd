@@ -23,6 +23,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Android: linking the same phone again replaces its row in Linked devices instead of adding a second one, and the row shows the model and Android version (for example "Pixel 8, Android 15") (#769).
 - GitHub issue hooks: issue titles now carry a `[clrd <topic>]` prefix, priority maps to `clrd` and `priority:*` labels, the issue body links back to the notification when `CLRD_BASE_URL` is set, and full admins can pause all GitHub issue hooks server-wide with `github_hooks_paused` in `PUT /api/v1/settings` (#680).
 - Desktop (Linux): the title bar and the This computer page follow the Appearance pick in the inbox (Dark, Light or System), not only the desktop's own setting. The pick is kept for the next start (#760).
+- Web, SDKs and F-Droid: the sign-in page now carries the shared footer so the GitHub link is visible on phones, the Go and Python SDK READMEs link to the repo, and the F-Droid metadata sets the changelog URL (#586).
 - Desktop: linking the same computer again replaces its row in Linked devices instead of adding a second one, and the row shows its system (for example "Fedora Linux 41" or "Windows 11") (#770).
 - Server and web: a browser that signs in again replaces its own row in Linked devices instead of adding a new one, keeping any lower approve setting the old row had. Each browser and phone row also shows what it is (for example "Firefox 120 on Linux"), a Rename button names it, and "Unlink devices unused for 7 days" tidies old rows in one click. Linked browsers unused for 30 days now unlink on their own (setting `unlink_idle_browsers_days`, 0 turns it off); on upgrade, browsers already unused that long unlink within the hour (#765).
 - SDKs: the JavaScript client and GitHub Action READMEs link to the source repository on GitHub (#586).
@@ -34,6 +35,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Server: the answer to ack, snooze, dismiss, resolve or reopen says `"changed": false` when it changed nothing (the notification already had that state), so an app retrying an action does not mistake it for its own change (#693).
 - Web: a Stats page for admins, with notifications per hour or day, priorities, top topics and senders, how fast each gets cleared, and repeat alerts, over 24 hours, 7, 30 or 90 days (#120).
 - Web: Settings, Appearance picks System, Light or Dark for this browser. It applies at once on every page with no flash, and System still follows the device (#583).
+- Android: Settings, Display, Appearance picks System, Light or Dark for this phone. It applies at once, status bar icons included, and System still follows the phone (#583).
 - Web: Settings has an About section with the version this server runs and
   a What's new list of what changed in each version, read from the
   changelog built into the binary (#580).
@@ -139,6 +141,10 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Desktop (Linux): with GTK set to prefer dark and no desktop preference, picking Light and then System in Appearance turns the window dark again at once, instead of only after a restart (#783).
+- Desktop (Linux): a clear that arrives just after the notification service restarted no longer closes another app's notification that took the old one's number (#601).
+- Desktop (Linux): after the notification service restarts, an update to a clrd notification no longer replaces another app's notification that got the same number, and a button pressed on a notification from before the restart no longer acts on a different one (#791).
+- Desktop (Linux): if the keyring quits while its unlock dialog is open, clrd stops waiting and says so instead of hanging. Keyrings that lock each entry on its own are now unlocked entry by entry, and only the keyring itself can end the wait for its dialog (#608).
 - Android: a phone set up by pasting a token now follows the topics you unsubscribed from on the web. Before, it kept showing cards of those topics, so a clear on the web looked like it never reached the phone. After the update the phone drops them on its own; nothing to set up. Scripts using the same token still see every topic (#764).
 - Web: Undo after an Unsubscribe sends `if_request_id`, so if another device changed topic subscriptions before the click, the server refuses it and the page shows "Changed on another device." instead of reversing their choice (#716).
 - GitHub issue hooks: one alert never opens two issues. A retry after GitHub's answer was lost, or after a long alert whose answer was too big to read, now finds the issue already opened. The limit of 10 issues an hour also holds after an outage clears (#680).

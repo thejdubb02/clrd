@@ -48,15 +48,18 @@ mod os {
     use super::{pack, unpack, Linked};
     use std::collections::HashMap;
     use std::pin::Pin;
+    use std::task::Poll;
     use zbus::export::futures_core::Stream;
     use zbus::OwnedVariant as OwnedValue;
-    use zbus::{block_on, Connection, MessageStream, ObjectPath, OwnedObjectPath, Variant};
+    use zbus::{block_on, Connection, MessageStream, OwnedObjectPath, Variant};
 
     const NAME: &str = "org.freedesktop.secrets";
     const SERVICE: &str = "org.freedesktop.Secret.Service";
     const COLLECTION: &str = "org.freedesktop.Secret.Collection";
     const ITEM: &str = "org.freedesktop.Secret.Item";
     const PROMPT: &str = "org.freedesktop.Secret.Prompt";
+    const SESSION: &str = "org.freedesktop.Secret.Session";
+    const DBUS: &str = "org.freedesktop.DBus";
     /// The keyring the desktop unlocks at login.
     const DEFAULT: &str = "/org/freedesktop/secrets/aliases/default";
 
@@ -85,54 +88,100 @@ mod os {
         }
 
         /// Runs a prompt the service asked for (the unlock dialog) and waits
-        /// for the user. `/` means there is nothing to ask.
-        // ponytail: waits as long as the dialog is open, with no timeout of
-        // our own; a keyring service that dies mid-prompt holds this thread.
+        /// for the user, as long as the dialog is open. `/` means there is
+        /// nothing to ask. Only the service itself can end the wait, and it
+        /// ends with an error if the service goes away first (#608).
         fn prompt(&self, prompt: &OwnedObjectPath) -> Result<(), String> {
             if prompt.as_str() == "/" {
                 return Ok(());
             }
             let err = |e: zbus::Error| format!("keychain: {e}");
-            let mut done = block_on(async {
+            let (owner, mut done, mut gone) = block_on(async {
+                let owner: String = self
+                    .0
+                    .call_method(
+                        Some(DBUS),
+                        "/org/freedesktop/DBus",
+                        Some(DBUS),
+                        "GetNameOwner",
+                        &NAME,
+                    )
+                    .await?
+                    .body()
+                    .deserialize()?;
                 let rule = zbus::MatchRule::builder()
                     .msg_type(zbus::message::Type::Signal)
+                    .sender(owner.as_str())
                     .interface(PROMPT)
                     .member("Completed")
                     .path(prompt.as_str())
                     .build()?;
-                MessageStream::for_match_rule(rule, &self.0, None).await
+                let done = MessageStream::for_match_rule(rule, &self.0, None).await?;
+                let rule = zbus::MatchRule::builder()
+                    .msg_type(zbus::message::Type::Signal)
+                    .sender(DBUS)
+                    .interface(DBUS)
+                    .member("NameOwnerChanged")
+                    .arg(0, NAME)
+                    .build()?;
+                let gone = MessageStream::for_match_rule(rule, &self.0, None).await?;
+                Ok::<_, zbus::Error>((owner, done, gone))
             })
             .map_err(err)?;
-            self.call::<_, ()>(prompt.as_str(), PROMPT, "Prompt", &"")?;
-            let msg = block_on(std::future::poll_fn(|cx| Pin::new(&mut done).poll_next(cx)))
-                .ok_or("keychain: the bus closed")?
-                .map_err(err)?;
+            // To the owner we listen to, not the name: a keyring started in
+            // its place must not get the call while its Completed is ignored.
+            block_on(self.0.call_method(
+                Some(owner.as_str()),
+                prompt.as_str(),
+                Some(PROMPT),
+                "Prompt",
+                &"",
+            ))
+            .map_err(err)?;
+            let msg = block_on(std::future::poll_fn(|cx| {
+                match Pin::new(&mut done).poll_next(cx) {
+                    Poll::Pending => Pin::new(&mut gone).poll_next(cx).map(|_| None),
+                    ready => ready,
+                }
+            }))
+            .ok_or("keychain: the keyring went away during the unlock")?
+            .map_err(err)?;
             match msg.body().deserialize::<(bool, OwnedValue)>() {
                 Ok((false, _)) => Ok(()),
                 _ => Err("keychain: stayed locked".into()),
             }
         }
 
-        /// A session for passing secrets, and the default keyring unlocked.
+        /// Unlocks `paths`, asking the user if the service wants to. A
+        /// service may lock entries one by one, not only whole keyrings.
+        fn unlock(&self, paths: &[OwnedObjectPath]) -> Result<(), String> {
+            let (_, prompt): (Vec<OwnedObjectPath>, OwnedObjectPath) =
+                self.call("/org/freedesktop/secrets", SERVICE, "Unlock", &(paths,))?;
+            self.prompt(&prompt)
+        }
+
+        /// Runs `f` with the default keyring unlocked and a session for
+        /// passing secrets, closed again after.
         // ponytail: the "plain" session sends the secret unencrypted over the
         // user's own session bus, like libsecret does when a service offers
         // nothing else. A program that can read that bus can already ask the
         // keychain for the secret itself.
-        fn open(&self) -> Result<OwnedObjectPath, String> {
+        fn with_session<R>(
+            &self,
+            f: impl FnOnce(&OwnedObjectPath) -> Result<R, String>,
+        ) -> Result<R, String> {
             let (_, session): (OwnedValue, OwnedObjectPath) = self.call(
                 "/org/freedesktop/secrets",
                 SERVICE,
                 "OpenSession",
                 &("plain", Variant::from("")),
             )?;
-            let (_, prompt): (Vec<OwnedObjectPath>, OwnedObjectPath) = self.call(
-                "/org/freedesktop/secrets",
-                SERVICE,
-                "Unlock",
-                &(vec![ObjectPath::from_static_str_unchecked(DEFAULT)],),
-            )?;
-            self.prompt(&prompt)?;
-            Ok(session)
+            let out = self
+                .unlock(&[DEFAULT.try_into().unwrap()])
+                .and_then(|()| f(&session));
+            // Tidiness only: a session also ends with the bus connection.
+            let _ = self.call::<_, ()>(session.as_str(), SESSION, "Close", &());
+            out
         }
 
         fn items(&self) -> Result<Vec<OwnedObjectPath>, String> {
@@ -145,27 +194,30 @@ mod os {
         }
 
         pub fn save(&self, linked: &Linked) -> Result<(), String> {
-            let session = self.open()?;
-            let mut props: HashMap<&str, Variant<'_>> = HashMap::new();
-            props.insert("org.freedesktop.Secret.Item.Label", "clrd".into());
-            props.insert(
-                "org.freedesktop.Secret.Item.Attributes",
-                HashMap::from([("application", "clrd")]).into(),
-            );
-            let secret: Secret = (session, vec![], pack(linked), "text/plain".into());
-            let (_, prompt): (OwnedObjectPath, OwnedObjectPath) =
-                self.call(DEFAULT, COLLECTION, "CreateItem", &(props, secret, true))?;
-            self.prompt(&prompt)
+            self.with_session(|session| {
+                let mut props: HashMap<&str, Variant<'_>> = HashMap::new();
+                props.insert("org.freedesktop.Secret.Item.Label", "clrd".into());
+                props.insert(
+                    "org.freedesktop.Secret.Item.Attributes",
+                    HashMap::from([("application", "clrd")]).into(),
+                );
+                let secret: Secret = (session.clone(), vec![], pack(linked), "text/plain".into());
+                let (_, prompt): (OwnedObjectPath, OwnedObjectPath) =
+                    self.call(DEFAULT, COLLECTION, "CreateItem", &(props, secret, true))?;
+                self.prompt(&prompt)
+            })
         }
 
         /// `None` when this computer is not linked.
         pub fn load(&self) -> Result<Option<Linked>, String> {
-            let session = self.open()?;
-            loop {
+            self.with_session(|session| loop {
                 let Some(item) = self.items()?.into_iter().next() else {
                     return Ok(None);
                 };
-                match self.call::<_, (Secret,)>(item.as_str(), ITEM, "GetSecret", &(&session,)) {
+                let read = self.unlock(std::slice::from_ref(&item)).and_then(|()| {
+                    self.call::<_, (Secret,)>(item.as_str(), ITEM, "GetSecret", &(session,))
+                });
+                match read {
                     Ok((secret,)) => return Ok(unpack(&secret.2)),
                     // Still there, so the read itself failed.
                     Err(e) if self.items()?.contains(&item) => return Err(e),
@@ -174,12 +226,14 @@ mod os {
                     // one more entry to have gone.
                     Err(_) => {}
                 }
-            }
+            })
         }
 
         pub fn clear(&self) -> Result<(), String> {
-            self.open()?;
-            for item in self.items()? {
+            self.unlock(&[DEFAULT.try_into().unwrap()])?;
+            let items = self.items()?;
+            self.unlock(&items)?;
+            for item in items {
                 let prompt: OwnedObjectPath = self.call(item.as_str(), ITEM, "Delete", &())?;
                 self.prompt(&prompt)?;
             }

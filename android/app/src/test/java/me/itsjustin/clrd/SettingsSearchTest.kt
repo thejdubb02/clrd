@@ -58,10 +58,10 @@ class SettingsSearchTest {
 
     @Test fun sectionsInSpecOrder() {
         assertEquals(
-            listOf(R.string.section_notifications, R.string.section_inbox, R.string.section_devices, R.string.section_integrations),
+            listOf(R.string.section_notifications, R.string.section_inbox, R.string.section_display, R.string.section_devices, R.string.section_integrations),
             SETTINGS.map { it.section }.distinct(),
         )
-        assertEquals(3, SETTINGS.map { it.section }.zipWithNext().count { (a, b) -> a != b }) // each section in one run
+        assertEquals(4, SETTINGS.map { it.section }.zipWithNext().count { (a, b) -> a != b }) // each section in one run
     }
 
     @Test fun matchRule() {

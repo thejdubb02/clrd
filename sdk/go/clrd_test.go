@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -125,5 +126,15 @@ func TestRedirectNotFollowed(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("redirect followed, token sent on: %q", got)
+	}
+}
+
+func TestReadmeLinksRepo(t *testing.T) {
+	b, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "(https://github.com/thejdubb02/clrd)") {
+		t.Fatal("sdk/go/README.md must link to https://github.com/thejdubb02/clrd")
 	}
 }
