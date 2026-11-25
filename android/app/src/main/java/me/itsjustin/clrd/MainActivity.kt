@@ -1269,6 +1269,7 @@ private fun DeviceSettings(app: App, resumes: Int) {
     var log by remember(server) { mutableStateOf<List<org.json.JSONObject>>(emptyList()) }
     var reload by remember { mutableStateOf(0) }
     var unlink by remember { mutableStateOf<org.json.JSONObject?>(null) }
+    var closed by remember(server) { mutableStateOf(false) } // the server refused the list: a publish-only phone
     var error by remember { mutableStateOf<String?>(null) }
     var clearsError by remember { mutableStateOf<String?>(null) } // shown by the switch, which sits far above the list's error line
     var showLog by rememberSaveable { mutableStateOf(false) }
@@ -1295,12 +1296,45 @@ private fun DeviceSettings(app: App, resumes: Int) {
     LaunchedEffect(server, resumes, reload, changed) {
         val api = app.api()
         app.io.execute {
-            runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices?all=1")), "devices") }.getOrNull()?.let { devices = it }
+            val got = runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices?all=1")), "devices") }
+            got.getOrNull()?.let { devices = it }
+            val refused = got.exceptionOrNull() as? HttpError
+            if (refused?.isAuth == true) devices = null // a signed-out phone shows no old list
+            closed = refused?.code == 403
             busy = false
             runCatching { objects(org.json.JSONObject(api.get("/api/v1/devices/log")), "events") }.getOrNull()?.let { log = it }
         }
     }
-    val list = devices ?: return
+    unlink?.let { d ->
+        AlertDialog(
+            onDismissRequest = { unlink = null },
+            title = { Text(stringResource(R.string.device_unlink_title, d.optString("name"))) },
+            text = { Text(stringResource(R.string.device_unlink_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    unlink = null
+                    val api = app.api()
+                    app.io.execute {
+                        error = runCatching { api.delete(unlinkPath(d)) }
+                            .exceptionOrNull()?.let { ctx.getString(R.string.device_unlink_failed, it.message) }
+                        reload++
+                    }
+                }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
+            },
+            dismissButton = { TextButton(onClick = { unlink = null }) { Text(stringResource(R.string.link_cancel)) } },
+        )
+    }
+    val list = devices ?: run {
+        // A publish-only phone may not read the list, but it may still unlink itself (#643).
+        if (closed) {
+            Spacer(Modifier.height(8.dp))
+            Text(stringResource(R.string.devices_title), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            val me = stringResource(R.string.this_phone)
+            TextButton(onClick = { unlink = org.json.JSONObject().put("this", true).put("name", me) }) { Text(stringResource(R.string.device_unlink_this), color = b.signal) }
+            error?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+        }
+        return
+    }
     val approve = when (list.firstOrNull { it.optBoolean("this") }?.optString("approve")) {
         "allowed" -> R.string.approve_allowed
         "ask" -> R.string.approve_ask
@@ -1379,26 +1413,11 @@ private fun DeviceSettings(app: App, resumes: Int) {
             dismissButton = { TextButton(onClick = { lower = null }) { Text(stringResource(R.string.link_cancel)) } },
         )
     }
-    unlink?.let { d ->
-        AlertDialog(
-            onDismissRequest = { unlink = null },
-            title = { Text(stringResource(R.string.device_unlink_title, d.optString("name"))) },
-            text = { Text(stringResource(R.string.device_unlink_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    unlink = null
-                    val api = app.api()
-                    app.io.execute {
-                        error = runCatching { api.delete("/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}") }
-                            .exceptionOrNull()?.let { ctx.getString(R.string.device_unlink_failed, it.message) }
-                        reload++
-                    }
-                }) { Text(stringResource(R.string.device_unlink), color = b.signal) }
-            },
-            dismissButton = { TextButton(onClick = { unlink = null }) { Text(stringResource(R.string.link_cancel)) } },
-        )
-    }
 }
+
+/** This phone unlinks itself by "this", which needs no read scope and no id (#643). */
+internal fun unlinkPath(d: org.json.JSONObject) =
+    if (d.optBoolean("this")) "/api/v1/devices/this" else "/api/v1/devices/${android.net.Uri.encode(d.optString("id"))}"
 
 /** A sender's kind (docs/SPEC.md section 5.1) in the web's words. */
 internal fun senderKind(kind: String) = when (kind) {
@@ -1972,7 +1991,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     val open = mapOf(
         "subscriptions" to (app.configured && subs != null && !subsGone),
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
-        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && canRead),
+        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && (canRead || rejected)), // rejected: a publish-only phone may still unlink itself (#643)
         "senders" to (app.configured && !rejected && senders.value != null),
     )
     val shown = SETTINGS.filter {

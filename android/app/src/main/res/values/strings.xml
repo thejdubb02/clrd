@@ -209,6 +209,8 @@
     <string name="device_unlink_title">Unlink %1$s?</string>
     <string name="device_unlink_text">It is signed out at once and stops syncing. Unlinking a phone also signs out the browsers it approved. It can be linked again with a new code.</string>
     <string name="device_unlink_failed">Not unlinked: %1$s</string>
+    <string name="device_unlink_this">Unlink this phone</string>
+    <string name="this_phone">this phone</string>
     <string name="device_approve">May approve: %1$s</string>
     <string name="approve_name_allowed">Allowed</string>
     <string name="approve_name_ask">Ask</string>
