@@ -1904,7 +1904,7 @@
   "/api/v1/devices/tidy": {
    "post": {
     "summary": "Unlink browsers and phones unused for some days",
-    "description": "Scope read. Body {\"days\":7,\"dry_run\":true}, both optional (days 1 to 36500, default 7). Unlinks the browsers and phones in the caller's GET /api/v1/devices?all=1 list unseen for days, never the caller, a typed-in token or an agent, nor a device with an open stream, web push or a browser signed in under it. dry_run only counts. Returns {count, devices (ids), dry_run}.",
+    "description": "Scope read. Body {\"days\":7,\"dry_run\":true}, both optional (days 1 to 36500, default 7). Unlinks the browsers and phones in the caller's GET /api/v1/devices?all=1 list unseen for days, never the caller, a typed-in token or an agent, nor a device with an open stream, web push or a browser signed in under it. dry_run only counts. Optional devices (ids, as a dry run returned them) limits the unlink to those; each row is checked again as it is unlinked. Returns {count, devices (ids), dry_run}.",
     "tags": [
      "sync"
     ],
@@ -1921,6 +1921,12 @@
          },
          "dry_run": {
           "type": "boolean"
+         },
+         "devices": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
          }
         }
        }

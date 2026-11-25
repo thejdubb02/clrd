@@ -22,7 +22,9 @@ func localClears(ctx context.Context, q querier) (map[string]bool, error) {
 // does: a session signed in or linked with a token, or the row it replaces,
 // passes its option on, as with approve. One statement, so a racing
 // SetClears is never lost.
-func inheritClears(ctx context.Context, db *sql.DB, from, to string) error {
+func inheritClears(ctx context.Context, db interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, from, to string) error {
 	_, err := db.ExecContext(ctx, `UPDATE settings SET value = json_set(value, '$."' || ? || '"', json('true'))
 		WHERE key = ? AND json_extract(value, '$."' || ? || '"')`, to, localClearsKey, from)
 	return err

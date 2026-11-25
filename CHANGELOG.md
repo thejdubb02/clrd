@@ -145,6 +145,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Server and web: "Unlink devices unused for 7 days" unlinks only the devices it counted, and it and the idle sweep check each device again as they unlink it, so one used, given web push or signed in under in the meantime stays. A browser signing in again no longer loses a lower approve setting saved at the same moment. `POST /api/v1/devices/tidy` takes an optional `devices` list (#773).
 - Android: when a cleared card leaves the list, the space under it now closes with it in one smooth move, as on the web, instead of snapping shut at the end (#726).
 - Desktop (Linux): with GTK set to prefer dark and no desktop preference, picking Light and then System in Appearance turns the window dark again at once, instead of only after a restart (#783).
 - Desktop (Linux): a clear that arrives just after the notification service restarted no longer closes another app's notification that took the old one's number (#601).
