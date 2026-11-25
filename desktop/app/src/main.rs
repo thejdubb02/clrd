@@ -548,7 +548,7 @@ fn unlink(app: AppHandle, page: tauri::WebviewWindow) {
     if let Some(url) = base.and_then(|b| b.parse::<Url>().ok()) {
         // Only ours: a proxy in front of the server may keep its own.
         for cookie in page.cookies_for_url(url).unwrap_or_default() {
-            if cookie.name() == "clrd_session_BREAK709" {
+            if cookie.name() == "clrd_session" {
                 let _ = page.delete_cookie(cookie);
             }
         }
