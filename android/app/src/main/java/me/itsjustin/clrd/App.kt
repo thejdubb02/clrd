@@ -95,17 +95,21 @@ class App : Application() {
     private val leftShade = ArrayList<Long>()
 
     /** Rows left the shade now: a stack swipe, or a swipe or Clear all on one row. Counted toward a burst either way. */
-    fun leftShade(count: Int) = synchronized(leftShade) { repeat(count) { leftShade += android.os.SystemClock.uptimeMillis() } }
+    fun leftShade(count: Int) = synchronized(leftShade) {
+        val now = android.os.SystemClock.uptimeMillis()
+        leftShade.removeAll { it < now - 2 * LONE_MS } // only the last burst window matters, so the list stays small
+        repeat(count) { leftShade += now }
+    }
 
     /**
      * One row swiped out of the shade with "Swipe clears everywhere" on (#271): Android sends the same delete for a
      * swipe, a bundle swipe and Clear all, so it waits [LONE_MS] and clears only if no other row left near it.
+     * The receiver returns at once: holding it would hold back the next delete in a burst, so the first row would look alone.
      */
-    fun swiped(id: String, server: String?, r: android.content.BroadcastReceiver.PendingResult) {
+    fun swiped(id: String, server: String?) {
         val at = android.os.SystemClock.uptimeMillis()
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            val alone = synchronized(leftShade) { leftShade.removeAll { it < at - LONE_MS }; lone(leftShade, at) }
-            if (alone) act(id, "dismiss", "{}", server, VIA_TRAY_SWIPE) { r.finish() } else r.finish()
+            if (synchronized(leftShade) { lone(leftShade, at) }) act(id, "dismiss", "{}", server, VIA_TRAY_SWIPE)
         }, LONE_MS)
     }
 

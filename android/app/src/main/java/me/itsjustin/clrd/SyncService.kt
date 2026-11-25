@@ -135,7 +135,7 @@ class ActionReceiver : BroadcastReceiver() {
         if (intent.action == Tray.ACTION_DISMISS) { // a swipe or Clear all: hide here only (#265), unless a lone swipe clears (#271)
             app.trayHidden += id
             app.leftShade(1)
-            if (app.shadeClears) app.swiped(id, server, goAsync())
+            if (app.shadeClears) app.swiped(id, server)
             return
         }
         if (intent.action == Tray.ACTION_DEVICE) { // a sender's http or broadcast button (#449)
