@@ -273,6 +273,11 @@
     <string name="server_explain">The clrd server this phone syncs with, and the token it signs in with.</string>
     <string name="devices_explain">Every phone and browser signed in to your server.</string>
     <string name="link_phone_explain">Signed in on a browser already? Its Settings page shows a code that sets this phone up.</string>
+    <string name="client_cert">Client certificate</string>
+    <string name="client_cert_explain">For a server behind mutual TLS. Pick a certificate installed in Android settings; clrd offers it only to this server.</string>
+    <string name="client_cert_none">None picked</string>
+    <string name="client_cert_pick">Pick certificate</string>
+    <string name="client_cert_remove">Remove</string>
     <string name="battery">Battery</string>
     <string name="section_notifications">Notifications</string>
     <string name="section_inbox">Inbox</string>
