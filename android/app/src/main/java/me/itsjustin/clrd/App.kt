@@ -231,6 +231,9 @@ class App : Application() {
     /** This token got 403 changing [swipes] or a display switch, so Settings shows them read-only. In memory: a token's grants can widen. */
     val swipesLocked = MutableStateFlow(false)
 
+    /** Goes up on every settings message and every save the server took (#818), so an open preview asks again after a switch. */
+    val settingsRev = MutableStateFlow(0)
+
     /**
      * Sends [next] from Settings (#161). It shows at once; the server's settings message confirms it to every device.
      * Null when the server took it or the token may not change it ([swipesLocked]), else why not. Call on [io].
@@ -251,8 +254,10 @@ class App : Application() {
 
     /** PUTs [body]; null when the server took it or this token may not change it ([swipesLocked]), else why not. */
     private fun putSettings(api: Api, body: String, keep: () -> Unit, undo: () -> Unit): String? = try {
+        val rev = settingsRev.value
         api.put("/api/v1/settings", body)
-        keep()
+        // A settings message that landed meanwhile is newer than this reply (#818): keep it, not what was sent.
+        synchronized(configLock) { if (settingsRev.value == rev) keep(); settingsRev.value++ }
         null
     } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
         // Back to what the server last said. Under the lock a settings message cannot land between the read and the write (#568).
@@ -305,6 +310,7 @@ class App : Application() {
 
     /** Keeps a server `settings` message. The sync client calls it through [RoomStore.settings], so an old server's message is dropped. */
     fun saveSettings(o: org.json.JSONObject) {
+        settingsRev.value++
         if (o.has("sound")) serverSound(o.optString("sound"))
         if (o.has("keep_cleared_days")) { // the server's keep for cleared rows (#261): drop what it deleted
             val keep = org.json.JSONObject().put("days", o.optInt("keep_cleared_days", KEEP_DAYS))
