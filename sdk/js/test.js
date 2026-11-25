@@ -1,5 +1,6 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { Client, ClrdError } from "./index.js";
 
@@ -91,4 +92,9 @@ test("default fetch is called unbound-safe", async () => {
   } finally {
     globalThis.fetch = real;
   }
+});
+
+test("README links to the repo", () => {
+  const readme = readFileSync(new URL("./README.md", import.meta.url), "utf8");
+  assert.match(readme, /https:\/\/github\.com\/thejdubb02\/clrd/);
 });
