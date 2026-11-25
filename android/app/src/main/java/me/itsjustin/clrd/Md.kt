@@ -46,7 +46,8 @@ object Md {
             """|<u>(.{1,300}?)</u>""" +
             """|\*(?=[^\s*])(.{1,300}?)(?<=[^\s*])\*""" +
             """|(?<!\w)_(?=[^\s_])(.{1,300}?)(?<=[^\s_])_(?!\w)""" +
-            """|\\([\\`*_~+\[\]()<>#.!-])""",
+            """|\\([\\`*_~+\[\]()<>#.!-])""" +
+            """|<(https?://[^\s<>]+)>""", // an address in angle brackets is a written link: no brackets shown, even with autolink off
     )
     private val BARE = Regex(BARE_URL)
     private val HEADING = Regex("""^#{1,6}\s+(.*)""")
@@ -145,6 +146,7 @@ object Md {
                 g[10] != null -> nest(ITALIC, g[10]!!.value)
                 g[11] != null -> nest(ITALIC, g[11]!!.value)
                 g[12] != null -> append(g[12]!!.value)
+                g[13] != null -> linked(g[13]!!.value, g[13]!!.value)
             }
         }
         append(s, at, s.length)
