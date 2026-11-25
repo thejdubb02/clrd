@@ -21,9 +21,11 @@ pub struct Os {
     /// Which run of the service showed each id: its own name on the bus,
     /// which no later run gets. A close goes there, so after a restart it
     /// fails instead of closing whatever the new run shows under that id
-    /// (#601).
-    owners: Mutex<HashMap<u32, OwnedUniqueName>>,
+    /// (#601). An id leaves when it is closed, by us or by the service.
+    owners: Owners,
 }
+
+type Owners = Arc<Mutex<HashMap<u32, OwnedUniqueName>>>;
 
 impl Os {
     pub fn new(
@@ -45,11 +47,10 @@ impl Os {
             // queue is spare room.
             MessageStream::for_match_rule(rule, &conn, std::num::NonZero::new(4096)).await
         })?;
-        std::thread::spawn(move || listen(stream, close_clears, tx));
-        Ok(Self {
-            conn,
-            owners: Mutex::default(),
-        })
+        let owners = Owners::default();
+        let gone = owners.clone();
+        std::thread::spawn(move || listen(stream, gone, close_clears, tx));
+        Ok(Self { conn, owners })
     }
 
     fn call<B>(&self, method: &str, body: &B) -> zbus::Result<zbus::Message>
@@ -144,7 +145,12 @@ impl Os {
 /// Reads the service's signals until the bus connection ends, and hands them
 /// on at once: a close is judged by the setting as it was when the user
 /// closed it, however long the ones before it take to handle (#685).
-fn listen(mut stream: MessageStream, close_clears: Arc<AtomicBool>, tx: mpsc::Sender<Signal>) {
+fn listen(
+    mut stream: MessageStream,
+    owners: Owners,
+    close_clears: Arc<AtomicBool>,
+    tx: mpsc::Sender<Signal>,
+) {
     while let Some(Ok(msg)) = block_on(std::future::poll_fn(|cx| {
         Pin::new(&mut stream).poll_next(cx)
     })) {
@@ -152,6 +158,12 @@ fn listen(mut stream: MessageStream, close_clears: Arc<AtomicBool>, tx: mpsc::Se
         let body = msg.body();
         let signal = match header.member().map(|m| m.as_str()) {
             Some("NotificationClosed") => body.deserialize::<(u32, u32)>().ok().map(|(id, why)| {
+                // Gone from the run that showed it: nothing left to close.
+                let mut owners = owners.lock().unwrap();
+                let from = header.sender().map(|s| s.as_str());
+                if owners.get(&id).map(|o| o.as_str()) == from {
+                    owners.remove(&id);
+                }
                 Signal::Closed(id, why == BY_USER && close_clears.load(Ordering::Relaxed))
             }),
             Some("ActionInvoked") => body
