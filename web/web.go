@@ -266,7 +266,7 @@ type LinkedDevice struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
 	Detail     string     `json:"detail"` // "Firefox 120 on Linux", to tell same names apart (#765)
-	Kind       string     `json:"kind"` // token, browser, phone or agent
+	Kind       string     `json:"kind"`   // token, browser, phone or agent
 	Via        string     `json:"via"`
 	ViaID      string     `json:"via_id"`
 	Approve    string     `json:"approve"` // allowed, ask or denied: may it tap a reply (#329)
