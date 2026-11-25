@@ -486,6 +486,53 @@ fn quitting_takes_down_what_is_showing() {
     assert_eq!(closes, ["close 1", "close 2"]);
 }
 
+#[test]
+fn a_clear_after_the_service_restarts_leaves_the_new_one_alone() {
+    let mut d = Desk::start();
+    d.show(&note("a"), true);
+    // Another run of the service takes over; its ids start over at 1.
+    block_on(d.service.release_name(NAME)).unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let _new = block_on(
+        zbus::connection::Builder::address(d._bus.1.as_str())
+            .name(NAME)
+            .serve_at(
+                PATH,
+                Service {
+                    calls: calls.clone(),
+                    next: Arc::new(AtomicU32::new(0)),
+                    markup: true,
+                    echo: Arc::new(AtomicU32::new(3)),
+                },
+            )
+            .build(),
+    )
+    .unwrap();
+    d.notifier.as_mut().unwrap().close("a"); // another device cleared it
+    settle();
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "{:?}",
+        calls.lock().unwrap()
+    );
+}
+
+#[test]
+fn a_clear_from_another_device_while_a_local_clear_fails_keeps_it_away() {
+    let mut d = Desk::start();
+    d.show(&note("a"), true);
+    d.server.hold_dismiss(true);
+    d.user_presses(1, "clear");
+    wait("the clear is on its way", || {
+        d.server.requests().iter().any(|r| r.contains("/a/dismiss"))
+    });
+    d.notifier.as_mut().unwrap().close("a"); // another device cleared it
+    d.server.offline();
+    d.server.hold_dismiss(false); // the local clear fails now
+    settle();
+    assert_eq!(d.calls(), [first("a"), "close 1".to_string()]);
+}
+
 /// The whole path, as the app runs it: server, sync engine, notifier, bus.
 #[test]
 fn clears_sync_both_ways_through_the_engine() {
