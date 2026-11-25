@@ -136,6 +136,7 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * Null when the phone already lets clrd run in the background, else the system prompt that allows it.
@@ -1999,6 +2000,20 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 Title(R.string.link_phone)
                 Explain(R.string.link_phone_explain)
                 TextButton(onClick = scan) { Text(stringResource(R.string.scan_qr), color = b.ink) }
+            }
+            "client-cert" -> {
+                Title(R.string.client_cert)
+                Explain(R.string.client_cert_explain)
+                val alias by app.clientCert.collectAsState()
+                Text(alias ?: stringResource(R.string.client_cert_none), color = b.body, fontSize = 14.sp)
+                Row {
+                    TextButton(onClick = {
+                        val host = app.serverUrl.toHttpUrlOrNull()
+                        // Android's own picker: the key stays in the key store, clrd only learns its name.
+                        (ctx as? android.app.Activity)?.let { android.security.KeyChain.choosePrivateKeyAlias(it, { a -> if (a != null) app.pickClientCert(a) }, null, null, host?.host, host?.port ?: -1, alias) }
+                    }) { Text(stringResource(R.string.client_cert_pick), color = b.ink) }
+                    if (alias != null) TextButton(onClick = { app.pickClientCert(null) }) { Text(stringResource(R.string.client_cert_remove), color = b.ink) }
+                }
             }
             "battery" -> battery?.let { prompt ->
                 Title(R.string.battery)
