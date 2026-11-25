@@ -23,3 +23,5 @@ c.List(ctx, "infra", "open")
 Non-2xx answers return `*clrd.Error` with `Status` and `Code`.
 
 Tests: `go test ./...`
+
+Source: [github.com/thejdubb02/clrd](https://github.com/thejdubb02/clrd)

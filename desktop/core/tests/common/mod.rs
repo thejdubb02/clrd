@@ -336,6 +336,9 @@ fn serve(mut conn: TcpStream, inner: Arc<Mutex<Inner>>) {
         while inner.lock().unwrap().hold_dismiss && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(10));
         }
+        if !inner.lock().unwrap().online {
+            return; // went offline while held: the dismiss fails
+        }
     }
     if open_routes(
         &mut conn,

@@ -34,3 +34,5 @@ clrd list infra
 Errors raise `clrd.ClrdError` with `.status` and `.code`.
 
 Tests: `python3 -m unittest test_clrd.py`
+
+Source: [github.com/thejdubb02/clrd](https://github.com/thejdubb02/clrd)
