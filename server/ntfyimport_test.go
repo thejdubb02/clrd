@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // importFixture imports testdata/ntfy (written by the real ntfy v2.38.1, see
@@ -45,6 +47,14 @@ func importFixture(t *testing.T, in NtfyImport, before ...func(*Server, string, 
 		toks[l] = tk
 	}
 	rows.Close()
+	// ntfy hashed these at bcrypt cost 10, about 1 s a check under -race;
+	// cost 4 keeps the password tests fast (#945). Only the copy changes.
+	for user, pass := range map[string]string{"boss": "adminpass", "phone": "phonepass"} {
+		h, _ := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.MinCost)
+		if _, err := src.Exec(`UPDATE user SET pass = ? WHERE user = ?`, string(h), user); err != nil {
+			t.Fatal(err)
+		}
+	}
 	src.Close()
 	s, ts, admin := newTest(t)
 	for _, f := range before {
@@ -107,6 +117,24 @@ func TestNtfyImportDryRun(t *testing.T) {
 func TestNtfyImport(t *testing.T) {
 	s, u, toks, _ := importFixture(t, NtfyImport{})
 	boss, pixel, web := toks[""], toks["pixel"], toks["web"]
+
+	// importFixture swaps in fast hashes; ntfy's own cost 10 hash must still sign in.
+	fx, err := sql.Open("sqlite", "file:testdata/ntfy/user.db?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var real string
+	err = fx.QueryRow(`SELECT pass FROM user WHERE user = 'phone'`).Scan(&real)
+	fx.Close()
+	if err != nil || !strings.HasPrefix(real, "$2a$10$") {
+		t.Fatalf("fixture hash: %q %v", real, err)
+	}
+	if _, err := s.db.Exec(`UPDATE users SET hash = ? WHERE name = 'phone'`, real); err != nil {
+		t.Fatal(err)
+	}
+	if c := basic(t, "GET", u+"/alerts/json?poll=1", "phone", "phonepass", ""); c != 200 {
+		t.Fatalf("ntfy's own hash: %d", c)
+	}
 
 	// A second import is refused.
 	if err := s.ImportNtfy(context.Background(), NtfyImport{DefaultAccess: "deny-all"}, io.Discard); err == nil {

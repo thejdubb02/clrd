@@ -88,6 +88,8 @@ type formatIgnore struct {
 // topic, or with bySender one per topic and sending token (#320). Topics
 // turned off and dismissed findings (#320) are left out and listed.
 // ponytail: one page of 500, page through older ones if anyone needs more.
+var formatCheckLimit = 500 // a var so the test can fill a page quickly
+
 func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender bool) (map[string]any, error) {
 	rows, err := s.db.QueryContext(r.Context(), `SELECT topic, rule, sender FROM format_ignore ORDER BY topic, rule, sender`)
 	if err != nil {
@@ -113,7 +115,7 @@ func (s *Server) FormatCheck(r *http.Request, tok *Token, topic string, bySender
 		return nil, err
 	}
 	// Off topics are left out in the query, so they never use up the 500.
-	lq := ListQuery{State: "all", Limit: 500, Skip: off, All: true} // a sender's format is not a view of one owner (#617)
+	lq := ListQuery{State: "all", Limit: formatCheckLimit, Skip: off, All: true} // a sender's format is not a view of one owner (#617)
 	if topic != "" {
 		lq.Topics = []string{topic}
 	}
