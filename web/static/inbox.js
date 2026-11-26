@@ -194,6 +194,7 @@
     });
     addEventListener('storage', e => { if (e.key === 'clrd.theme') themeSel.value = e.newValue || ''; });
   }
+  const store = (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* storage can be disabled */ } };
   const colors = window.clrdPalette;
   const paletteForm = $('[data-palette-form]');
   let savedPalette = colors.initial, draftPalette = false, savingPalette = false;
@@ -228,8 +229,11 @@
       if (theme.value === 'custom') st.theme_colors = Object.fromEntries(Object.keys(colors.starter).map(k => [k, fields.elements[k].value]));
       return st;
     };
-    renderPalette();
-    fields.addEventListener('input', () => {
+    // Settings saves reload the page. Keep this draft in the current tab
+    // and restore it only for the same signed-in device and database.
+    const draftKey = 'clrd-palette-draft';
+    const scope = JSON.stringify([B, epoch, shell.dataset.meId]);
+    function previewPalette() {
       draftPalette = true;
       const st = patch();
       $('[data-palette-colors]').hidden = !st.theme_colors;
@@ -241,7 +245,20 @@
         colors.show(st);
         if (themeSel) themeSel.disabled = !!st.theme_colors;
       }
-    });
+    }
+    renderPalette();
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(draftKey));
+      if (draft?.scope === scope) {
+        theme.value = draft.st.theme;
+        for (const key of Object.keys(colors.starter)) {
+          if (draft.st.theme_colors?.[key]) fields.elements[key].value = draft.st.theme_colors[key];
+        }
+        previewPalette();
+      }
+    } catch { /* storage can be disabled */ }
+    fields.addEventListener('input', previewPalette);
+    addEventListener('pagehide', () => store(draftKey, draftPalette ? JSON.stringify({ scope, st: patch() }) : null));
     $('[data-palette-cancel]').addEventListener('click', () => {
       draftPalette = false;
       syncPalette(savedPalette);
@@ -784,7 +801,6 @@
   const snzTyped = () => snz.times.value.split(',').map(v => v.trim()).filter(Boolean);
   const snzValue = v => v.replace(/^(\d+)d$/, (_, n) => `${n * 24}h`);
   const snzSaved = snz && snz.default.value;
-  const snzDirty = () => snz && (snz.times.value !== snz.times.defaultValue || snz.default.value !== snzSaved);
   if (snz) {
     // The Default list follows the Times box as it is typed, so a time just added can be the default (#182).
     const labels = Object.fromEntries([...snz.default.options].map(o => [o.value, o.text]));
@@ -802,7 +818,6 @@
   const subsPut = body => fetch('/api/v1/subscriptions', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
   const subsWhy = async r => r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   const approvalsOff = t => confirm(`Agents send their approval requests to ${t}. Unsubscribe, and those requests stop reaching you. Unsubscribe anyway?`);
-  const store = (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* private window: no Undo after the reload */ } };
   let unsubDone = null;
   try { unsubDone = JSON.parse(sessionStorage.getItem('clrd-unsub')); } catch { /* as above */ }
   if (Array.isArray(unsubDone)) {
@@ -1472,6 +1487,17 @@
     if (on) { clearTimeout(staleTimer); staleTimer = null; offline.hidden = true; }
     else staleTimer ??= setTimeout(() => { offline.hidden = false; }, 180000);
   };
+  // What every Settings field held once the page was set up: a live settings change from
+  // another device reloads the page only while no field has an unsaved edit (#182, #883).
+  // Settings forms only, not a card's snooze box. ponytail: rows a script adds or removes
+  // later are not tracked, except color rules, which are compared whole.
+  const fieldNow = e => /^(checkbox|radio)$/.test(e.type) ? e.checked : e.value;
+  const asLoaded = new Map([...document.querySelectorAll('[data-settings-group] form')].flatMap(f => [...f.elements]).filter(e => !/^(submit|button|reset|file|fieldset)$/.test(e.type)).map(e => [e, fieldNow(e)]));
+  const edited = () => {
+    const ed = new Set([...asLoaded].filter(([e, v]) => e.isConnected && fieldNow(e) !== v).map(([e]) => e.form));
+    if (crf && crKey(crRules()) !== crSaved) ed.add(crf); // a color rule added or removed (#165)
+    return ed;
+  };
   function connect() {
     const u = new URL(B + '/api/v1/ws', location.href);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1493,18 +1519,22 @@
       else if (m.type === 'reset') reset();
       else if (m.type === 'devices') refresh(); // a device connected, caught up or dropped: redraw the dots (#295)
       else if (m.type === 'settings') {
-        // Snooze times or formatting changed on another device: the cards are stale.
-        // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
+        // Settings changed on another device: the cards and the forms are stale.
+        // Edits not saved here yet are kept; saving them replaces the other change (#182, #883).
         const st = m.settings || {};
         if (st.theme) syncPalette(st);
         if (st.color_rules) refresh(); // recolor the cards (#165)
         if (crf && st.color_rules && crKey(st.color_rules) !== crSaved) $('[data-color-status]').textContent = 'Color rules changed on another device. Saving here replaces that change.';
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
-        const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
+        const stale = () => {
+          const ed = edited();
+          if (!ed.size) return reset();
+          ed.forEach(f => { const n = f && [...f.querySelectorAll('[role=status]')].pop(); if (n) n.textContent = 'Settings changed on another device. Saving here replaces that change.'; });
+        };
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
-        else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) reset(); // a stale form would save the old period back
+        else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) stale();
         else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
-        else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) reset(); // the buttons and the form would be stale
+        else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) stale(); // the buttons would be stale too
       }
       else if (m.notification) {
         if (m.type === 'state' && cleared(m.notification.state)) syncAlerts(m.notification.id, m.seq);

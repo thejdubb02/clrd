@@ -1132,16 +1132,16 @@ One project version for the server, web, Android and desktop apps: the
 newest dated heading in `CHANGELOG.md` (`## 0.1.0 - 2026-11-23`). It is
 `0.0.0` until the first version is cut. Cut one with
 `go run ./server/cmd/cutversion 0.1.0` (date defaults to today, UTC): it
-moves everything under `## Unreleased` into a new dated section and leaves
-`## Unreleased` in place, empty, for the next entry. With
+collects the pending files in `changelog.d/` into a new dated section,
+removes the files it consumed, and leaves `## Unreleased` in place. With
 `-summary-file F` (before the version), the short hand-written text in `F`
 (`###` sections with `-` items, like Unreleased) becomes the version's
 section, and the full entries go to `CHANGELOG-archive.md` under the same
 heading. A version is cut with each deploy batch, so Unreleased stays small.
 
-The binary embeds `CHANGELOG.md`, so it carries the recent history and the
-repo carries all of it. A test fails when the embedded file is over 96,000
-bytes. When a cut leaves it over 90,000 bytes, the script moves the oldest
+The binary shows the pending entries under Unreleased and carries recent
+versions from `CHANGELOG.md`. A test fails when the combined changelog is
+over 96,000 bytes. When a cut leaves it over 90,000 bytes, the script moves the oldest
 versions into `CHANGELOG-archive.md` at the repo root (not embedded), keeping
 the newest 10 when they fit under 96,000 and always the newest one.
 
@@ -1176,7 +1176,7 @@ its data):
   a dismissible note at the top of the inbox opens What's new; quiet on the
   first open ever, and off with the switch in Settings, About.
 
-`/docs/changelog` renders the same file; a private server hides it with the
+`/docs/changelog` renders the combined changelog; a private server hides it with the
 rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
 and `initialize` reports `version` as `serverInfo.version`.
 
@@ -1199,8 +1199,11 @@ and `initialize` reports `version` as `serverInfo.version`.
   are taken as they are. `X-Template`/`Template`/`tpl` set
   to yes/true/1 makes the message, title and priority Go templates over the
   JSON body, as in ntfy (any other `?template=` value is a webhook template,
-  below). A body over 4096 bytes without a file
-  name is still a 413; clrd does not turn it into an attachment. ntfy output
+  below). By default, a body over 4096 bytes without a file name is a 413.
+  With `CLRD_NTFY_IMPLICIT_UPLOADS=on`, ordinary topic publishes with a body
+  over 4096 bytes or invalid UTF-8 become uploaded files named `attachment`.
+  The same file limits, access checks and safe download types apply. Templates
+  and external attachments keep their message handling. ntfy output
   carries `icon` and `attachment` (`name`, `url`, `type`, `size`, with `url`
   made absolute from `CLRD_BASE_URL`). Unlike ntfy, clrd's file URLs need a
   token, so a third-party ntfy app that fetches files without one gets 401.
