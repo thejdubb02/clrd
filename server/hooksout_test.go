@@ -459,6 +459,32 @@ func TestHooksOutPreview(t *testing.T) {
 
 // A discord hook posts each new notification and edits that message when its
 // state changes, in order, with the token in its URL kept out of errors (#166).
+// A delivery queued for one destination never goes to another (#871).
+func TestHooksOutURLChangeDropsPending(t *testing.T) {
+	s, ts, admin := newTest(t)
+	path := "/api/v1/topics/ops/hooks/h"
+	pending := func() (n int) {
+		s.db.QueryRow(`SELECT count(*) FROM hook_deliveries WHERE topic = 'ops' AND name = 'h'`).Scan(&n)
+		return
+	}
+	save := func(url string) {
+		t.Helper()
+		if code, h := call(t, ts, "PUT", path, admin, map[string]any{"url": url}); code != 200 {
+			t.Fatalf("save %s: %d %v", url, code, h)
+		}
+	}
+	save("https://a.example/hook")
+	s.db.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at) VALUES ('ops', 'h', 1, 'posted', '{}', 0, 0)`)
+	save("https://a.example/hook")
+	if n := pending(); n != 1 {
+		t.Fatalf("same url dropped the pending delivery: %d", n)
+	}
+	save("https://b.example/hook")
+	if n := pending(); n != 0 {
+		t.Fatalf("%d deliveries still queued for the old url", n)
+	}
+}
+
 func TestHooksOutDiscord(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()
@@ -1012,6 +1038,9 @@ func TestHooksOutSlack(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT remote_id FROM hook_posts WHERE name = 'slack' AND id = ?`, a["id"]).Scan(&remote); err != nil || remote != "C999/123.456" {
 		t.Fatalf("kept post: %q, %v", remote, err)
 	}
+	// Only the channel matters: a save that changes anything else in the URL
+	// keeps the message ids, so the dismiss below still edits the post (#870).
+	save("C0123&unused=1")
 	api("POST", "/api/v1/notifications/"+a["id"].(string)+"/dismiss", nil)
 	deliver()
 	got := checkHits("chat.postMessage", "chat.update", "reactions.add")
