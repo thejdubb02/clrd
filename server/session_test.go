@@ -168,6 +168,127 @@ func TestRevokeParentEndsSessions(t *testing.T) {
 	}
 }
 
+// Rename and rotate a sender's token (#119): same id, so its rules stay; the
+// old secret and the browsers signed in with it stop at once.
+func TestRenameRotateToken(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	typed := mkToken(t, s, "laptop", []string{ScopeRead, ScopePublish}, nil)
+	id := s.lookupToken(ctx, typed).ID
+	if code, _ := call(t, ts, "PUT", "/api/v1/senders/"+id, admin, map[string]any{"muted": true}); code != 200 {
+		t.Fatalf("set rules: %d", code)
+	}
+	limited := mkToken(t, s, "ops admin", []string{ScopeAdmin}, []string{"ops"})
+	reader := mkToken(t, s, "reader", []string{ScopeRead}, nil)
+	for _, c := range []struct {
+		tok, id string
+		name    any
+		want    int
+	}{{admin, id, " work\tlaptop ", 200}, {admin, id, " \x01 ", 400}, {admin, id, nil, 400}, {admin, "nope", "x", 404}, {limited, id, "x", 403}, {reader, id, "x", 403}} {
+		if code, _ := call(t, ts, "PUT", "/api/v1/tokens/"+c.id, c.tok, map[string]any{"name": c.name}); code != c.want {
+			t.Errorf("rename %q on %s: %d, want %d", c.name, c.id, code, c.want)
+		}
+	}
+	if got := tokenIDs(t, ts, admin)[id]; got != "work laptop" {
+		t.Fatalf("after rename: name %q", got)
+	}
+
+	_, _, cookie := signIn(t, ts, `{"token":"`+typed+`"}`, firefoxLinux, nil)
+	old := dialWS(t, ts.URL, typed, 0)
+	old.until(func(m msg) bool { return m.Type == "ready" })
+	for _, tok := range []string{limited, reader} {
+		if code, _ := call(t, ts, "POST", "/api/v1/tokens/"+id+"/rotate", tok, nil); code != 403 {
+			t.Fatalf("rotate by a non-full admin: %d, want 403", code)
+		}
+	}
+	code, out := call(t, ts, "POST", "/api/v1/tokens/"+id+"/rotate", admin, nil)
+	fresh, _ := out["token"].(string)
+	if code != 200 || out["id"] != id || !isToken(fresh) || fresh == typed {
+		t.Fatalf("rotate: %d %v", code, out)
+	}
+	if c, _ := call(t, ts, "GET", "/api/v1/topics", typed, nil); c != 401 {
+		t.Errorf("old secret after rotate: %d, want 401", c)
+	}
+	if withCookie(t, ts, "GET", "/api/v1/topics", cookie) != 401 {
+		t.Error("a browser signed in with the old secret survives the rotate")
+	}
+	rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if _, _, err := old.c.Read(rctx); websocket.CloseStatus(err) != websocket.StatusTryAgainLater {
+		t.Errorf("stream on the old secret after rotate: %v", err)
+	}
+	if c, _ := call(t, ts, "GET", "/api/v1/topics", fresh, nil); c != 200 {
+		t.Errorf("new secret: %d, want 200", c)
+	}
+	dialWS(t, ts.URL, fresh, 0).until(func(m msg) bool { return m.Type == "ready" }) // never put in revoked
+	if _, sd := call(t, ts, "GET", "/api/v1/senders/"+id, admin, nil); sd["rules"].(map[string]any)["muted"] != true || sd["name"] != "work laptop" {
+		t.Errorf("sender after rotate: %v, want the same rules and name", sd)
+	}
+
+	_, sess, _ := signIn(t, ts, `{"token":"`+fresh+`"}`, firefoxLinux, nil)
+	if _, err := s.db.Exec(`UPDATE tokens SET config = 1 WHERE id = ?`, s.lookupToken(ctx, reader).ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		id   string
+		want int
+	}{{"nope", 404}, {sess["id"].(string), 409}, {s.lookupToken(ctx, reader).ID, 409}} {
+		if code, _ := call(t, ts, "POST", "/api/v1/tokens/"+c.id+"/rotate", admin, nil); code != c.want {
+			t.Errorf("rotate %s: %d, want %d", c.id, code, c.want)
+		}
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/tokens/"+s.lookupToken(ctx, reader).ID, admin, map[string]any{"name": "x"}); code != 409 {
+		t.Errorf("rename a CLRD_CONFIG token: %d, want 409", code)
+	}
+}
+
+// What holds the old secret's token across a rotate gets nothing under the
+// new one (#119): a sign-in that authenticated just before, a pairing and a
+// phone link it approved, and a stream that subscribes just after.
+func TestRotateCutsStaleHolders(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	stale := s.lookupToken(ctx, typed) // as a racing request loaded it
+	pc := browser(t)
+	_, p, _ := pairSend(t, pc, "POST", ts.URL+"/api/v1/pair", "", nil)
+	pairCode, _ := p["code"].(string)
+	if code, _, _ := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/pair/"+pairCode+"/approve", typed, nil); code != 200 {
+		t.Fatalf("approve pairing: %d", code)
+	}
+	_, l, _ := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/link", typed, nil)
+	lc, _ := l["code"].(string)
+	if code, _ := linkClaim(t, ts.URL, lc, phoneSecret); code != 202 {
+		t.Fatalf("link claim: %d", code)
+	}
+	if code, _, _ := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/link/"+lc+"/approve", typed, nil); code != 200 {
+		t.Fatalf("approve link: %d", code)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/tokens/"+stale.ID+"/rotate", admin, nil); code != 200 {
+		t.Fatalf("rotate: %d", code)
+	}
+
+	if _, _, err := s.childToken(ctx, stale, stale.ID, "late browser", false); err == nil {
+		t.Error("a sign-in on the old secret finished after the rotate and made a session")
+	}
+	if code, _, _ := pairSend(t, pc, "POST", ts.URL+"/api/v1/pair/claim", "", map[string]string{"code": pairCode}); code != 401 {
+		t.Errorf("claim a pairing approved before the rotate: %d, want 401", code)
+	}
+	if code, _ := linkClaim(t, ts.URL, lc, phoneSecret); code != 401 {
+		t.Errorf("claim a phone link approved before the rotate: %d, want 401", code)
+	}
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE parent_id = ?`, stale.ID).Scan(&n)
+	if n != 0 {
+		t.Errorf("%d sessions under the rotated token, want 0", n)
+	}
+	sctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := s.follow(sctx, stale, 0, nil, nil, func([]byte, int64) error { return nil }, func() error { return nil }); !errors.Is(err, errRevoked) {
+		t.Errorf("a stream on the old secret, subscribing after the rotate: %v, want revoked", err)
+	}
+}
+
 func TestDeviceName(t *testing.T) {
 	for _, c := range [][2]string{
 		{firefoxLinux, "Firefox on Linux"},

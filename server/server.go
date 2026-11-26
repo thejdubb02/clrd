@@ -1030,13 +1030,33 @@ func (s *Server) routesSetup() {
 		return nil
 	})
 	s.api("DELETE /api/v1/tokens/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
-		if err := tok.needFullAdmin(); err != nil {
-			return err
-		}
-		if err := s.DeleteToken(r.Context(), r.PathValue("id")); err != nil {
+		if err := s.RevokeToken(r.Context(), tok, r.PathValue("id")); err != nil {
 			return err
 		}
 		w.WriteHeader(http.StatusNoContent)
+		return nil
+	})
+	s.api("PUT /api/v1/tokens/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		var in struct {
+			Name string `json:"name"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			return err
+		}
+		id := r.PathValue("id")
+		if err := s.RenameToken(r.Context(), tok, id, in.Name); err != nil {
+			return err
+		}
+		writeJSON(w, 200, map[string]string{"id": id, "name": deviceName(in.Name, "")})
+		return nil
+	})
+	s.api("POST /api/v1/tokens/{id}/rotate", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
+		id := r.PathValue("id")
+		raw, err := s.RotateToken(r.Context(), tok, id)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, 200, map[string]string{"id": id, "token": raw})
 		return nil
 	})
 	s.api("GET /api/v1/server", func(w http.ResponseWriter, r *http.Request, tok *Token) error {

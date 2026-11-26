@@ -468,6 +468,49 @@ func (a webAPI) UndoSenderChange(r *http.Request, id string, seq int64) error {
 	return webError(err)
 }
 
+func (a webAPI) RenameToken(r *http.Request, id, name string) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	return webError(a.s.RenameToken(r.Context(), tok, id, name))
+}
+
+// errOwnToken: rotating or revoking the token this browser is signed in
+// under would sign it out, the new secret unseen.
+var errOwnToken = errors.New("this browser is signed in with that token: rotate or revoke it from another device or the API")
+
+func (a webAPI) RotateToken(r *http.Request, id string) (string, error) {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return "", web.ErrUnauthorized
+	}
+	if a.s.Under(r.Context(), tok.ID, id) {
+		return "", errOwnToken
+	}
+	// The sender page is where the new secret shows, once: no sender, no rotate.
+	if _, err := a.s.Sender(r.Context(), tok, id); err != nil {
+		return "", webError(err)
+	}
+	raw, err := a.s.RotateToken(r.Context(), tok, id)
+	return raw, webError(err)
+}
+
+func (a webAPI) RevokeToken(r *http.Request, id string) error {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return web.ErrUnauthorized
+	}
+	if a.s.Under(r.Context(), tok.ID, id) {
+		return errOwnToken
+	}
+	err := a.s.RevokeToken(r.Context(), tok, id)
+	if status, _ := server.PublicError(err); status == 404 {
+		return nil // already gone: the page was stale
+	}
+	return webError(err)
+}
+
 func (a webAPI) DeleteTemplate(r *http.Request, topic, name string) error {
 	tok := a.s.Authenticate(r)
 	if tok == nil {

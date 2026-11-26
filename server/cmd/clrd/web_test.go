@@ -91,13 +91,8 @@ func TestNotificationLinkUnlisted(t *testing.T) {
 	get := func(path string) (int, string) { // as this token, whose clears stay here
 		req, _ := http.NewRequest("GET", ts.URL+path, nil)
 		req.Header.Set("Authorization", "Bearer "+raw)
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer res.Body.Close()
-		b, _ := io.ReadAll(res.Body)
-		return res.StatusCode, string(b)
+		code, body, _ := send(t, http.DefaultClient, req)
+		return code, body
 	}
 	ids := make([]string, 502)
 	for i := range ids {
@@ -269,16 +264,8 @@ func TestMarkForm(t *testing.T) {
 	post := func(c *http.Client, v url.Values) (int, string) {
 		t.Helper()
 		v.Set("id", m[1])
-		req, _ := http.NewRequest("POST", ts.URL+"/app/mark", strings.NewReader(v.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", ts.URL)
-		res, err := c.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer res.Body.Close()
-		b, _ := io.ReadAll(res.Body)
-		return res.StatusCode, string(b)
+		code, body, _ := postForm(t, c, ts.URL, "/app/mark", v)
+		return code, body
 	}
 	if code, body := post(c, url.Values{"mark": {"actioned"}, "link": {"javascript:alert(1)"}}); code != 400 || !strings.Contains(body, "Not marked: link") {
 		t.Errorf("a script link: %d %q, want 400 with the reason", code, body)
@@ -304,6 +291,104 @@ func TestMarkForm(t *testing.T) {
 	n, _ := s.Get(context.Background(), mustTok(t, s, raw), m[1])
 	if len(n.Marks) != 1 || n.Marks[0].By != "stew" {
 		t.Errorf("after Remove: %+v, want only stew's mark", n.Marks)
+	}
+}
+
+// TestSenderTokenForms posts the sender page's rename, rotate and revoke
+// forms the way a browser without JavaScript does (#119).
+func TestSenderTokenForms(t *testing.T) {
+	s, ts, raw := realServer(t)
+	ctx := context.Background()
+	cam, camRaw, err := s.CreateToken(ctx, "camera", "", []string{"publish"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish(t, ts, camRaw, "home", "motion")
+	api := func(tok, method, path, body string) int {
+		t.Helper()
+		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	signedIn := func(tok string) *http.Client {
+		c := browser()
+		_, page, _ := fetch(t, c, ts.URL+"/app")
+		submit(t, c, ts.URL, page, tok, "")
+		return c
+	}
+	post := func(c *http.Client, id string, v url.Values) (int, string, string) {
+		t.Helper()
+		code, body, res := postForm(t, c, ts.URL, "/app/senders/"+id, v)
+		return code, body, res.Request.URL.Path
+	}
+	c := signedIn(raw)
+	if _, page, _ := fetch(t, c, ts.URL+"/app/senders/"+cam.ID); !strings.Contains(page, `name="token_name"`) || !strings.Contains(page, "Rotate secret") || !strings.Contains(page, `name="revoke"`) {
+		t.Fatal("a token sender's page has no rename, rotate or revoke")
+	}
+
+	// Someone who is no full admin changes nothing.
+	rt, reader, _ := s.CreateToken(ctx, "reader", "", []string{"read"}, nil)
+	// A token that never sent has no sender page to show a new secret on.
+	if code, _, _ := post(c, rt.ID, url.Values{"rotate": {"1"}}); code == 200 || api(reader, "GET", "/api/v1/topics", "") != 200 {
+		t.Fatalf("rotate a token with no sender: %d, want refused and the token kept", code)
+	}
+	other := signedIn(reader)
+	for _, v := range []url.Values{{"token_name": {"x"}}, {"rotate": {"1"}}, {"revoke": {"1"}}} {
+		if code, _, _ := post(other, cam.ID, v); code == 200 {
+			t.Errorf("%v by a reader: 200", v)
+		}
+	}
+	if api(camRaw, "POST", "/api/v1/notifications", `{"topic":"home","message":"still here"}`) != 200 {
+		t.Fatal("a reader's posts changed the camera token")
+	}
+
+	if code, page, at := post(c, cam.ID, url.Values{"token_name": {"porch camera"}}); code != 200 || at != "/app/senders/"+cam.ID || !strings.Contains(page, `value="porch camera"`) {
+		t.Fatalf("rename: %d at %s", code, at)
+	}
+	code, page, res := postForm(t, c, ts.URL, "/app/senders/"+cam.ID, url.Values{"rotate": {"1"}})
+	m := regexp.MustCompile(`<code data-secret>(clrd_[A-Za-z0-9]+)</code>`).FindStringSubmatch(page)
+	if code != 200 || m == nil {
+		t.Fatalf("rotate: %d, no new secret on the page", code)
+	}
+	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("the page with the new secret: Cache-Control %q, want no-store", cc)
+	}
+	if api(camRaw, "POST", "/api/v1/notifications", `{"topic":"home","message":"x"}`) != 401 || api(m[1], "POST", "/api/v1/notifications", `{"topic":"home","message":"x"}`) != 200 {
+		t.Fatal("after rotate the old secret should be 401 and the new one work")
+	}
+	// Never the token this browser is signed in under: the new secret would be lost.
+	me, _ := s.Tokens(ctx, time.Time{})
+	if code, _, _ := post(c, me[0].ID, url.Values{"rotate": {"1"}}); code != 400 || api(raw, "GET", "/api/v1/topics", "") != 200 {
+		t.Fatalf("rotate own token from the web: %d, want 400 and the token kept", code)
+	}
+	if code, _, at := post(c, cam.ID, url.Values{"revoke": {"1"}}); code != 200 || at != "/app/senders" {
+		t.Fatalf("revoke: %d at %s, want the senders list", code, at)
+	}
+	if api(raw, "GET", "/api/v1/senders/"+cam.ID, "") != 404 || api(m[1], "POST", "/api/v1/notifications", `{"topic":"home","message":"x"}`) != 401 {
+		t.Fatal("after revoke the sender and its token should be gone")
+	}
+
+	// An anonymous sender has no token to manage.
+	if api(raw, "PUT", "/api/v1/ntfy/anonymous", `{"grants":[{"topic":"up*","scopes":["publish"]}]}`) != 200 || api("", "POST", "/up1", "hi") != 200 {
+		t.Fatal("anonymous publish")
+	}
+	ss, _ := s.Senders(ctx, mustTok(t, s, raw))
+	if len(ss) != 1 || ss[0].TokenID != "" {
+		t.Fatalf("senders: %+v, want the anonymous one alone", ss)
+	}
+	for _, sd := range ss {
+		if sd.TokenID == "" {
+			if _, page, _ := fetch(t, c, ts.URL+"/app/senders/"+sd.ID); !strings.Contains(page, "Rules") || strings.Contains(page, `name="token_name"`) || strings.Contains(page, `name="revoke"`) {
+				t.Error("an anonymous sender's page shows token forms")
+			}
+		}
 	}
 }
 
@@ -339,6 +424,28 @@ func fetch(t *testing.T, c *http.Client, u string) (int, string, *url.URL) {
 	defer res.Body.Close()
 	b, _ := io.ReadAll(res.Body)
 	return res.StatusCode, string(b), res.Request.URL
+}
+
+// postForm posts v to base+path as a same-origin browser form, following
+// redirects, and returns the answer it landed on.
+func postForm(t *testing.T, c *http.Client, base, path string, v url.Values) (int, string, *http.Response) {
+	t.Helper()
+	req, _ := http.NewRequest("POST", base+path, strings.NewReader(v.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", base)
+	return send(t, c, req)
+}
+
+// send runs req on c and returns the status, body and the (read) answer.
+func send(t *testing.T, c *http.Client, req *http.Request) (int, string, *http.Response) {
+	t.Helper()
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return res.StatusCode, string(b), res
 }
 
 // submit posts the page's sign-in form to its own action, as a browser would.

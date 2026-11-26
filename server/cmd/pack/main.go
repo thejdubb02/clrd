@@ -23,6 +23,7 @@ var packs = []struct{ src, out string }{
 	{"docs", "packed"},
 	{"web/static", "web/packed"},
 	{"server/openapi.json", "server/packed"},
+	{"server/mcp/tools.json", "server/mcp/packed"},
 }
 
 func main() {

@@ -63,6 +63,7 @@ type Token struct {
 	view       *view      // its subscriptions filter once loaded (subs.go); nil until then
 	union      []*Token   // set: may what any of these may (an admin's ?for=<user>, subs.go)
 	follow     bool       // subscribed=mine: a typed-in token with no user follows its own set (#764)
+	hash       string     // its secret's hash as loaded: a rotate since changes it (#119)
 }
 
 // limited reports whether the token is held to some topics.
@@ -245,21 +246,21 @@ func (s *Server) CreateToken(ctx context.Context, name, approve string, scopes, 
 
 func (s *Server) createToken(ctx context.Context, t *Token) (*Token, string, error) {
 	raw := tokenPrefix + randomString(32)
-	t.ID, t.CreatedAt = randomString(12), now()
-	if err := insertToken(ctx, s.db, t, hashToken(raw)); err != nil {
+	t.ID, t.CreatedAt, t.hash = randomString(12), now(), hashToken(raw)
+	if err := insertToken(ctx, s.db, t, t.hash); err != nil {
 		return nil, "", err
 	}
 	return t, raw, nil
 }
 
-const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve, COALESCE(user_id, '')`
+const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve, COALESCE(user_id, ''), hash`
 
 func scanToken(r scanner) (*Token, error) {
 	var t Token
 	var scopes, topics, grants string
 	var created int64
 	var seen sql.NullInt64
-	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve, &t.User); err != nil {
+	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve, &t.User, &t.hash); err != nil {
 		return nil, err
 	}
 	if grants != "" {
@@ -318,6 +319,90 @@ func (s *Server) listTokens(ctx context.Context, q string, args ...any) ([]*Toke
 // DeleteToken revokes a token and every web session signed in with it.
 func (s *Server) DeleteToken(ctx context.Context, id string) error {
 	return s.deleteTokenIf(ctx, id, `SELECT ?`, id)
+}
+
+// RevokeToken is DeleteToken for an admin with no topic limit
+// (DELETE /api/v1/tokens/{id}).
+func (s *Server) RevokeToken(ctx context.Context, tok *Token, id string) error {
+	if err := tok.needFullAdmin(); err != nil {
+		return err
+	}
+	return s.DeleteToken(ctx, id)
+}
+
+// RenameToken names token id (PUT /api/v1/tokens/{id}), cleaned as a device
+// name is. A CLRD_CONFIG token is named in the file.
+func (s *Server) RenameToken(ctx context.Context, tok *Token, id, name string) error {
+	if err := tok.needFullAdmin(); err != nil {
+		return err
+	}
+	if strings.IndexFunc(name, func(c rune) bool { return !unicode.IsSpace(c) && !unicode.IsControl(c) }) < 0 {
+		return errf(400, "bad_request", "name must not be empty")
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE tokens SET name = ? WHERE id = ? AND config = 0`, deviceName(name, ""), id)
+	if err == nil {
+		err = tokenMiss(ctx, s.db, res, id, "a token from CLRD_CONFIG is named in that file")
+	}
+	if err == nil {
+		s.devicesChanged.fire()
+	}
+	return err
+}
+
+// RotateToken gives token id a new secret, returned once, and keeps its id,
+// so its sender rules, history, grants and stats stay (#119). The old secret
+// stops at once, and the browsers and phones signed in with it are revoked
+// as DELETE revokes them: a rotation usually means a leak. Only a typed-in
+// token: a Gotify or Pushover key or an ntfy password has its own form, and a
+// CLRD_CONFIG token's secret lives in that file.
+func (s *Server) RotateToken(ctx context.Context, tok *Token, id string) (string, error) {
+	if err := tok.needFullAdmin(); err != nil {
+		return "", err
+	}
+	raw := tokenPrefix + randomString(32)
+	var gone []string
+	_, err := s.write(ctx, func(tx *sql.Tx) ([]Event, error) {
+		res, err := tx.ExecContext(ctx, `UPDATE tokens SET hash = ? WHERE id = ? AND config = 0 AND NOT `+anonymousWhere+`
+		  AND id NOT IN (SELECT token_id FROM sessions) AND id NOT LIKE 'pushover-%' AND id NOT IN (SELECT token_id FROM gotify_apps)
+		  AND id NOT IN (SELECT token_id FROM users)`, hashToken(raw), id)
+		if err == nil {
+			err = tokenMiss(ctx, tx, res, id, "only a typed-in token is rotated: make a new Gotify or Pushover key, an ntfy password or a CLRD_CONFIG entry instead")
+		}
+		if err == nil {
+			gone, err = dropTokens(ctx, tx, `SELECT token_id FROM sessions WHERE parent_id = ?`, id)
+		}
+		return nil, err
+	})
+	if err != nil {
+		return "", err
+	}
+	s.revokeAll(gone) // never id itself: its new secret must keep working
+	s.hub.drop(id)    // its streams on the old secret close now
+	s.devicesChanged.fire()
+	return raw, nil
+}
+
+// Under reports whether token tok is id or signed in under it at any depth,
+// so that revoking or rotating id signs tok out too.
+func (s *Server) Under(ctx context.Context, tok, id string) bool {
+	var one int
+	return s.db.QueryRowContext(ctx, `WITH RECURSIVE k(id) AS (SELECT ? UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
+	  SELECT 1 FROM k WHERE id = ?`, id, tok).Scan(&one) == nil
+}
+
+// tokenMiss is nil when res changed a row, else 404 when id is no token and
+// 409 with refused when it is one the change left out.
+func tokenMiss(ctx context.Context, db interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, res sql.Result, id, refused string) error {
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	var one int
+	if db.QueryRowContext(ctx, `SELECT 1 FROM tokens WHERE id = ?`, id).Scan(&one) != nil {
+		return errf(404, "not_found", "token not found")
+	}
+	return errf(409, "conflict", "%s", refused)
 }
 
 // deleteTokenIf is DeleteToken, but only while seed, run in the same
@@ -598,8 +683,11 @@ func (s *Server) linkDevice(ctx context.Context, access *Token, parentID, name s
 	}
 	var res sql.Result
 	if err == nil {
-		// Only while the parent exists, so a racing revoke cannot miss this one.
-		res, err = s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id, phone) SELECT ?, id, ? FROM tokens WHERE id = ?`, st.ID, phone, parentID)
+		// Only while the parent exists and access keeps the secret it came
+		// with, so a racing revoke or rotate cannot miss this one (#119). A
+		// pairing or phone link approved before a rotate fails here too.
+		res, err = s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id, phone) SELECT ?, id, ? FROM tokens
+		  WHERE id = ? AND EXISTS (SELECT 1 FROM tokens WHERE id = ? AND hash = ?)`, st.ID, phone, parentID, access.ID, access.hash)
 	}
 	if err == nil {
 		if n, _ := res.RowsAffected(); n == 0 {

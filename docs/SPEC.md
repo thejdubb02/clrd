@@ -991,6 +991,8 @@ resolved`) and `ntfy_import`.
 | PUT | `/api/v1/devices/{id}/approve` | Body `{"approve":"allowed"}`, `ask` or `denied`: who may answer approval requests (section 4). Same device list and 404 as DELETE; 403 `approve_denied` when the caller is not allowed, 403 `forbidden` to raise itself or a token it hangs under or from a token limited to some topics, 400 for any other value. Returns the device; the device list shows each device's `approve`. |
 | PUT | `/api/v1/devices/{id}/clears` | Body `{"everywhere":false}` or `true`: whether that device's clears reach every device (section 2, "Clears everywhere"). Same rules and errors as `/approve`: 403 `approve_denied` when the caller is not allowed, 403 `forbidden` from a token limited to some topics, 404 outside the device list, 400 without `everywhere`. Returns the device. |
 | GET/POST/DELETE | `/api/v1/tokens` | Manage tokens (admin with no topic limit). POST takes `{name, scopes, topics}` or `{name, scopes, grants:[{topic, scopes}]}` (section 4) and returns the token with its secret once, as `token`. It starts denied for approval requests (section 4); `approve` other than `denied` is 400. |
+| PUT | `/api/v1/tokens/{id}` | Rename a token, `{name}`, cleaned as a device name is (section 4). Same admin as above. 400 when empty, 404 for an unknown id, 409 for a token from `CLRD_CONFIG` (named in that file). Returns `{id, name}`. |
+| POST | `/api/v1/tokens/{id}/rotate` | A new secret for the same token row, returned once as `token` (`{id, token}`). Same admin as above. The id stays, so sender rules, history, grants, its user and stats stay. The old secret stops at once, its open streams close, and every browser and phone signed in with it is revoked, as DELETE revokes them: a rotation usually means a leak. A sign-in, pairing or phone link it approved but not yet claimed fails with 401. Typed-in tokens only: a browser or phone, a Gotify or Pushover key, an ntfy user's token and a `CLRD_CONFIG` token get 409. 404 for an unknown id. |
 | GET | `/api/v1/stats` | Traffic numbers for notifications created in `[from, to)` (unix ms; `to` defaults to now, `from` to `days` back, default 7, at most 366): `total`, `answered`, count per `priorities`, count per UTC hour in `hours`, and the top 50 `topics`, `senders` (top token id) and `cleared_by` (who cleared), each with `open`, `cleared` and the median and p90 time from publish to first clear in ms, plus `flappers` (an external id that fired more than once) and `delivery` (failed outgoing webhook deliveries and Web Push sends per topic, worst first, #661; a deleted webhook's failures still count, #794). `?format=csv` returns the same numbers as CSV (`text/csv`); a text cell starting with `=`, `+`, `-`, `@`, `'` or tab gets one leading `'`, so a value that already starts with `'` stays distinct; a CR in a text cell is written as `\r` and a backslash as `\\`, so a CR LF stays apart from a bare LF in readers that fold them (#804). Read from stored rows, so cleared messages past the keep-cleared setting are not counted. Admin with no topic limit (#120). The web Stats page (`/app/stats`, `days` 1, 7, 30 or 90) shows the same numbers and links to the CSV export. |
 | GET | `/metrics` | Optional Prometheus text exposition metrics, off by default (404 until `CLRD_METRICS=on`, #661). Admin with no topic limit. |
 | GET | `/api/v1/senders` | Every sender, most recently heard first (section 5.1). Admin with no topic limit. |
@@ -1030,7 +1032,7 @@ and its address) returns `{senders:[Sender]}`, last heard first:
 | Field | Meaning |
 |---|---|
 | `id` | The sender id: its top token id, or `anonymous-` and 12 hex digits for an anonymous address |
-| `token_id` | The top token id; `""` for anonymous. Rename, rotate and revoke go through `/api/v1/tokens` with it; revoking it removes the sender |
+| `token_id` | The top token id; `""` for anonymous. Rename (`PUT /api/v1/tokens/{id}`), rotate (`POST /api/v1/tokens/{id}/rotate`) and revoke (`DELETE /api/v1/tokens/{id}`) go through `/api/v1/tokens` with it; a rotate keeps the sender, revoking it removes the sender |
 | `name` | The token's name, `anonymous` for anonymous |
 | `kind` | `token`, `person` (a token owned by a user), `ntfy_user`, `gotify_app`, `pushover_app` or `anonymous` |
 | `template` | The webhook template (`?template=`) it last posted through, `""` if none ever |
@@ -1082,7 +1084,13 @@ The web inbox shows the list at `/app/senders` and one sender at
 `/app/senders/{id}`, where a form sets every rule above (an `expect` or `alert_topic` the server
 refuses comes back with its message by that field) and each change
 has an Undo button, for the same admins only; anyone
-else gets 403. The form sends `base_seq`, so saving a page drawn before a
+else gets 403. A sender with a `token_id` also has a Token section: a name
+field (rename), Rotate secret (a typed-in token or a person's, after a
+confirm; the new secret is shown once on the page that answers, never in a
+URL) and Revoke (after a confirm, then back to the list). An anonymous
+sender shows none of these. The web page refuses to rotate or revoke the
+token the browser itself is signed in under, which would sign it out with
+the new secret unseen; the API and MCP allow it. The form sends `base_seq`, so saving a page drawn before a
 newer change is refused rather than undoing that change. The Android app
 lists them in Settings with the same rules (the silence alarm's `expect` and
 `alert_topic` below included), change log and Undo, for the same admins, and
@@ -1336,6 +1344,7 @@ the rest is the body of a POST or PUT, and state changes add `via: "mcp"`: `dism
 only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?, body?)`,
 `preview_hook(topic, body, event?)`, `hook_allow()`, `set_hook_allow(networks, ports)`, `delete_hook(topic, name)`, `hook_deliveries(topic, name)`, `tokens()`,
 `create_token(name, scopes, topics? | grants?)`, `revoke_token(id)`,
+`rename_token(id, name)`, `rotate_token(id)`,
 `create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
 `subscriptions(topics?, new_topics?, for?)` (section 2.3), `server_env()` (`GET /api/v1/server`), `version()` (`GET /api/v1/version`, section 5.2, any token), `ntfy_ignored()`, `senders()` and
 `sender(id)` (section 5.1).

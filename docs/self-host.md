@@ -79,7 +79,8 @@ clrd token list
 Scopes: `read` (see and act on notifications), `publish` (send), `admin`
 (manage tokens). `--topics` limits a token to those topics. Revoke with
 `DELETE /api/v1/tokens/{id}` (ids are in `GET /api/v1/tokens`); open streams for that token close
-at once.
+at once. `PUT /api/v1/tokens/{id}` with `{"name":"..."}` renames one, and
+`POST /api/v1/tokens/{id}/rotate` gives it a new secret under the same id.
 
 `POST /api/v1/tokens` with an admin token makes one over the API. Instead of
 `topics` it takes per-topic `grants`, first match wins, for example

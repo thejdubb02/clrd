@@ -860,12 +860,11 @@
     const b = e.target.closest('[data-silence-end]');
     if (b) e.preventDefault(), silSave([`/api/v1/silences/${encodeURIComponent(b.dataset.silenceEnd)}`, { method: 'DELETE', credentials: 'same-origin' }], $('[data-silence-status]'));
   });
-  // Settings: deleting a webhook also drops its delivery log, so ask first.
+  // A form that deletes or replaces something asks first: a webhook and its
+  // delivery log, a template, a sender's token (#119).
   document.addEventListener('submit', e => {
-    const f = e.target.closest('[data-hook-delete]');
-    if (f && !confirm(`Delete the webhook ${f.dataset.hookDelete} and its delivery log?`)) e.preventDefault();
-    const t = e.target.closest('[data-template-delete]');
-    if (t && !confirm(`Delete the template ${t.dataset.templateDelete}?`)) e.preventDefault();
+    const c = e.target.closest('[data-confirm]');
+    if (c && !confirm(c.dataset.confirm)) e.preventDefault();
   });
 
   // Settings: run a template's unsaved fields over a sample post (#129).
@@ -975,8 +974,9 @@
   });
   // Settings, add an agent (#456): copy the invite string pair.js shows.
   document.addEventListener('click', async e => {
-    if (!e.target.closest('[data-agent-copy]')) return;
-    try { await copyText(document.querySelector('[data-agent-invite]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
+    const b = e.target.closest('[data-agent-copy], [data-secret-copy]'); // or a sender's rotated secret (#119)
+    if (!b) return;
+    try { await copyText(document.querySelector(b.matches('[data-agent-copy]') ? '[data-agent-invite]' : '[data-secret]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
   });
   // Settings, webhook body template (#495): show what a delivery would send.
   // The server renders it against a sample event and sends nothing (#241).
