@@ -459,6 +459,35 @@ func TestHooksOutPreview(t *testing.T) {
 
 // A discord hook posts each new notification and edits that message when its
 // state changes, in order, with the token in its URL kept out of errors (#166).
+// A rate-limited send waits as long as the receiver asks, not the fixed
+// backoff (#859); a longer ask than an hour is held to an hour.
+func TestHooksOutRetryAfter(t *testing.T) {
+	s, ts, admin := newTest(t)
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	wait := "600"
+	rl, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", wait)
+		w.WriteHeader(429)
+	})
+	if code, h := call(t, ts, "PUT", "/api/v1/topics/ops/hooks/rl", admin, map[string]any{"url": rl.URL}); code != 200 {
+		t.Fatalf("save: %d %v", code, h)
+	}
+	for _, want := range []int64{600, 3600} {
+		s.db.Exec(`DELETE FROM hook_deliveries`)
+		s.db.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at) VALUES ('ops', 'rl', 1, 'dismissed', '{}', 0, 0)`)
+		if err := s.deliverHooks(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		var gap int64
+		var msg string
+		s.db.QueryRow(`SELECT (next_at - updated_at) / 1000, error FROM hook_deliveries`).Scan(&gap, &msg)
+		if gap != want || !strings.Contains(msg, "retry after") {
+			t.Fatalf("Retry-After %s: next try in %ds (%q), want %ds", wait, gap, msg, want)
+		}
+		wait = "9223372037" // would wrap a Duration if not capped first
+	}
+}
+
 // A delivery queued for one destination never goes to another (#871).
 func TestHooksOutURLChangeDropsPending(t *testing.T) {
 	s, ts, admin := newTest(t)
