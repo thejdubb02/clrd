@@ -6273,6 +6273,10 @@
       "type": "string",
       "description": "The topic of the sender's last quiet alarm, until its next publish or a change to expect or alert_topic; absent when there is none."
      },
+     "config": {
+      "type": "boolean",
+      "description": "True for a token from CLRD_CONFIG, which is renamed and rotated in that file only (both answer 409 here); absent otherwise."
+     },
      "recent": {
       "type": "array",
       "description": "Only on GET /api/v1/senders/{id}.",
@@ -6313,6 +6317,10 @@
      "alert_topic": {
       "type": "string",
       "description": "The topic for the quiet alarm. Empty: the first topic the sender's last topic routes to, or that topic itself."
+     },
+     "icon": {
+      "type": "string",
+      "description": "An http(s) image URL, at most 2048 characters: the icon its publishes get when they give none, before the topic's icon. Empty or absent is none."
      },
      "routes": {
       "type": "object",

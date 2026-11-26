@@ -414,8 +414,9 @@ type Sender struct {
 	Count     int            `json:"count"`
 	Topics    map[string]int `json:"topics"`
 	Recent    []Notification `json:"recent"`
-	Form      *RulesForm     `json:"-"` // a refused save, shown again
-	Secret    string         `json:"-"` // its new secret, on the page a rotate draws only
+	Config    bool           `json:"config"` // a CLRD_CONFIG token: no rename or rotate here
+	Form      *RulesForm     `json:"-"`      // a refused save, shown again
+	Secret    string         `json:"-"`      // its new secret, on the page a rotate draws only
 }
 
 // KindLabel names the kind for people.
@@ -436,6 +437,7 @@ type SenderRules struct {
 	Routes      map[string][]string `json:"routes"`
 	Expect      string              `json:"expect"`      // alarm when quiet this long, "" off; sent empty so a save clears it
 	AlertTopic  string              `json:"alert_topic"` // where that alarm goes
+	Icon        string              `json:"icon"`        // its publishes' icon when they give none
 }
 
 // RulesForm is a refused save shown again: what was typed, the base it was
@@ -546,6 +548,9 @@ func (r SenderRules) Summary() string {
 			a += " in " + r.AlertTopic
 		}
 		p = append(p, a)
+	}
+	if r.Icon != "" {
+		p = append(p, "icon "+r.Icon)
 	}
 	if len(p) == 0 {
 		return "No rules"
@@ -1549,7 +1554,7 @@ func Handler(api API, baseURL string) http.Handler {
 			err = errors.New("the rules form was incomplete")
 		} else {
 			rules := SenderRules{Paused: f.Get("paused") != "", Muted: f.Get("muted") != "",
-				Expect: strings.TrimSpace(f.Get("expect")), AlertTopic: strings.TrimSpace(f.Get("alert_topic"))}
+				Expect: strings.TrimSpace(f.Get("expect")), AlertTopic: strings.TrimSpace(f.Get("alert_topic")), Icon: strings.TrimSpace(f.Get("icon"))}
 			var e1, e2, e3 error
 			var base int64
 			rules.PriorityMin, e1 = strconv.Atoi(f.Get("priority_min"))
@@ -1562,7 +1567,7 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 			// A field the server named: the page again, typed values kept, the
 			// message by that field.
-			for _, field := range []string{"expect", "alert_topic"} {
+			for _, field := range []string{"expect", "alert_topic", "icon"} {
 				if err != nil && strings.HasPrefix(err.Error(), field) {
 					fm := &RulesForm{Rules: rules, Base: base, Field: field, Err: strings.TrimPrefix(err.Error(), "alert_topic: ")}
 					app("sender")(w, r.WithContext(context.WithValue(r.Context(), rulesFormKey{}, fm)))

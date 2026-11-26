@@ -118,6 +118,77 @@ func TestSendersDiscovered(t *testing.T) {
 
 // #119: a sender's rules route, mute, clamp and pause what it publishes;
 // every change is kept and can be undone; no rules is today's behaviour.
+// A sender's icon (#119): set, refused, used before the topic's when a
+// publish gives none, on every path, logged and undone like the other rules.
+func TestSenderIcon(t *testing.T) {
+	s, ts, admin := newTest(t)
+	svc := mkToken(t, s, "svc", []string{ScopePublish}, []string{"up"})
+	id := s.lookupToken(context.Background(), svc).ID
+	const own, mine, topic = "https://img.example/own.png", "https://img.example/svc.png", "https://img.example/up.png"
+	icon := func(body map[string]any) any {
+		t.Helper()
+		body["topic"] = "up"
+		code, n := call(t, ts, "POST", "/api/v1/notifications", svc, body)
+		if code != 200 && code != 201 {
+			t.Fatalf("publish %v: %d %v", body, code, n)
+		}
+		return n["icon"]
+	}
+	set := func(v string) (int, map[string]any) {
+		return call(t, ts, "PUT", "/api/v1/senders/"+id, admin, map[string]any{"icon": v})
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/topics/up", admin, map[string]any{"icon": topic}); code != 200 {
+		t.Fatalf("topic icon: %d", code)
+	}
+	if got := icon(map[string]any{"message": "a"}); got != topic {
+		t.Fatalf("no sender icon: %v, want the topic's", got)
+	}
+	if code, sd := set(mine); code != 200 || sd["rules"].(map[string]any)["icon"] != mine {
+		t.Fatalf("set icon: %d %v", code, sd)
+	}
+	for _, bad := range []string{"ftp://img.example/a.png", "/a.png", "https://"} {
+		if code, _ := set(bad); code != 400 {
+			t.Errorf("icon %q: %d, want 400", bad, code)
+		}
+	}
+	if _, sd := call(t, ts, "GET", "/api/v1/senders/"+id, admin, nil); sd["rules"].(map[string]any)["icon"] != mine {
+		t.Fatalf("a refused icon changed the rules: %v", sd["rules"])
+	}
+	if got := icon(map[string]any{"message": "b"}); got != mine {
+		t.Errorf("sender icon: %v, want %s before the topic's", got, mine)
+	}
+	if got := icon(map[string]any{"message": "c", "icon": own}); got != own {
+		t.Errorf("publish icon: %v, want its own", got)
+	}
+	if got := icon(map[string]any{"message": "d", "live": true}); got != mine {
+		t.Errorf("live publish: %v, want the sender icon", got)
+	}
+	if _, out := raw(t, "POST", ts.URL+"/up", svc, "e", nil); ntfyDecode(t, out).Icon != mine {
+		t.Errorf("ntfy publish: %q, want the sender icon", out)
+	}
+	if code, _ := call(t, ts, "PUT", "/api/v1/senders/"+id, admin, map[string]any{"routes": map[string]any{"up": []string{"infra"}}}); code != 200 {
+		t.Fatal("route")
+	}
+	if _, l := call(t, ts, "POST", "/api/v1/notifications", svc, map[string]any{"topic": "up", "message": "f"}); l["topic"] != "infra" || l["icon"] != mine {
+		t.Errorf("routed publish: %v, want the sender icon in infra", l)
+	}
+	call(t, ts, "PUT", "/api/v1/senders/"+id, admin, map[string]any{"routes": map[string]any{}})
+	if code, sd := set(""); code != 200 || sd["rules"].(map[string]any)["icon"] != nil {
+		t.Fatalf("clear icon: %d %v", code, sd)
+	}
+	if got := icon(map[string]any{"message": "g"}); got != topic {
+		t.Errorf("after clear: %v, want the topic's again", got)
+	}
+	_, ch := call(t, ts, "GET", "/api/v1/senders/"+id+"/changes", admin, nil)
+	last := ch["changes"].([]any)[0].(map[string]any)
+	if last["before"].(map[string]any)["icon"] != mine {
+		t.Fatalf("the clear is not logged with the icon before: %v", last)
+	}
+	if code, sd := call(t, ts, "POST", fmt.Sprintf("/api/v1/senders/%s/changes/%v/undo", id, last["seq"]), admin, nil); code != 200 || sd["rules"].(map[string]any)["icon"] != mine {
+		t.Fatalf("undo the clear: %d %v", code, sd)
+	}
+}
+
 func TestSenderRules(t *testing.T) {
 	s, ts, admin := newTest(t)
 	svc := mkToken(t, s, "svc", []string{ScopePublish}, []string{"up"})

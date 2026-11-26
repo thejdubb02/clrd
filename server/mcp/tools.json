@@ -1477,7 +1477,7 @@
   "name": "sender"
  },
  {
-  "description": "Set a sender's rules: pause (accept and drop), mute (store, never alert), a priority floor and cap, routes from the topic it names to other topics, and an alarm when it goes quiet. Only the fields given change; routes, when given, replace them all. Each change is kept and can be undone. Needs an admin token without a topic list.",
+  "description": "Set a sender's rules: pause (accept and drop), mute (store, never alert), a priority floor and cap, routes from the topic it names to other topics, an alarm when it goes quiet, and an icon for its publishes that give none. Only the fields given change; routes, when given, replace them all. Each change is kept and can be undone. Needs an admin token without a topic list.",
   "inputSchema": {
    "properties": {
     "alert_topic": {
@@ -1486,6 +1486,10 @@
     },
     "expect": {
      "description": "Raise an urgent alarm when it sends nothing for this long, 1m to 8784h like \"25h\"; \"\" for off",
+     "type": "string"
+    },
+    "icon": {
+     "description": "http(s) image URL its publishes get when they give none, before the topic's icon; \"\" for none",
      "type": "string"
     },
     "id": {
