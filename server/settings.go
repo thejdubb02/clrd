@@ -46,9 +46,9 @@ func ntfyMarkdown(v string) *bool {
 	return &b
 }
 
-// Settings are the display choices every device follows (spec, Message
-// formatting). One set per server: tokens are devices, not users.
+// Settings contains server display options and the asking device's preferences.
 type Settings struct {
+	ThemeSettings
 	RenderFormatting bool `json:"render_formatting"`
 	Autolink         bool `json:"autolink"`
 	Favicons         bool `json:"favicons"`
@@ -227,6 +227,8 @@ func defaultSettings() Settings {
 // SettingsPatch is a PUT body: only the fields given change. A topic
 // mapped to null drops its override.
 type SettingsPatch struct {
+	Theme             *string          `json:"theme"`
+	ThemeColors       *ThemeColors     `json:"theme_colors"`
 	RenderFormatting  *bool            `json:"render_formatting"`
 	Autolink          *bool            `json:"autolink"`
 	Favicons          *bool            `json:"favicons"`
@@ -278,6 +280,12 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 	if err == nil {
 		st.Subscriptions, err = s.subSettings(ctx, tok)
 	}
+	if err == nil {
+		st.ThemeSettings, err = readTheme(ctx, s.db, tok.ID)
+	}
+	if err == nil {
+		err = settingJSON(ctx, s.db, "theme:d:"+tok.ID, &st.DeviceTheme)
+	}
 	return st, err
 }
 
@@ -319,7 +327,7 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 		p.SnoozeIntervals != nil || p.SnoozeDefault != nil || p.KeepClearedDays != nil || p.Sound != nil ||
 		p.SwipeStart != nil || p.SwipeEnd != nil || p.ColorRules != nil || p.UnlinkIdle != nil || p.GitHubHooksPaused != nil
 	if global && tok.limited() {
-		return Settings{}, errf(403, "forbidden", "a token limited to some topics can only change topic_previews and topic_keep_cleared_days")
+		return Settings{}, errf(403, "forbidden", "a token limited to some topics cannot change server-wide settings")
 	}
 	var swipeStart, swipeEnd []string
 	for _, f := range []struct {
@@ -455,6 +463,9 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 				st.TopicKeepClearedDays[t] = *v
 			}
 		}
+	}
+	if err == nil && (p.Theme != nil || p.ThemeColors != nil) {
+		err = saveTheme(ctx, tx, tok, p)
 	}
 	if err == nil {
 		raw, _ := json.Marshal(st)
