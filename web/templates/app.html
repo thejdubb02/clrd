@@ -30,7 +30,7 @@
     </a>
   </aside>
 
-  <main id="main" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
+  <main id="main" tabindex="-1" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
     <div class="alert mb-4" data-variant="destructive" role="alert" data-offline hidden>{{template "i-wifi-off"}}<h2>Lost the live connection</h2><section>This page may be out of date. Still trying. <a href="" class="underline">Reload</a></section></div>
     {{if ne .View "settings"}}{{with about}}<div class="alert mb-4" role="status" data-update-note hidden>{{template "i-book-open"}}<h2>Updated to clrd {{.Version}}</h2><section><div class="mt-2 flex flex-wrap items-center gap-2"><a class="btn" data-variant="outline" data-size="sm" href="{{base}}/app/settings#about" data-update-open>What's new</a><button type="button" class="btn" data-variant="ghost" data-size="sm" data-update-dismiss>Dismiss</button></div></section></div>{{end}}{{end}}
     {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else if eq .View "add"}}{{template "addservice" .}}{{else if eq .View "stats"}}{{template "stats" .}}{{else}}
@@ -654,7 +654,7 @@
   <div class="command">
     <header>
       {{template "i-search"}}
-      <input type="text" id="palette-input" placeholder="Type a command or a topic" autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="true" aria-controls="palette-menu">
+      <input type="text" id="palette-input" aria-label="Find a command or topic" placeholder="Type a command or a topic" autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="true" aria-controls="palette-menu">
     </header>
     <div role="menu" id="palette-menu" aria-orientation="vertical" data-empty="No command matches.">
       {{if ne .View "settings"}}<div role="group" aria-labelledby="pal-card">

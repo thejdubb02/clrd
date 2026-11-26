@@ -124,11 +124,44 @@ try {
   }
   console.log('ok: tips advance on their own, pause on hover, and have Pause and Play');
 
+  // The landing skip link shows strong keyboard focus in both schemes and
+  // takes focus directly to the content. Reduced motion leaves the demo still.
+  for (const scheme of ['light', 'dark']) {
+    const home = await browser.newPage({ colorScheme: scheme, reducedMotion: scheme === 'dark' ? 'reduce' : 'no-preference' });
+    await home.goto(base + '/');
+    await home.keyboard.press('Tab');
+    const skip = home.getByRole('link', { name: 'Skip to content' });
+    assert.equal(await skip.evaluate(a => document.activeElement === a && a.matches(':focus-visible')), true);
+    assert.deepEqual(await skip.evaluate(a => {
+      const css = getComputedStyle(a);
+      return [css.outlineStyle, css.outlineWidth, css.outlineColor];
+    }), ['solid', '2px', scheme === 'dark' ? 'rgb(245, 243, 238)' : 'rgb(15, 17, 20)']);
+    await home.keyboard.press('Enter');
+    assert.equal(await home.evaluate(() => document.activeElement.id), 'main');
+    await home.keyboard.press('Tab');
+    assert.equal(await home.evaluate(() => document.activeElement.getAttribute('href')), '#self-host');
+    const motion = await home.locator('.mini.swipe').evaluate(a => {
+      const css = getComputedStyle(a);
+      return [css.animationName, css.animationDuration, css.animationIterationCount];
+    });
+    assert.deepEqual(motion, scheme === 'dark' ? ['none', '0s', '1'] : ['clrd-swipe', '4s', '1']);
+    await home.context().close();
+  }
+
   // Clearing it here offers Undo, and Undo brings it back.
   const a = await api(phone, '/api/v1/notifications', { topic: 'infra', title: 'Disk full on web-1', message: '/var at 99%' });
   await page.reload();
-  await card('Disk full on web-1').locator('[data-act="dismiss"]').click();
+  const alerted = card('Disk full on web-1');
+  const moreTimes = alerted.getByLabel('More snooze times');
+  await moreTimes.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  assert.equal(await alerted.locator('details[open] [data-for]').first().evaluate(b => b === document.activeElement), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await moreTimes.evaluate(a => a === document.activeElement && !a.parentElement.open), true, 'Escape did not return focus to Snooze');
+  await alerted.getByRole('button', { name: 'Clear', exact: true }).press('Enter');
   await toast.getByRole('button', { name: 'Undo' }).waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'main', 'clearing the last card lost keyboard focus');
   assert.equal((await get(laptop, a.id)).state, 'dismissed');
   await toast.getByRole('button', { name: 'Undo' }).click();
   await until(page, async id => (await (await fetch(`/api/v1/notifications/${id}`)).json()).state === 'active', a.id);
