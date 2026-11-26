@@ -88,9 +88,14 @@ object DeviceAction {
             val label = o.optString("label").ifBlank { app.getString(if (value != null) R.string.copy else R.string.tray_open) }
             fun finish(ok: Boolean) {
                 if (!ok) toast(app, app.getString(R.string.device_failed, label))
-                // Only the version tapped: a row edited while the request ran is left for the person to see.
-                val clear = ok && o.optBoolean("clear") && sameAccount() && runCatching { acct.db.dao().get(id)?.seq == seq }.getOrDefault(false)
-                if (clear) acct.actAll(listOf(id), "dismiss", "{}", server, via, done) else done()
+                // The Room write checks the version again, even if sync edits it while the clear is queued.
+                val queued = ok && o.optBoolean("clear") && synchronized(acct.configLock) {
+                    if (!sameAccount()) false else {
+                        acct.actAll(listOf(id), "dismiss", "{}", server, via, expectedSeq = seq, done = done)
+                        true
+                    }
+                }
+                if (!queued) done()
             }
             if (value != null) {
                 finish(runCatching {

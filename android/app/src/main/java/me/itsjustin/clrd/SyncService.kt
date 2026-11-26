@@ -160,7 +160,7 @@ class ActionReceiver : BroadcastReceiver() {
             val r = goAsync()
             // Android shows a spinner until the row is posted again: once the answer is saved, or at once if it cannot be sent.
             val repost = { acct.tray.repost(id); r.finish() }
-            if (body != null) acct.actAll(listOf(id), "reply", body, server, App.VIA_TRAY_BUTTON, repost)
+            if (body != null) acct.actAll(listOf(id), "reply", body, server, App.VIA_TRAY_BUTTON, done = repost)
             else app.acts.execute {
                 android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, R.string.reply_text_invalid, android.widget.Toast.LENGTH_LONG).show() }
                 repost()

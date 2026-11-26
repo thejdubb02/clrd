@@ -92,6 +92,16 @@ class DeviceActionTest {
         assertEquals(Notif.ACTIVE, bg { dao.get("a") }!!.state)
     }
 
+    @Test fun aQueuedClearDoesNotDismissANewerVersion() {
+        val n = row(JSONArray(), seq = 2)
+        bg { dao.applyAll(listOf(n), n.seq) }
+        val done = CountDownLatch(1)
+        app.account.actAll(listOf(n.id), "dismiss", "{}", "https://a.example", App.VIA_APP, expectedSeq = 1) { done.countDown() }
+        assertTrue(done.await(10, TimeUnit.SECONDS))
+        assertEquals(Notif.ACTIVE, bg { dao.get(n.id) }!!.state)
+        assertTrue(bg { dao.pending() }.isEmpty())
+    }
+
     @Test fun requestIsBuiltAsSent() {
         val r = DeviceAction.request(http())!!
         assertEquals("PUT", r.method)
