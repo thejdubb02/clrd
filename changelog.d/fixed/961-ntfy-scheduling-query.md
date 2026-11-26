@@ -1,0 +1,1 @@
+- ntfy publishes honor `x-delay`, `x-at`, `x-in` and `x-timezone` in the URL, so requests using these aliases are scheduled as intended.
