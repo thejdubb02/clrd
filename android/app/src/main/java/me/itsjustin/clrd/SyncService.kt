@@ -141,13 +141,13 @@ class ActionReceiver : BroadcastReceiver() {
         if (gen != acct.configGen) return
         if (intent.action == Tray.ACTION_DISMISS_STACK) { // a stack swiped away: hide here only (#265)
             val ids = intent.getStringArrayExtra(Tray.EXTRA_IDS).orEmpty()
-            acct.trayHidden += ids
+            if (!acct.hide(ids.toList(), gen)) return
             app.leftShade(maxOf(ids.size, 2)) // a stack is never a lone swipe, and its rows only hide
             return
         }
         val id = intent.getStringExtra(Tray.EXTRA_ID) ?: return
         if (intent.action == Tray.ACTION_DISMISS) { // a swipe or Clear all: hide here only (#265), unless a lone swipe clears (#271)
-            acct.trayHidden += id
+            if (!acct.hide(listOf(id), gen)) return
             app.leftShade(1)
             if (app.shadeClears) app.swiped(id, server, acct, gen)
             return
