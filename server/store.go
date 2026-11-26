@@ -1162,8 +1162,8 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 	case err != nil && src.err == nil: // the body read fine, so the disk refused it
 		s.log.Warn("could not store an upload", "err", err)
 		return nil, errf(507, "storage_full", "attachment storage is full")
-	case err != nil:
-		return nil, errf(400, "bad_request", "cannot read file: %v", err)
+	case err != nil: // the read's own error, so a write failing too shows no server path
+		return nil, errf(400, "bad_request", "cannot read file: %v", src.err)
 	}
 	b := make([]byte, 16)
 	rand.Read(b)

@@ -21,8 +21,14 @@ func TestUploadDiskFull(t *testing.T) {
 	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &lim); err != nil {
 		t.Skip(err)
 	}
+	restore := func() {
+		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &was); err != nil {
+			panic(err) // every later test would write under 1 MB
+		}
+	}
+	defer restore() // a Fatal inside upload still lifts the limit
 	code, out := upload(t, ts, admin, map[string]any{"topic": "infra"}, "big.bin", bytes.Repeat([]byte("x"), 2<<20), false)
-	syscall.Setrlimit(syscall.RLIMIT_FSIZE, &was)
+	restore()
 	if msg, _ := out["error"].(string); code != 507 || strings.Contains(msg, s.opt.Attachments) {
 		t.Fatalf("disk full: %d %v", code, out)
 	}
