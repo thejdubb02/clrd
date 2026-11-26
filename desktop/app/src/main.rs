@@ -462,7 +462,17 @@ fn stop_sync(app: &AppHandle) {
 /// What the This computer page shows. Asking is also what moves a waiting
 /// link forward: the moment it is approved, sync starts and the window opens.
 #[tauri::command(async)]
-fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>, bool) {
+#[allow(clippy::type_complexity)]
+fn state(
+    app: AppHandle,
+) -> (
+    View,
+    String,
+    bool,
+    Option<(String, String)>,
+    bool,
+    Vec<String>,
+) {
     let shell = app.state::<Shell>();
     if shell.device.poll().is_some() {
         start_sync(&app);
@@ -471,7 +481,8 @@ fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>, bool)
     // The third says something went wrong in the app itself, so the page
     // offers Retry for that too. The fourth is a link the browser handed
     // over and the server it names, for the page to put in the box. The
-    // last is the "Closing clears everywhere" switch.
+    // fifth is the "Closing clears everywhere" switch. The last is a custom
+    // theme's colors, for the page to paint itself with.
     let noted = !shell.note.lock().unwrap().is_empty();
     let offer = shell.device.take_offer();
     let closing = close_clears(&app).is_ok_and(CloseClears::get);
@@ -481,6 +492,7 @@ fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>, bool)
         noted,
         offer,
         closing,
+        COLORS.lock().unwrap().clone(),
     )
 }
 
@@ -621,14 +633,18 @@ fn retry(app: AppHandle) {
 /// Tells the app the web Appearance pick (#760) by a navigation the window
 /// turns away, so the page still gets no way to call the app. Checked once a
 /// second because a change in the same tab fires no event. A custom theme
-/// (#584) is light or dark by its own colors, so the page's word for it wins.
+/// (#584) is light or dark by its own colors, so the page's word for it wins,
+/// and its colors follow for the This computer page (#939).
 #[cfg(target_os = "linux")]
 const TELL_PICK: &str = r#"if (/^https?:$/.test(location.protocol)) addEventListener('load', () => {
   let last;
   const tell = () => {
     let pick = null;
     try { pick = localStorage.getItem('clrd.theme'); } catch {}
-    pick = document.documentElement.dataset.scheme || (pick === 'dark' || pick === 'light' ? pick : 'system');
+    const r = document.documentElement, custom = r.dataset.scheme;
+    pick = custom || (pick === 'dark' || pick === 'light' ? pick : 'system');
+    if (custom) pick += ':' + ['--background', '--foreground', '--body', '--border', '--clear', '--clear-foreground', '--destructive']
+      .map(t => r.style.getPropertyValue(t).trim().slice(1)).join('-');
     if (pick !== last) { last = pick; location.href = 'clrd-theme:' + pick; }
   };
   tell();
@@ -645,24 +661,89 @@ static LOOK: Mutex<(u32, Option<bool>, bool)> = Mutex::new((0, None, false));
 /// opens.
 #[cfg(target_os = "linux")]
 fn picked(app: &AppHandle, word: &str) {
-    let pick = match word {
-        "dark" => Some(true),
-        "light" => Some(false),
-        "system" => None,
-        _ => return,
+    let Some((pick, colors)) = parse_pick(word) else {
+        return;
     };
-    if std::mem::replace(&mut LOOK.lock().unwrap().1, pick) == pick {
+    let new_colors = std::mem::replace(&mut *COLORS.lock().unwrap(), colors.clone()) != colors;
+    let new_pick = std::mem::replace(&mut LOOK.lock().unwrap().1, pick) != pick;
+    if !new_pick && !new_colors {
         return;
     }
     if let Ok(dir) = app.path().app_data_dir() {
         let file = dir.join("theme");
         let _ = match pick {
-            Some(dark) => std::fs::write(file, if dark { "dark" } else { "light" }),
+            Some(dark) => {
+                let word = if dark { "dark" } else { "light" };
+                let colors: Vec<_> = colors.iter().map(|c| &c[1..]).collect();
+                let text = if colors.is_empty() {
+                    word.to_string()
+                } else {
+                    format!("{word}:{}", colors.join("-"))
+                };
+                std::fs::write(file, text)
+            }
             None => std::fs::remove_file(file),
         };
     }
-    look(app);
+    if new_pick {
+        look(app);
+    }
 }
+
+/// A pick as the page sends it and the app keeps it: `dark`, `light` or
+/// `system`, then for a custom theme `:` and seven colors as hex. The colors
+/// come from the server's page, so anything but seven plain colors is
+/// dropped whole, and so are colors that would hide the page's text or
+/// buttons (Unlink among them): ink and body on the background, and the
+/// button text on clear, need 4.5:1 as SPEC section 10 asks of a palette.
+#[cfg(target_os = "linux")]
+fn parse_pick(text: &str) -> Option<(Option<bool>, Vec<String>)> {
+    let (word, hex) = text.trim().split_once(':').unwrap_or((text.trim(), ""));
+    let pick = match word {
+        "dark" => Some(true),
+        "light" => Some(false),
+        "system" => None,
+        _ => return None,
+    };
+    let colors: Vec<String> = hex.split('-').map(|c| format!("#{c}")).collect();
+    let plain = |c: &String| c.len() == 7 && c[1..].bytes().all(|b| b.is_ascii_hexdigit());
+    let readable = |c: &[String]| {
+        [(1, 0), (2, 0), (5, 4)]
+            .iter()
+            .all(|&(fg, bg)| ratio(&c[fg], &c[bg]) >= 4.5)
+    };
+    let colors =
+        if pick.is_some() && colors.len() == 7 && colors.iter().all(plain) && readable(&colors) {
+            colors
+        } else {
+            Vec::new()
+        };
+    Some((pick, colors))
+}
+
+/// WCAG contrast of two `#rrggbb` colors, as the web inbox works it out.
+#[cfg(target_os = "linux")]
+fn ratio(a: &str, b: &str) -> f64 {
+    let light = |hex: &str| {
+        [(1, 0.2126), (3, 0.7152), (5, 0.0722)]
+            .iter()
+            .fold(0.0, |sum, &(i, w)| {
+                let n = f64::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0)) / 255.0;
+                sum + w * if n <= 0.04045 {
+                    n / 12.92
+                } else {
+                    ((n + 0.055) / 1.055).powf(2.4)
+                }
+            })
+    };
+    let (l, r) = (light(a), light(b));
+    (l.max(r) + 0.05) / (l.min(r) + 0.05)
+}
+
+/// A custom theme's colors for the This computer page (#939), in the order
+/// its tokens take them: background, ink, body, line, clear, on clear,
+/// signal. Empty with any other theme, and always on Windows.
+static COLORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// The pick wins; with System the desktop's word does. With neither, GTK's
 /// own choice stands: setting none would turn GTK's dark off, so it is only
@@ -913,11 +994,9 @@ fn main() {
                     .app_data_dir()
                     .ok()
                     .and_then(|dir| std::fs::read_to_string(dir.join("theme")).ok());
-                LOOK.lock().unwrap().1 = match kept.as_deref().map(str::trim) {
-                    Some("dark") => Some(true),
-                    Some("light") => Some(false),
-                    _ => None,
-                };
+                let (pick, colors) = kept.as_deref().and_then(parse_pick).unwrap_or_default();
+                LOOK.lock().unwrap().1 = pick;
+                *COLORS.lock().unwrap() = colors;
                 keep_gtk_dark(app);
                 look(app);
                 let app = app.clone();

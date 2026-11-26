@@ -720,6 +720,9 @@ func TestNtfyDelayTimezone(t *testing.T) {
 		{"/?timezone=Mars/Base", `{"topic":"tz","message":"m","delay":"10am","timezone":"Asia/Tokyo"}`, map[string]string{"Timezone": "Mars/Base"}},
 		{"/?at=10am&timezone=Mars/Base", `{"topic":"tz","message":"m"}`, map[string]string{"Timezone": "Asia/Tokyo"}},
 		{"/?at=10am&timezone=Asia/Tokyo", `{"topic":"tz","message":"m"}`, nil},
+		{"/tz?x-at=10am&x-timezone=Asia/Tokyo", "m", nil},
+		{"/?x-delay=10am&x-timezone=Asia/Tokyo", `{"topic":"tz","message":"m"}`, nil},
+		{"/?x-delay=11am&x-timezone=Mars/Base", `{"topic":"tz","message":"m","delay":"10am","timezone":"Asia/Tokyo"}`, nil},
 	} {
 		code, out := raw(t, "POST", ts.URL+c.path, admin, c.body, c.hdr)
 		at := time.Unix(ntfyDecode(t, out).Time, 0).In(tokyo)
@@ -914,5 +917,17 @@ func TestNtfyMessageParamNewlines(t *testing.T) {
 				t.Fatalf("publish: %d %s, want %q", code, out, tc.want)
 			}
 		})
+	}
+}
+
+func TestNtfyPrefixedDelayQuery(t *testing.T) {
+	_, ts, admin := newTest(t)
+	at := time.Now().Add(time.Hour).Unix()
+	for _, alias := range []string{"x-delay", "x-at", "x-in"} {
+		path := fmt.Sprintf("%s/alerts/publish?m=later&%s=%d", ts.URL, alias, at)
+		code, out := raw(t, "GET", path, admin, "", nil)
+		if code != 200 || ntfyDecode(t, out).Time != at {
+			t.Errorf("%s: got %d %s, want a message at %d", alias, code, out, at)
+		}
 	}
 }
