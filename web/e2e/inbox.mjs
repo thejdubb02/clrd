@@ -2519,19 +2519,26 @@ try {
         assert.ok(icon && (await ctx.request.get(new URL(icon.src, manifestURL).href)).ok(), `missing ${size}px app icon`);
       }
       await inboxWorkerReady(sp, '/clrd');
-      await sp.goto(sub + '/app');
-      assert.ok(await sp.evaluate(() => navigator.serviceWorker.controller?.scriptURL.endsWith('/inbox-worker.js')));
+      await sp.close();
+      const visited = await ctx.newPage();
+      // Keep inbox WebSocket resets from navigating this tab during the
+      // deliberate reload. The worker and its HTTP requests still run normally.
+      await visited.routeWebSocket('**/api/v1/ws?*', () => {});
+      assert.equal((await visited.goto(sub + '/app')).status(), 200);
+      assert.ok(await visited.evaluate(() => navigator.serviceWorker.controller?.scriptURL.endsWith('/inbox-worker.js')));
       const path = sub + '/app?offline=1';
       // Playwright's offline emulation can leave worker fetches online.
       await new Promise(ok => { srv2.once('exit', ok); srv2.kill(); });
-      assert.equal((await sp.reload()).status(), 503, 'a visited inbox must not be replayed offline');
-      assert.equal((await sp.goto(path)).status(), 503);
-      await sp.getByRole('heading', { name: 'Lost the live connection' }).waitFor();
-      assert.equal(await sp.locator('[data-inbox]').count(), 0);
+      assert.equal((await visited.reload()).status(), 503, 'a visited inbox must not be replayed offline');
+      await visited.close();
+      const offline = await ctx.newPage();
+      assert.equal((await offline.goto(path)).status(), 503);
+      await offline.getByRole('heading', { name: 'Lost the live connection' }).waitFor();
+      assert.equal(await offline.locator('[data-inbox]').count(), 0);
       await start();
-      await sp.getByRole('link', { name: 'Reload' }).click();
-      await sp.locator('.is-live').waitFor();
-      assert.equal(sp.url(), path, 'reloading an offline inbox changed its URL');
+      await offline.getByRole('link', { name: 'Reload' }).click();
+      await offline.locator('.is-live').waitFor();
+      assert.equal(offline.url(), path, 'reloading an offline inbox changed its URL');
       // Pair page: the sign-in code request also stays inside the sub-path.
       const pc = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
       pc.on('request', r => { const u = new URL(r.url()); if (u.origin === root && !u.pathname.startsWith('/clrd/')) outside.push(u.pathname); });
