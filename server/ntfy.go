@@ -257,7 +257,7 @@ func ntfyDelay(v, tz string) (*time.Time, error) {
 		if err != nil {
 			return nil, errf(400, "bad_request", "invalid timezone %q: use an IANA name like America/New_York", tz)
 		}
-		_ = l
+		loc = l
 	}
 	now := time.Now().In(loc)
 	t, err := delayTime(v, now)
@@ -355,7 +355,7 @@ func delayTime(v string, now time.Time) (time.Time, error) {
 		case day < 0: // a bare time already gone today means tomorrow, as on ntfy
 			t = at(1)
 		case weekday:
-			t = at(day)
+			t = at(day + 7)
 		default:
 			return t, errf(400, "bad_request", "delay %q is in the past", v)
 		}
