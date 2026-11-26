@@ -103,6 +103,10 @@ CREATE TABLE IF NOT EXISTS tokens (
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 -- Display settings every device follows, as one JSON document (spec, Message formatting).
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TRIGGER IF NOT EXISTS drop_device_theme AFTER DELETE ON tokens
+BEGIN
+  DELETE FROM settings WHERE key = 'theme:d:' || OLD.id;
+END;
 CREATE TABLE IF NOT EXISTS topics (topic TEXT PRIMARY KEY, icon TEXT NOT NULL DEFAULT '',
 	checkin_ms INTEGER, checkin_at INTEGER, checkin_late INTEGER NOT NULL DEFAULT 0, device_actions INTEGER NOT NULL DEFAULT 0, approvals INTEGER NOT NULL DEFAULT 0);
 -- Format check findings a user dismissed, by topic, rule and sending token ("" for every one); rule "" turns the check off for the topic (#320).

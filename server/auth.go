@@ -740,7 +740,7 @@ func (s *Server) replaceInstall(ctx context.Context, st *Token, parentID string,
 			return nil, err
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT t.id, t.approve FROM sessions s JOIN tokens t ON t.id = s.token_id
-		  WHERE s.parent_id = ? AND s.phone = ? AND t.install = ? AND t.rowid < (SELECT rowid FROM tokens WHERE id = ?)`,
+		  WHERE s.parent_id = ? AND s.phone = ? AND t.install = ? AND t.rowid < (SELECT rowid FROM tokens WHERE id = ?) ORDER BY t.rowid DESC`,
 			parentID, phone, dev.install, st.ID) // only older rows: two racing sign-ins never drop each other
 		if err != nil {
 			return nil, err
@@ -765,6 +765,11 @@ func (s *Server) replaceInstall(ctx context.Context, st *Token, parentID string,
 				approve = o.approve
 			}
 			if err := inheritClears(ctx, tx, o.id, st.ID); err != nil {
+				return nil, err
+			}
+			// Prefer the newest old override and keep a choice already made on the new row.
+			if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO settings (key, value)
+				SELECT ?, value FROM settings WHERE key = ?`, "theme:d:"+st.ID, "theme:d:"+o.id); err != nil {
 				return nil, err
 			}
 			// What hung under the old row now hangs under the new one, so
