@@ -2,7 +2,10 @@
 
 clrd speaks ntfy's publish and subscribe protocol, so ntfy's own tools work:
 `PUT|POST /{topic}`, `POST /` JSON, `GET /{topic}/json|sse|ws|raw` in ntfy's
-message format, and Basic auth with a token as the password.
+message format, and Basic auth with a token as the password. Use `poll`
+or `X-Poll` to read cached messages and close the stream, and `since` or
+`X-Since` to select where replay starts. Query aliases include `po`, `si`,
+`x-poll` and `x-since`.
 
 ## ntfy CLI
 
@@ -51,6 +54,9 @@ Allowed origins can read the `Retry-After` response header on time-based
 rate limits to decide when to retry.
 
 ## Request and stream limits
+
+Each ntfy subscription can name up to 150 distinct topics. Repeat names
+count once. Use another subscription for any remaining topics.
 
 Operators can [set per-address limits](../self-host.md#server-environment)
 for ntfy API requests and open subscriptions. Both are off by default.

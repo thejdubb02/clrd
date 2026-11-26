@@ -148,6 +148,12 @@ pickers with a preview. Save theme shares the choice across your signed-in
 browsers. Theme on this browser can override that choice. The Light or dark
 setting stays on this browser, and Custom uses the shade of its own background.
 
+Under **Share custom colors**, choose **Export custom colors** to select a
+code you can copy. To import one, paste it in **Theme code** and choose
+**Preview imported colors**. The preview applies in this tab. Choose **Save
+theme** to share it with your signed-in browsers, or **Cancel preview** to
+return to your saved colors.
+
 Automate the same choices with `PUT /api/v1/settings` or the MCP `settings`
 tool. For example, send `{"theme":"high-contrast"}`. To use a custom theme,
 send `theme: custom` and all six `theme_colors` from the

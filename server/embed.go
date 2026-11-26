@@ -4,10 +4,10 @@ package server
 
 import "embed"
 
-// apiDoc holds openapi.json; the release build (-tags packed) stores it
+// serverFiles holds the OpenAPI document and emoji aliases; the release build (-tags packed) stores it
 // gzipped: embed_packed.go.
 //
-//go:embed openapi.json
-var apiDoc embed.FS
+//go:embed openapi.json emoji_aliases.txt
+var serverFiles embed.FS
 
 const packedBuild = false

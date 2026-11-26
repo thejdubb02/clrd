@@ -216,7 +216,11 @@ func param(r *http.Request, names ...string) string {
 		if n == "Priority" && (strings.Contains(h, "u=") || h == "i") {
 			h = "" // browsers send RFC 9218 "Priority: u=3, i" on HTTP/2 and 3; not ours
 		}
-		for _, v := range []string{r.Header.Get("X-" + n), h} {
+		var prefixed string
+		if !strings.HasPrefix(n, "X-") {
+			prefixed = r.Header.Get("X-" + n)
+		}
+		for _, v := range []string{prefixed, h} {
 			if v != "" {
 				if d, err := new(mime.WordDecoder).DecodeHeader(v); err == nil {
 					return d
@@ -808,6 +812,8 @@ var (
 	errPruned = errors.New("since was pruned")
 )
 
+const ntfySubscribeTopicLimit = 150
+
 // ntfySubscribe: GET /{t1,t2}/json|sse|raw|ws with since= and poll=1.
 func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
@@ -816,17 +822,28 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		if len(topics) == 0 {
 			return errf(400, "bad_request", "no topic given")
 		}
+		seen := make(map[string]bool)
+		distinct := topics[:0]
 		for _, t := range topics {
+			if seen[t] {
+				continue
+			}
 			if err := validTopic(t); err != nil {
 				return err
 			}
 			if err := tok.need(ScopeRead, t); err != nil {
 				return err
 			}
+			seen[t] = true
+			distinct = append(distinct, t)
+			if len(distinct) > ntfySubscribeTopicLimit {
+				return errf(400, "bad_request", "an ntfy subscription can have at most %d topics", ntfySubscribeTopicLimit)
+			}
 		}
-		q := r.URL.Query()
-		poll := q.Get("poll") == "1" || q.Get("poll") == "true"
-		sinceArg := q.Get("since")
+		topics = distinct
+		pollParam := ntfyMarkdown(strings.TrimSpace(param(r, "X-Poll", "Poll", "Po")))
+		poll := pollParam != nil && *pollParam
+		sinceArg := strings.TrimSpace(param(r, "X-Since", "Since", "Si"))
 		if sinceArg == "" && poll {
 			sinceArg = "all"
 		}
@@ -964,12 +981,14 @@ type ntfyFilter struct {
 }
 
 func ntfyFilters(r *http.Request) (f ntfyFilter, err error) {
-	f.id, f.message, f.title = param(r, "Id"), param(r, "Message", "M"), param(r, "Title", "T")
-	if b := ntfyMarkdown(param(r, "Scheduled", "Sched")); b != nil {
+	f.id = param(r, "X-Id", "Id")
+	f.message = param(r, "X-Message", "Message", "M")
+	f.title = param(r, "X-Title", "Title", "T")
+	if b := ntfyMarkdown(param(r, "X-Scheduled", "Scheduled", "Sched")); b != nil {
 		f.sched = *b
 	}
-	f.tags = splitList(param(r, "Tags", "Tag", "Ta"))
-	for _, v := range splitList(param(r, "Priority", "Prio", "P")) {
+	f.tags = splitList(param(r, "X-Tags", "Tags", "Tag", "Ta"))
+	for _, v := range splitList(param(r, "X-Priority", "Priority", "Prio", "P")) {
 		p, err := ntfyPriority(v)
 		if err != nil {
 			return f, err

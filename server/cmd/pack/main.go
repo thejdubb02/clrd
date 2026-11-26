@@ -18,13 +18,13 @@ import (
 	"github.com/thejdubb02/clrd/internal/changelog"
 )
 
-// Each source (a folder or a file) is stored under out as name.gz. Templates
-// stay raw: packed, they saved 110 KB of binary but cost about 300 KB of
-// memory, as they are decoded and parsed at start (#690).
+// Each source (a folder or a file) is stored under out as name.gz.
 var packs = []struct{ src, out string }{
 	{"docs", "packed"},
 	{"web/static", "web/packed"},
+	{"web/templates", "web/packed"},
 	{"server/openapi.json", "server/packed"},
+	{"server/emoji_aliases.txt", "server/packed"},
 	{"server/mcp/tools.json", "server/mcp/packed"},
 }
 

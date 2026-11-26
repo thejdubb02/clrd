@@ -1,0 +1,1 @@
+- Server: the release binary stores its web page templates gzipped too, so it is about 136 KB smaller, and it gives back the memory used to read them at start, so it idles about 380 KB lighter (#929).

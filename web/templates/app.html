@@ -436,6 +436,18 @@
           </select>
         </div>
         <p class="text-body text-sm" role="status" data-palette-status></p>
+        <details>
+          <summary class="btn" data-variant="outline">Share custom colors {{template "i-chevron-down"}}</summary>
+          <fieldset class="grid gap-2 pt-2" data-palette-share>
+            <label for="palette-code" class="label">Theme code</label>
+            <textarea id="palette-code" class="textarea font-mono" rows="2" maxlength="128" spellcheck="false" autocomplete="off"></textarea>
+            <div class="flex flex-wrap gap-2">
+              <button class="btn" type="button" data-variant="outline" data-palette-export>Export custom colors</button>
+              <button class="btn" type="button" data-variant="outline" data-palette-import>Preview imported colors</button>
+            </div>
+            <p class="text-body text-sm" role="status" data-palette-share-status></p>
+          </fieldset>
+        </details>
       </form>
     </section>
     {{if .Snap.CanColorRules}}<section id="color-rules" data-setting data-keywords="color, colour, highlight, severity, priority, tint, bar, gradient" class="grid gap-3">

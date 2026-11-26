@@ -80,8 +80,9 @@ Setting it again replaces it; only the author changes or removes it. A mark
 writes a `mark` event (section 3) and moves `updated_at`. A publish that
 updates the row by `external_id` keeps its marks.
 
-**Emoji (#306):** `title` and `message` are sent with common GitHub and
-Slack shortcodes shown as the emoji (`:warning:` becomes ⚠️), and a tag that
+**Emoji (#306):** `title` and `message` render emoji shortcodes from the
+gemoji alias table (`:warning:` becomes ⚠️). The table includes ntfy's
+documented emoji tags. A tag that
 names an emoji (`rotating_light`, `warning`) goes in front of the title, or of
 the message when there is no title, as ntfy apps show it. Unknown names, text
 inside backticks and strings like `10:30:15` or `a:b:c` stay as typed. The
@@ -1242,7 +1243,8 @@ and `initialize` reports `version` as `serverInfo.version`.
   JSON, and the filename describes an external attachment. For a raw publish,
   `Content-Type: text/markdown` selects Markdown even with `Markdown: no`.
 - `GET /{topics}/json`, `/{topics}/sse`, `/{topics}/ws`, `/{topics}/raw` with
-  comma-separated topic names, `since=` (`none`, `all`, `latest`, unix time,
+  up to 150 distinct comma-separated topic names (repeats count once),
+  `since=` (`none`, `all`, `latest`, unix time,
   duration or message ID), `poll=1` for a finite replay, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
   list). `scheduled=1` (or `sched=1`) also lists messages sent with a delay
@@ -1754,6 +1756,13 @@ save if text on background or cards falls below 4.5:1, any state color on
 cards falls below 3:1, or the Euclidean distance between urgent and clear
 in 8-bit sRGB is less than 80. Each rejection names the failed check.
 The web editor previews valid picks and shows the same checks before saving.
+
+The editor can share a custom palette as one line,
+`clrd-theme:1:Custom:#bg,#card,#text,#clear,#urgent,#snooze`, with each
+color represented by six hex digits after `#`. The name is a label in the
+code, up to 64 characters and without a colon or line break. Imports use
+the same color and contrast checks, open a draft, and take effect on other
+devices when saved.
 
 Derive line, slate and body by mixing 12%, 60% and 85% ink over paper in sRGB.
 High contrast uses 65% ink for outlines. Slate and body fall back to ink if

@@ -223,10 +223,45 @@ func TestNtfyScheduled(t *testing.T) {
 	if got := msgs(""); strings.Join(got, ",") != "now" {
 		t.Fatalf("plain poll: %v", got)
 	}
-	for _, q := range []string{"&scheduled=1", "&sched=yes"} {
+	for _, q := range []string{"&scheduled=1", "&sched=yes", "&x-scheduled=yes"} {
 		if got := msgs(q); strings.Join(got, ",") != "soon,now" {
 			t.Fatalf("%s: %v", q, got)
 		}
+	}
+}
+
+func TestNtfySubscribeTopicLimit(t *testing.T) {
+	_, ts, admin := newTest(t)
+	topics := make([]string, 151)
+	for i := range topics {
+		topics[i] = fmt.Sprintf("topic%d", i)
+	}
+	exact := strings.Join(topics[:150], ",")
+	repeated := exact + "," + topics[0] + "," + topics[12]
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", ts.URL+"/"+repeated+"/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.SetBasicAuth("", admin)
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	scan := bufio.NewScanner(res.Body)
+	if res.StatusCode != 200 || !scan.Scan() {
+		t.Fatalf("subscribe with 150 distinct topics and duplicates: %d %v", res.StatusCode, scan.Err())
+	}
+	if opened := ntfyDecode(t, scan.Text()); opened.Event != "open" || opened.Topic != exact {
+		t.Fatalf("open event did not list distinct topics in order: %+v", opened)
+	}
+	res.Body.Close()
+
+	path := ts.URL + "/" + strings.Join(topics, ",") + "/json?poll=1"
+	if code, out := raw(t, "GET", path, admin, "", nil); code != 400 || !strings.Contains(out, "at most 150 topics") {
+		t.Fatalf("151 distinct topics: %d %s", code, out)
 	}
 }
 
@@ -396,7 +431,8 @@ func TestNtfyFilters(t *testing.T) {
 	keep := ntfyDecode(t, out).ID
 	raw(t, "POST", ts.URL+"/f", admin, "drop", map[string]string{"Title": "cpu", "Priority": "low", "Tags": "a"})
 	for _, q := range []string{"id=" + keep, "message=keep", "m=keep", "title=disk", "t=disk", "priority=high", "p=4,5", "prio=max,high",
-		"tags=a,b", "ta=b", "tag=b"} {
+		"tags=a,b", "ta=b", "tag=b", "x-id=" + keep, "x-message=keep", "x-title=disk", "x-priority=high", "x-tags=b",
+		"x-title=disk&title=cpu"} {
 		code, out := raw(t, "GET", ts.URL+"/f/json?poll=1&"+q, admin, "", nil)
 		if l := lines(out); code != 200 || len(l) != 1 || ntfyDecode(t, l[0]).Message != "keep" {
 			t.Errorf("%s: %d %v", q, code, l)
@@ -405,7 +441,7 @@ func TestNtfyFilters(t *testing.T) {
 	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1", admin, "", nil); len(lines(out)) != 2 {
 		t.Fatalf("no filter: %v", lines(out))
 	}
-	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1", admin, "", map[string]string{"X-Title": "cpu"}); len(lines(out)) != 1 || ntfyDecode(t, lines(out)[0]).Message != "drop" {
+	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1&x-title=disk", admin, "", map[string]string{"X-Title": "cpu"}); len(lines(out)) != 1 || ntfyDecode(t, lines(out)[0]).Message != "drop" {
 		t.Errorf("filter by header: %v", lines(out))
 	}
 	// A browser's RFC 9218 Priority header is not a filter, and does not hide ?priority=.
@@ -801,4 +837,54 @@ func TestNtfyReplayTopicRanges(t *testing.T) {
 		t.Fatalf("pruned gap: %v", err)
 	}
 	check(3, 4)
+}
+
+func TestNtfySubscribeReplayAliases(t *testing.T) {
+	_, ts, admin := newTest(t)
+	for _, msg := range []string{"first", "second"} {
+		if code, out := raw(t, "POST", ts.URL+"/alerts", admin, msg, nil); code != 200 {
+			t.Fatalf("publish %q: %d %s", msg, code, out)
+		}
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, tc := range []struct {
+		name, query string
+		headers     map[string]string
+		want        []string
+	}{
+		{"headers beat query", "?poll=no&since=none", map[string]string{"X-Poll": "YES", "X-Since": "latest"}, []string{"second"}},
+		{"short query aliases", "?po=yes&si=latest", nil, []string{"second"}},
+		{"prefixed query aliases", "?x-poll=1&x-since=latest", nil, []string{"second"}},
+		{"canonical yes", "?poll=yes&since=latest", nil, []string{"second"}},
+		{"poll defaults to all", "", map[string]string{"X-Poll": "1"}, []string{"first", "second"}},
+		{"header since none", "?poll=1", map[string]string{"X-Since": "none"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", ts.URL+"/alerts/json"+tc.query, nil)
+			req.SetBasicAuth("", admin)
+			for key, value := range tc.headers {
+				req.Header.Set(key, value)
+			}
+			res, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			if res.StatusCode != 200 {
+				t.Fatalf("status %d", res.StatusCode)
+			}
+			sc := bufio.NewScanner(res.Body)
+			for _, want := range tc.want {
+				if !sc.Scan() {
+					t.Fatalf("missing message %q: %v", want, sc.Err())
+				}
+				if m := ntfyDecode(t, sc.Text()); m.Event != "message" || m.Message != want {
+					t.Fatalf("got %+v, want message %q", m, want)
+				}
+			}
+			if sc.Scan() || sc.Err() != nil {
+				t.Fatalf("poll did not end after replay: %q, %v", sc.Text(), sc.Err())
+			}
+		})
+	}
 }

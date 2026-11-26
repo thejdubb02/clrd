@@ -1,0 +1,1 @@
+- ntfy subscribers can use the prefixed query aliases for message filters and scheduled replay, such as `x-title` and `x-scheduled`.
