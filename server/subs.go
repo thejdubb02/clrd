@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -32,6 +31,7 @@ type view struct {
 	newTopics bool
 	rows      map[string]bool
 	seq       int64 // the owner's last subscriptions event
+	moved     int64 // the last attach or detach for this owner
 }
 
 func (v *view) subscribed(topic string) bool {
@@ -93,13 +93,12 @@ func (s *Server) withView(ctx context.Context, tok *Token, all bool) (*Token, er
 	// Not filtered, only the last move counts: a token just detached resets
 	// on a stale since, but its browsers changing the set never resets it (#635).
 	var nt bool
-	var moved int64
-	err = tx.QueryRowContext(ctx, `SELECT new_topics, seq, moved FROM sub_owners WHERE owner = ?`, owner).Scan(&nt, &v.seq, &moved)
+	err = tx.QueryRowContext(ctx, `SELECT new_topics, seq, moved FROM sub_owners WHERE owner = ?`, owner).Scan(&nt, &v.seq, &v.moved)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	if !filtered {
-		v.seq = moved
+		v.seq = v.moved
 		return &c, nil
 	}
 	if err == nil {
@@ -225,7 +224,11 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 			return SubscriptionList{}, errf(400, "bad_request", "%s: at most 64 letters, digits, - or _", []string{"request_id", "if_request_id"}[i])
 		}
 	}
-	names := slices.Sorted(maps.Keys(topics))
+	names := make([]string, 0, len(topics))
+	for topic := range topics {
+		names = append(names, topic)
+	}
+	slices.Sort(names)
 	for _, t := range names {
 		if err := validTopic(t); err != nil {
 			return SubscriptionList{}, err

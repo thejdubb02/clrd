@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 )
@@ -115,8 +114,8 @@ func (s *Server) AskApprove(ctx context.Context, tok *Token, topic, approve stri
 		}
 		link, _ := json.Marshal(confirmLink{Reply: approve, Asker: tok.ID, AskerName: tok.Name, Kind: "approve", From: cur})
 		t := now()
-		out = &Notification{ID: s.newID(t), Topic: topic, Title: fmt.Sprintf("Confirm %s may approve: %s", tok.Name, approve),
-			Message: fmt.Sprintf("%s asks to change who may approve from %s to %s for itself.", tok.Name, cur, approve),
+		out = &Notification{ID: s.newID(t), Topic: topic, Title: "Confirm " + tok.Name + " may approve: " + approve,
+			Message: tok.Name + " asks to change who may approve from " + cur + " to " + approve + " for itself.",
 			Format:  FormatText, Priority: 3, Tags: []string{},
 			Actions: []Action{{Label: "Confirm", Reply: "confirm"}, {Label: "Reject", Reply: "reject"}},
 			State:   Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, confirm: string(link)}
@@ -154,7 +153,7 @@ func (s *Server) askConfirm(ctx context.Context, tx *sql.Tx, tok *Token, n *Noti
 	}
 	label := n.Actions[slices.IndexFunc(n.Actions, func(a Action) bool { return a.Reply == reply })].Label
 	t := now()
-	p = &Notification{ID: s.newID(t), Topic: n.Topic, Title: fmt.Sprintf("Confirm %s's answer: %s", tok.Name, label),
+	p = &Notification{ID: s.newID(t), Topic: n.Topic, Title: "Confirm " + tok.Name + "'s answer: " + label,
 		Message: msg, Format: format, Priority: n.Priority, Tags: []string{}, Icon: n.Icon,
 		Actions: []Action{{Label: "Confirm", Reply: "confirm"}, {Label: "Reject", Reply: "reject"}},
 		State:   Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, confirm: string(link)}

@@ -11,6 +11,8 @@ Needs JDK 17 and an Android SDK with platform 35 and build-tools 35.
 ```bash
 export ANDROID_HOME=/path/to/android-sdk
 ./gradlew assembleDebug testDebugUnitTest   # debug APK + unit tests
+./gradlew verifyRoborazziDebug              # unit tests + JVM screenshot checks
+./gradlew recordRoborazziDebug --tests "me.itsjustin.clrd.ScreensTest" # refresh android/screenshots/
 ./gradlew assembleRelease                   # unsigned release APK
 ```
 

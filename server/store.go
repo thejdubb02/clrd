@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -387,35 +386,28 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	// Databases made before these columns existed.
 	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text", "requested_topic", "color"} {
-		if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
-			!strings.Contains(err.Error(), "duplicate column") {
+		if err := addColumn(db, `ALTER TABLE notifications ADD COLUMN `+col+` TEXT NOT NULL DEFAULT ''`, "add "+col+" column"); err != nil {
 			db.Close()
-			return nil, fmt.Errorf("add %s column: %w", col, err)
+			return nil, err
 		}
 	}
 	for _, add := range []string{`notifications ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`, `senders ADD COLUMN rules TEXT NOT NULL DEFAULT '{}'`,
 		`senders ADD COLUMN last_topic TEXT NOT NULL DEFAULT ''`, `senders ADD COLUMN alarm_from INTEGER NOT NULL DEFAULT 0`,
 		`senders ADD COLUMN alarm_topic TEXT NOT NULL DEFAULT ''`} {
-		if _, err := db.Exec(`ALTER TABLE ` + add); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		if err := addColumn(db, `ALTER TABLE `+add, "alter "+add); err != nil {
 			db.Close()
-			return nil, fmt.Errorf("alter %s: %w", add, err)
+			return nil, err
 		}
 	}
 	// Rows from before formats were rendered as Markdown, the default.
-	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN format TEXT NOT NULL DEFAULT 'markdown'`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
+	if err := addColumn(db, `ALTER TABLE notifications ADD COLUMN format TEXT NOT NULL DEFAULT 'markdown'`, "add format column"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("add format column: %w", err)
+		return nil, err
 	}
 	// A table from before moved: every past change counts as a move, so a
 	// detach before the upgrade still resets. One transaction, so a stop in
 	// between never leaves the column without the fill.
-	if err := func() error {
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
+	if err := migrateDB(db, func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`ALTER TABLE sub_owners ADD COLUMN moved INTEGER NOT NULL DEFAULT 0`); err != nil {
 			if strings.Contains(err.Error(), "duplicate column") {
 				return nil
@@ -426,34 +418,27 @@ func openDB(path string) (*sql.DB, error) {
 			return err
 		}
 		return tx.Commit()
-	}(); err != nil {
+	}); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("add moved column: %w", err)
 	}
-	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN expires_at INTEGER`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
+	if err := addColumn(db, `ALTER TABLE notifications ADD COLUMN expires_at INTEGER`, "add expires_at column"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("add expires_at column: %w", err)
+		return nil, err
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS notifications_expires ON notifications(expires_at) WHERE expires_at IS NOT NULL`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("expires index: %w", err)
 	}
 	for _, col := range []string{"checkin_ms INTEGER", "checkin_at INTEGER", "checkin_late INTEGER NOT NULL DEFAULT 0", "device_actions INTEGER NOT NULL DEFAULT 0"} {
-		if _, err := db.Exec(`ALTER TABLE topics ADD COLUMN ` + col); err != nil &&
-			!strings.Contains(err.Error(), "duplicate column") {
+		if err := addColumn(db, `ALTER TABLE topics ADD COLUMN `+col, "add topics "+col); err != nil {
 			db.Close()
-			return nil, fmt.Errorf("add topics %s: %w", col, err)
+			return nil, err
 		}
 	}
 	// approvals (#623) starts from the questions already stored, in one
 	// transaction so a crash cannot leave the column without them.
-	if err := func() error {
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
+	if err := migrateDB(db, func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`ALTER TABLE topics ADD COLUMN approvals INTEGER NOT NULL DEFAULT 0`); err != nil {
 			if strings.Contains(err.Error(), "duplicate column") {
 				return nil
@@ -465,19 +450,17 @@ func openDB(path string) (*sql.DB, error) {
 			return err
 		}
 		return tx.Commit()
-	}(); err != nil {
+	}); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("add topics approvals: %w", err)
 	}
-	if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN grants TEXT NOT NULL DEFAULT ''`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
+	if err := addColumn(db, `ALTER TABLE tokens ADD COLUMN grants TEXT NOT NULL DEFAULT ''`, "add grants column"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("add grants column: %w", err)
+		return nil, err
 	}
-	if _, err := db.Exec(`ALTER TABLE notifications ADD COLUMN silenced INTEGER NOT NULL DEFAULT 0`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
+	if err := addColumn(db, `ALTER TABLE notifications ADD COLUMN silenced INTEGER NOT NULL DEFAULT 0`, "add silenced column"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("add silenced column: %w", err)
+		return nil, err
 	}
 	// qseq: the seq of the row's last event that changed the question, so a
 	// mark or re-alert after a prune still lets an old tap through (#452).
@@ -499,12 +482,7 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	// cleared_at: when the row was dismissed or resolved, for time to clear
 	// (#120). Rows cleared before it existed take their last change.
-	if err := func() error { // one transaction, so a crash never leaves the column unfilled
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
+	if err := migrateDB(db, func(tx *sql.Tx) error { // one transaction, so a crash never leaves the column unfilled
 		if _, err := tx.Exec(`ALTER TABLE notifications ADD COLUMN cleared_at INTEGER`); err != nil {
 			if strings.Contains(err.Error(), "duplicate column") {
 				return nil
@@ -536,19 +514,14 @@ func openDB(path string) (*sql.DB, error) {
 			return err
 		}
 		return tx.Commit()
-	}(); err != nil {
+	}); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("add cleared_at column: %w", err)
 	}
 	// hook_failures: failed webhook deliveries per topic for stats (#794). A
 	// trigger copies each one as it fails, so deleting a hook and its delivery
 	// log keeps its past failures. An upgrade copies the failures already kept.
-	if err := func() error {
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
+	if err := migrateDB(db, func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`CREATE TABLE hook_failures (id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL, at INTEGER NOT NULL)`); err != nil {
 			if strings.Contains(err.Error(), "already exists") {
 				return nil
@@ -567,53 +540,47 @@ func openDB(path string) (*sql.DB, error) {
 			}
 		}
 		return tx.Commit()
-	}(); err != nil {
+	}); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("add hook_failures table: %w", err)
 	}
 	for _, c := range []string{"body", "kind"} {
-		if _, err := db.Exec(`ALTER TABLE hooks_out ADD COLUMN ` + c + ` TEXT NOT NULL DEFAULT ''`); err != nil &&
-			!strings.Contains(err.Error(), "duplicate column") {
+		if err := addColumn(db, `ALTER TABLE hooks_out ADD COLUMN `+c+` TEXT NOT NULL DEFAULT ''`, "add hooks_out "+c+" column"); err != nil {
 			db.Close()
-			return nil, fmt.Errorf("add hooks_out %s column: %w", c, err)
+			return nil, err
 		}
 	}
-	if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN phone INTEGER NOT NULL DEFAULT 0`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
+	if err := addColumn(db, `ALTER TABLE sessions ADD COLUMN phone INTEGER NOT NULL DEFAULT 0`, "add sessions phone column"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("add sessions phone column: %w", err)
+		return nil, err
 	}
 	// The person a typed-in token belongs to (#143); NULL for none.
-	if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN user_id TEXT REFERENCES people(id)`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column") {
+	if err := addColumn(db, `ALTER TABLE tokens ADD COLUMN user_id TEXT REFERENCES people(id)`, "add tokens user_id column"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("add tokens user_id column: %w", err)
+		return nil, err
 	}
 	// Agents (#454): kind is person or agent; owner is the top token whose
 	// invite made an agent, so it shows in that person's device list.
 	for _, c := range []string{`kind TEXT NOT NULL DEFAULT 'person'`, `owner TEXT NOT NULL DEFAULT ''`} {
-		if _, err := db.Exec(`ALTER TABLE people ADD COLUMN ` + c); err != nil &&
-			!strings.Contains(err.Error(), "duplicate column") {
+		if err := addColumn(db, `ALTER TABLE people ADD COLUMN `+c, "add people column"); err != nil {
 			db.Close()
-			return nil, fmt.Errorf("add people column: %w", err)
+			return nil, err
 		}
 	}
 	// Devices (#765): install is the id a browser or app keeps for itself, so
 	// linking again replaces its own row; detail is a short "Chrome 131,
 	// Windows 10" from the user agent, to tell rows of one name apart.
 	for _, c := range []string{`install TEXT NOT NULL DEFAULT ''`, `detail TEXT NOT NULL DEFAULT ''`} {
-		if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN ` + c); err != nil &&
-			!strings.Contains(err.Error(), "duplicate column") {
+		if err := addColumn(db, `ALTER TABLE tokens ADD COLUMN `+c, "add tokens column"); err != nil {
 			db.Close()
-			return nil, fmt.Errorf("add tokens column: %w", err)
+			return nil, err
 		}
 	}
 	// Rows the CLRD_CONFIG file made (#155): only these does a start remove.
 	for _, t := range []string{"tokens", "people"} {
-		if _, err := db.Exec(`ALTER TABLE ` + t + ` ADD COLUMN config INTEGER NOT NULL DEFAULT 0`); err != nil &&
-			!strings.Contains(err.Error(), "duplicate column") {
+		if err := addColumn(db, `ALTER TABLE `+t+` ADD COLUMN config INTEGER NOT NULL DEFAULT 0`, "add "+t+" config column"); err != nil {
 			db.Close()
-			return nil, fmt.Errorf("add %s config column: %w", t, err)
+			return nil, err
 		}
 	}
 	// Who may answer approval requests (#187). Only on the run that adds the
@@ -640,6 +607,22 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("file index: %w", err)
 	}
 	return db, nil
+}
+
+func migrateDB(db *sql.DB, migrate func(*sql.Tx) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	return migrate(tx)
+}
+
+func addColumn(db *sql.DB, query, label string) error {
+	if _, err := db.Exec(query); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	return nil
 }
 
 func ms(t time.Time) int64     { return t.UnixMilli() }
@@ -1606,7 +1589,11 @@ func (s *Server) prune(ctx context.Context) error {
 		}
 	}
 	// [] not null, since NOT IN (NULL) matches nothing.
-	own, _ := json.Marshal(append([]string{}, slices.Collect(maps.Keys(st.TopicKeepClearedDays))...))
+	topics := make([]string, 0, len(st.TopicKeepClearedDays))
+	for topic := range st.TopicKeepClearedDays {
+		topics = append(topics, topic)
+	}
+	own, _ := json.Marshal(topics)
 	if keep != 0 { // 0 = forever
 		if _, err := tx.Exec(`DELETE FROM notifications WHERE `+prunable+` AND topic NOT IN (SELECT value FROM json_each(?))`,
 			ms(now.Add(-keep)), string(own)); err != nil {
@@ -1735,7 +1722,14 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 	}
 	hiding := tok.view.hiding()
 	if hiding && len(topics) > 0 {
-		if topics = slices.DeleteFunc(slices.Clone(topics), tok.view.hides); len(topics) == 0 {
+		visible := make([]string, 0, len(topics))
+		for _, topic := range topics {
+			if !tok.view.hides(topic) {
+				visible = append(visible, topic)
+			}
+		}
+		topics = visible
+		if len(topics) == 0 {
 			return []*Notification{}, nil
 		}
 	}
@@ -1786,7 +1780,7 @@ func (s *Server) List(ctx context.Context, tok *Token, lq ListQuery) ([]*Notific
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, ` AND `)
 	}
-	ns, err := queryNotifications(s.db, q+fmt.Sprintf(` ORDER BY id DESC LIMIT %d`, lq.Limit), args...)
+	ns, err := queryNotifications(s.db, q+(` ORDER BY id DESC LIMIT `+strconv.Itoa(lq.Limit)), args...)
 	forReader(tok, ns...)
 	return ns, err
 }

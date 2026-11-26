@@ -72,10 +72,22 @@ func ParseChangelog(md string) []Release {
 			inItem = false
 		}
 	}
-	for i := range rs {
-		rs[i].Changes = slices.DeleteFunc(rs[i].Changes, func(c Change) bool { return len(c.Items) == 0 })
+	out := rs[:0]
+	for _, r := range rs {
+		changes := r.Changes[:0]
+		for _, c := range r.Changes {
+			if len(c.Items) != 0 {
+				changes = append(changes, c)
+			}
+		}
+		clear(r.Changes[len(changes):])
+		r.Changes = changes
+		if r.Version != "Unreleased" || len(r.Changes) != 0 {
+			out = append(out, r)
+		}
 	}
-	return slices.DeleteFunc(rs, func(r Release) bool { return r.Version == "Unreleased" && len(r.Changes) == 0 })
+	clear(rs[len(out):])
+	return out
 }
 
 // Version is the newest cut version, or 0.0.0 before the first.
