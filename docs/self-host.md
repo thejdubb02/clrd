@@ -310,7 +310,12 @@ Anonymous topics are off until an admin sets them, with
 right now and is stored nowhere, so it never shows in the inbox or a replay.
 It cannot be delayed, repeated, carry a file or an `Id`.
 
-`view` action buttons work everywhere. `http` and `broadcast` buttons are
+`view` action buttons work everywhere. The server also accepts `copy` action
+buttons on any topic and passes them to ntfy subscribers. In the web inbox,
+the button copies its value to the clipboard and clears the notification
+after a successful copy if the action sets `clear`. Use
+`copy, Copy code, 123456` in `X-Actions` or set `value` in the JSON action.
+`http` and `broadcast` buttons are
 stored and passed to ntfy apps once an admin turns them on for the topic
 (`{"device_actions":true}` on `PUT /api/v1/topics/{topic}`, or the MCP tool
 `set_topic`); until then they are dropped. clrd's own app does not run them

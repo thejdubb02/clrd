@@ -258,11 +258,12 @@ CREATE TABLE IF NOT EXISTS hidden (token_id TEXT NOT NULL, notification_id TEXT 
 `
 
 // Action is a button on a notification: a link (URL), an answer (Reply)
-// that POST /api/v1/notifications/{id}/reply records, or a request the
-// reader's device makes (HTTP, Broadcast; deviceactions.go).
+// that POST /api/v1/notifications/{id}/reply records, text to copy (Copy),
+// or a request the reader's device makes (HTTP, Broadcast; deviceactions.go).
 type Action struct {
 	Label     string           `json:"label"`
 	URL       string           `json:"url"`
+	Copy      string           `json:"copy,omitempty"`
 	Reply     string           `json:"reply,omitempty"`
 	HTTP      *HTTPAction      `json:"http,omitempty"`
 	Broadcast *BroadcastAction `json:"broadcast,omitempty"`
@@ -1281,17 +1282,20 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 // maxReplyText caps a typed answer (#153), in characters.
 const maxReplyText = 1000
 
-// checkActions: each action is one of a link, a reply, an http request or a
-// broadcast; reply values are short, unique, and at most 3 (what an Android
-// tray entry shows). At most one reply action takes typed text.
+// checkActions: each action is one of a link, a reply, text to copy, an HTTP
+// request or a broadcast. Reply values are short and unique, with at most 3
+// per notification (what an Android tray entry shows). At most one takes typed text.
 func checkActions(as []Action) error {
 	seen, dev, texts := map[string]bool{}, 0, 0
 	for _, a := range as {
 		if dev += btoi(isDeviceAction(a)); dev > 3 {
 			return errf(400, "bad_request", "at most 3 http or broadcast actions")
 		}
-		if n := btoi(a.URL != "") + btoi(a.Reply != "") + btoi(a.HTTP != nil) + btoi(a.Broadcast != nil); n != 1 {
-			return errf(400, "bad_request", "action %q needs exactly one of url, reply, http or broadcast", a.Label)
+		if n := btoi(a.URL != "") + btoi(a.Reply != "") + btoi(a.Copy != "") + btoi(a.HTTP != nil) + btoi(a.Broadcast != nil); n != 1 {
+			return errf(400, "bad_request", "action %q needs exactly one of url, reply, copy, http or broadcast", a.Label)
+		}
+		if len(a.Copy) > 4096 {
+			return errf(400, "bad_request", "action %q: copy must be at most 4096 bytes", a.Label)
 		}
 		if err := checkDeviceAction(a); err != nil {
 			return err

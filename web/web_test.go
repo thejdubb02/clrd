@@ -408,6 +408,16 @@ func TestHostileNotification(t *testing.T) {
 	}
 }
 
+func TestCopyActionButton(t *testing.T) {
+	n := Notification{ID: "copy", Topic: "ops", Message: "Code ready", State: "active", CreatedAt: time.Now(),
+		Actions: []Action{{Label: "Copy code", Copy: `a"<&>`, Clear: true}}}
+	_, body := get(t, Handler(one{n: n}, ""), "/app")
+	want := `<button type="button" class="btn js-only" data-variant="outline" data-copy-action="a&#34;&lt;&amp;&gt;" data-copy-clear>Copy code</button>`
+	if !strings.Contains(body, want) {
+		t.Errorf("inbox missing %s", want)
+	}
+}
+
 // The shared color rule fixture every client runs (#165, SPEC Color rules).
 func TestColorRules(t *testing.T) {
 	b, err := os.ReadFile("../server/testdata/colorrules.json")

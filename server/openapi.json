@@ -3606,7 +3606,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Only view actions are kept. Also X-Actions"
+      "description": "Supports view and copy actions. HTTP and broadcast actions require device_actions on the topic. Also X-Actions."
      },
      {
       "name": "Delay",
@@ -3786,7 +3786,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Only view actions are kept. Also X-Actions"
+      "description": "Supports view and copy actions. HTTP and broadcast actions require device_actions on the topic. Also X-Actions."
      },
      {
       "name": "Delay",
@@ -3974,7 +3974,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Only view actions are kept. Also X-Actions"
+      "description": "Supports view and copy actions. HTTP and broadcast actions require device_actions on the topic. Also X-Actions."
      },
      {
       "name": "Delay",
@@ -4123,7 +4123,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Only view actions are kept. Also X-Actions"
+      "description": "Supports view and copy actions. HTTP and broadcast actions require device_actions on the topic. Also X-Actions."
      },
      {
       "name": "Delay",
@@ -6447,13 +6447,18 @@
    },
    "Action": {
     "type": "object",
-    "description": "A link (url) or an answer button (reply), exactly one of the two. At most 3 reply actions; reply values are 1 to 64 of A-Z a-z 0-9 _ - and unique. At most one reply action may set text: true; answering it needs typed text.",
+    "description": "Set exactly one of url, reply, copy, http or broadcast. At most 3 reply actions; reply values are 1 to 64 of A-Z a-z 0-9 _ - and unique. At most one reply action may set text: true; answering it needs typed text.",
     "properties": {
      "label": {
       "type": "string"
      },
      "url": {
       "type": "string"
+     },
+     "copy": {
+      "type": "string",
+      "description": "Clipboard text, from 1 to 4096 bytes. Available on any topic.",
+      "example": "123456"
      },
      "reply": {
       "type": "string",
