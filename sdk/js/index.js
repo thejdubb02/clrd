@@ -77,10 +77,11 @@ export class Client {
     return this.#req("GET", `/api/v1/notifications/${e(id)}`);
   }
 
-  list({ topic, state = "open", limit } = {}) {
+  list({ topic, state = "open", limit, subscribed } = {}) {
     const q = new URLSearchParams({ state });
     if (topic) q.set("topic", topic);
     if (limit) q.set("limit", String(limit));
+    if (subscribed === "all") q.set("subscribed", subscribed);
     return this.#req("GET", `/api/v1/notifications?${q}`);
   }
 

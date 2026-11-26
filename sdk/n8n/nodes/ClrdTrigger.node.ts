@@ -49,7 +49,7 @@ export class ClrdTrigger implements INodeType {
 		const topic = this.getNodeParameter('topic') as string;
 		const type = this.getNodeParameter('event') as string;
 		if (this.getMode() === 'manual') {
-			const { notifications } = await client.list({ topic, state: 'all', limit: 1 }) as {
+			const { notifications } = await client.list({ topic, state: 'all', limit: 1, subscribed: 'all' }) as {
 				notifications: IDataObject[];
 			};
 			if (!notifications.length) return null;

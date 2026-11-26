@@ -91,12 +91,15 @@ test('trigger skips old history, filters events, and advances its cursor', async
   ]);
 });
 
-test('manual sample leaves the live cursor untouched', async () => {
+test('manual sample includes readable unsubscribed topics and leaves the live cursor untouched', async () => {
   const notification = { id: 'a', topic: 'infra', seq: 2 };
   const ctx = context([{ topic: 'infra', event: 'state' }], () => ({
     statusCode: 200, body: { notifications: [notification] },
   }));
   ctx.getMode = () => 'manual';
   assert.deepEqual(await new ClrdTrigger().poll.call(ctx), [[{ json: { seq: 2, type: 'sample', notification } }]]);
+  assert.deepEqual(ctx.requests, [
+    ['GET', '/api/v1/notifications?state=all&topic=infra&limit=1&subscribed=all', undefined],
+  ]);
   assert.deepEqual(ctx.staticData, {});
 });

@@ -48,6 +48,8 @@ export interface ListOptions {
   topic?: string;
   state?: "open" | "all" | State;
   limit?: number;
+  /** Include readable topics even if the owner is unsubscribed. */
+  subscribed?: "all";
 }
 
 export interface EventCursor {
