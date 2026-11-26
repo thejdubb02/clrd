@@ -22,7 +22,7 @@ data directory, then use:
 ```sh
 mkdir -p ~/.n8n/nodes
 cd ~/.n8n/nodes
-npm install /absolute/path/to/n8n-nodes-clrd-0.1.0.tgz
+npm install --omit=peer --ignore-scripts /absolute/path/to/n8n-nodes-clrd-0.1.0.tgz
 ```
 
 Run this as the user running n8n and restart n8n. In Docker, install inside

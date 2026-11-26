@@ -3,9 +3,9 @@ import type {
 	IExecuteFunctions,
 	INodeExecutionData,
 	INodeType,
+	NodeConnectionType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import { clrdClient } from './client';
 
 const operations = ['send', 'clear', 'acknowledge', 'resolve', 'snooze'] as const;
@@ -22,8 +22,8 @@ export class Clrd implements INodeType {
 		version: 1,
 		description: 'Send or change the state of a clrd notification',
 		defaults: { name: 'clrd' },
-		inputs: [NodeConnectionTypes.Main],
-		outputs: [NodeConnectionTypes.Main],
+		inputs: ['main' as NodeConnectionType],
+		outputs: ['main' as NodeConnectionType],
 		credentials: [{ name: 'clrdApi', required: true }],
 		properties: [
 			{
@@ -136,7 +136,9 @@ export class Clrd implements INodeType {
 			} catch (error) {
 				const failure = error instanceof Error ? error : new Error(String(error));
 				if (!this.continueOnFail()) {
-					throw new NodeOperationError(this.getNode(), failure, { itemIndex: i });
+					// Report the item without importing a second copy of the host workflow library.
+					// eslint-disable-next-line @n8n/community-nodes/require-node-api-error
+					throw new Error(`Item ${i + 1}: ${failure.message}`);
 				}
 				output.push({ json: { error: failure.message }, pairedItem: i });
 			}

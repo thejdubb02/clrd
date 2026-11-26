@@ -19,6 +19,8 @@ export async function clrdClient(context: IExecuteFunctions | IPollFunctions) {
 				ignoreHttpStatusErrors: true,
 				disableFollowRedirect: true,
 				timeout: 10_000,
+			}).catch(() => {
+				throw new Error('Could not reach clrd. Check the server URL and network access.');
 			});
 			return new Response(
 				[204, 205, 304].includes(response.statusCode) ? null :

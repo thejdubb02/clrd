@@ -2,10 +2,10 @@ import type {
 	IDataObject,
 	INodeExecutionData,
 	INodeType,
+	NodeConnectionType,
 	INodeTypeDescription,
 	IPollFunctions,
 } from 'n8n-workflow';
-import { NodeConnectionTypes } from 'n8n-workflow';
 import type { EventCursor } from '../../js/index.js' with { 'resolution-mode': 'import' };
 import { clrdClient } from './client';
 
@@ -21,7 +21,7 @@ export class ClrdTrigger implements INodeType {
 		defaults: { name: 'clrd Trigger' },
 		polling: true,
 		inputs: [],
-		outputs: [NodeConnectionTypes.Main],
+		outputs: ['main' as NodeConnectionType],
 		credentials: [{ name: 'clrdApi', required: true }],
 		properties: [
 			{

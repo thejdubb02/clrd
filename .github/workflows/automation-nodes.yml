@@ -35,7 +35,12 @@ jobs:
           npm run lint
           npm run build
           npm test
-          npm pack --dry-run
+          pack_dir=$(mktemp -d)
+          npm pack --pack-destination "$pack_dir"
+          cd "$pack_dir"
+          npm install --ignore-scripts ./n8n-nodes-clrd-0.1.0.tgz
+          test ! -d node_modules/n8n-workflow
+          node -e 'require("n8n-nodes-clrd/dist/nodes/Clrd.node.js"); require("n8n-nodes-clrd/dist/nodes/ClrdTrigger.node.js")'
       - name: Node-RED
         working-directory: sdk/node-red
         run: |
