@@ -81,13 +81,17 @@ func ntfyActions(v string) ([]Action, error) {
 			as = append(as, ntfyShortAction(f))
 		}
 	}
+	return ntfyActionList(as), nil
+}
+
+func ntfyActionList(actions []ntfyAction) []Action {
 	var out []Action
-	for _, a := range as {
+	for _, a := range actions {
 		if pa, ok := a.action(); ok {
 			out = append(out, pa)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // ntfySplitActions splits the short form into actions (";") of fields (",").
