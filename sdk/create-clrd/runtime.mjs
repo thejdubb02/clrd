@@ -69,7 +69,10 @@ try {
   }
 } catch {
   // Empty hook output leaves the agent's own permission prompt in charge.
-  if (mode === 'mcp') process.stderr.write('clrd connection is unavailable\n');
+  if (mode === 'mcp') {
+    process.stderr.write('clrd connection is unavailable\n');
+    process.exitCode = 1;
+  }
 } finally {
   input?.close();
 }
