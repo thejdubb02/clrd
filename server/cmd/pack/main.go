@@ -24,6 +24,7 @@ var packs = []struct{ src, out string }{
 	{"web/static", "web/packed"},
 	{"web/templates", "web/packed"},
 	{"server/openapi.json", "server/packed"},
+	{"server/emoji_aliases.txt", "server/packed"},
 	{"server/mcp/tools.json", "server/mcp/packed"},
 }
 

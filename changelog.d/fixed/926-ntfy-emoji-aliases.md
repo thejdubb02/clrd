@@ -1,0 +1,1 @@
+- clrd recognizes more emoji tags and shortcodes, including the aliases documented by ntfy. Existing clrd aliases still work.
