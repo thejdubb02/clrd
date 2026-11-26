@@ -1172,6 +1172,9 @@ its data):
 - After an update to a new version, the web inbox shows a small, dismissible
   What's new note on the first open (quiet on a browser's first visit ever),
   linking to Settings, About; each browser can turn the note off in Settings.
+  The Android app does the same for its own version: after the app updates,
+  a dismissible note at the top of the inbox opens What's new; quiet on the
+  first open ever, and off with the switch in Settings, About.
 
 `/docs/changelog` renders the combined changelog; a private server hides it with the
 rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
@@ -1649,7 +1652,7 @@ JavaScript off the web page shows every section and no search box.
 | Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
 | Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
 | Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
-| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2) |
+| About | `about` | Version | version, what's new, changelog, release, update, build | both. Web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2). Android: this app's version and the shown server's side by side with a plain line when one is newer, What's new from the server or, when it cannot be reached, the released versions built into the app, and the phone's switch for its after-update note |
 
 The Android version line stays at the foot of the page, outside the sections.
 
