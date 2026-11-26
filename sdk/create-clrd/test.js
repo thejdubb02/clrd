@@ -79,7 +79,7 @@ async function fixture(t) {
 
 test('detects seven agents, claims separate invites, and removes only its own entries', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
-  for (const folder of ['.claude', '.codex', '.gemini', '.grok', '.config/opencode', '.cursor', '.config/Code']) {
+  for (const folder of ['.claude', '.codex', '.gemini', '.grok', '.config/opencode', '.cursor', '.config/Code', 'Library/Application Support/Code']) {
     await mkdir(join(f.home, folder), { recursive: true });
   }
   const cursor = await f.put('.cursor/mcp.json', '{\n  // Keep this comment\n  "mcpServers": { "custom": { "command": "custom" }, },\n}\n');
@@ -211,4 +211,30 @@ test('retains the connection for retry when the server cannot revoke it', { time
   assert.equal(next.status, 0, next.err);
   assert.equal(existsSync(f.state('codex')), false);
   assert.equal(existsSync(join(f.home, '.codex/config.toml')), false);
+});
+
+test('uses the selected Claude profile without touching the default', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const original = '{"mcpServers":{"clrd":{"command":"keep-default"}}}';
+  const defaultFile = await f.put('.claude.json', original);
+  f.env.CLAUDE_CONFIG_DIR = join(f.home, 'claude-alternate');
+  const installed = await f.setup(['--agents', 'claude'], code(0) + '\n');
+  assert.equal(installed.status, 0, installed.err);
+  assert.equal(await readFile(defaultFile, 'utf8'), original);
+  const selected = JSON.parse(await readFile(join(f.env.CLAUDE_CONFIG_DIR, '.claude.json'), 'utf8'));
+  assert.equal(selected.mcpServers.clrd.args[2], f.state('claude'));
+});
+
+test('refuses to move a key from an edited TOML block into another table', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const config = await f.put('.codex/config.toml', '[mcp_servers.other]\ncommand = "other"\n');
+  const installed = await f.setup(['--agents', 'codex'], code(0) + '\n');
+  assert.equal(installed.status, 0, installed.err);
+  const edited = await readFile(config, 'utf8') + 'enabled = false\n';
+  await writeFile(config, edited);
+  const removed = await f.remove('--agents', 'codex');
+  assert.equal(removed.status, 1);
+  assert.match(removed.err, /Existing or edited clrd configuration/);
+  assert.equal(await readFile(config, 'utf8'), edited);
+  assert.equal(f.calls.length, 1);
 });

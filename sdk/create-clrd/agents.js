@@ -61,7 +61,7 @@ export async function agentEdits(agent, runtime, state, approvals, notifications
 
   if (agent === 'claude') {
     const hooks = join(claude, 'settings.json');
-    const edits = [mcp(join(home, '.claude.json'), { type: 'stdio', ...stdio })];
+    const edits = [mcp(join(directory('CLAUDE_CONFIG_DIR', home), '.claude.json'), { type: 'stdio', ...stdio })];
     if (notifications) edits.push(json(hooks, ['hooks', 'Stop'], grouped(commandHook(notify)), true));
     if (approvals) edits.push(json(hooks, ['hooks', 'PermissionRequest'], grouped(approve), true));
     return edits;

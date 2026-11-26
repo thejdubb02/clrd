@@ -83,10 +83,16 @@ function tomlStep(text, { path, value }, operation) {
       throw new Error('Invalid TOML configuration: ' + path);
     }
   };
-  const exists = Object.hasOwn(entries(text) ?? {}, 'clrd');
+  const current = entries(text) ?? {};
+  const exists = Object.hasOwn(current, 'clrd');
   if (text.includes(value)) {
-    if (operation === 'remove') return text.replace(value, '');
-    if (operation === 'resume' && exists) return text;
+    if (!exists || !isDeepStrictEqual(current.clrd, entries(value).clrd)) throw conflict(path);
+    if (operation === 'remove') {
+      const updated = text.replace(value, '');
+      entries(updated); // Verify the remaining document before writing it.
+      return updated;
+    }
+    if (operation === 'resume') return text;
     throw conflict(path);
   }
   if (exists || text.includes('# create-clrd start')) throw conflict(path);
