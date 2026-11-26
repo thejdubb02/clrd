@@ -18,7 +18,6 @@ apprise -t "Disk 91%" -b "/var on build is 91% full" "ntfys://clrd_...@clrd.exam
 
 ## Auto-resolve
 
-Not supported: Apprise is fire-and-forget and has no resolved state or stable
-key. Resolve separately with `curl -fsS -X POST .../infra/<key>/resolve` (see
-[curl](curl.md)) if your script knows when the problem clears, or use the
-native API or an SDK instead of Apprise for alerts that should clear themselves.
+Apprise sends alerts without a stable key. To clear an alert when a problem
+ends, use the [native API](curl.md) or an SDK to send it with an external ID
+and resolve it by that ID.

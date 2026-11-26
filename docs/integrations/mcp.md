@@ -55,7 +55,7 @@ Tools:
 | `set_hook_allow` | `networks, ports` | Let webhooks reach these networks (like `192.168.1.0/24` or one address) and ports besides 80 and 443. A dial passes when the address is public or listed and the port is 80, 443 or listed. Empty lists turn it off. Refused when the operator locked it with `CLRD_HOOK_ALLOW=off`. Admin. |
 | `tokens` | none | API tokens, never their secrets. Admin. |
 | `create_gotify_app` | `name, topic, priority?` | Gotify app key for one topic, for shoutrrr, Watchtower and the gotify CLI; the key is in the result once. It only publishes, only to that topic, only on `POST /message`. Admin. |
-| `create_pushover_app` | `name, topic` | Pushover app key for one topic, for Apprise and scripts; the key is in the result once, with a `user` value clrd never checks. It only publishes, only to that topic, only on `POST /1/messages.json`. Admin. |
+| `create_pushover_app` | `name, topic` | Pushover app key for one topic, for scripts and senders that let you set the Pushover server URL. The key is in the result once, with a `user` value clrd never checks. It only publishes, only to that topic, only on `POST /1/messages.json`. Admin. |
 | `create_token` | `name, scopes, topics? or grants?` | New token for a phone, script or agent; the secret is in the result once. `grants` sets scopes per topic, first match wins: `[{"topic":"home-*","scopes":["publish"]}]`. It starts denied for approval requests, whoever makes it; raise it from an allowed device or with `request_approve`. Admin. |
 | `revoke_token` | `id` | Revoke a token; its streams close at once. Admin. |
 | `rename_token` | `id, name` | Rename a token (a sender's `token_id`). Admin. |

@@ -7,7 +7,7 @@ or `X-Poll` to read cached messages and close the stream, and `since` or
 `X-Since` to select where replay starts. Query aliases include `po`, `si`,
 `x-poll` and `x-since`.
 
-On a plain publish, `X-Message` and the `message` or `m` query options
+On a plain publish, `X-Message` and the `x-message`, `message` or `m` query options
 turn a literal `\n` into a line break. A message sent in the body keeps its
 original text.
 
@@ -36,8 +36,9 @@ Add a subscription with "Use another server" set to
 `https://clrd.example.com`. For auth, add a user in Settings, Manage users:
 any username, password = your `clrd_...` token (clrd accepts Basic `user:token`).
 
-The ntfy app only receives. Swiping there does not clear the notification on
-other devices; for that, use the clrd app.
+On Android, you can also [publish from the ntfy app](https://docs.ntfy.sh/subscribe/phone/#publishing-messages)
+with a token that can publish to the topic. To clear a notification everywhere,
+use Clear in the clrd app.
 
 ## ntfy web app and other web pages
 
