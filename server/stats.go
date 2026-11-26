@@ -25,6 +25,7 @@ const (
 type StatsGroup struct {
 	Key           string `json:"key"`
 	Count         int    `json:"count"`
+	Previous      *int   `json:"previous,omitempty"`
 	Open          int    `json:"open"` // not cleared yet: the ones nobody dealt with
 	Cleared       int    `json:"cleared"`
 	ClearMedianMS int64  `json:"clear_median_ms"`
@@ -34,8 +35,9 @@ type StatsGroup struct {
 
 // StatsBucket is the count published in one UTC hour.
 type StatsBucket struct {
-	At    int64 `json:"at"`
-	Count int   `json:"count"`
+	At    int64          `json:"at"`
+	Count int            `json:"count"`
+	By    map[string]int `json:"by,omitempty"`
 }
 
 // StatsFlapper is an external id that fired more than once in the range.
@@ -52,18 +54,29 @@ type StatsDelivery struct {
 	WebPush  int    `json:"web_push"` // Web Push sends that failed
 }
 
+type StatsQuiet struct {
+	SenderID string `json:"sender_id"`
+	Name     string `json:"name"`
+	Topic    string `json:"topic"`
+}
+
 type Stats struct {
-	From       int64           `json:"from"`
-	To         int64           `json:"to"`
-	Total      int             `json:"total"`
-	Answered   int             `json:"answered"` // a reply action was tapped
-	Priorities map[string]int  `json:"priorities"`
-	Hours      []StatsBucket   `json:"hours"`
-	Topics     []*StatsGroup   `json:"topics"`
-	Senders    []*StatsGroup   `json:"senders"`
-	ClearedBy  []*StatsGroup   `json:"cleared_by"`
-	Flappers   []StatsFlapper  `json:"flappers"`
-	Delivery   []StatsDelivery `json:"delivery"` // topics with webhook or Web Push failures, worst first
+	WeekHours   [7][24]int      `json:"week_hours"`
+	Cleared     int             `json:"cleared"`
+	SelfCleared int             `json:"self_cleared"`
+	Quiet       []StatsQuiet    `json:"quiet"`
+	Connected   int             `json:"connected"`
+	From        int64           `json:"from"`
+	To          int64           `json:"to"`
+	Total       int             `json:"total"`
+	Answered    int             `json:"answered"` // a reply action was tapped
+	Priorities  map[string]int  `json:"priorities"`
+	Hours       []StatsBucket   `json:"hours"`
+	Topics      []*StatsGroup   `json:"topics"`
+	Senders     []*StatsGroup   `json:"senders"`
+	ClearedBy   []*StatsGroup   `json:"cleared_by"`
+	Flappers    []StatsFlapper  `json:"flappers"`
+	Delivery    []StatsDelivery `json:"delivery"` // topics with webhook or Web Push failures, worst first
 }
 
 // floorBucket rounds t down to a multiple of step, even for timestamps before 1970 (#661).
@@ -77,21 +90,34 @@ func floorBucket(t, step int64) int64 {
 
 // Stats counts notifications created in [from, to). Admin with no topic list.
 func (s *Server) Stats(ctx context.Context, tok *Token, from, to time.Time) (*Stats, error) {
+	return s.GroupedStats(ctx, tok, from, to, "")
+}
+
+// GroupedStats optionally splits each hour by topic, sender or priority.
+func (s *Server) GroupedStats(ctx context.Context, tok *Token, from, to time.Time, group string) (*Stats, error) {
 	if err := tok.needFullAdmin(); err != nil {
 		return nil, err
 	}
 	if !from.Before(to) || to.Sub(from) > statsMaxRange {
 		return nil, errf(400, "bad_request", "from must be before to, at most 366 days apart")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT topic, sender, external_id, priority, state, state_by, created_at, cleared_at, reply != ''
-		FROM notifications WHERE created_at >= ? AND created_at < ?`, ms(from), ms(to))
+	switch group {
+	case "", "topic", "sender", "priority":
+	default:
+		return nil, errf(400, "bad_request", "group must be topic, sender or priority")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT n.topic, n.sender, n.external_id, n.priority, n.state_by, n.created_at,
+  n.cleared_at, n.reply != '', COALESCE(s.token_id IN (WITH RECURSIVE up(id) AS (SELECT n.state_by_id
+    UNION SELECT parent_id FROM sessions, up WHERE token_id = up.id AND NOT phone) SELECT id FROM up WHERE id != ''), 0)
+  FROM notifications n LEFT JOIN senders s ON s.id = n.sender
+  WHERE n.created_at >= ? AND n.created_at < ?`, ms(from), ms(to))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	st := &Stats{From: ms(from), To: ms(to), Priorities: map[string]int{}}
 	topics, senders, by := map[string]*StatsGroup{}, map[string]*StatsGroup{}, map[string]*StatsGroup{}
-	hours, flaps := map[int64]int{}, map[[2]string]int{}
+	hours, flaps := map[int64]*StatsBucket{}, map[[2]string]int{}
 	add := func(m map[string]*StatsGroup, k string, cleared sql.NullInt64, created int64) {
 		g := m[k]
 		if g == nil {
@@ -107,23 +133,47 @@ func (s *Server) Stats(ctx context.Context, tok *Token, from, to time.Time) (*St
 		}
 	}
 	for rows.Next() {
-		var topic, sender, ext, state, stateBy string
+		var topic, sender, ext, stateBy string
 		var prio int
 		var created int64
 		var cleared sql.NullInt64
-		var answered bool
-		if err := rows.Scan(&topic, &sender, &ext, &prio, &state, &stateBy, &created, &cleared, &answered); err != nil {
+		var answered, selfCleared bool
+		if err := rows.Scan(&topic, &sender, &ext, &prio, &stateBy, &created, &cleared, &answered, &selfCleared); err != nil {
 			return nil, err
 		}
 		st.Total++
 		if answered {
 			st.Answered++
 		}
-		st.Priorities[strconv.Itoa(prio)]++
-		hours[floorBucket(created, int64(time.Hour/time.Millisecond))]++
+		priority := strconv.Itoa(prio)
+		st.Priorities[priority]++
+		local := time.UnixMilli(created).In(time.Local)
+		st.WeekHours[local.Weekday()][local.Hour()]++
+		at := floorBucket(created, time.Hour.Milliseconds())
+		h := hours[at]
+		if h == nil {
+			h = &StatsBucket{At: at}
+			if group != "" {
+				h.By = map[string]int{}
+			}
+			hours[at] = h
+		}
+		h.Count++
+		switch group {
+		case "topic":
+			h.By[topic]++
+		case "sender":
+			h.By[sender]++
+		case "priority":
+			h.By[priority]++
+		}
 		add(topics, topic, cleared, created)
 		add(senders, sender, cleared, created)
 		if cleared.Valid {
+			st.Cleared++
+			if selfCleared {
+				st.SelfCleared++
+			}
 			add(by, stateBy, cleared, created)
 		}
 		if ext != "" {
@@ -134,11 +184,44 @@ func (s *Server) Stats(ctx context.Context, tok *Token, from, to time.Time) (*St
 		return nil, err
 	}
 	st.Hours = []StatsBucket{}
-	for at, k := range hours {
-		st.Hours = append(st.Hours, StatsBucket{at, k})
+	for _, h := range hours {
+		st.Hours = append(st.Hours, *h)
 	}
 	sort.Slice(st.Hours, func(i, j int) bool { return st.Hours[i].At < st.Hours[j].At })
 	st.Topics, st.Senders, st.ClearedBy = top(topics), top(senders), top(by)
+	switch group {
+	case "topic":
+		foldStatsHours(st.Hours, st.Topics)
+	case "sender":
+		foldStatsHours(st.Hours, st.Senders)
+	}
+	set, err := s.loadSettings(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	// No trend when a prune may have emptied the period before.
+	if prev := from.Add(-to.Sub(from)); !prev.Before(time.Now().Add(-s.shortestKeep(set))) {
+		for _, d := range [...]string{"topic", "sender"} {
+			g := st.Topics
+			if d == "sender" {
+				g = st.Senders
+			}
+			if err := s.statsPrevious(ctx, d, ms(prev), st.From, g); err != nil {
+				return nil, err
+			}
+		}
+	}
+	st.Quiet, err = s.statsQuiet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.hub.mu.Lock()
+	for _, sub := range s.hub.subs { // every client stream: WebSocket, SSE and ntfy, not in-process ones
+		if sub.tok != "" {
+			st.Connected++
+		}
+	}
+	s.hub.mu.Unlock()
 	st.Flappers = []StatsFlapper{}
 	for k, n := range flaps {
 		if n > 1 {
@@ -156,6 +239,71 @@ func (s *Server) Stats(ctx context.Context, tok *Token, from, to time.Time) (*St
 	}
 	st.Delivery = deliv
 	return st, nil
+}
+
+func foldStatsHours(hours []StatsBucket, groups []*StatsGroup) {
+	keep := map[string]bool{"other": true}
+	for _, g := range groups[:min(5, len(groups))] {
+		keep[g.Key] = true
+	}
+	for _, h := range hours {
+		other := 0
+		for key, count := range h.By {
+			if !keep[key] {
+				other += count
+				delete(h.By, key)
+			}
+		}
+		if other > 0 {
+			h.By["other"] += other
+		}
+	}
+}
+
+func (s *Server) statsPrevious(ctx context.Context, dimension string, from, to int64, groups []*StatsGroup) error {
+	if len(groups) == 0 {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+dimension+`, COUNT(*) FROM notifications
+  WHERE created_at >= ? AND created_at < ? GROUP BY `+dimension, from, to)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	counts := make(map[string]*int, len(groups))
+	for _, g := range groups {
+		g.Previous = new(int)
+		counts[g.Key] = g.Previous
+	}
+	for rows.Next() {
+		var key string
+		var count int
+		if err := rows.Scan(&key, &count); err != nil {
+			return err
+		}
+		if prev := counts[key]; prev != nil {
+			*prev = count
+		}
+	}
+	return rows.Err()
+}
+
+func (s *Server) statsQuiet(ctx context.Context) ([]StatsQuiet, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT s.id, COALESCE(t.name, 'anonymous'), s.alarm_topic
+  FROM senders s LEFT JOIN tokens t ON t.id = s.token_id WHERE s.alarm_topic != '' ORDER BY 2, s.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	quiet := []StatsQuiet{}
+	for rows.Next() {
+		var q StatsQuiet
+		if err := rows.Scan(&q.SenderID, &q.Name, &q.Topic); err != nil {
+			return nil, err
+		}
+		quiet = append(quiet, q)
+	}
+	return quiet, rows.Err()
 }
 
 // deliveryFailures counts failed outgoing webhook deliveries and Web Push
@@ -267,7 +415,7 @@ func (s *Server) statsRoutes() {
 		if format != "" && format != "json" && format != "csv" {
 			return errf(400, "bad_request", "format must be json or csv")
 		}
-		st, err := s.Stats(r.Context(), tok, from, to)
+		st, err := s.GroupedStats(r.Context(), tok, from, to, q.Get("group"))
 		if err != nil {
 			return err
 		}
@@ -312,41 +460,78 @@ func writeCSVRow(b *bytes.Buffer, cols ...string) {
 	b.WriteByte('\n')
 }
 
+func sortedStatsKeys(counts map[string]int) []string {
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// Keep the row construction in one place to reduce the packed binary size.
+//
+//go:noinline
+func writeStatsCount(buf *bytes.Buffer, section, key, detail string, count int) {
+	writeCSVRow(buf, section, key, detail, strconv.Itoa(count), "", "", "", "")
+}
+
 // writeStatsCSV writes st in one flat CSV table with a section column (#661).
 func writeStatsCSV(w http.ResponseWriter, st *Stats) {
 	var buf bytes.Buffer
 	writeCSVRow(&buf, "section", "key", "detail", "count", "open", "cleared", "clear_median_ms", "clear_p90_ms")
-	writeCSVRow(&buf, "summary", "total", "", strconv.Itoa(st.Total), "", "", "", "")
-	writeCSVRow(&buf, "summary", "answered", "", strconv.Itoa(st.Answered), "", "", "", "")
-	pkeys := make([]string, 0, len(st.Priorities))
-	for k := range st.Priorities {
-		pkeys = append(pkeys, k)
+	for _, summary := range []struct {
+		key   string
+		count int
+	}{
+		{"total", st.Total},
+		{"answered", st.Answered},
+		{"cleared", st.Cleared},
+		{"self_cleared", st.SelfCleared},
+		{"connected", st.Connected},
+	} {
+		writeStatsCount(&buf, "summary", summary.key, "", summary.count)
 	}
-	sort.Strings(pkeys)
-	for _, k := range pkeys {
-		writeCSVRow(&buf, "priority", k, "", strconv.Itoa(st.Priorities[k]), "", "", "", "")
+	for _, q := range st.Quiet {
+		writeCSVRow(&buf, "quiet", csvCell(q.SenderID), csvCell(q.Topic), "", "", "", "", "")
+		writeCSVRow(&buf, "quiet_name", csvCell(q.SenderID), csvCell(q.Name), "", "", "", "", "")
+	}
+	for day, hours := range st.WeekHours {
+		for hour, count := range hours {
+			writeStatsCount(&buf, "week_hours", strconv.Itoa(day), strconv.Itoa(hour), count)
+		}
+	}
+	for _, k := range sortedStatsKeys(st.Priorities) {
+		writeStatsCount(&buf, "priority", k, "", st.Priorities[k])
 	}
 	for _, h := range st.Hours {
-		writeCSVRow(&buf, "hour", fromMS(h.At).UTC().Format(time.RFC3339), "", strconv.Itoa(h.Count), "", "", "", "")
+		at := fromMS(h.At).UTC().Format(time.RFC3339)
+		writeStatsCount(&buf, "hour", at, "", h.Count)
+		for _, k := range sortedStatsKeys(h.By) {
+			writeStatsCount(&buf, "hour_by", at, csvCell(k), h.By[k])
+		}
 	}
 	writeGroups := func(sec string, gs []*StatsGroup) {
 		for _, g := range gs {
 			writeCSVRow(&buf, sec, csvCell(g.Key), "", strconv.Itoa(g.Count), strconv.Itoa(g.Open), strconv.Itoa(g.Cleared),
 				strconv.FormatInt(g.ClearMedianMS, 10), strconv.FormatInt(g.ClearP90MS, 10))
+			if g.Previous != nil {
+				writeStatsCount(&buf, sec+"_previous", csvCell(g.Key), "", *g.Previous)
+			}
 		}
 	}
 	writeGroups("topic", st.Topics)
 	writeGroups("sender", st.Senders)
 	writeGroups("cleared_by", st.ClearedBy)
 	for _, f := range st.Flappers {
-		writeCSVRow(&buf, "flapper", csvCell(f.Topic), csvCell(f.ExternalID), strconv.Itoa(f.Count), "", "", "", "")
+		writeStatsCount(&buf, "flapper", csvCell(f.Topic), csvCell(f.ExternalID), f.Count)
 	}
 	for _, d := range st.Delivery {
 		if d.Webhooks > 0 {
-			writeCSVRow(&buf, "delivery_webhook", csvCell(d.Topic), "", strconv.Itoa(d.Webhooks), "", "", "", "")
+			writeStatsCount(&buf, "delivery_webhook", csvCell(d.Topic), "", d.Webhooks)
 		}
 		if d.WebPush > 0 {
-			writeCSVRow(&buf, "delivery_web_push", csvCell(d.Topic), "", strconv.Itoa(d.WebPush), "", "", "", "")
+			writeStatsCount(&buf, "delivery_web_push", csvCell(d.Topic), "", d.WebPush)
 		}
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")

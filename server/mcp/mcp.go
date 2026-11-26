@@ -378,7 +378,7 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 	case "counts":
 		return h.api(r, "GET", "/api/v1/counts?"+query(a, "keep_cleared_days", "topic"), nil)
 	case "stats":
-		return h.api(r, "GET", "/api/v1/stats?"+query(a, "days"), nil)
+		return h.api(r, "GET", "/api/v1/stats?"+query(a, "days", "group"), nil)
 	case "format_check":
 		return h.api(r, "GET", "/api/v1/format-check?"+query(a, "topic", "by"), nil)
 	case "devices":

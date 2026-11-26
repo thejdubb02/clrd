@@ -195,7 +195,7 @@ func TestTools(t *testing.T) {
 		{"resolve", map[string]any{"id": "01J"}, "POST /api/v1/notifications/01J/resolve", map[string]any{"via": "mcp"}},
 		{"resolve", map[string]any{"topic": "infra", "external_id": "disk-build"}, "POST /infra/disk-build/resolve", map[string]any{"via": "mcp"}},
 		{"snooze", map[string]any{"id": "01J", "for": "1h"}, "POST /api/v1/notifications/01J/snooze", map[string]any{"for": "1h", "via": "mcp"}},
-		{"stats", map[string]any{"days": 30}, "GET /api/v1/stats?days=30", nil},
+		{"stats", map[string]any{"days": 30, "group": "topic"}, "GET /api/v1/stats?days=30&group=topic", nil},
 		{"counts", map[string]any{"keep_cleared_days": 5}, "GET /api/v1/counts?keep_cleared_days=5", nil},
 		{"counts", map[string]any{"keep_cleared_days": 5, "topic": "infra"}, "GET /api/v1/counts?keep_cleared_days=5&topic=infra", nil},
 		{"counts", map[string]any{"keep_cleared_days": "default", "topic": "infra"}, "GET /api/v1/counts?keep_cleared_days=default&topic=infra", nil},
