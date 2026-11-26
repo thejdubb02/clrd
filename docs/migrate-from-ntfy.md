@@ -17,7 +17,7 @@ Tested against ntfy v2.38.1.
 | Access rules (read-write, read-only, write-only, deny, wildcards) | Per-topic grants, checked in ntfy's order. A write-only topic stays write-only: you can publish to it but not read it. |
 | `everyone` rules and `auth-default-access` | A token named `anonymous`, used only on the ntfy routes and only for requests with no credentials at all. |
 | Admin users | Admin tokens. |
-| Messages | Notifications, with their original times. Sequence updates merge into one notification, a sequence delete arrives dismissed, a delayed message arrives snoozed until its time. |
+| Messages | Notifications with their original times. Sequence updates merge into one notification, a sequence clear becomes acknowledged, a sequence delete becomes dismissed, and a delayed message stays snoozed until its delivery time. |
 | Attachments | Uploaded files are copied in. External links are kept as links. Set `CLRD_NTFY_IMPLICIT_UPLOADS=on` for senders that omit the filename: an ordinary publish over 4096 bytes or with invalid UTF-8 becomes an upload. The existing file limits and access checks apply. |
 | Headers with non-ASCII text sent as RFC 2047 encoded words (`Title: =?UTF-8?B?...?=`) | Decoded the same way, in the title, message, tags, file name and the other publish headers. |
 | Publish URLs with `?tpl=yes` (or `X-Template: yes`, `?template=yes`) | Work as they are: the message, title and priority are Go templates over the JSON body, so `m={{.text}}&p={{if .channel}}2{{else}}4{{end}}` renders. `range`, `printf` and template calls are refused, as in [custom webhooks](integrations/custom-webhooks.md). |
@@ -34,6 +34,8 @@ Set `CLRD_NTFY_CACHE_TOPICS` to a comma-separated list of exact topic names
 to age out their active and acknowledged notifications. The hourly prune
 removes these after `CLRD_RETENTION` since their last update. Snoozed messages
 and scheduled sends survive until they wake, when their age starts again.
+Connected JSON, SSE and WebSocket readers get a `message_delete` for an
+expired sequence.
 Other topics keep the normal clrd inbox behavior. Cleared rows are still
 governed by the keep-cleared settings. See [server settings](self-host.md#settings).
 
@@ -64,7 +66,7 @@ notifications, is refused.
 
 Add `--clear-older-than 72h` to bring older messages in as dismissed, so
 phones do not start with a pile of old alerts. Without it every message
-arrives open.
+keeps the state mapped from ntfy's history.
 
 Then start clrd. The ntfy admins' tokens are admin tokens in clrd; for the web
 inbox, sign in with one of them, or make a new one with
@@ -74,7 +76,11 @@ inbox, sign in with one of them, or make a new one with
 
 Point ntfy's hostname (DNS, or your reverse proxy) at clrd. Publishers and
 subscribers carry on. A phone that was subscribed with `since=<message id>`
-picks up from the same message, because clrd remembers ntfy's message ids.
+can resume after that message, because clrd remembers ntfy's message IDs.
+With `since=latest`, a multi-topic subscription starts from the newest
+eligible event in each topic. Longer replays keep the newest events that
+fit within 10 MiB of stored event data per topic. A capped HTTP replay
+returns `X-Messages-Truncated: 1`.
 
 Keep ntfy stopped but do not delete it or its files. To roll back, point the
 hostname back at ntfy and start it again.
@@ -86,8 +92,17 @@ when it suits you to get dismissals that sync across devices.
 
 ## After the switch
 
+Keep using ntfy clients, or use the bundled
+[clrd publish, poll and subscribe commands](self-host.md#publish-and-subscribe-from-the-command-line).
+Copy actions from ntfy publishers work in the clrd web inbox, Android inbox
+and Android notification shade. Quote a whole short-form label or value to
+keep it literal, for example `copy, Copy token, "prefix=value"`.
+
+If you use ntfy's hosted web app, [allow its origin](integrations/ntfy-clients.md#ntfy-web-app-and-other-web-pages).
+An allowed web app can read `Retry-After` on a time-based 429 response.
+
 clrd ignores some ntfy publish options (email, calls, Firebase,
-UnifiedPush, poll requests) and any unknown JSON field. Each one it receives
+UnifiedPush and the `Poll-Id` publish header) and any unknown JSON field. Each one it receives
 is counted at `GET /api/v1/ntfy/ignored` (admin token; open it in a signed-in
 browser for a table), so you can see which services rely on something clrd
 does not do.
