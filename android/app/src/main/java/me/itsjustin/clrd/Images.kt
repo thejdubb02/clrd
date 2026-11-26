@@ -24,8 +24,9 @@ import java.util.concurrent.TimeUnit
  * any failure means no picture, and the notification looks as it did before icons.
  */
 class Images(private val app: App) {
-    private val clients = ConcurrentHashMap<Int, OkHttpClient>() // each server's own client, so none gets another's certificate (#78)
-    private fun client(a: Account) = clients.getOrPut(a.id) { limits(a.http) }
+    // Each server's own client, so none gets another's certificate (#78); made again when a certificate pick replaces it (#887).
+    private val clients = ConcurrentHashMap<Int, Pair<OkHttpClient, OkHttpClient>>()
+    private fun client(a: Account) = a.http.let { h -> clients.compute(a.id) { _, c -> c?.takeIf { it.first === h } ?: (h to limits(h)) }!!.second }
     private fun limits(h: OkHttpClient) = h.newBuilder().callTimeout(15, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
     /** "/api/v1/files/x" is another file on each server, so another account's pictures are cached apart (#78). */
     private fun key(px: Int, url: String, a: Account) = if (a.id == 0) "$px $url" else "${a.id} $px $url"

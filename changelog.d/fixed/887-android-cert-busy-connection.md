@@ -1,0 +1,1 @@
+- Android: after a client certificate is picked or removed, a connection that was busy at that moment (an image fetch, for example) is no longer used again, so the server stops seeing the old certificate at once.

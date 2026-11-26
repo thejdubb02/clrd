@@ -41,7 +41,8 @@ class SyncService : Service() {
         for ((a, store, api) in ready) synchronized(a.configLock) { // a server removed meanwhile gets no client
             if (a.sync != null || a.removed) return@synchronized
             app.io.execute { store.reconcile() } // the tray is empty after a reboot; refill it quietly
-            a.sync = SyncClient(a.http, api, store, onStatus = { status(a, it) }, onSettings = store::settings, onDevices = { app.devicesChanged.value++ }).also { it.start() }
+            // The API's own client: a certificate pick between two reads must not split them (#887).
+            a.sync = SyncClient(api.http, api, store, onStatus = { status(a, it) }, onSettings = store::settings, onDevices = { app.devicesChanged.value++ }).also { it.start() }
         }
         if (netCallback == null) {
             netCallback = object : ConnectivityManager.NetworkCallback() {
