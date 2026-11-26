@@ -51,7 +51,15 @@ class Account(private val ctx: Context, val id: Int) {
 
     val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
 
-    fun api() = Api(http, serverUrl, token)
+    /** The address without its scheme, as the switcher, the Servers list and tray entries name this server. */
+    val host get() = serverUrl.substringAfter("://")
+
+    /** Address and token as one pair, read under the lock [saveServer] writes them under, so a token never meets another address. */
+    fun creds() = synchronized(configLock) { serverUrl to token }
+    fun api() = creds().let { (u, t) -> Api(http, u, t) }
+
+    /** The Send box's send in flight, kept here so a rotation does not forget it (#523), and one per server (#78). */
+    val sender by lazy { Sender { app.io.execute(it) } }
 
     /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
     val clientCert by lazy { MutableStateFlow(prefs.getString("client_cert", null)) }
@@ -334,7 +342,7 @@ class Account(private val ctx: Context, val id: Int) {
                 serverUrl = newUrl
                 token = newToken
             }
-        } else {
+        } else synchronized(configLock) {
             serverUrl = newUrl
             token = newToken
         }

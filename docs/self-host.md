@@ -176,6 +176,18 @@ for contrast before saving. Use `device_theme` in MCP for a device override.
 effect, defaults filled in, so an agent can check a setup. They change only by
 setting the variable and restarting.
 
+## More than one server on a phone
+
+The Android app can talk to several clrd servers, say a home one and a work
+one. Add one under Settings, Devices, Servers, Add server (its address and a
+token, or scan its QR code), or open a pairing link for a server the phone does
+not have yet. Each server keeps its own connection, settings and
+notifications. The inbox shows one at a time: pick which with the server name
+at the top, or tap that server in the Servers list. Tray entries name their
+server once there is more than one, and a tap opens that server's inbox.
+Remove a server from the same list; the server keeps its own copy, and the
+phone stays in its device list until you unlink it there.
+
 ## HTTPS and the reverse proxy
 
 Phones need HTTPS. The proxy must pass WebSocket upgrades and must not buffer
@@ -191,7 +203,8 @@ certificate on the phone (same screen, VPN and app user certificate), then in
 the app pick it under Settings, Devices, Client certificate. The key stays in
 Android's key store, and clrd offers it only to the server address it was
 picked for, and only once that server has proved its name, never to a site a
-message links to. Change the server address and you pick it again. Picking needs the phone's own dialog, so an agent
+message links to. Change the server address and you pick it again. With
+more than one server, the certificate is for the first one only. Picking needs the phone's own dialog, so an agent
 cannot set it over the API.
 
 Caddy (handles certificates and WebSockets on its own):
