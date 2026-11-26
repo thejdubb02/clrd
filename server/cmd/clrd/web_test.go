@@ -392,6 +392,100 @@ func TestSenderTokenForms(t *testing.T) {
 	}
 }
 
+// TestSenderRotateShownOnlyWhereItWorks (#830 review): for every kind of
+// token sender, the page offers Rotate secret exactly when the server rotates it.
+func TestSenderRotateShownOnlyWhereItWorks(t *testing.T) {
+	s, ts, raw := realServer(t)
+	ctx := context.Background()
+	api := func(method, path, body string) (int, map[string]any) {
+		t.Helper()
+		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+raw)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out map[string]any
+		json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out
+	}
+	typed, _, _ := s.CreateToken(ctx, "typed", "", []string{"publish"}, nil)
+	own, _, _ := s.CreateToken(ctx, "laptop", "", []string{"publish"}, nil)
+	_, u := api("POST", "/api/v1/users", `{"name":"sam"}`)
+	if code, _ := api("PUT", "/api/v1/tokens/"+own.ID+"/user", `{"user":"`+u["id"].(string)+`"}`); code != 200 {
+		t.Fatalf("attach token to a person: %d", code)
+	}
+	_, g := api("POST", "/api/v1/gotify/apps", `{"name":"gotify","topic":"home"}`)
+	_, p := api("POST", "/api/v1/pushover/apps", `{"name":"pushover","topic":"home"}`)
+	file, _, _ := s.CreateToken(ctx, "from file", "", []string{"publish"}, nil)
+	fromFile := file.ID
+	db, err := sql.Open("sqlite", s.DBPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE tokens SET config = 1 WHERE id = ?`, fromFile); err != nil { // as CLRD_CONFIG makes it
+		t.Fatal(err)
+	}
+	login, _, _ := s.CreateToken(ctx, "ntfy login", "", []string{"publish"}, nil)
+	if _, err := db.Exec(`INSERT INTO users (name, hash, token_id) VALUES ('phil', 'x', ?)`, login.ID); err != nil { // as an ntfy import makes it
+		t.Fatal(err)
+	}
+	c := browser()
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	submit(t, c, ts.URL, page, raw, "")
+	want := map[string]string{typed.ID: "token", own.ID: "person", g["token_id"].(string): "gotify_app", p["token_id"].(string): "pushover_app", fromFile: "token", login.ID: "ntfy_user"}
+	for id, kind := range want {
+		if code, sd := api("PUT", "/api/v1/senders/"+id, `{}`); code != 200 || sd["kind"] != kind {
+			t.Fatalf("sender %s: %d %v, want kind %s", id, code, sd, kind)
+		}
+		_, page, _ := fetch(t, c, ts.URL+"/app/senders/"+id)
+		shown := strings.Contains(page, "Rotate secret")
+		code, _ := api("POST", "/api/v1/tokens/"+id+"/rotate", "")
+		if shown != (code == 200) {
+			t.Errorf("%s sender %s: Rotate secret shown %v, rotate answers %d", kind, id, shown, code)
+		}
+		if id == fromFile && (shown || strings.Contains(page, `name="token_name"`)) {
+			t.Error("a CLRD_CONFIG token's page offers rename or rotate")
+		}
+	}
+}
+
+// TestSenderIconForm sets, refuses and clears a sender's icon from its page (#119).
+func TestSenderIconForm(t *testing.T) {
+	s, ts, raw := realServer(t)
+	cam, camRaw, _ := s.CreateToken(context.Background(), "camera", "", []string{"publish"}, nil)
+	publish(t, ts, camRaw, "home", "motion")
+	c := browser()
+	_, page, _ := fetch(t, c, ts.URL+"/app")
+	submit(t, c, ts.URL, page, raw, "")
+	save := func(icon string) (int, string) {
+		t.Helper()
+		_, page, _ := fetch(t, c, ts.URL+"/app/senders/"+cam.ID)
+		base := regexp.MustCompile(`name="base_seq" value="(\d+)"`).FindStringSubmatch(page)
+		if base == nil {
+			t.Fatal("no rules form")
+		}
+		code, body, _ := postForm(t, c, ts.URL, "/app/senders/"+cam.ID, url.Values{"priority_min": {"0"}, "priority_max": {"0"}, "base_seq": {base[1]}, "icon": {icon}})
+		return code, body
+	}
+	img := `src="https://img.example/cam.png"`
+	if code, page := save("https://img.example/cam.png"); code != 200 || !strings.Contains(page, img) || !strings.Contains(page, `value="https://img.example/cam.png"`) ||
+		!strings.Contains(page, "Icon https://img.example/cam.png") {
+		t.Fatalf("set icon: %d, want it shown, in the form and in the change log", code)
+	}
+	if _, list, _ := fetch(t, c, ts.URL+"/app/senders"); !strings.Contains(list, img) {
+		t.Error("the senders list does not show the icon")
+	}
+	if code, page := save("ftp://img.example/cam.png"); code != 400 || !strings.Contains(page, `id="r-icon-err"`) || !strings.Contains(page, `value="ftp://img.example/cam.png"`) {
+		t.Fatalf("bad icon: %d, want the form again with the message by the field", code)
+	}
+	if code, page := save(""); code != 200 || strings.Contains(page, img) {
+		t.Fatalf("clear icon: %d", code)
+	}
+}
+
 func realServer(t *testing.T) (*server.Server, *httptest.Server, string) {
 	t.Helper()
 	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RateToken: -1, RateTopic: -1})

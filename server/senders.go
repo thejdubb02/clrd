@@ -46,7 +46,8 @@ type Sender struct {
 	Count     int             `json:"count"`
 	Topics    map[string]int  `json:"topics"`
 	Rules     SenderRules     `json:"rules"`
-	Alarm     string          `json:"alarm,omitempty"` // the topic of its quiet alarm, until it publishes
+	Alarm     string          `json:"alarm,omitempty"`  // the topic of its quiet alarm, until it publishes
+	Config    bool            `json:"config,omitempty"` // a CLRD_CONFIG token: renamed and rotated in that file only
 	Recent    []*Notification `json:"recent,omitempty"`
 	recent    []string
 }
@@ -188,7 +189,7 @@ const senderCols = `s.id, COALESCE(s.token_id, ''), COALESCE(t.name, 'anonymous'
     WHEN EXISTS (SELECT 1 FROM gotify_apps g WHERE g.token_id = s.token_id) THEN 'gotify_app'
     WHEN s.token_id LIKE 'pushover-%' THEN 'pushover_app'
     WHEN t.user_id IS NOT NULL THEN 'person' ELSE 'token' END,
-  s.template, s.user_agent, s.address, s.first_seen, s.last_seen, s.count, s.topics, s.recent, s.rules, s.alarm_topic
+  s.template, s.user_agent, s.address, s.first_seen, s.last_seen, s.count, s.topics, s.recent, s.rules, s.alarm_topic, COALESCE(t.config, 0)
   FROM senders s LEFT JOIN tokens t ON t.id = s.token_id`
 
 func scanSender(r scanner) (*Sender, error) {
@@ -196,7 +197,7 @@ func scanSender(r scanner) (*Sender, error) {
 	var first, last int64
 	var topics, recent, rules string
 	if err := r.Scan(&sd.ID, &sd.TokenID, &sd.Name, &sd.Kind, &sd.Template, &sd.UserAgent, &sd.Address,
-		&first, &last, &sd.Count, &topics, &recent, &rules, &sd.Alarm); err != nil {
+		&first, &last, &sd.Count, &topics, &recent, &rules, &sd.Alarm, &sd.Config); err != nil {
 		return nil, err
 	}
 	sd.FirstSeen, sd.LastSeen = fromMS(first), fromMS(last)
@@ -334,6 +335,8 @@ type SenderRules struct {
 	// long ("25h"), in AlertTopic, or else where its last topic routes to.
 	Expect     string `json:"expect,omitempty"`
 	AlertTopic string `json:"alert_topic,omitempty"`
+	// Icon is the icon its publishes get when they give none, before the topic's.
+	Icon string `json:"icon,omitempty"`
 }
 
 // none is true when no rule touches a publish (Expect only watches).
@@ -348,6 +351,9 @@ func (r SenderRules) check() error {
 	}
 	if d, err := time.ParseDuration(r.Expect); r.Expect != "" && (err != nil || d < time.Minute || d > 366*24*time.Hour) {
 		return errf(400, "bad_request", `expect must be a duration from 1m to 8784h, like "25h"`)
+	}
+	if err := checkImageURL("icon", r.Icon); err != nil {
+		return err
 	}
 	if r.AlertTopic != "" {
 		if err := validTopic(r.AlertTopic); err != nil {
@@ -410,6 +416,9 @@ func (s *Server) Publish(ctx context.Context, tok *Token, in PublishInput) (*Not
 			return nil, err
 		}
 		json.Unmarshal([]byte(raw), &rules)
+	}
+	if in.Icon == "" { // the publish's own icon, else the sender's, else (in publishTo) the topic's
+		in.Icon = rules.Icon
 	}
 	if rules.none() {
 		return s.publishTo(ctx, tok, in)
@@ -602,7 +611,7 @@ func (s *Server) setRules(ctx context.Context, tok *Token, id string, edit func(
 		}
 		bb, _ := json.Marshal(before)
 		ab := []byte("{}")
-		if !after.none() || after.Expect != "" || after.AlertTopic != "" {
+		if !after.none() || after.Expect != "" || after.AlertTopic != "" || after.Icon != "" {
 			ab, _ = json.Marshal(after)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE senders SET rules = ? WHERE id = ?`, string(ab), id); err != nil {

@@ -253,8 +253,9 @@ without headers or body (#450).
 **Icons:** `icon` is an absolute `http` or `https` URL with a host (at most
 2048 characters); anything else is a 400. Clients load it straight from that
 URL, so the image host sees the viewer's IP address. Each topic can have its
-own icon (`PUT /api/v1/topics/{topic}`): a publish that gives no `icon` gets
-the topic's icon copied in at publish time, so changing the topic's icon later
+own icon (`PUT /api/v1/topics/{topic}`), and so can each sender (its `icon`
+rule, section 5.1). A publish that gives no `icon` gets its sender's icon,
+else the topic's, copied in at publish time, so changing either later
 leaves notifications already sent as they were. Fields added after a client
 shipped (`icon` today) may be missing from events logged before the server
 upgrade: clients treat a missing field as empty (`attachment`: null).
@@ -1040,6 +1041,7 @@ and its address) returns `{senders:[Sender]}`, last heard first:
 | `first_seen`, `last_seen` | RFC 3339 |
 | `count` | Stored publishes, an update by `external_id` included; it outlives the rows themselves |
 | `topics` | `{topic: count}` of the same publishes |
+| `config` | `true` for a token from `CLRD_CONFIG`, absent otherwise: its rename and rotate are 409 (change it in that file) |
 
 `GET /api/v1/senders/{id}` returns one Sender plus `recent`: up to its last
 10 notifications, newest first, that are still stored (full notifications,
@@ -1054,6 +1056,7 @@ Every Sender also carries `rules`, `{}` until someone sets one:
 | `priority_min`, `priority_max` | Priority clamped into the range, 1 to 5; `0` means no limit. Min above max is 400 |
 | `routes` | `{topic: [topics]}`: a publish to the key topic lands in each listed topic instead. Key `*` matches any topic with no route of its own. An empty list drops the publish like `paused` |
 | `expect`, `alert_topic` | Nothing on its publishes: an urgent alarm when the sender goes quiet that long, see the silence alarm below |
+| `icon` | An `http(s)` image URL (the rule for `icon` in section 2, else 400) that a publish giving no `icon` gets, before the topic's icon; `""` for none. A routed publish takes it to every target. The Senders list and the sender page show it |
 
 A routed notification keeps the topic it was sent to as `requested_topic`
 (section 2), and the sender is counted once, under that topic. Each target
@@ -1081,19 +1084,19 @@ by_id, at}]}`, newest first, with `before` and `after` the full rules. `POST
 sender, its rules and its log.
 
 The web inbox shows the list at `/app/senders` and one sender at
-`/app/senders/{id}`, where a form sets every rule above (an `expect` or `alert_topic` the server
+`/app/senders/{id}`, where a form sets every rule above (an `expect`, `alert_topic` or `icon` the server
 refuses comes back with its message by that field) and each change
 has an Undo button, for the same admins only; anyone
 else gets 403. A sender with a `token_id` also has a Token section: a name
 field (rename), Rotate secret (a typed-in token or a person's, after a
 confirm; the new secret is shown once on the page that answers, never in a
-URL) and Revoke (after a confirm, then back to the list). An anonymous
-sender shows none of these. The web page refuses to rotate or revoke the
+URL) and Revoke (after a confirm, then back to the list). A `config`
+sender shows Revoke only, an anonymous sender none of these. The web page refuses to rotate or revoke the
 token the browser itself is signed in under, which would sign it out with
 the new secret unseen; the API and MCP allow it. The form sends `base_seq`, so saving a page drawn before a
 newer change is refused rather than undoing that change. The Android app
 lists them in Settings with the same rules (the silence alarm's `expect` and
-`alert_topic` below included), change log and Undo, for the same admins, and
+`alert_topic` below included, `icon` not yet), change log and Undo, for the same admins, and
 sends one field per change; for anyone else the section stays hidden.
 
 The silence alarm: `expect` (a duration, 1m to 8784h, like `"25h"`; `""`

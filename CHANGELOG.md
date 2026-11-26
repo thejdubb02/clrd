@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Server and web: a sender can have its own icon, set in the rules form on its page, over the API (`PUT /api/v1/senders/{id}` `{"icon":"https://..."}`) or from an agent (`set_sender`). Its notifications that bring no icon get it, before the topic's icon; it shows on the Senders list and page, and the change can be undone like the other rules (#119).
 - Rename, rotate and revoke a sender's token from its page in the web inbox, over the API (`PUT /api/v1/tokens/{id}`, `POST /api/v1/tokens/{id}/rotate`) or from an agent (`rename_token`, `rotate_token`). A rotated token keeps its id, rules and history; the old secret and the browsers signed in with it stop at once (#119).
 - Android: Settings, Display, Formatting and links has the four switches the web inbox has (Markdown, web addresses as links, site icons, link previews). With link previews on, an opened message shows a card with the page title, summary and image, fetched by your server, and each topic's preview choice from the web is followed (#107).
 - Android: a "Swipe clears everywhere" setting, off by default. With it on, swiping one notification out of the shade clears it on every device; swiping a group away or Clear all on several still only hides them on the phone (#271).
@@ -151,6 +152,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web: the sender page no longer offers Rename or Rotate secret for a token set in the config file, which the server always refuses; it says to change it there. Senders carry `config: true` for such tokens (#119).
 - Web: a notification's own page shows "This notification is gone" once it is deleted or its topic is no longer yours, instead of keeping the card and retrying every few seconds (#826).
 - Web: a notification's link (`/app/n/{id}`, as a GitHub issue links it) opens a page with that card alone, in any state, with a link back to its list, so it is there even past a list's newest 500 or when this device cleared it for itself alone (#822).
 - Android: dark mode uses the same quiet grey and urgent orange as the web inbox (`#98A1AC` and `#F97316`), so the two match side by side (#583).

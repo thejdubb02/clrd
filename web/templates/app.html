@@ -713,7 +713,7 @@
     <table class="table">
       <thead><tr><th scope="col">Sender</th><th scope="col" class="max-sm:hidden">Topics</th><th scope="col">Sent</th><th scope="col">Last seen</th></tr></thead>
       <tbody>
-        {{range .Snap.Senders}}<tr data-sender="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]"><a class="underline" href="{{base}}/app/senders/{{.ID}}">{{.Name}}</a>
+        {{range .Snap.Senders}}<tr data-sender="{{.ID}}"><td class="whitespace-normal [overflow-wrap:anywhere]">{{with .Rules.Icon}}<img class="me-2 inline-block size-6 rounded object-cover align-[-5px]" src="{{.}}" alt="" width="24" height="24" loading="lazy" referrerpolicy="no-referrer" data-icon>{{end}}<a class="underline" href="{{base}}/app/senders/{{.ID}}">{{.Name}}</a>
           <div class="meta">{{.KindLabel}}{{with .Template}}, template {{.}}{{end}}</div></td>
           <td class="meta whitespace-normal max-sm:hidden">{{range $t, $n := .Topics}}<span class="whitespace-nowrap">{{$t}} ({{$n}})</span> {{end}}</td>
           <td class="tabular-nums">{{.Count}}</td>
@@ -727,6 +727,7 @@
     <table class="table">
       <tbody>
         <tr><th scope="row">Kind</th><td>{{.KindLabel}}</td></tr>
+        {{with .Rules.Icon}}<tr><th scope="row">Icon</th><td><img class="inline-block size-6 rounded object-cover" src="{{.}}" alt="" width="24" height="24" loading="lazy" referrerpolicy="no-referrer" data-icon></td></tr>{{end}}
         {{with .Template}}<tr><th scope="row">Template</th><td>{{.}}</td></tr>{{end}}
         {{with .UserAgent}}<tr><th scope="row">User agent</th><td class="whitespace-normal [overflow-wrap:anywhere]">{{.}}</td></tr>{{end}}
         {{with .Address}}<tr><th scope="row">Address</th><td>{{.}}</td></tr>{{end}}
@@ -759,12 +760,13 @@
   {{with .Secret}}<div class="bg-card grid gap-2 rounded-xl border p-4" role="status"><p class="text-body text-sm/relaxed">The new secret, shown this once: copy it now. The old one no longer works.</p>
     <pre tabindex="0" class="bg-muted/50 w-full border-transparent text-start whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-secret>{{.}}</code></pre>
     <div class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="ghost" data-size="sm" data-secret-copy>{{template "i-copy"}}Copy</button></div></div>{{end}}
-  <form class="bg-card grid gap-4 rounded-xl border p-4" method="post" action="{{base}}/app/senders/{{.ID}}">
+  {{if .Config}}<p class="text-body text-sm/relaxed">Set in the server's config file: rename or rotate it there.</p>
+  {{else}}<form class="bg-card grid gap-4 rounded-xl border p-4" method="post" action="{{base}}/app/senders/{{.ID}}">
     <div class="field"><label for="t-name">Name</label><input id="t-name" name="token_name" type="text" autocomplete="off" required value="{{.Name}}"></div>
     <div><button class="btn" data-variant="outline">Rename</button></div>
-  </form>
+  </form>{{end}}
   <div class="flex flex-wrap gap-2">
-    {{if eq .Kind "token" "person"}}<form method="post" action="{{base}}/app/senders/{{.ID}}" data-confirm="Give {{.Name}} a new secret? The old one stops at once, and browsers and phones signed in with it are signed out."><button class="btn" data-variant="outline" name="rotate" value="1">Rotate secret</button></form>{{end}}
+    {{if and (not .Config) (eq .Kind "token" "person")}}<form method="post" action="{{base}}/app/senders/{{.ID}}" data-confirm="Give {{.Name}} a new secret? The old one stops at once, and browsers and phones signed in with it are signed out."><button class="btn" data-variant="outline" name="rotate" value="1">Rotate secret</button></form>{{end}}
     <form method="post" action="{{base}}/app/senders/{{.ID}}" data-confirm="Revoke {{.Name}}? It can no longer send, and this sender, its rules and its log go too."><button class="btn" data-variant="destructive" name="revoke" value="1">Revoke</button></form>
   </div>
 </section>{{end}}
@@ -792,6 +794,10 @@
       <input id="r-alert" name="alert_topic" type="text" autocomplete="off" spellcheck="false" placeholder="ops" value="{{$r.AlertTopic}}" aria-describedby="r-alert-hint{{if .FieldErr "alert_topic"}} r-alert-err{{end}}"{{if .FieldErr "alert_topic"}} aria-invalid="true"{{end}}>
       {{with .FieldErr "alert_topic"}}<p id="r-alert-err" role="alert">Not saved: {{.}}.</p>{{end}}
       <p id="r-alert-hint">Where the alarm goes. Empty means the first topic its last topic routes to, or that topic when it has no route.</p></div>
+    <div class="field"{{if .FieldErr "icon"}} data-invalid="true"{{end}}><label for="r-icon">Icon</label>
+      <input id="r-icon" name="icon" type="url" autocomplete="off" spellcheck="false" placeholder="https://" value="{{$r.Icon}}" aria-describedby="r-icon-hint{{if .FieldErr "icon"}} r-icon-err{{end}}"{{if .FieldErr "icon"}} aria-invalid="true"{{end}}>
+      {{with .FieldErr "icon"}}<p id="r-icon-err" role="alert">Not saved: {{.}}.</p>{{end}}
+      <p id="r-icon-hint">An image link shown on what it sends when a notification gives none, before the topic's icon. Empty is none.</p></div>
     <div><button class="btn" data-variant="outline">Save rules</button></div>
   </form>
   <h2 class="mt-4 text-base font-semibold">Changes</h2>
