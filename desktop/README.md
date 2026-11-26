@@ -75,7 +75,9 @@ which has no toasts, only the refusal was seen: showing one fails cleanly.
 - On Linux the page tells the app one thing, the Appearance pick, by a
   `clrd-theme:dark`, `:light` or `:system` link the window turns away. Any
   other word is ignored. With a custom theme the page sends dark or light by
-  the theme's own background, so the title bar matches it.
+  the theme's own background, so the title bar matches it, plus its colors
+  as seven hex values for the This computer page. A color that is not plain
+  hex drops all seven.
 
 ## Build and test
 

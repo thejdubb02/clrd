@@ -3,8 +3,12 @@
 const invoke = window.__TAURI_INTERNALS__.invoke;
 const $ = (id) => document.getElementById(id);
 
-function show([view, status, noted, offer, closing]) {
+// A custom theme's colors (#939), in the order the app sends them.
+const tokens = ['--bg', '--ink', '--body', '--line', '--clear', '--on-clear', '--signal'];
+
+function show([view, status, noted, offer, closing, colors]) {
   $('close-clears').checked = closing;
+  tokens.forEach((t, i) => colors[i] ? document.documentElement.style.setProperty(t, colors[i]) : document.documentElement.style.removeProperty(t));
   const waiting = view.check !== '';
   const linked = view.server !== '';
   // A link the browser handed over. Any page can send one, so it only goes

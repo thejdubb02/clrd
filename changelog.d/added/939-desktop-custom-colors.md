@@ -1,0 +1,1 @@
+- Desktop (Linux): with a custom theme, the This computer page now uses the theme's own colors (#939).
