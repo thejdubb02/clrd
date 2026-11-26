@@ -313,7 +313,7 @@ func TestHooksOutRaces(t *testing.T) {
 		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m"})
 		call(t, ts, "POST", "/api/v1/notifications/"+n["id"].(string)+"/dismiss", admin, nil)
 		j := hookJob{topic: "alerts", name: "gh", url: "https://x.test/"}
-		if err := s.db.QueryRow(`SELECT MAX(id) FROM hook_deliveries`).Scan(&j.id); err != nil {
+		if err := s.db.QueryRow(`SELECT MAX(d.id), h.rev FROM hook_deliveries d JOIN hooks_out h ON h.topic = d.topic AND h.name = d.name`).Scan(&j.id, &j.rev); err != nil {
 			t.Fatal(err)
 		}
 		return j
@@ -369,6 +369,49 @@ func TestHooksOutRaces(t *testing.T) {
 		t.Fatal("hook still on")
 	}
 	one(t, s, "alerts", "webhook-off-gh")
+
+	// #878: a last try to the old URL fails just before a save moves the hook.
+	// The save keeps failed rows, but the new URL's streak still starts clean.
+	save()
+	d := queued()
+	d.attempts = hookTries - 1
+	s.db.Exec(`UPDATE hook_deliveries SET status = 'failed' WHERE id = ?`, d.id)
+	moveTo := func(u string) {
+		if code, _ := call(t, ts, "PUT", "/api/v1/topics/alerts/hooks/gh", admin, map[string]any{"url": u}); code != 200 {
+			t.Fatalf("save %s: %d", u, code)
+		}
+	}
+	moveTo("https://y.test/")
+	if err := s.recordHook(ctx, d, 500, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, failing := since(); failing {
+		t.Fatal("the old URL's failure started the new URL's streak")
+	}
+
+	// #878: moved to another URL and back while a post was out: the post's id
+	// belongs to a message the save forgot, so it is not kept.
+	moveTo("https://x.test/")
+	p := queued()
+	moveTo("https://y.test/")
+	moveTo("https://x.test/")
+	if err := s.keepPost(ctx, p, "n1", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	var kept int
+	s.db.QueryRow(`SELECT count(*) FROM hook_posts`).Scan(&kept)
+	if kept != 0 {
+		t.Fatal("a post from before the moves was kept")
+	}
+	// Saved again with the same URL: same channel, the id is kept.
+	p = queued()
+	save()
+	if err := s.keepPost(ctx, p, "n2", "m2"); err != nil {
+		t.Fatal(err)
+	}
+	if s.db.QueryRow(`SELECT count(*) FROM hook_posts`).Scan(&kept); kept != 1 {
+		t.Fatal("a post to the same URL was dropped")
+	}
 }
 
 // A body template (#239): the receiver gets its own JSON shape, signed as
