@@ -98,17 +98,19 @@ func ntfyActionList(actions []ntfyAction) []Action {
 // A quote opens only at the start of a field or right after "=", so a label
 // like Don't stays as written. Inside quotes, spaces stay and \" (or \')
 // is the quote itself (#446); outside, spaces around a value are dropped.
-func ntfySplitActions(v string) ([][]string, error) {
-	var acts [][]string
-	var fields []string
+// A field that opens with a quote is marked, so it is never read as key=value (#910).
+func ntfySplitActions(v string) ([][]shortField, error) {
+	var acts [][]shortField
+	var fields []shortField
 	var b strings.Builder
 	var q rune
+	quoted := false
 	keep := 0 // b up to here ends in quoted text, whose spaces stay
 	field := func() {
 		s := b.String()
-		fields = append(fields, s[:keep]+strings.TrimRightFunc(s[keep:], unicode.IsSpace))
+		fields = append(fields, shortField{s[:keep] + strings.TrimRightFunc(s[keep:], unicode.IsSpace), quoted})
 		b.Reset()
-		keep = 0
+		keep, quoted = 0, false
 	}
 	rs := []rune(v)
 	for i := 0; i < len(rs); i++ {
@@ -126,7 +128,7 @@ func ntfySplitActions(v string) ([][]string, error) {
 		case unicode.IsSpace(c) && (keep > 0 && b.Len() == keep || cur == "" || key && strings.HasSuffix(cur, "=")):
 			// before a value or after a closing quote
 		case (c == '\'' || c == '"') && (cur == "" || key):
-			q = c
+			q, quoted = c, quoted || cur == ""
 		case c == ',':
 			field()
 		case c == ';':
@@ -145,12 +147,18 @@ func ntfySplitActions(v string) ([][]string, error) {
 
 // ntfyShortAction reads one short-form action: action, label, and url (or value
 // for copy) by position, the rest as key=value, headers.X=... and extras.x=...
-func ntfyShortAction(fields []string) ntfyAction {
+type shortField struct {
+	v      string
+	quoted bool
+}
+
+func ntfyShortAction(fields []shortField) ntfyAction {
 	var a ntfyAction
 	pos := []*string{&a.Action, &a.Label, &a.URL} // by index, as ntfy reads them
 	keys := map[string]*string{"action": &a.Action, "label": &a.Label, "url": &a.URL, "value": &a.Value, "method": &a.Method, "body": &a.Body, "intent": &a.Intent}
 	for i, f := range fields {
-		rawK, v, eq := strings.Cut(f, "=")
+		rawK, v, eq := strings.Cut(f.v, "=")
+		eq = eq && !f.quoted
 		rawK = strings.TrimSpace(rawK) // the splitter trimmed v, but not inside quotes
 		k := strings.ToLower(rawK)
 		switch {
@@ -163,9 +171,9 @@ func ntfyShortAction(fields []string) ntfyAction {
 		case eq && strings.HasPrefix(k, "extras.") && len(k) > len("extras."):
 			a.Extras = setKey(a.Extras, rawK[len("extras."):], v)
 		case i == 2 && strings.EqualFold(a.Action, "copy"):
-			a.Value = f
+			a.Value = f.v
 		case i < len(pos): // no key, or not one ntfy knows: "Show x=y", https://x?a=b
-			*pos[i] = f
+			*pos[i] = f.v
 		}
 	}
 	return a

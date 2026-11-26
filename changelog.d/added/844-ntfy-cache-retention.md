@@ -1,0 +1,1 @@
+- ntfy migration: opt in to age-based retention for active and acknowledged notifications on selected topics. Pending deliveries are kept until they wake (#844).

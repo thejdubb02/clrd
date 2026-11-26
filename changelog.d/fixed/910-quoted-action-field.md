@@ -1,0 +1,1 @@
+- ntfy short-form actions: a quoted field that looks like `key=value`, such as `copy, Copy, "url=https://example.com"`, is now kept as the label, URL or copy value instead of being read as a key (#910).

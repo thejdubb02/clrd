@@ -1,0 +1,1 @@
+- Allowed ntfy web apps can read `Retry-After` when clrd rate-limits a request (#915).

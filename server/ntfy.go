@@ -926,7 +926,12 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			if e.Type == EventMark { // ntfy has no marks; sending it again would alert again
 				return nil
 			}
-			if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
+			// Evictions carry only a sequence key, so content filters cannot match them.
+			if e.Via == viaCacheExpiry {
+				if sinceArg == "latest" && seq <= cur {
+					return nil
+				}
+			} else if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
 				return nil
 			}
 			return write(s.ntfyMessage(e.Notification, seq, f.sched && (poll || seq <= replayEnd)))
@@ -1044,8 +1049,8 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 var ntfyReplayMax = 10 << 20 // a var so a test can shrink it
 
 // ntfyFloors is the first seq each topic replays in (since, cur], as ntfy does
-// per topic (#845): its latest message for since=latest (marks and
-// device-only events never count), else the oldest of its newest events whose
+// per topic (#845): its latest message for since=latest (excluding cache
+// evictions, marks and device-only events), else the oldest of its newest events whose
 // bytes fit in ntfyReplayMax. truncated says some topic had more.
 func (s *Server) ntfyFloors(ctx context.Context, since, cur int64, latest bool, topics []string) (map[string]int64, bool, error) {
 	q := `SELECT topic, MIN(CASE WHEN run <= ? THEN seq ELSE 1 << 62 END), MAX(run > ?) FROM (
@@ -1055,9 +1060,9 @@ func (s *Server) ntfyFloors(ctx context.Context, since, cur int64, latest bool, 
 	if latest {
 		q = `SELECT t.value, (SELECT seq FROM events
 			WHERE topic = t.value AND seq > ? AND seq <= ? AND type != ? AND data NOT LIKE '%"only":"%'
-			ORDER BY seq DESC LIMIT 1), 0 FROM json_each(?) t`
+			AND data NOT LIKE ? ORDER BY seq DESC LIMIT 1), 0 FROM json_each(?) t`
 		t, _ := json.Marshal(topics)
-		args = append(args[2:], string(t))
+		args = append(args[2:], `%"via":"`+viaCacheExpiry+`"%`, string(t))
 	} else {
 		for _, t := range topics {
 			args = append(args, t)

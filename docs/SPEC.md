@@ -329,8 +329,15 @@ or `48h`, each above 0 and at most 31 days, no two the same length) and
 `snooze_default` is the one a plain tap uses; it must be in the list. A list
 without the current default makes its first entry the default.
 `keep_cleared_days` is how many days a dismissed or resolved notification is
-kept after it was cleared (its `updated_at`); `0` keeps them forever. Open,
-acknowledged and snoozed notifications are never deleted. Until it is set it
+kept after it was cleared (its `updated_at`); `0` keeps them forever. Open
+notifications stay by default. With `CLRD_NTFY_CACHE_TOPICS` set to exact
+topic names separated by commas, the hourly prune also deletes active and
+acknowledged rows on those topics after `CLRD_RETENTION` since `updated_at`.
+Snoozed rows and delayed sends survive the prune and start a new retention
+window when they wake. A removed row emits an identifying `state` event
+with state `resolved`, via `cache-expiry`, and no original notification body,
+so live clients can clear it. In ntfy streams this is a `message_delete`
+by sequence ID, including on filtered streams. Until `keep_cleared_days` is set it
 follows `CLRD_RETENTION` (30 days by default); once set, the setting wins.
 Changing it needs scope admin and takes 0 to 36500. The hourly prune applies
 it, so a shorter value deletes older cleared rows within the hour, and the
@@ -963,7 +970,7 @@ and via. Values clients send today:
 The server's own changes use `snooze_end`, `expired`, `checkin` (a late
 check-in resolved by the next message), `quiet` (a sender's quiet alarm
 resolved by its next publish or a rule change, section 5.1), `publish` (a publish with `status
-resolved`) and `ntfy_import`.
+resolved`), `ntfy_import` and `cache-expiry` (the cache retention prune).
 
 | Method | Path | Does |
 |---|---|---|
@@ -1419,10 +1426,12 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `CLRD_RETENTION` (`720h` for final rows and events; the
   `keep_cleared_days` setting overrides it once set),
   `CLRD_NTFY_TEMPLATE_DIR` (directory of named ntfy templates, unset disables lookup),
+  `CLRD_NTFY_CACHE_TOPICS` (unset; exact topics separated by commas where
+  active and acknowledged notifications age out under `CLRD_RETENTION`),
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
   the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
   `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still
-  exist; open notifications are never pruned, so their files keep counting),
+  exist, including open notifications that are still kept),
   `CLRD_PUBLIC_PAGES` (`on`; `off` for a private server: `/` redirects to
   `/app`, `/docs` and `/sitemap.xml` are 404, `robots.txt` disallows
   everything, and the web pages send `X-Robots-Tag: noindex, nofollow`).
