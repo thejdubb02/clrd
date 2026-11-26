@@ -784,7 +784,6 @@
   const snzTyped = () => snz.times.value.split(',').map(v => v.trim()).filter(Boolean);
   const snzValue = v => v.replace(/^(\d+)d$/, (_, n) => `${n * 24}h`);
   const snzSaved = snz && snz.default.value;
-  const snzDirty = () => snz && (snz.times.value !== snz.times.defaultValue || snz.default.value !== snzSaved);
   if (snz) {
     // The Default list follows the Times box as it is typed, so a time just added can be the default (#182).
     const labels = Object.fromEntries([...snz.default.options].map(o => [o.value, o.text]));
@@ -882,6 +881,11 @@
     s.append(...[['', 'None'], ['clear', 'Clear'], ['snooze', 'Snooze'], ['ack', 'Ack'], ['resolve', 'Resolve']].map(([v, t]) => new Option(t, v, false, (sides[d.dataset.side][i] || '') === v)));
     return s;
   })));
+  // What each form held when the page loaded: a live change from another device
+  // reloads Settings only while none of them has unsaved edits (#182, #883).
+  const contents = f => JSON.stringify([...new FormData(f)]);
+  const loaded = forms.map(f => f && contents(f));
+  const unsaved = () => forms.some((f, i) => f && contents(f) !== loaded[i]);
   swp && swp.addEventListener('submit', async e => {
     e.preventDefault();
     const pick = side => [...swp.querySelectorAll(`select[name=${side}]`)].map(s => s.value).filter(Boolean);
@@ -1443,17 +1447,17 @@
       else if (m.type === 'reset') reset();
       else if (m.type === 'devices') refresh(); // a device connected, caught up or dropped: redraw the dots (#295)
       else if (m.type === 'settings') {
-        // Snooze times or formatting changed on another device: the cards are stale.
-        // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
+        // Settings changed on another device: the cards and the forms are stale.
+        // Edits not saved here yet are kept; saving them replaces the other change (#182, #883).
         const st = m.settings || {};
         if (st.theme) syncPalette(st);
         if (st.color_rules) refresh(); // recolor the cards (#165)
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
-        const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
+        const stale = () => unsaved() ? forms.forEach(f => { const n = f?.querySelector('[role=status]'); if (n) n.textContent = 'Settings changed on another device. Saving here replaces that change.'; }) : reset();
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
-        else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) reset(); // a stale form would save the old period back
+        else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) stale();
         else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
-        else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) reset(); // the buttons and the form would be stale
+        else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) stale(); // the buttons would be stale too
       }
       else if (m.notification) {
         if (m.type === 'state' && cleared(m.notification.state)) syncAlerts(m.notification.id, m.seq);

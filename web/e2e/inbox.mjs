@@ -333,6 +333,18 @@ try {
   assert.equal(await sp.getByLabel('Times').inputValue(), '1h, soon', 'unsaved snooze edit dropped');
   await sp.reload();
   await sp.locator('[data-snooze="1h,1h,4h"]').waitFor({ state: 'attached' });
+  // Any form counts: an unsaved swipe edit survives a change to another setting (#883).
+  const swipe1 = sp.locator('[data-swipe-settings] select').first();
+  const was = await swipe1.inputValue();
+  await swipe1.selectOption(was === 'ack' ? 'resolve' : 'ack');
+  const keep0 = (await (await fetch(`${base}/api/v1/settings`, { headers: { Authorization: `Bearer ${phone}` } })).json()).keep_cleared_days;
+  await sp.evaluate(() => { window.notReloaded = true; });
+  await putSettings({ keep_cleared_days: keep0 === 5 ? 6 : 5 });
+  await sp.locator('[data-swipe-status]').filter({ hasText: 'another device' }).waitFor();
+  assert.equal(await sp.evaluate(() => window.notReloaded), true, 'Settings reloaded over an unsaved swipe edit');
+  assert.notEqual(await swipe1.inputValue(), was, 'unsaved swipe edit dropped');
+  await putSettings({ keep_cleared_days: keep0 });
+  await sp.reload();
   // Appearance (#583): a saved choice beats the device, at once and on every page, before
   // first paint; System follows the device again.
   const dark = () => sp.evaluate(() => document.documentElement.classList.contains('dark'));

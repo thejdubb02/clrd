@@ -164,6 +164,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web Settings no longer reloads over unsaved edits when a setting changes on another device. Any form with an edit not saved yet (swipe buttons, keep cleared, display and more, not only snooze times) is kept, and each form says the setting changed elsewhere (#883).
 - Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
 
