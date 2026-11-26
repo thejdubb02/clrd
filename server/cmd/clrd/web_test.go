@@ -450,7 +450,7 @@ func TestAddService(t *testing.T) {
 	if code, _, _ := postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"nope"}, "topic": {"dev"}}); code != 400 {
 		t.Errorf("unknown service: %d, want 400", code)
 	}
-	for _, bad := range []string{"", "a/b", "../x"} { // the form's pattern is only a hint
+	for _, bad := range []string{"", "a/b", "../x", `a"b`, "a b", "a;id"} { // the form's pattern is only a hint; insertToken checks every topic
 		if code, page, _ := postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"curl"}, "topic": {bad}}); code != 400 || strings.Contains(page, "data-secret") {
 			t.Errorf("topic %q: %d, want 400", bad, code)
 		}
