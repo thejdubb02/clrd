@@ -669,7 +669,9 @@ database whose head seq is below the saved one, or whose epoch differs from
 the saved one, was restored or swapped: the server picks a new epoch, and
 clients start over.
 
-Also `GET /api/v1/events?since=<seq>&limit=500` for clients that poll: returns
+Also `GET /api/v1/events?since=<seq>&limit=500` for clients that poll. Use
+`subscribed=all` to poll all readable topics without restarting the cursor
+when subscriptions are edited. The endpoint returns
 `{"events":[...],"seq":<current>,"epoch":"<id>"}`, or HTTP 410 with code `reset`. SSE at
 `GET /api/v1/events/sse?since=<seq>` sends the same JSON objects as the
 WebSocket (events, `settings`, `ready`, `reset`), one per `data:` line, and

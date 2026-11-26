@@ -1261,7 +1261,14 @@ func tips(b, topic string, topics []Topic) []Tip {
 		{Icon: "bell-ring", Title: "Pick a sound", Text: "Choose the sound this browser plays when a notification arrives, or turn it off.", Link: "/app/settings#sound-h", LinkText: "Sound settings"},
 	}
 	if len(topics) == 0 {
-		ts = slices.DeleteFunc(ts, func(t Tip) bool { return t.Icon == "hash" })
+		for i, t := range ts {
+			if t.Icon == "hash" {
+				copy(ts[i:], ts[i+1:])
+				ts[len(ts)-1] = Tip{}
+				ts = ts[:len(ts)-1]
+				break
+			}
+		}
 	}
 	return ts
 }

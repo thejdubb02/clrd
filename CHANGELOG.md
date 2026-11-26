@@ -18,12 +18,14 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Integrations: n8n and Node-RED nodes can send, clear, acknowledge, resolve and snooze clrd notifications, and start workflows on new notifications or state changes (#113). Available to build from source.
 - Install the web inbox on a phone or computer, with an offline screen and opt-in browser notifications. Clear or resolve an alert on another device and the open inbox removes its browser notification. Browser subscriptions can also be managed through MCP (#164).
 - SDKs: the source-only create-clrd installer connects local AI agents to clrd with individual invites, configures MCP and hooks, and can remove the connections (#154).
 - ntfy publish: headers carrying RFC 2047 encoded words (for example `Title: =?UTF-8?B?...?=`, as ntfy clients send non-ASCII text) are decoded, the same as on ntfy (#842).
 
 - Android: add more than one server and switch between them; each keeps its own settings, connection and notifications (#78).
 - Desktop: the tray's About menu always has What's new (the server's history, or the project's when this computer is not linked), says plainly when this app is older or newer than the server, and reads "What's new in" the version for the first start after an update until it is opened (#580).
+- Android: JVM screenshot tests render the inbox, an open card and Settings in light and dark mode to `android/screenshots/` for the README and CI verification (#658).
 - Web: choose Default, High contrast, Midnight or a custom color theme with a live preview and contrast checks. The server saves it for your signed-in browsers, with optional device overrides and API and MCP support (#584).
 
 - Web: Add a service on the Senders page. Pick a service (GitHub, Grafana, Sentry and the other webhook templates, or curl, ntfy, Gotify, Pushover), name it and pick a topic; clrd makes a token that can only publish to that topic and shows it once with a ready-to-paste URL or command and the service's guide, then says connected when its first message arrives (#119).
@@ -160,6 +162,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
   than three topics the cards start closed.
 
 ### Fixed
+
+- Event polling with `subscribed=all` keeps its cursor through subscription edits, so automation triggers can deliver notifications queued between polls (#868).
 
 - Server: a GitHub issue hook still finds the issue it already opened after the issue was edited on GitHub's website, so a retried delivery does not open a second one (#827).
 - Server and web: a token from the server's config file can no longer be revoked from the sender page or the API (409), because the next restart made it again from the file and the revoke silently undid itself. Remove it from the file instead; the page now says so and hides Revoke (#832).

@@ -121,7 +121,7 @@ func tokenCmd(opt server.Options, args []string) error {
 			}
 			grants := ""
 			for _, g := range t.Grants {
-				grants += fmt.Sprintf(" %s=%s", g.Topic, strings.Join(g.Scopes, "+"))
+				grants += " " + g.Topic + "=" + strings.Join(g.Scopes, "+")
 			}
 			fmt.Printf("%s\t%s\t%s\ttopics=%s\tgrants=%s\tseen=%s\n", t.ID, t.Name, strings.Join(t.Scopes, ","), strings.Join(t.Topics, ","), strings.TrimSpace(grants), seen)
 		}

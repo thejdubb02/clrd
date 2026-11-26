@@ -622,6 +622,9 @@ func (s *Server) route(pattern string, h func(http.ResponseWriter, *http.Request
 }
 
 // api registers a native route that needs a token (cookie allowed).
+// Keep the auth wrapper out of line to share it across API routes.
+//
+//go:noinline
 func (s *Server) api(pattern string, h func(http.ResponseWriter, *http.Request, *Token) error) {
 	s.route(pattern, func(w http.ResponseWriter, r *http.Request) error {
 		tok := s.auth(r, true)

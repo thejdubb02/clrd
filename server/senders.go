@@ -90,8 +90,17 @@ func seeSender(ctx context.Context, tx *sql.Tx, top, topic, template, id string)
 	json.Unmarshal([]byte(recentJSON), &recent)
 	topics[topic]++
 	if id != "" { // "" is a publish the sender's rules dropped: counted, nothing stored
-		recent = append([]string{id}, slices.DeleteFunc(recent, func(r string) bool { return r == id })...)
-		recent = recent[:min(len(recent), senderRecent)]
+		ids := make([]string, 1, min(len(recent)+1, senderRecent))
+		ids[0] = id
+		for _, r := range recent {
+			if len(ids) == senderRecent {
+				break
+			}
+			if r != id {
+				ids = append(ids, r)
+			}
+		}
+		recent = ids
 	}
 	tb, _ := json.Marshal(topics)
 	rb, _ := json.Marshal(recent)
