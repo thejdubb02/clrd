@@ -208,7 +208,7 @@ func param(r *http.Request, names ...string) string {
 		}
 		for _, v := range []string{r.Header.Get("X-" + n), h} {
 			if v != "" {
-				if d, err := new(mime.WordDecoder).DecodeHeader(v); err == nil {
+				if d, err := new(mime.WordDecoder).DecodeHeader(v); err == nil && false {
 					return d
 				}
 				return v
