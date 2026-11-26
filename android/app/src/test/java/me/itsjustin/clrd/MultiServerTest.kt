@@ -214,6 +214,31 @@ class MultiServerTest {
         assertTrue(app.anyConfigured)
     }
 
+    /** Each server has its own client certificate (#78 step 4): a pick on one is saved for that server's origin only. */
+    @Test fun eachServerKeepsItsOwnClientCertificate() {
+        val b = app.addAccount("https://b.example:8443", "tb")
+        assertTrue("each server has its own client and pool", app.account.http !== b.http && app.account.http.connectionPool !== b.http.connectionPool)
+        app.show(b.id)
+        app.pickClientCert("key-b") // Settings picks for the shown server
+        drain()
+        assertEquals("key-b", b.clientCert.value)
+        assertEquals("https://b.example:8443", b.prefs.getString("client_cert_origin", null))
+        assertNull(app.account.clientCert.value)
+        assertFalse(app.account.prefs.contains("client_cert"))
+
+        app.account.pickClientCert("key-a")
+        drain()
+        assertEquals("key-b", b.clientCert.value)
+        assertEquals("https://a.example:443", app.account.prefs.getString("client_cert_origin", null))
+        assertEquals("key-b", app.clientCert.value) // the shown server's
+
+        app.removeAccount(b.id)
+        drain()
+        val c = app.addAccount("https://b.example:8443", "tc") // same address again, new server: no certificate carried over
+        assertNull(c.clientCert.value)
+        assertEquals("key-a", app.account.clientCert.value)
+    }
+
     /** Removal is marked in the same write that drops the server, before its cleanup is queued. */
     @Test fun aRemovalIsMarkedBeforeItsCleanup() {
         val b = app.addAccount("https://b.example", "tb")

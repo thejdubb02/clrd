@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.room.Room
 import kotlinx.coroutines.flow.MutableStateFlow
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 
 /**
@@ -22,11 +23,42 @@ class Account(private val ctx: Context, val id: Int) {
     /** This server's tray entries. Account 0 posts as before #78; the others tag theirs with the account id. */
     val tray by lazy { Tray(ctx, this) }
 
+    /** The server origin the certificate was picked for. A moved server gets no certificate until it is picked again. */
+    private fun origin(u: okhttp3.HttpUrl) = "${u.scheme}://${u.host}:${u.port}"
+    private val certKeys by lazy {
+        ClientCertKeys({ clientCert.value }, {
+            serverUrl.toHttpUrlOrNull()?.takeIf { origin(it) == prefs.getString("client_cert_origin", null) }?.let { it.host to it.port }
+        }) { a ->
+            runCatching { // a removed key or revoked access means no certificate, not a crash
+                val k = android.security.KeyChain.getPrivateKey(ctx, a)
+                val c = android.security.KeyChain.getCertificateChain(ctx, a)
+                if (k != null && c != null) k to c else null
+            }.getOrNull()
+        }
+    }
+
     /**
-     * Only account 0 may present the client certificate (#152), which was picked for its server. The others use
-     * their own client with no certificate and their own connection pool, so they never reuse a connection that sent it.
+     * This server's own client (#78): its own client certificate (#152) and its own connection pool, so no
+     * server ever gets another's certificate or reuses a connection that sent it.
      */
-    val http: okhttp3.OkHttpClient get() = if (id == 0) app.http else app.plainHttp
+    val http by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .sslSocketFactory(certKeys.socketFactory, certKeys.trustManager)
+            .pingInterval(45, java.util.concurrent.TimeUnit.SECONDS) // notices a dead connection the server ping alone would not
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** Picks or removes this server's client certificate (#152). Open connections used the old one, so they close and sync reconnects. */
+    fun pickClientCert(alias: String?) {
+        prefs.edit().putString("client_cert", alias).putString("client_cert_origin", serverUrl.toHttpUrlOrNull()?.let(::origin)).apply()
+        clientCert.value = alias
+        app.io.execute {
+            certKeys.renew()
+            http.connectionPool.evictAll()
+            if (configured) SyncService.start(app, restart = true)
+        }
+    }
 
     /** Set by [App.removeAccount]. A store, tap or redraw still in flight for it then changes nothing. */
     @Volatile var removed = false
