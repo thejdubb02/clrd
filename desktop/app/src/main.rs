@@ -80,7 +80,7 @@ fn version_note(app: &str, server: &str) -> Option<&'static str> {
         n.next().is_none().then_some(v)
     };
     match parse(app)?.cmp(&parse(server)?) {
-        std::cmp::Ordering::Less => None,
+        std::cmp::Ordering::Less => Some("This app is older than the server"),
         std::cmp::Ordering::Greater => Some("This app is newer than the server"),
         std::cmp::Ordering::Equal => None,
     }
