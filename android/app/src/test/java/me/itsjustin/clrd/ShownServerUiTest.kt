@@ -142,6 +142,21 @@ class ShownServerUiTest {
         }
     }
 
+    /** A new token saved while the server cannot be reached still gets a sync started, to connect once the network is back. */
+    @Test fun aTokenSavedOfflineStillStartsSync() {
+        server.dispatcher = object : Dispatcher() { override fun dispatch(request: RecordedRequest) = MockResponse().setResponseCode(503) }
+        val started = org.robolectric.Shadows.shadowOf(app)
+        while (started.nextStartedService != null) Unit
+        rule.setContent { SettingsScreen(app, null, 0) {} }
+        rule.onAllNodesWithText(s(R.string.token))[0].performScrollTo().performTextReplacement("tnew")
+        rule.onAllNodesWithText(s(R.string.save_and_test))[0].performScrollTo().performClick()
+        drain()
+        assertEquals("tnew", app.account.token)
+        val i = started.nextStartedService
+        assertEquals(SyncService::class.java.name, i?.component?.className)
+        assertNull("a restart would drop the other servers' connections", i?.action)
+    }
+
     /** A server whose token was cleared stays in the Servers list (#860), so either one can still be opened. */
     @Test fun aServerWithItsTokenClearedStaysListed() {
         bg { b.saveServer("https://b.example", "") }
