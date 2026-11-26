@@ -219,7 +219,16 @@ class App : Application() {
     /** The autolink setting (#107): off leaves bare web addresses as text; written links stay links. On until the server says otherwise. */
     val autolink by lazy { MutableStateFlow(prefs.getBoolean("autolink", true)) }
 
-    /** This token got 403 changing [swipes], so Settings shows them read-only. In memory: a token's grants can widen. */
+    /** The link_previews setting (#107): a card with the page's title and picture under an open message's first link. Off until the server says otherwise. */
+    val linkPreviews by lazy { MutableStateFlow(prefs.getBoolean("link_previews", false)) }
+
+    /** topic_previews (#107): a topic's own preview choice, over [linkPreviews]. */
+    val topicPreviews by lazy { MutableStateFlow(onOff(prefs.getString("topic_previews", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() })) }
+
+    /** The four display switches by their server names, each with its out-of-the-box value. */
+    private val display get() = mapOf("render_formatting" to (formatting to true), "autolink" to (autolink to true), "favicons" to (favicons to true), "link_previews" to (linkPreviews to false))
+
+    /** This token got 403 changing [swipes] or a display switch, so Settings shows them read-only. In memory: a token's grants can widen. */
     val swipesLocked = MutableStateFlow(false)
 
     /**
@@ -228,15 +237,27 @@ class App : Application() {
      */
     fun saveSwipes(next: Swipes, api: Api = api()): String? {
         swipes.value = next
-        return try {
-            api.put("/api/v1/settings", next.json())
-            prefs.edit().putString("swipes", next.json()).apply() // the server has it: a restart before its echo keeps it
-            null
-        } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
-            // Back to what the server last said. Under the lock a settings message cannot land between the read and the write (#568).
-            synchronized(configLock) { swipes.value = Swipes.parse(prefs.getString("swipes", null)) }
-            if (e is HttpError && e.code == 403) { swipesLocked.value = true; null } else (e as? HttpError)?.message ?: getString(R.string.sound_no_connection)
-        }
+        // On success the server has it: a restart before its echo keeps it.
+        return putSettings(api, next.json(), { prefs.edit().putString("swipes", next.json()).apply() }) { swipes.value = Swipes.parse(prefs.getString("swipes", null)) }
+    }
+
+    /** Sends one display switch from Settings (#107), like [saveSwipes]. A formatting change redraws the shade at once, quietly. Call on [io]. */
+    fun saveDisplay(key: String, on: Boolean, api: Api = api()): String? {
+        val (flow, default) = display.getValue(key)
+        fun set(v: Boolean) { if (flow.value != v) { flow.value = v; if (key == "render_formatting") RoomStore(this).reconcile() } }
+        set(on)
+        return putSettings(api, org.json.JSONObject().put(key, on).toString(), { prefs.edit().putBoolean(key, on).apply() }) { set(prefs.getBoolean(key, default)) }
+    }
+
+    /** PUTs [body]; null when the server took it or this token may not change it ([swipesLocked]), else why not. */
+    private fun putSettings(api: Api, body: String, keep: () -> Unit, undo: () -> Unit): String? = try {
+        api.put("/api/v1/settings", body)
+        keep()
+        null
+    } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
+        // Back to what the server last said. Under the lock a settings message cannot land between the read and the write (#568).
+        synchronized(configLock) { undo() }
+        if (e is HttpError && e.code == 403) { swipesLocked.value = true; null } else (e as? HttpError)?.message ?: getString(R.string.sound_no_connection)
     }
 
     /** This account's topic subscriptions (#617), as the server last sent them; null from a server without them. */
@@ -296,11 +317,16 @@ class App : Application() {
             prefs.edit().putString("swipes", w.json()).apply()
             swipes.value = w
         }
-        for ((key, flow) in listOf("favicons" to favicons, "render_formatting" to formatting, "autolink" to autolink)) {
+        for ((key, d) in display) {
             if (!o.has(key)) continue
-            val on = o.optBoolean(key, true)
+            val on = o.optBoolean(key, d.second)
             prefs.edit().putBoolean(key, on).apply()
-            flow.value = on
+            d.first.value = on
+        }
+        if (o.has("topic_previews")) {
+            val t = o.optJSONObject("topic_previews")
+            prefs.edit().apply { if (t == null) remove("topic_previews") else putString("topic_previews", t.toString()) }.apply()
+            topicPreviews.value = onOff(t)
         }
         // Every settings message is the whole view, so no subscriptions object means a server without them (#617).
         val sub = o.optJSONObject("subscriptions")
@@ -355,12 +381,14 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").remove("favicons").remove("render_formatting").remove("autolink").apply() // a choice the old server refused is not the new one's
+                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").remove("favicons").remove("render_formatting").remove("autolink").remove("link_previews").remove("topic_previews").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
                 swipes.value = Swipes()
                 favicons.value = true
                 formatting.value = true
                 autolink.value = true
+                linkPreviews.value = false
+                topicPreviews.value = emptyMap()
                 swipesLocked.value = false // another token may change them
                 markId.value = ""
                 subs.value = null // the new token's own set arrives with its settings message
@@ -618,6 +646,10 @@ class RoomStore(private val app: App) : Store {
     /** A queued dismiss or snooze that has not reached the server yet wins over what the server last said. */
     private fun waiting() = dao.pending().filter { it.action == "dismiss" || it.action == "snooze" }.map { it.notifId }.toSet()
 }
+
+/** A topic_previews object as topic to on or off; a topic without a boolean has no choice of its own. */
+internal fun onOff(o: org.json.JSONObject?): Map<String, Boolean> =
+    o?.keys()?.asSequence()?.mapNotNull { k -> (o.opt(k) as? Boolean)?.let { k to it } }?.toMap().orEmpty()
 
 /** True when [at] is the only time in [times] within [App.LONE_MS] either side: a lone swipe, not a burst (#271). */
 internal fun lone(times: List<Long>, at: Long) = times.count { kotlin.math.abs(it - at) <= App.LONE_MS } == 1

@@ -763,6 +763,9 @@ internal fun Card(n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), 
                 val body = @Composable { MessageText(text, maxLines = if (open) Int.MAX_VALUE else 6, modifier = Modifier.padding(end = 8.dp)) }
                 // Open text can be selected and copied; links open in the browser.
                 if (open) SelectionContainer { body() } else body()
+                val on by app.linkPreviews.collectAsState()
+                val topics by app.topicPreviews.collectAsState()
+                if (open && (topics[n.topic] ?: on)) PreviewCard(n, text) // fetched only once someone opens the card
             }
             n.file?.let { f -> Attached(f) }
             val ctx = LocalContext.current
@@ -1802,6 +1805,27 @@ private fun AgentInvite(app: App, hold: AgentHold, close: () -> Unit) {
  * Which buttons each swipe shows (#161), saved on the server so every device shows the same. A tap adds a button
  * last on that side (moving it from the other) or takes it off. A token that may not change them sees them read-only.
  */
+/** The display switches (#107), shared with every device through the server like the swipe buttons. */
+@Composable
+private fun DisplaySettings(app: App) {
+    val b = LocalBrand.current
+    val locked by app.swipesLocked.collectAsState()
+    var result by remember { mutableStateOf<String?>(null) }
+    Text(stringResource(R.string.formatting_settings), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(if (locked) R.string.formatting_locked else R.string.formatting_explain), color = b.slate, fontSize = 13.sp)
+    listOf(
+        Triple("render_formatting", app.formatting, R.string.render_formatting), Triple("autolink", app.autolink, R.string.autolink),
+        Triple("favicons", app.favicons, R.string.favicons), Triple("link_previews", app.linkPreviews, R.string.link_previews),
+    ).forEach { (key, flow, label) ->
+        val on by flow.collectAsState()
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(label), color = b.body, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Switch(checked = on, enabled = !locked, modifier = Modifier.testTag("display-$key"), onCheckedChange = { v -> app.io.execute { result = app.saveDisplay(key, v) } })
+        }
+    }
+    result?.let { Text(it, color = b.signal, fontSize = 13.sp) }
+}
+
 @Composable
 private fun SwipeSettings(app: App) {
     val b = LocalBrand.current
@@ -2001,7 +2025,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     val open = mapOf(
         "subscriptions" to (app.configured && subs != null && !subsGone),
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
-        "swipe" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && (canRead || rejected)), // rejected: a publish-only phone may still unlink itself (#643)
+        "swipe" to app.configured, "formatting" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && (canRead || rejected)), // rejected: a publish-only phone may still unlink itself (#643)
         "senders" to (app.configured && !rejected && senders.value != null),
     )
     val shown = SETTINGS.filter {
@@ -2117,6 +2141,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             "shade-clears" -> Toggle(R.string.shade_clears, R.string.shade_clears_explain, shade) { on -> shade = on; app.shadeClears = on }
             "full-swipe" -> Toggle(R.string.fast_swipe, R.string.fast_swipe_explain, fast) { on -> fast = on; app.fastSwipe = on }
             "swipe" -> SwipeSettings(app)
+            "formatting" -> DisplaySettings(app)
             "sound" -> SoundSettings(app, resumes)
             "snooze" -> SnoozeSettings(app)
             "devices" -> DeviceSettings(app, resumes)
