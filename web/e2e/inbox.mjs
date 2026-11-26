@@ -360,10 +360,10 @@ try {
   await keyPage.keyboard.press(',');
   assert.equal(new URL(keyPage.url()).pathname, '/app');
   await keyPage.keyboard.press('Control+k');
-  await keyPage.getByRole('dialog', { name: 'Commands' }).waitFor();
+  await keyPage.locator('#palette[open] #palette-input:focus').waitFor();
   await keyPage.keyboard.press('Escape');
   await keyPage.getByRole('button', { name: 'Commands' }).press('Enter');
-  await keyPage.getByRole('dialog', { name: 'Commands' }).waitFor();
+  await keyPage.locator('#palette[open] #palette-input:focus').waitFor();
   await keyPage.keyboard.press('Escape');
   assert.equal((await sp.request.put(base + '/api/v1/settings', { data: { single_key_shortcuts: true } })).status(), 200);
   await keyPage.locator('[data-no-single-key]').waitFor({ state: 'detached' });
