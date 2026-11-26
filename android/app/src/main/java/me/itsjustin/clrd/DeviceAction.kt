@@ -72,9 +72,8 @@ object DeviceAction {
      * Runs button [index] of row [id] as shown at [seq]. Clears the row everywhere when the button asks and it worked;
      * a failure says so in a toast and leaves the row. [done] runs once, on any path.
      */
-    fun run(ctx: Context, acct: Account, id: String, index: Int, seq: Long, server: String?, via: String = App.VIA_TRAY_BUTTON, done: () -> Unit) {
+    fun run(ctx: Context, acct: Account, id: String, index: Int, seq: Long, server: String?, via: String = App.VIA_TRAY_BUTTON, gen: Int = acct.configGen, done: () -> Unit) {
         val app = App.of(ctx)
-        val gen = acct.configGen
         fun sameAccount() = acct.configGen == gen && !acct.removed && (server == null || server == acct.serverUrl)
         // acts, not io: io may be blocked on the network, and this must fit the receiver's 10 s budget.
         app.acts.execute {

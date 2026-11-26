@@ -1,0 +1,1 @@
+- Android with several servers: each server keeps its own Do Not Disturb notice, reply-box tracking and send queue while sync is off, a swipe waiting to clear acts only for the sign-in it came from, and two servers already sharing an address can still be saved.

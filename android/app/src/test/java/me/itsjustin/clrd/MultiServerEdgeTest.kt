@@ -14,6 +14,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -74,7 +75,7 @@ class MultiServerEdgeTest {
         assertTrue("B's change took its pass", bg { b.saveSound("chime") })
         b.tray.dndNotice()
         app.tray.reconcile(emptyList(), emptySet()) // account 0's next sync
-        assertNotNull(shadowOf(nm).getNotification(null, Tray.DND_ID))
+        assertNotNull(shadowOf(nm).getNotification("dnd${b.id}", Tray.DND_ID))
         assertTrue(b.tray.dndLost())
         b.db.close()
     }
@@ -140,6 +141,74 @@ class MultiServerEdgeTest {
         assertTrue(app.account.configGen > gen)
         assertEquals("a restart reads the number the removal left", app.account.configGen, Account(app, 0).configGen)
         b.db.close()
+    }
+
+    /** Two servers that both lost the Urgent pass each keep a notice; the pass back on one takes only its own (#921). */
+    @Test fun eachServerKeepsItsOwnDndNotice() {
+        val b = app.addAccount("https://b.example", "")
+        bg { b.saveSound("ding") }
+        app.tray.dndNotice()
+        b.tray.dndNotice()
+        b.prefs.edit().putBoolean("dnd_lost", true).apply()
+        nm.getNotificationChannel(Sounds.channel(5, "ding")).setBypassDnd(true)
+        assertFalse(b.tray.dndLost())
+        assertNull(shadowOf(nm).getNotification("dnd${b.id}", Tray.DND_ID))
+        assertNotNull("account 0's notice stays", shadowOf(nm).getNotification(null, Tray.DND_ID))
+        b.db.close()
+    }
+
+    /** A changed question on server B moves only B's count, not account 0's entry with the same id (#921). */
+    @Test fun aChangedQuestionBelongsToItsServer() {
+        val b = app.addAccount("https://b.example", "")
+        val typed = Pending(notifId = "a", action = "reply", body = """{"reply":"note","text":"Back at 5","seq":1}""")
+        bg { RoomStore(app, b).replyOutcome(typed, "conflict") }
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, b.changed["a"])
+        assertNull(app.account.changed["a"])
+        b.db.close()
+    }
+
+    /** A lone swipe acts a second later, and only for the sign-in it was posted under (#921). */
+    @Test fun aSwipeBeforeANewSignInIsRefused() {
+        app.shadeClears = true
+        bg { app.account.saveServer("https://a.example", "old") }
+        bg { RoomStore(app).apply(listOf(row("a")), 1) }
+        val data = shadowOf(shadowOf(nm).getNotification("a", 0)!!.deleteIntent).savedIntent.dataString!!
+        app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(Tray.ACTION_DISMISS).setData(Uri.parse(data)).putExtra(Tray.EXTRA_ID, "a").putExtra(Tray.EXTRA_SERVER, "https://a.example"))
+        shadowOf(Looper.getMainLooper()).idle() // the tap arrives under the old sign-in
+        bg { app.account.saveServer("https://a.example", "new") } // a new sign-in inside the wait
+        bg { RoomStore(app).apply(listOf(row("a")), 1) } // the new server's row with the same id
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(App.LONE_MS + 100))
+        drain()
+        assertEquals(emptyList<Pending>(), bg { app.db.dao().pending() })
+    }
+
+    /** With no sync running, one server's send that hangs leaves another server's action free to go (#921). */
+    @Test fun aStalledSendWithoutSyncLeavesTheOtherServerFree() {
+        val arrived = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val slow = MockWebServer().apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse { arrived.countDown(); release.await(20, TimeUnit.SECONDS); return MockResponse().setBody("{}") }
+            }
+            start()
+        }
+        val fast = MockWebServer().apply { dispatcher = object : Dispatcher() { override fun dispatch(request: RecordedRequest) = MockResponse().setBody("{}") }; start() }
+        try {
+            bg { app.account.saveServer(slow.url("/").toString().trimEnd('/'), "t") }
+            val b = app.addAccount(fast.url("/").toString().trimEnd('/'), "t")
+            app.account.actAll(listOf("a"), "ack", "{}", null, App.VIA_APP) {}
+            assertTrue(arrived.await(10, TimeUnit.SECONDS))
+            b.actAll(listOf("a"), "ack", "{}", null, App.VIA_APP) {}
+            val until = System.currentTimeMillis() + 5000
+            while (bg { b.db.dao().pending() }.isNotEmpty() && System.currentTimeMillis() < until) Thread.sleep(50)
+            assertEquals("B's send waited on account 0's", emptyList<Pending>(), bg { b.db.dao().pending() })
+            b.db.close()
+        } finally {
+            release.countDown()
+            slow.shutdown()
+            fast.shutdown()
+        }
     }
 
     /** One server's send that hangs does not hold back another server's queue. */

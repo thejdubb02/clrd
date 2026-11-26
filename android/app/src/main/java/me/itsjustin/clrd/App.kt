@@ -144,11 +144,7 @@ class App : Application() {
     val acts = Executors.newSingleThreadExecutor()
     /** The shown server's refused typed answers ([Account.drafts]). */
     val drafts get() = cur.drafts
-    /** Typed answers refused because the question changed (409), counted by notification id, so a reply box open on it closes (#516). */
-    val changed = androidx.compose.runtime.mutableStateMapOf<String, Int>()
     val sender get() = cur.sender
-    /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
-    internal val sends = Executors.newSingleThreadExecutor()
 
     // Forwarders to the shown server ([shown]), so the screens read it as they read the one server before. Explicit
     // getters, not "by account::": that would open the account before the app has a context. Background paths
@@ -244,10 +240,10 @@ class App : Application() {
      * swipe, a bundle swipe and Clear all, so it waits [LONE_MS] and clears only if no other row left near it.
      * The receiver returns at once: holding it would hold back the next delete in a burst, so the first row would look alone.
      */
-    fun swiped(id: String, server: String?, acct: Account = account) {
+    fun swiped(id: String, server: String?, acct: Account = account, gen: Int = acct.configGen) {
         val at = android.os.SystemClock.uptimeMillis()
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            if (synchronized(leftShade) { lone(leftShade, at) }) acct.actAll(listOf(id), "dismiss", "{}", server, VIA_TRAY_SWIPE) {}
+            if (synchronized(leftShade) { lone(leftShade, at) }) acct.actAll(listOf(id), "dismiss", "{}", server, VIA_TRAY_SWIPE, gen = gen) {} // the sign-in the swipe came from (#921)
         }, LONE_MS)
     }
 
@@ -433,7 +429,7 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
         if (outcome == "bad_request" || outcome == "approve_denied" || outcome == "own_request") { if (typed.isNotEmpty()) acct.drafts[p.notifId] = typed }
         else acct.drafts.remove(p.notifId)
         android.os.Handler(android.os.Looper.getMainLooper()).post {
-            if (outcome == "conflict") app.changed[p.notifId] = (app.changed[p.notifId] ?: 0) + 1 // Compose state, so on the main thread
+            if (outcome == "conflict") acct.changed[p.notifId] = (acct.changed[p.notifId] ?: 0) + 1 // Compose state, so on the main thread
             android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show()
         }
     }

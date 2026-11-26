@@ -156,7 +156,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
         // Every other server's sound keeps its channels too (#78): the sound is a server setting.
         val keep = mine.map { it.id }.toSet() + App.of(ctx).accounts.filter { it.id != acct.id }.flatMap { a -> (1..5).map { Sounds.channel(it, a.sound) } }
         val gone = ours.map { it.id }.filter { it !in keep }.toSet()
-        val noticeUp = nm.activeNotifications.any { it.id == DND_ID && it.tag == null }
+        val noticeUp = nm.activeNotifications.any { it.id == DND_ID && it.tag == dndTag }
         // Cancelled by us first: Android's own cancel on channel delete can fire the delete intent, which reads as a swipe.
         nm.activeNotifications.filter { it.notification.channelId in gone }.forEach { nm.cancel(it.tag, it.id) }
         gone.forEach(nm::deleteNotificationChannel)
@@ -167,6 +167,9 @@ class Tray(private val ctx: Context, private val acct: Account) {
         return dndLost(sound, had) && (had || noticeUp)
     }
 
+    /** The DND notice's tag: none for account 0, as before; its server's id for the others (#921). */
+    private val dndTag get() = if (acct.id == 0) null else "dnd${acct.id}"
+
     /**
      * A sound change from the server or an agent took the Do Not Disturb pass (#380). The person is not in
      * Settings to see the note there, so the tray says it once; a tap opens the switch.
@@ -176,13 +179,13 @@ class Tray(private val ctx: Context, private val acct: Account) {
             .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
             .putExtra(Settings.EXTRA_CHANNEL_ID, Sounds.channel(5, sound))
         nm.notify(
-            DND_ID,
+            dndTag, DND_ID, // one per server (#921): another server's notice neither replaces nor clears it
             NotificationCompat.Builder(ctx, Sounds.channel(5, sound)) // the channel it is about: muted only if urgent ones are
                 .setSmallIcon(R.drawable.ic_stat_clrd)
                 .setContentTitle(ctx.getString(R.string.dnd_notice_title))
                 .setContentText(ctx.getString(R.string.dnd_notice))
                 .setStyle(NotificationCompat.BigTextStyle().bigText(ctx.getString(R.string.dnd_notice)))
-                .setContentIntent(PendingIntent.getActivity(ctx, DND_ID, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+                .setContentIntent(PendingIntent.getActivity(ctx, DND_ID or (acct.id shl 8), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
                 .build(), // no auto cancel: it stays until the pass is back (see [dndLost])
         )
     }
@@ -195,7 +198,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
         val was = prefs.getBoolean("dnd_lost", false)
         val lost = Sounds.dndLost(was, replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
         prefs.edit().putBoolean("dnd_lost", lost).apply()
-        if (was && !lost) nm.cancel(DND_ID) // turned back on: the tray notice has done its job
+        if (was && !lost) nm.cancel(dndTag, DND_ID) // turned back on: the tray notice has done its job
         return lost
     }
 
@@ -242,6 +245,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
     /** Takes every entry of this account out of the tray, for a removed server. Writes nothing: its files are going. */
     fun clear() {
         nm.activeNotifications.filter { (it.id == 0 && owns(it.tag, tagPrefix)) || (it.id == SUMMARY_ID && owns(it.tag, group)) }.forEach { nm.cancel(it.tag, it.id) }
+        nm.cancel(dndTag, DND_ID) // its Do Not Disturb notice too (#921)
     }
 
     /**
@@ -419,7 +423,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
         /** The data of [inbox] past account 0, with [QUERY_ACCOUNT]; [MainActivity] matches on it. */
         const val OPEN = "clrd://open"
         const val SUMMARY_ID = 1
-        const val DND_ID = 2 // no tag, so the tray rebuild (tagged, id 0 or 1) never touches it
+        const val DND_ID = 2 // the tray rebuild cancels only ids 0 and 1, so it never touches this notice
         const val EXTRA_ID = "id"
         const val EXTRA_SERVER = "server"
         const val EXTRA_REPLY = "reply"
