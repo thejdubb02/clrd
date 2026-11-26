@@ -1,0 +1,1 @@
+- Android with several servers: a Do Not Disturb notice left by an older version comes back tagged for each server that still lacks the pass, a sender HTTP button no longer fires after a new sign-in that lands while it connects, and a tray reply from before a new sign-in no longer posts a notification again.

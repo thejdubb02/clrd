@@ -191,24 +191,38 @@ class Tray(private val ctx: Context, private val acct: Account) {
     }
 
     /** True when a sound change dropped the Urgent channel's Do Not Disturb pass and the person has not set it again (#346). */
-    @Synchronized // Settings and a sound change both read then write the flag; a stale false must not undo a fresh true
     fun dndLost(sound: String = acct.sound, replacedHadIt: Boolean = false): Boolean {
-        // Per server (#860): another server's sync must not clear the note this one raised. Account 0's is the old phone-wide key.
-        val prefs = acct.prefs
-        val was = prefs.getBoolean("dnd_lost", false)
-        val lost = Sounds.dndLost(was, replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
-        prefs.edit().putBoolean("dnd_lost", lost).apply()
-        if (was && !lost) cancelDnd() // turned back on: the tray notice has done its job
+        // Settings and a sound change both read then write the flag; a stale false must not undo a fresh true.
+        val (restored, lost) = synchronized(this) {
+            // Per server (#860): another server's sync must not clear the note this one raised. Account 0's is the old phone-wide key.
+            val prefs = acct.prefs
+            val was = prefs.getBoolean("dnd_lost", false)
+            val lost = Sounds.dndLost(was, replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
+            prefs.edit().putBoolean("dnd_lost", lost).apply()
+            if (was && !lost) nm.cancel(dndTag, DND_ID) // turned back on: the tray notice has done its job
+            (was && !lost) to lost
+        }
+        if (restored) dropUntagged() // outside this lock: it takes the app's and other servers' (#951)
         return lost
     }
 
+    /** Puts this server's notice up again if its pass is still lost and the notice is not showing (#951). */
+    @Synchronized fun dndAgain() {
+        if (acct.prefs.getBoolean("dnd_lost", false) && nm.activeNotifications.none { it.tag == dndTag && it.id == DND_ID }) dndNotice()
+    }
+
     /**
-     * Takes this server's Do Not Disturb notice down. Before #921 another server's notice had no tag, so that
-     * untagged one goes too while account 0 has none of its own up (#943).
+     * Before #921 every server's notice had no tag, so the untagged one goes when this server's does, unless account 0
+     * still has its own up (#943). Its owner is unknown, so each other server still without the pass then shows its own
+     * tagged one (#951). Never called under this tray's lock: that order would deadlock against a sound change.
      */
-    private fun cancelDnd() {
-        nm.cancel(dndTag, DND_ID)
-        if (dndTag != null && !App.of(ctx).account.prefs.getBoolean("dnd_lost", false)) nm.cancel(null, DND_ID)
+    private fun dropUntagged() {
+        val app = App.of(ctx)
+        if (dndTag != null) {
+            if (app.account.prefs.getBoolean("dnd_lost", false)) return
+            nm.cancel(null, DND_ID)
+        }
+        app.accounts.filter { it.id != 0 && it.id != acct.id }.forEach { it.tray.dndAgain() }
     }
 
     /** True when the phone's own settings override the chosen sound (changed sound or importance on p3..p5). */
@@ -219,8 +233,9 @@ class Tray(private val ctx: Context, private val acct: Account) {
         )
 
     /** Post one row again, quietly, as Room has it: clears the spinner Android shows after an inline reply (#153). */
-    fun repost(id: String) {
-        if (acct.removed) return // a closed database would open again and bring the deleted file back
+    fun repost(id: String, gen: Int): Unit = synchronized(acct.configLock) {
+        // Under the sign-in lock and only for sign-in [gen]: a row read before a new sign-in never comes back stamped with its number (#951).
+        if (acct.removed || gen != acct.configGen) return // a closed database would open again and bring the deleted file back
         val n = runCatching { acct.db.dao().get(id) }.getOrNull() ?: return // closed by a remove in between
         apply(TrayStep.plan(n, acct.muted).let { if (it is TrayStep.Show) TrayStep.Show(n, silent = true) else it })
     }
@@ -254,7 +269,8 @@ class Tray(private val ctx: Context, private val acct: Account) {
     /** Takes every entry of this account out of the tray, for a removed server. Writes nothing: its files are going. */
     fun clear() {
         nm.activeNotifications.filter { (it.id == 0 && owns(it.tag, tagPrefix)) || (it.id == SUMMARY_ID && owns(it.tag, group)) }.forEach { nm.cancel(it.tag, it.id) }
-        cancelDnd() // its Do Not Disturb notice too (#921)
+        nm.cancel(dndTag, DND_ID) // its Do Not Disturb notice too (#921)
+        dropUntagged()
     }
 
     /**
