@@ -25,6 +25,7 @@ internal val SETTINGS = listOf(
     Setting(R.string.section_devices, "link-phone", R.string.link_phone, R.string.link_phone_explain, listOf("qr", "scan", "pair", "code", "add phone")),
     Setting(R.string.section_devices, "client-cert", R.string.client_cert, R.string.client_cert_explain, listOf("certificate", "mtls", "mutual tls", "tls", "key")),
     Setting(R.string.section_integrations, "senders", R.string.senders_title, R.string.senders_explain, listOf("sender", "rules", "bot", "agent", "allow")),
+    Setting(R.string.section_about, "about", R.string.about_title, R.string.about_explain, listOf("version", "what's new", "changelog", "release", "update", "build")),
 )
 
 /** SPEC 9.1: the typed text, trimmed and ignoring case, appears in the label, the description or a keyword. */

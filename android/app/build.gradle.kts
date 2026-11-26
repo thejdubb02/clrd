@@ -97,8 +97,30 @@ val copySounds = tasks.register<CopySounds>("copySounds") {
     wavs.from(fileTree(rootDir.resolve("../assets/sounds")) { include("*.wav") })
 }
 
+// What's new offline (#580): the released versions of CHANGELOG.md, without Unreleased, so the copy only
+// grows when a version is cut. Read by About.kt when the server cannot be reached.
+abstract class CutChangelog : DefaultTask() {
+    @get:InputFile abstract val changelog: RegularFileProperty
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    @TaskAction fun cut() {
+        val raw = outputDir.get().dir("raw").asFile
+        raw.mkdirs()
+        val lines = changelog.get().asFile.readLines()
+        val first = lines.indexOfFirst { it.startsWith("## ") && !it.startsWith("## Unreleased") }
+        raw.resolve("changelog.md").writeText(if (first < 0) "" else lines.drop(first).joinToString("\n"))
+    }
+}
+
+val cutChangelog = tasks.register<CutChangelog>("cutChangelog") {
+    changelog.set(rootDir.resolve("../CHANGELOG.md"))
+}
+
 androidComponents {
-    onVariants { v -> v.sources.res?.addGeneratedSourceDirectory(copySounds, CopySounds::outputDir) }
+    onVariants { v ->
+        v.sources.res?.addGeneratedSourceDirectory(copySounds, CopySounds::outputDir)
+        v.sources.res?.addGeneratedSourceDirectory(cutChangelog, CutChangelog::outputDir)
+    }
 }
 
 dependencies {

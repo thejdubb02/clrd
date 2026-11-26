@@ -2,10 +2,10 @@ package server
 
 import (
 	"bufio"
-	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -515,6 +515,50 @@ func TestExternalIDWithSlash(t *testing.T) {
 	}
 }
 
+func TestNtfyMixedPublishOptions(t *testing.T) {
+	_, ts, admin := newTest(t)
+	const topic = "mixed"
+	at := time.Now().Add(time.Hour).Unix()
+	t.Run("header and query fallback", func(t *testing.T) {
+		code, out := raw(t, "POST", fmt.Sprintf("%s/?in=%d&sid=mixed-id&md=no&filename=report.txt", ts.URL, at),
+			admin, `{"topic":"mixed"}`, map[string]string{
+				"Message": "from header",
+				"Actions": "view, Open, https://example.com/report",
+				"Attach":  "https://example.com/file",
+			})
+		m := ntfyDecode(t, out)
+		if code != 200 || m.Topic != topic || m.Message != "from header" || m.Time != at || m.SequenceID != "mixed-id" ||
+			m.ContentType != "" || len(m.Actions) != 1 || m.Actions[0].URL != "https://example.com/report" ||
+			m.Attachment == nil || m.Attachment.Name != "report.txt" || m.Attachment.URL != "https://example.com/file" {
+			t.Fatalf("mixed publish: %d %s", code, out)
+		}
+	})
+	t.Run("JSON wins", func(t *testing.T) {
+		body := fmt.Sprintf(`{"topic":"mixed","message":"from JSON","delay":"%d","sequence_id":"json-id","markdown":false,"tags":[],"actions":[],"cache":"yes"}`, at)
+		code, out := raw(t, "POST", ts.URL+"/?delay=invalid&sid=query-id&md=yes&tags=query",
+			admin, body, map[string]string{"Message": "from header", "Actions": "[invalid", "Cache": "no"})
+		m := ntfyDecode(t, out)
+		if code != 200 || m.Message != "from JSON" || m.Time != at || m.SequenceID != "json-id" ||
+			m.ContentType != "" || len(m.Actions) != 0 || len(m.Tags) != 0 {
+			t.Fatalf("JSON precedence: %d %s", code, out)
+		}
+	})
+	t.Run("Markdown media type", func(t *testing.T) {
+		code, out := raw(t, "PUT", ts.URL+"/mixed", admin, "**bold**",
+			map[string]string{"Content-Type": "text/markdown; charset=utf-8", "Markdown": "no"})
+		if m := ntfyDecode(t, out); code != 200 || m.ContentType != "text/markdown" {
+			t.Fatalf("Markdown media type: %d %s", code, out)
+		}
+	})
+	t.Run("invalid fallback is rejected", func(t *testing.T) {
+		for _, h := range []map[string]string{{"Actions": "[invalid"}, {"Delay": "later-ish"}} {
+			if code, out := raw(t, "POST", ts.URL+"/", admin, `{"topic":"mixed","message":"hello"}`, h); code != 400 {
+				t.Errorf("invalid option %v: %d %s", h, code, out)
+			}
+		}
+	})
+}
+
 // Review fixes on PR #11: an empty topic list, a lowercase auth scheme and a
 // delay past ntfy's 3-day limit.
 func TestNtfyEdgeInputs(t *testing.T) {
@@ -564,12 +608,16 @@ func TestNtfyDelayTimezone(t *testing.T) {
 	if err != nil {
 		t.Skip("no timezone database")
 	}
-	for _, c := range []struct{ path, body string }{{"/tz", ""}, {"/", `{"topic":"tz","message":"m","delay":"10am","timezone":"Asia/Tokyo"}`}} {
-		hdr := map[string]string{"At": "10am", "X-Timezone": "Asia/Tokyo"}
-		if c.body != "" {
-			hdr = nil
-		}
-		code, out := raw(t, "POST", ts.URL+c.path, admin, cmp.Or(c.body, "m"), hdr)
+	for _, c := range []struct {
+		path, body string
+		hdr        map[string]string
+	}{
+		{"/tz", "m", map[string]string{"At": "10am", "X-Timezone": "Asia/Tokyo"}},
+		{"/?timezone=Mars/Base", `{"topic":"tz","message":"m","delay":"10am","timezone":"Asia/Tokyo"}`, map[string]string{"Timezone": "Mars/Base"}},
+		{"/?at=10am&timezone=Mars/Base", `{"topic":"tz","message":"m"}`, map[string]string{"Timezone": "Asia/Tokyo"}},
+		{"/?at=10am&timezone=Asia/Tokyo", `{"topic":"tz","message":"m"}`, nil},
+	} {
+		code, out := raw(t, "POST", ts.URL+c.path, admin, c.body, c.hdr)
 		at := time.Unix(ntfyDecode(t, out).Time, 0).In(tokyo)
 		if ahead := time.Until(at); code != 200 || at.Hour() != 10 || at.Minute() != 0 || ahead <= 0 || ahead > 24*time.Hour {
 			t.Errorf("%s: 10am in Tokyo came back as %v: %d %s", c.path, at, code, out)

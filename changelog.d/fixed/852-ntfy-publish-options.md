@@ -1,0 +1,1 @@
+- ntfy JSON publishes read omitted options such as actions and delay from headers and query parameters. Raw publishes also honor `Content-Type: text/markdown` (#852).
