@@ -6,7 +6,7 @@
 <section class="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-4 pt-12 pb-14 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14 lg:py-22">
   <div>
     <h1 class="text-foreground mb-6 max-w-[9ch] text-[44px]/[0.98] font-semibold tracking-[-0.05em] sm:text-7xl/[0.98]">Dismiss once. Gone everywhere.</h1>
-    <p class="max-w-[34em] text-lg/relaxed">clrd is a self-hosted notification server. Send an alert with one HTTP call. It lands on your phone, your tablet and the web inbox. A synced clear reaches the other devices when they connect.</p>
+    <p class="max-w-[34em] text-lg/relaxed">clrd is a self-hosted notification server. Send an alert with one HTTP call. It lands on your phone, your tablet and the web inbox. Clear it on any of them and it clears on all the others.</p>
     <p class="mt-7 mb-5 flex flex-wrap gap-2">
       <a class="btn" data-variant="primary" data-size="lg" href="#self-host">Self-host clrd</a>
       <a class="btn" data-variant="outline" data-size="lg" href="{{base}}/docs/">Read the docs</a>
@@ -26,7 +26,7 @@
       {{template "follower" "web inbox"}}
       {{template "follower" "tablet"}}
     </div>
-    <figcaption id="demo-cap" class="text-muted-foreground mt-3.5 text-sm">Cleared in the phone app. The web inbox and tablet follow.</figcaption>
+    <figcaption id="demo-cap" class="text-muted-foreground mt-3.5 text-sm">Swiped away in the phone app. The web inbox and the tablet clear in the same second.</figcaption>
   </figure>
 </section>
 
@@ -34,7 +34,7 @@
   <div>
     <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="inbox">The web inbox</h2>
     <p class="mt-2 max-w-[60ch] text-lg">Every alert is a card you can act on. Clear it, acknowledge it, snooze it, answer an agent's question, or mark that you dealt with it so the rest of the team knows.</p>
-    <p class="text-muted-foreground mt-3 text-sm">Sample cards use the inbox template, with buttons disabled.</p>
+    <p class="text-muted-foreground mt-3 text-sm">This sample is drawn by the same template as the real inbox, so it always matches it. The buttons do nothing here.</p>
   </div>
   {{with demo}}{{$d := .}}<fieldset class="grid min-w-0 gap-2" disabled inert aria-label="Sample inbox">
     {{range .Items}}{{template "card" (card . "demo" "" $d.Snap)}}{{end}}

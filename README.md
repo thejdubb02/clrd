@@ -7,11 +7,11 @@
 <p align="center"><strong>Self-hosted push notifications. Dismiss once, gone everywhere.</strong></p>
 
 Send an alert with one HTTP call. It shows up on your Android phone, your tablet
-and the web inbox. Clear it in the app or web inbox and the other devices
-catch up when they sync. Turn off "Clears everywhere" on a device to keep its
-clears local. Swiping a phone notification away only hides it on that phone
-unless you turn on "Swipe clears everywhere". A sender can resolve the alert
-when the problem is fixed.
+and the web inbox. Clear it on any one of them (in the phone app, or Clear on
+the web) and it clears on all the others. Swiping a phone notification away
+only hides it on that phone, unless you turn on "Swipe clears everywhere". When the problem fixes itself, the sender resolves it and it clears
+everywhere without anyone touching it.
+A device can turn off "Clears everywhere" to keep its clears local.
 
 For a setup behind an HTTPS proxy, start it with `CLRD_BASE_URL` set to the
 HTTPS address your proxy serves it on, open the setup link it prints to make
@@ -50,8 +50,8 @@ by `android/app/src/test/java/me/itsjustin/clrd/ScreensTest.kt`.
 clrd publishes and subscribes the [ntfy](https://github.com/binwiederhier/ntfy)
 way. The difference: in ntfy, when you clear a notification on one
 device, your other devices keep it. clrd keeps every notification's state on
-the server, so a synced clear reaches other devices, including phones
-that catch up after being offline.
+the server, so a clear anywhere clears it everywhere, and a phone that was
+offline catches up the moment it reconnects.
 
 ## Features
 
@@ -97,7 +97,7 @@ that catch up after being offline.
   changed. See [Pushover senders](docs/integrations/pushover.md).
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
   tokens, per-topic access rules, message history and attachments, so you can
-  swap the hostname and keep the supported credentials. See
+  swap the hostname and keep existing passwords and non-expiring access tokens. See
   [Switch from ntfy](docs/migrate-from-ntfy.md).
   Email is not supported.
 - **Files and icons.** Agents and scripts can attach a file or an icon to a
