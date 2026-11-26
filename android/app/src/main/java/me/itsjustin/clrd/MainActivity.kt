@@ -161,6 +161,8 @@ class MainActivity : ComponentActivity() {
     val battery = mutableStateOf<Intent?>(null)
     /** Counts resumes, so Settings re-reads what the phone's own settings changed meanwhile (the sound). */
     val resumes = mutableStateOf(0)
+    /** Counts tray opens, so the inbox tab comes to the front for each (#78). */
+    val opens = mutableStateOf(0)
 
     /** The browser sign-in or phone link in progress, if any. */
     val pair = mutableStateOf<PairUi?>(null)
@@ -198,7 +200,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val look by app.appearance.collectAsState()
             ClrdTheme(look) {
-                Home(app, battery.value, resumes.value, ::scan)
+                Home(app, battery.value, resumes.value, opens.value, ::scan)
                 PairDialog(pair.value, { pair.value = it }, ::approvePair, ::claimLink)
             }
         }
@@ -210,8 +212,8 @@ class MainActivity : ComponentActivity() {
         handleOpen(intent)
     }
 
-    /** A tray entry of another server opens the app on that server (#78). */
-    private fun handleOpen(intent: Intent) = openedAccount(intent)?.let(App.of(this)::show)
+    /** A tray entry opens the app on its server, account 0 included, at the inbox (#78). */
+    private fun handleOpen(intent: Intent) = openedAccount(intent)?.let { App.of(this).show(it); opens.value++ }
 
     private fun handlePair(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
@@ -390,9 +392,10 @@ private enum class Tab(val label: Int, val icon: ImageVector) {
 }
 
 @Composable
-private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
+internal fun Home(app: App, battery: Intent?, resumes: Int, opens: Int, scan: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
     // Everything below reads the shown server (#78), so a switch starts it afresh; only the tab carries over.
+    LaunchedEffect(opens) { if (opens > 0 && app.configured) tab = Tab.Inbox } // a tray tap lands on the inbox
     val shown by app.shown.collectAsState()
     androidx.compose.runtime.key(shown.id) { ServerHome(app, battery, resumes, scan, tab) { tab = it } }
 }
@@ -406,6 +409,7 @@ private fun ServerHome(app: App, battery: Intent?, resumes: Int, scan: () -> Uni
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val dao = app.db.dao()
+    val a = remember { app.shown.value } // the server this screen was drawn for; a job queued before a switch still writes to it (#78)
     val ctx = LocalContext.current
     val status by app.status.collectAsState()
     val snooze by app.snooze.collectAsState() // the times a swiped card's Snooze offers
@@ -441,11 +445,11 @@ private fun ServerHome(app: App, battery: Intent?, resumes: Int, scan: () -> Uni
     val unsubscribeNow: (String) -> Unit = { t ->
         val api = app.api()
         app.io.execute {
-            val err = app.subscribe(t, false, api)
+            val err = a.subscribe(t, false, api)
             scope.launch {
                 if (err != null) snackbar.showSnackbar(ctx.getString(R.string.subs_failed, err))
                 else if (snackbar.showSnackbar(ctx.getString(R.string.unsubscribed, t), ctx.getString(R.string.undo), duration = androidx.compose.material3.SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
-                    app.io.execute { app.subscribe(t, true, api)?.let { e -> scope.launch { snackbar.showSnackbar(ctx.getString(R.string.subs_failed, e)) } } }
+                    app.io.execute { a.subscribe(t, true, api)?.let { e -> scope.launch { snackbar.showSnackbar(ctx.getString(R.string.subs_failed, e)) } } }
                 }
             }
         }
@@ -456,7 +460,7 @@ private fun ServerHome(app: App, battery: Intent?, resumes: Int, scan: () -> Uni
     val unsubscribe: (String) -> Unit = { t ->
         val api = app.api()
         app.io.execute {
-            val warn = asksFirst(t, runCatching { app.loadSubs(api) }.getOrNull())
+            val warn = asksFirst(t, runCatching { a.loadSubs(api) }.getOrNull())
             scope.launch { if (warn) asking = t else unsubscribeNow(t) }
         }
     }
@@ -591,7 +595,7 @@ private fun ServerCleared(app: App, here: Int, newest: String?) {
     val b = LocalBrand.current
     var total by remember { mutableStateOf(-1) }
     LaunchedEffect(here, newest) { // a new clear at the 200-row cap keeps the size but changes the top row
-        app.io.execute { app.pruneCleared() } // rows age out while the tab is open on an idle connection
+        val a = app.shown.value; app.io.execute { a.pruneCleared() } // rows age out while the tab is open on an idle connection
         if (!app.configured) return@LaunchedEffect
         val api = app.api()
         app.io.execute { runCatching { org.json.JSONObject(api.get("/api/v1/counts")).getInt("cleared") }.getOrNull()?.let { total = it } }
@@ -1048,6 +1052,7 @@ private fun ConfirmUnsubscribe(topic: String?, dismiss: () -> Unit, go: (String)
 private fun SubscriptionSettings(app: App, resumes: Int, gone: () -> Unit) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
+    val a = remember { app.shown.value } // the server this screen was drawn for; a job queued before a switch still writes to it (#78)
     val subs by app.subs.collectAsState()
     val filtered = subs?.filtered == true
     var list by remember { mutableStateOf<SubsList?>(null) }
@@ -1061,7 +1066,7 @@ private fun SubscriptionSettings(app: App, resumes: Int, gone: () -> Unit) {
         if (!filtered) return@LaunchedEffect
         val api = app.api()
         app.io.execute {
-            try { app.loadSubs(api)?.let { list = it; error = null } ?: gone() } catch (e: Exception) { error = why(e) }
+            try { a.loadSubs(api)?.let { list = it; error = null } ?: gone() } catch (e: Exception) { error = why(e) }
         }
     }
     val sending = remember { java.util.concurrent.atomic.AtomicInteger() }
@@ -1072,9 +1077,9 @@ private fun SubscriptionSettings(app: App, resumes: Int, gone: () -> Unit) {
         val api = app.api()
         sending.incrementAndGet()
         app.io.execute { // one thread, so changes reach the server in tap order; only the last answer shows
-            try { app.putSubs(body, api).let { if (sending.decrementAndGet() == 0) list = it }; error = null } catch (e: Exception) {
+            try { a.putSubs(body, api).let { if (sending.decrementAndGet() == 0) list = it }; error = null } catch (e: Exception) {
                 error = why(e)
-                if (sending.decrementAndGet() == 0) runCatching { app.loadSubs(api) }.getOrNull()?.let { list = it } // nothing changed on the server
+                if (sending.decrementAndGet() == 0) runCatching { a.loadSubs(api) }.getOrNull()?.let { list = it } // nothing changed on the server
             }
         }
     }
@@ -1874,6 +1879,7 @@ private fun AgentInvite(app: App, hold: AgentHold, close: () -> Unit) {
 private fun DisplaySettings(app: App) {
     val b = LocalBrand.current
     val locked by app.swipesLocked.collectAsState()
+    val a = remember { app.shown.value } // the server this screen was drawn for; a job queued before a switch still writes to it (#78)
     var result by remember { mutableStateOf<String?>(null) }
     Text(stringResource(R.string.formatting_settings), color = b.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
     Text(stringResource(if (locked) R.string.formatting_locked else R.string.formatting_explain), color = b.slate, fontSize = 13.sp)
@@ -1884,7 +1890,7 @@ private fun DisplaySettings(app: App) {
         val on by flow.collectAsState()
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(label), color = b.body, fontSize = 14.sp, modifier = Modifier.weight(1f))
-            Switch(checked = on, enabled = !locked, modifier = Modifier.testTag("display-$key"), onCheckedChange = { v -> app.io.execute { result = app.saveDisplay(key, v) } })
+            Switch(checked = on, enabled = !locked, modifier = Modifier.testTag("display-$key"), onCheckedChange = { v -> app.io.execute { result = a.saveDisplay(key, v) } })
         }
     }
     result?.let { Text(it, color = b.signal, fontSize = 13.sp) }
@@ -1894,6 +1900,7 @@ private fun DisplaySettings(app: App) {
 private fun SwipeSettings(app: App) {
     val b = LocalBrand.current
     val s by app.swipes.collectAsState()
+    val a = remember { app.shown.value } // the server this screen was drawn for; a job queued before a switch still writes to it (#78)
     val locked by app.swipesLocked.collectAsState()
     var result by remember { mutableStateOf<String?>(null) }
     val full = stringResource(R.string.swipe_full, Swipes.MAX)
@@ -1917,7 +1924,7 @@ private fun SwipeSettings(app: App) {
                     selected = at >= 0, enabled = !locked,
                     onClick = {
                         // From the latest value on io, not this frame's: two quick taps both count.
-                        app.io.execute { val next = app.swipes.value.toggle(name, toStart); result = if (next == null) full else app.saveSwipes(next) }
+                        app.io.execute { val next = a.swipes.value.toggle(name, toStart); result = if (next == null) full else a.saveSwipes(next) }
                     },
                     label = { Text(if (at >= 0) stringResource(R.string.swipe_place, at + 1, label) else label) },
                 )
@@ -1980,6 +1987,7 @@ private fun SnoozeSettings(app: App) {
 private fun SoundSettings(app: App, resumes: Int) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
+    val a = remember { app.shown.value } // the server this screen was drawn for; a job queued before a switch still writes to it (#78)
     val sound by app.soundNow.collectAsState() // follows a change from the server or an agent (#289)
     var saves by remember { mutableStateOf(0) } // bumped once a save has made the channels, so the check reads them
     var why by remember { mutableStateOf<String?>(null) } // why the choice stays on this phone only
@@ -1994,8 +2002,8 @@ private fun SoundSettings(app: App, resumes: Int) {
     Sounds.NAMES.forEach { name ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             RadioButton(selected = name == sound, onClick = {
-                app.soundNow.value = name
-                app.io.execute { why = app.pickSound(name); saves++ }
+                a.soundNow.value = name
+                app.io.execute { why = a.pickSound(name); saves++ }
             })
             Text(stringResource(soundLabel(name)), color = b.ink, modifier = Modifier.weight(1f))
             Sounds.uri(ctx, name)?.let { uri ->
@@ -2057,6 +2065,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val saved by app.saved.collectAsState() // a linked phone's new server and token show here at once
+    val a = remember { app.shown.value } // the server this screen was drawn for; a job queued before a switch still writes to it (#78)
     var muted by remember { mutableStateOf(app.muted) }
     var stack by remember { mutableStateOf(app.stack) }
     var drop by remember { mutableStateOf(app.dropCleared) }
@@ -2122,12 +2131,14 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 val newUrl = serverAddress(url)
                 url = newUrl
                 val newToken = token.trim()
+                // One slot per address: another try at a server this phone has would take its token and wipe its notifications.
+                if (adding && app.accountAt(newUrl) != null) { result = ctx.getString(R.string.server_already, newUrl); return@Button }
                 app.io.execute {
                     // Another server is tried first and kept only once it answers, so a typo adds nothing (#78).
-                    if (!adding) app.saveServer(newUrl, newToken)
+                    if (!adding) a.saveServer(newUrl, newToken)
                     // /api/v1/topics needs the read scope, so this checks the URL and the token together.
                     result = try {
-                        (if (adding) Api(app.http, newUrl, newToken) else app.api()).get("/api/v1/topics")
+                        (if (adding) Api(app.http, newUrl, newToken) else a.api()).get("/api/v1/topics")
                         if (adding) app.saveTo(newUrl, newToken) // shows it, so this screen is drawn again for it
                         SyncService.start(ctx, restart = true)
                         ctx.getString(R.string.test_ok)
@@ -2199,8 +2210,8 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                         Spacer(Modifier.width(8.dp))
                         Switch(checked = t !in muted, onCheckedChange = { on ->
                             muted = if (on) muted - t else muted + t
-                            app.muted = muted
-                            app.io.execute { RoomStore(app, app.shown.value).reconcile() }
+                            a.muted = muted
+                            app.io.execute { RoomStore(app, a).reconcile() }
                         })
                     }
                 }
@@ -2213,7 +2224,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             "drop-cleared" -> Toggle(R.string.drop_cleared, R.string.drop_cleared_explain, drop) { on ->
                 drop = on
                 app.dropCleared = on
-                app.io.execute { app.pruneCleared() }
+                app.io.execute { a.pruneCleared() }
             }
             "appearance" -> {
                 Title(R.string.appearance)
@@ -2263,6 +2274,13 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
 
 internal const val REPO = "https://github.com/thejdubb02/clrd"
 
-/** The server a tray tap opens the app on (#78): only an app tap with [Tray.OPEN] data carries one. */
-internal fun openedAccount(i: Intent): Int? =
-    i.data?.takeIf { i.action == null && it.toString().startsWith(Tray.OPEN) }?.getQueryParameter(Tray.QUERY_ACCOUNT)?.toIntOrNull()
+/**
+ * The server a tray tap opens the app on (#78). [Tray]'s open intent has no action and CLEAR_TOP; account 0's
+ * has no data, as before #78, so it shows account 0, and another server's names itself in [Tray.OPEN] data.
+ * The launcher (ACTION_MAIN) and the sync notice (no CLEAR_TOP) leave the shown server as it is.
+ */
+internal fun openedAccount(i: Intent): Int? {
+    if (i.action != null || (i.flags and Intent.FLAG_ACTIVITY_CLEAR_TOP) == 0) return null
+    val d = i.data ?: return 0
+    return if (d.toString().startsWith(Tray.OPEN)) d.getQueryParameter(Tray.QUERY_ACCOUNT)?.toIntOrNull() ?: 0 else null
+}

@@ -315,6 +315,7 @@
     <string name="servers">Servers</string>
     <string name="servers_explain">Add another clrd server. Each keeps its own settings, connection and notifications; the inbox shows one at a time.</string>
     <string name="server_add">Add server</string>
+    <string name="server_already">%1$s is already added on this phone.</string>
     <string name="server_remove">Remove</string>
     <string name="server_remove_title">Remove %1$s?</string>
     <string name="server_remove_text">Its notifications and settings leave this phone. The server keeps its own copy, and this phone stays in its device list until you unlink it there.</string>

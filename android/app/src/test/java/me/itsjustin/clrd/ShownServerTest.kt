@@ -142,6 +142,10 @@ class ShownServerTest {
         assertEquals(b.id, openedAccount(open))
         Robolectric.buildActivity(MainActivity::class.java, open).create()
         assertEquals(b.id, app.shown.value.id)
+        val zero = shadowOf(shadowOf(nm).getNotification("a", 0)!!.contentIntent).savedIntent
+        assertNull("still today's intent", zero.data)
+        Robolectric.buildActivity(MainActivity::class.java, zero).create()
+        assertEquals("account 0's tap shows account 0", 0, app.shown.value.id)
 
         app.removeAccount(b.id)
         drain()
