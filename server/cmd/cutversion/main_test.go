@@ -119,6 +119,8 @@ func TestRunConsumesFragments(t *testing.T) {
 	write(changelog, "# Changelog\n\n## Unreleased\n\n### Added\n\n- Legacy entry.\n\n## 1.0.0 - 2026-01-01\n\n### Fixed\n\n- Older entry.\n")
 	write("changelog.d/README.md", "Instructions.")
 	const fragment = "changelog.d/fixed/issue.md"
+	const draft = "changelog.d/fixed/.draft.md"
+	write(draft, "- Leave this draft alone.\n")
 	write(fragment, "- A pending fix,\n  with a continuation.\n")
 
 	if err := run("1.0.0", "2026-01-02", ""); err == nil {
@@ -133,6 +135,9 @@ func TestRunConsumesFragments(t *testing.T) {
 	}
 	if _, err := os.Stat(fragment); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("fragment left behind: %v", err)
+	}
+	if _, err := os.Stat(draft); err != nil {
+		t.Fatalf("cut removed the draft: %v", err)
 	}
 	if _, err := os.Stat("changelog.d/README.md"); err != nil {
 		t.Fatal(err)
@@ -150,7 +155,7 @@ func TestRunConsumesFragments(t *testing.T) {
 		t.Fatalf("changelog: %+v", kept)
 	}
 	if len(moved) != 1 || moved[0].Version != "1.0.1" || !strings.Contains(string(arch), "- Legacy entry.") ||
-		!strings.Contains(string(arch), "- A pending fix,\n  with a continuation.") {
+		!strings.Contains(string(arch), "- A pending fix,\n  with a continuation.") || strings.Contains(string(arch), "Leave this draft alone.") {
 		t.Fatalf("archive: %+v", moved)
 	}
 }

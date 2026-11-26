@@ -4,8 +4,13 @@ package changelog
 import (
 	"errors"
 	"io/fs"
+	"regexp"
 	"strings"
 )
+
+// Match the check in .github/changelog-check.sh and exclude editor drafts
+// that go:embed leaves out.
+var fragmentName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*\.md$`)
 
 // Assemble adds the pending fragments below Unreleased. It also returns the
 // paths a successful release cut should consume. Legacy inline entries are
@@ -33,7 +38,7 @@ func Assemble(fsys fs.FS) (string, []string, error) {
 		}
 		wroteHeading := false
 		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			if !entry.Type().IsRegular() || !fragmentName.MatchString(entry.Name()) {
 				continue
 			}
 			name := dir + "/" + entry.Name()
