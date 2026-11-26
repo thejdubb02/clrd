@@ -11,7 +11,7 @@
       <a class="btn" data-variant="primary" data-size="lg" href="#self-host">Self-host clrd</a>
       <a class="btn" data-variant="outline" data-size="lg" href="{{base}}/docs/">Read the docs</a>
     </p>
-    <p class="mb-3 max-w-[34em]">Small on purpose: a 16.3 MB server and a 1.9 MB Android app, against 77.5 MB and 9.3 MB for ntfy (server measured 2026-11-23, the rest 2026-11-20).</p>
+    <p class="mb-3 max-w-[34em]">Small on purpose: a 16.3 MB server and a 2.1 MB Android app, against 77.5 MB and 9.3 MB for ntfy. Measurements are from 2026-11-23 for the clrd server, 2026-11-26 for its F-Droid build and 2026-11-20 for ntfy.</p>
     <p class="meta">In early development. The API is settling; expect changes before 1.0.</p>
   </div>
 
@@ -95,21 +95,21 @@
         <h3 class="text-foreground text-base font-semibold">AI agents (MCP)</h3>
         <p>clrd serves MCP at <code>/mcp</code>. Agents can send, list, acknowledge and resolve, edit a progress message in place, and <code>wait_for_reply</code> lets an agent ask you a yes or no question and wait for your tap. With publish on a topic an agent can also set up silences, check-ins and incoming webhook templates there; with an admin token, outgoing webhooks and tokens. Claude Code and Codex can send their permission prompts to your phone through <code>/mcp/approve</code>. For Claude Code, the <a href="{{base}}/docs/integrations/claude-code">clrd plugin</a> sets up all of it, plus a ping when a task finishes, in one install. To give an agent its own sign-in, press Add agent in Settings and hand it the one-use <a href="{{base}}/docs/integrations/agent-invite">invite</a>: it reaches only the topics you pick.</p>
         <h3 class="text-foreground text-base font-semibold">SDKs</h3>
-        <p>Thin clients for Python, JavaScript and Go wrap the same API. The <a href="{{base}}/docs/spec">API reference</a> lists every endpoint.</p>
+        <p>Thin clients for Python, JavaScript and Go wrap the same API. The <a href="{{base}}/docs/spec">API guide</a> describes the routes and how to use them.</p>
       </div>
     </div>
 
     <h3 class="text-foreground mt-12 mb-3 text-base font-semibold">Works with</h3>
     <dl class="grid border-t text-sm sm:grid-cols-2 lg:grid-cols-4 [&_dt]:text-foreground [&_dt]:mb-1 [&_dt]:font-semibold [&>div]:border-b [&>div]:py-4 [&>div]:pe-4">
       <div><dt>Apprise</dt><dd>Use an <code>ntfys://</code> URL pointed at your clrd server.</dd></div>
-      <div><dt>Gatus</dt><dd>Use the ntfy alert provider. When the endpoint recovers, the alert clears itself.</dd></div>
+      <div><dt>Gatus</dt><dd>Use the <a href="{{base}}/docs/integrations/gatus">custom alert provider</a> with <code>send-on-resolved</code>. When the endpoint recovers, the alert clears everywhere.</dd></div>
       <div><dt>Uptime Kuma</dt><dd>Pick the ntfy notification type and enter your clrd server URL.</dd></div>
       <div><dt>Grafana</dt><dd>Add a webhook contact point at <code>/{topic}?template=grafana</code>. Firing alerts open, resolved alerts clear.</dd></div>
-      <div><dt>Home Assistant</dt><dd>Use the ntfy integration or a <code>rest_command</code>.</dd></div>
+      <div><dt>Home Assistant</dt><dd>Use a <a href="{{base}}/docs/integrations/home-assistant"><code>rest_command</code></a> to send alerts and clear them when the condition ends.</dd></div>
       <div><dt>GitHub Actions</dt><dd>One curl step at the end of a job.</dd></div>
       <div><dt>Alertmanager</dt><dd>Point a webhook receiver at <code>/{topic}?template=alertmanager</code>. Resolved alerts clear on every device.</dd></div>
-      <div><dt>GitHub, Sentry, Stripe, Jira</dt><dd>Use the matching template on <code>/{topic}?template=github</code> (or <code>sentry</code>, <code>stripe</code>, <code>jira</code>). clrd checks signatures when you configure a secret. Closed issues clear.</dd></div>
-      <div><dt>Homelab</dt><dd>Built-in templates for Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the *arr apps. Recoveries clear.</dd></div>
+      <div><dt>GitHub, Sentry, Stripe, Jira</dt><dd>Use the matching template on <code>/{topic}?template=github</code> (or <code>sentry</code>, <code>stripe</code>, <code>jira</code>). clrd checks signatures when you configure a secret. Closing a GitHub issue or marking a Jira issue done clears its alert everywhere, as does resolving a Sentry issue.</dd></div>
+      <div><dt>Homelab</dt><dd>Built-in templates for Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the *arr apps. Recoveries clear when Healthchecks.io, Zabbix, Netdata or an *arr health check reports them.</dd></div>
       <div><dt>Any webhook</dt><dd>Save a template that maps any service's JSON to a notification.</dd></div>
       <div><dt>Webhooks out</dt><dd>Tell your own service when someone dismisses, acks, resolves, snoozes or replies. Retried, logged, signed when you set a secret, and shaped the way Slack or Discord wants.</dd></div>
       <div><dt>Any ntfy client</dt><dd>The ntfy app, CLI and libraries publish and subscribe unchanged.</dd></div>
@@ -165,7 +165,7 @@
     <div>
       <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="self-host">Self-host it</h2>
       <p>One Go binary and one SQLite file. No Redis, no message broker, no account on anyone else's service. clrd sends no telemetry, and the only pages it fetches are site icons and link previews your devices ask for.</p>
-      <p class="mt-3">The only setting you need is the HTTPS address your proxy serves it on. Open the setup link it prints to make your admin token, scan the Link a phone code with the app and approve it, and send. Check-ins, webhooks, icons and snooze times are optional, and server settings, topics, tokens and webhooks are all on the REST API, so an AI agent can set them up for you.</p>
+      <p class="mt-3">The only setting you need is the HTTPS address your proxy serves it on. Open the setup link it prints to make your admin token, scan the Link a phone code with the app and approve it, and send. Check-ins, webhooks, icons and snooze times are optional, and display settings, topics, tokens and webhooks are all on the REST API, so an AI agent can set them up for you.</p>
       <p class="text-muted-foreground mt-3 text-sm">The Compose file builds the image from source. You can also build the binary with Go 1.24 or newer. See <a href="{{base}}/docs/self-host#server-environment">optional server settings</a>.</p>
     </div>
     <div>

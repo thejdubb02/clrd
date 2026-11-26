@@ -17,13 +17,14 @@ For a setup behind an HTTPS proxy, start it with `CLRD_BASE_URL` set to the
 HTTPS address your proxy serves it on, open the setup link it prints to make
 your admin token, scan the Link a phone code with the app and approve it, and
 send. Everything else (check-ins, webhooks, icons, snooze times, display
-settings) is optional and has a default. Server settings, topics, tokens and
+settings) is optional and has a default. Display settings, topics, tokens and
 webhooks are all on the REST API (`/openapi.json` describes it), so a script or
 an AI agent can set them up without a person clicking through Settings.
 
 Small on purpose. The server is one 16.3 MB binary (measured 2026-11-23;
-ntfy 2.38.1: 77.5 MB) and the Android app is a 1.9 MB APK (measured
-2026-11-20; ntfy 1.25.2: 9.3 MB). CI fails any change that grows either past its budget in
+ntfy 2.38.1: 77.5 MB) and the Android app is a 2.1 MB APK (clrd F-Droid
+build on 2026-11-26; ntfy 1.25.2: 9.3 MB measured 2026-11-20).
+CI fails any change that grows either past its budget in
 [`.github/size-budget`](.github/size-budget).
 
 <p align="center">
@@ -60,7 +61,7 @@ offline catches up the moment it reconnects.
 - **State that syncs.** Dismiss (hide it), acknowledge (someone is on it),
   resolve (it is fixed) and snooze, each shown on every device. Snooze times
   and the default are one setting shared by every device.
-- **Marks.** You (in the web inbox), another person or an agent with its own token can mark a card
+- **Marks.** You (in the web inbox or Android app), another person or an agent with its own token can mark a card
   seen, or actioned with a note and link ("stew actioned: filed relay#512").
   It clears nothing; everyone on the topic sees who handled it.
 - **Self-resolving alerts.** Senders tag an alert with their own ID and resolve
@@ -180,8 +181,10 @@ curl, the [SDKs](sdk/), GitHub Actions, MCP (Claude Code, Claude Desktop,
 Cursor, VS Code, Windsurf, Zed, Codex CLI, Gemini CLI), Home Assistant, Gatus, Uptime Kuma, Alertmanager, Grafana, Apprise,
 ntfy clients, Gotify senders and Watchtower. Built-in webhook templates for GitHub, Sentry,
 Stripe, Jira, Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the
-*arr apps, with signature checks, and your own template for any other
-service's JSON, which you can try on a sample payload before going live.
+*arr apps. When you configure a secret, clrd checks signatures for GitHub,
+Sentry, Stripe and Jira, and checks the shared secret for the other templates.
+You can save your own template for another service's JSON and try it on a
+sample payload before going live.
 Outgoing webhooks tell your own service when someone
 dismisses, acks, resolves, snoozes or replies. Setup for each, and which ones resolve themselves:
 [docs/integrations](docs/integrations/README.md).
