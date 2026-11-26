@@ -24,4 +24,11 @@ Non-2xx answers return `*clrd.Error` with `Status` and `Code`.
 
 Tests: `go test ./...`
 
+Send options are fields on `clrd.Message`. Use `Icon` for an image URL,
+`Attachment: &clrd.Attachment{URL: "..."}` for a file link, and
+`Actions: []clrd.Action{{Label: "Copy", Copy: "build-42"}}` for a copy button.
+Reuse `ID` on the same topic to update an open notification. Set `Reopen` to
+make an acknowledged notification active when updating it. Delivery options
+include `SnoozeUntil`, `Expires`, `Repeat`, `RepeatTimes`, `Live`, and `Devices`.
+
 Source: [github.com/thejdubb02/clrd](https://github.com/thejdubb02/clrd)

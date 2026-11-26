@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type hit struct{ method, uri, body, auth string }
@@ -47,6 +49,34 @@ func TestSend(t *testing.T) {
 	}
 	if _, ok := body["title"]; ok {
 		t.Fatal("empty title sent")
+	}
+}
+
+func TestSendOptions(t *testing.T) {
+	c, hits := fake(t)
+	at := time.Date(2040, 2, 1, 10, 0, 0, 0, time.UTC)
+	_, err := c.Send(context.Background(), Message{
+		Topic: "builds", Message: "Done", ID: "build-42",
+		Icon: "https://example.com/build.png", Attachment: &Attachment{URL: "https://example.com/report.pdf"},
+		Actions: []Action{{Label: "Copy", Copy: "build-42"}}, Reopen: true,
+		Color: "#225588", Format: "text", SnoozeUntil: &at, Expires: "1h", Repeat: "5m",
+		RepeatTimes: 3, Devices: []string{"work"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got, want map[string]any
+	if err := json.Unmarshal([]byte((*hits)[0].body), &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(`{"topic":"builds","message":"Done","external_id":"build-42",
+		"icon":"https://example.com/build.png","attachment":{"url":"https://example.com/report.pdf"},
+		"actions":[{"label":"Copy","copy":"build-42"}],"reopen":true,"color":"#225588","format":"text",
+		"snooze_until":"2040-02-01T10:00:00Z","expires":"1h","repeat":"5m","repeat_times":3,"devices":["work"]}`), &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("send body: got %v, want %v", got, want)
 	}
 }
 

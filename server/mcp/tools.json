@@ -65,6 +65,10 @@
      ],
      "type": "object"
     },
+    "click": {
+     "description": "URL opened when the notification is tapped",
+     "type": "string"
+    },
     "color": {
      "description": "Optional card color as #RRGGBB, shown as a bar; the user's color_rules (settings) win over it",
      "pattern": "^#[0-9A-Fa-f]{6}$",
@@ -76,6 +80,10 @@
       "type": "string"
      },
      "type": "array"
+    },
+    "expires": {
+     "description": "Resolve automatically after this duration or at this RFC3339 time",
+     "type": "string"
     },
     "format": {
      "description": "markdown (default) or text, which is shown exactly as sent",
@@ -107,6 +115,11 @@
      "minimum": 1,
      "type": "integer"
     },
+    "reopen": {
+     "default": true,
+     "description": "Make an acknowledged notification active when reusing its id. Set false to keep its state.",
+     "type": "boolean"
+    },
     "repeat": {
      "description": "Optional: alert again every this long (1m to 24h, e.g. 5m) until someone acknowledges, snoozes, dismisses or resolves it",
      "type": "string"
@@ -116,6 +129,16 @@
      "maximum": 100,
      "minimum": 1,
      "type": "integer"
+    },
+    "snooze_until": {
+     "description": "Deliver at this future RFC3339 time",
+     "type": "string"
+    },
+    "tags": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
     },
     "title": {
      "description": "Optional title",

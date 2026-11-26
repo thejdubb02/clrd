@@ -38,6 +38,17 @@ test("send maps id to external_id", async () => {
   });
 });
 
+test("send preserves optional native options and explicit false", async () => {
+  const opts = {
+    icon: "https://example.com/build.png", attachment: { url: "https://example.com/report.pdf" },
+    actions: [{ label: "Copy", copy: "build-42" }], reopen: false, format: "text", color: "#225588",
+    snooze_until: "2040-02-01T10:00:00Z", expires: "1h", repeat: "5m", repeat_times: 3,
+    live: false, devices: ["work"],
+  };
+  await c.send("builds", "Done", { id: "build-42", ...opts });
+  assert.deepEqual(last().body, { topic: "builds", message: "Done", external_id: "build-42", ...opts });
+});
+
 test("resolve and ack by key or id", async () => {
   await c.resolve("infra", "disk/build");
   assert.equal(call(), "POST /infra/disk%2Fbuild/resolve");

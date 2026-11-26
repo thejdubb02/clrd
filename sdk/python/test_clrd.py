@@ -59,6 +59,14 @@ class T(unittest.TestCase):
                                        {"topic": "infra", "message": "Disk 91%", "priority": 4, "external_id": "disk-build"},
                                        "Bearer clrd_test"))
 
+    def test_send_options(self):
+        options = dict(icon="https://example.com/build.png", attachment={"url": "https://example.com/report.pdf"},
+                       actions=[{"label": "Copy", "copy": "build-42"}], reopen=False, color="#225588",
+                       format="text", snooze_until="2040-02-01T10:00:00Z", expires="1h",
+                       repeat="5m", repeat_times=3, live=False, devices=["work"])
+        clrd.send("builds", "Done", id="build-42", **options)
+        self.assertEqual(self.last()[2], dict(topic="builds", message="Done", external_id="build-42", **options))
+
     def test_resolve_and_ack(self):
         clrd.resolve("infra", "disk/build")
         self.assertEqual(self.last()[:2], ("POST", "/infra/disk%2Fbuild/resolve"))
@@ -108,6 +116,14 @@ class T(unittest.TestCase):
             self.assertEqual(clrd.main(["send", "infra", "hi", "--id", "k", "-p", "5"]), 0)
         self.assertEqual(self.last(), ("POST", "/api/v1/notifications",
                                        {"topic": "infra", "message": "hi", "priority": 5, "external_id": "k"}, "Bearer clrd_cli"))
+        with contextlib.redirect_stdout(io.StringIO()):
+            options = {"icon": "https://example.com/icon.png", "reopen": False}
+            self.assertEqual(clrd.main(["send", "infra", "update", "--id", "k", "--options", json.dumps(options)]), 0)
+        self.assertEqual(self.last()[2], dict(topic="infra", message="update", external_id="k", **options))
+        count = len(seen)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            clrd.main(["send", "infra", "update", "--options", '{"topic":"other"}'])
+        self.assertEqual(len(seen), count)
         with contextlib.redirect_stdout(io.StringIO()):
             clrd.main(["resolve", "infra", "k"])
         self.assertEqual(self.last()[:2], ("POST", "/infra/k/resolve"))

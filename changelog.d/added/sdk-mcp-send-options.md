@@ -1,0 +1,1 @@
+- Go, Python, JavaScript and the GitHub Action expose more native notification options. MCP send supports delivery timing, tags, click links and preserving an acknowledged notification on update.

@@ -166,6 +166,12 @@ func TestInitializeAndList(t *testing.T) {
 	if props := send["inputSchema"].(map[string]any)["properties"].(map[string]any); props["format"] == nil || props["icon"] == nil || props["attachment"] == nil {
 		t.Fatalf("send schema lacks format, icon or attachment: %v", props)
 	}
+	props := send["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	for _, name := range []string{"click", "expires", "reopen", "snooze_until", "tags"} {
+		if props[name] == nil {
+			t.Errorf("send schema lacks %s", name)
+		}
+	}
 	_, out = rpc(t, h, "Bearer clrd_good", `{"jsonrpc":"2.0","id":3,"method":"nope"}`)
 	if out["error"].(map[string]any)["code"].(float64) != -32601 {
 		t.Fatalf("want method not found: %v", out)
@@ -187,6 +193,12 @@ func TestTools(t *testing.T) {
 			"POST /api/v1/notifications", map[string]any{"topic": "infra", "message": "*raw*", "format": "text", "reopen": true}},
 		{"send", map[string]any{"topic": "infra", "message": "m", "icon": "https://x.test/i.png", "attachment": map[string]any{"url": "https://x.test/r.pdf", "name": "r.pdf", "size": 9}},
 			"POST /api/v1/notifications", map[string]any{"attachment": map[string]any{"name": "r.pdf", "url": "https://x.test/r.pdf"}, "icon": "https://x.test/i.png", "message": "m", "reopen": true, "topic": "infra"}},
+		{"send", map[string]any{"topic": "infra", "message": "m", "id": "build", "reopen": false,
+			"click": "https://x.test/build", "tags": []any{"build"}, "expires": "1h", "snooze_until": "2040-02-01T10:00:00Z",
+			"actions": []any{map[string]any{"label": "Copy", "copy": "build"}}},
+			"POST /api/v1/notifications", map[string]any{"topic": "infra", "message": "m", "external_id": "build", "reopen": false,
+				"click": "https://x.test/build", "tags": []any{"build"}, "expires": "1h", "snooze_until": "2040-02-01T10:00:00Z",
+				"actions": []any{map[string]any{"label": "Copy", "copy": "build"}}}},
 		{"list", map[string]any{"topic": "infra"}, "GET /api/v1/notifications?state=open&topic=infra", nil},
 		{"list", map[string]any{"state": "all"}, "GET /api/v1/notifications?state=all", nil},
 		{"mark", map[string]any{"id": "01J", "mark": "actioned", "note": "filed relay#512"}, "POST /api/v1/notifications/01J/mark", map[string]any{"link": "", "mark": "actioned", "note": "filed relay#512"}},
