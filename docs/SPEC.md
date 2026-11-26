@@ -1198,7 +1198,8 @@ and `initialize` reports `version` as `serverInfo.version`.
 - `PUT|POST /{topic}` with the body as the message. Headers `X-Title`/`Title`/`t`,
   `X-Priority`/`Priority`/`p` (1-5 or min/low/default/high/urgent),
   `X-Tags`/`Tags`, `X-Click`, `X-Actions` (JSON or the short form, where
-  a quoted value keeps its spaces and `\"` or `\'` is the quote itself;
+  a quoted value keeps its spaces and `\"` or `\'` is the quote itself.
+  A whole quoted field containing `=` is positional text;
   `view`, `copy`, `http` and `broadcast`, the last two only on a topic with
   `device_actions` on, else dropped. For copy, use `copy, Label, value`
   or set `value` in JSON), `X-Delay`/`Delay`/`X-At`/`At`/`X-In`/`In` (a unix
@@ -1240,18 +1241,29 @@ and `initialize` reports `version` as `serverInfo.version`.
   as do explicit JSON arrays and the Markdown boolean. The topic comes from
   JSON, and the filename describes an external attachment. For a raw publish,
   `Content-Type: text/markdown` selects Markdown even with `Markdown: no`.
-- `GET /{topic}/json`, `/{topic}/sse`, `/{topic}/ws`, `/{topic}/raw` with `since=`
-  (`all`, unix time, duration, message id) and `poll=1`, and ntfy's filters
+- `GET /{topics}/json`, `/{topics}/sse`, `/{topics}/ws`, `/{topics}/raw` with
+  comma-separated topic names, `since=` (`none`, `all`, `latest`, unix time,
+  duration or message ID), `poll=1` for a finite replay, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
   list). `scheduled=1` (or `sched=1`) also lists messages sent with a delay
   that have not fired yet, as a `message` at their delivery time, as ntfy
   does; a notification snoozed until later counts too, since a delay is a
-  snooze. Output in ntfy's message format so the ntfy Android app and ntfy CLI
+  snooze. Without `since`, a live stream starts at the present and a poll
+  replays retained events. `since=latest` selects the latest eligible event
+  per topic, leaving out cache evictions, marks and device-only events.
+  Other replays keep the newest events that fit within 10 MiB of stored
+  event data per topic when the replay begins. A capped HTTP replay sets
+  `X-Messages-Truncated: 1`. The cap applies to replay, and live delivery
+  continues with new events. Output in ntfy's message format so the ntfy Android app and ntfy CLI
   work unchanged. Pages on other web sites are refused on the ntfy and Gotify
   routes (requests, preflight and WebSocket) unless an admin allows their
   origin with `PUT /api/v1/ntfy/origins` (or `*`, ntfy's own behaviour);
   requests with no Origin (phones, scripts) and clrd's own pages always pass
-  (#374).
+  (#374). Allowed cross-origin clients may read `Retry-After` when a
+  time-based rate limit returns 429.
+- The bundled `clrd publish`, `clrd poll` and `clrd subscribe` commands
+  use these routes. Poll and subscribe print newline-delimited JSON.
+  See [command examples](self-host.md#publish-and-subscribe-from-the-command-line).
 - Webhook-friendly: `GET /{topic}/publish?message=...` and `/{topic}/trigger`.
 - Alertmanager/Grafana/Gatus: a payload with `status: resolved` and a stable
   key (alert fingerprint / `X-Id`) resolves instead of creating. Mapping in `docs/integrations/`.
