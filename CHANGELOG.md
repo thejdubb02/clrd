@@ -150,6 +150,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web: a notification's own page shows "This notification is gone" once it is deleted or its topic is no longer yours, instead of keeping the card and retrying every few seconds (#826).
 - Web: a notification's link (`/app/n/{id}`, as a GitHub issue links it) opens a page with that card alone, in any state, with a link back to its list, so it is there even past a list's newest 500 or when this device cleared it for itself alone (#822).
 - Android: dark mode uses the same quiet grey and urgent orange as the web inbox (`#98A1AC` and `#F97316`), so the two match side by side (#583).
 - Server: adding or removing `?wait=true` on a Discord webhook's URL no longer counts as a new channel, so the next wake edits the message instead of posting it again (#816).
