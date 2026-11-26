@@ -311,6 +311,16 @@
     <string name="scan_not_clrd">Not a clrd code</string>
     <string name="link_title">Connect to %1$s?</string>
     <string name="link_text">Only say Yes if you just made this code on your own browser, signed in to that server. The browser then asks you to approve this phone.</string>
+    <string name="link_adds">It is added as another server. The servers this phone has now stay as they are.</string>
+    <string name="servers">Servers</string>
+    <string name="servers_explain">Add another clrd server. Each keeps its own settings, connection and notifications; the inbox shows one at a time.</string>
+    <string name="server_add">Add server</string>
+    <string name="server_already">%1$s is already added on this phone.</string>
+    <string name="server_remove">Remove</string>
+    <string name="server_remove_title">Remove %1$s?</string>
+    <string name="server_remove_text">Its notifications and settings leave this phone. The server keeps its own copy, and this phone stays in its device list until you unlink it there.</string>
+    <string name="tray_server">%1$s · %2$s</string>
+    <string name="server_switch">%1$s ▾</string>
     <string name="link_replaces">This replaces the server this app uses now (%1$s) and clears its notifications from this phone.</string>
     <string name="link_yes">Yes</string>
     <string name="link_no">No</string>

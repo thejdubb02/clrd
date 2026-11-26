@@ -109,11 +109,11 @@ class PreviewTest {
         server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
             override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = MockResponse().setBody("""{"title":"Mine"}""")
         }
-        assertEquals("Mine", onIo { LinkPreview.load(app, "https://x.example/c", "alerts") }?.title)
-        onIo { LinkPreview.load(app, "https://x.example/c", "alerts") }
+        assertEquals("Mine", onIo { LinkPreview.load(app.shown.value, "https://x.example/c", "alerts") }?.title)
+        onIo { LinkPreview.load(app.shown.value, "https://x.example/c", "alerts") }
         assertEquals(1, server.requestCount) // the same account asks once
         app.token = "someone-else"
-        onIo { LinkPreview.load(app, "https://x.example/c", "alerts") }
+        onIo { LinkPreview.load(app.shown.value, "https://x.example/c", "alerts") }
         assertEquals(2, server.requestCount)
     }
 
@@ -135,7 +135,7 @@ class PreviewTest {
                 if (request.requestUrl!!.encodedPath == "/api/v1/preview") MockResponse().setResponseCode(302).setHeader("Location", server.url("/elsewhere"))
                 else MockResponse().setBody("""{"title":"Followed"}""")
         }
-        assertNull(onIo { LinkPreview.load(app, "https://x.example/r", "alerts") })
+        assertNull(onIo { LinkPreview.load(app.shown.value, "https://x.example/r", "alerts") })
         assertEquals(1, server.requestCount)
     }
 
@@ -166,4 +166,17 @@ class PreviewTest {
 
     private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.onAllNodesWithTagCount(tag: String) =
         onAllNodes(androidx.compose.ui.test.hasTestTag(tag)).fetchSemanticsNodes().size
+
+    /** A card asks the server it was opened on, even when another is shown before the fetch runs (#78). */
+    @Test fun aCardAsksItsOwnServerAfterASwitch() {
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = MockResponse().setBody("""{"title":"Mine"}""")
+        }
+        val mine = app.shown.value
+        val b = app.addAccount("https://b.example", "tb")
+        app.show(b.id)
+        assertEquals("Mine", onIo { LinkPreview.load(mine, "https://x.example/d", "alerts") }?.title)
+        app.show(mine.id)
+        b.db.close()
+    }
 }

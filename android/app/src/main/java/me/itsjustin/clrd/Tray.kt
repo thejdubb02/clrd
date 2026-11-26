@@ -110,6 +110,9 @@ class Tray(private val ctx: Context, private val acct: Account) {
     /** Adds this account to a tap's data URI, which is what PendingIntents match on. None means account 0. */
     private fun Uri.Builder.account() = apply { if (acct.id != 0) appendQueryParameter(QUERY_ACCOUNT, "${acct.id}") }
 
+    /** An entry's subtext; with more than one server set up it names this one first (#78). */
+    private fun sub(text: String) = if (App.of(ctx).servers.size > 1) ctx.getString(R.string.tray_server, acct.host, text) else text
+
     /**
      * Makes the channels for [sound] (see [Sounds]) and deletes the other sounds' channels. Posts go to the new ones.
      * True when this change took the Urgent channel's Do Not Disturb pass with it.
@@ -251,7 +254,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
                 .setSmallIcon(R.drawable.ic_stat_clrd)
                 .setContentTitle(topic)
                 .setContentText(ctx.resources.getQuantityString(R.plurals.tray_stack, rows.size, rows.size))
-                .setSubText(topic)
+                .setSubText(sub(topic))
                 .setGroup(group)
                 .setGroupSummary(true)
                 .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN) // the rows alert, the summary never does
@@ -278,12 +281,12 @@ class Tray(private val ctx: Context, private val acct: Account) {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSubText(
-                when {
+                sub(when {
                     n.reply.isNotEmpty() -> ctx.getString(R.string.tray_answered, n.replyText.ifEmpty { n.reply }, n.stateBy ?: ctx.getString(R.string.tray_another_device))
                     app.drafts.containsKey(n.id) -> ctx.getString(R.string.tray_draft) // a tray reply cannot be prefilled; the app box has the text (#516)
                     n.state == Notif.ACKNOWLEDGED -> ctx.getString(R.string.tray_acked, n.stateBy ?: ctx.getString(R.string.tray_another_device))
                     else -> n.topic
-                },
+                }),
             )
             .setWhen(n.createdAt)
             .setShowWhen(true)
@@ -392,6 +395,8 @@ class Tray(private val ctx: Context, private val acct: Account) {
         private val OTHER = Regex("^(a|$GROUP)\\d+:")
         /** The account id in a tap's data URI (#78); absent means account 0. */
         const val QUERY_ACCOUNT = "account"
+        /** The data of [inbox] past account 0, with [QUERY_ACCOUNT]; [MainActivity] matches on it. */
+        const val OPEN = "clrd://open"
         const val SUMMARY_ID = 1
         const val DND_ID = 2 // no tag, so the tray rebuild (tagged, id 0 or 1) never touches it
         const val EXTRA_ID = "id"

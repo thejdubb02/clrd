@@ -45,12 +45,13 @@ internal data class LinkPreview(val url: String, val title: String, val descript
         fun firstLink(text: AnnotatedString) = text.getLinkAnnotations(0, text.length)
             .firstNotNullOfOrNull { (it.item as? LinkAnnotation.Url)?.url?.takeIf { u -> u.startsWith("https://", true) || u.startsWith("http://", true) } }
 
-        /** The server's preview of [url] for [topic], or null when it has none (off, no title, no connection). Call off the main thread. */
-        fun load(app: App, url: String, topic: String): LinkPreview? {
-            val key = "${app.serverUrl} ${app.token.hashCode()} $topic $url" // another server or account never sees this one's
+        /** Server [a]'s preview of [url] for [topic], or null when it has none (off, no title, no connection). Call off the main thread. */
+        fun load(a: Account, url: String, topic: String): LinkPreview? {
+            val (server, token) = a.creds()
+            val key = "$server ${token.hashCode()} $topic $url" // another server or account never sees this one's
             cache.get(key)?.let { return it }
             // No redirects (#818): a proxy in front of the server could send the phone to the linked site. A 3xx is an error, so no preview.
-            val api = Api(app.http.newBuilder().followRedirects(false).followSslRedirects(false).build(), app.serverUrl, app.token)
+            val api = Api(a.http.newBuilder().followRedirects(false).followSslRedirects(false).build(), server, token)
             val o = runCatching { JSONObject(api.get("/api/v1/preview?url=" + Uri.encode(url) + "&topic=" + Uri.encode(topic))) }.getOrNull() ?: return null
             val title = o.optString("title")
             if (title.isEmpty()) return null
@@ -72,9 +73,10 @@ internal fun PreviewCard(n: Notif, text: AnnotatedString) {
     val app = App.of(LocalContext.current)
     val b = LocalBrand.current
     val url = remember(text) { LinkPreview.firstLink(text) } ?: return
+    val acct = remember { app.shown.value } // the card's server, bound now: a switch before the fetch runs sends nothing to the other one
     var p by remember(url, n.topic) { mutableStateOf<LinkPreview?>(null) }
     val rev by app.settingsRev.collectAsState() // a switch saved after the first ask, which the server refused, asks again (#818)
-    LaunchedEffect(url, n.topic, rev) { p = withContext(app.images.dispatcher) { LinkPreview.load(app, url, n.topic) } ?: p }
+    LaunchedEffect(url, n.topic, rev) { p = withContext(app.images.dispatcher) { LinkPreview.load(acct, url, n.topic) } ?: p }
     val shown = p ?: return
     val uri = LocalUriHandler.current
     Surface(

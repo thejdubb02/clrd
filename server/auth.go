@@ -69,6 +69,9 @@ type Token struct {
 // limited reports whether the token is held to some topics.
 func (t *Token) limited() bool { return len(t.Topics) > 0 || len(t.Grants) > 0 || len(t.union) > 0 }
 
+// Limited is limited for the web pages: such a token cannot change server-wide settings.
+func (t *Token) Limited() bool { return t.limited() }
+
 // may reports whether the token may use scope on topic. Topic "" asks only
 // about the scope. Every topic check goes through here.
 func (t *Token) may(scope, topic string) bool {

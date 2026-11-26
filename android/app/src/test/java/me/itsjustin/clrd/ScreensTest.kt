@@ -150,7 +150,7 @@ class ScreensTest {
         app.pickAppearance(appearance)
         rule.setContent {
             ClrdTheme(appearance) {
-                Home(app, battery = null, resumes = 0, scan = {})
+                Home(app, battery = null, resumes = 0, opens = 0, scan = {})
             }
         }
         rule.waitUntil(5_000) {
