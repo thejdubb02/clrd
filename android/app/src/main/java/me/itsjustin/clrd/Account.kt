@@ -51,6 +51,9 @@ class Account(private val ctx: Context, val id: Int) {
 
     val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
 
+    /** The address without its scheme, as the switcher, the Servers list and tray entries name this server. */
+    val host get() = serverUrl.substringAfter("://")
+
     fun api() = Api(http, serverUrl, token)
 
     /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */

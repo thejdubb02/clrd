@@ -194,7 +194,7 @@ class MainActivity : ComponentActivity() {
         val app = App.of(this)
         if (app.anyConfigured) SyncService.start(this)
         // Not again after rotation or from recents: the code was used already and would read as expired.
-        if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handlePair(intent)
+        if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) { handlePair(intent); handleOpen(intent) }
         setContent {
             val look by app.appearance.collectAsState()
             ClrdTheme(look) {
@@ -207,7 +207,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handlePair(intent)
+        handleOpen(intent)
     }
+
+    /** A tray entry of another server opens the app on that server (#78). */
+    private fun handleOpen(intent: Intent) = openedAccount(intent)?.let(App.of(this)::show)
 
     private fun handlePair(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
@@ -219,8 +223,10 @@ class MainActivity : ComponentActivity() {
         when (scan) {
             is Scan.Pair -> pairWith(scan.link)
             // Nothing is sent until the person has seen the server address and said Yes.
+            // An address this phone has goes to that server; a new one is added beside the others (#78).
             is Scan.Link -> App.of(this).let { app ->
-                pair.value = PairUi.Confirm(scan.link, app.serverUrl.takeIf { app.configured })
+                val same = app.accountAt(scan.link.server)
+                pair.value = PairUi.Confirm(scan.link, same?.takeIf { it.configured }?.serverUrl, adds = same == null && app.anyConfigured)
             }
             Scan.Bad -> pair.value = PairUi.Note(bad)
         }
@@ -257,7 +263,7 @@ class MainActivity : ComponentActivity() {
             val got = outcome
             if (got is Claim.Approved) {
                 app.io.execute {
-                    app.saveServer(link.server, got.token)
+                    app.saveTo(link.server, got.token)
                     SyncService.start(this, restart = true)
                     pair.value = PairUi.Note(getString(R.string.link_done))
                 }
@@ -270,14 +276,17 @@ class MainActivity : ComponentActivity() {
 
     private fun pairWith(link: PairLink) {
         val app = App.of(this)
+        // The server this phone has at the link's address, else the one shown (#78), whose gate then says why not.
+        val acct = app.accountAt(link.server)?.takeIf { it.configured } ?: app.shown.value
         // One snapshot: the gate and every request use the same server and token, never the link's server.
-        val url = app.serverUrl
-        val token = app.token
+        val url = acct.serverUrl
+        val token = acct.token
         when (pairGate(link, url, token)) {
             PairGate.NOT_SET_UP -> pair.value = PairUi.Note(getString(R.string.pair_not_set_up))
             PairGate.OTHER_SERVER -> pair.value = PairUi.Note(getString(R.string.pair_other_server, serverAddress(link.server)))
             PairGate.OK -> {
-                val api = Api(app.http, url, token)
+                val api = Api(acct.http, url, token)
+                app.show(acct.id)
                 pair.value = null
                 app.io.execute {
                     pair.value = try {
@@ -322,7 +331,7 @@ sealed interface PairUi {
     class Ask(val api: Api, val code: String, val name: String, val server: String) : PairUi
     class Note(val text: String) : PairUi
     /** Link this phone to [link]'s server? [replaces] is the server it is set up with now, if any. */
-    class Confirm(val link: LinkCode, val replaces: String?) : PairUi
+    class Confirm(val link: LinkCode, val replaces: String?, val adds: Boolean = false) : PairUi
     class Waiting(val link: LinkCode, val check: String) : PairUi
 }
 
@@ -356,6 +365,7 @@ private fun PairDialog(ui: PairUi?, set: (PairUi?) -> Unit, approve: (PairUi.Ask
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.link_text))
                     ui.replaces?.let { Text(stringResource(R.string.link_replaces, it)) }
+                    if (ui.adds) Text(stringResource(R.string.link_adds))
                     if (ui.link.server.startsWith("http://")) Text(stringResource(R.string.plain_http_warning), color = LocalBrand.current.signal)
                 }
             },
@@ -381,8 +391,15 @@ private enum class Tab(val label: Int, val icon: ImageVector) {
 
 @Composable
 private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
-    val b = LocalBrand.current
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
+    // Everything below reads the shown server (#78), so a switch starts it afresh; only the tab carries over.
+    val shown by app.shown.collectAsState()
+    androidx.compose.runtime.key(shown.id) { ServerHome(app, battery, resumes, scan, tab) { tab = it } }
+}
+
+@Composable
+private fun ServerHome(app: App, battery: Intent?, resumes: Int, scan: () -> Unit, tab: Tab, pick: (Tab) -> Unit) {
+    val b = LocalBrand.current
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
     var unfolded by rememberSaveable { mutableStateOf(setOf<String>()) } // stacks opened in the list
     var sending by rememberSaveable { mutableStateOf(false) } // the Send box (#150)
@@ -396,7 +413,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val clearLabel = stringResource(R.string.clear)
     val ackLabel = stringResource(R.string.ack)
     val snoozeLabelText = stringResource(R.string.tray_snooze)
-    LaunchedEffect(status) { if (status == SyncClient.Status.AUTH_FAILED) tab = Tab.Settings } // signed out: show the sign-in screen
+    LaunchedEffect(status) { if (status == SyncClient.Status.AUTH_FAILED) pick(Tab.Settings) } // signed out: show the sign-in screen
 
     // Clear with an Undo toast, as on the web inbox.
     val clear: (Notif) -> Unit = { n ->
@@ -460,7 +477,7 @@ private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
             NavigationBar(containerColor = b.paper, tonalElevation = 0.dp) {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
-                        selected = tab == t, onClick = { tab = t },
+                        selected = tab == t, onClick = { pick(t) },
                         icon = { Icon(t.icon, null) }, label = { Text(stringResource(t.label)) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = b.ink, selectedTextColor = b.ink, indicatorColor = b.line,
@@ -589,21 +606,66 @@ private fun ServerCleared(app: App, here: Int, newest: String?) {
 @Composable
 private fun Header(app: App) {
     val b = LocalBrand.current
-    val status by app.status.collectAsState()
+    val saved by app.saved.collectAsState()
+    val servers = remember(saved) { app.servers }
+    var menu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.app_name), style = Wordmark, color = b.ink)
+        // More than one server (#78): the one shown, and a tap picks another. One server shows nothing new.
+        if (servers.size > 1) Box(Modifier.padding(start = 12.dp).weight(1f, fill = false)) {
+            Text(stringResource(R.string.server_switch, app.shown.value.host), style = Mono, color = b.ink, maxLines = 1, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { menu = true }.padding(6.dp).testTag("server-switch"))
+            DropdownMenu(menu, { menu = false }) {
+                servers.forEach { a -> DropdownMenuItem(text = { Text(a.host) }, onClick = { menu = false; app.show(a.id) }) }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        SyncState(app.shown.value)
+    }
+}
+
+/** A server's dot and status line, as the header and the Servers list show it. */
+@Composable
+private fun SyncState(a: Account) {
+    val b = LocalBrand.current
+    val status by a.status.collectAsState()
     val (dot, label) = when {
-        !app.configured -> b.slate to R.string.status_not_set_up
+        !a.configured -> b.slate to R.string.status_not_set_up
         status == SyncClient.Status.CONNECTED -> b.clear to R.string.status_in_sync
         status == SyncClient.Status.CONNECTING -> b.snooze to R.string.status_connecting
         status == SyncClient.Status.AUTH_FAILED -> b.signal to R.string.status_token_rejected
         status == SyncClient.Status.BUSY -> b.snooze to R.string.status_busy
         else -> b.slate to R.string.status_offline
     }
-    Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(R.string.app_name), style = Wordmark, color = b.ink)
-        Spacer(Modifier.weight(1f))
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
         Spacer(Modifier.width(6.dp))
         Text(stringResource(label), style = Mono, color = b.slate)
+    }
+}
+
+/** Settings, Servers (#78), with more than one: each opens that server here, and Remove asks first. */
+@Composable
+private fun ServerList(app: App, saved: Int) {
+    val b = LocalBrand.current
+    val servers = remember(saved) { app.servers }
+    var removing by remember { mutableStateOf<Account?>(null) }
+    if (servers.size > 1) servers.forEach { a ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f).clickable(role = Role.Button) { app.show(a.id) }.padding(vertical = 6.dp)) {
+                Text(a.host, color = b.ink, fontWeight = if (a.id == app.shown.value.id) FontWeight.SemiBold else null)
+                SyncState(a)
+            }
+            TextButton(onClick = { removing = a }) { Text(stringResource(R.string.server_remove), color = b.signal) }
+        }
+    }
+    removing?.let { a ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text(stringResource(R.string.server_remove_title, a.host)) },
+            text = { Text(stringResource(R.string.server_remove_text)) },
+            confirmButton = { TextButton(onClick = { removing = null; app.removeAccount(a.id) }) { Text(stringResource(R.string.server_remove), color = b.signal) } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(R.string.link_cancel)) } },
+        )
     }
 }
 
@@ -829,10 +891,12 @@ private fun Attached(f: Attachment) {
 @Composable
 internal fun rememberPicture(url: String, px: Int): ImageBitmap? {
     if (url.isEmpty()) return null
-    val images = App.of(LocalContext.current).images
-    var bmp by remember(url) { mutableStateOf(images.cached(url, px)) }
+    val app = App.of(LocalContext.current)
+    val images = app.images
+    val a = app.shown.value
+    var bmp by remember(url) { mutableStateOf(images.cached(url, px, a)) }
     LaunchedEffect(url) {
-        if (bmp == null) bmp = withContext(images.dispatcher) { images.load(url, px) }
+        if (bmp == null) bmp = withContext(images.dispatcher) { images.load(url, px, a) }
     }
     return remember(bmp) { bmp?.asImageBitmap() }
 }
@@ -1993,9 +2057,6 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val saved by app.saved.collectAsState() // a linked phone's new server and token show here at once
-    var url by rememberSaveable(saved) { mutableStateOf(app.serverUrl.ifEmpty { "https://" }) }
-    var token by rememberSaveable(saved) { mutableStateOf(app.token) }
-    var result by remember { mutableStateOf<String?>(null) }
     var muted by remember { mutableStateOf(app.muted) }
     var stack by remember { mutableStateOf(app.stack) }
     var drop by remember { mutableStateOf(app.dropCleared) }
@@ -2027,6 +2088,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
         "swipe" to app.configured, "formatting" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && (canRead || rejected)), // rejected: a publish-only phone may still unlink itself (#643)
         "senders" to (app.configured && !rejected && senders.value != null),
+        "client-cert" to (app.shown.value.id == 0), // only the first server presents one for now (#78)
     )
     val shown = SETTINGS.filter {
         open[it.id] != false && settingMatches(query, ctx.getString(it.label), it.desc?.let(ctx::getString), it.keywords)
@@ -2040,43 +2102,63 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             Switch(checked = on, onCheckedChange = set)
         }
 
+    /** The address and token form: the shown server's, or [adding] another one through [App.saveTo]. */
+    @Composable fun ServerForm(adding: Boolean) {
+        var url by rememberSaveable(saved) { mutableStateOf(if (adding) "https://" else app.serverUrl.ifEmpty { "https://" }) }
+        var token by rememberSaveable(saved) { mutableStateOf(if (adding) "" else app.token) }
+        var result by remember { mutableStateOf<String?>(null) }
+        OutlinedTextField(
+            url, { url = pastedUrl(it) }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+        if (url.trim().startsWith("http://", ignoreCase = true)) Text(stringResource(R.string.plain_http_warning), color = b.signal, fontSize = 13.sp)
+        OutlinedTextField(
+            token, { token = it }, label = { Text(stringResource(R.string.token)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            visualTransformation = PasswordVisualTransformation(),
+        )
+        Button(
+            onClick = {
+                result = ctx.getString(R.string.testing)
+                val newUrl = serverAddress(url)
+                url = newUrl
+                val newToken = token.trim()
+                app.io.execute {
+                    // Another server is tried first and kept only once it answers, so a typo adds nothing (#78).
+                    if (!adding) app.saveServer(newUrl, newToken)
+                    // /api/v1/topics needs the read scope, so this checks the URL and the token together.
+                    result = try {
+                        (if (adding) Api(app.http, newUrl, newToken) else app.api()).get("/api/v1/topics")
+                        if (adding) app.saveTo(newUrl, newToken) // shows it, so this screen is drawn again for it
+                        SyncService.start(ctx, restart = true)
+                        ctx.getString(R.string.test_ok)
+                    } catch (e: HttpError) {
+                        if (e.isAuth) ctx.getString(R.string.test_token_rejected) else ctx.getString(R.string.test_http_error, e.code)
+                    } catch (e: Exception) {
+                        ctx.getString(R.string.test_unreachable, e.message)
+                    }
+                }
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),
+        ) { Text(stringResource(R.string.save_and_test)) }
+        result?.let { Text(it, color = b.body, fontSize = 14.sp) }
+    }
+
     @Composable fun Block(id: String) {
         when (id) {
             "server" -> {
                 Title(R.string.server)
                 Explain(R.string.server_explain)
-                OutlinedTextField(
-                    url, { url = pastedUrl(it) }, label = { Text(stringResource(R.string.server_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                )
-                if (url.trim().startsWith("http://", ignoreCase = true)) Text(stringResource(R.string.plain_http_warning), color = b.signal, fontSize = 13.sp)
-                OutlinedTextField(
-                    token, { token = it }, label = { Text(stringResource(R.string.token)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = PasswordVisualTransformation(),
-                )
-                Button(
-                    onClick = {
-                        result = ctx.getString(R.string.testing)
-                        val newUrl = serverAddress(url)
-                        url = newUrl
-                        val newToken = token.trim()
-                        app.io.execute {
-                            app.saveServer(newUrl, newToken)
-                            // /api/v1/topics needs the read scope, so this checks the URL and the token together.
-                            result = try {
-                                app.api().get("/api/v1/topics")
-                                SyncService.start(ctx, restart = true)
-                                ctx.getString(R.string.test_ok)
-                            } catch (e: HttpError) {
-                                if (e.isAuth) ctx.getString(R.string.test_token_rejected) else ctx.getString(R.string.test_http_error, e.code)
-                            } catch (e: Exception) {
-                                ctx.getString(R.string.test_unreachable, e.message)
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),
-                ) { Text(stringResource(R.string.save_and_test)) }
-                result?.let { Text(it, color = b.body, fontSize = 14.sp) }
+                ServerForm(false)
+            }
+            "servers" -> {
+                Title(R.string.servers)
+                Explain(R.string.servers_explain)
+                ServerList(app, saved)
+                var adding by rememberSaveable { mutableStateOf(false) }
+                if (adding) {
+                    ServerForm(true)
+                    TextButton(onClick = scan) { Text(stringResource(R.string.scan_qr), color = b.ink) } // a new address in a code is added (#78)
+                } else TextButton(onClick = { adding = true }) { Text(stringResource(R.string.server_add), color = b.ink) }
             }
             "link-phone" -> {
                 Title(R.string.link_phone)
@@ -2118,7 +2200,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                         Switch(checked = t !in muted, onCheckedChange = { on ->
                             muted = if (on) muted - t else muted + t
                             app.muted = muted
-                            app.io.execute { RoomStore(app).reconcile() }
+                            app.io.execute { RoomStore(app, app.shown.value).reconcile() }
                         })
                     }
                 }
@@ -2126,7 +2208,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             "stack" -> Toggle(R.string.stack, R.string.stack_explain, stack) { on ->
                 stack = on
                 app.stack = on
-                app.io.execute { app.accounts.forEach { RoomStore(app, it).reconcile() } } // reposts every row in or out of its stack, on every server
+                app.redrawTrays() // reposts every row in or out of its stack, on every server
             }
             "drop-cleared" -> Toggle(R.string.drop_cleared, R.string.drop_cleared_explain, drop) { on ->
                 drop = on
@@ -2180,3 +2262,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
 }
 
 internal const val REPO = "https://github.com/thejdubb02/clrd"
+
+/** The server a tray tap opens the app on (#78): only an app tap with [Tray.OPEN] data carries one. */
+internal fun openedAccount(i: Intent): Int? =
+    i.data?.takeIf { i.action == null && it.toString().startsWith(Tray.OPEN) }?.getQueryParameter(Tray.QUERY_ACCOUNT)?.toIntOrNull()

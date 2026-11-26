@@ -12,14 +12,14 @@ import java.util.concurrent.TimeUnit
 class App : Application() {
     /** The server this phone talks to (#78). Its settings, database and sync state; the members below that name a server forward to it. */
     val account by lazy { Account(this, 0) }
-    val db get() = account.db
+    val db get() = cur.db
     /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
     val clientCert get() = account.clientCert
     /** The server origin the certificate was picked for. A moved server gets no certificate until it is picked again. */
     private fun origin(u: okhttp3.HttpUrl) = "${u.scheme}://${u.host}:${u.port}"
     private val certKeys by lazy {
         ClientCertKeys({ clientCert.value }, {
-            serverUrl.toHttpUrlOrNull()?.takeIf { origin(it) == account.prefs.getString("client_cert_origin", null) }?.let { it.host to it.port }
+            account.serverUrl.toHttpUrlOrNull()?.takeIf { origin(it) == account.prefs.getString("client_cert_origin", null) }?.let { it.host to it.port }
         }) { a ->
             runCatching { // a removed key or revoked access means no certificate, not a crash
                 val k = android.security.KeyChain.getPrivateKey(this, a)
@@ -39,7 +39,7 @@ class App : Application() {
     internal val plainHttp by lazy {
         OkHttpClient.Builder().pingInterval(45, TimeUnit.SECONDS).connectTimeout(15, TimeUnit.SECONDS).build()
     }
-    val tray get() = account.tray
+    val tray get() = cur.tray
 
     private val others = HashMap<Int, Account>() // guarded by this
     /** The accounts past account 0, in the order added, from the phone part of the "clrd" file. None is the old one-server install. */
@@ -56,6 +56,40 @@ class App : Application() {
     }
 
     val anyConfigured get() = accounts.any { it.configured }
+    /** The servers set up on this phone. More than one brings the inbox switcher, the Servers list and the host in tray entries. */
+    val servers get() = accounts.filter { it.configured }
+
+    /**
+     * The server the screens show (#78), remembered on this phone. Account 0 until another is picked, and when the
+     * remembered one is gone. Only the screens follow it: the sync service, the tray and the receivers keep their own.
+     */
+    val shown by lazy { kotlinx.coroutines.flow.MutableStateFlow(account(prefs.getInt("shown_server", 0)) ?: account) }
+
+    /** Shows server [id] on the screens and remembers it. An unknown id changes nothing. */
+    fun show(id: Int) {
+        val a = account(id) ?: return
+        prefs.edit().putInt("shown_server", id).apply()
+        shown.value = a
+    }
+
+    /** The server at [url]'s address, if this phone has it. */
+    fun accountAt(url: String) = accounts.firstOrNull { it.serverUrl.isNotEmpty() && serverAddress(it.serverUrl) == serverAddress(url) }
+
+    /**
+     * Saves a server from a setup link or Add server, then shows it. An address this phone has goes to that server,
+     * an empty account 0 is filled as before #78, and any other address is added as another server, never
+     * replacing one. Call on [io].
+     */
+    fun saveTo(url: String, token: String): Account {
+        val a = accountAt(url) ?: account.takeIf { !it.configured }
+        if (a != null) a.saveServer(url, token)
+        val got = a ?: addAccount(url, token).also { redrawTrays() } // the entries already up now name their server
+        show(got.id)
+        return got
+    }
+
+    /** Reposts every server's tray entries quietly, such as after the stack switch or a server added or removed. */
+    fun redrawTrays() = io.execute { accounts.forEach { RoomStore(this, it).reconcile() } }
 
     /** Adds a server. Ids are never used twice, so a stale tray tap for a removed one never lands on this one. */
     @Synchronized fun addAccount(url: String, token: String): Account {
@@ -81,6 +115,9 @@ class App : Application() {
                 others.remove(id)
                 a.removed = true
             }
+            // At once, before its database closes: the screens move to a server still set up, else account 0.
+            if (shown.value.id == id) show((servers.firstOrNull { it.id != id } ?: account).id)
+            saved.value++ // the switcher and the Servers list read the list again
             a
         }
         synchronized(a.configLock) { // with the service's start under the same lock, no client can arrive after this
@@ -105,6 +142,7 @@ class App : Application() {
                 deleteDatabase("clrd-$id.db") // with its -wal and -shm
             }
             a.tray.clear()
+            redrawTrays() // one server left: its entries drop the host
             if (!anyConfigured) stopService(android.content.Intent(this, SyncService::class.java)) else SyncService.start(this)
         }
     }
@@ -123,61 +161,63 @@ class App : Application() {
     /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
     internal val sends = Executors.newSingleThreadExecutor()
 
-    // Forwarders to [account], so the screens read the one server as before. Explicit getters, not "by account::":
-    // that would open the account before the app has a context.
-    val status get() = account.status
+    // Forwarders to the shown server ([shown]), so the screens read it as they read the one server before. Explicit
+    // getters, not "by account::": that would open the account before the app has a context. Background paths
+    // (the sync service, the tray, the receivers) hold their own [Account] and never read these.
+    private val cur get() = shown.value
+    val status get() = cur.status
     var sync: SyncClient?
-        get() = account.sync
-        set(v) { account.sync = v }
-    val configLock get() = account.configLock
+        get() = cur.sync
+        set(v) { cur.sync = v }
+    val configLock get() = cur.configLock
     var configGen: Int
-        get() = account.configGen
-        set(v) { account.configGen = v }
+        get() = cur.configGen
+        set(v) { cur.configGen = v }
     var serverUrl: String
-        get() = account.serverUrl
-        set(v) { account.serverUrl = v }
+        get() = cur.serverUrl
+        set(v) { cur.serverUrl = v }
     var token: String
-        get() = account.token
-        set(v) { account.token = v }
+        get() = cur.token
+        set(v) { cur.token = v }
     var epoch: String
-        get() = account.epoch
-        set(v) { account.epoch = v }
+        get() = cur.epoch
+        set(v) { cur.epoch = v }
     var muted: Set<String>
-        get() = account.muted
-        set(v) { account.muted = v }
+        get() = cur.muted
+        set(v) { cur.muted = v }
     var trayHidden: Set<String>
-        get() = account.trayHidden
-        set(v) { account.trayHidden = v }
-    val configured get() = account.configured
-    fun api() = account.api()
-    val sound get() = account.sound
-    val soundNow get() = account.soundNow
-    val soundPending get() = account.soundPending
-    fun saveSound(name: String) = account.saveSound(name)
-    fun pickSound(name: String) = account.pickSound(name)
-    fun pushSound() = account.pushSound()
-    internal fun moveSound() = account.moveSound()
-    val snooze get() = account.snooze
-    val swipes get() = account.swipes
-    val favicons get() = account.favicons
-    val formatting get() = account.formatting
-    val autolink get() = account.autolink
-    val linkPreviews get() = account.linkPreviews
-    val topicPreviews get() = account.topicPreviews
-    val swipesLocked get() = account.swipesLocked
-    val settingsRev get() = account.settingsRev
-    fun saveSwipes(next: Swipes, api: Api = api()) = account.saveSwipes(next, api)
-    fun saveDisplay(key: String, on: Boolean, api: Api = api()) = account.saveDisplay(key, on, api)
-    internal val subs get() = account.subs
-    internal fun loadSubs(api: Api = api()) = account.loadSubs(api)
-    internal fun putSubs(body: JSONObject, api: Api = api()) = account.putSubs(body, api)
-    fun subscribe(topic: String, on: Boolean, api: Api = api()) = account.subscribe(topic, on, api)
-    val markId get() = account.markId
-    fun mark(id: String, kind: String?, note: String, link: String, done: (String?) -> Unit) = account.mark(id, kind, note, link, done)
-    fun saveSettings(o: JSONObject) = account.saveSettings(o)
-    fun pruneCleared(now: Long = System.currentTimeMillis()) = account.pruneCleared(now)
+        get() = cur.trayHidden
+        set(v) { cur.trayHidden = v }
+    val configured get() = cur.configured
+    fun api() = cur.api()
+    val sound get() = cur.sound
+    val soundNow get() = cur.soundNow
+    val soundPending get() = cur.soundPending
+    fun saveSound(name: String) = cur.saveSound(name)
+    fun pickSound(name: String) = cur.pickSound(name)
+    fun pushSound() = cur.pushSound()
+    internal fun moveSound() = cur.moveSound()
+    val snooze get() = cur.snooze
+    val swipes get() = cur.swipes
+    val favicons get() = cur.favicons
+    val formatting get() = cur.formatting
+    val autolink get() = cur.autolink
+    val linkPreviews get() = cur.linkPreviews
+    val topicPreviews get() = cur.topicPreviews
+    val swipesLocked get() = cur.swipesLocked
+    val settingsRev get() = cur.settingsRev
+    fun saveSwipes(next: Swipes, api: Api = api()) = cur.saveSwipes(next, api)
+    fun saveDisplay(key: String, on: Boolean, api: Api = api()) = cur.saveDisplay(key, on, api)
+    internal val subs get() = cur.subs
+    internal fun loadSubs(api: Api = api()) = cur.loadSubs(api)
+    internal fun putSubs(body: JSONObject, api: Api = api()) = cur.putSubs(body, api)
+    fun subscribe(topic: String, on: Boolean, api: Api = api()) = cur.subscribe(topic, on, api)
+    val markId get() = cur.markId
+    fun mark(id: String, kind: String?, note: String, link: String, done: (String?) -> Unit) = cur.mark(id, kind, note, link, done)
+    fun saveSettings(o: JSONObject) = cur.saveSettings(o)
+    fun pruneCleared(now: Long = System.currentTimeMillis()) = cur.pruneCleared(now)
     /** Saves the server and token from Settings or a scanned link. Call on [io]. */
-    fun saveServer(newUrl: String, newToken: String) = account.saveServer(newUrl, newToken)
+    fun saveServer(newUrl: String, newToken: String) = cur.saveServer(newUrl, newToken)
 
     /**
      * Stack by topic (#108), in the tray and the app's list. Off until a person turns it on (#465), as on the web;
@@ -226,12 +266,12 @@ class App : Application() {
 
     /** Picks or removes the client certificate (#152). Open connections used the old one, so they close and sync reconnects. */
     fun pickClientCert(alias: String?) {
-        account.prefs.edit().putString("client_cert", alias).putString("client_cert_origin", serverUrl.toHttpUrlOrNull()?.let(::origin)).apply()
+        account.prefs.edit().putString("client_cert", alias).putString("client_cert_origin", account.serverUrl.toHttpUrlOrNull()?.let(::origin)).apply()
         clientCert.value = alias
         io.execute {
             certKeys.renew()
             http.connectionPool.evictAll()
-            if (configured) SyncService.start(this, restart = true)
+            if (account.configured) SyncService.start(this, restart = true)
         }
     }
 
@@ -250,8 +290,8 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        tray.createChannels()
-        moveSound()
+        account.tray.createChannels()
+        account.moveSound()
     }
 
     /**
@@ -263,10 +303,10 @@ class App : Application() {
      * [via] says how the person did it (docs/SPEC.md "via"), so the server log can answer "I did not clear that".
      */
     fun act(id: String, action: String, body: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) =
-        account.actAll(listOf(id), action, body, server, via, done)
+        cur.actAll(listOf(id), action, body, server, via, done)
 
     /** One action on several rows from the inbox, such as a stack's Clear (#360): the dismisses go out as one clear call. */
-    fun act(ids: List<String>, action: String, via: String = VIA_APP) = account.actAll(ids, action, "{}", null, via) {}
+    fun act(ids: List<String>, action: String, via: String = VIA_APP) = cur.actAll(ids, action, "{}", null, via) {}
 
     /** Undo of a Clear (#425): rows come back as they were, so a snoozed one is snoozed again until its old time. */
     fun undoClear(rows: List<Notif>) {
@@ -305,7 +345,7 @@ class App : Application() {
         const val KEEP_DAYS = 7
 
         /** The keys in the "clrd" file that belong to the phone, not to account 0's server (#78). */
-        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id")
+        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id", "shown_server")
     }
 }
 

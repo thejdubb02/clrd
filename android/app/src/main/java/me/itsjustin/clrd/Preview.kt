@@ -47,10 +47,11 @@ internal data class LinkPreview(val url: String, val title: String, val descript
 
         /** The server's preview of [url] for [topic], or null when it has none (off, no title, no connection). Call off the main thread. */
         fun load(app: App, url: String, topic: String): LinkPreview? {
-            val key = "${app.serverUrl} ${app.token.hashCode()} $topic $url" // another server or account never sees this one's
+            val a = app.shown.value
+            val key = "${a.serverUrl} ${a.token.hashCode()} $topic $url" // another server or account never sees this one's
             cache.get(key)?.let { return it }
             // No redirects (#818): a proxy in front of the server could send the phone to the linked site. A 3xx is an error, so no preview.
-            val api = Api(app.http.newBuilder().followRedirects(false).followSslRedirects(false).build(), app.serverUrl, app.token)
+            val api = Api(a.http.newBuilder().followRedirects(false).followSslRedirects(false).build(), a.serverUrl, a.token)
             val o = runCatching { JSONObject(api.get("/api/v1/preview?url=" + Uri.encode(url) + "&topic=" + Uri.encode(topic))) }.getOrNull() ?: return null
             val title = o.optString("title")
             if (title.isEmpty()) return null
