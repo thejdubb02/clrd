@@ -237,11 +237,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
         shown.filter { it !in stacks.keys }.forEach { nm.cancel(it, SUMMARY_ID) }
         if (stacks.isEmpty()) return
         val server = acct.serverUrl
-        val main = PendingIntent.getActivity(
-            ctx, 0,
-            Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
+        val main = PendingIntent.getActivity(ctx, 0, inbox(), PendingIntent.FLAG_IMMUTABLE)
         for ((group, rows) in stacks) {
             val topic = group.removePrefix(this.group)
             val ids = rows.map { it.tag.removePrefix(tagPrefix) }.toTypedArray()
@@ -338,9 +334,16 @@ class Tray(private val ctx: Context, private val acct: Account) {
 
     private fun open(n: Notif): PendingIntent {
         val i = n.click?.takeIf { it.startsWith("http") }?.let { Intent(Intent.ACTION_VIEW, Uri.parse(it)) }
-            ?: Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            ?: inbox()
         return PendingIntent.getActivity(ctx, n.id.hashCode(), i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
+
+    /**
+     * The app's inbox. For a server other than account 0 the data URI names it (PendingIntents match on the URI,
+     * and it says which inbox to show); account 0's stays as before, with no data.
+     */
+    private fun inbox() = Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        .apply { if (acct.id != 0) data = Uri.parse("clrd://open").buildUpon().account().build() }
 
     /** A sender link opens in the browser. The URL itself makes the PendingIntent unique. */
     private fun link(url: String) =

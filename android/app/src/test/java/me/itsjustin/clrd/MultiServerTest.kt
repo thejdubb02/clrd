@@ -68,6 +68,19 @@ class MultiServerTest {
         assertEquals(setOf("a" to 0, "b" to 0, "topic:t" to 1), nm.activeNotifications.map { it.tag to it.id }.toSet())
     }
 
+    /** A tap on another server's entry or stack names that server, so the app can open its inbox; account 0's is unchanged. */
+    @Test fun aTapOpensTheServerItCameFrom() {
+        app.stack = true
+        val b = app.addAccount("https://b.example", "")
+        bg { RoomStore(app, app.account).apply(listOf(row("a"), row("b")), 1) }
+        bg { RoomStore(app, b).apply(listOf(row("a"), row("c")), 1) }
+        fun open(tag: String, id: Int = 0) = shadowOf(shadowOf(nm).getNotification(tag, id)!!.contentIntent).savedIntent
+        assertNull(open("a").data)
+        assertNull(open("topic:t", Tray.SUMMARY_ID).data)
+        assertEquals("${b.id}", open("a${b.id}:a").data?.getQueryParameter(Tray.QUERY_ACCOUNT))
+        assertEquals("${b.id}", open("topic:${b.id}:t", Tray.SUMMARY_ID).data?.getQueryParameter(Tray.QUERY_ACCOUNT))
+    }
+
     @Test fun anotherAccountTagsItsEntriesAndLeavesAccountZerosAlone() {
         app.stack = true
         val b = app.addAccount("https://b.example", "")

@@ -98,6 +98,7 @@ class App : Application() {
                 }
                 a.clientCert.value = null
                 a.soundNow.value = a.sound
+                a.tray.createChannels() // back on the default sound, whose channels an earlier change may have deleted
             } else {
                 a.close()
                 deleteSharedPreferences("clrd-$id")
