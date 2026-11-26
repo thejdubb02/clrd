@@ -35,11 +35,11 @@
     {{if ne .View "settings"}}{{with about}}<div class="alert mb-4" role="status" data-update-note hidden>{{template "i-book-open"}}<h2>Updated to clrd {{.Version}}</h2><section><div class="mt-2 flex flex-wrap items-center gap-2"><a class="btn" data-variant="outline" data-size="sm" href="{{base}}/app/settings#about" data-update-open>What's new</a><button type="button" class="btn" data-variant="ghost" data-size="sm" data-update-dismiss>Dismiss</button></div></section></div>{{end}}{{end}}
     {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else if eq .View "stats"}}{{template "stats" .}}{{else}}
     <header class="mb-4 flex flex-wrap items-center gap-2 md:min-h-9 md:flex-nowrap">
-      <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{.Heading}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
+      <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{with .One}}<a class="text-muted-foreground font-normal" href="{{$base}}?topic={{.Topic}}#t-{{.ID}}" data-back>{{$.Heading}}</a> / {{.Topic}}{{else}}{{.Heading}}{{end}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
       {{if eq .View "inbox"}}<button type="button" class="btn js-only" data-variant="outline" data-send-open title="Send a notification">{{template "i-send"}}<span class="max-md:sr-only">Send</span></button>{{end}}
-      {{if eq .View "inbox"}}<button type="button" class="btn js-only" data-variant="outline" data-act="clear-all"{{if not .Snap.Items}} hidden{{end}}>{{template "i-check-check"}}Clear all</button>{{end}}
+      {{if and (eq .View "inbox") (not .One)}}<button type="button" class="btn js-only" data-variant="outline" data-act="clear-all"{{if not .Snap.Items}} hidden{{end}}>{{template "i-check-check"}}Clear all</button>{{end}}
       <button type="button" class="btn js-only" data-variant="outline" data-palette aria-label="Commands" title="Commands">{{template "i-command"}}<kbd class="kbd max-md:hidden" data-mod>Ctrl K</kbd></button>
-      <form class="input-group bg-card max-md:order-last max-md:basis-full md:w-60" role="search" method="get">
+      <form class="input-group bg-card max-md:order-last max-md:basis-full md:w-60" role="search" method="get"{{if .One}} action="{{$base}}"{{end}}>
         {{with .Topic}}<input type="hidden" name="topic" value="{{.}}">{{end}}
         <label class="sr-only" for="q">Search notifications</label>
         <input id="q" type="search" name="q" value="{{.Q}}" placeholder="Search" autocomplete="off" data-search>
@@ -612,7 +612,7 @@
       <div role="group" aria-labelledby="pal-list">
         <span data-heading id="pal-list">This list</span>
         <div role="menuitem" data-cmd="search" data-keywords="find filter">{{template "i-search"}}Search <kbd class="kbd" data-shortcut>/</kbd></div>
-        {{if eq .View "inbox"}}<div role="menuitem" data-cmd="clear-all" data-keywords="dismiss everything">{{template "i-check-check"}}Clear all</div>{{end}}
+        {{if and (eq .View "inbox") (not .One)}}<div role="menuitem" data-cmd="clear-all" data-keywords="dismiss everything">{{template "i-check-check"}}Clear all</div>{{end}}
       </div>
       <hr role="separator">{{end}}
       <div role="group" aria-labelledby="pal-go">

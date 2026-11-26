@@ -83,6 +83,47 @@ func TestWebOnRealServer(t *testing.T) {
 	}
 }
 
+// The link shows the card where no list does (#822): past the newest 500 of
+// its state in its topic, and cleared on this device alone (#767).
+func TestNotificationLinkUnlisted(t *testing.T) {
+	s, ts, raw := realServer(t)
+	ctx, tok := context.Background(), mustTok(t, s, raw)
+	get := func(path string) (int, string) { // as this token, whose clears stay here
+		req, _ := http.NewRequest("GET", ts.URL+path, nil)
+		req.Header.Set("Authorization", "Bearer "+raw)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(b)
+	}
+	ids := make([]string, 502)
+	for i := range ids {
+		n, err := s.Publish(ctx, tok, server.PublishInput{Topic: "home", Message: "m"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[i] = n.ID
+	}
+	if _, err := s.SetClears(ctx, tok, tok.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Act(ctx, tok, ids[501], "dismiss", "api", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []struct{ id, list, state string }{{ids[0], "/app", "active"}, {ids[501], "/app/cleared", "dismissed"}} {
+		if _, body := get(k.list + "?topic=home"); strings.Contains(body, `id="t-`+k.id+`"`) {
+			t.Fatalf("%s lists %s, so this test proves nothing", k.list, k.state)
+		}
+		code, body := get("/app/n/" + k.id)
+		if code != 200 || !strings.Contains(body, `id="t-`+k.id+`"`) || !strings.Contains(body, `href="`+k.list+`?topic=home#t-`+k.id+`" data-back`) {
+			t.Errorf("%s: %d, want its card linking back to %s", k.state, code, k.list)
+		}
+	}
+}
+
 // The sidebar and the API count every row, past the 500 the page lists.
 func TestExactCounts(t *testing.T) {
 	s, ts, raw := realServer(t)
@@ -613,8 +654,9 @@ func TestSubscriptionsOnRealServer(t *testing.T) {
 	}
 }
 
-// A GitHub issue links one notification at /app/n/{id} (#814): it opens the
-// view its state is in now, at its card, after a clear or snooze too; signed
+// A GitHub issue links one notification at /app/n/{id} (#814): a page with
+// its card, linking back to the view its state is in now, after a clear or
+// snooze too (#822); signed
 // out it is the sign-in page, and gone or in a topic the token cannot read it
 // is the same not found page.
 func TestNotificationLink(t *testing.T) {
@@ -643,8 +685,8 @@ func TestNotificationLink(t *testing.T) {
 			}
 		}
 		code, body, at := fetch(t, c, ts.URL+"/app/n/"+id)
-		if code != 200 || at.Path != step.path || at.Query().Get("topic") != "home" || !strings.Contains(body, `id="t-`+id+`"`) {
-			t.Errorf("after %q: %d at %s, want its card at %s?topic=home", step.act, code, at, step.path)
+		if code != 200 || at.Path != "/app/n/"+id || !strings.Contains(body, `id="t-`+id+`"`) || !strings.Contains(body, `href="`+step.path+`?topic=home#t-`+id+`" data-back`) {
+			t.Errorf("after %q: %d at %s, want its card linking back to %s?topic=home", step.act, code, at, step.path)
 		}
 	}
 	// A token for another topic, and an id that is not there, both get the
