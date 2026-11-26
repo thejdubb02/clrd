@@ -616,13 +616,12 @@ private fun Header(app: App) {
     Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.app_name), style = Wordmark, color = b.ink)
         // More than one server (#78): the one shown, and a tap picks another. One server shows nothing new.
-        if (servers.size > 1) Box(Modifier.padding(start = 12.dp).weight(1f, fill = false)) {
-            Text(stringResource(R.string.server_switch, app.shown.value.host), style = Mono, color = b.ink, maxLines = 1, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { menu = true }.padding(6.dp).testTag("server-switch"))
+        if (servers.size > 1) Box(Modifier.padding(start = 12.dp, end = 8.dp).weight(1f)) {
+            Text(stringResource(R.string.server_switch, app.shown.value.host), style = Mono, color = b.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { menu = true }.padding(6.dp).testTag("server-switch"))
             DropdownMenu(menu, { menu = false }) {
                 servers.forEach { a -> DropdownMenuItem(text = { Text(a.host) }, onClick = { menu = false; app.show(a.id) }) }
             }
-        }
-        Spacer(Modifier.weight(1f))
+        } else Spacer(Modifier.weight(1f))
         SyncState(app.shown.value)
     }
 }
