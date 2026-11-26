@@ -10,7 +10,7 @@ the Done category or it is deleted.
 3. Events: issue created, updated and deleted. Add a JQL filter to narrow it.
 4. If you set a secret (the REST API registration supports one), save it in
    clrd so it checks `X-Hub-Signature`:
-   `curl -X PUT .../api/v1/topics/tickets/templates/jira -H "Authorization: Bearer clrd_..." -d '{"secret":"..."}'`
+   `curl -X PUT https://clrd.example.com/api/v1/topics/tickets/templates/jira -H "Authorization: Bearer clrd_..." -d '{"secret":"..."}'`
 
 | clrd | Jira |
 |---|---|

@@ -9,7 +9,7 @@ topic owner can save their own for anything else.
 Most services cannot add an `Authorization` header to a webhook, so put the
 token in the URL. Either works:
 
-- `?auth=` plus the base64 of `Bearer clrd_...`:
+- `?auth=` plus the unpadded URL-safe base64 of `Bearer clrd_...`:
   `echo -n "Bearer clrd_..." | base64 | tr -d '='`
 - Basic auth in the URL: `https://anything:clrd_...@clrd.example.com/infra?template=github`
 
@@ -60,7 +60,7 @@ publishing anything.
 
 ## Your own template
 
-Save a template under any name (letters, digits, `_` and `-`), then send to
+Save a template with a name of up to 64 letters, digits, `_` or `-`, then send to
 `?template=<that name>`:
 
 ```sh

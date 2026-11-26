@@ -11,7 +11,7 @@ high.
 3. Content type: `application/json`. The form type is not supported.
 4. Secret: any long random string. Save the same one in clrd so it checks
    `X-Hub-Signature-256`:
-   `curl -X PUT .../api/v1/topics/dev/templates/github -H "Authorization: Bearer clrd_..." -d '{"secret":"..."}'`
+   `curl -X PUT https://clrd.example.com/api/v1/topics/dev/templates/github -H "Authorization: Bearer clrd_..." -d '{"secret":"..."}'`
 5. Pick the events you want. The ping GitHub sends on save shows up too.
 
 | clrd | GitHub |

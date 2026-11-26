@@ -113,9 +113,10 @@ MCP tools `format_dismiss` and `set_topic`.
 
 Your devices never contact the linked sites. When a client asks for an icon
 or a preview, the clrd server fetches it, so the sites see your server, not
-your phone. These are the only requests clrd makes to other servers. The
-server refuses to fetch anything on your own network (private, loopback and
+your phone. The fetcher refuses addresses on your own network (private, loopback and
 link-local addresses, checked after DNS and on every redirect), only uses
 ports 80 and 443, stops after 5 seconds or 1 MB, and keeps icons for 7 days
-and previews for 24 hours. Leave `link_previews` off if you would rather your
-server never load pages people link to.
+and previews for 24 hours. Turning off `favicons` stops the built-in clients
+from requesting icons automatically. Clients with read access can still
+request them directly. To disable previews, turn off `link_previews` and
+remove any topic overrides that enable previews.
