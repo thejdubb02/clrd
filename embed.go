@@ -9,10 +9,20 @@ package clrd
 import (
 	"embed"
 	"io/fs"
+
+	"github.com/thejdubb02/clrd/internal/changelog"
 )
 
-//go:embed docs assets CHANGELOG.md
+//go:embed docs assets CHANGELOG.md changelog.d
 var files embed.FS
 
 // Files reads the same in both builds.
 var Files fs.FS = files
+
+func readChangelog() string {
+	md, _, err := changelog.Assemble(Files)
+	if err != nil {
+		panic(err)
+	}
+	return md
+}

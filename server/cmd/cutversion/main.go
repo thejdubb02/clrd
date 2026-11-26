@@ -1,4 +1,4 @@
-// Command cutversion turns the Unreleased entries of CHANGELOG.md into a
+// Command cutversion turns pending changelog fragments into a
 // dated version, and keeps the file the binary embeds small by moving the
 // oldest versions to CHANGELOG-archive.md (SPEC section 5.2). From the repo
 // root: go run ./server/cmd/cutversion [-summary-file F] 0.1.0 [YYYY-MM-DD]
@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/thejdubb02/clrd"
+	pending "github.com/thejdubb02/clrd/internal/changelog"
 )
 
 const (
@@ -56,7 +57,7 @@ func run(version, date, sumFile string) error {
 		}
 		summary = string(b)
 	}
-	md, err := os.ReadFile(changelog)
+	md, fragments, err := pending.Assemble(os.DirFS("."))
 	if err != nil {
 		return err
 	}
@@ -64,7 +65,7 @@ func run(version, date, sumFile string) error {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	out, arch, err := cut(string(md), string(old), version, date, summary)
+	out, arch, err := cut(md, string(old), version, date, summary)
 	if err != nil {
 		return err
 	}
@@ -73,7 +74,19 @@ func run(version, date, sumFile string) error {
 			return err
 		}
 	}
-	return os.WriteFile(changelog, []byte(out), 0o644)
+	if err := os.WriteFile(changelog, []byte(out), 0o644); err != nil {
+		return err
+	}
+	var cleanup error
+	for _, name := range fragments {
+		if err := os.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			cleanup = errors.Join(cleanup, err)
+		}
+	}
+	if cleanup != nil {
+		return fmt.Errorf("version %s was written; remove the remaining consumed fragments before building: %w", version, cleanup)
+	}
+	return nil
 }
 
 var semver = regexp.MustCompile(`^\d+\.\d+\.\d+$`)

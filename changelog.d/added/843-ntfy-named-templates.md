@@ -1,0 +1,1 @@
+- ntfy compatibility: set `CLRD_NTFY_TEMPLATE_DIR` to migrate named `.yml` templates. Select a file by name on a JSON publish using the header or query parameter (#843).
