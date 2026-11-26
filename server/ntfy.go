@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"mime"
 	"net/http"
 	"regexp"
 	"slices"
@@ -196,7 +197,9 @@ func (s *Server) ntfyRoutes() {
 }
 
 // param reads a ntfy parameter from X-Name or Name for every alias first,
-// then from the query (?name=), the same order as ntfy's readParam.
+// then from the query (?name=), the same order as ntfy's readParam. A header
+// may carry RFC 2047 encoded words (=?UTF-8?B?...?=), since headers hold only
+// ASCII; they are decoded as ntfy does, and one that cannot be is kept as sent.
 func param(r *http.Request, names ...string) string {
 	for _, n := range names {
 		h := r.Header.Get(n)
@@ -205,6 +208,9 @@ func param(r *http.Request, names ...string) string {
 		}
 		for _, v := range []string{r.Header.Get("X-" + n), h} {
 			if v != "" {
+				if d, err := new(mime.WordDecoder).DecodeHeader(v); err == nil {
+					return d
+				}
 				return v
 			}
 		}
