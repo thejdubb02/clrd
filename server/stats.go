@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -231,7 +230,7 @@ func top(m map[string]*StatsGroup) []*StatsGroup {
 	out = out[:min(len(out), statsTop)]
 	for _, g := range out {
 		if n := len(g.clear); n > 0 {
-			slices.Sort(g.clear)
+			sort.Slice(g.clear, func(i, j int) bool { return g.clear[i] < g.clear[j] })
 			g.ClearMedianMS, g.ClearP90MS = g.clear[(n-1)/2], g.clear[(n*9+9)/10-1] // nearest rank
 		}
 	}

@@ -90,7 +90,7 @@ func (h *Handler) approve(w http.ResponseWriter, r *http.Request) {
 		hookAnswer(w, "allow", "")
 		return
 	case str(m, "reply") == "timeout":
-		reason = fmt.Sprintf("No answer on clrd within %d s.", int(d.Seconds()))
+		reason = "No answer on clrd within " + strconv.Itoa(int(d.Seconds())) + " s."
 	case str(m, "by") != "":
 		reason = "Denied from clrd by " + str(m, "by") + "."
 	}

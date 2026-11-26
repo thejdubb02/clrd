@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -225,7 +224,11 @@ func (s *Server) SetSubscriptions(ctx context.Context, tok *Token, newTopics *bo
 			return SubscriptionList{}, errf(400, "bad_request", "%s: at most 64 letters, digits, - or _", []string{"request_id", "if_request_id"}[i])
 		}
 	}
-	names := slices.Sorted(maps.Keys(topics))
+	names := make([]string, 0, len(topics))
+	for topic := range topics {
+		names = append(names, topic)
+	}
+	slices.Sort(names)
 	for _, t := range names {
 		if err := validTopic(t); err != nil {
 			return SubscriptionList{}, err

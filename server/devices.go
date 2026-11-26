@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -484,7 +485,7 @@ func (s *Server) unlinkIdle(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		if _, err := s.unlinkIfIdle(ctx, id, cutoff, true, id, fmt.Sprintf("unused for %d days", n)); err != nil {
+		if _, err := s.unlinkIfIdle(ctx, id, cutoff, true, id, "unused for "+strconv.Itoa(n)+" days"); err != nil {
 			return err
 		}
 	}

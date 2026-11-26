@@ -122,7 +122,10 @@ func (s Stats) Bars() []Bar {
 			}
 		}
 	}
-	top := max(slices.Max(counts), 1)
+	top := 1
+	for _, c := range counts {
+		top = max(top, c)
+	}
 	w := 600 / float64(n)
 	bars := make([]Bar, n)
 	for i, c := range counts {
