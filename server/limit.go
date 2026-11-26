@@ -125,6 +125,26 @@ func perMinute(n int) *limiter {
 	return newLimiter(n, time.Minute/time.Duration(n))
 }
 
+func (s *Server) openNtfySubscription(ip string) bool {
+	s.ntfySubsMu.Lock()
+	defer s.ntfySubsMu.Unlock()
+	if s.ntfySubs[ip] >= s.opt.NtfyMaxSubscriptions {
+		return false
+	}
+	s.ntfySubs[ip]++
+	return true
+}
+
+func (s *Server) closeNtfySubscription(ip string) {
+	s.ntfySubsMu.Lock()
+	defer s.ntfySubsMu.Unlock()
+	if s.ntfySubs[ip] == 1 {
+		delete(s.ntfySubs, ip)
+	} else {
+		s.ntfySubs[ip]--
+	}
+}
+
 // publishLimit spends one publish from the token's and the topic's caps.
 // ponytail: anonymous publishers share one bucket; key them by address if that bites.
 func (s *Server) publishLimit(tok *Token, topic string) error {
