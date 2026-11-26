@@ -661,6 +661,19 @@ try {
   await img.scrollIntoViewIfNeeded(); // lazy: loads once on screen
   for (let i = 0; i < 50 && !await img.evaluate(i => i.complete); i++) await sharePage.waitForTimeout(100);
   assert.equal(await img.evaluate(i => i.naturalWidth), 1, 'uploaded image did not load on the card');
+
+  const value = 'first line\n"a < b & c > d"';
+  const copyNotice = await api(phone, '/api/v1/notifications', {
+    topic: 'infra', title: 'Code ready', message: 'Use the button',
+    actions: [{ label: 'Copy code', copy: value, clear: true }],
+  });
+  const copyCard = sharePage.locator('article.card', { hasText: 'Code ready' });
+  await copyCard.getByRole('button', { name: 'Copy code', exact: true }).click();
+  await sharePage.locator('[data-toast]').filter({ hasText: 'Cleared.' }).getByRole('button', { name: 'Undo' }).waitFor();
+  assert.equal(await sharePage.evaluate(() => window.shared.at(-1)), value);
+  assert.equal((await get(laptop, copyNotice.id)).state, 'dismissed');
+  console.log('ok: a copy action copies its value and clears the card with Undo');
+
   await sharePage.close();
   // On a plain http LAN address there is no navigator.clipboard: Copy still works.
   const lan = await page.context().newPage();

@@ -123,7 +123,7 @@ func TestDeviceActionChecks(t *testing.T) {
 }
 
 func TestNtfyShortActions(t *testing.T) {
-	as, err := ntfyActions(`view, Don't, https://example.com/a; broadcast, Ping, extras.cmd=go, intent=io.x.P; copy, C, x`)
+	as, err := ntfyActions(`view, Don't, https://example.com/a; broadcast, Ping, extras.cmd=go, intent=io.x.P; unsupported, C, x`)
 	if err != nil || len(as) != 2 || as[0].Label != "Don't" || as[1].Broadcast == nil || as[1].Broadcast.Extras["cmd"] != "go" ||
 		as[1].Broadcast.Intent != "io.x.P" {
 		t.Fatalf("short form: %v %+v", err, as)

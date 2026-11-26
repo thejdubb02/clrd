@@ -101,11 +101,13 @@ type Repeat struct {
 	Next  *time.Time `json:"next"`
 }
 
-// Action is a link (URL), an answer button (Reply) or a device action (HTTP
+// Action is a link (URL), an answer button (Reply), clipboard text (Copy) or a device action (HTTP
 // or Broadcast, #401) that only a phone runs; the inbox shows it, never runs it.
 type Action struct {
 	Label     string           `json:"label"`
 	URL       string           `json:"url"`
+	Copy      string           `json:"copy,omitempty"`
+	Clear     bool             `json:"clear,omitempty"`
 	Reply     string           `json:"reply,omitempty"`
 	Text      bool             `json:"text,omitempty"` // answered with typed text (#153)
 	HTTP      *HTTPAction      `json:"http,omitempty"`
@@ -153,6 +155,16 @@ func (a Attachment) Image() bool {
 func (n Notification) Links() (out []Action) {
 	for _, a := range n.Actions {
 		if a.URL != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// Copies are the actions that copy text to the clipboard.
+func (n Notification) Copies() (out []Action) {
+	for _, a := range n.Actions {
+		if a.Copy != "" {
 			out = append(out, a)
 		}
 	}
