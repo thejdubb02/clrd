@@ -85,6 +85,9 @@
       dark = light(palette.bg) < 0.179;
     }
     root.classList.toggle('dark', dark);
+    // A custom theme is light or dark by its own background; the desktop app reads this (#584).
+    if (palette && palette === shown.theme_colors) root.dataset.scheme = dark ? 'dark' : 'light';
+    else delete root.dataset.scheme;
     paint(palette, choice === 'high-contrast');
     for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = palette?.bg || (dark ? '#0F1114' : '#F5F3EE');
   }
