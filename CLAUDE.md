@@ -25,8 +25,8 @@ Public open-source project: self-hosted notification server + Android app (F-Dro
 - Local Android and Go builds and test runs go to cezar1, never the devbox (its CPU is throttled by the host).
 - Work tracked as GitHub issues on thejdubb02/clrd.
 - Keep the repo page and site true (Justin, 2026-11-19). Any PR a user would
-  notice updates, in the same PR: `CHANGELOG.md` under Unreleased (CI fails
-  without it; label `no-changelog` for tests, CI and refactors), plus
+  notice updates, in the same PR: one pending entry in [changelog.d](changelog.d/README.md)
+  (CI checks it, with `no-changelog` for tests, CI and refactors), plus
   `README.md`, `web/templates/landing.html` and the matching `docs/` page when
   a headline feature, install step or integration changes. The site serves
   `docs/` and the landing page from the binary, so the repo is the site.

@@ -1139,16 +1139,16 @@ One project version for the server, web, Android and desktop apps: the
 newest dated heading in `CHANGELOG.md` (`## 0.1.0 - 2026-11-23`). It is
 `0.0.0` until the first version is cut. Cut one with
 `go run ./server/cmd/cutversion 0.1.0` (date defaults to today, UTC): it
-moves everything under `## Unreleased` into a new dated section and leaves
-`## Unreleased` in place, empty, for the next entry. With
+collects the pending files in `changelog.d/` into a new dated section,
+removes the files it consumed, and leaves `## Unreleased` in place. With
 `-summary-file F` (before the version), the short hand-written text in `F`
 (`###` sections with `-` items, like Unreleased) becomes the version's
 section, and the full entries go to `CHANGELOG-archive.md` under the same
 heading. A version is cut with each deploy batch, so Unreleased stays small.
 
-The binary embeds `CHANGELOG.md`, so it carries the recent history and the
-repo carries all of it. A test fails when the embedded file is over 96,000
-bytes. When a cut leaves it over 90,000 bytes, the script moves the oldest
+The binary shows the pending entries under Unreleased and carries recent
+versions from `CHANGELOG.md`. A test fails when the combined changelog is
+over 96,000 bytes. When a cut leaves it over 90,000 bytes, the script moves the oldest
 versions into `CHANGELOG-archive.md` at the repo root (not embedded), keeping
 the newest 10 when they fit under 96,000 and always the newest one.
 
@@ -1180,7 +1180,7 @@ its data):
   What's new note on the first open (quiet on a browser's first visit ever),
   linking to Settings, About; each browser can turn the note off in Settings.
 
-`/docs/changelog` renders the same file; a private server hides it with the
+`/docs/changelog` renders the combined changelog; a private server hides it with the
 rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
 and `initialize` reports `version` as `serverInfo.version`.
 
