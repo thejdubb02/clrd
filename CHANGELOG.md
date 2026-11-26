@@ -153,6 +153,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Server: a GitHub issue hook still finds the issue it already opened after the issue was edited on GitHub's website, so a retried delivery does not open a second one (#827).
 - Web: the sender page no longer offers Rename or Rotate secret for a token set in the config file, which the server always refuses; it says to change it there. Senders carry `config: true` for such tokens (#119).
 - Web: a notification's own page shows "This notification is gone" once it is deleted or its topic is no longer yours, instead of keeping the card and retrying every few seconds (#826).
 - Web: a notification's link (`/app/n/{id}`, as a GitHub issue links it) opens a page with that card alone, in any state, with a link back to its list, so it is there even past a list's newest 500 or when this device cleared it for itself alone (#822).
