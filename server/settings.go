@@ -266,7 +266,14 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 			delete(st.TopicKeepClearedDays, t)
 		}
 	}
-	st.ColorRules = slices.DeleteFunc(st.ColorRules, func(r ColorRule) bool { return r.Topic != "" && !tok.Allows(r.Topic) })
+	rules := st.ColorRules[:0]
+	for _, r := range st.ColorRules {
+		if r.Topic == "" || tok.Allows(r.Topic) {
+			rules = append(rules, r)
+		}
+	}
+	clear(st.ColorRules[len(rules):])
+	st.ColorRules = rules
 	if st.KeepClearedDays == nil { // filled on reads only, so a save never pins CLRD_RETENTION
 		d := int((s.opt.Retention + 24*time.Hour - 1) / (24 * time.Hour))
 		st.KeepClearedDays = &d
