@@ -1146,7 +1146,8 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 		return nil, err
 	}
 	defer os.Remove(f.Name()) // no-op once renamed
-	size, err := io.Copy(f, io.LimitReader(body, s.opt.AttachmentMax+1))
+	src := &readErr{r: io.LimitReader(body, s.opt.AttachmentMax+1)}
+	size, err := io.Copy(f, src)
 	head := make([]byte, 512)
 	k, _ := f.ReadAt(head, 0)
 	if cerr := f.Close(); err == nil {
@@ -1158,6 +1159,9 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 		return nil, errf(413, "too_large", "file over %d bytes", s.opt.AttachmentMax)
 	case errors.Is(err, os.ErrDeadlineExceeded):
 		return nil, errf(408, "timeout", "upload too slow")
+	case err != nil && src.err == nil: // the body read fine, so the disk refused it
+		s.log.Warn("could not store an upload", "err", err)
+		return nil, errf(507, "storage_full", "attachment storage is full")
 	case err != nil:
 		return nil, errf(400, "bad_request", "cannot read file: %v", err)
 	}
@@ -1173,6 +1177,20 @@ func (s *Server) PublishFile(ctx context.Context, tok *Token, in PublishInput, n
 	n, err := s.Publish(ctx, tok, in)
 	if err != nil {
 		os.Remove(path)
+	}
+	return n, err
+}
+
+// readErr keeps the error its reader returned, telling a bad upload from a full disk.
+type readErr struct {
+	r   io.Reader
+	err error
+}
+
+func (e *readErr) Read(p []byte) (int, error) {
+	n, err := e.r.Read(p)
+	if err != nil && err != io.EOF {
+		e.err = err
 	}
 	return n, err
 }
