@@ -10,6 +10,13 @@
   const shell = document.querySelector('[data-inbox]');
   if (!shell) return;
 
+  const workers = navigator.serviceWorker;
+  // Keep the existing push registration under /static/ so installed browser
+  // subscriptions survive the upgrade. Only the inbox worker intercepts pages.
+  if (location.pathname === B + '/app' || location.pathname.startsWith(B + '/app/')) {
+    workers?.register(B + '/static/inbox-worker.js', { scope: B + '/app' }).catch(() => {});
+  }
+
   const show = { inbox: ['active', 'acknowledged'], snoozed: ['snoozed'], cleared: ['dismissed', 'resolved'] }[shell.dataset.view] || [];
   const $ = s => document.querySelector(s);
   const list = $('[data-list]'), empty = $('main [data-empty]'), clearAll = $('[data-act=clear-all]');
@@ -395,17 +402,17 @@
   // button is tapped. Server and browser must agree; when one side lost the
   // subscription, or the site is blocked, both are tidied to off.
   const pushBtn = $('[data-push]');
+  const pushScope = `${B}/static/`;
   if (pushBtn) {
     const hint = $('[data-push-hint]');
-    const scope = `${B}/static/`;
     const blockedPush = 'Notifications are blocked for this site in the browser settings.';
     let key = '';
     const show = (on, why) => { pushBtn.dataset.on = on ? '1' : ''; pushBtn.textContent = on ? 'Turn off notifications' : 'Turn on notifications'; hint.textContent = why; };
-    const local = async () => (await navigator.serviceWorker.getRegistration(scope))?.pushManager.getSubscription();
+    const local = async () => (await workers.getRegistration(pushScope))?.pushManager.getSubscription();
     const save = s => fetch('/api/v1/push', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) });
     // True once the server stopped pushing; the browser's own copy is best effort.
     const off = async () => { await (await local().catch(() => null))?.unsubscribe().catch(() => {}); return !!(await fetch('/api/v1/push', { method: 'DELETE' }).catch(() => null))?.ok; };
-    if (!('PushManager' in window) || !navigator.serviceWorker) show(false, 'This browser cannot show notifications from clrd.');
+    if (!('PushManager' in window) || !workers) show(false, 'This browser cannot show notifications from clrd.');
     else fetch('/api/v1/push').then(r => r.ok ? r.json() : Promise.reject()).then(async g => {
       key = g.public_key;
       const s = await local().catch(() => null);
@@ -420,7 +427,7 @@
       const p = await Notification.requestPermission(); // first, while the tap still counts
       if (p !== 'granted') { pushBtn.disabled = p === 'denied'; return show(false, p === 'denied' ? blockedPush : 'Not turned on: the browser was not allowed to show notifications.'); }
       try {
-        const reg = await navigator.serviceWorker.register(`${scope}sw.js`);
+        const reg = await workers.register(`${pushScope}sw.js`);
         const w = reg.installing || reg.waiting || reg.active; // ready never settles: this page is outside the worker's scope
         if (w.state !== 'activated') await new Promise((ok, no) => w.addEventListener('statechange', () => w.state === 'activated' ? ok() : w.state === 'redundant' && no()));
         const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)) });
@@ -430,6 +437,29 @@
       pushBtn.disabled = false;
     });
   }
+
+  const cleared = state => state === 'dismissed' || state === 'resolved';
+  const syncAlerts = async (id, through) => {
+    if (!workers || window.Notification?.permission !== 'granted') return;
+    try {
+      const reg = await workers.getRegistration(pushScope);
+      const alerts = await reg?.getNotifications(id ? { tag: id } : {});
+      await Promise.all((alerts || []).map(async alert => {
+        if (!alert.tag) return;
+        // A clear from replay must leave a newer alert for a reopened item alone.
+        if (through != null) {
+          if (!(alert.data?.seq > through)) alert.close();
+          return;
+        }
+        const res = await fetch('/api/v1/notifications/' + encodeURIComponent(alert.tag), { cache: 'no-store' });
+        if (res.status === 404 || (res.ok && cleared((await res.json()).state))) alert.close();
+      }));
+    } catch {} // The inbox still syncs if the browser's notification store is unavailable.
+  };
+  workers?.addEventListener('message', e => {
+    // A push queued before a clear can arrive after the live event.
+    if (e.data === 'clrd-push-shown' && e.source?.scriptURL === location.origin + pushScope + 'sw.js') syncAlerts();
+  });
 
   // A card that no longer belongs in this view: the cleared moment (clrd.css).
   // Green washes across it with a check and the reason, then it folds away.
@@ -1424,6 +1454,7 @@
         if (epoch && m.epoch && m.epoch !== epoch) return reset();
         epoch ||= m.epoch || '';
         tries = 0; if (m.seq > seq) seq = m.seq; live(true); ready = true;
+        syncAlerts();
       }
       else if (m.type === 'reset') reset();
       else if (m.type === 'devices') refresh(); // a device connected, caught up or dropped: redraw the dots (#295)
@@ -1441,6 +1472,7 @@
         else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) reset(); // the buttons and the form would be stale
       }
       else if (m.notification) {
+        if (m.type === 'state' && cleared(m.notification.state)) syncAlerts(m.notification.id, m.seq);
         // Live news only: the replay before ready is catch-up. A scheduled send rings when it wakes, not when queued.
         if (ready && m.notification.state === 'active' && (m.type === 'created' || m.type === 'repeat' || m.via === 'snooze_end')) alertSound(m.notification);
         // A card that comes in live while this tab is in front slides in (SPEC 10.1).

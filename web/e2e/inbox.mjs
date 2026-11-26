@@ -35,6 +35,19 @@ const until = async (p, fn, arg) => {
   for (let i = 0; i < 100; i++) { if (await p.evaluate(fn, arg)) return; await p.waitForTimeout(100); }
   throw new Error(`timed out waiting for ${fn}`);
 };
+const inboxWorkerReady = async (page, prefix = '') => {
+  const app = prefix + '/app';
+  // A first navigation can finish as the worker is claiming windows. Wait
+  // for installation separately; the next navigation is reliably controlled.
+  try {
+    await until(page, async path => (await navigator.serviceWorker.getRegistration(path))?.active?.state === 'activated', app);
+  } catch (err) {
+    // Surface the browser's registration error if the worker failed to install.
+    await page.evaluate(({ script, scope }) => navigator.serviceWorker.register(script, { scope }).then(() => true),
+      { script: prefix + '/static/inbox-worker.js', scope: app });
+    throw err;
+  }
+};
 
 let browser;
 try {
@@ -2001,6 +2014,14 @@ try {
       let sub = ss('keep') ? mk() : null;
       PushManager.prototype.subscribe = async () => (sub = mk());
       PushManager.prototype.getSubscription = async () => sub;
+      // Headless cannot show system notifications. Model the browser's visible
+      // tray across page loads, and let the live inbox close entries by tag.
+      ServiceWorkerRegistration.prototype.getNotifications = async function ({ tag } = {}) {
+        if (!this.scope.endsWith('/static/')) return [];
+        return JSON.parse(ss('tray') || '[]').filter(n => !tag || tag === n.tag).map(n => ({
+          ...n, close: () => ss('tray', JSON.stringify(JSON.parse(ss('tray')).filter(a => a.tag !== n.tag))),
+        }));
+      };
     }, fake);
     const pp = await ctx.newPage();
     await pp.goto(`${base}/app?auth=${Buffer.from(`Bearer ${laptop}`).toString('base64url')}`);
@@ -2010,7 +2031,8 @@ try {
     const ready = async name => { await pp.getByRole('button', { name }).waitFor(); await until(pp, () => !document.querySelector('[data-push]').disabled); };
     await ready('Turn on notifications');
     assert.equal(await pp.evaluate(() => window.asked), 0, 'asked for permission on load');
-    assert.equal(await pp.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0, 'a worker registered before opting in');
+    await inboxWorkerReady(pp);
+    assert.deepEqual(await pp.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map(r => new URL(r.scope).pathname)), ['/app'], 'the push worker registered before opting in');
     assert.equal(await subscribed(), false);
 
     const swe = ctx.waitForEvent('serviceworker');
@@ -2022,7 +2044,10 @@ try {
     const sw = await swe;
     await sw.evaluate(() => { self.seen = []; self.registration.showNotification = async (t, o) => { self.seen.push({ t, ...o }); }; });
     const cdp = await ctx.newCDPSession(pp);
-    const regs = new Promise(ok => cdp.on('ServiceWorker.workerRegistrationUpdated', e => e.registrations[0] && ok(e.registrations[0].registrationId)));
+    const regs = new Promise(ok => cdp.on('ServiceWorker.workerRegistrationUpdated', e => {
+      const pushReg = e.registrations.find(r => r.scopeURL === base + '/static/' && !r.isDeleted);
+      if (pushReg) ok(pushReg.registrationId);
+    }));
     await cdp.send('ServiceWorker.enable');
     const regId = await regs;
     const n = await api(phone, '/api/v1/notifications', { topic: 'pushy', title: 'Disk full', message: 'Free 2 GB' });
@@ -2033,6 +2058,17 @@ try {
     const seen = await sw.evaluate(() => self.seen);
     assert.deepEqual(seen.map(s => [s.t, s.body, s.tag, s.renotify]), [['Short one', 'body', 'abc', true], ['Disk full', 'Free 2 GB', n.id, true]], 'what the worker showed');
     assert.equal((await get(laptop, n.id)).state, 'active', 'a push cleared the notification');
+
+    const later = await api(phone, '/api/v1/notifications', { topic: 'pushy', message: 'Clear with inbox closed' });
+    await pp.evaluate(ids => sessionStorage.setItem('tray', JSON.stringify(ids.map(tag => ({ tag })))), [n.id, later.id]);
+    await pp.locator('.is-live').first().waitFor();
+    await api(phone, `/api/v1/notifications/${n.id}/dismiss`);
+    await until(pp, id => JSON.parse(sessionStorage.getItem('tray')).map(n => n.tag).join() === id, later.id);
+    await pp.goto(base + '/');
+    await api(phone, `/api/v1/notifications/${later.id}/resolve`);
+    assert.equal(await pp.evaluate(() => JSON.parse(sessionStorage.getItem('tray')).length), 1);
+    await pp.goto(base + '/app/settings');
+    await until(pp, () => sessionStorage.getItem('tray') === '[]');
 
     // The browser lost its subscription (stub gone after reload): tidy to off.
     await pp.reload();
@@ -2374,13 +2410,17 @@ try {
     const root = `http://127.0.0.1:${p2}`, sub = root + '/clrd';
     const env2 = { ...process.env, CLRD_DB: join(mkdtempSync(join(tmpdir(), 'clrd-sub-')), 'clrd.db'), CLRD_LISTEN: `127.0.0.1:${p2}`, CLRD_BASE_URL: sub + '/' };
     const tok = execFileSync(bin, ['token', 'create', '--name', 'sub', '--scope', 'admin', '--approve', 'allowed'], { env: env2, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
-    const srv2 = spawn(bin, [], { env: env2, stdio: 'inherit' });
-    try {
+    let srv2;
+    const start = async () => {
+      srv2 = spawn(bin, [], { env: env2, stdio: 'inherit' });
       for (let i = 0; ; i++) {
         try { if ((await fetch(sub + '/healthz')).ok) break; } catch {}
         if (i > 50) throw new Error('sub-path server did not start');
         await new Promise(r => setTimeout(r, 100));
       }
+    };
+    try {
+      await start();
       const ctx = await browser.newContext();
       const outside = [];
       ctx.on('request', r => { const u = new URL(r.url()); if (u.origin === root && !u.pathname.startsWith('/clrd/')) outside.push(u.pathname); });
@@ -2392,6 +2432,29 @@ try {
       const mine = async () => (await (await ctx.request.get(sub + '/api/v1/settings')).json()).sound;
       for (let i = 0; i < 20 && (await mine()) !== 'pop'; i++) await sp.waitForTimeout(250);
       assert.equal(await mine(), 'pop', 'a setting saved under a sub-path reached the server');
+      const manifestURL = await sp.locator('link[rel=manifest]').evaluate(link => link.href);
+      const manifest = await (await ctx.request.get(manifestURL)).json();
+      assert.equal(manifest.display, 'standalone');
+      assert.equal(new URL(manifest.start_url, manifestURL).href, sub + '/app');
+      assert.equal(new URL(manifest.scope, manifestURL).href, sub + '/app');
+      for (const size of [192, 512]) {
+        const icon = manifest.icons.find(i => i.sizes === `${size}x${size}`);
+        assert.ok(icon && (await ctx.request.get(new URL(icon.src, manifestURL).href)).ok(), `missing ${size}px app icon`);
+      }
+      await inboxWorkerReady(sp, '/clrd');
+      await sp.goto(sub + '/app');
+      assert.ok(await sp.evaluate(() => navigator.serviceWorker.controller?.scriptURL.endsWith('/inbox-worker.js')));
+      const path = sub + '/app?offline=1';
+      // Playwright's offline emulation can leave worker fetches online.
+      await new Promise(ok => { srv2.once('exit', ok); srv2.kill(); });
+      assert.equal((await sp.reload()).status(), 503, 'a visited inbox must not be replayed offline');
+      assert.equal((await sp.goto(path)).status(), 503);
+      await sp.getByRole('heading', { name: 'Lost the live connection' }).waitFor();
+      assert.equal(await sp.locator('[data-inbox]').count(), 0);
+      await start();
+      await sp.getByRole('link', { name: 'Reload' }).click();
+      await sp.locator('.is-live').waitFor();
+      assert.equal(sp.url(), path, 'reloading an offline inbox changed its URL');
       // Pair page: the sign-in code request also stays inside the sub-path.
       const pc = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
       pc.on('request', r => { const u = new URL(r.url()); if (u.origin === root && !u.pathname.startsWith('/clrd/')) outside.push(u.pathname); });
@@ -2403,7 +2466,7 @@ try {
       await pc.context().close();
       await ctx.close();
       console.log('ok: under a sub-path the inbox and sign-in code requests stay inside it and a setting saves');
-    } finally { srv2.kill(); }
+    } finally { srv2?.kill(); }
   }
 } finally {
   await browser?.close();
