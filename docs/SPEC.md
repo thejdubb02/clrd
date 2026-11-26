@@ -1203,8 +1203,11 @@ and `initialize` reports `version` as `serverInfo.version`.
   are taken as they are. `X-Template`/`Template`/`tpl` set
   to yes/true/1 makes the message, title and priority Go templates over the
   JSON body, as in ntfy (any other `?template=` value is a webhook template,
-  below). A body over 4096 bytes without a file
-  name is still a 413; clrd does not turn it into an attachment. ntfy output
+  below). By default, a body over 4096 bytes without a file name is a 413.
+  With `CLRD_NTFY_IMPLICIT_UPLOADS=on`, ordinary topic publishes with a body
+  over 4096 bytes or invalid UTF-8 become uploaded files named `attachment`.
+  The same file limits, access checks and safe download types apply. Templates
+  and external attachments keep their message handling. ntfy output
   carries `icon` and `attachment` (`name`, `url`, `type`, `size`, with `url`
   made absolute from `CLRD_BASE_URL`). Unlike ntfy, clrd's file URLs need a
   token, so a third-party ntfy app that fetches files without one gets 401.

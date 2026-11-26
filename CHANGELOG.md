@@ -19,6 +19,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Added
 
 - ntfy publish: scheduled messages accept the forms ntfy's docs list, adding RFC 3339 times (`2026-12-01T10:00:00Z`), spoken durations (`2 days`) and times of day (`10am`, `tomorrow, 3pm`, `Tuesday 7am`), read in the sender's `X-Timezone` when given. Anything else is refused with a clear 400 (#841).
+- ntfy compatibility: opt in to treating unnamed large or binary publishes as file uploads with the existing attachment limits (#851).
 
 - Web Settings has a Color rules section: add, order and delete rules, with Severity and By topic presets and a note when a color looks like clrd's clear green; docs page docs/color-rules.md. Inbox cards now show their rule colors on a running server, which did not serve the card colors stylesheet (#165).
 - Slack outgoing hooks post notifications, edit them on state changes, and add acknowledgment and clear reactions (#166)
@@ -169,12 +170,14 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Web Settings no longer reloads over unsaved edits when a setting changes on another device. An edit not saved yet in any Settings form (color rules, swipe buttons, keep cleared, webhooks, themes and more, not only snooze times) is kept, and each form says the setting changed elsewhere (#883).
 - Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
 
 - Outgoing hooks honor a rate-limited receiver's Retry-After (up to an hour) instead of retrying sooner and burning an attempt (#859).
 - Saving a Slack hook again keeps its posted message ids unless the channel changes, so later state changes still edit the original message (#870).
 - Automation nodes report invalid credentials and inputs more clearly, and the Node-RED trigger slows its retries when polling fails (#862).
+- Web: signing in again on the same browser keeps its theme override, and saving another setting keeps your unsaved palette draft (#867).
 - Event polling with `subscribed=all` keeps its cursor through subscription edits, so automation triggers can deliver notifications queued between polls (#868).
 
 - Server: a GitHub issue hook still finds the issue it already opened after the issue was edited on GitHub's website, so a retried delivery does not open a second one (#827).
