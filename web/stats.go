@@ -1,8 +1,6 @@
 package web
 
 import (
-	"fmt"
-	"slices"
 	"strconv"
 	"time"
 )
@@ -69,8 +67,12 @@ var StatsRanges = []int{1, 7, 30, 90}
 
 // statsDays reads ?days=, keeping it to one of StatsRanges.
 func statsDays(v string) int {
-	if n, err := strconv.Atoi(v); err == nil && slices.Contains(StatsRanges, n) {
-		return n
+	if n, err := strconv.Atoi(v); err == nil {
+		for _, days := range StatsRanges {
+			if days == n {
+				return n
+			}
+		}
 	}
 	return 7
 }
@@ -108,7 +110,9 @@ type HeatRow struct {
 func (s Stats) Heatmap() [7]HeatRow {
 	peak := 1
 	for _, hours := range s.WeekHours {
-		peak = max(peak, slices.Max(hours[:]))
+		for _, count := range hours {
+			peak = max(peak, count)
+		}
 	}
 	var rows [7]HeatRow
 	for day, hours := range s.WeekHours {
@@ -152,12 +156,18 @@ func (s Stats) GroupColumns() []StatsGroup {
 	if s.Group == "sender" {
 		rows = s.Senders
 	}
-	cols := slices.Clone(rows[:min(len(rows), 5)])
-	if !slices.ContainsFunc(cols, func(g StatsGroup) bool { return g.Key == "other" }) {
-		for _, h := range s.Hours {
-			if h.By["other"] > 0 {
-				return append(cols, StatsGroup{Key: "other"})
-			}
+	cols := rows[:min(len(rows), 5)]
+	if len(cols) > 0 {
+		cols = append([]StatsGroup(nil), cols...)
+	}
+	for _, col := range cols {
+		if col.Key == "other" {
+			return cols
+		}
+	}
+	for _, h := range s.Hours {
+		if h.By["other"] > 0 {
+			return append(cols, StatsGroup{Key: "other"})
 		}
 	}
 	return cols
@@ -168,9 +178,9 @@ func (g StatsGroup) Trend() string {
 	case g.Previous == 0 && g.Count > 0:
 		return "new"
 	case g.Count > g.Previous:
-		return fmt.Sprintf("up %d", g.Count-g.Previous)
+		return "up " + strconv.Itoa(g.Count-g.Previous)
 	case g.Count < g.Previous:
-		return fmt.Sprintf("down %d", g.Previous-g.Count)
+		return "down " + strconv.Itoa(g.Previous-g.Count)
 	}
 	return ""
 }
@@ -234,7 +244,10 @@ func (s Stats) Bars() []Bar {
 			}
 		}
 	}
-	top := max(slices.Max(counts), 1)
+	top := 1
+	for _, count := range counts {
+		top = max(top, count)
+	}
 	w := 600 / float64(n)
 	bars := make([]Bar, n)
 	for i, c := range counts {
@@ -269,11 +282,11 @@ func took(ms int64) string {
 	d := time.Duration(ms) * time.Millisecond
 	switch {
 	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
+		return strconv.Itoa(int(d.Seconds())) + "s"
 	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
+		return strconv.Itoa(int(d.Minutes())) + "m"
 	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+		return strconv.Itoa(int(d.Hours())) + "h " + strconv.Itoa(int(d.Minutes())%60) + "m"
 	}
-	return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
+	return strconv.Itoa(int(d.Hours())/24) + "d " + strconv.Itoa(int(d.Hours())%24) + "h"
 }

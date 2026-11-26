@@ -5,9 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"maps"
 	"net/http"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -370,7 +368,7 @@ func top(m map[string]*StatsGroup) []*StatsGroup {
 	out = out[:min(len(out), statsTop)]
 	for _, g := range out {
 		if n := len(g.clear); n > 0 {
-			slices.Sort(g.clear)
+			sort.Slice(g.clear, func(i, j int) bool { return g.clear[i] < g.clear[j] })
 			g.ClearMedianMS, g.ClearP90MS = g.clear[(n-1)/2], g.clear[(n*9+9)/10-1] // nearest rank
 		}
 	}
@@ -452,37 +450,55 @@ func writeCSVRow(b *bytes.Buffer, cols ...string) {
 	b.WriteByte('\n')
 }
 
+func sortedStatsKeys(counts map[string]int) []string {
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// Keep the row construction in one place to reduce the packed binary size.
+//
+//go:noinline
+func writeStatsCount(buf *bytes.Buffer, section, key, detail string, count int) {
+	writeCSVRow(buf, section, key, detail, strconv.Itoa(count), "", "", "", "")
+}
+
 // writeStatsCSV writes st in one flat CSV table with a section column (#661).
 func writeStatsCSV(w http.ResponseWriter, st *Stats) {
 	var buf bytes.Buffer
 	writeCSVRow(&buf, "section", "key", "detail", "count", "open", "cleared", "clear_median_ms", "clear_p90_ms")
-	writeCSVRow(&buf, "summary", "total", "", strconv.Itoa(st.Total), "", "", "", "")
-	writeCSVRow(&buf, "summary", "answered", "", strconv.Itoa(st.Answered), "", "", "", "")
-	writeCSVRow(&buf, "summary", "cleared", "", strconv.Itoa(st.Cleared), "", "", "", "")
-	writeCSVRow(&buf, "summary", "self_cleared", "", strconv.Itoa(st.SelfCleared), "", "", "", "")
-	writeCSVRow(&buf, "summary", "connected", "", strconv.Itoa(st.Connected), "", "", "", "")
+	for _, summary := range []struct {
+		key   string
+		count int
+	}{
+		{"total", st.Total},
+		{"answered", st.Answered},
+		{"cleared", st.Cleared},
+		{"self_cleared", st.SelfCleared},
+		{"connected", st.Connected},
+	} {
+		writeStatsCount(&buf, "summary", summary.key, "", summary.count)
+	}
 	for _, q := range st.Quiet {
 		writeCSVRow(&buf, "quiet", csvCell(q.SenderID), csvCell(q.Topic), "", "", "", "", "")
 		writeCSVRow(&buf, "quiet_name", csvCell(q.SenderID), csvCell(q.Name), "", "", "", "", "")
 	}
 	for day, hours := range st.WeekHours {
 		for hour, count := range hours {
-			writeCSVRow(&buf, "week_hours", strconv.Itoa(day), strconv.Itoa(hour), strconv.Itoa(count), "", "", "", "")
+			writeStatsCount(&buf, "week_hours", strconv.Itoa(day), strconv.Itoa(hour), count)
 		}
 	}
-	pkeys := make([]string, 0, len(st.Priorities))
-	for k := range st.Priorities {
-		pkeys = append(pkeys, k)
-	}
-	sort.Strings(pkeys)
-	for _, k := range pkeys {
-		writeCSVRow(&buf, "priority", k, "", strconv.Itoa(st.Priorities[k]), "", "", "", "")
+	for _, k := range sortedStatsKeys(st.Priorities) {
+		writeStatsCount(&buf, "priority", k, "", st.Priorities[k])
 	}
 	for _, h := range st.Hours {
 		at := fromMS(h.At).UTC().Format(time.RFC3339)
-		writeCSVRow(&buf, "hour", at, "", strconv.Itoa(h.Count), "", "", "", "")
-		for _, k := range slices.Sorted(maps.Keys(h.By)) {
-			writeCSVRow(&buf, "hour_by", at, csvCell(k), strconv.Itoa(h.By[k]), "", "", "", "")
+		writeStatsCount(&buf, "hour", at, "", h.Count)
+		for _, k := range sortedStatsKeys(h.By) {
+			writeStatsCount(&buf, "hour_by", at, csvCell(k), h.By[k])
 		}
 	}
 	writeGroups := func(sec string, gs []*StatsGroup) {
@@ -490,7 +506,7 @@ func writeStatsCSV(w http.ResponseWriter, st *Stats) {
 			writeCSVRow(&buf, sec, csvCell(g.Key), "", strconv.Itoa(g.Count), strconv.Itoa(g.Open), strconv.Itoa(g.Cleared),
 				strconv.FormatInt(g.ClearMedianMS, 10), strconv.FormatInt(g.ClearP90MS, 10))
 			if g.Previous != nil {
-				writeCSVRow(&buf, sec+"_previous", csvCell(g.Key), "", strconv.Itoa(*g.Previous), "", "", "", "")
+				writeStatsCount(&buf, sec+"_previous", csvCell(g.Key), "", *g.Previous)
 			}
 		}
 	}
@@ -498,14 +514,14 @@ func writeStatsCSV(w http.ResponseWriter, st *Stats) {
 	writeGroups("sender", st.Senders)
 	writeGroups("cleared_by", st.ClearedBy)
 	for _, f := range st.Flappers {
-		writeCSVRow(&buf, "flapper", csvCell(f.Topic), csvCell(f.ExternalID), strconv.Itoa(f.Count), "", "", "", "")
+		writeStatsCount(&buf, "flapper", csvCell(f.Topic), csvCell(f.ExternalID), f.Count)
 	}
 	for _, d := range st.Delivery {
 		if d.Webhooks > 0 {
-			writeCSVRow(&buf, "delivery_webhook", csvCell(d.Topic), "", strconv.Itoa(d.Webhooks), "", "", "", "")
+			writeStatsCount(&buf, "delivery_webhook", csvCell(d.Topic), "", d.Webhooks)
 		}
 		if d.WebPush > 0 {
-			writeCSVRow(&buf, "delivery_web_push", csvCell(d.Topic), "", strconv.Itoa(d.WebPush), "", "", "", "")
+			writeStatsCount(&buf, "delivery_web_push", csvCell(d.Topic), "", d.WebPush)
 		}
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
