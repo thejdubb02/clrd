@@ -91,6 +91,14 @@ class MultiServerEdgeTest {
         b.db.close()
     }
 
+    /** Pointing a server slot at another sign-in drops the old one's typed answers: its row ids are not the new one's. */
+    @Test fun aNewSignInDropsTheOldDrafts() {
+        bg { app.account.saveServer("https://a.example", "old") }
+        app.account.drafts["42"] = "Back at 5"
+        bg { app.account.saveServer("https://a.example", "new") }
+        assertEquals(null, app.account.drafts["42"])
+    }
+
     /** A tray tap from before the token was replaced at the same address does nothing; one posted after it acts. */
     @Test fun aTapFromAnOldSignInIsRefused() {
         bg { app.account.saveServer("https://a.example", "old") }

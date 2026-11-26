@@ -382,6 +382,7 @@ class Account(private val ctx: Context, val id: Int) {
             // and bumping configGen fence the old client (RoomStore.ifMine) and keeps the service from starting
             // one; a crash before the final save leaves the app unconfigured, never mixed.
             synchronized(configLock) { configGen++; prefs.edit().putInt(CONFIG_GEN, configGen).apply(); token = "" }
+            drafts.clear() // the old server's typed answers, keyed by its ids (#860)
             val old = sync
             sync = null
             old?.stop()

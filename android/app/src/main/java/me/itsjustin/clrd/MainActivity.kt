@@ -1240,7 +1240,8 @@ private fun MarkButton(app: App, n: Notif) {
 private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
     val b = LocalBrand.current
     val app = App.of(LocalContext.current)
-    val drafts = remember { app.drafts } // the server this box opened on, after a switch too (#860)
+    val acct = remember { app.shown.value } // the server this box opened on: its drafts, and its Send, after a switch too (#860)
+    val drafts = acct.drafts
     var text by rememberSaveable { mutableStateOf(drafts[n.id].orEmpty()) }
     val seq = rememberSaveable { n.seq } // the question as the box opened: an edit since then gets 409, never this answer
     val body = TrayButton.typed(a.reply!!, text, seq)
@@ -1262,7 +1263,7 @@ private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { ended = true; drafts.remove(n.id); app.act(n.id, "reply", body!!); close() }, enabled = body != null) {
+            TextButton(onClick = { ended = true; drafts.remove(n.id); acct.actAll(listOf(n.id), "reply", body!!, null, App.VIA_APP) {}; close() }, enabled = body != null) {
                 Text(stringResource(R.string.reply_text_send), color = b.ink, fontWeight = FontWeight.SemiBold)
             }
         },
