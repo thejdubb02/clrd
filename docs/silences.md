@@ -31,9 +31,9 @@ curl -H "Authorization: Bearer $CLRD_TOKEN" \
   -d '{"topic":"infra","for":"8h","comment":"maintenance"}' \
   https://clrd.example.com/api/v1/silences
 
-# Mute anything tagged backup, in every topic, until Monday morning
+# Set UNTIL to a future RFC3339 time, then mute the backup tag until that time.
 curl -H "Authorization: Bearer $CLRD_TOKEN" \
-  -d '{"tag":"backup","until":"2026-11-23T08:00:00Z"}' \
+  -d "{\"tag\":\"backup\",\"until\":\"${UNTIL:?Set UNTIL to a future RFC3339 time}\"}" \
   https://clrd.example.com/api/v1/silences
 ```
 
@@ -51,7 +51,9 @@ Agents use the MCP tools `silence` (same fields), `silences` and
 
 ```sh
 curl -H "Authorization: Bearer $CLRD_TOKEN" https://clrd.example.com/api/v1/silences
-curl -X DELETE -H "Authorization: Bearer $CLRD_TOKEN" https://clrd.example.com/api/v1/silences/<id>
+# Set SILENCE_ID to the id from the list.
+curl -X DELETE -H "Authorization: Bearer $CLRD_TOKEN" \
+  "https://clrd.example.com/api/v1/silences/${SILENCE_ID:?Set SILENCE_ID from the list}"
 ```
 
 The list shows only silences that are still running. A silence ends by
