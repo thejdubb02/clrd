@@ -1,0 +1,1 @@
+- Desktop (Linux): with a custom theme, the title bar and the This computer page now follow the theme's own light or dark background instead of the Appearance setting (#584).
