@@ -210,10 +210,13 @@ func TestFormatCheckSenderDismissOff(t *testing.T) {
 	if len(check("")) != 1 {
 		t.Fatal("turning it back on did not")
 	}
-	// 500 newer messages in an off topic must not push out an older one.
+	// A page of newer messages in an off topic must not push out an older one.
+	old := formatCheckLimit
+	t.Cleanup(func() { formatCheckLimit = old })
+	formatCheckLimit = 20
 	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "quiet", "message": "no title"})
 	s.tokLimit, s.topicLimit = nil, nil
-	for range 500 {
+	for range formatCheckLimit {
 		if _, err := s.Publish(t.Context(), &Token{Name: "x", Scopes: []string{ScopeAdmin}}, PublishInput{Topic: "noisy", Title: "ok", Message: "ok"}); err != nil {
 			t.Fatal(err)
 		}

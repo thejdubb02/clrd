@@ -6,6 +6,7 @@ import type {
 	NodeConnectionType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
+import type { SendOptions } from '../../js/index.js' with { 'resolution-mode': 'import' };
 import { clrdClient } from './client';
 
 const operations = ['send', 'clear', 'acknowledge', 'resolve', 'snooze'] as const;
@@ -66,11 +67,39 @@ export class Clrd implements INodeType {
 				displayOptions: { show: { operation: ['send'] } },
 				options: [
 					{
+						displayName: 'Actions (JSON)',
+						name: 'actions',
+						type: 'json',
+						default: '[]',
+						description: 'Array of actions, for example [{"label":"Copy ID","copy":"build-42"}]',
+					},
+					{
+						displayName: 'Attachment Name',
+						name: 'attachmentName',
+						type: 'string',
+						default: '',
+						description: 'Optional file name to display for the attachment URL',
+					},
+					{
+						displayName: 'Attachment URL',
+						name: 'attachmentUrl',
+						type: 'string',
+						default: '',
+						description: 'HTTP or HTTPS URL of a file to link',
+					},
+					{
 						displayName: 'External ID',
 						name: 'id',
 						type: 'string',
 						default: '',
 						description: 'Stable key for updating the same open notification',
+					},
+					{
+						displayName: 'Icon URL',
+						name: 'icon',
+						type: 'string',
+						default: '',
+						description: 'HTTP or HTTPS URL of the notification icon',
 					},
 					{
 						displayName: 'Priority',
@@ -84,6 +113,13 @@ export class Clrd implements INodeType {
 							{ name: '5 (Urgent)', value: 5 },
 						],
 						default: 3,
+					},
+					{
+						displayName: 'Reopen',
+						name: 'reopen',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to make an acknowledged notification active when updating its external ID',
 					},
 					{ displayName: 'Title', name: 'title', type: 'string', default: '' },
 				],
@@ -126,8 +162,20 @@ export class Clrd implements INodeType {
 					if (typeof message !== 'string' || !message.trim()) {
 						throw new Error('Enter a notification message');
 					}
-					const fields = this.getNodeParameter('additionalFields', i);
-					result = await client.send(topic, message, fields);
+					const fields = this.getNodeParameter('additionalFields', i, {}) as Omit<SendOptions, 'actions'> & {
+						attachmentUrl?: string;
+						attachmentName?: string;
+						actions?: string | SendOptions['actions'];
+					};
+					const { attachmentUrl, attachmentName, actions, ...options } = fields ?? {};
+					if (attachmentName && !attachmentUrl) throw new Error('Enter an attachment URL with the attachment name');
+					const parsed: unknown = typeof actions === 'string' ? JSON.parse(actions) : actions;
+					if (parsed !== undefined && !Array.isArray(parsed)) throw new Error('Actions must be a JSON array');
+					result = await client.send(topic, message, {
+						...options,
+						...(attachmentUrl && { attachment: { url: attachmentUrl, name: attachmentName || undefined } }),
+						actions: parsed as SendOptions['actions'],
+					});
 				} else {
 					const id = this.getNodeParameter('notificationId', i);
 					if (typeof id !== 'string' || !id || /^(?:\.{1,2})$|\s/.test(id)) {

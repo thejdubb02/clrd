@@ -336,7 +336,11 @@ func TestLinkApproveNearExpiry(t *testing.T) {
 	if code, _ := call(t, ts, "POST", "/api/v1/link/"+lc+"/approve", admin, nil); code != 200 {
 		t.Fatalf("approve: %d", code)
 	}
-	time.Sleep(3 * time.Second) // the phone's next poll lands after the code's first 2 minutes
+	// The phone's next poll lands 3 s later, past the code's first 2 minutes:
+	// moving created back stands in for the wait.
+	s.pairMu.Lock()
+	s.pairs[lc].created = s.pairs[lc].created.Add(-3 * time.Second)
+	s.pairMu.Unlock()
 	if code, out := linkClaim(t, ts.URL, lc, phoneSecret); code != 200 || out["token"] == nil {
 		t.Fatalf("claim after an approval near expiry: %d %v", code, out)
 	}

@@ -13,6 +13,7 @@ import (
 // (517)" (#207). The web inbox hits this when a page reload cancels its
 // snapshot request.
 func TestCancelledQueryLeavesNoOpenSnapshot(t *testing.T) {
+	t.Parallel() // its own database; runs beside the rest instead of adding 3 s
 	path := filepath.Join(t.TempDir(), "c.db")
 	db, err := openDB(path)
 	if err != nil {

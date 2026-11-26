@@ -22,10 +22,11 @@ docker run -d --name clrd -p 127.0.0.1:8080:8080 -v clrd-data:/data \
   -e CLRD_BASE_URL=https://clrd.example.com clrd
 ```
 
-Both publish the port on localhost only (Docker 28 or newer keeps that
-from other machines on the same network), so tokens reach clrd through your
-HTTPS proxy and never cross the network in plain HTTP. If the proxy runs on
-another machine, publish the port on a private interface instead.
+Both bind the port to localhost (Docker 28 or newer keeps that port away
+from other machines on the same network). A proxy on the same host can
+forward to localhost. If your proxy runs on another host, publish the port
+on a private interface, restrict it to that proxy, and protect the link
+between them. HTTPS at the proxy protects the client-to-proxy connection.
 
 Or the binary (Go 1.24+, no C compiler needed):
 
@@ -147,6 +148,12 @@ pickers with a preview. Save theme shares the choice across your signed-in
 browsers. Theme on this browser can override that choice. The Light or dark
 setting stays on this browser, and Custom uses the shade of its own background.
 
+Under **Share custom colors**, choose **Export custom colors** to select a
+code you can copy. To import one, paste it in **Theme code** and choose
+**Preview imported colors**. The preview applies in this tab. Choose **Save
+theme** to share it with your signed-in browsers, or **Cancel preview** to
+return to your saved colors.
+
 Automate the same choices with `PUT /api/v1/settings` or the MCP `settings`
 tool. For example, send `{"theme":"high-contrast"}`. To use a custom theme,
 send `theme: custom` and all six `theme_colors` from the
@@ -163,15 +170,15 @@ for contrast before saving. Use `device_theme` in MCP for a device override.
 | `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. This is the starting value: once someone sets "Keep cleared messages" in Settings (or `keep_cleared_days` over the API or MCP), that setting wins, and a topic can have its own value (in Settings under "By topic", or `topic_keep_cleared_days`). Open messages stay by default. |
 | `CLRD_NTFY_CACHE_TOPICS` | unset | Comma-separated exact topic names whose active and acknowledged notifications age out after `CLRD_RETENTION` since their last update. The hourly prune leaves snoozed and delayed messages alone until they wake. |
 | `CLRD_NTFY_IMPLICIT_UPLOADS` | `off` | Set to `on` to accept unnamed large or binary ntfy publishes as attachments. File limits and authorization still apply. |
-| `CLRD_NTFY_TEMPLATE_DIR` | unset | Directory of operator-managed ntfy `.yml` templates, read on publish. See [named templates](migrate-from-ntfy.md#named-templates). |
+| `CLRD_NTFY_TEMPLATE_DIR` | unset | Existing directory of operator-managed ntfy `.yml` templates, read on publish. See [named templates](migrate-from-ntfy.md#named-templates). |
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
 | `CLRD_PUBLIC_PAGES` | `on` | `off` hides the landing page and docs on a private server: `/` goes to the inbox, `/docs` is 404, and `robots.txt` asks every crawler to stay out. |
 | `CLRD_ATTACHMENT_MAX_MB` | `15` | Largest file one notification can carry, in MB. |
 | `CLRD_ATTACHMENT_TOTAL_MB` | `5000` | Space all stored files may use together, in MB. Uploads past it get 507. |
 | `CLRD_RATE_TOKEN` | `60` | Publishes a minute one token may send, with a burst of the same size. Past it gets 429 with `Retry-After`. `0` turns it off. |
 | `CLRD_RATE_TOPIC` | `60` | Publishes a minute one topic may take from all tokens together. `0` turns it off. |
-| `CLRD_NTFY_REQUESTS_PER_MINUTE` | `0` | ntfy API requests per minute per client address, with a burst of the same size. Over the limit, clients get 429 with `Retry-After`. `0` turns it off. |
-| `CLRD_NTFY_MAX_SUBSCRIPTIONS` | `0` | Maximum open ntfy subscriptions per client address. Polls do not occupy a slot. `0` turns it off. |
+| `CLRD_NTFY_REQUESTS_PER_MINUTE` | `0` (off) | ntfy API requests per minute per client address, with a burst of the same size. Over the limit, clients get 429 with `Retry-After`. |
+| `CLRD_NTFY_MAX_SUBSCRIPTIONS` | `0` (off) | Maximum open ntfy subscriptions per client address. A finite poll uses no subscription slot. A rejected open subscription gets 429 without a retry time. |
 | `CLRD_TRUSTED_PROXIES` | unset | Comma-separated CIDRs or addresses of your reverse proxies, for example `127.0.0.1,172.16.0.0/12`. Only these may set the client address with `X-Forwarded-For`, and the link scheme with `X-Forwarded-Proto`. Unset, any loopback or private-network peer may. |
 | `CLRD_HOOK_ALLOW` | `on` | `off` locks the [webhook LAN allow list](integrations/webhooks-out.md#receivers-on-your-lan) empty: webhooks reach only public addresses on ports 80 and 443, whatever an admin saved, and no token can change it. Set it on a box that runs other services on loopback or a private network. |
 | `CLRD_METRICS` | `off` | `on` exposes Prometheus metrics at `GET /metrics` (requires an admin token with no topic limit). |
@@ -274,8 +281,8 @@ clrd subscribe infra,ops
 
 Publish prints the server's JSON reply. Poll prints stored events as
 newline-delimited JSON and exits, with retained history as the default.
-Subscribe streams new events as they happen until stopped with Ctrl+C. Use
-`--since` to start a stream with replay.
+Subscribe streams new events until the connection closes or you stop it
+with Ctrl+C. Use `--since` to start a stream with replay.
 
 ## Health
 
@@ -316,20 +323,23 @@ ntfy subscribe --token $CLRD_TOKEN https://clrd.example.com/backups
 
 Send `X-Id: <key>` (or publish to `/{topic}/{key}`) to update one
 notification instead of stacking new ones, and `Status: resolved` with the
-same key to clear it everywhere when the problem goes away. Alertmanager and
-Grafana can post straight to `https://clrd.example.com/<topic>?template=alertmanager`:
-firing alerts appear, resolved alerts clear.
+same key to clear it everywhere when the problem goes away. Send
+[Alertmanager](integrations/alertmanager.md) webhooks with
+`?template=alertmanager` and [Grafana](integrations/grafana.md) webhooks with
+`?template=grafana`. Firing alerts appear and resolved alerts clear.
 
-Files work: send one with `X-Filename` (or `PUT` it as the body), or link one
-with `X-Attach`. Icons work with `X-Icon`.
+Send a file as the body of a `PUT` or `POST` with `X-Filename`, or link to a
+file with `X-Attach`. The optional unnamed-upload setting is listed under
+[Server environment](#server-environment). Use `X-Icon` for an icon URL.
 
 Anonymous topics are off until an admin sets them, with
 `PUT /api/v1/ntfy/anonymous` or the MCP tool `set_ntfy_anonymous`, or
 `clrd import ntfy` brings over ntfy's `everyone` rules
 ([Switch from ntfy](migrate-from-ntfy.md)).
 
-`Cache: no` sends a live-only message: it goes to the ntfy streams open
-right now and is stored nowhere, so it never shows in the inbox or a replay.
+`Cache: no` sends a live-only message. The values `false` and `0` also
+work. The message goes to open ntfy streams and is stored nowhere, so it
+never shows in the inbox or a replay.
 It cannot be delayed, repeated, carry a file or an `Id`.
 
 `view` action buttons work everywhere. The server also accepts `copy` action
@@ -341,8 +351,9 @@ action sets `clear`. Android hides the value from the clipboard preview. Use
 `http` and `broadcast` buttons are
 stored and passed to ntfy apps once an admin turns them on for the topic
 (`{"device_actions":true}` on `PUT /api/v1/topics/{topic}`, or the MCP tool
-`set_topic`); until then they are dropped. clrd's own app does not run them
-yet. The web inbox shows them under the card as text and never runs them.
+`set_topic`); until then they are dropped. The clrd Android app runs these
+actions from its notification shade. The web inbox shows them under the card
+as text.
 
 Not supported yet: email and phone call forwarding.
 

@@ -221,12 +221,14 @@
   }
   if (paletteForm) {
     const fields = paletteForm.querySelector('fieldset');
+    const share = $('[data-palette-share]');
+    const colorKeys = Object.keys(colors.starter);
     const { theme, override } = paletteForm.elements;
     const status = $('[data-palette-status]');
     const save = paletteForm.querySelector('[type=submit]');
     const patch = () => {
       const st = { theme: theme.value };
-      if (theme.value === 'custom') st.theme_colors = Object.fromEntries(Object.keys(colors.starter).map(k => [k, fields.elements[k].value]));
+      if (theme.value === 'custom') st.theme_colors = Object.fromEntries(colorKeys.map(k => [k, fields.elements[k].value]));
       return st;
     };
     // Settings saves reload the page. Keep this draft in the current tab
@@ -251,29 +253,66 @@
       const draft = JSON.parse(sessionStorage.getItem(draftKey));
       if (draft?.scope === scope) {
         theme.value = draft.st.theme;
-        for (const key of Object.keys(colors.starter)) {
+        for (const key of colorKeys) {
           if (draft.st.theme_colors?.[key]) fields.elements[key].value = draft.st.theme_colors[key];
         }
         previewPalette();
       }
     } catch { /* storage can be disabled */ }
     fields.addEventListener('input', previewPalette);
+    const code = $('#palette-code');
+    const shareStatus = $('[data-palette-share-status]');
+    $('[data-palette-export]').addEventListener('click', () => {
+      const palette = patch().theme_colors || savedPalette.theme_colors;
+      if (!palette) {
+        shareStatus.textContent = 'Choose Custom to export its colors.';
+        return;
+      }
+      const error = colors.validate(palette);
+      if (error) {
+        shareStatus.textContent = error;
+        return;
+      }
+      code.value = 'clrd-theme:1:Custom:' + colorKeys.map(key => palette[key]).join(',');
+      code.focus();
+      code.select();
+      shareStatus.textContent = 'Code selected. Copy it to share these colors.';
+    });
+    $('[data-palette-import]').addEventListener('click', () => {
+      const match = /^clrd-theme:1:[^:\r\n]{1,64}:((?:#[0-9a-f]{6},){5}#[0-9a-f]{6})$/i.exec(code.value.trim());
+      if (!match) {
+        shareStatus.textContent = 'Paste a clrd theme code with six hex colors.';
+        return;
+      }
+      const swatches = match[1].toLowerCase().split(',');
+      const palette = Object.fromEntries(colorKeys.map((key, i) => [key, swatches[i]]));
+      const error = colors.validate(palette);
+      if (error) {
+        shareStatus.textContent = error;
+        return;
+      }
+      theme.value = 'custom';
+      for (const key of colorKeys) fields.elements[key].value = palette[key];
+      previewPalette();
+      shareStatus.textContent = 'Previewing imported colors. Save theme to keep them.';
+    });
     addEventListener('pagehide', () => store(draftKey, draftPalette ? JSON.stringify({ scope, st: patch() }) : null));
     $('[data-palette-cancel]').addEventListener('click', () => {
       draftPalette = false;
       syncPalette(savedPalette);
-      status.textContent = '';
+      status.textContent = shareStatus.textContent = '';
     });
     async function savePalette(path, body) {
-      savingPalette = fields.disabled = override.disabled = true;
+      savingPalette = fields.disabled = share.disabled = override.disabled = true;
       status.textContent = 'Saving theme';
       const r = await fetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
       const result = r && await r.json().catch(() => null);
-      savingPalette = fields.disabled = false;
+      savingPalette = fields.disabled = share.disabled = false;
       if (r?.ok && result) {
         draftPalette = false;
         syncPalette(path.endsWith('/this') ? { ...savedPalette, device_theme: result.theme } : result);
         status.textContent = 'Theme saved.';
+        shareStatus.textContent = '';
       } else {
         if (!draftPalette) syncPalette(savedPalette);
         status.textContent = result?.error || 'Could not save theme. Try again.';

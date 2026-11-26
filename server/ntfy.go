@@ -378,6 +378,12 @@ func delayTime(v string, now time.Time) (time.Time, error) {
 
 var errNoCache = errf(400, "bad_request", "Cache: no is not supported with a webhook template")
 
+// Only explicit off values opt out of delivery to the inbox and replay.
+func ntfyCacheOff(v string) bool {
+	b := ntfyMarkdown(strings.TrimSpace(v))
+	return b != nil && !*b
+}
+
 func parseDuration(v string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(v, "d"); ok {
 		n, err := strconv.Atoi(days)
@@ -414,7 +420,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	}
 	tok := s.ntfyAuth(r)
 	s.noteIgnored(r)
-	live := strings.EqualFold(param(r, "Cache"), "no") // sent to open streams, stored nowhere (live.go)
+	live := ntfyCacheOff(param(r, "X-Cache", "Cache")) // sent to open streams, stored nowhere (live.go)
 	file := ntfyFilename(r)
 	if r.Method == http.MethodGet {
 		file = "" // GET /{topic}/publish has no body to be the file
@@ -506,7 +512,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		if named != nil {
 			in.Message = "triggered" // ntfy's default for an empty rendered message
 		} else if !tpl {
-			in.Message = param(r, "Message", "M")
+			in.Message = ntfyPlainMessage(r)
 		}
 	}
 	if in.Message == "" && file != "" {
@@ -592,6 +598,12 @@ func ntfyTemplate(r *http.Request, body []byte, fields map[string]*string) error
 	return nil
 }
 
+// Only plain message parameters use ntfy's escaped line breaks. Bodies
+// and template expressions already have their own escaping.
+func ntfyPlainMessage(r *http.Request) string {
+	return strings.ReplaceAll(param(r, "X-Message", "Message", "M"), `\n`, "\n")
+}
+
 // ntfyFilename is the file name that makes a ntfy publish body a file.
 func ntfyFilename(r *http.Request) string { return param(r, "Filename", "File", "F") }
 
@@ -655,11 +667,11 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.noteIgnored(r, unknown...)
 	if in.Cache == "" {
-		in.Cache = param(r, "Cache")
+		in.Cache = param(r, "X-Cache", "Cache")
 	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown,
-		Live: strings.EqualFold(in.Cache, "no"), dropDevice: true}
+		Live: ntfyCacheOff(in.Cache), dropDevice: true}
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
 	if icon == "" {
@@ -691,7 +703,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	// Like ntfy, headers and query params fill what the JSON leaves out
 	// (Apprise sends X-Priority, X-Tags, X-Click next to a JSON body).
 	if p.Message == "" {
-		p.Message = param(r, "Message", "M")
+		p.Message = ntfyPlainMessage(r)
 	}
 	if p.Title == "" {
 		p.Title = param(r, "Title", "Ti", "T")

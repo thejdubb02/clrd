@@ -95,7 +95,11 @@
         <dt>payload <span class="property-type">string | object</span></dt>
         <dd>For Send, a message string or an object with <code>message</code> and
         optional <code>topic</code>, <code>title</code>, <code>external_id</code> and
-        <code>priority</code>. For state changes, a clrd notification ID or an
+        <code>priority</code>, <code>icon</code>, <code>attachment</code>,
+        <code>actions</code> and <code>reopen</code>. Use an HTTP(S) icon URL,
+        an attachment object with <code>url</code> and optional <code>name</code>,
+        and actions such as <code>{"label":"Copy ID","copy":"build-42"}</code>.
+        For state changes, a clrd notification ID or an
         object with <code>id</code> and optional snooze <code>duration</code>.</dd>
     </dl>
     <h3>Output</h3>
@@ -112,6 +116,7 @@
         <select id="node-input-event">
             <option value="created">New Notification</option>
             <option value="state">State Change</option>
+            <option value="updated">Updated Notification</option>
         </select>
     </div>
     <div class="form-row">
@@ -129,7 +134,7 @@
 </script>
 
 <script type="text/html" data-help-name="clrd-events">
-    <p>Poll clrd for new notifications or state changes. Each deployment starts
+    <p>Poll clrd for new notifications, updates or state changes. Each deployment starts
     from the current event position.</p>
     <h3>Output</h3>
     <p><code>msg.payload</code> is the clrd event with <code>type</code>,

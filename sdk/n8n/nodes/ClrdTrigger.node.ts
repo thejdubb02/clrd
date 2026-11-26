@@ -13,11 +13,11 @@ export class ClrdTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'clrd Trigger',
 		name: 'clrdTrigger',
-		subtitle: '={{$parameter["event"] === "created" ? "New notification" : "State change"}}',
+		subtitle: '={{ { created: "New notification", state: "State change", updated: "Updated notification" }[$parameter["event"]] }}',
 		icon: { light: 'file:clrd.svg', dark: 'file:clrd.dark.svg' },
 		group: ['trigger'],
 		version: 1,
-		description: 'Start a workflow when a clrd notification arrives or changes state',
+		description: 'Start a workflow when a clrd notification arrives, is updated or changes state',
 		defaults: { name: 'clrd Trigger' },
 		polling: true,
 		inputs: [],
@@ -31,6 +31,7 @@ export class ClrdTrigger implements INodeType {
 				options: [
 					{ name: 'New Notification', value: 'created' },
 					{ name: 'State Change', value: 'state' },
+					{ name: 'Updated Notification', value: 'updated' },
 				],
 				default: 'created',
 			},
