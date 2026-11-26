@@ -183,9 +183,10 @@ each re-alert as a new message. The web inbox plays its sound again on a
 **Actions:** each action sets exactly one of `url` (link), `reply` (answer),
 `copy` (clipboard text), `http` or `broadcast`. For example,
 `{"label":"Copy code","copy":"123456"}` supplies text to copy. Copy text
-is limited to 4096 bytes and works on any topic. The web inbox copies the
-value to the clipboard and clears the card after a successful copy if the
-action sets `clear: true`. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
+is limited to 4096 bytes and works on any topic. The web inbox, Android
+inbox and Android notification shade copy the value and clear the card
+after a successful copy if the action sets `clear: true`. Android hides
+the clipboard preview of the value. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
 notification, and there are at most 3 reply actions (an Android tray entry
 shows 3). Tapping one posts it to `/api/v1/notifications/{id}/reply`, which
 sets `reply`, sets the state to `acknowledged` with `state_by` = the device,

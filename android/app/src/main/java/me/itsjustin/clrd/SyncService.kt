@@ -149,7 +149,7 @@ class ActionReceiver : BroadcastReceiver() {
             if (app.shadeClears) app.swiped(id, server, acct)
             return
         }
-        if (intent.action == Tray.ACTION_DEVICE) { // a sender's http or broadcast button (#449)
+        if (intent.action == Tray.ACTION_DEVICE) { // a sender's copy, HTTP or broadcast button
             val r = goAsync()
             DeviceAction.run(ctx, acct, id, intent.getIntExtra(Tray.EXTRA_INDEX, -1), intent.getLongExtra(Tray.EXTRA_SEQ, -1), server) { r.finish() }
             return

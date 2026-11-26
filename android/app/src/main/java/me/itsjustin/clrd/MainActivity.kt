@@ -846,6 +846,19 @@ internal fun Card(n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), 
                 }
                 answers.firstOrNull { it.text }?.let { a -> if (typing) ReplyBox(n, a) { typing = false } }
             }
+            val copies = TrayButton.copies(n)
+            if (copies.isNotEmpty()) {
+                val acct = App.of(ctx).shown.collectAsState().value
+                val server = acct.serverUrl
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    copies.forEach { a ->
+                        val label = if (a.res != 0) stringResource(a.res) else a.label
+                        TextButton(onClick = { DeviceAction.run(ctx, acct, n.id, a.device!!, n.seq, server, App.VIA_APP) {} }) {
+                            Text(label, color = b.ink)
+                        }
+                    }
+                }
+            }
             // What was typed, as plain text: never Markdown (#153).
             if (n.replyText.isNotEmpty() && open) Text(stringResource(R.string.answered_text, n.replyText), color = b.body, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, end = 8.dp))
             Spacer(Modifier.height(8.dp))
