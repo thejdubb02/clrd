@@ -911,9 +911,9 @@
   // a preset replaces it. A green close to clrd's clear color gets a note.
   const crRules = () => crf ? [...crf.querySelectorAll('[data-color-rule]')].map(li => {
     const v = n => li.querySelector(`[name=${n}]`).value;
-    return { topic: v('topic').trim(), tag: v('tag').trim(), priority_min: +v('priority_min'), priority_max: +v('priority_max'), title: v('title'), color: v('color').toUpperCase(), style: v('style') };
+    return { topic: v('topic'), tag: v('tag'), priority_min: +v('priority_min'), priority_max: +v('priority_max'), title: v('title'), color: v('color').toUpperCase(), style: v('style') };
   }) : [];
-  const crSaved = JSON.stringify(crRules()).toLowerCase();
+  const crKey = rs => JSON.stringify(rs.map(r => ({ ...r, color: r.color.toUpperCase() }))), crSaved = crKey(crRules());
   const crRow = r => {
     const li = crf.querySelector('[data-color-new]').content.firstElementChild.cloneNode(true);
     for (const [k, v] of Object.entries(r)) li.querySelector(`[name=${k}]`).value = v;
@@ -1498,7 +1498,7 @@
         const st = m.settings || {};
         if (st.theme) syncPalette(st);
         if (st.color_rules) refresh(); // recolor the cards (#165)
-        if (crf && st.color_rules && JSON.stringify(st.color_rules).toLowerCase() !== crSaved) $('[data-color-status]').textContent = 'Color rules changed on another device. Saving here replaces that change.';
+        if (crf && st.color_rules && crKey(st.color_rules) !== crSaved) $('[data-color-status]').textContent = 'Color rules changed on another device. Saving here replaces that change.';
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
         const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
