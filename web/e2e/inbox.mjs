@@ -333,6 +333,18 @@ try {
   assert.equal(await sp.getByLabel('Times').inputValue(), '1h, soon', 'unsaved snooze edit dropped');
   await sp.reload();
   await sp.locator('[data-snooze="1h,1h,4h"]').waitFor({ state: 'attached' });
+  // Any form counts: an unsaved swipe edit survives a change to another setting (#883).
+  const swipe1 = sp.locator('[data-swipe-settings] select').first();
+  const was = await swipe1.inputValue();
+  await swipe1.selectOption(was === 'ack' ? 'resolve' : 'ack');
+  const keep0 = (await (await fetch(`${base}/api/v1/settings`, { headers: { Authorization: `Bearer ${phone}` } })).json()).keep_cleared_days;
+  await sp.evaluate(() => { window.notReloaded = true; });
+  await putSettings({ keep_cleared_days: keep0 === 5 ? 6 : 5 });
+  await sp.locator('[data-swipe-status]').filter({ hasText: 'another device' }).waitFor();
+  assert.equal(await sp.evaluate(() => window.notReloaded), true, 'Settings reloaded over an unsaved swipe edit');
+  assert.notEqual(await swipe1.inputValue(), was, 'unsaved swipe edit dropped');
+  await putSettings({ keep_cleared_days: keep0 });
+  await sp.reload();
   // Appearance (#583): a saved choice beats the device, at once and on every page, before
   // first paint; System follows the device again.
   const dark = () => sp.evaluate(() => document.documentElement.classList.contains('dark'));
@@ -1222,6 +1234,17 @@ try {
     await rows.nth(2).getByRole('button', { name: 'Up' }).click();
     await Promise.all([sp.waitForEvent('load'), form.getByRole('button', { name: 'Save rules' }).click()]);
     assert.deepEqual(await form.locator('ol [name=priority_min]').evaluateAll(s => s.map(e => e.value)), ['5', '3', '4'], 'saved order after reload');
+    // A rule added and not saved yet survives a change to another setting made on another device (#883).
+    await sp.locator('#sync.is-live').waitFor();
+    await form.getByRole('button', { name: 'Add rule' }).click();
+    await sp.evaluate(() => { window.notReloaded = true; });
+    const put = body => fetch(`${base}/api/v1/settings`, { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const keep0 = (await (await fetch(`${base}/api/v1/settings`, { headers: { Authorization: `Bearer ${laptop}` } })).json()).keep_cleared_days;
+    assert.equal((await put({ keep_cleared_days: keep0 === 5 ? 6 : 5 })).status, 200);
+    await form.locator('[data-color-status]').filter({ hasText: 'another device' }).waitFor();
+    assert.equal(await sp.evaluate(() => window.notReloaded), true, 'Settings reloaded over an unsaved color rule');
+    assert.equal(await rows.count(), 4, 'unsaved color rule dropped');
+    assert.equal((await put({ keep_cleared_days: keep0 })).status, 200);
     const r = await fetch(`${base}/api/v1/settings`, { method: 'PUT', headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ color_rules: [] }) });
     assert.equal(r.status, 200, 'clear color rules');
     await ctx.close();
