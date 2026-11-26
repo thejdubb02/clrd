@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -100,5 +102,55 @@ func TestCutArchives(t *testing.T) {
 	// One version bigger than the limit by itself is refused, not written.
 	if _, _, err := cut("## Unreleased\n\n### Added\n\n"+strings.Repeat(big, 5), "", "1.0.0", "2026-02-01", ""); err == nil {
 		t.Fatal("oversize version: no error")
+	}
+}
+
+func TestRunConsumesFragments(t *testing.T) {
+	t.Chdir(t.TempDir())
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(name, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll("changelog.d/fixed", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(changelog, "# Changelog\n\n## Unreleased\n\n### Added\n\n- Legacy entry.\n\n## 1.0.0 - 2026-01-01\n\n### Fixed\n\n- Older entry.\n")
+	write("changelog.d/README.md", "Instructions.")
+	const fragment = "changelog.d/fixed/issue.md"
+	write(fragment, "- A pending fix,\n  with a continuation.\n")
+
+	if err := run("1.0.0", "2026-01-02", ""); err == nil {
+		t.Fatal("cut a duplicate version")
+	}
+	if _, err := os.Stat(fragment); err != nil {
+		t.Fatalf("failed cut removed the fragment: %v", err)
+	}
+	write("summary.md", "### Fixed\n\n- Short summary.\n")
+	if err := run("1.0.1", "2026-01-02", "summary.md"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fragment); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("fragment left behind: %v", err)
+	}
+	if _, err := os.Stat("changelog.d/README.md"); err != nil {
+		t.Fatal(err)
+	}
+	md, err := os.ReadFile(changelog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arch, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, moved := clrd.ParseChangelog(string(md)), clrd.ParseChangelog(string(arch))
+	if len(kept) != 2 || kept[0].Version != "1.0.1" || kept[0].Changes[0].Items[0] != "Short summary." {
+		t.Fatalf("changelog: %+v", kept)
+	}
+	if len(moved) != 1 || moved[0].Version != "1.0.1" || !strings.Contains(string(arch), "- Legacy entry.") ||
+		!strings.Contains(string(arch), "- A pending fix,\n  with a continuation.") {
+		t.Fatalf("archive: %+v", moved)
 	}
 }
