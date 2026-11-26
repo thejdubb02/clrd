@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // importFixture imports testdata/ntfy (written by the real ntfy v2.38.1, see
@@ -45,6 +47,14 @@ func importFixture(t *testing.T, in NtfyImport, before ...func(*Server, string, 
 		toks[l] = tk
 	}
 	rows.Close()
+	// ntfy hashed these at bcrypt cost 10, about 1 s a check under -race;
+	// cost 4 keeps the password tests fast (#945). Only the copy changes.
+	for user, pass := range map[string]string{"boss": "adminpass", "phone": "phonepass"} {
+		h, _ := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.MinCost)
+		if _, err := src.Exec(`UPDATE user SET pass = ? WHERE user = ?`, string(h), user); err != nil {
+			t.Fatal(err)
+		}
+	}
 	src.Close()
 	s, ts, admin := newTest(t)
 	for _, f := range before {
