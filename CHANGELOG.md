@@ -174,6 +174,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Outgoing hooks honor a rate-limited receiver's Retry-After (up to an hour) instead of retrying sooner and burning an attempt (#859).
 - Saving a Slack hook again keeps its posted message ids unless the channel changes, so later state changes still edit the original message (#870).
 - Automation nodes report invalid credentials and inputs more clearly, and the Node-RED trigger slows its retries when polling fails (#862).
+- Web: signing in again on the same browser keeps its theme override, and saving another setting keeps your unsaved palette draft (#867).
 - Event polling with `subscribed=all` keeps its cursor through subscription edits, so automation triggers can deliver notifications queued between polls (#868).
 
 - Server: a GitHub issue hook still finds the issue it already opened after the issue was edited on GitHub's website, so a retried delivery does not open a second one (#827).
