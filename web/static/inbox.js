@@ -1473,10 +1473,15 @@
   };
   // What every Settings field held once the page was set up: a live settings change from
   // another device reloads the page only while no field has an unsaved edit (#182, #883).
-  // Settings forms only, not a card's snooze box. ponytail: rows a script adds or removes later are not tracked.
+  // Settings forms only, not a card's snooze box. ponytail: rows a script adds or removes
+  // later are not tracked, except color rules, which are compared whole.
   const fieldNow = e => /^(checkbox|radio)$/.test(e.type) ? e.checked : e.value;
   const asLoaded = new Map([...document.querySelectorAll('[data-settings-group] form')].flatMap(f => [...f.elements]).filter(e => !/^(submit|button|reset|file|fieldset)$/.test(e.type)).map(e => [e, fieldNow(e)]));
-  const edited = () => new Set([...asLoaded].filter(([e, v]) => e.isConnected && fieldNow(e) !== v).map(([e]) => e.form));
+  const edited = () => {
+    const ed = new Set([...asLoaded].filter(([e, v]) => e.isConnected && fieldNow(e) !== v).map(([e]) => e.form));
+    if (crf && crKey(crRules()) !== crSaved) ed.add(crf); // a color rule added or removed (#165)
+    return ed;
+  };
   function connect() {
     const u = new URL(B + '/api/v1/ws', location.href);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1508,7 +1513,7 @@
         const stale = () => {
           const ed = edited();
           if (!ed.size) return reset();
-          ed.forEach(f => { const n = f?.querySelector('[role=status]'); if (n) n.textContent = 'Settings changed on another device. Saving here replaces that change.'; });
+          ed.forEach(f => { const n = f && [...f.querySelectorAll('[role=status]')].pop(); if (n) n.textContent = 'Settings changed on another device. Saving here replaces that change.'; });
         };
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
         else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) stale();

@@ -1234,6 +1234,17 @@ try {
     await rows.nth(2).getByRole('button', { name: 'Up' }).click();
     await Promise.all([sp.waitForEvent('load'), form.getByRole('button', { name: 'Save rules' }).click()]);
     assert.deepEqual(await form.locator('ol [name=priority_min]').evaluateAll(s => s.map(e => e.value)), ['5', '3', '4'], 'saved order after reload');
+    // A rule added and not saved yet survives a change to another setting made on another device (#883).
+    await sp.locator('#sync.is-live').waitFor();
+    await form.getByRole('button', { name: 'Add rule' }).click();
+    await sp.evaluate(() => { window.notReloaded = true; });
+    const put = body => fetch(`${base}/api/v1/settings`, { method: 'PUT', headers: { Authorization: `Bearer ${phone}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const keep0 = (await (await fetch(`${base}/api/v1/settings`, { headers: { Authorization: `Bearer ${laptop}` } })).json()).keep_cleared_days;
+    assert.equal((await put({ keep_cleared_days: keep0 === 5 ? 6 : 5 })).status, 200);
+    await form.locator('[data-color-status]').filter({ hasText: 'another device' }).waitFor();
+    assert.equal(await sp.evaluate(() => window.notReloaded), true, 'Settings reloaded over an unsaved color rule');
+    assert.equal(await rows.count(), 4, 'unsaved color rule dropped');
+    assert.equal((await put({ keep_cleared_days: keep0 })).status, 200);
     const r = await fetch(`${base}/api/v1/settings`, { method: 'PUT', headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ color_rules: [] }) });
     assert.equal(r.status, 200, 'clear color rules');
     await ctx.close();
