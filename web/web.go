@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -1386,6 +1387,10 @@ func Handler(api API, baseURL string) http.Handler {
 		prefix = u.Path
 	}
 	tpl := templates(prefix)
+	// Parsing decodes every template (gzipped in the packed build); without
+	// this the runtime keeps that garbage and idle memory rises about 300 KB
+	// (#929). Once, at start.
+	debug.FreeOSMemory()
 	base := func(r *http.Request) string {
 		if baseURL != "" {
 			return baseURL
