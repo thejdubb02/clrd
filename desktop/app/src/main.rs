@@ -463,7 +463,16 @@ fn stop_sync(app: &AppHandle) {
 /// link forward: the moment it is approved, sync starts and the window opens.
 #[tauri::command(async)]
 #[allow(clippy::type_complexity)]
-fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>, bool, Vec<String>) {
+fn state(
+    app: AppHandle,
+) -> (
+    View,
+    String,
+    bool,
+    Option<(String, String)>,
+    bool,
+    Vec<String>,
+) {
     let shell = app.state::<Shell>();
     if shell.device.poll().is_some() {
         start_sync(&app);
@@ -698,12 +707,17 @@ fn parse_pick(text: &str) -> Option<(Option<bool>, Vec<String>)> {
     };
     let colors: Vec<String> = hex.split('-').map(|c| format!("#{c}")).collect();
     let plain = |c: &String| c.len() == 7 && c[1..].bytes().all(|b| b.is_ascii_hexdigit());
-    let readable = |c: &[String]| [(1, 0), (2, 0), (5, 4)].iter().all(|&(fg, bg)| ratio(&c[fg], &c[bg]) >= 4.5);
-    let colors = if pick.is_some() && colors.len() == 7 && colors.iter().all(plain) && readable(&colors) {
-        colors
-    } else {
-        Vec::new()
+    let readable = |c: &[String]| {
+        [(1, 0), (2, 0), (5, 4)]
+            .iter()
+            .all(|&(fg, bg)| ratio(&c[fg], &c[bg]) >= 4.5)
     };
+    let colors =
+        if pick.is_some() && colors.len() == 7 && colors.iter().all(plain) && readable(&colors) {
+            colors
+        } else {
+            Vec::new()
+        };
     Some((pick, colors))
 }
 
@@ -711,10 +725,16 @@ fn parse_pick(text: &str) -> Option<(Option<bool>, Vec<String>)> {
 #[cfg(target_os = "linux")]
 fn ratio(a: &str, b: &str) -> f64 {
     let light = |hex: &str| {
-        [(1, 0.2126), (3, 0.7152), (5, 0.0722)].iter().fold(0.0, |sum, &(i, w)| {
-            let n = f64::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0)) / 255.0;
-            sum + w * if n <= 0.04045 { n / 12.92 } else { ((n + 0.055) / 1.055).powf(2.4) }
-        })
+        [(1, 0.2126), (3, 0.7152), (5, 0.0722)]
+            .iter()
+            .fold(0.0, |sum, &(i, w)| {
+                let n = f64::from(u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0)) / 255.0;
+                sum + w * if n <= 0.04045 {
+                    n / 12.92
+                } else {
+                    ((n + 0.055) / 1.055).powf(2.4)
+                }
+            })
     };
     let (l, r) = (light(a), light(b));
     (l.max(r) + 0.05) / (l.min(r) + 0.05)
