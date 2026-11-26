@@ -56,12 +56,17 @@ func readNtfyTemplate(dir, name string) (map[string]string, error) {
 func parseNtfyTemplateFile(src string) (map[string]string, error) {
 	rows := strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n")
 	fields := map[string]string{}
+	opened := false
 	for i := 0; i < len(rows); i++ {
 		row := strings.TrimSpace(rows[i])
 		if row == "" || strings.HasPrefix(row, "#") {
 			continue
 		}
-		if (i == 0 && row == "---") || (row == "..." && strings.TrimSpace(strings.Join(rows[i+1:], "\n")) == "") {
+		if row == "---" && !opened && len(fields) == 0 {
+			opened = true
+			continue
+		}
+		if row == "..." && strings.TrimSpace(strings.Join(rows[i+1:], "\n")) == "" {
 			continue
 		}
 		key, value, ok := strings.Cut(rows[i], ":")

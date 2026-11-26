@@ -120,3 +120,19 @@ func TestNtfyNamedTemplateOff(t *testing.T) {
 		t.Fatalf("unconfigured lookup changed existing webhook behavior: %d %s", code, out)
 	}
 }
+
+func TestNtfyTemplateDocumentMarker(t *testing.T) {
+	fields, err := parseNtfyTemplateFile("# Operator notes\n\n---\nmessage: Hello\n...\n")
+	if err != nil || fields["message"] != "Hello" {
+		t.Fatalf("template with a preamble: %v, %v", fields, err)
+	}
+	for _, src := range []string{
+		"---\n# Comment\n---\nmessage: Hello\n",
+		"message: Hello\n---\ntitle: Another document\n",
+		"message: Hello\n...\n---\ntitle: Another document\n",
+	} {
+		if _, err := parseNtfyTemplateFile(src); err == nil {
+			t.Errorf("accepted multiple documents: %q", src)
+		}
+	}
+}
