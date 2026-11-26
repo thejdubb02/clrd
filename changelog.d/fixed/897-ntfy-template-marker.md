@@ -1,0 +1,1 @@
+- ntfy named templates accept a YAML document marker after leading comments or blank lines.
