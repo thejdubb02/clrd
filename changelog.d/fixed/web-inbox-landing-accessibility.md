@@ -1,0 +1,1 @@
+- Web inbox and landing page: clearer keyboard focus, labeled command search, and reliable focus after closing a card menu or clearing a notification. The landing demo plays once and stays still when reduced motion is enabled.

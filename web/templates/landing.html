@@ -1,7 +1,7 @@
 {{define "landing"}}{{template "head" .}}</head>
 <body class="text-body">
 {{template "site-header" .}}
-<main id="main" class="[&_p]:leading-relaxed">
+<main id="main" tabindex="-1" class="[&_p]:leading-relaxed">
 
 <section class="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-4 pt-12 pb-14 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14 lg:py-22">
   <div>
@@ -16,7 +16,7 @@
   </div>
 
   <figure aria-labelledby="demo-cap">
-    <div class="grid grid-cols-[1fr_1.3fr] items-end gap-3 sm:grid-cols-[.8fr_1.25fr_1fr]">
+    <div aria-hidden="true" class="grid grid-cols-[1fr_1.3fr] items-end gap-3 sm:grid-cols-[.8fr_1.25fr_1fr]">
       <div class="device min-h-70">
         <p class="meta mb-3.5 text-[11px]">pixel-9</p>
         <div class="mini swipe">
@@ -26,7 +26,7 @@
       {{template "follower" "web inbox"}}
       {{template "follower" "tablet"}}
     </div>
-    <figcaption id="demo-cap" class="text-muted-foreground mt-3.5 text-sm">Swiped away in the phone app. The web inbox and the tablet clear in the same second.</figcaption>
+    <figcaption id="demo-cap" class="text-muted-foreground mt-3.5 text-sm">A nightly backup alert appears on the phone, web inbox, and tablet. Clearing it on the phone clears it on the other two.</figcaption>
   </figure>
 </section>
 

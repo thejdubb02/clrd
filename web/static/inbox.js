@@ -531,7 +531,12 @@
       }
       return tidy();
     }
-    if (key(c) === selId) { const all = nav(), i = all.indexOf(c); select(all[i + 1] || all[i - 1] || null, c.contains(document.activeElement)); }
+    const focused = c.contains(document.activeElement);
+    if (focused || key(c) === selId) {
+      const all = nav(), i = all.indexOf(c), next = all[i + 1] || all[i - 1];
+      select(next, focused);
+      if (focused && !next) $('#main').focus();
+    }
     const p = document.createElement('p');
     p.className = 'gone';
     p.innerHTML = check;
@@ -720,6 +725,15 @@
     const d = e.target;
     if (d.open && d.matches && d.matches('article details.popover')) d.closest('article').querySelectorAll('details.popover[open]').forEach(o => { if (o !== d) o.open = false; });
   }, true);
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    const menu = e.target.closest('article details.popover[open]');
+    if (!menu) return;
+    e.preventDefault();
+    menu.open = false;
+    menu.querySelector('summary').focus();
+  });
 
   // Enter in the date box would submit the card form with its first button
   // (Ack). Enter in a typed answer sends it; Shift+Enter makes a new line.
@@ -1269,18 +1283,26 @@
     }, 9000); // long enough to read one tip (#292)
   }
 
+  // Keep focus on a pending action so a live card removal can move it.
+  function lockCardAction(button) {
+    button.setAttribute('aria-disabled', 'true');
+    return () => button.removeAttribute('aria-disabled');
+  }
+
   // Card marks (#451): seen or actioned, with an optional note and link, for
   // everyone on the topic. A mark changes no state; Remove takes yours off.
   async function markCard(b, c) {
     const f = b.form.elements, url = `/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/mark`;
-    b.disabled = true;
+    const unlock = lockCardAction(b);
     const r = b.value ? await post(url, { mark: b.value, note: f.note.value.trim(), link: f.link.value.trim() }, true)
       : await fetch(url, { method: 'DELETE', credentials: 'same-origin' }).catch(() => say('Could not reach the server. Nothing changed.'));
-    b.disabled = false;
+    unlock();
     if (!r) return;
     if (r.status === 401) return location.reload();
     if (!r.ok) return say(`${b.value ? 'Not marked' : 'Not removed'}: ${(await r.json().catch(() => ({}))).error || r.status}.`);
-    b.closest('details').open = false;
+    const menu = b.closest('details'), focused = menu.contains(document.activeElement);
+    menu.open = false;
+    if (focused) menu.querySelector('summary').focus();
     tell(b.value ? `Marked ${b.value}.` : 'Your mark is removed.');
     refresh();
   }
@@ -1291,19 +1313,21 @@
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled) return;
     e.preventDefault(); // the buttons are also a form for when this script is off
+    if (b.getAttribute('aria-disabled') === 'true') return;
     const act = b.dataset.act;
     if (act === 'clear-all' || act === 'clear-stack') {
       // A stack sends the ids it holds, not its topic: clearing a topic on the
       // server would also clear that topic's snoozed notifications.
       const s = act === 'clear-stack' && b.closest('[data-stack]');
       const ids = cards().filter(c => !s || c.dataset.topic === s.dataset.stack).map(c => c.dataset.id);
-      b.disabled = true; // one tap, one clear
+      const unlock = lockCardAction(b); // one tap, one clear
       ids.forEach(id => clearing.add(id)); // two clears at once share it
       const r = ids.length && await post('/api/v1/notifications/clear', { ids, via: 'web_bulk' });
-      b.disabled = false;
+      unlock();
       const done = () => ids.forEach(id => clearing.delete(id));
       if (!r) { done(); arrived = arrived.filter(id => !ids.includes(id)); return; } // they never left, so nothing slides in (#656)
       const n = (await r.json().catch(() => ({}))).cleared;
+      if (!s && b === document.activeElement) $('#main').focus();
       // Clear all takes every stack with it, so none shrinks card by card.
       // Each one goes a little after the one above it (SPEC 10.1).
       const order = nav(), lag = el => Math.min(Math.max(order.indexOf(el), 0), 8) * 40;
@@ -1327,9 +1351,9 @@
     const typed = act === 'reply' && b.form.elements.text; // a typed answer (#153)
     if (typed && !typed.value.trim()) { typed.focus(); return say('Type an answer first.'); }
     if (act === 'reply') body = { reply: b.value, text: typed ? typed.value : undefined, seq: Number(c.dataset.seq) }; // 409 if it changed since this card
-    b.disabled = true;
+    const unlock = lockCardAction(b);
     const r = await post(`/api/v1/notifications/${encodeURIComponent(c.dataset.id)}/${act}`, body, act === 'reply');
-    b.disabled = false;
+    unlock();
     if (!r) return;
     const n = await r.json().catch(() => ({}));
     if (act === 'reply') {

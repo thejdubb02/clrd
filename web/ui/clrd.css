@@ -15,7 +15,7 @@
 @layer components {
   /* Clear is the one green button. It means "dismiss everywhere". */
   .btn[data-variant='clear'] {
-    @apply bg-clear text-clear-foreground hover:bg-clear/85 focus-visible:ring-clear/40;
+    @apply bg-clear text-clear-foreground hover:underline focus-visible:ring-clear/40;
   }
 
   /* State chips. Square-ish like every control; never a pill. */
@@ -104,9 +104,9 @@
   .mini { @apply bg-card rounded-lg border px-3 py-2.5; }
   .mini-cleared { @apply text-clear absolute inset-x-3 top-10 flex items-center gap-2 px-3 py-2.5 text-xs font-medium opacity-0; }
   @media (prefers-reduced-motion: no-preference) {
-    .swipe { animation: clrd-swipe 7s cubic-bezier(.4, 0, .2, 1) infinite; }
-    .follow { animation: clrd-follow 7s ease infinite; }
-    .mini-cleared { animation: clrd-cleared 7s ease infinite; }
+    .swipe { animation: clrd-swipe 4s cubic-bezier(.4, 0, .2, 1) both; }
+    .follow { animation: clrd-follow 4s ease both; }
+    .mini-cleared { animation: clrd-cleared 4s ease both; }
   }
 
   /* Message bodies (docs/SPEC.md section 2.1): compact, headings small. */
@@ -147,13 +147,23 @@
 /* A color input under .input shrinks to a 6 px sliver; give the swatch room. */
 .input[type='color'] { width: 3rem; height: 2.25rem; padding: 2px; }
 
+/* Give keyboard focus a solid edge against the current surface. */
+:where(a, button, input, select, textarea, summary, pre, article, .skip):focus-visible {
+  outline: 2px solid var(--color-foreground);
+  outline-offset: 2px;
+}
+.btn[aria-disabled="true"] { opacity: 0.5; }
+.notice button:focus-visible { outline-color: var(--color-background); }
+.input-group :focus-visible { outline-offset: -2px; }
+.command [role='menuitem'].active { outline: 2px solid var(--color-foreground); outline-offset: -2px; }
+
 @keyframes clrd-draw { to { stroke-dashoffset: 0; } }
 @keyframes clrd-up { from { opacity: 0; transform: translateY(8px); } }
 @keyframes clrd-in { from { opacity: 0; transform: translateY(-8px); } }
 @keyframes clrd-wiggle { 33% { transform: rotate(1deg); } 67% { transform: rotate(-1deg); } }
-@keyframes clrd-swipe { 0%, 18% { transform: none; opacity: 1; } 26% { transform: translateX(120%); opacity: 0; } 88% { transform: translateX(120%); opacity: 0; } 89% { transform: none; opacity: 0; } 96%, 100% { opacity: 1; } }
-@keyframes clrd-follow { 0%, 27% { opacity: 1; border-color: var(--border); } 30% { border-color: var(--clear); opacity: 1; } 36% { opacity: 0; transform: scale(.97); } 88% { opacity: 0; transform: none; } 96%, 100% { opacity: 1; } }
-@keyframes clrd-cleared { 0%, 32% { opacity: 0; } 38%, 78% { opacity: 1; } 86%, 100% { opacity: 0; } }
+@keyframes clrd-swipe { 0%, 35% { transform: none; opacity: 1; } 50%, 100% { transform: translateX(120%); opacity: 0; } }
+@keyframes clrd-follow { 0%, 51% { opacity: 1; border-color: var(--border); } 55% { border-color: var(--clear); opacity: 1; } 63%, 100% { opacity: 0; transform: scale(.97); } }
+@keyframes clrd-cleared { 0%, 63% { opacity: 0; } 68%, 100% { opacity: 1; } }
 
 .msg .favicon { display: inline; width: 1em; height: 1em; margin-inline-end: 0.25em; vertical-align: -0.125em; border-radius: 2px; }
 /* Icons are drawn for light tabs, so dark ones (GitHub's) vanish on ink. A paper tile keeps any icon visible. */
