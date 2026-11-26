@@ -720,7 +720,13 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			if e.Type == EventMark { // ntfy has no marks; sending it again would alert again
 				return nil
 			}
-			if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
+			// Evictions have only a sequence key. Clients can drop that key
+			// even if the original message reached them through a filter.
+			if e.Via == viaCacheExpiry {
+				if sinceArg == "latest" && (poll || seq <= replayEnd) {
+					return nil
+				}
+			} else if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
 				return nil
 			}
 			return write(s.ntfyMessage(e.Notification, seq, f.sched && (poll || seq <= replayEnd)))
@@ -809,11 +815,11 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		return 0, nil
 	case "latest":
 		var seq *int64
-		args := []any{EventMark} // the stream skips marks, so the latest message is never one
+		args := []any{EventMark, `%"via":"` + viaCacheExpiry + `"%`}
 		for _, t := range topics {
 			args = append(args, t)
 		}
-		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE type != ? AND data NOT LIKE '%"only":"%' AND topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
+		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE type != ? AND data NOT LIKE ? AND data NOT LIKE '%"only":"%' AND topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
 		if err != nil || seq == nil {
 			return cur, err
 		}

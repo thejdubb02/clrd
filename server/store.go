@@ -781,22 +781,7 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 	for i := range evs {
 		e := &evs[i]
 		e.Notification.Silenced = silenced(sils, e.Notification) || e.Notification.muted
-		res, err := tx.Exec(`INSERT INTO events (type, topic, data, created_at) VALUES (?, ?, '', ?)`,
-			e.Type, e.Notification.Topic, ms(t))
-		if err != nil {
-			return nil, err
-		}
-		e.Seq, _ = res.LastInsertId()
-		if e.Only == "" { // one device's copy keeps the row's seq, so a tap on it is not refused as stale
-			e.Notification.Seq, e.Notification.UpdatedAt = e.Seq, t
-			if err := saveNotification(tx, e.Notification, e.Type); err != nil {
-				return nil, err
-			}
-		}
-		if e.Raw, err = json.Marshal(e); err != nil {
-			return nil, errf(400, "bad_request", "cannot encode notification: %v", err)
-		}
-		if _, err := tx.Exec(`UPDATE events SET data = ? WHERE seq = ?`, string(e.Raw), e.Seq); err != nil {
+		if err := appendEvent(tx, e, t, true); err != nil {
 			return nil, err
 		}
 		if e.Only != "" {
@@ -826,6 +811,29 @@ func (s *Server) write(ctx context.Context, fn func(tx *sql.Tx) ([]Event, error)
 		}
 	}
 	return evs, nil
+}
+
+// appendEvent stores an event and optionally its notification row.
+func appendEvent(tx *sql.Tx, e *Event, t time.Time, keepRow bool) error {
+	res, err := tx.Exec(`INSERT INTO events (type, topic, data, created_at) VALUES (?, ?, '', ?)`,
+		e.Type, e.Notification.Topic, ms(t))
+	if err != nil {
+		return err
+	}
+	e.Seq, _ = res.LastInsertId()
+	if e.Only == "" { // one device's copy keeps the row's seq
+		e.Notification.Seq, e.Notification.UpdatedAt = e.Seq, t
+		if keepRow {
+			if err := saveNotification(tx, e.Notification, e.Type); err != nil {
+				return err
+			}
+		}
+	}
+	if e.Raw, err = json.Marshal(e); err != nil {
+		return errf(400, "bad_request", "cannot encode notification: %v", err)
+	}
+	_, err = tx.Exec(`UPDATE events SET data = ? WHERE seq = ?`, string(e.Raw), e.Seq)
+	return err
 }
 
 // newID returns a monotonic ULID. Callers hold s.mu.
@@ -1553,15 +1561,18 @@ func (s *Server) expireDue(ctx context.Context) error {
 	return err
 }
 
+// The hyphen keeps this server-owned label out of cleanVia's accepted set.
+const viaCacheExpiry = "cache-expiry"
+
 // prune drops events older than the retention and cleared notifications
 // older than the keep_cleared_days setting. The event log never outlives
 // the cleared rows, so a client further behind gets a reset instead of
 // replaying changes to notifications that are gone.
 func (s *Server) prune(ctx context.Context) error {
-	now := time.Now()
-	cutoff := ms(now.Add(-s.opt.Retention))
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	at := now()
+	cutoff := ms(at.Add(-s.opt.Retention))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -1577,7 +1588,7 @@ func (s *Server) prune(ctx context.Context) error {
 	shortest := s.shortestKeep(st)
 	evCutoff := cutoff
 	if shortest < s.opt.Retention {
-		evCutoff = ms(now.Add(-shortest))
+		evCutoff = ms(at.Add(-shortest))
 	}
 	var upTo sql.NullInt64
 	if err := tx.QueryRow(`SELECT MAX(seq) FROM events WHERE created_at < ?`, evCutoff).Scan(&upTo); err != nil {
@@ -1600,15 +1611,22 @@ func (s *Server) prune(ctx context.Context) error {
 	own, _ := json.Marshal(topics)
 	if keep != 0 { // 0 = forever
 		if _, err := tx.Exec(`DELETE FROM notifications WHERE `+prunable+` AND topic NOT IN (SELECT value FROM json_each(?))`,
-			ms(now.Add(-keep)), string(own)); err != nil {
+			ms(at.Add(-keep)), string(own)); err != nil {
 			return err
 		}
 	}
 	for t, k := range st.TopicKeepClearedDays { // topics with their own keep (#262)
 		if k != 0 {
-			if _, err := tx.Exec(`DELETE FROM notifications WHERE `+prunable+` AND topic = ?`, ms(now.Add(-days(k))), t); err != nil {
+			if _, err := tx.Exec(`DELETE FROM notifications WHERE `+prunable+` AND topic = ?`, ms(at.Add(-days(k))), t); err != nil {
 				return err
 			}
+		}
+	}
+	var expired []Event
+	if len(s.opt.NtfyCacheTopics) != 0 {
+		expired, err = pruneCached(tx, s.opt.NtfyCacheTopics, cutoff, at)
+		if err != nil {
+			return err
 		}
 	}
 	// A github delivery waiting out github_hooks_paused stays, however long the pause (#796).
@@ -1640,7 +1658,59 @@ func (s *Server) prune(ctx context.Context) error {
 	if upTo.Valid && upTo.Int64 > s.pruned.Load() {
 		s.pruned.Store(upTo.Int64)
 	}
+	for _, e := range expired {
+		s.seq.Store(e.Seq)
+		s.hub.publish(e)
+	}
 	return s.sweepFiles(ctx)
+}
+
+// pruneCached drops delivered rows on opted-in topics. Only an identifying
+// state event remains, so a live inbox can clear the cached row.
+func pruneCached(tx *sql.Tx, topics []string, cutoff int64, t time.Time) ([]Event, error) {
+	names, _ := json.Marshal(topics)
+	const aged = `state IN ('active', 'acknowledged') AND updated_at < ?
+		AND topic IN (SELECT value FROM json_each(?))`
+	// A device-only clear or reopen can outlive the shared row's last
+	// update. Scrub that copy too, keeping the sequence log contiguous.
+	if _, err := tx.Exec(`UPDATE events AS e SET data = json_set(e.data, '$.notification',
+		json_object('id', n.id, 'topic', n.topic, 'external_id', n.external_id,
+			'state', 'resolved', 'priority', 3, 'format', 'text',
+			'seq', json_extract(e.data, '$.notification.seq'),
+			'created_at', json_extract(e.data, '$.notification.created_at'),
+			'updated_at', json_extract(e.data, '$.notification.updated_at')))
+		FROM (SELECT id, topic, external_id FROM notifications WHERE `+aged+`) AS n
+		WHERE e.topic = n.topic AND e.type = 'state'
+		  AND json_type(e.data, '$.only') = 'text'
+		  AND json_extract(e.data, '$.notification.id') = n.id`, cutoff, string(names)); err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(`DELETE FROM notifications WHERE `+aged+
+		` RETURNING id, topic, external_id, created_at`, cutoff, string(names))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var events []Event
+	for rows.Next() {
+		n := &Notification{State: Resolved, StateBy: "server", Format: FormatText, Priority: 3,
+			Tags: []string{}, Actions: []Action{}, Devices: []string{}}
+		var created int64
+		if err := rows.Scan(&n.ID, &n.Topic, &n.ExternalID, &created); err != nil {
+			return nil, err
+		}
+		n.CreatedAt = fromMS(created)
+		events = append(events, Event{Type: EventState, Notification: n, Via: viaCacheExpiry})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range events {
+		if err := appendEvent(tx, &events[i], t, false); err != nil {
+			return nil, err
+		}
+	}
+	return events, nil
 }
 
 // sweepFiles removes uploaded files no notification points at: pruned or
