@@ -469,9 +469,9 @@ fn state(app: AppHandle) -> (View, String, bool, Option<(String, String)>, bool)
         open_main(&app);
     }
     // The third says something went wrong in the app itself, so the page
-    // offers Retry for that too. The last is a link the browser handed
-    // over and the server it names, for the page to put in the box. Then
-    // the "Closing clears everywhere" switch.
+    // offers Retry for that too. The fourth is a link the browser handed
+    // over and the server it names, for the page to put in the box. The
+    // last is the "Closing clears everywhere" switch.
     let noted = !shell.note.lock().unwrap().is_empty();
     let offer = shell.device.take_offer();
     let closing = close_clears(&app).is_ok_and(CloseClears::get);
