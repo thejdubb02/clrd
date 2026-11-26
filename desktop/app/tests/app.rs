@@ -340,13 +340,7 @@ fetch('/report', { method: 'POST', body: String(matchMedia('(prefers-color-schem
 </script>"#,
     );
     let (bus, _daemon, _keys, home) = linked(&fake);
-    let gtk = home.join("config/gtk-3.0");
-    std::fs::create_dir_all(&gtk).unwrap();
-    std::fs::write(
-        gtk.join("settings.ini"),
-        "[Settings]\ngtk-application-prefer-dark-theme=1\n",
-    )
-    .unwrap();
+    gtk_setting(&home, "gtk-application-prefer-dark-theme=1");
     let _portal = portal(&bus, Default::default());
     let _app = Group(
         app(&bus, &home, &[])
@@ -382,13 +376,7 @@ setInterval(async () => {
     let fake = Fake::start();
     fake.set_page(PICKS);
     let (bus, _daemon, _keys, home) = linked(&fake);
-    let gtk = home.join("config/gtk-3.0");
-    std::fs::create_dir_all(&gtk).unwrap();
-    std::fs::write(
-        gtk.join("settings.ini"),
-        "[Settings]\ngtk-application-prefer-dark-theme=1\n",
-    )
-    .unwrap();
+    gtk_setting(&home, "gtk-application-prefer-dark-theme=1");
     let _portal = portal(&bus, Default::default());
     let _app = Group(
         app(&bus, &home, &[])
@@ -476,13 +464,7 @@ say();
 </script>"#,
     );
     let (bus, _daemon, _keys, home) = linked(&fake);
-    let gtk = home.join("config/gtk-3.0");
-    std::fs::create_dir_all(&gtk).unwrap();
-    std::fs::write(
-        gtk.join("settings.ini"),
-        "[Settings]\ngtk-theme-name=Adwaita-dark\n",
-    )
-    .unwrap();
+    gtk_setting(&home, "gtk-theme-name=Adwaita-dark");
     let scheme = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(2));
     let portal = portal(&bus, scheme.clone());
     let _app = Group(
@@ -725,6 +707,13 @@ fetch('/report', { method: 'POST', body: 'open' });
 }
 
 /// A settings portal on the test bus that answers with `scheme`.
+/// One line of GTK's own settings file for the app's home.
+fn gtk_setting(home: &Path, line: &str) {
+    let gtk = home.join("config/gtk-3.0");
+    std::fs::create_dir_all(&gtk).unwrap();
+    std::fs::write(gtk.join("settings.ini"), format!("[Settings]\n{line}\n")).unwrap();
+}
+
 fn portal(bus: &Bus, scheme: std::sync::Arc<std::sync::atomic::AtomicU32>) -> zbus::Connection {
     zbus::block_on(
         zbus::connection::Builder::address(bus.1.as_str())
@@ -835,4 +824,47 @@ fn the_servers_page_gets_a_session_and_nothing_else() {
     assert!(!on_disk(&home, TOKEN.as_bytes()));
     let value = sessions[0].split_once('=').unwrap().1;
     assert!(!on_disk(&home, value.as_bytes()));
+}
+
+/// A custom theme's colors reach the app and are kept for the This computer
+/// page (#939). Colors that would hide the page's text are refused whole,
+/// since they come from the server's page.
+#[test]
+fn a_custom_themes_colors_are_kept_and_anything_else_refused() {
+    const CUSTOM: &str = r#"<!doctype html><title>custom</title><script>
+const r = document.documentElement;
+const paint = body => {
+  r.dataset.scheme = 'light';
+  for (const [t, v] of [['--background', '#fafafa'], ['--foreground', '#101010'], ['--body', body],
+    ['--border', '#cccccc'], ['--clear', '#00aa55'], ['--clear-foreground', '#000000'], ['--destructive', '#bb2200']]) r.style.setProperty(t, v);
+};
+paint('#f0f0f0');
+setInterval(async () => {
+  if ((await (await fetch(location.href)).text()).includes('GO ' + 'GOOD')) paint('#202020');
+}, 300);
+</script>"#;
+
+    let fake = Fake::start();
+    fake.set_page(CUSTOM);
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let _portal = portal(&bus, Default::default());
+    let _app = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    let kept = home.join("data/org.clrd.desktop/theme");
+    let holds = |what: &str, want: &str| {
+        wait_long(what, || {
+            std::fs::read_to_string(&kept).is_ok_and(|text| text == want)
+        })
+    };
+    holds("unreadable colors are refused, the scheme kept", "light");
+    fake.set_page(&format!("{CUSTOM}<!-- GO GOOD -->"));
+    holds(
+        "the colors are kept",
+        "light:fafafa-101010-202020-cccccc-00aa55-000000-bb2200",
+    );
 }
