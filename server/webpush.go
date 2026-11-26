@@ -232,7 +232,8 @@ func (s *Server) sendPushes(ctx context.Context, e Event) {
 			switch {
 			case err != nil:
 				if ctx.Err() == nil {
-					s.log.Warn("web push", "device", p.tokenID, "err", err)
+					// HTTP errors can include the subscription's private endpoint.
+					s.log.Warn("web push request failed", "device", p.tokenID)
 					s.recordPushFailure(ctx, n.Topic)
 				}
 			case code == 404 || code == 410: // the browser dropped it

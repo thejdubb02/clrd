@@ -97,7 +97,8 @@ offline catches up the moment it reconnects.
   notification, and each topic can have its own icon. The server stores
   uploaded files; icons are image links. The Android app and the web inbox
   show both.
-- **Web inbox built in.** Server-rendered, live over WebSocket, the main actions
+- **Web inbox built in.** [Install it as an app](docs/web-app.md) on your phone
+  or computer. Server-rendered, live over WebSocket, the main actions
   work without JavaScript, Markdown formatting and links, link previews,
   Share and Copy on each card, a part swipe on a phone that shows a card's buttons, optional stacking by topic, a Ctrl+K command
   palette, a Send box for a quick note to your phone, a sound for new
@@ -175,6 +176,7 @@ dismisses, acks, resolves, snoozes or replies. Setup for each, and which ones re
 
 ## Docs
 
+- [Install the web inbox](docs/web-app.md)
 - [docs/self-host.md](docs/self-host.md): run it, put HTTPS in front, tokens, backups
 - [docs/integrations/mcp.md](docs/integrations/mcp.md): MCP tools for agents, and phone approval of agent prompts
 - [docs/formatting.md](docs/formatting.md): Markdown, emoji, display settings and the format check

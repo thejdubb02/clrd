@@ -19,6 +19,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Added
 
 - Integrations: n8n and Node-RED nodes can send, clear, acknowledge, resolve and snooze clrd notifications, and start workflows on new notifications or state changes (#113). Available to build from source.
+- Install the web inbox on a phone or computer, with an offline screen and opt-in browser notifications. Clear or resolve an alert on another device and the open inbox removes its browser notification. Browser subscriptions can also be managed through MCP (#164).
 - SDKs: the source-only create-clrd installer connects local AI agents to clrd with individual invites, configures MCP and hooks, and can remove the connections (#154).
 - ntfy publish: headers carrying RFC 2047 encoded words (for example `Title: =?UTF-8?B?...?=`, as ntfy clients send non-ASCII text) are decoded, the same as on ntfy (#842).
 
