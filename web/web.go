@@ -1412,6 +1412,9 @@ func Handler(api API, baseURL string) http.Handler {
 	// is cached for good. Any other (no ?v=, or an old one) is revalidated by
 	// ETag, so a stale request still gets today's file (#410).
 	mux.HandleFunc("GET /static/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/static/inbox-worker.js" {
+			w.Header().Set("Service-Worker-Allowed", prefix+"/app")
+		}
 		h, ok := staticHash[strings.TrimPrefix(r.URL.Path, "/static/")]
 		if ok {
 			w.Header().Set("ETag", `"`+h+`"`)

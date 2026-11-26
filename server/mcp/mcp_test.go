@@ -159,7 +159,7 @@ func TestInitializeAndList(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,mark,ack,resolve,snooze,wait_for_reply,devices,device_theme,device_log,unlink,sound,subscriptions,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,preview_template,"+
-		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,rename_token,rotate_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,version,ntfy_ignored,senders,stats,sender,set_sender,sender_changes,undo_sender_change" {
+		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,rename_token,rotate_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,version,ntfy_ignored,senders,stats,sender,set_sender,sender_changes,undo_sender_change,push,set_push,delete_push" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
@@ -214,6 +214,10 @@ func TestTools(t *testing.T) {
 		{"settings", map[string]any{"theme": "custom", "theme_colors": map[string]any{"bg": "#ffffff"}}, "PUT /api/v1/settings", map[string]any{"theme": "custom", "theme_colors": map[string]any{"bg": "#ffffff"}}},
 		{"device_theme", map[string]any{"id": "d1", "theme": ""}, "PUT /api/v1/devices/d1", map[string]any{"theme": ""}},
 		{"settings", map[string]any{"keep_cleared_days": 5}, "PUT /api/v1/settings", map[string]any{"keep_cleared_days": float64(5)}},
+		{"push", nil, "GET /api/v1/push", nil},
+		{"set_push", map[string]any{"endpoint": "https://example.test/sub", "keys": map[string]any{"p256dh": "example", "auth": "example"}},
+			"PUT /api/v1/push", map[string]any{"endpoint": "https://example.test/sub", "keys": map[string]any{"p256dh": "example", "auth": "example"}}},
+		{"delete_push", nil, "DELETE /api/v1/push", nil},
 	}
 	for _, c := range cases {
 		text, isErr := callTool(t, h, c.tool, c.args)

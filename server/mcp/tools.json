@@ -1601,5 +1601,34 @@
    "type": "object"
   },
   "name": "undo_sender_change"
+ },
+ {
+  "description": "Get the VAPID public key and subscription status for this read token.",
+  "inputSchema": {"type": "object"},
+  "name": "push"
+ },
+ {
+  "description": "Register this read token's browser PushSubscription JSON after the user grants notification permission. Subscription data is sensitive.",
+  "inputSchema": {
+   "properties": {
+    "endpoint": {"type": "string"},
+    "keys": {
+     "type": "object",
+     "properties": {
+      "p256dh": {"type": "string"},
+      "auth": {"type": "string"}
+     },
+     "required": ["p256dh", "auth"]
+    }
+   },
+   "required": ["endpoint", "keys"],
+   "type": "object"
+  },
+  "name": "set_push"
+ },
+ {
+  "description": "Remove this read token's Web Push subscription from the server.",
+  "inputSchema": {"type": "object"},
+  "name": "delete_push"
  }
 ]

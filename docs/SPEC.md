@@ -1360,7 +1360,9 @@ only, `hooks(topic)`, `set_hook(topic, name, url, events?, secret?, body?)`,
 `rename_token(id, name)`, `rotate_token(id)`,
 `create_agent_invite(name, topics, expires_in?)` (`POST /api/v1/agents/invite`, section 4),
 `subscriptions(topics?, new_topics?, for?)` (section 2.3), `server_env()` (`GET /api/v1/server`), `version()` (`GET /api/v1/version`, section 5.2, any token), `ntfy_ignored()`, `senders()` and
-`sender(id)` (section 5.1).
+`sender(id)` (section 5.1). For the caller's read token, `push()`,
+`set_push(endpoint, keys)`, and `delete_push()` map to GET, PUT, and DELETE
+`/api/v1/push` respectively (section 9).
 
 `POST /mcp/approve?topic=agents&timeout=590` takes a Claude Code or Codex
 `PermissionRequest` hook body, sends an Allow / Deny notification, waits, and
@@ -1541,6 +1543,11 @@ rules. Its token lives in the OS keychain and is sent only as an
   `web/ui/build.sh` writes `web/static/app.css`, which is committed so a plain
   `go build` still works. CI rebuilds it and fails if it drifted. Icons are
   Lucide, inlined as SVG partials in `web/templates/icons.html`.
+- Installable web inbox (#164). The manifest starts at `/app` in standalone
+  mode with the clrd icons. The signed-in inbox registers an offline worker
+  scoped to `/app`, including under a sub-path. It loads navigation from the
+  network and shows "Lost the live connection" with a reload link on network
+  failure. It stores no inbox pages, API replies or credentials.
 - Web Push (#164). The
   server makes a VAPID key pair on first start and keeps it in the
   database. A signed-in device subscribes with its token:
@@ -1558,7 +1565,7 @@ rules. Its token lives in the OS keychain and is sent only as an
   `{type, via, seq, id, topic, title, message, priority, tags, click, icon}`,
   empty fields left out. A message too long for one 4 KB push is cut to fit;
   if it still does not fit, only `{type, via, seq, id, topic}` is sent and
-  the page fetches the rest. Headers: `TTL: 86400`, `Urgency` high for
+  the worker fetches the rest. Headers: `TTL: 86400`, `Urgency` high for
   priority 4 and 5, low for 1 and 2, `Topic` the notification id so a
   newer push replaces an older one waiting in the push service.
 - The push service answering 404 or 410 drops the subscription. Other
@@ -1573,7 +1580,12 @@ rules. Its token lives in the OS keychain and is sent only as an
   every push (fetching the notification by id when only the short form
   came), and a tap opens or focuses the inbox. The system notification only
   signals: closing it changes nothing on the server. Browsers allow Web Push
-  only over HTTPS (or on localhost).
+  only over HTTPS (or on localhost). A live or replayed clear or resolve
+  closes the browser alert with that ID, unless the alert is newer than the
+  event. On reconnect the inbox also checks displayed alerts against server
+  state. With every inbox closed, alert removal waits for the inbox to open
+  again. State changes never wake a background worker. See
+  [Install the web inbox](web-app.md).
 
 ## 9.1 Settings layout (#575, web and Android)
 
