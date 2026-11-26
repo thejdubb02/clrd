@@ -117,6 +117,9 @@ class Account(private val ctx: Context, val id: Int) {
     /** Typed answers this server refused, by notification id, so the reply box opens with them again (#153); per server, as ids are (#860). */
     val drafts = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /** Typed answers refused because the question changed (409), counted by notification id, so a reply box open on it closes (#516); per server, as ids are (#921). */
+    val changed = androidx.compose.runtime.mutableStateMapOf<String, Int>()
+
     /** Held while this server's queue is sent (#860): one sender per server, so another server's slow send never waits on it. */
     internal val sendLock = Any()
 
@@ -140,7 +143,9 @@ class Account(private val ctx: Context, val id: Int) {
      */
     @Volatile var configGen = prefs.getInt(CONFIG_GEN, 0)
 
-    private var sendNotBefore = 0L // System.nanoTime(); a busy server's Retry-After, touched only on [App.sends]
+    /** This server's sends while no sync client runs, one at a time (#921): another server's stalled send never holds them. Its thread ends when idle. */
+    private val sends = java.util.concurrent.ThreadPoolExecutor(0, 1, 30, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue())
+    private var sendNotBefore = 0L // System.nanoTime(); a busy server's Retry-After, touched only on [sends]
     private var sendNotBeforeGen = 0 // the settings it came from; another server is not busy
 
     var muted: Set<String>
@@ -468,7 +473,7 @@ class Account(private val ctx: Context, val id: Int) {
             if (!configured) return
             Triple(configGen, RoomStore(app, this), api())
         }
-        app.sends.execute {
+        sends.execute {
             if (gen == sendNotBeforeGen && System.nanoTime() < sendNotBefore) return@execute // stays queued for later
             try {
                 flushPending(store, api) { configGen == gen }

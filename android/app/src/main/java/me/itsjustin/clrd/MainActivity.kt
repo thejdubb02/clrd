@@ -1266,8 +1266,8 @@ private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
     var ended by remember { mutableStateOf(false) }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { keepDraft(drafts, n.id, text, ended) } }
     // An earlier answer came back 409: this box answers the old question too. Close it.
-    val changed0 = remember { app.changed[n.id] ?: 0 }
-    LaunchedEffect(app.changed[n.id]) { if ((app.changed[n.id] ?: 0) != changed0) close() }
+    val changed0 = remember { acct.changed[n.id] ?: 0 }
+    LaunchedEffect(acct.changed[n.id]) { if ((acct.changed[n.id] ?: 0) != changed0) close() }
     val count = text.trim().let { it.codePointCount(0, it.length) }
     AlertDialog(
         onDismissRequest = close,
@@ -2159,7 +2159,8 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                     // One slot per address: another try at a server this phone has would take its token and wipe its
                     // notifications. Checked here, in turn, so a second quick tap sees the server the first one added.
                     // An edit may not take another server's address either (#860): a pairing link for it would find the wrong slot.
-                    if (app.accountAt(newUrl, if (adding) -1 else a.id) != null) { result = ctx.getString(R.string.server_already, newUrl); return@execute }
+                    // Kept at its own address, a slot saves even if another already shares it from before #860 (#921).
+                    if ((adding || serverAddress(newUrl) != serverAddress(a.serverUrl)) && app.accountAt(newUrl, if (adding) -1 else a.id) != null) { result = ctx.getString(R.string.server_already, newUrl); return@execute }
                     // Another server is tried first and kept only once it answers, so a typo adds nothing (#78).
                     if (!adding) a.saveServer(newUrl, newToken)
                     // /api/v1/topics needs the read scope, so this checks the URL and the token together.

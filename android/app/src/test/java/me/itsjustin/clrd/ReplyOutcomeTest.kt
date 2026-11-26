@@ -46,10 +46,10 @@ class ReplyOutcomeTest {
         app.drafts["a"] = "older"
         bg { store.replyOutcome(typed, "conflict") }
         shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(1, app.changed["a"])
+        assertEquals(1, app.account.changed["a"])
         assertNull(app.drafts["a"])
         bg { store.replyOutcome(typed, "bad_request") }
         shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("a refusal is not a changed question", 1, app.changed["a"])
+        assertEquals("a refusal is not a changed question", 1, app.account.changed["a"])
     }
 }

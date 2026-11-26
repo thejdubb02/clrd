@@ -149,12 +149,12 @@ class ActionReceiver : BroadcastReceiver() {
         if (intent.action == Tray.ACTION_DISMISS) { // a swipe or Clear all: hide here only (#265), unless a lone swipe clears (#271)
             acct.trayHidden += id
             app.leftShade(1)
-            if (app.shadeClears) app.swiped(id, server, acct)
+            if (app.shadeClears) app.swiped(id, server, acct, gen)
             return
         }
         if (intent.action == Tray.ACTION_DEVICE) { // a sender's copy, HTTP or broadcast button
             val r = goAsync()
-            DeviceAction.run(ctx, acct, id, intent.getIntExtra(Tray.EXTRA_INDEX, -1), intent.getLongExtra(Tray.EXTRA_SEQ, -1), server) { r.finish() }
+            DeviceAction.run(ctx, acct, id, intent.getIntExtra(Tray.EXTRA_INDEX, -1), intent.getLongExtra(Tray.EXTRA_SEQ, -1), server, gen = gen) { r.finish() }
             return
         }
         if (intent.action == Tray.ACTION_REPLY && intent.data?.getQueryParameter("text") == "1") { // typed in the tray (#153)
