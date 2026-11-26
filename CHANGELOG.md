@@ -153,6 +153,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Server and web: a token from the server's config file can no longer be revoked from the sender page or the API (409), because the next restart made it again from the file and the revoke silently undid itself. Remove it from the file instead; the page now says so and hides Revoke (#832).
 - Web: the sender page no longer offers Rename or Rotate secret for a token set in the config file, which the server always refuses; it says to change it there. Senders carry `config: true` for such tokens (#119).
 - Web: a notification's own page shows "This notification is gone" once it is deleted or its topic is no longer yours, instead of keeping the card and retrying every few seconds (#826).
 - Web: a notification's link (`/app/n/{id}`, as a GitHub issue links it) opens a page with that card alone, in any state, with a link back to its list, so it is there even past a list's newest 500 or when this device cleared it for itself alone (#822).
