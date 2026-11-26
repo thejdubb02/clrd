@@ -50,6 +50,14 @@ The MCP tools are `ntfy_origins` and `set_ntfy_origins`.
 Allowed origins can read the `Retry-After` response header on time-based
 rate limits to decide when to retry.
 
+## Request and stream limits
+
+Operators can [set per-address limits](../self-host.md#server-environment)
+for ntfy API requests and open subscriptions. Both are off by default.
+Clients that hit the request rate get HTTP 429 and a `Retry-After` header.
+If a new live subscription gets HTTP 429 without that header, a slot frees
+when an existing stream disconnects. A poll uses the request budget only.
+
 ## Auto-resolve
 
 ntfy has no resolved state. Send with clrd's `X-Id` header, then resolve by key:

@@ -129,6 +129,12 @@ func (s *Server) ntfyRoutes() {
 			if err := s.ntfyCORS(w, r); err != nil {
 				return err
 			}
+			if s.ntfyReqLimit != nil && (pattern != "POST /message" || !hasGotifyKey(r)) {
+				ip := clientIP(r, s.opt.TrustedProxies)
+				if wait := s.ntfyReqLimit.take(ip, time.Now()); wait > 0 {
+					return retryAfter(wait, "too many ntfy requests from this address, try again later")
+				}
+			}
 			if _, _, ok := ntfyPassword(r); ok { // taken before bcrypt, kept only if the password was wrong
 				ip := clientIP(r, s.opt.TrustedProxies)
 				if wait := s.pwLimit.take(ip, time.Now()); wait > 0 {
@@ -850,6 +856,13 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		f, err := ntfyFilters(r)
 		if err != nil {
 			return err
+		}
+		if !poll && s.ntfySubs != nil {
+			ip := clientIP(r, s.opt.TrustedProxies)
+			if !s.openNtfySubscription(ip) {
+				return errf(429, "rate_limited", "too many open ntfy subscriptions from this address")
+			}
+			defer s.closeNtfySubscription(ip)
 		}
 
 		var write func(m ntfyMsg) error

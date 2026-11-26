@@ -1,0 +1,1 @@
+- ntfy compatibility: optionally limit requests and open subscriptions per client address (#848).

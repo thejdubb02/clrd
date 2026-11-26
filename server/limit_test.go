@@ -4,11 +4,111 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestNtfyVisitorLimits(t *testing.T) {
+	start := func(t *testing.T, requests, subscriptions string) (*Server, string) {
+		t.Helper()
+		t.Setenv("CLRD_NTFY_REQUESTS_PER_MINUTE", requests)
+		t.Setenv("CLRD_NTFY_MAX_SUBSCRIPTIONS", subscriptions)
+		t.Setenv("CLRD_TRUSTED_PROXIES", "127.0.0.1")
+		opt, err := ConfigFromEnv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		opt.DB = filepath.Join(t.TempDir(), "clrd.db")
+		s, err := New(opt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { s.Close() })
+		admin := mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
+		return s, admin
+	}
+	get := func(t *testing.T, ts *httptest.Server, path, tok, addr string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest("GET", ts.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("X-Forwarded-For", addr)
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { res.Body.Close() })
+		return res
+	}
+	t.Run("request bucket", func(t *testing.T) {
+		s, admin := start(t, "1", "0")
+		ts := httptest.NewServer(s)
+		t.Cleanup(ts.Close)
+		ts.Client().Timeout = 5 * time.Second
+		const addr, other = "198.51.100.4", "198.51.100.5"
+		if res := get(t, ts, "/v1/health", admin, addr); res.StatusCode != 200 {
+			t.Fatalf("first ntfy request: %d", res.StatusCode)
+		}
+		if res := get(t, ts, "/alerts/json?poll=1", admin, addr); res.StatusCode != 429 || res.Header.Get("Retry-After") == "" {
+			t.Fatalf("second ntfy request: %d, headers %v", res.StatusCode, res.Header)
+		}
+		if res := get(t, ts, "/alerts/json?poll=1", admin, other); res.StatusCode != 200 {
+			t.Fatalf("other address: %d", res.StatusCode)
+		}
+		if res := get(t, ts, "/api/v1/topics", admin, addr); res.StatusCode != 200 {
+			t.Fatalf("native request: %d", res.StatusCode)
+		}
+		tok := mkToken(t, s, "Gotify app", []string{ScopePublish}, []string{"gotify"})
+		headers := map[string]string{"X-Forwarded-For": addr, "X-Gotify-Key": tok, "Content-Type": "application/json"}
+		if code, out := raw(t, "POST", ts.URL+"/message", "", `{"message":"Gotify publish"}`, headers); code != 200 {
+			t.Fatalf("Gotify request: %d %s", code, out)
+		}
+		if env := s.effectiveEnv(); env["CLRD_NTFY_REQUESTS_PER_MINUTE"] != "1" || env["CLRD_NTFY_MAX_SUBSCRIPTIONS"] != "0" {
+			t.Fatalf("effective limits: %v", env)
+		}
+	})
+	t.Run("live subscriptions", func(t *testing.T) {
+		s, admin := start(t, "0", "1")
+		disconnected := make(chan struct{})
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.ServeHTTP(w, r)
+			if r.URL.Query().Get("tracked") == "1" {
+				close(disconnected)
+			}
+		}))
+		t.Cleanup(ts.Close)
+		ts.Client().Timeout = 5 * time.Second
+		const url, addr, other = "/alerts/json", "198.51.100.4", "198.51.100.5"
+		first := get(t, ts, url+"?tracked=1", admin, addr)
+		if first.StatusCode != 200 {
+			t.Fatalf("first subscription: %d", first.StatusCode)
+		}
+		if res := get(t, ts, url, admin, addr); res.StatusCode != 429 || res.Header.Get("Retry-After") != "" {
+			t.Fatalf("second subscription: %d, headers %v", res.StatusCode, res.Header)
+		}
+		if res := get(t, ts, url+"?poll=1", admin, addr); res.StatusCode != 200 {
+			t.Fatalf("poll alongside stream: %d", res.StatusCode)
+		}
+		if res := get(t, ts, url, admin, other); res.StatusCode != 200 {
+			t.Fatalf("stream from other address: %d", res.StatusCode)
+		}
+		first.Body.Close()
+		select {
+		case <-disconnected:
+		case <-time.After(5 * time.Second):
+			t.Fatal("server did not finish the disconnected subscription")
+		}
+		if res := get(t, ts, url, admin, addr); res.StatusCode != 200 {
+			t.Fatalf("subscription after disconnect: %d", res.StatusCode)
+		}
+	})
+}
 
 func TestLimiterRefill(t *testing.T) {
 	l, t0 := newLimiter(2, time.Minute), time.Unix(1000, 0)

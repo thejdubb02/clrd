@@ -1440,6 +1440,12 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `CLRD_RATE_TOKEN` and `CLRD_RATE_TOPIC` (60 each, publishes a minute per
   token and per topic, with a burst of the same size; `0` turns one off).
   Every publish counts, on every route; over a cap is a 429 `rate_limited`.
+  `CLRD_NTFY_REQUESTS_PER_MINUTE` limits requests to ntfy compatibility
+  routes by client address, with a burst of the same size.
+  `CLRD_NTFY_MAX_SUBSCRIPTIONS` limits concurrent ntfy streams by address,
+  excluding polls. Both default to `0` (off). Over either limit, clrd returns
+  429 `rate_limited`. The request rate also returns `Retry-After`.
+  These limits leave the native and Gotify APIs alone.
   `CLRD_TRUSTED_PROXIES` (unset; comma-separated CIDRs or addresses): the
   only peers whose rightmost `X-Forwarded-For` hop is taken as the client
   address, and whose `X-Forwarded-Proto` sets the scheme of links built from
