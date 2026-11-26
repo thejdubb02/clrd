@@ -808,6 +808,8 @@ var (
 	errPruned = errors.New("since was pruned")
 )
 
+const ntfySubscribeTopicLimit = 150
+
 // ntfySubscribe: GET /{t1,t2}/json|sse|raw|ws with since= and poll=1.
 func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
@@ -816,14 +818,25 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		if len(topics) == 0 {
 			return errf(400, "bad_request", "no topic given")
 		}
+		seen := make(map[string]bool)
+		distinct := topics[:0]
 		for _, t := range topics {
+			if seen[t] {
+				continue
+			}
 			if err := validTopic(t); err != nil {
 				return err
 			}
 			if err := tok.need(ScopeRead, t); err != nil {
 				return err
 			}
+			seen[t] = true
+			distinct = append(distinct, t)
+			if len(distinct) > ntfySubscribeTopicLimit {
+				return errf(400, "bad_request", "an ntfy subscription can have at most %d topics", ntfySubscribeTopicLimit)
+			}
 		}
+		topics = distinct
 		q := r.URL.Query()
 		poll := q.Get("poll") == "1" || q.Get("poll") == "true"
 		sinceArg := q.Get("since")

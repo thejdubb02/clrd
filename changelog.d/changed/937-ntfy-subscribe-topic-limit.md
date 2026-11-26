@@ -1,0 +1,1 @@
+- ntfy subscriptions accept up to 150 distinct topics per request and count repeated names once (#937).
