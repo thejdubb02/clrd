@@ -23,7 +23,8 @@ invite per agent, granting read and publish on the topic shown in the
 terminal (`agents` by default). Paste each invite into its prompt. Use a
 different name for every invite so you can identify the agent in Linked
 devices. Use `--topic` to choose a different notification topic and
-`--no-browser` to open the printed URL yourself.
+`--no-browser` to open the printed URL yourself. Press Ctrl+C to stop setup.
+Connections already completed stay in place.
 
 The installer uses each invite once. It keeps the agent's token in a private
 local file and writes a stdio MCP entry to the agent's user configuration.
@@ -31,7 +32,8 @@ Agent config files and hook commands contain only the path to that file.
 Restart the clients and approve any MCP or hook trust prompts in the client.
 For VS Code, this configures the Copilot session target on the local machine.
 
-Turn completion hooks send a fixed message to the selected topic. Use
+Turn completion hooks send a fixed message to the selected topic and need
+publish access. Permission prompts need both read and publish. Use
 `--no-notifications` for MCP only. Use `--phone-approvals` to also wire Claude
 Code and Codex permission prompts to clrd. This sends the prompt's tool
 details to your server. The hook uses clrd's Allow or Deny response and
@@ -53,7 +55,8 @@ servers, unrelated hooks and comments are kept. Some files may retain empty
 configuration sections.
 
 If an editor saves a configuration while setup is running, rerun the same
-command to finish with the saved invite claim.
+command to finish with the saved invite claim. To change the topic or hooks
+of an existing connection, remove it and connect again with the new options.
 
 Read about [agent invites](../../docs/integrations/agent-invite.md) and the
 [clrd MCP endpoint](../../docs/integrations/mcp.md).
