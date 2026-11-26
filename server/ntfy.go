@@ -613,7 +613,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		if err != nil {
 			return err
 		}
-		floor, truncated, err := s.ntfyFloors(r.Context(), since, sinceArg == "latest", topics)
+		floor, truncated, err := s.ntfyFloors(r.Context(), since, cur, sinceArg == "latest", topics)
 		if err != nil {
 			return err
 		}
@@ -824,17 +824,17 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 // ntfyReplayMax caps a replay per topic, as ntfy's 10 MB message poll limit.
 var ntfyReplayMax = 10 << 20 // a var so a test can shrink it
 
-// ntfyFloors is the first seq each topic replays after since, as ntfy does
+// ntfyFloors is the first seq each topic replays in (since, cur], as ntfy does
 // per topic (#845): its latest message for since=latest (marks and
-// device-only events never count), else the oldest of its newest events that
-// fit in ntfyReplayMax. truncated says some topic had more.
-func (s *Server) ntfyFloors(ctx context.Context, since int64, latest bool, topics []string) (map[string]int64, bool, error) {
+// device-only events never count), else the oldest of its newest events whose
+// bytes fit in ntfyReplayMax. truncated says some topic had more.
+func (s *Server) ntfyFloors(ctx context.Context, since, cur int64, latest bool, topics []string) (map[string]int64, bool, error) {
 	q := `SELECT topic, MIN(CASE WHEN run <= ? THEN seq ELSE 1 << 62 END), MAX(run > ?) FROM (
-		SELECT topic, seq, SUM(length(data)) OVER (PARTITION BY topic ORDER BY seq DESC) AS run
-		FROM events WHERE seq > ? AND type != ? AND topic IN (` + placeholders(len(topics)) + `)) GROUP BY topic`
-	args := []any{ntfyReplayMax, ntfyReplayMax, since, EventMark}
+		SELECT topic, seq, SUM(length(CAST(data AS BLOB))) OVER (PARTITION BY topic ORDER BY seq DESC) AS run
+		FROM events WHERE seq > ? AND seq <= ? AND type != ? AND data NOT LIKE '%"only":"%' AND topic IN (` + placeholders(len(topics)) + `)) GROUP BY topic`
+	args := []any{ntfyReplayMax, ntfyReplayMax, since, cur, EventMark}
 	if latest {
-		q = `SELECT topic, MAX(seq), 0 FROM events WHERE seq > ? AND type != ? AND data NOT LIKE '%"only":"%'
+		q = `SELECT topic, MAX(seq), 0 FROM events WHERE seq > ? AND seq <= ? AND type != ? AND data NOT LIKE '%"only":"%'
 			AND topic IN (` + placeholders(len(topics)) + `) GROUP BY topic`
 		args = args[2:]
 	}
