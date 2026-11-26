@@ -18,7 +18,7 @@ import (
 func TestStats(t *testing.T) {
 	s, ts, admin := newTest(t)
 	s.opt.Retention = 100 * 365 * 24 * time.Hour // keeps the 2023 history below, so trends show
-	const base = int64(1_699_999_200_000) // a whole UTC hour
+	const base = int64(1_699_999_200_000)        // a whole UTC hour
 	pub := func(topic, ext string) string {
 		t.Helper()
 		code, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": topic, "message": "m", "external_id": ext, "priority": 4})
