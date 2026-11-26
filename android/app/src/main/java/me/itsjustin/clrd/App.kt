@@ -2,43 +2,18 @@ package me.itsjustin.clrd
 
 import android.app.Application
 import android.content.Context
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 /** App-wide singletons. Small enough that a DI framework would be the bigger thing. */
 class App : Application() {
     /** The server this phone talks to (#78). Its settings, database and sync state; the members below that name a server forward to it. */
     val account by lazy { Account(this, 0) }
     val db get() = cur.db
-    /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
-    val clientCert get() = account.clientCert
-    /** The server origin the certificate was picked for. A moved server gets no certificate until it is picked again. */
-    private fun origin(u: okhttp3.HttpUrl) = "${u.scheme}://${u.host}:${u.port}"
-    private val certKeys by lazy {
-        ClientCertKeys({ clientCert.value }, {
-            account.serverUrl.toHttpUrlOrNull()?.takeIf { origin(it) == account.prefs.getString("client_cert_origin", null) }?.let { it.host to it.port }
-        }) { a ->
-            runCatching { // a removed key or revoked access means no certificate, not a crash
-                val k = android.security.KeyChain.getPrivateKey(this, a)
-                val c = android.security.KeyChain.getCertificateChain(this, a)
-                if (k != null && c != null) k to c else null
-            }.getOrNull()
-        }
-    }
-    val http by lazy {
-        OkHttpClient.Builder()
-            .sslSocketFactory(certKeys.socketFactory, certKeys.trustManager)
-            .pingInterval(45, TimeUnit.SECONDS) // notices a dead connection the server ping alone would not
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .build()
-    }
-    /** For servers past the first (#78): no client certificate, and a pool of its own. Built only when one is added. */
-    internal val plainHttp by lazy {
-        OkHttpClient.Builder().pingInterval(45, TimeUnit.SECONDS).connectTimeout(15, TimeUnit.SECONDS).build()
-    }
+    /** The shown server's client certificate (#152, #78). Each server has its own, offered only to its own host. */
+    val clientCert get() = cur.clientCert
+    /** Account 0's client: a new address is tried with it, which offers its certificate to account 0's host only. */
+    val http get() = account.http
     val tray get() = cur.tray
 
     private val others = HashMap<Int, Account>() // guarded by this
@@ -136,7 +111,7 @@ class App : Application() {
                     // Keep-list, not a list of server keys: a key added later and forgotten here errs toward wiping a token.
                     prefs.edit().apply { prefs.all.keys.filter { it !in PHONE_KEYS }.forEach(::remove) }.commit()
                 }
-                a.clientCert.value = null
+                a.dropClientCert()
                 a.soundNow.value = a.sound
                 a.tray.createChannels() // back on the default sound, whose channels an earlier change may have deleted
                 a.tray.clear()
@@ -276,16 +251,7 @@ class App : Application() {
         get() = prefs.getBoolean("drop_cleared", false)
         set(v) = prefs.edit().putBoolean("drop_cleared", v).apply()
 
-    /** Picks or removes the client certificate (#152). Open connections used the old one, so they close and sync reconnects. */
-    fun pickClientCert(alias: String?) {
-        account.prefs.edit().putString("client_cert", alias).putString("client_cert_origin", account.serverUrl.toHttpUrlOrNull()?.let(::origin)).apply()
-        clientCert.value = alias
-        io.execute {
-            certKeys.renew()
-            http.connectionPool.evictAll()
-            if (account.configured) SyncService.start(this, restart = true)
-        }
-    }
+    fun pickClientCert(alias: String?) = cur.pickClientCert(alias)
 
     /** Display, Appearance (#583): "system", "light" or "dark", this phone only. Applies at once through [ClrdTheme]. */
     val appearance by lazy { kotlinx.coroutines.flow.MutableStateFlow(prefs.getString("appearance", null) ?: "system") }

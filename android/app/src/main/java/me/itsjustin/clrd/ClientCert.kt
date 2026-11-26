@@ -20,21 +20,20 @@ import javax.net.ssl.X509TrustManager
 
 /**
  * Client certificate for mutual TLS (#152). Offers the key picked from Android's key store, and only to
- * the host and port it was picked for ([origin], null when the server has moved since), so a site an
+ * the host and port it was picked for ([pick], null when the server has moved since), so a site an
  * image or action link points at never sees it. The server's certificate must name that host before the
  * key is offered: the trust check below verifies the hostname during the handshake, where OkHttp would
  * only do it after the key had been sent. The key stays in KeyChain; [keys] looks it up on the
  * connecting thread, never the main one.
  */
 class ClientCertKeys(
-    private val alias: () -> String?,
-    private val origin: () -> Pair<String, Int>?,
+    private val pick: () -> Pair<String, Pair<String, Int>>?, // the alias and its host and port, read once per handshake
     private val trust: KeyStore? = null,
     private val keys: (String) -> Pair<PrivateKey, Array<X509Certificate>>?,
 ): X509ExtendedKeyManager() {
     override fun chooseClientAlias(keyType: Array<String>?, issuers: Array<Principal>?, socket: Socket?): String? {
-        val a = alias() ?: return null
-        val (host, port) = origin() ?: return null
+        val (a, at) = pick() ?: return null
+        val (host, port) = at
         val s = (socket as? SSLSocket)?.handshakeSession ?: return null
         return a.takeIf { s.peerHost.equals(host, ignoreCase = true) && s.peerPort == port }
     }

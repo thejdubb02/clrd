@@ -24,8 +24,8 @@ import java.util.concurrent.TimeUnit
  * any failure means no picture, and the notification looks as it did before icons.
  */
 class Images(private val app: App) {
-    private val http by lazy { limits(app.http) }
-    private val plainHttp by lazy { limits(app.plainHttp) } // a server past the first never gets account 0's certificate (#78)
+    private val clients = ConcurrentHashMap<Int, OkHttpClient>() // each server's own client, so none gets another's certificate (#78)
+    private fun client(a: Account) = clients.getOrPut(a.id) { limits(a.http) }
     private fun limits(h: OkHttpClient) = h.newBuilder().callTimeout(15, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
     /** "/api/v1/files/x" is another file on each server, so another account's pictures are cached apart (#78). */
     private fun key(px: Int, url: String, a: Account) = if (a.id == 0) "$px $url" else "${a.id} $px $url"
@@ -70,7 +70,7 @@ class Images(private val app: App) {
         cache.get(key)?.let { return it }
         if (System.currentTimeMillis() - (failedAt[key] ?: 0) < RETRY_MS) return null
         val (base, token) = synchronized(a.configLock) { a.serverUrl to a.token }
-        val bmp = request(url, base, token)?.let { fetch(if (a.id == 0) http else plainHttp, it, MAX_BYTES) }?.let { decode(it, px) }
+        val bmp = request(url, base, token)?.let { fetch(client(a), it, MAX_BYTES) }?.let { decode(it, px) }
         if (bmp == null) failedAt[key] = System.currentTimeMillis() else cache.put(key, bmp)
         return bmp
     }

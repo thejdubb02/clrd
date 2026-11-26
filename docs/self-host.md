@@ -204,8 +204,10 @@ the app pick it under Settings, Devices, Client certificate. The key stays in
 Android's key store, and clrd offers it only to the server address it was
 picked for, and only once that server has proved its name, never to a site a
 message links to. Change the server address and you pick it again. With
-more than one server, the certificate is for the first one only. Picking needs the phone's own dialog, so an agent
-cannot set it over the API.
+more than one server, each has its own: switch to the server, then pick. A
+second server that accepts only certificate holders cannot be added yet,
+since adding one makes a request before a certificate can be picked (#885).
+Picking needs the phone's own dialog, so an agent cannot set it over the API.
 
 Caddy (handles certificates and WebSockets on its own):
 
