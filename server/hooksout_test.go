@@ -928,7 +928,8 @@ func TestHooksOutGitHub(t *testing.T) {
 			return
 		case strings.HasSuffix(r.URL.Path, "/issues"):
 			hits = append(hits, h)
-			opened = append([]map[string]any{{"number": 7 + len(opened), "body": h.body["body"]}}, opened...)
+			body := strings.ReplaceAll(h.body["body"].(string), "\n", "\r\n") // as an edit on GitHub's website saves it (#827)
+			opened = append([]map[string]any{{"number": 7 + len(opened), "body": body}}, opened...)
 			if lose {
 				w.WriteHeader(502) // the issue is made, the answer is lost
 				return

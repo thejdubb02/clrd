@@ -554,6 +554,7 @@ func (s *Server) githubFind(ctx context.Context, u url.URL, secret, mark string,
 	if err := json.Unmarshal(resp, &issues); err != nil {
 		return "", 0, errors.New("unreadable issue list")
 	}
+	mark = strings.TrimSuffix(mark, "\n") // an edit on GitHub's website saves line breaks as \r\n (#827)
 	for _, i := range issues {
 		if strings.HasPrefix(i.Body, mark) {
 			return strconv.Itoa(i.Number), 200, nil
