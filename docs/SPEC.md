@@ -1195,8 +1195,13 @@ and `initialize` reports `version` as `serverInfo.version`.
   ntfy does; a value that cannot be decoded is kept as sent. Query values
   are taken as they are. `X-Template`/`Template`/`tpl` set
   to yes/true/1 makes the message, title and priority Go templates over the
-  JSON body, as in ntfy (any other `?template=` value is a webhook template,
-  below). A body over 4096 bytes without a file
+  JSON body. Other selectors on a JSON POST or PUT can load `name.yml`
+  from `CLRD_NTFY_TEMPLATE_DIR` (unset disables disk lookup). Existing saved
+  or built-in webhooks selected by `?template=` take precedence. Disk
+  templates need publish access to the topic, use the normal ntfy publish
+  response and share the inline renderer limits. See
+  [supported file syntax](migrate-from-ntfy.md#named-templates).
+  A body over 4096 bytes without a file
   name is still a 413; clrd does not turn it into an attachment. ntfy output
   carries `icon` and `attachment` (`name`, `url`, `type`, `size`, with `url`
   made absolute from `CLRD_BASE_URL`). Unlike ntfy, clrd's file URLs need a
@@ -1390,6 +1395,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   requests without the path are still answered, for a proxy that strips it),
   `CLRD_RETENTION` (`720h` for final rows and events; the
   `keep_cleared_days` setting overrides it once set),
+  `CLRD_NTFY_TEMPLATE_DIR` (directory of named ntfy templates, unset disables lookup),
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
   the database), `CLRD_ATTACHMENT_MAX_MB` (15, per file),
   `CLRD_ATTACHMENT_TOTAL_MB` (5000, all files of notifications that still

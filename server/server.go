@@ -67,7 +67,8 @@ type Options struct {
 	// any loopback or private-network peer is trusted.
 	TrustedProxies []netip.Prefix
 
-	Config string // CLRD_CONFIG, a JSON file of users and tokens applied at every start (#155); unset, none
+	Config          string // CLRD_CONFIG, JSON users and tokens applied at startup (#155)
+	NtfyTemplateDir string // CLRD_NTFY_TEMPLATE_DIR, unset disables on-disk templates (#843)
 }
 
 // ConfigFromEnv reads the spec section 7 environment variables.
@@ -81,6 +82,7 @@ func ConfigFromEnv() (Options, error) {
 		o.Retention = d
 	}
 	o.Attachments = os.Getenv("CLRD_ATTACHMENTS")
+	o.NtfyTemplateDir = os.Getenv("CLRD_NTFY_TEMPLATE_DIR")
 	switch v := os.Getenv("CLRD_PUBLIC_PAGES"); v {
 	case "", "on":
 	case "off":
@@ -301,6 +303,15 @@ func New(opt Options) (*Server, error) {
 	if opt.AttachmentTotal == 0 {
 		opt.AttachmentTotal = 5000 << 20
 	}
+	if opt.NtfyTemplateDir != "" {
+		info, err := os.Stat(opt.NtfyTemplateDir)
+		if err != nil {
+			return nil, fmt.Errorf("CLRD_NTFY_TEMPLATE_DIR: %w", err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("CLRD_NTFY_TEMPLATE_DIR: %q is not a directory", opt.NtfyTemplateDir)
+		}
+	}
 	if err := os.MkdirAll(opt.Attachments, 0o750); err != nil {
 		return nil, fmt.Errorf("attachments folder: %w", err)
 	}
@@ -414,6 +425,7 @@ func (s *Server) effectiveEnv() map[string]string {
 		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
 		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
 		"CLRD_CONFIG": o.Config, "CLRD_HOOK_ALLOW": hookAllow, "CLRD_METRICS": metrics,
+		"CLRD_NTFY_TEMPLATE_DIR": o.NtfyTemplateDir,
 	}
 }
 

@@ -313,16 +313,28 @@ func render(t *template.Template, field string, data any) (string, error) {
 
 var webhookNameRe = topicRe
 
-// webhook finds the template name for topic: the topic's own saved one,
-// with any field it leaves empty taken from the built-in of that name.
+func unknownWebhook(name string) error {
+	return errf(400, "bad_request", "unknown template %q: use a built-in (%s) or save one for this topic",
+		name, strings.Join(builtinNames(), ", "))
+}
+
 func (s *Server) webhook(ctx context.Context, topic, name string) (*Webhook, error) {
+	h, err := s.findWebhook(ctx, topic, name)
+	if h == nil && err == nil {
+		err = unknownWebhook(name)
+	}
+	return h, err
+}
+
+// findWebhook returns the topic's saved template with built-in defaults,
+// or nil if neither exists.
+func (s *Server) findWebhook(ctx context.Context, topic, name string) (*Webhook, error) {
 	var spec string
 	err := s.db.QueryRowContext(ctx, `SELECT spec FROM webhook_templates WHERE topic = ? AND name = ?`, topic, name).Scan(&spec)
 	b, builtin := builtinWebhooks[name]
 	if errors.Is(err, sql.ErrNoRows) {
 		if !builtin {
-			return nil, errf(400, "bad_request", "unknown template %q: use a built-in (%s) or save one for this topic",
-				name, strings.Join(builtinNames(), ", "))
+			return nil, nil
 		}
 		return &b, nil
 	}
@@ -434,21 +446,11 @@ func renderWebhook(r *http.Request, topic string, h *Webhook, body []byte) ([]Pu
 	return ps, nil
 }
 
-// webhookIn: POST /{topic}?template=<name>. Each item becomes one
+// webhookIn publishes a template looked up on an authorized topic. Each item becomes one
 // notification; one that renders resolve=true resolves the open row with its
 // id instead (nothing to do if there is none, so a repeat delivery is fine).
-func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, name string) error {
+func (s *Server) webhookIn(w http.ResponseWriter, r *http.Request, tok *Token, name string, h *Webhook) error {
 	topic := r.PathValue("topic")
-	if err := validTopic(topic); err != nil {
-		return err
-	}
-	if err := tok.need(ScopePublish, topic); err != nil { // before the lookup: no probing other topics' templates
-		return err
-	}
-	h, err := s.webhook(r.Context(), topic, name)
-	if err != nil {
-		return err
-	}
 	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxBody))
 	if err != nil {
 		return errf(413, "too_large", "request body over %d bytes", maxBody)

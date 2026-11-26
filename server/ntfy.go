@@ -288,14 +288,43 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == http.MethodGet {
 		file = "" // GET /{topic}/publish has no body to be the file
 	}
-	inline := ntfyMarkdown(param(r, "Template", "Tpl")) // ntfy's yes/true/1 (#272); any other ?template= is a named one
+	selector := param(r, "Template", "Tpl")
+	inline := ntfyMarkdown(selector)
 	yes := inline != nil && *inline
 	tpl := yes && file == "" && r.Method != http.MethodGet
-	if t := r.URL.Query().Get("template"); t != "" && !yes && r.Method != http.MethodGet {
-		if live {
-			return errNoCache
+	var named map[string]string
+	if !yes && r.Method != http.MethodGet {
+		queryName := r.URL.Query().Get("template")
+		disk := s.opt.NtfyTemplateDir != "" && inline == nil && selector != "" && file == ""
+		if queryName != "" || disk {
+			topic := r.PathValue("topic")
+			if err := templateOwner(tok, topic, ""); err != nil {
+				return err
+			}
+			if queryName != "" {
+				h, err := s.findWebhook(r.Context(), topic, queryName)
+				if err != nil {
+					return err
+				}
+				if h != nil {
+					if live {
+						return errNoCache
+					}
+					return s.webhookIn(w, r, tok, queryName, h)
+				}
+			}
+			if !disk {
+				if live {
+					return errNoCache
+				}
+				return unknownWebhook(queryName)
+			}
+			var err error
+			named, err = readNtfyTemplate(s.opt.NtfyTemplateDir, selector)
+			if err != nil {
+				return err
+			}
 		}
-		return s.webhookIn(w, r, tok, t) // webhooks.go
 	}
 	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid"), Live: live, dropDevice: true}
 	if in.ExternalID == "" {
@@ -311,18 +340,33 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 			return errf(413, "too_large", "message longer than %d bytes (send a file with X-Filename)", ntfyMaxBody)
 		}
 		in.Message = strings.TrimSpace(string(body))
-		if tpl {
+		if tpl || named != nil {
 			msg := param(r, "Message", "M")
-			if err := ntfyTemplate(r, body, &msg, &title, &prio); err != nil {
+			useMessage := named != nil || msg != ""
+			fields := map[string]*string{"message": &msg, "title": &title, "priority": &prio}
+			if named != nil {
+				for name, dst := range fields {
+					if src, ok := named[name]; ok {
+						*dst = src
+					} else {
+						delete(fields, name)
+					}
+				}
+			}
+			if err := ntfyTemplate(r, body, fields); err != nil {
 				return err
 			}
-			if param(r, "Message", "M") != "" {
+			if useMessage {
 				in.Message = msg
 			}
 		}
 	}
-	if in.Message == "" && !tpl {
-		in.Message = param(r, "Message", "M")
+	if in.Message == "" {
+		if named != nil {
+			in.Message = "triggered" // ntfy's default for an empty rendered message
+		} else if !tpl {
+			in.Message = param(r, "Message", "M")
+		}
 	}
 	if in.Message == "" && file != "" {
 		in.Message = "You received a file: " + cleanName(file)
@@ -357,22 +401,27 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	return s.ntfyReply(w, r.Context(), tok, in)
 }
 
-// ntfyTemplate renders ntfy's inline templates (?tpl=yes): the message,
-// title and priority are Go templates over the JSON body, with the same
-// functions and limits as a saved webhook template. An empty one stays empty.
-func ntfyTemplate(r *http.Request, body []byte, msg, title, prio *string) error {
+// ntfyTemplate renders selected ntfy fields over a JSON body, with the
+// same functions and limits as a saved webhook template.
+func ntfyTemplate(r *http.Request, body []byte, fields map[string]*string) error {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
 	var data any
 	if err := dec.Decode(&data); err != nil {
 		return errf(400, "bad_request", "template: the body must be JSON: %v", err)
 	}
-	h := Webhook{Message: *msg, Title: *title, Priority: *prio}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return errf(400, "bad_request", "template: the body must be one JSON value")
+	}
+	var h Webhook
+	for f, p := range fields {
+		*h.field(f) = *p
+	}
 	t, err := h.parse(r.Header)
 	if err != nil {
 		return err
 	}
-	for f, p := range map[string]*string{"message": msg, "title": title, "priority": prio} {
+	for f, p := range fields {
 		if *p, err = render(t, f, data); err != nil {
 			return err
 		}
