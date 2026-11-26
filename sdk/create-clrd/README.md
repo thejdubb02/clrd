@@ -41,6 +41,13 @@ falls back to the client's prompt if clrd cannot accept the request.
 OpenCode 1.x uses a local notification plugin. An existing OpenCode 2.x MCP
 configuration gets an MCP entry alone.
 
+The MCP connection uses the tools advertised by your server. On a server
+that supports them, the `send` tool accepts an `icon` URL, an external
+`attachment` with a URL and optional name, and an action such as
+`{"label":"Copy ID","copy":"build-42"}`. Reuse the tool's `id` with the same
+topic to update an open notification. The turn completion hooks still send
+their fixed message.
+
 ## Remove
 
 ```sh

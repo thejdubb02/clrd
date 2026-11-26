@@ -1,8 +1,8 @@
 # n8n
 
 The clrd action node can send, acknowledge, clear, resolve or snooze a
-notification. The clrd Trigger node starts a workflow for new notifications
-or state changes.
+notification. The clrd Trigger node starts a workflow for new notifications,
+updates or state changes.
 
 ## Install from source
 
@@ -37,14 +37,21 @@ for Send and Resolve, and `read` for the trigger and the other state changes. Us
 workflow sends a notification and later changes it.
 
 Add a **clrd** node and choose an operation. Send takes a topic, message,
-and optional title, priority or external ID. For the other operations pass
+and optional fields including title, priority, icon URL and attachment URL
+with an optional display name. In **Actions (JSON)**, enter an array such as
+`[{"label":"Copy ID","copy":"build-42"}]`. The attachment field links to
+an existing file. Reuse **External ID** on the same topic to update an open
+notification. **Reopen** returns an acknowledged notification to active
+on that update.
+
+For the other operations pass
 the server-assigned Notification ID, for example `{{ $json.id }}` from
 Send or `{{ $json.notification.id }}` from a trigger. For Snooze also
 give a duration such as `15m`. Each action returns the notification.
 
 ## Trigger
 
-Add **clrd Trigger**, choose New Notification or State Change, and set
+Add **clrd Trigger**, choose New Notification, State Change or Updated Notification, and set
 n8n's poll interval. Leave Topic blank to watch all topics the token can read.
 A live workflow starts at the current event position on its first poll.
 It outputs one item per matching event with `type`, `seq` and

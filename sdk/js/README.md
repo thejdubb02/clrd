@@ -20,6 +20,12 @@ await c.list({ topic: "infra" });
 
 Errors throw `ClrdError` with `.status` and `.code`.
 
+Send options include an HTTP(S) `icon`, an external `attachment` with
+`url` and optional `name`, and copy actions such as
+`{ label: "Copy ID", copy: "build-42" }`. Reuse `id` on the same topic
+to update an open notification. Set `reopen: true` to return an acknowledged
+notification to active during an update.
+
 Tests: `npm test`
 
 Source: [github.com/thejdubb02/clrd](https://github.com/thejdubb02/clrd)

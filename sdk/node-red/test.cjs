@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { EventEmitter, once } = require('node:events');
+const { readFileSync } = require('node:fs');
 const { createServer } = require('node:http');
 const { test } = require('node:test');
 const register = require('./clrd.js');
@@ -73,8 +74,12 @@ function input(node, msg) {
 
 test('action maps every operation and keeps the rest of the message', { timeout: 5000 }, async (t) => {
     const app = await runtime(t, (i) => ({ json: { id: String(i) } }));
+    const send = { message: 'Disk full', title: 'Alert', external_id: 'disk', priority: 4,
+        icon: 'https://example.com/disk.png',
+        attachment: { url: 'https://example.com/report.pdf', name: 'Report.pdf' },
+        actions: [{ label: 'Copy ID', copy: 'disk' }], reopen: true };
     const values = [
-        ['send', { message: 'Disk full', title: 'Alert', external_id: 'disk', priority: 4 }],
+        ['send', send],
         ['acknowledge', 'abc/123'],
         ['clear', { id: 'abc/123' }],
         ['resolve', 'abc/123'],
@@ -86,7 +91,7 @@ test('action maps every operation and keeps the rest of the message', { timeout:
     }
     const idPath = '/api/v1/notifications/abc%2F123';
     assert.deepEqual(app.requests, [
-        ['/api/v1/notifications', { topic: 'infra', message: 'Disk full', title: 'Alert', external_id: 'disk', priority: 4 }],
+        ['/api/v1/notifications', { topic: 'infra', ...send }],
         [idPath + '/ack', ''],
         [idPath + '/dismiss', ''],
         [idPath + '/resolve', ''],
@@ -100,14 +105,15 @@ test('action reports API failures through done', { timeout: 5000 }, async (t) =>
 });
 
 test('event input skips history and stops polling on close', { timeout: 5000 }, async (t) => {
+    assert.match(readFileSync(require.resolve('./clrd.html'), 'utf8'), /<option value="updated">Updated Notification<\/option>/);
     const notification = { id: 'a', topic: 'infra' };
-    const event = { seq: 12, type: 'state', notification };
+    const event = { seq: 12, type: 'updated', notification };
     const pages = [
         { notifications: [{ id: 'old' }], seq: 10, epoch: 'db' },
         { events: [{ seq: 11, type: 'created', notification }, event], seq: 12, epoch: 'db' },
     ];
     const app = await runtime(t, (i) => ({ json: pages[i] }));
-    const node = app.node('clrd-events', { event: 'state', topic: 'infra', interval: 1 });
+    const node = app.node('clrd-events', { event: 'updated', topic: 'infra', interval: 1 });
     assert.deepEqual(await once(node, 'message'), [{ payload: event, topic: 'infra' }]);
     node.emit('close');
     await new Promise((done) => setTimeout(done, 1100));
