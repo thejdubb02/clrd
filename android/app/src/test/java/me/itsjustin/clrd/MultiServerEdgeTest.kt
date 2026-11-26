@@ -122,6 +122,18 @@ class MultiServerEdgeTest {
         b.db.close()
     }
 
+    /** Removing account 0 keeps its sign-in number, so a tap from before the removal never matches a later sign-in. */
+    @Test fun removingAccountZeroKeepsItsSignInNumber() {
+        bg { app.account.saveServer("https://a.example", "t") }
+        val gen = app.account.configGen
+        val b = app.addAccount("https://b.example", "")
+        app.removeAccount(0)
+        drain()
+        assertTrue(app.account.configGen > gen)
+        assertEquals("a restart reads the number the removal left", app.account.configGen, Account(app, 0).configGen)
+        b.db.close()
+    }
+
     /** One server's send that hangs does not hold back another server's queue. */
     @Test fun oneServersSlowSendLeavesTheOtherFree() {
         val arrived = CountDownLatch(1)
