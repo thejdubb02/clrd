@@ -165,6 +165,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- A send that was already out when an outgoing hook moved to another URL or kind no longer counts toward the new address's failure streak, and no longer brings back an old post id after the hook moves away and back (#878).
 - Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
 
