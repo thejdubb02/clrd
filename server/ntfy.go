@@ -338,14 +338,10 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if in.Priority, err = ntfyPriority(prio); err != nil {
 		return err
 	}
-	if in.Actions, err = ntfyActions(param(r, "Actions", "Action")); err != nil {
-		return err
-	}
-	if in.SnoozeUntil, err = ntfyDelay(param(r, "Delay", "At", "In")); err != nil {
+	if err := ntfyDetails(r, &in, nil, ""); err != nil {
 		return err
 	}
 	in.Status = param(r, "Status")
-	in.Markdown = ntfyMarkdown(param(r, "Markdown", "Md"))
 	if file != "" {
 		n, err := s.PublishFile(r.Context(), tok, in, file, r.Body)
 		if err != nil {
@@ -355,6 +351,35 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	return s.ntfyReply(w, r.Context(), tok, in)
+}
+
+// ntfyDetails parses options common to raw and JSON publishes. JSON can
+// explicitly turn Markdown off or supply an empty list of actions.
+func ntfyDetails(r *http.Request, in *PublishInput, actions []ntfyAction, delay string) error {
+	var err error
+	if actions == nil {
+		in.Actions, err = ntfyActions(param(r, "Actions", "Action"))
+		if err != nil {
+			return err
+		}
+	} else {
+		in.Actions = ntfyActionList(actions)
+	}
+	if delay == "" {
+		delay = param(r, "Delay", "At", "In")
+	}
+	if in.SnoozeUntil, err = ntfyDelay(delay); err != nil {
+		return err
+	}
+	if in.Markdown == nil {
+		kind, _, _ := mime.ParseMediaType(param(r, "Content-Type", "Content_Type"))
+		if kind == "text/markdown" {
+			in.Format = FormatMarkdown
+		} else {
+			in.Markdown = ntfyMarkdown(param(r, "Markdown", "Md"))
+		}
+	}
+	return nil
 }
 
 // ntfyTemplate renders ntfy's inline templates (?tpl=yes): the message,
@@ -441,15 +466,27 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	s.noteIgnored(r, unknown...)
+	if in.Cache == "" {
+		in.Cache = param(r, "Cache")
+	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown,
-		Live: strings.EqualFold(in.Cache, "no") || strings.EqualFold(param(r, "Cache"), "no"), dropDevice: true}
+		Live: strings.EqualFold(in.Cache, "no"), dropDevice: true}
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
+	if icon == "" {
+		icon = param(r, "Icon")
+	}
 	p.Icon = ntfyIcon(icon)
 	var attach string
 	_ = json.Unmarshal(in.Attach, &attach)
+	if attach == "" {
+		attach = param(r, "Attach", "A")
+	}
 	if attach = ntfyIcon(attach); attach != "" {
+		if in.Filename == "" {
+			in.Filename = ntfyFilename(r)
+		}
 		p.Attachment = &Attachment{URL: attach, Name: in.Filename}
 	}
 	for _, id := range []string{in.SequenceID, in.ID} {
@@ -457,32 +494,33 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 			p.ExternalID = id
 		}
 	}
-	for _, a := range in.Actions {
-		if pa, ok := a.action(); ok {
-			p.Actions = append(p.Actions, pa)
-		}
+	if p.ExternalID == "" {
+		p.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
 	}
-	if p.SnoozeUntil, err = ntfyDelay(in.Delay); err != nil {
-		return err
+	if p.Status == "" {
+		p.Status = param(r, "Status")
 	}
 	// Like ntfy, headers and query params fill what the JSON leaves out
 	// (Apprise sends X-Priority, X-Tags, X-Click next to a JSON body).
+	if p.Message == "" {
+		p.Message = param(r, "Message", "M")
+	}
 	if p.Title == "" {
 		p.Title = param(r, "Title", "Ti", "T")
 	}
-	if len(p.Tags) == 0 {
+	if p.Tags == nil {
 		p.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
 	}
 	if p.Click == "" {
 		p.Click = param(r, "Click")
 	}
-	if p.Icon == "" {
-		p.Icon = ntfyIcon(param(r, "Icon"))
-	}
 	if p.Priority == 0 {
 		if p.Priority, err = ntfyPriority(param(r, "Priority", "Prio", "P")); err != nil {
 			return err
 		}
+	}
+	if err := ntfyDetails(r, &p, in.Actions, in.Delay); err != nil {
+		return err
 	}
 	return s.ntfyReply(w, r.Context(), s.ntfyAuth(r), p)
 }

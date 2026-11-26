@@ -167,6 +167,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- ntfy JSON publishes read omitted options such as actions and delay from headers and query parameters. Raw publishes also honor `Content-Type: text/markdown` (#852).
+
 - Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
 
