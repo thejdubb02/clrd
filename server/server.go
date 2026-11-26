@@ -420,7 +420,32 @@ var epochEvery = time.Minute
 // saveEpoch records the epoch and head seq next to the database (see New).
 // Best effort, so it never marks the job failing in /healthz.
 func (s *Server) saveEpoch(context.Context) error {
-	if err := os.WriteFile(s.opt.DB+".epoch", fmt.Appendf(nil, "%s %d\n", s.epoch, s.seq.Load()), 0o600); err != nil {
+	path := s.opt.DB + ".epoch"
+	seq := s.seq.Load()
+	// Never lower it: a CLI command's Close holds the head from when it opened,
+	// below what the running server saved since.
+	var was string
+	var high int64
+	if b, err := os.ReadFile(path); err == nil {
+		if fmt.Sscan(string(b), &was, &high); was == s.epoch {
+			seq = max(seq, high)
+		}
+	}
+	// A new file renamed over the old, so a crash or a reader never sees it half written.
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	if err == nil {
+		_, err = fmt.Fprintf(f, "%s %d\n", s.epoch, seq)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err == nil {
+			err = os.Rename(f.Name(), path)
+		}
+		if err != nil {
+			os.Remove(f.Name())
+		}
+	}
+	if err != nil {
 		s.log.Warn("could not write the epoch file", "err", err)
 	}
 	return nil

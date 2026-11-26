@@ -312,7 +312,10 @@ func TestEpochRestoreAfterCrash(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
-	saved := func() { // waits for the file to hold the head
+	stop := sync.OnceFunc(func() { cancel(); <-done; ts.Close() })
+	t.Cleanup(func() { stop(); s.db.Close() }) // a Fatal below still stops Run before the temp dir goes
+	// saved waits for the file to hold the head.
+	saved := func() {
 		want := fmt.Sprintf("%s %d\n", s.Epoch(), s.CurrentSeq())
 		for end := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
 			if b, _ := os.ReadFile(opt.DB + ".epoch"); string(b) == want {
@@ -331,9 +334,7 @@ func TestEpochRestoreAfterCrash(t *testing.T) {
 	}
 	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "lost"})
 	saved()
-	cancel()
-	<-done
-	ts.Close()
+	stop()
 	was := s.Epoch()
 	s.db.Close() // the crash: no Close, so nothing is written on the way down
 	b, err := os.ReadFile(backup)
@@ -352,6 +353,20 @@ func TestEpochRestoreAfterCrash(t *testing.T) {
 	defer restored.Close()
 	if restored.Epoch() == was {
 		t.Fatalf("backup restored after a crash kept epoch %q", was)
+	}
+}
+
+// A CLI command's Close saves the head from when it opened, below what the
+// running server saved since: the file must keep the higher one.
+func TestEpochFileNeverLowers(t *testing.T) {
+	s, _, _ := newTest(t)
+	path := s.opt.DB + ".epoch"
+	if err := os.WriteFile(path, fmt.Appendf(nil, "%s %d\n", s.Epoch(), s.CurrentSeq()+50), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.saveEpoch(context.Background())
+	if b, _ := os.ReadFile(path); string(b) != fmt.Sprintf("%s %d\n", s.Epoch(), s.CurrentSeq()+50) {
+		t.Fatalf("epoch file went back to %q", b)
 	}
 }
 
