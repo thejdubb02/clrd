@@ -32,8 +32,9 @@ type LinkedDevice struct {
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	This       bool       `json:"this"` // the token asking
 	CanUnlink  bool       `json:"can_unlink"`
-	Sound      string     `json:"sound"`   // one of GET /api/v1/sounds
-	Approve    string     `json:"approve"` // allowed, ask or denied: may it answer approval requests (#187)
+	Theme      string     `json:"theme,omitempty"` // empty follows the owner
+	Sound      string     `json:"sound"`           // one of GET /api/v1/sounds
+	Approve    string     `json:"approve"`         // allowed, ask or denied: may it answer approval requests (#187)
 	// CanApprove is true on the asker's own row when it may change who
 	// approves (#329, #433): allowed, and on every topic, as SetApprove checks.
 	CanApprove bool `json:"can_approve"`
@@ -57,7 +58,7 @@ func (s *Server) devicesMsg(ctx context.Context, tok *Token) ([]byte, string, er
 	}
 	var key strings.Builder
 	for _, d := range ds {
-		fmt.Fprintf(&key, "%s %t %t %s %t %q,", d.ID, d.Connected, d.CaughtUp, d.Approve, d.ClearsEverywhere, d.Name)
+		fmt.Fprintf(&key, "%s %t %t %s %t %q %s,", d.ID, d.Connected, d.CaughtUp, d.Approve, d.ClearsEverywhere, d.Name, d.Theme)
 	}
 	msg, err := json.Marshal(struct {
 		Type    string         `json:"type"`
@@ -290,8 +291,9 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 	rows, err := q.QueryContext(ctx, `WITH RECURSIVE `+topsSQL+`, k(id) AS
 	  (SELECT id FROM tops UNION SELECT t.id FROM tokens t JOIN people u ON u.id = t.user_id WHERE u.kind = 'agent' AND u.owner IN tops
 	   UNION SELECT token_id FROM sessions JOIN k ON parent_id = k.id)
-	  SELECT t.id, t.name, t.detail, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve, COALESCE(u.kind, '')
+	  SELECT t.id, t.name, t.detail, t.created_at, t.last_seen_at, s.phone, p.name, p.id, t.approve, COALESCE(u.kind, ''), COALESCE(json_extract(th.value, '$'), '')
 	  FROM tokens t LEFT JOIN sessions s ON s.token_id = t.id LEFT JOIN tokens p ON p.id = s.parent_id LEFT JOIN people u ON u.id = t.user_id
+	  LEFT JOIN settings th ON th.key = 'theme:d:' || t.id
 	  WHERE ? OR t.id IN k ORDER BY t.created_at, t.rowid`, tok.ID, all)
 	if err != nil {
 		return nil, err
@@ -305,7 +307,7 @@ func (s *Server) devices(ctx context.Context, q querier, tok *Token) ([]LinkedDe
 		var phone sql.NullBool
 		var via, viaID sql.NullString
 		var kind string
-		if err := rows.Scan(&d.ID, &d.Name, &d.Detail, &created, &seen, &phone, &via, &viaID, &d.Approve, &kind); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Detail, &created, &seen, &phone, &via, &viaID, &d.Approve, &kind, &d.Theme); err != nil {
 			return nil, err
 		}
 		d.LinkedAt, d.Via, d.ViaID, d.This, d.CanUnlink = fromMS(created), via.String, viaID.String, d.ID == tok.ID, phone.Valid || kind == "agent"
