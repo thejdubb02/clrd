@@ -328,8 +328,9 @@ Anonymous topics are off until an admin sets them, with
 `clrd import ntfy` brings over ntfy's `everyone` rules
 ([Switch from ntfy](migrate-from-ntfy.md)).
 
-`Cache: no` sends a live-only message: it goes to the ntfy streams open
-right now and is stored nowhere, so it never shows in the inbox or a replay.
+`Cache: no` sends a live-only message. The values `false` and `0` also
+work. The message goes to open ntfy streams and is stored nowhere, so it
+never shows in the inbox or a replay.
 It cannot be delayed, repeated, carry a file or an `Id`.
 
 `view` action buttons work everywhere. The server also accepts `copy` action

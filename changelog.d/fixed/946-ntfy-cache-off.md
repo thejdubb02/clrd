@@ -1,0 +1,1 @@
+- ntfy publishes recognize `false` and `0` alongside `no` for Cache, including the `x-cache` query alias, so those messages stay live-only.
