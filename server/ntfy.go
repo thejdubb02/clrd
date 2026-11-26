@@ -468,7 +468,8 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if in.ExternalID == "" {
 		in.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
 	}
-	title, prio := param(r, "Title", "Ti", "T"), param(r, "Priority", "Prio", "P")
+	title := param(r, "X-Title", "Title", "Ti", "T")
+	prio := param(r, "X-Priority", "Priority", "Prio", "P")
 	payload := io.Reader(r.Body)
 	if file == "" {
 		body, err := io.ReadAll(io.LimitReader(r.Body, ntfyMaxBody+1))
@@ -526,7 +527,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	}
 	var err error
 	in.Title = title
-	in.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
+	in.Tags = splitList(param(r, "X-Tags", "Tags", "Tag", "Ta"))
 	in.Click = param(r, "Click")
 	in.Icon = ntfyIcon(param(r, "Icon"))
 	if in.Priority, err = ntfyPriority(prio); err != nil {
@@ -713,16 +714,16 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		p.Message = ntfyPlainMessage(r)
 	}
 	if p.Title == "" {
-		p.Title = param(r, "Title", "Ti", "T")
+		p.Title = param(r, "X-Title", "Title", "Ti", "T")
 	}
 	if p.Tags == nil {
-		p.Tags = splitList(param(r, "Tags", "Tag", "Ta"))
+		p.Tags = splitList(param(r, "X-Tags", "Tags", "Tag", "Ta"))
 	}
 	if p.Click == "" {
 		p.Click = param(r, "Click")
 	}
 	if p.Priority == 0 {
-		if p.Priority, err = ntfyPriority(param(r, "Priority", "Prio", "P")); err != nil {
+		if p.Priority, err = ntfyPriority(param(r, "X-Priority", "Priority", "Prio", "P")); err != nil {
 			return err
 		}
 	}
