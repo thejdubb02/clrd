@@ -164,6 +164,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
 
 - Saving a Slack hook again keeps its posted message ids unless the channel changes, so later state changes still edit the original message (#870).

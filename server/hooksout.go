@@ -914,11 +914,7 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 		}
 	}
 	// A new URL or kind is another channel: the old message ids mean nothing
-	// there, and deliveries queued for the old kind were never checked for it.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM hook_deliveries WHERE topic = ? AND name = ? AND status = 'pending'
-		AND EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND kind != ?)`, topic, name, topic, name, h.Kind); err != nil {
-		return err
-	}
+	// there, and deliveries queued for the old one must not go to it (#871).
 	var oldURL, oldKind string
 	_ = tx.QueryRowContext(ctx, `SELECT url, kind FROM hooks_out WHERE topic = ? AND name = ?`, topic, name).Scan(&oldURL, &oldKind)
 	if oldKind == "discord" {
@@ -929,6 +925,9 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	}
 	if oldURL != h.URL || oldKind != h.Kind {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?`, topic, name); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM hook_deliveries WHERE topic = ? AND name = ? AND status = 'pending'`, topic, name); err != nil {
 			return err
 		}
 	}
