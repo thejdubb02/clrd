@@ -198,8 +198,17 @@ class Tray(private val ctx: Context, private val acct: Account) {
         val was = prefs.getBoolean("dnd_lost", false)
         val lost = Sounds.dndLost(was, replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
         prefs.edit().putBoolean("dnd_lost", lost).apply()
-        if (was && !lost) nm.cancel(dndTag, DND_ID) // turned back on: the tray notice has done its job
+        if (was && !lost) cancelDnd() // turned back on: the tray notice has done its job
         return lost
+    }
+
+    /**
+     * Takes this server's Do Not Disturb notice down. Before #921 another server's notice had no tag, so that
+     * untagged one goes too while account 0 has none of its own up (#943).
+     */
+    private fun cancelDnd() {
+        nm.cancel(dndTag, DND_ID)
+        if (dndTag != null && !App.of(ctx).account.prefs.getBoolean("dnd_lost", false)) nm.cancel(null, DND_ID)
     }
 
     /** True when the phone's own settings override the chosen sound (changed sound or importance on p3..p5). */
@@ -245,7 +254,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
     /** Takes every entry of this account out of the tray, for a removed server. Writes nothing: its files are going. */
     fun clear() {
         nm.activeNotifications.filter { (it.id == 0 && owns(it.tag, tagPrefix)) || (it.id == SUMMARY_ID && owns(it.tag, group)) }.forEach { nm.cancel(it.tag, it.id) }
-        nm.cancel(dndTag, DND_ID) // its Do Not Disturb notice too (#921)
+        cancelDnd() // its Do Not Disturb notice too (#921)
     }
 
     /**

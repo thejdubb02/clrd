@@ -1,0 +1,1 @@
+- Android with several servers: a Do Not Disturb notice left untagged by an older version goes away with its server, and a tray swipe or sender button tapped just before a new sign-in no longer acts for the new one.

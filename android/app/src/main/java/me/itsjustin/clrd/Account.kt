@@ -160,6 +160,9 @@ class Account(private val ctx: Context, val id: Int) {
         get() = prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
         set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
 
+    /** Hides [ids] on this phone only while sign-in [gen] still holds, so a stale swipe never hides the next sign-in's row (#943). */
+    fun hide(ids: Collection<String>, gen: Int) = synchronized(configLock) { (gen == configGen).also { if (it) trayHidden += ids } }
+
     /** This phone's notification sound (docs/SPEC.md section 2.2). Unset means the phone's own default. Change it with [saveSound]. */
     val sound: String get() = Sounds.known(prefs.getString("sound", null))
 
