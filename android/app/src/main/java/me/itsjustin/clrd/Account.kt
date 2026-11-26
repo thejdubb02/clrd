@@ -404,7 +404,10 @@ class Account(private val ctx: Context, val id: Int) {
      * A user action from the tray or the inbox; see [App.act]. Saved first, shown locally at once, then sent.
      * One for a server that is no longer configured, or that waited across a Settings switch, is dropped.
      */
-    internal fun actAll(ids: List<String>, action: String, rawBody: String, server: String?, via: String, done: () -> Unit) {
+    internal fun actAll(
+        ids: List<String>, action: String, rawBody: String, server: String?, via: String,
+        expectedSeq: Long? = null, done: () -> Unit,
+    ) {
         val json = JSONObject(rawBody)
         val until = if (action == "snooze" || action == "reopen") snoozeEnd(json) else null
         // #508: a snooze sent late (offline) ends when this phone and its Undo say; see snoozeWire
@@ -426,7 +429,11 @@ class Account(private val ctx: Context, val id: Int) {
                     // One transaction: a stack swipe is saved whole or not at all, never half.
                     val saved = db.runInTransaction<List<String>> {
                         // A stack swipe may also fire each row's own delete intent: those rows are cleared already.
-                        ids.filterNot { action == "dismiss" && dao.get(it)?.state == Notif.DISMISSED }.onEach { id ->
+                        ids.filter { id ->
+                            val row = if (action == "dismiss" || expectedSeq != null) dao.get(id) else null
+                            (expectedSeq == null || row?.let { it.seq == expectedSeq && !it.isFinal } == true) &&
+                                (action != "dismiss" || row?.state != Notif.DISMISSED)
+                        }.onEach { id ->
                             if (local != null) app.moving(listOf(id to Moved(0, false, local, null))) // before Room shows it (#598)
                             dao.addPending(Pending(notifId = id, action = action, body = body))
                             if (until != null && local == Notif.SNOOZED) dao.snooze(id, until, action == "reopen")
