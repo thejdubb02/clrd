@@ -1651,6 +1651,44 @@ Rules: no gradients, flat fills, 1px hairlines, radius 6 (chips, inputs), 8
 (buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. A user's color rules (section 2.1) color their own cards, gradient included; clrd's own chrome keeps these rules. Dark
 mode swaps paper and ink, and accents use the lighter dark mode values above where given. Each app offers System (the default, follows the device), Light and Dark in Display, Appearance. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
 
+### Color themes (#584)
+
+Web inbox Settings, Appearance offers Default, High contrast, Midnight and
+Custom. Default retains the brand tokens above. High contrast has light and
+dark palettes with stronger outlines. Midnight has a cool light palette and
+a true black dark background. The browser's System, Light or Dark selection
+chooses the built-in variant. Custom uses its own background luminance
+(below 0.179 is dark).
+
+`GET /api/v1/settings` and the `settings` stream message carry `theme`
+(`default`, `high-contrast`, `midnight` or `custom`), `theme_colors` when a
+custom palette has been saved, and `device_theme` when the calling device has
+an override. `PUT /api/v1/settings` (MCP `settings`) takes `theme` and/or
+`theme_colors`. They belong to the user, or to the top token and its linked
+devices when it has no user, and need read scope. The saved custom palette
+stays available when a built-in is selected.
+
+`PUT /api/v1/devices/{id}` with `{"theme":"midnight"}` (MCP `device_theme`)
+sets a theme override for a device the caller can see. An empty theme
+follows the owner. Use `this` for the calling device. A custom override uses
+the owner's saved colors and falls back to the owner theme if the device
+later moves to an owner without custom colors.
+
+The custom palette takes six `#RRGGBB` strings: `bg` (paper), `card` (surface),
+`text` (ink), `clear`, `urgent` (signal), and `snooze`. The server refuses a
+save if text on background or cards falls below 4.5:1, any state color on
+cards falls below 3:1, or the Euclidean distance between urgent and clear
+in 8-bit sRGB is less than 80. Each rejection names the failed check.
+The web editor previews valid picks and shows the same checks before saving.
+
+Derive line, slate and body by mixing 12%, 60% and 85% ink over paper in sRGB.
+High contrast uses 65% ink for outlines. Slate and body fall back to ink if
+the mix fails 4.5:1. A chip mixes 15% of its state color over surface, with
+black or white text when the state color fails 4.5:1. Card color rules still
+apply on matching cards. The inbox bootstraps the validated palette in an
+escaped attribute and applies it before first paint with the existing
+same-origin theme script.
+
 Logo ("A, refined", picked 2026-11-19; it lives in `assets/logo.svg` so every surface uses one file). The three lines end on one circle around the disc, so every gap to the disc is the same:
 
 ```svg

@@ -1118,6 +1118,12 @@
        "schema": {
         "type": "object",
         "properties": {
+         "theme": {
+          "type": "string",
+          "enum": ["default", "high-contrast", "midnight", "custom"],
+          "description": "Color theme shared by the asking device's owner."
+         },
+         "theme_colors": {"$ref": "#/components/schemas/ThemeColors"},
          "keep_cleared_days": {
           "type": "integer",
           "minimum": 0,
@@ -1822,8 +1828,8 @@
   },
   "/api/v1/devices/{id}": {
    "put": {
-    "summary": "Rename a device or set its notification sound",
-    "description": "Scope read. Body {\"sound\":\"chime\"}, {\"name\":\"Work laptop\"} or both. sound needs a token not limited to some topics and is a name from GET /api/v1/sounds; an unknown name gives 400 listing the valid ones. name renames a browser or phone (403 for a typed-in token or agent; an empty name gives 400). The caller must see the device in GET /api/v1/devices?all=1 (else 404). Returns the device. The device's settings stream carries the new sound.",
+    "summary": "Rename a device or set its notification sound or theme",
+    "description": "Scope read. Body {\"sound\":\"chime\"}, {\"name\":\"Work laptop\"} or both. sound needs a token not limited to some topics and is a name from GET /api/v1/sounds; an unknown name gives 400 listing the valid ones. name renames a browser or phone (403 for a typed-in token or agent; an empty name gives 400). The caller must see the device in GET /api/v1/devices?all=1 (else 404). Returns the device. The settings stream carries the new sound or theme. Use a separate request with {\"theme\":\"midnight\"} for an override (id this is the caller), or an empty theme to follow the owner's choice.",
     "tags": [
      "sync"
     ],
@@ -1837,6 +1843,7 @@
          "sound": {
           "type": "string"
          },
+         "theme": {"type": "string", "enum": ["", "default", "high-contrast", "midnight", "custom"]},
          "name": {
           "type": "string"
          }
@@ -1847,7 +1854,7 @@
     },
     "responses": {
      "200": {
-      "description": "The device, with its new sound"
+      "description": "The updated device"
      },
      "400": {
       "$ref": "#/components/responses/Error"
@@ -7104,10 +7111,26 @@
      "request_id": {"type": "string", "description": "The request_id the set's last change was sent with. Left out when that change had none. A client compares it with its own to tell its change from another device's (#702)."}
     }
    },
+   "ThemeColors": {
+    "type": "object",
+    "description": "Custom palette. Text must pass 4.5:1 on bg and card. Clear, urgent and snooze must pass 3:1 on card, and clear and urgent must be distinct.",
+    "required": ["bg", "card", "text", "clear", "urgent", "snooze"],
+    "properties": {
+     "bg": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+     "card": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+     "text": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+     "clear": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+     "urgent": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+     "snooze": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}
+    }
+   },
    "Settings": {
     "type": "object",
-    "description": "Display settings every device follows. One set per server.",
+    "description": "Server display options and the asking device's preferences.",
     "properties": {
+     "theme": {"type": "string", "enum": ["default", "high-contrast", "midnight", "custom"]},
+     "theme_colors": {"$ref": "#/components/schemas/ThemeColors"},
+     "device_theme": {"type": "string", "description": "The asking device's override, omitted when following the owner's theme."},
      "subscriptions": {
       "type": "object",
       "description": "Read only, change it with PUT /api/v1/subscriptions (#617). topics maps each topic the owner chose to whether it is subscribed.",
