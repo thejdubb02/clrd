@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   reply_text TEXT NOT NULL DEFAULT '',
   requested_topic TEXT NOT NULL DEFAULT '',
   muted INTEGER NOT NULL DEFAULT 0,
-  cleared_at INTEGER
+  cleared_at INTEGER,
+  hook_notice TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -287,6 +288,7 @@ type Notification struct {
 	Actions     []Action    `json:"actions"`
 	Attachment  *Attachment `json:"attachment"`
 	file        string      // uploaded file id, "" for none or external
+	hookNotice  string      // hook name for a server-owned turn-off notice
 	sender      string      // top token of the last sender's tree: it may not answer it (#187)
 	muted       bool        // its sender is muted (#119): stored and shown, never alerts
 	confirm     string      // a confirm prompt: its confirmLink as JSON, "" for any other (#187)
@@ -390,11 +392,16 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text", "requested_topic", "color"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text", "requested_topic", "color", "hook_notice"} {
 		if err := addColumn(db, `ALTER TABLE notifications ADD COLUMN `+col+` TEXT NOT NULL DEFAULT ''`, "add "+col+" column"); err != nil {
 			db.Close()
 			return nil, err
 		}
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_hook_notice ON notifications(topic, hook_notice)
+		WHERE hook_notice != '' AND state NOT IN ('dismissed', 'resolved')`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("hook notice index: %w", err)
 	}
 	for _, add := range []string{`notifications ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`, `senders ADD COLUMN rules TEXT NOT NULL DEFAULT '{}'`,
 		`senders ADD COLUMN last_topic TEXT NOT NULL DEFAULT ''`, `senders ADD COLUMN alarm_from INTEGER NOT NULL DEFAULT 0`,
@@ -647,7 +654,7 @@ func nullMS(t *time.Time) any {
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
   state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks, devices, reply_text,
-  requested_topic, muted, color`
+  requested_topic, muted, color, hook_notice`
 
 type scanner interface{ Scan(...any) error }
 
@@ -659,7 +666,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
 		&n.Silenced, &rep, &n.sender, &n.confirm, &marks, &devs, &n.ReplyText,
-		&n.RequestedTopic, &n.muted, &n.Color)
+		&n.RequestedTopic, &n.muted, &n.Color, &n.hookNotice)
 	if err != nil {
 		return nil, err
 	}
@@ -724,7 +731,7 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 	} else {
 		n.Devices = []string{} // every event says [] for everyone, never null
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(32)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(33)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
@@ -733,7 +740,7 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 		requested_topic=excluded.requested_topic, muted=excluded.muted, color=excluded.color`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText, n.RequestedTopic, n.muted, n.Color)
+		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText, n.RequestedTopic, n.muted, n.Color, n.hookNotice)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -881,6 +888,7 @@ type PublishInput struct {
 	Attachment  *Attachment `json:"attachment"` // external only: {"url","name"}; uploads go through PublishFile
 	file        string
 	dropDevice  bool       // compat: drop http and broadcast actions a topic does not allow, instead of refusing
+	hookNotice  string     // private hook name for a server-generated notice
 	checkin     bool       // clrd's own missed check-in alert: does not reset the timer
 	template    string     // the webhook template it came through, for the senders list (#119)
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
@@ -917,9 +925,6 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 	}
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
 		return nil, err
-	}
-	if tok != serverToken && strings.HasPrefix(in.ExternalID, hookOffPrefix) {
-		return nil, errf(400, "bad_request", "external_id prefix %s is reserved", hookOffPrefix)
 	}
 	if err := s.gateDeviceActions(ctx, s.db, &in); err != nil {
 		return nil, err
@@ -1026,13 +1031,13 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 		} else if ev != nil {
 			extra = append(extra, *ev)
 		}
-		if in.ExternalID != "" {
-			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
-				in.Topic, in.ExternalID)
+		if in.ExternalID != "" || in.hookNotice != "" {
+			key, where := in.ExternalID, `external_id = ?`
+			if in.hookNotice != "" {
+				key, where = in.hookNotice, `hook_notice = ? AND hook_notice != ''`
+			}
+			n, err := getNotification(ctx, tx, `topic = ? AND state NOT IN ('dismissed', 'resolved') AND `+where, in.Topic, key)
 			if err == nil {
-				if strings.HasPrefix(in.ExternalID, hookOffPrefix) && (n.sender != "" || n.Title != hookOffTitle) {
-					return nil, errf(409, "conflict", "webhook notice key is already used by an existing alert")
-				}
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
 				n.ReplyText = ""
@@ -1064,7 +1069,7 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
 			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Color: in.Color, Actions: in.Actions,
 			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires,
-			Repeat: repeat, sender: sender, Devices: in.Devices, muted: in.muted, RequestedTopic: in.requested}
+			Repeat: repeat, sender: sender, hookNotice: in.hookNotice, Devices: in.Devices, muted: in.muted, RequestedTopic: in.requested}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
@@ -1233,9 +1238,6 @@ func (s *Server) Edit(ctx context.Context, tok *Token, id, message string) (*Not
 
 // ActByKey applies ack or resolve to the open notification with topic and external_id.
 func (s *Server) ActByKey(ctx context.Context, tok *Token, topic, externalID, action, via string) (*Notification, error) {
-	if tok != nil && tok != serverToken && strings.HasPrefix(externalID, hookOffPrefix) {
-		return nil, errf(400, "bad_request", "external_id prefix %s is reserved", hookOffPrefix)
-	}
 	return s.act(ctx, tok, action, via, nil, true, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 		topic, externalID)
 }

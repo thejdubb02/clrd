@@ -819,7 +819,7 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 		if u, err := url.Parse(j.url); err == nil {
 			host = u.Host
 		}
-		_, err = s.Publish(ctx, serverToken, PublishInput{Topic: j.topic, ExternalID: hookOffPrefix + j.name, Priority: 4,
+		_, err = s.Publish(ctx, serverToken, PublishInput{Topic: j.topic, hookNotice: j.name, Priority: 4,
 			Title: hookOffTitle, Format: FormatText,
 			Message: fmt.Sprintf("Webhook %q to %s failed for %.0f hours and is now off. Last error: %s. Save it again to turn it back on.",
 				j.name, host, hookDisableAfter.Hours(), msg)})
@@ -836,24 +836,24 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 	return err
 }
 
-const (
-	hookOffPrefix = "clrd-webhook-off-"
-	hookOffTitle  = "Webhook turned off"
-)
+const hookOffTitle = "Webhook turned off"
 
-// clearHookOff also resolves notices made before the prefix was reserved.
-// The legacy key may identify an ordinary alert, so require a server sender
-// and the notice title when selecting a row to resolve.
+// clearHookOff resolves the server's notice and any remaining notice from
+// before they had their own identity. The legacy key could belong to a
+// publisher, so check where the alert came from before clearing it.
 func (s *Server) clearHookOff(ctx context.Context, topic, name string) error {
-	for _, prefix := range [...]string{hookOffPrefix, "webhook-off-"} {
-		_, err := s.act(ctx, serverToken, "resolve", "webhook_on", nil, true,
-			`topic = ? AND external_id = ? AND sender = '' AND title = ? AND state NOT IN ('dismissed', 'resolved')`,
-			topic, prefix+name, hookOffTitle)
-		if err != nil && !isNotFound(err) {
-			return err
-		}
+	const openOnTopic = `topic = ? AND state NOT IN ('dismissed', 'resolved') AND `
+	_, err := s.act(ctx, serverToken, "resolve", "webhook_on", nil, true,
+		openOnTopic+`hook_notice = ? AND hook_notice != ''`, topic, name)
+	if err != nil && !isNotFound(err) {
+		return err
 	}
-	return nil
+	_, err = s.act(ctx, serverToken, "resolve", "webhook_on", nil, true,
+		openOnTopic+`external_id = ? AND sender = '' AND title = ?`, topic, "webhook-off-"+name, hookOffTitle)
+	if isNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // hookOwner checks a hook's topic and name and that tok may manage hooks.
