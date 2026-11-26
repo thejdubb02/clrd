@@ -231,6 +231,33 @@ func TestNtfyFiles(t *testing.T) {
 	}
 }
 
+func TestNtfyExternalAttachmentFilename(t *testing.T) {
+	_, ts, admin := newTest(t)
+	const link = "https://example.com/original.pdf"
+	for _, tc := range []struct {
+		method, path, body string
+		headers            map[string]string
+		want               string
+	}{
+		{"PUT", "/alerts", "see the report", map[string]string{"X-Attach": link, "X-Filename": "report.pdf"}, "see the report"},
+		{"GET", "/alerts/publish?x-attach=" + url.QueryEscape(link) + "&x-filename=report.pdf&m=see", "", nil, "see"},
+		{"POST", "/alerts", "", map[string]string{"X-Attach": link, "X-Filename": "report.pdf"}, "You received a file: report.pdf"},
+	} {
+		code, out := raw(t, tc.method, ts.URL+tc.path, admin, tc.body, tc.headers)
+		m := ntfyDecode(t, out)
+		if code != 200 || m.Message != tc.want || m.Attachment == nil || m.Attachment.URL != link ||
+			m.Attachment.Name != "report.pdf" || m.Attachment.Size != 0 {
+			t.Fatalf("%s %s: %d %s", tc.method, tc.path, code, out)
+		}
+	}
+	code, out := raw(t, "PUT", ts.URL+"/alerts?x-filename=upload.txt", admin, "file", map[string]string{"X-Attach": "ftp://invalid"})
+	m := ntfyDecode(t, out)
+	if code != 200 || m.Attachment == nil || m.Attachment.Name != "upload.txt" ||
+		m.Attachment.Size != 4 || !strings.Contains(m.Attachment.URL, "/api/v1/files/") {
+		t.Fatalf("invalid external URL should not change the upload: %d %s", code, out)
+	}
+}
+
 func TestAttachmentLifetime(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()

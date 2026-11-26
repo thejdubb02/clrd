@@ -1,0 +1,1 @@
+- ntfy publishes can name an external attachment with `Filename` while keeping the request body as the message.
