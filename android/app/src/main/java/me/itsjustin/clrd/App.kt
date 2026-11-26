@@ -35,7 +35,75 @@ class App : Application() {
             .connectTimeout(15, TimeUnit.SECONDS)
             .build()
     }
-    val tray by lazy { Tray(this) }
+    /** For servers past the first (#78): no client certificate, and a pool of its own. Built only when one is added. */
+    internal val plainHttp by lazy {
+        OkHttpClient.Builder().pingInterval(45, TimeUnit.SECONDS).connectTimeout(15, TimeUnit.SECONDS).build()
+    }
+    val tray get() = account.tray
+
+    private val others = HashMap<Int, Account>() // guarded by this
+    /** The accounts past account 0, in the order added, from the phone part of the "clrd" file. None is the old one-server install. */
+    private fun ids() = prefs.getString("servers", null).orEmpty().split(',').mapNotNull { it.toIntOrNull() }
+
+    /** Every server on this phone (#78): account 0 first, then the ones added. One instance per id, as its state lives on it. */
+    val accounts: List<Account> get() = listOf(account) + ids().mapNotNull(::account)
+
+    /** The account for [id], or null when there is none (removed, or never made): a tap for it is ignored. */
+    @Synchronized fun account(id: Int): Account? = when {
+        id == 0 -> account
+        id in ids() -> others.getOrPut(id) { Account(this, id) }
+        else -> null
+    }
+
+    val anyConfigured get() = accounts.any { it.configured }
+
+    /** Adds a server. Ids are never used twice, so a stale tray tap for a removed one never lands on this one. */
+    @Synchronized fun addAccount(url: String, token: String): Account {
+        val id = prefs.getInt("next_server_id", 1)
+        prefs.edit().putInt("next_server_id", id + 1).putString("servers", (ids() + id).joinToString(",")).commit()
+        return account(id)!!.also {
+            it.serverUrl = url
+            it.token = token
+            if (it.configured) SyncService.start(this)
+        }
+    }
+
+    /**
+     * Removes a server: its connection stops at once, then on [io] its tray entries go, and its file and
+     * database are deleted. Account 0's file also holds the phone's choices, so only its server keys go.
+     */
+    fun removeAccount(id: Int) {
+        val a = synchronized(this) {
+            val a = account(id) ?: return
+            if (id != 0) {
+                prefs.edit().putString("servers", (ids() - id).joinToString(",")).commit()
+                others.remove(id)
+                a.removed = true
+            }
+            a
+        }
+        synchronized(a.configLock) { a.configGen++ }
+        a.sync?.stop()
+        a.sync = null
+        io.execute {
+            if (id == 0) {
+                a.saveServer("", "")
+                synchronized(a.configLock) {
+                    a.db.dao().forget()
+                    // Keep-list, not a list of server keys: a key added later and forgotten here errs toward wiping a token.
+                    prefs.edit().apply { prefs.all.keys.filter { it !in PHONE_KEYS }.forEach(::remove) }.commit()
+                }
+                a.clientCert.value = null
+                a.soundNow.value = a.sound
+            } else {
+                a.close()
+                deleteSharedPreferences("clrd-$id")
+                deleteDatabase("clrd-$id.db") // with its -wal and -shm
+            }
+            a.tray.clear()
+            if (!anyConfigured) stopService(android.content.Intent(this, SyncService::class.java)) else SyncService.start(this)
+        }
+    }
     val images by lazy { Images(this) }
     /** This phone's own choices, whichever server it talks to. Per-server settings live in [Account.prefs]. */
     val prefs by lazy { getSharedPreferences("clrd", Context.MODE_PRIVATE) }
@@ -136,10 +204,10 @@ class App : Application() {
      * swipe, a bundle swipe and Clear all, so it waits [LONE_MS] and clears only if no other row left near it.
      * The receiver returns at once: holding it would hold back the next delete in a burst, so the first row would look alone.
      */
-    fun swiped(id: String, server: String?) {
+    fun swiped(id: String, server: String?, acct: Account = account) {
         val at = android.os.SystemClock.uptimeMillis()
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            if (synchronized(leftShade) { lone(leftShade, at) }) act(id, "dismiss", "{}", server, VIA_TRAY_SWIPE)
+            if (synchronized(leftShade) { lone(leftShade, at) }) acct.actAll(listOf(id), "dismiss", "{}", server, VIA_TRAY_SWIPE) {}
         }, LONE_MS)
     }
 
@@ -231,6 +299,9 @@ class App : Application() {
         const val VIA_APP_BULK = "app_bulk"
         /** The most days of cleared history this phone keeps, whatever the server keeps. */
         const val KEEP_DAYS = 7
+
+        /** The keys in the "clrd" file that belong to the phone, not to account 0's server (#78). */
+        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id")
     }
 }
 
@@ -242,8 +313,8 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
     private val dao = acct.db.dao()
 
     /** The settings generation this store syncs for. After a switch in Settings its reads and writes are dropped. */
-    private val gen = app.configGen
-    private inline fun ifMine(f: () -> Unit) = synchronized(app.configLock) { if (gen == app.configGen) f() }
+    private val gen = acct.configGen
+    private inline fun ifMine(f: () -> Unit) = synchronized(acct.configLock) { if (gen == acct.configGen && !acct.removed) f() }
 
     override fun lastSeq() = dao.lastSeq() ?: 0
 
@@ -251,7 +322,7 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
         // A row fetched outside the stream (seq 0, such as a queued action's answer) is not filtered by the server:
         // one from a topic unsubscribed meanwhile must not come back after the reset dropped it (#617).
-        val subs = app.subs.value
+        val subs = acct.subs.value
         val (keep, out) = if (seq == 0L && subs?.filtered == true) notifs.partition { subs.subscribed(it.topic) } else notifs.toList() to emptyList<Notif>()
         if (out.isNotEmpty()) app.outside.value++
         val saved = dao.applyAll(keep, seq, answer)
@@ -261,12 +332,12 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
         val kept = if (!again) saved else saved + notifs.filter { n -> saved.none { it.id == n.id } && n.seq >= (dao.answerOf(n.id) ?: 0) }.mapNotNull { n ->
             dao.get(n.id)?.takeIf { it.copy(marks = n.marks, seq = n.seq, updatedAt = n.updatedAt, silenced = n.silenced) == n }
         }
-        val muted = app.muted
+        val muted = acct.muted
         val waiting = waiting()
         val acting = dao.pending().filter { it.action == "reopen" }.map { it.notifId }.toSet() // our own reopen's event may beat its answer here
         for (n in kept) {
             val step = if (n.id in waiting) TrayStep.Cancel(n.id) else TrayStep.plan(n, muted)
-            app.tray.apply(
+            acct.tray.apply(
                 when {
                     step !is TrayStep.Show -> step
                     quiet || n.id in acting -> step.copy(silent = true)
@@ -275,7 +346,7 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
                 },
             )
         }
-        app.pruneCleared()
+        acct.pruneCleared()
     }
 
     override fun live(notifs: Collection<Notif>, arrive: Boolean) = ifMine { app.moving(notifs.map { it.id to Moved(0, arrive, it.state, it.stateBy) }) }
@@ -283,23 +354,23 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
     override fun replaceAll(open: List<Notif>, seq: Long, epoch: String) = ifMine {
         val waiting = waiting()
         val sameDb = epoch.isEmpty() || acct.epoch.isEmpty() || epoch == acct.epoch
-        app.tray.reconcile(dao.replaceAll(open, seq, sameDb).filter { it.id !in waiting }, app.muted)
+        acct.tray.reconcile(dao.replaceAll(open, seq, sameDb).filter { it.id !in waiting }, acct.muted)
         if (epoch.isNotEmpty()) acct.epoch = epoch
         acct.prefs.edit().remove(FOLLOW_RELOAD).apply() // what it holds is the followed set now (#764)
         app.outside.value++
     }
 
-    override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) acct.epoch else "" } // another server's epoch says nothing here
+    override fun epoch() = synchronized(acct.configLock) { if (gen == acct.configGen && !acct.removed) acct.epoch else "" } // another server's epoch says nothing here
     override fun saveEpoch(epoch: String) = ifMine { acct.epoch = epoch }
     /** A settings message, kept only while this is still the server in Settings: one already in hand at a switch would undo the reset (#568). */
     fun settings(o: org.json.JSONObject): Boolean {
         var reload = false
         ifMine {
-            val was = app.subs.value?.filtered == true
-            val fmt = app.formatting.value
-            app.saveSettings(o)
-            if (fmt != app.formatting.value) app.tray.reconcile(dao.openNow().filter { it.id !in waiting() }, app.muted) // #809: quietly, in the new look
-            val now = app.subs.value?.filtered == true
+            val was = acct.subs.value?.filtered == true
+            val fmt = acct.formatting.value
+            acct.saveSettings(o)
+            if (fmt != acct.formatting.value) acct.tray.reconcile(dao.openNow().filter { it.id !in waiting() }, acct.muted) // #809: quietly, in the new look
+            val now = acct.subs.value?.filtered == true
             if (!was && now) acct.prefs.edit().putBoolean(FOLLOW_RELOAD, true).apply()
             reload = now && acct.prefs.getBoolean(FOLLOW_RELOAD, false)
         }
@@ -307,9 +378,9 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
         // shows. The mark stays until a reload lands, so a failed one is tried again on the next connect.
         return reload
     }
-    override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { acct.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
+    override fun saveMarkId(id: String) = ifMine { if (acct.markId.value != id) { acct.prefs.edit().putString("mark_id", id).apply(); acct.markId.value = id } }
 
-    override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
+    override fun pending() = synchronized(acct.configLock) { if (gen == acct.configGen && !acct.removed) dao.pending() else emptyList() } // never send the new server's queue to the old one
     /**
      * The queued action no longer hides the row, so the tray shows what Room says (another device may have reopened it).
      * Quietly: it follows the person's own tap (a reopen from the inbox), and a row that alerted already did so once.
@@ -337,13 +408,13 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
     override fun removePending(p: Pending) = ifMine {
         dao.removePending(p.key)
         val n = dao.get(p.notifId)
-        if (n != null && n.id !in waiting()) app.tray.apply(TrayStep.plan(n, app.muted).let { if (it is TrayStep.Show) it.copy(silent = true) else it })
+        if (n != null && n.id !in waiting()) acct.tray.apply(TrayStep.plan(n, acct.muted).let { if (it is TrayStep.Show) it.copy(silent = true) else it })
     }
 
     /** Under the lock, so a sync write cannot land between reading the rows and posting them. */
     fun reconcile() = ifMine {
         val waiting = waiting()
-        app.tray.reconcile(dao.openNow().filter { it.id !in waiting }, app.muted)
+        acct.tray.reconcile(dao.openNow().filter { it.id !in waiting }, acct.muted)
     }
 
     /** A queued dismiss or snooze that has not reached the server yet wins over what the server last said. */

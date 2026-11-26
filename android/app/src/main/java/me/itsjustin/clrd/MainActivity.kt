@@ -192,7 +192,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         val app = App.of(this)
-        if (app.configured) SyncService.start(this)
+        if (app.anyConfigured) SyncService.start(this)
         // Not again after rotation or from recents: the code was used already and would read as expired.
         if (savedInstanceState == null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) handlePair(intent)
         setContent {

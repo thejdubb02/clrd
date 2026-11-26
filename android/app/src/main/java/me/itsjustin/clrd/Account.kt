@@ -15,8 +15,24 @@ import org.json.JSONObject
 class Account(private val ctx: Context, val id: Int) {
     private val name = if (id == 0) "clrd" else "clrd-$id"
     val prefs: SharedPreferences = ctx.getSharedPreferences(name, Context.MODE_PRIVATE)
-    val db by lazy { Room.databaseBuilder(ctx, Db::class.java, "$name.db").build() }
+    private val dbOnce = lazy { Room.databaseBuilder(ctx, Db::class.java, "$name.db").build() }
+    val db by dbOnce
     private val app get() = App.of(ctx)
+
+    /** This server's tray entries. Account 0 posts as before #78; the others tag theirs with the account id. */
+    val tray by lazy { Tray(ctx, this) }
+
+    /**
+     * Only account 0 may present the client certificate (#152), which was picked for its server. The others use
+     * their own client with no certificate and their own connection pool, so they never reuse a connection that sent it.
+     */
+    val http: okhttp3.OkHttpClient get() = if (id == 0) app.http else app.plainHttp
+
+    /** Set by [App.removeAccount]. A store, tap or redraw still in flight for it then changes nothing. */
+    @Volatile var removed = false
+
+    /** Closes the database if it was opened; for [App.removeAccount], before the file goes. */
+    internal fun close() { if (dbOnce.isInitialized()) db.close() }
 
     var serverUrl: String
         get() = prefs.getString("url", "").orEmpty()
@@ -35,7 +51,7 @@ class Account(private val ctx: Context, val id: Int) {
 
     val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
 
-    fun api() = Api(app.http, serverUrl, token)
+    fun api() = Api(http, serverUrl, token)
 
     /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
     val clientCert by lazy { MutableStateFlow(prefs.getString("client_cert", null)) }
@@ -79,7 +95,7 @@ class Account(private val ctx: Context, val id: Int) {
      */
     fun saveSound(name: String): Boolean = synchronized(configLock) {
         val s = Sounds.known(name)
-        val dropped = app.tray.createChannels(s)
+        val dropped = tray.createChannels(s)
         prefs.edit().putString("sound", s).commit()
         soundNow.value = s
         RoomStore(app, this).reconcile()
@@ -125,7 +141,7 @@ class Account(private val ctx: Context, val id: Int) {
      */
     private fun serverSound(name: String) {
         if (soundPending != null) app.io.execute { pushSound() }
-        else if (Sounds.known(name) != sound && saveSound(name)) app.tray.dndNotice() // not picked here, so Settings' note may go unseen (#380)
+        else if (Sounds.known(name) != sound && saveSound(name)) tray.dndNotice() // not picked here, so Settings' note may go unseen (#380)
     }
 
     /** A sound picked before the server kept it (#282) goes to the server once, on the next connect. */
@@ -314,7 +330,7 @@ class Account(private val ctx: Context, val id: Int) {
                 swipesLocked.value = false // another token may change them
                 markId.value = ""
                 subs.value = null // the new token's own set arrives with its settings message
-                app.tray.reconcile(emptyList(), muted)
+                tray.reconcile(emptyList(), muted)
                 serverUrl = newUrl
                 token = newToken
             }
@@ -346,7 +362,7 @@ class Account(private val ctx: Context, val id: Int) {
                     else -> null
                 }
                 synchronized(configLock) {
-                    if (gen != configGen || (server != null && server != serverUrl)) return@execute
+                    if (gen != configGen || removed || (server != null && server != serverUrl)) return@execute
                     val dao = db.dao()
                     // One transaction: a stack swipe is saved whole or not at all, never half.
                     val saved = db.runInTransaction<List<String>> {
@@ -358,7 +374,7 @@ class Account(private val ctx: Context, val id: Int) {
                             else if (local != null) dao.setState(id, local)
                         }
                     }
-                    if (local == Notif.DISMISSED || local == Notif.SNOOZED) saved.forEach { app.tray.apply(TrayStep.Cancel(it)) }
+                    if (local == Notif.DISMISSED || local == Notif.SNOOZED) saved.forEach { tray.apply(TrayStep.Cancel(it)) }
                 }
                 val s = sync
                 if (s != null) s.flushSoon() else sendAlone()

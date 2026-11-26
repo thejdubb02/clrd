@@ -93,15 +93,28 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
     }
 }
 
-/** Posts and cancels system notifications. tag = clrd notification id, int id is always 0. */
-class Tray(private val ctx: Context) {
+/**
+ * Posts and cancels one account's system notifications. tag = clrd notification id, int id is always 0.
+ * Account 0 posts exactly as before #78, so entries from an older build keep working; account n tags its
+ * entries "a<n>:<id>" and groups them "topic:<n>:<topic>" (a topic has no colon), so two servers never touch each other's.
+ */
+class Tray(private val ctx: Context, private val acct: Account) {
     private val nm = ctx.getSystemService(NotificationManager::class.java)
+    private val tagPrefix = if (acct.id == 0) "" else "a${acct.id}:"
+    private val group = if (acct.id == 0) GROUP else "$GROUP${acct.id}:"
+    private fun tag(id: String) = tagPrefix + id
+
+    /** An entry of this account: its prefix, and for account 0 none of another account's. */
+    private fun owns(tag: String?, prefix: String) = tag != null && tag.startsWith(prefix) && (acct.id != 0 || !OTHER.containsMatchIn(tag))
+
+    /** Adds this account to a tap's data URI, which is what PendingIntents match on. None means account 0. */
+    private fun Uri.Builder.account() = apply { if (acct.id != 0) appendQueryParameter(QUERY_ACCOUNT, "${acct.id}") }
 
     /**
      * Makes the channels for [sound] (see [Sounds]) and deletes the other sounds' channels. Posts go to the new ones.
      * True when this change took the Urgent channel's Do Not Disturb pass with it.
      */
-    fun createChannels(sound: String = App.of(ctx).sound): Boolean {
+    fun createChannels(sound: String = acct.sound): Boolean {
         val uri = Sounds.uri(ctx, sound)
         val audio = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
         val names = listOf(R.string.channel_p1, R.string.channel_p2, R.string.channel_p3, R.string.channel_p4, R.string.channel_p5)
@@ -120,7 +133,8 @@ class Tray(private val ctx: Context) {
                     .apply { setShowBadge(false) },
             ),
         )
-        val keep = mine.map { it.id }.toSet()
+        // Every other server's sound keeps its channels too (#78): the sound is a server setting.
+        val keep = mine.map { it.id }.toSet() + App.of(ctx).accounts.filter { it.id != acct.id }.flatMap { a -> (1..5).map { Sounds.channel(it, a.sound) } }
         val gone = ours.map { it.id }.filter { it !in keep }.toSet()
         val noticeUp = nm.activeNotifications.any { it.id == DND_ID && it.tag == null }
         // Cancelled by us first: Android's own cancel on channel delete can fire the delete intent, which reads as a swipe.
@@ -137,7 +151,7 @@ class Tray(private val ctx: Context) {
      * A sound change from the server or an agent took the Do Not Disturb pass (#380). The person is not in
      * Settings to see the note there, so the tray says it once; a tap opens the switch.
      */
-    fun dndNotice(sound: String = App.of(ctx).sound) {
+    fun dndNotice(sound: String = acct.sound) {
         val open = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
             .putExtra(Settings.EXTRA_CHANNEL_ID, Sounds.channel(5, sound))
@@ -155,7 +169,7 @@ class Tray(private val ctx: Context) {
 
     /** True when a sound change dropped the Urgent channel's Do Not Disturb pass and the person has not set it again (#346). */
     @Synchronized // Settings and a sound change both read then write the flag; a stale false must not undo a fresh true
-    fun dndLost(sound: String = App.of(ctx).sound, replacedHadIt: Boolean = false): Boolean {
+    fun dndLost(sound: String = acct.sound, replacedHadIt: Boolean = false): Boolean {
         val prefs = App.of(ctx).prefs
         val lost = Sounds.dndLost(prefs.getBoolean("dnd_lost", false), replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
         prefs.edit().putBoolean("dnd_lost", lost).apply()
@@ -164,7 +178,7 @@ class Tray(private val ctx: Context) {
     }
 
     /** True when the phone's own settings override the chosen sound (changed sound or importance on p3..p5). */
-    fun soundOverridden(sound: String = App.of(ctx).sound): Boolean =
+    fun soundOverridden(sound: String = acct.sound): Boolean =
         Sounds.overridden(
             Sounds.uri(ctx, sound),
             (3..5).associateWith { p -> nm.getNotificationChannel(Sounds.channel(p, sound))?.let { it.sound to it.importance } },
@@ -172,13 +186,14 @@ class Tray(private val ctx: Context) {
 
     /** Post one row again, quietly, as Room has it: clears the spinner Android shows after an inline reply (#153). */
     fun repost(id: String) {
-        val n = App.of(ctx).db.dao().get(id) ?: return
-        apply(TrayStep.plan(n, App.of(ctx).muted).let { if (it is TrayStep.Show) TrayStep.Show(n, silent = true) else it })
+        if (acct.removed) return // a closed database would open again and bring the deleted file back
+        val n = acct.db.dao().get(id) ?: return
+        apply(TrayStep.plan(n, acct.muted).let { if (it is TrayStep.Show) TrayStep.Show(n, silent = true) else it })
     }
 
     fun apply(step: TrayStep) {
         when (step) {
-            is TrayStep.Cancel -> nm.cancel(step.id, 0)
+            is TrayStep.Cancel -> nm.cancel(tag(step.id), 0)
             is TrayStep.Show -> post(step.n, step.silent, step.again)
         }
         summaries()
@@ -191,15 +206,20 @@ class Tray(private val ctx: Context) {
      */
     fun reconcile(rows: List<Notif>, muted: Set<String>) {
         val open = rows.map { it.id }.toSet()
-        App.of(ctx).run { trayHidden = trayHidden.filterTo(HashSet()) { it in open } } // closed rows need no hiding
+        acct.run { trayHidden = trayHidden.filterTo(HashSet()) { it in open } } // closed rows need no hiding
         dndLost() // a pass turned back on in Android's settings takes the #380 notice with it on the next sync or launch
         val want = rows.map { TrayStep.plan(it, muted) }.filterIsInstance<TrayStep.Show>()
             .sortedByDescending { it.n.createdAt }.take(if (App.of(ctx).stack) 32 else 40)
-        val wantIds = want.map { it.n.id }.toSet()
-        val showing = nm.activeNotifications.filter { it.tag != null && it.id == 0 }.map { it.tag }.toSet()
+        val wantIds = want.map { tag(it.n.id) }.toSet()
+        val showing = nm.activeNotifications.filter { it.id == 0 && owns(it.tag, tagPrefix) }.map { it.tag }.toSet()
         showing.filter { it !in wantIds }.forEach { nm.cancel(it, 0) }
         want.forEach { post(it.n, silent = true) } // reposting a showing one updates it (state, buttons) without a sound
         summaries()
+    }
+
+    /** Takes every entry of this account out of the tray, for a removed server. Writes nothing: its files are going. */
+    fun clear() {
+        nm.activeNotifications.filter { (it.id == 0 && owns(it.tag, tagPrefix)) || (it.id == SUMMARY_ID && owns(it.tag, group)) }.forEach { nm.cancel(it.tag, it.id) }
     }
 
     /**
@@ -211,24 +231,24 @@ class Tray(private val ctx: Context) {
     private fun summaries() {
         val active = nm.activeNotifications
         // Tag check too: the sync notice also uses id 1, with no tag.
-        val shown = active.filter { it.id == SUMMARY_ID && it.tag?.startsWith(GROUP) == true }.map { it.tag }.toSet()
-        val stacks = active.filter { it.tag != null && it.id == 0 && it.notification.group?.startsWith(GROUP) == true }
+        val shown = active.filter { it.id == SUMMARY_ID && owns(it.tag, group) }.map { it.tag }.toSet()
+        val stacks = active.filter { it.id == 0 && owns(it.tag, tagPrefix) && owns(it.notification.group, group) }
             .groupBy { it.notification.group!! }.filter { (g, rows) -> rows.size >= 2 || g in shown }
         shown.filter { it !in stacks.keys }.forEach { nm.cancel(it, SUMMARY_ID) }
         if (stacks.isEmpty()) return
-        val server = App.of(ctx).serverUrl
+        val server = acct.serverUrl
         val main = PendingIntent.getActivity(
             ctx, 0,
             Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
         for ((group, rows) in stacks) {
-            val topic = group.removePrefix(GROUP)
-            val ids = rows.map { it.tag }.toTypedArray()
+            val topic = group.removePrefix(this.group)
+            val ids = rows.map { it.tag.removePrefix(tagPrefix) }.toTypedArray()
             // Swiping the stack away dismisses exactly the rows it held, queued like any other swipe (one clear call).
             val delete = Intent(ctx, ActionReceiver::class.java)
                 .setAction(ACTION_DISMISS_STACK)
-                .setData(Uri.parse("clrd://stack/${Uri.encode(topic)}").buildUpon().appendQueryParameter("server", server).build())
+                .setData(Uri.parse("clrd://stack/${Uri.encode(topic)}").buildUpon().appendQueryParameter("server", server).account().build())
                 .putExtra(EXTRA_IDS, ids)
                 .putExtra(EXTRA_SERVER, server)
             val b = NotificationCompat.Builder(ctx, rows.maxOf { it.notification.channelId })
@@ -251,12 +271,12 @@ class Tray(private val ctx: Context) {
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         val app = App.of(ctx)
-        if (n.id in app.trayHidden) { // hidden by a bulk clear on this phone (#265): only a new alert brings it back
+        if (n.id in acct.trayHidden) { // hidden by a bulk clear on this phone (#265): only a new alert brings it back
             if (silent) return
-            app.trayHidden -= n.id
+            acct.trayHidden -= n.id
         }
-        val text = Md.tray(n.message, n.isMarkdown && app.formatting.value)
-        val b = NotificationCompat.Builder(ctx, Sounds.channel(n.priority, app.sound))
+        val text = Md.tray(n.message, n.isMarkdown && acct.formatting.value)
+        val b = NotificationCompat.Builder(ctx, Sounds.channel(n.priority, acct.sound))
             .setSmallIcon(R.drawable.ic_stat_clrd)
             .setContentTitle(n.title.ifEmpty { n.topic })
             .setContentText(text)
@@ -278,15 +298,15 @@ class Tray(private val ctx: Context) {
             .setContentIntent(open(n))
             .setDeleteIntent(action(n, ACTION_DISMISS)) // a swipe only hides it on this phone (App.trayHidden)
         if (n.priority >= 5) b.setColor(0xFFC2410C.toInt())
-        if (App.of(ctx).stack) b.setGroup(GROUP + n.topic)
+        if (app.stack) b.setGroup(group + n.topic)
         // Pictures never hold up a post: one not loaded yet is fetched in the background, then the tray is redrawn.
         val images = App.of(ctx).images
         n.icon.takeIf { it.isNotEmpty() }?.let { url ->
-            images.cached(url, Images.ICON_PX)?.let(b::setLargeIcon) ?: images.prefetch(url, Images.ICON_PX, ::redraw)
+            images.cached(url, Images.ICON_PX, acct)?.let(b::setLargeIcon) ?: images.prefetch(url, Images.ICON_PX, acct, ::redraw)
         }
         n.file?.takeIf { it.isImage }?.let { f ->
-            images.cached(f.url, Images.PICTURE_PX)?.let { b.setStyle(NotificationCompat.BigPictureStyle().bigPicture(it).setSummaryText(text)) }
-                ?: images.prefetch(f.url, Images.PICTURE_PX, ::redraw)
+            images.cached(f.url, Images.PICTURE_PX, acct)?.let { b.setStyle(NotificationCompat.BigPictureStyle().bigPicture(it).setSummaryText(text)) }
+                ?: images.prefetch(f.url, Images.PICTURE_PX, acct, ::redraw)
         }
         TrayButton.pick(n).forEach {
             val label = if (it.res != 0) ctx.getString(it.res) else it.label
@@ -298,7 +318,7 @@ class Tray(private val ctx: Context) {
             else b.addAction(0, label, it.url?.let(::link) ?: it.reply?.let { r -> action(n, ACTION_REPLY, r) }
                 ?: it.device?.let { d -> action(n, ACTION_DEVICE, index = d) } ?: action(n, it.action!!))
         }
-        nm.notify(n.id, 0, b.build())
+        nm.notify(tag(n.id), 0, b.build())
     }
 
     private val redrawing = AtomicBoolean()
@@ -312,7 +332,7 @@ class Tray(private val ctx: Context) {
         val app = App.of(ctx)
         app.io.execute {
             redrawing.set(false)
-            RoomStore(app).reconcile()
+            RoomStore(app, acct).reconcile()
         }
     }
 
@@ -332,12 +352,12 @@ class Tray(private val ctx: Context) {
         )
 
     private fun action(n: Notif, action: String, reply: String? = null, index: Int? = null, typed: Boolean = false): PendingIntent {
-        val server = App.of(ctx).serverUrl // a tap after a server switch must not reach the new server
+        val server = acct.serverUrl // a tap after a server switch must not reach the new server
         val i = Intent(ctx, ActionReceiver::class.java)
             .setAction(action)
             // unique per (server, id, action, reply) so PendingIntents do not collide or take over each other's extras
             .setData(
-                Uri.parse("clrd://n/${n.id}/$action").buildUpon().appendQueryParameter("server", server)
+                Uri.parse("clrd://n/${n.id}/$action").buildUpon().appendQueryParameter("server", server).account()
                     // a reply also carries the version shown, so a tap on an older post cannot send a newer seq
                     .apply { if (reply != null) appendQueryParameter("reply", reply).appendQueryParameter("seq", "${n.seq}") }
                     .apply { if (typed) appendQueryParameter("text", "1") }
@@ -365,6 +385,10 @@ class Tray(private val ctx: Context) {
         const val ACTION_DISMISS_STACK = "me.itsjustin.clrd.DISMISS_STACK"
         const val EXTRA_IDS = "ids"
         const val GROUP = "topic:"
+        /** Another account's row tag or group key (#78); account 0 leaves these alone. */
+        private val OTHER = Regex("^(a|$GROUP)\\d+:")
+        /** The account id in a tap's data URI (#78); absent means account 0. */
+        const val QUERY_ACCOUNT = "account"
         const val SUMMARY_ID = 1
         const val DND_ID = 2 // no tag, so the tray rebuild (tagged, id 0 or 1) never touches it
         const val EXTRA_ID = "id"
