@@ -390,6 +390,11 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		return h.api(r, "DELETE", "/api/v1/devices/"+id, nil)
+	case "device_theme":
+		if err := need("id"); err != nil {
+			return nil, err
+		}
+		return h.api(r, "PUT", "/api/v1/devices/"+id, map[string]any{"theme": a["theme"]})
 	case "sound":
 		if _, set := a["sound"]; !set { // an empty name goes to the server, which refuses it (#299)
 			return h.api(r, "GET", "/api/v1/sounds", nil)

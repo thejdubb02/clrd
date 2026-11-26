@@ -76,6 +76,13 @@ func TestNtfyPublish(t *testing.T) {
 		t.Fatalf("PUT publish: %d %s", code, out)
 	}
 
+	// RFC 2047 encoded words, as ntfy's clients send non-ASCII headers (#842).
+	_, out = raw(t, "PUT", ts.URL+"/alerts", admin, "", map[string]string{"Title": "=?UTF-8?B?R3LDvMOfZSDwn5Sl?=",
+		"X-Tags": "plain,=?UTF-8?Q?caf=C3=A9?=", "Message": "=?utf-8?q?h=C3=A9llo?="})
+	if m := ntfyDecode(t, out); m.Title != "Grüße 🔥" || len(m.Tags) != 2 || m.Tags[0] != "plain" || m.Tags[1] != "café" ||
+		m.Message != "héllo" {
+		t.Fatalf("encoded headers: %s", out)
+	}
 	if _, out = raw(t, "GET", ts.URL+"/alerts/publish?message=hi&t=T&p=5", admin, "", nil); ntfyDecode(t, out).Priority != 5 {
 		t.Fatalf("GET publish: %s", out)
 	}

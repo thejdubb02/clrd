@@ -600,6 +600,8 @@ type Snapshot struct {
 	Me     string // device name of the signed-in token, the state_by its own actions get
 	MeID   string // its token id, the state_by_id its own actions get (names can repeat)
 	MarkID string // the by_id its marks get: its person, or the top of its token tree
+
+	Palette string // server-saved inbox theme, as JSON
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
@@ -1200,6 +1202,7 @@ func snoozeLabel(v string) string {
 }
 
 type meta struct {
+	Palette                 string // signed-in inbox only
 	Title, Desc, Path, Base string
 }
 
@@ -1576,7 +1579,7 @@ func Handler(api API, baseURL string) http.Handler {
 				Tips                          []Tip
 				Tip                           int
 			}{
-				meta: meta{Title: badge(c["active"]+c["acknowledged"]) + titles[view] + ": clrd", Path: r.URL.Path, Base: base(r)},
+				meta: meta{Title: badge(c["active"]+c["acknowledged"]) + titles[view] + ": clrd", Path: r.URL.Path, Base: base(r), Palette: snap.Palette},
 				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), One: card, Added: added, Snap: snap, Tips: ts, Tip: tip,
 				Inbox:   c["active"] + c["acknowledged"],
 				Snoozed: c["snoozed"],

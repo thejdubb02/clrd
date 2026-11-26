@@ -194,6 +194,80 @@
     });
     addEventListener('storage', e => { if (e.key === 'clrd.theme') themeSel.value = e.newValue || ''; });
   }
+  const colors = window.clrdPalette;
+  const paletteForm = $('[data-palette-form]');
+  let savedPalette = colors.initial, draftPalette = false, savingPalette = false;
+  function syncPalette(st) {
+    savedPalette = st;
+    if (!draftPalette && !savingPalette) {
+      colors.show(st);
+      renderPalette();
+    }
+  }
+  function renderPalette() {
+    if (!paletteForm) return;
+    const { theme, override } = paletteForm.elements;
+    theme.value = savedPalette.theme || 'default';
+    override.querySelector('[value=custom]').disabled = !savedPalette.theme_colors;
+    override.value = savedPalette.device_theme || '';
+    for (const [key, color] of Object.entries(savedPalette.theme_colors || colors.starter)) {
+      paletteForm.elements[key].value = color;
+    }
+    $('[data-palette-colors]').hidden = theme.value !== 'custom';
+    $('[data-palette-actions]').hidden = true;
+    override.disabled = false;
+    if (themeSel) themeSel.disabled = (savedPalette.device_theme || theme.value) === 'custom' && !!savedPalette.theme_colors;
+  }
+  if (paletteForm) {
+    const fields = paletteForm.querySelector('fieldset');
+    const { theme, override } = paletteForm.elements;
+    const status = $('[data-palette-status]');
+    const save = paletteForm.querySelector('[type=submit]');
+    const patch = () => {
+      const st = { theme: theme.value };
+      if (theme.value === 'custom') st.theme_colors = Object.fromEntries(Object.keys(colors.starter).map(k => [k, fields.elements[k].value]));
+      return st;
+    };
+    renderPalette();
+    fields.addEventListener('input', () => {
+      draftPalette = true;
+      const st = patch();
+      $('[data-palette-colors]').hidden = !st.theme_colors;
+      $('[data-palette-actions]').hidden = false;
+      override.disabled = true;
+      status.textContent = st.theme_colors ? colors.validate(st.theme_colors) : '';
+      save.disabled = !!status.textContent;
+      if (!save.disabled) {
+        colors.show(st);
+        if (themeSel) themeSel.disabled = !!st.theme_colors;
+      }
+    });
+    $('[data-palette-cancel]').addEventListener('click', () => {
+      draftPalette = false;
+      syncPalette(savedPalette);
+      status.textContent = '';
+    });
+    async function savePalette(path, body) {
+      savingPalette = fields.disabled = override.disabled = true;
+      status.textContent = 'Saving theme';
+      const r = await fetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+      const result = r && await r.json().catch(() => null);
+      savingPalette = fields.disabled = false;
+      if (r?.ok && result) {
+        draftPalette = false;
+        syncPalette(path.endsWith('/this') ? { ...savedPalette, device_theme: result.theme } : result);
+        status.textContent = 'Theme saved.';
+      } else {
+        if (!draftPalette) syncPalette(savedPalette);
+        status.textContent = result?.error || 'Could not save theme. Try again.';
+      }
+    }
+    paletteForm.addEventListener('submit', e => {
+      e.preventDefault();
+      if (draftPalette && !savingPalette && !save.disabled) savePalette('/api/v1/settings', patch());
+    });
+    override.addEventListener('change', () => savePalette('/api/v1/devices/this', { theme: override.value }));
+  }
   addEventListener('storage', e => { if (e.key === 'clrd.stack') { stacking = e.newValue === '1'; restack(); tidy(); } });
 
   // After-update What's new note (#580): per browser in localStorage.
@@ -1372,6 +1446,7 @@
         // Snooze times or formatting changed on another device: the cards are stale.
         // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
         const st = m.settings || {};
+        if (st.theme) syncPalette(st);
         if (st.color_rules) refresh(); // recolor the cards (#165)
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
         const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
