@@ -144,7 +144,7 @@ class ShownServerTest {
         assertEquals(b.id, app.shown.value.id)
 
         app.removeAccount(b.id)
-        drain(); drain() // the redraw is queued from the removal's own task
+        drain()
         assertEquals("one server again: as before", "t", subText("a"))
     }
 

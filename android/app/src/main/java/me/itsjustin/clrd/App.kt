@@ -89,7 +89,9 @@ class App : Application() {
     }
 
     /** Reposts every server's tray entries quietly, such as after the stack switch or a server added or removed. */
-    fun redrawTrays() = io.execute { accounts.forEach { RoomStore(this, it).reconcile() } }
+    fun redrawTrays() = io.execute(::redraw)
+    // Not an emptied account 0: its sweep would write its keys back into the phone's file.
+    private fun redraw() = servers.forEach { RoomStore(this, it).reconcile() }
 
     /** Adds a server. Ids are never used twice, so a stale tray tap for a removed one never lands on this one. */
     @Synchronized fun addAccount(url: String, token: String): Account {
@@ -142,7 +144,7 @@ class App : Application() {
                 deleteDatabase("clrd-$id.db") // with its -wal and -shm
             }
             a.tray.clear()
-            redrawTrays() // one server left: its entries drop the host
+            redraw() // already on io, so a drain after the removal covers it; one server left drops the host
             if (!anyConfigured) stopService(android.content.Intent(this, SyncService::class.java)) else SyncService.start(this)
         }
     }
