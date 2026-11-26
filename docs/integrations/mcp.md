@@ -20,7 +20,7 @@ Tools:
 | `format_check` | `topic?, by?` | Topics whose newest messages are hard to read (Markdown sent as plain text, unknown `:shortcodes:`, no title, very long, raw JSON), each with a prompt that says how to fix the sender. `by: "sender"` splits each topic by sending token. Advice only. See [Message formatting](../formatting.md#format-check). |
 | `format_dismiss` | `topic, rule, sender_id?, dismissed?` | Stop a format check rule counting in a topic, for one sending token or every one. `dismissed: false` shows it again. |
 | `counts` | `keep_cleared_days?`, `topic?` | Exact number of notifications in each state, plus `inbox` and `cleared` totals, over the topics the token can read. With `keep_cleared_days`, also `would_remove`: how many cleared ones that setting would delete. With `topic`, `would_remove` counts only that topic, to preview its own value. |
-| `settings` | any settings field, e.g. `keep_cleared_days?` | No arguments reads the server settings. With arguments, changes only those fields. `keep_cleared_days` (0 is forever) needs an admin token. `topic_keep_cleared_days`, like `{"alerts": 7}`, sets it for one topic (`null` drops it) and needs admin on that topic. |
+| `settings` | any settings field, e.g. `keep_cleared_days?` | No arguments reads the server settings. With arguments, changes only those fields. `keep_cleared_days` (0 is forever) needs an admin token. `topic_keep_cleared_days`, like `{"alerts": 7}`, sets it for one topic (`null` drops it) and needs admin on that topic. Use `theme` and `theme_colors` to set the owner's color theme. |
 | `get` | `id` | One notification by server id, with its current state. |
 | `update` | `id, message` | Replace the message of an open notification. The id and state stay, so a progress line ("step 3 of 10") is one notification, not ten. |
 | `ack` | `id` | Acknowledge by server id. |
@@ -29,6 +29,7 @@ Tools:
 | `mark` | `id, mark?, note?, link?` | Mark it `seen` or `actioned` (note and link optional) so everyone on the topic sees you handled it. Clears nothing. No `mark` removes yours. |
 | `wait_for_reply` | `id, timeout_s?` | Block until a human acks or dismisses it, or it is resolved. Snooze keeps it waiting. Returns `reply` = the new state, or `timeout`, plus `answer` when a button from `actions` was tapped, and `text` when that button has `"text": true`. Default 60 s, max 600 s. |
 | `devices` | none | Every linked device this token can see: name, kind (token, browser or phone), how it was linked, last seen. Never a secret. |
+| `device_theme` | `id`, `theme` | Set a linked device's color theme by ID, or use `this` for the calling device. An empty `theme` follows the owner. |
 | `device_log` | none | The last 200 links, sign-ins and unlinks, newest first. |
 | `unlink` | `id` | Sign out a browser or phone from `devices` at once. Unlinking a phone also signs out the browsers it approved. |
 | `sound` | `id?, sound?` | Notification sounds, one choice per device. No arguments lists the valid names and the default (`default`, the device's own sound). With `id` from `devices` and `sound`, sets that device's sound; an unknown name is refused with the list. `devices` shows each device's current sound. |

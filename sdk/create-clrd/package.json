@@ -1,0 +1,20 @@
+{
+  "name": "create-clrd",
+  "version": "0.1.0",
+  "description": "Connect installed AI agents to your clrd server",
+  "private": true,
+  "type": "module",
+  "bin": { "create-clrd": "./cli.js" },
+  "files": ["cli.js", "agents.js", "config.js", "connection.mjs", "runtime.mjs"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "lint": "node --check cli.js && node --check agents.js && node --check config.js && node --check connection.mjs && node --check runtime.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "jsonc-parser": "3.3.1",
+    "smol-toml": "1.7.0"
+  },
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/thejdubb02/clrd.git", "directory": "sdk/create-clrd" }
+}

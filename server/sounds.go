@@ -106,14 +106,26 @@ func (s *Server) soundRoutes() {
 	})
 	s.api("PUT /api/v1/devices/{id}", func(w http.ResponseWriter, r *http.Request, tok *Token) error {
 		var p struct {
+			Theme *string `json:"theme"`
 			Sound *string `json:"sound"`
 			Name  *string `json:"name"` // a browser or phone only (#765)
 		}
 		if err := decodeJSON(r, &p); err != nil {
 			return err
 		}
-		if p.Sound == nil && p.Name == nil {
-			return errf(400, "bad_request", "give sound, name or both")
+		if p.Sound == nil && p.Name == nil && p.Theme == nil {
+			return errf(400, "bad_request", "give sound, name or theme")
+		}
+		if p.Theme != nil {
+			if p.Sound != nil || p.Name != nil {
+				return errf(400, "bad_request", "set the device theme in a separate request")
+			}
+			d, err := s.setDeviceTheme(r.Context(), tok, r.PathValue("id"), *p.Theme)
+			if err != nil {
+				return err
+			}
+			writeJSON(w, 200, d)
+			return nil
 		}
 		var d LinkedDevice
 		var err error

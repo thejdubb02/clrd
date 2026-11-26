@@ -324,7 +324,7 @@ try {
   // first paint; System follows the device again.
   const dark = () => sp.evaluate(() => document.documentElement.classList.contains('dark'));
   await sp.emulateMedia({ colorScheme: 'light' });
-  await sp.getByLabel('Theme').selectOption('dark');
+  await sp.getByLabel('Light or dark').selectOption('dark');
   assert.ok(await dark(), 'Dark did not apply at once');
   assert.equal(await sp.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(15, 17, 20)', 'Dark set the class but not the colors');
   await sp.addInitScript(() => new MutationObserver((_, o) => {
@@ -334,18 +334,64 @@ try {
     await sp.goto(base + path);
     assert.equal(await sp.evaluate(() => window.darkAtBody), true, `${path} painted light before going dark`);
   }
-  assert.equal(await sp.getByLabel('Theme').inputValue(), 'dark', 'the saved choice did not show');
+  assert.equal(await sp.getByLabel('Light or dark').inputValue(), 'dark', 'the saved choice did not show');
   await sp.emulateMedia({ colorScheme: 'dark' });
-  await sp.getByLabel('Theme').selectOption('light');
+  await sp.getByLabel('Light or dark').selectOption('light');
   assert.equal(await dark(), false, 'Light lost to a dark device');
-  await sp.getByLabel('Theme').selectOption('');
+  await sp.getByLabel('Light or dark').selectOption('');
   assert.ok(await dark(), 'System did not follow a dark device');
   await sp.emulateMedia({ colorScheme: 'light' });
   // The device change arrives as an event, so poll for it (#714).
   await until(sp, () => !document.documentElement.classList.contains('dark'))
     .catch(() => assert.fail('System did not follow the device changing'));
+  // Color themes (#584): preview locally, reject faint text, then follow the
+  // saved palette live in an independent browser and before its next paint.
+  const theme = sp.getByLabel('Color theme', { exact: true });
+  const saveTheme = sp.getByRole('button', { name: 'Save theme' });
+  const paletteStatus = sp.locator('[data-palette-status]');
+  const peerContext = await browser.newContext({ colorScheme: 'dark' });
+  const themePeer = await peerContext.newPage();
+  await themePeer.addInitScript(() => new MutationObserver((_, o) => {
+    if (document.body) {
+      window.paletteAtBody = document.documentElement.style.getPropertyValue('--background');
+      o.disconnect();
+    }
+  }).observe(document, { childList: true, subtree: true }));
+  await themePeer.goto(`${base}/app?auth=${link}`);
+  const bg = p => p.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  assert.equal(await bg(sp), 'rgb(245, 243, 238)', 'Default changed the light appearance');
+  assert.equal(await bg(themePeer), 'rgb(15, 17, 20)', 'Default changed the dark appearance');
+  await theme.selectOption('midnight');
+  assert.equal(await bg(sp), 'rgb(237, 241, 248)', 'Midnight did not preview locally');
+  assert.equal(await bg(themePeer), 'rgb(15, 17, 20)', 'unsaved preview leaked to another browser');
+  await saveTheme.click();
+  await until(themePeer, () => getComputedStyle(document.body).backgroundColor === 'rgb(0, 0, 0)');
+  await themePeer.reload();
+  assert.equal(await themePeer.evaluate(() => window.paletteAtBody), '#000000', 'Midnight applied after the body appeared');
+  await theme.selectOption('custom');
+  await sp.getByLabel('Text', { exact: true }).fill('#ffffff');
+  assert.match(await paletteStatus.textContent(), /Text on background.*4\.5:1/);
+  assert.equal(await saveTheme.isDisabled(), true, 'faint text could be saved');
+  await sp.getByLabel('Text', { exact: true }).fill('#101010');
+  await sp.getByLabel('Background', { exact: true }).fill('#f1e4d2');
+  assert.equal(await bg(sp), 'rgb(241, 228, 210)', 'custom background did not preview');
+  assert.equal(await bg(themePeer), 'rgb(0, 0, 0)', 'unsaved custom colors reached another browser');
+  await saveTheme.click();
+  await until(themePeer, () => getComputedStyle(document.body).backgroundColor === 'rgb(241, 228, 210)');
+  assert.equal(await themePeer.evaluate(() => document.documentElement.classList.contains('dark')), false, 'custom light background should use light controls');
+  const override = sp.getByLabel('Theme on this browser');
+  await override.selectOption('high-contrast');
+  await until(sp, () => getComputedStyle(document.body).backgroundColor === 'rgb(255, 255, 255)');
+  assert.equal(await bg(themePeer), 'rgb(241, 228, 210)', 'device override changed the saved theme');
+  await override.selectOption('');
+  await until(sp, () => getComputedStyle(document.body).backgroundColor === 'rgb(241, 228, 210)');
+  await theme.selectOption('default');
+  await saveTheme.click();
+  await until(themePeer, () => getComputedStyle(document.body).backgroundColor === 'rgb(15, 17, 20)');
+  assert.equal((await themePeer.request.delete(base + '/api/v1/devices/this')).status(), 204);
+  await peerContext.close();
   await sp.close();
-  console.log('ok: snooze default, long press, right click and Settings');
+  console.log('ok: snooze, appearance, and synced color themes');
 
   // The tab shows the open count and follows a change on another device.
   const titleIs = async (p, t) => { // the page's CSP refuses waitForFunction

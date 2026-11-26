@@ -1,0 +1,33 @@
+name: create-clrd
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/create-clrd/**"
+      - ".github/workflows/create-clrd.yml"
+  pull_request:
+    paths:
+      - "sdk/create-clrd/**"
+      - ".github/workflows/create-clrd.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sdk/create-clrd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm test
+      - run: npm pack --dry-run
