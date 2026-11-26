@@ -183,7 +183,7 @@
     {{if eq .View "cleared"}}{{if eq $n.State "dismissed"}}<button class="btn" data-variant="outline" name="act" value="reopen" data-act="reopen">{{template "i-rotate-ccw"}}Restore</button>{{end}}
     {{else}}
       {{range $n.Replies}}<button class="btn" data-variant="outline" name="reply" value="{{.Reply}}" data-act="reply">{{.Label}}</button>{{end}}
-      {{range $n.Copies}}<button type="button" class="btn js-only" data-variant="outline" data-copy-action="{{.Copy}}"{{if .Clear}} data-copy-clear{{end}}>{{.Label}}</button>{{end}}
+      {{range $n.Copies}}<span type="button" class="btn js-only" data-variant="outline" data-copy-action="{{.Copy}}"{{if .Clear}} data-copy-clear{{end}}>{{.Label}}</button>{{end}}
       {{if ne $n.State "acknowledged"}}<button class="btn" data-variant="outline" name="act" value="ack" data-act="ack">Ack</button>{{end}}
       {{if ne $n.State "snoozed"}}<span class="inline-flex">
       <button class="btn rounded-e-none select-none [-webkit-touch-callout:none]" data-variant="outline" name="snooze" value="{{.SnoozeDefault}}" data-act="snooze" data-for="{{.SnoozeDefault}}" data-snooze-main title="Snooze {{snoozeLabel .SnoozeDefault}}. Long press for more times.">Snooze</button>
