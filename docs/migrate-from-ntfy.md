@@ -19,6 +19,7 @@ Tested against ntfy v2.38.1.
 | Admin users | Admin tokens. |
 | Messages | Notifications, with their original times. Sequence updates merge into one notification, a sequence delete arrives dismissed, a delayed message arrives snoozed until its time. |
 | Attachments | Uploaded files are copied in. External links are kept as links. |
+| Headers with non-ASCII text sent as RFC 2047 encoded words (`Title: =?UTF-8?B?...?=`) | Decoded the same way, in the title, message, tags, file name and the other publish headers. |
 | Publish URLs with `?tpl=yes` (or `X-Template: yes`, `?template=yes`) | Work as they are: the message, title and priority are Go templates over the JSON body, so `m={{.text}}&p={{if .channel}}2{{else}}4{{end}}` renders. `range`, `printf` and template calls are refused, as in [custom webhooks](integrations/custom-webhooks.md). |
 
 What does not carry over, and the dry run lists each one with a count:
