@@ -118,6 +118,24 @@ func TestNtfyImport(t *testing.T) {
 	s, u, toks, _ := importFixture(t, NtfyImport{})
 	boss, pixel, web := toks[""], toks["pixel"], toks["web"]
 
+	// importFixture swaps in fast hashes; ntfy's own cost 10 hash must still sign in.
+	fx, err := sql.Open("sqlite", "file:testdata/ntfy/user.db?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var real string
+	err = fx.QueryRow(`SELECT pass FROM user WHERE user = 'phone'`).Scan(&real)
+	fx.Close()
+	if err != nil || !strings.HasPrefix(real, "$2a$10$") {
+		t.Fatalf("fixture hash: %q %v", real, err)
+	}
+	if _, err := s.db.Exec(`UPDATE users SET hash = ? WHERE name = 'phone'`, real); err != nil {
+		t.Fatal(err)
+	}
+	if c := basic(t, "GET", u+"/alerts/json?poll=1", "phone", "phonepass", ""); c != 200 {
+		t.Fatalf("ntfy's own hash: %d", c)
+	}
+
 	// A second import is refused.
 	if err := s.ImportNtfy(context.Background(), NtfyImport{DefaultAccess: "deny-all"}, io.Discard); err == nil {
 		t.Fatal("second import ran")
