@@ -638,7 +638,11 @@ type Snapshot struct {
 	Sender                            *Sender    // a sender's own page only
 	Stats                             *Stats     // the Stats page only (#120)
 	ColorRules                        []ColorRule
+	CanColorRules                     bool // the token may change them: read scope, no topic list or grants
 }
+
+// NewColorRule is the blank row Settings adds.
+func (Snapshot) NewColorRule() ColorRule { return ColorRule{Color: "#2563EB", Style: "bar"} }
 
 // ColorRule colors matching cards (docs/SPEC.md section 2.1, Color rules).
 type ColorRule struct {

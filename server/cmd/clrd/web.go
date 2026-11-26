@@ -22,7 +22,7 @@ func mountWeb(s *server.Server, baseURL string, hide bool) {
 	if hide {
 		h = private(s, h)
 	}
-	for _, p := range []string{"/", "/docs", "/app", "/static", "/assets", "/favicon.svg", "/favicon.ico", "/apple-touch-icon.png", "/manifest.webmanifest", "/robots.txt", "/sitemap.xml"} {
+	for _, p := range []string{"/", "/docs", "/app", "/static", "/assets", "/favicon.svg", "/favicon.ico", "/apple-touch-icon.png", "/manifest.webmanifest", "/robots.txt", "/sitemap.xml", "/card-colors.css"} {
 		s.Mount(p, h)
 	}
 }
@@ -324,7 +324,8 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			}
 			snap.CanTemplates, snap.BuiltinTemplates = true, server.BuiltinTemplates()
 		}
-		snap.CanKeep = tok.Has(server.ScopeAdmin) // a keep deletes data, so it needs admin
+		snap.CanKeep = tok.Has(server.ScopeAdmin)                        // a keep deletes data, so it needs admin
+		snap.CanColorRules = tok.Has(server.ScopeRead) && !tok.Limited() // as UpdateSettings checks (#165)
 		// Webhooks are admin only (#238): anyone else gets no hook URLs at all.
 		if hooks, err := a.s.OutHooks(ctx, tok, ""); err == nil {
 			snap.CanHooks = true

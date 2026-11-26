@@ -457,6 +457,34 @@ func TestCardColorsCSS(t *testing.T) {
 	}
 }
 
+type snapOf struct {
+	readOnly
+	s Snapshot
+}
+
+func (o snapOf) Snapshot(*http.Request, Query) (Snapshot, error) { return o.s, nil }
+
+// Settings lists the color rules in the HTML, in order, only for a token that may change them (#165).
+func TestColorRulesSettings(t *testing.T) {
+	rules := []ColorRule{{Topic: "gatus", PriorityMin: 4, Color: "#DC2626", Style: "tint"}, {Tag: "backup", Title: "nightly", Color: "#2563EB", Style: "gradient"}}
+	_, body := get(t, Handler(snapOf{s: Snapshot{ColorRules: rules, CanColorRules: true}}, ""), "/app/settings")
+	first, second := strings.Index(body, `name="topic" size="10" value="gatus"`), strings.Index(body, `value="nightly"`)
+	if !strings.Contains(body, `id="color-rules"`) || first < 0 || second < first || strings.Count(body, "<li data-color-rule>") != 3 || // two rules and the blank row
+		!strings.Contains(body, `<option value="4" selected>4 high</option>`) || !strings.Contains(body, `<option value="gradient" selected>`) ||
+		!strings.Contains(body, `data-color-none>No color rules`) || !strings.Contains(body, " hidden data-color-none") {
+		t.Errorf("rules missing or out of order: %d %d", first, second)
+	}
+	if _, body := get(t, Handler(snapOf{s: Snapshot{CanColorRules: true}}, ""), "/app/settings"); strings.Contains(body, " hidden data-color-none") || strings.Count(body, "<li data-color-rule>") != 1 {
+		t.Error("no rules: want the empty note and only the blank row")
+	}
+	if _, body := get(t, Handler(snapOf{s: Snapshot{ColorRules: rules}}, ""), "/app/settings"); strings.Contains(body, `id="color-rules"`) || strings.Contains(body, "<li data-color-rule>") {
+		t.Error("a token that may not change the rules sees the section")
+	}
+	if code, body := get(t, Handler(NewFake(), ""), "/docs/color-rules"); code != 200 || !strings.Contains(body, "Color rules") {
+		t.Errorf("/docs/color-rules: %d", code)
+	}
+}
+
 // A card shows who marked it, and a mark never hides it (card marks).
 func TestMarks(t *testing.T) {
 	n := Notification{ID: "m1", Topic: "triage", Title: "disk", State: "active", CreatedAt: time.Now(), Marks: []Mark{

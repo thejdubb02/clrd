@@ -33,7 +33,7 @@ func TestWebOnRealServer(t *testing.T) {
 		code, body, _ := fetch(t, c, ts.URL+path)
 		return code, body
 	}
-	for _, p := range []string{"/", "/docs/", "/favicon.svg", "/robots.txt", "/sitemap.xml"} {
+	for _, p := range []string{"/", "/docs/", "/favicon.svg", "/robots.txt", "/sitemap.xml", "/card-colors.css?c=DC2626"} {
 		if code, _ := get(p); code != 200 {
 			t.Fatalf("GET %s: %d", p, code)
 		}

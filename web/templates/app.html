@@ -437,6 +437,20 @@
         <p class="text-body text-sm" role="status" data-palette-status></p>
       </form>
     </section>
+    {{if .Snap.CanColorRules}}<section id="color-rules" data-setting data-keywords="color, colour, highlight, severity, priority, tint, bar, gradient" class="grid gap-3">
+      <h3 id="cr-h" class="text-base font-semibold">Color rules</h3>
+      <p class="text-body text-sm/relaxed">Color cards by topic, tag, priority or title text. The first rule that matches a card wins, and it beats a sender's own color. Empty fields match anything. Rules apply in every browser you sign in to; the Android app does not show them yet.</p>
+      <form class="grid gap-3" data-color-rules>
+        <p class="text-body text-sm"{{if .Snap.ColorRules}} hidden{{end}} data-color-none>No color rules. Cards keep their usual look.</p>
+        <ol class="grid list-decimal gap-3 ps-5">{{range .Snap.ColorRules}}{{template "color-rule" .}}{{end}}</ol>
+        <template data-color-new>{{template "color-rule" .Snap.NewColorRule}}</template>
+        <p class="meta" role="status" data-color-green></p>
+        <div class="js-only flex flex-wrap items-center gap-2"><button type="button" class="btn" data-variant="outline" data-cr="add">Add rule</button>
+          <button type="button" class="btn" data-variant="outline" data-cr="severity">Severity preset</button>{{if .Snap.Topics}}<button type="button" class="btn" data-variant="outline" data-cr="topics">By topic preset</button>{{end}}</div>
+        <p class="meta js-only">A preset replaces the list. Nothing changes until you save.</p>
+        <div class="js-only flex items-center gap-3"><button class="btn" data-variant="outline">Save rules</button><span class="meta" role="status" data-color-status></span></div>
+      </form>
+    </section>{{end}}
   </section>
   <section class="grid gap-8" aria-labelledby="g-devices" data-settings-group>
     <h2 id="g-devices" class="border-b pb-2 text-lg font-semibold tracking-tight">Devices</h2>
@@ -687,6 +701,16 @@
   <p id="{{$id}}-secret-hint" class="meta">{{if .HasSecret}}A secret is saved. Leave this empty to keep it.{{else}}Optional. Signs each delivery so the receiver can check it came from here.{{end}}</p>
   {{if .HasSecret}}<label class="label font-normal"><input type="checkbox" class="input" name="clear_secret" value="1"> Remove the saved secret</label>{{end}}</div>
 {{end}}
+{{define "color-rule"}}<li data-color-rule><div class="flex flex-wrap items-end gap-2">
+  <label class="label">Topic <input class="input w-auto" name="topic" size="10" value="{{.Topic}}" autocomplete="off" spellcheck="false"></label>
+  <label class="label">Tag <input class="input w-auto" name="tag" size="10" value="{{.Tag}}" autocomplete="off" spellcheck="false"></label>
+  {{$r := .}}<label class="label">Lowest priority <select class="input w-auto" name="priority_min">{{range $i, $n := priorities}}<option value="{{$i}}"{{if eq $i $r.PriorityMin}} selected{{end}}>{{$n}}</option>{{end}}</select></label>
+  <label class="label">Highest priority <select class="input w-auto" name="priority_max">{{range $i, $n := priorities}}<option value="{{$i}}"{{if eq $i $r.PriorityMax}} selected{{end}}>{{$n}}</option>{{end}}</select></label>
+  <label class="label">Title has <input class="input w-auto" name="title" size="12" value="{{.Title}}" autocomplete="off"></label>
+  <label class="label">Color <input class="input w-auto" type="color" name="color" value="{{.Color}}"></label>
+  <label class="label">Style <select class="input w-auto" name="style"><option value="bar">Bar</option><option value="tint"{{if eq .Style "tint"}} selected{{end}}>Tint</option><option value="solid"{{if eq .Style "solid"}} selected{{end}}>Solid</option><option value="gradient"{{if eq .Style "gradient"}} selected{{end}}>Gradient</option></select></label>
+  <span class="js-only flex gap-1"><button type="button" class="btn" data-variant="ghost" data-size="sm" data-cr="up">Up</button><button type="button" class="btn" data-variant="ghost" data-size="sm" data-cr="down">Down</button><button type="button" class="btn" data-variant="ghost" data-size="sm" data-cr="del">Delete</button></span>
+</div></li>{{end}}
 {{define "tpl-fields"}}{{$id := print "tpl-" .Topic "/" .Name}}
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-each">Each</label>
   <input id="{{$id}}-each" class="input" name="each" value="{{.Each}}" maxlength="256" aria-describedby="{{$id}}-each-hint" autocomplete="off" spellcheck="false">

@@ -35,7 +35,7 @@ class ClientCertTest {
         setCertificateEntry("ca", CertificateFactory.getInstance("X.509").generateCertificate(ClientCertTest::class.java.getResourceAsStream("/mtls/ca.pem")))
     }
 
-    private val keys = ClientCertKeys({ alias }, { origin }, ca) { a ->
+    private val keys = ClientCertKeys({ alias?.let { a -> origin?.let { a to it } } }, ca) { a ->
         lookups++
         (client.getKey(a, "test".toCharArray()) as PrivateKey) to client.getCertificateChain(a).map { it as X509Certificate }.toTypedArray()
     }

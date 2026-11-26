@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Web Settings has a Color rules section: add, order and delete rules, with Severity and By topic presets and a note when a color looks like clrd's clear green; docs page docs/color-rules.md. Inbox cards now show their rule colors on a running server, which did not serve the card colors stylesheet (#165).
 - Slack outgoing hooks post notifications, edit them on state changes, and add acknowledgment and clear reactions (#166)
 - Stats adds a server-time heatmap, prior-period trends, volume breakdowns, same-token clears, quiet alarms, and live connections on the Stats page and API (#120).
 - Integrations: n8n and Node-RED nodes can send, clear, acknowledge, resolve and snooze clrd notifications, and start workflows on new notifications or state changes (#113). Available to build from source.
@@ -26,6 +27,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - ntfy publish: headers carrying RFC 2047 encoded words (for example `Title: =?UTF-8?B?...?=`, as ntfy clients send non-ASCII text) are decoded, the same as on ntfy (#842).
 
 - Android: add more than one server and switch between them; each keeps its own settings, connection and notifications (#78).
+- Android: each server can have its own client certificate for mutual TLS, picked in Settings while that server is shown (#78).
 - Desktop: the tray's About menu always has What's new (the server's history, or the project's when this computer is not linked), says plainly when this app is older or newer than the server, and reads "What's new in" the version for the first start after an update until it is opened (#580).
 - Android: JVM screenshot tests render the inbox, an open card and Settings in light and dark mode to `android/screenshots/` for the README and CI verification (#658).
 - Web: choose Default, High contrast, Midnight or a custom color theme with a live preview and contrast checks. The server saves it for your signed-in browsers, with optional device overrides and API and MCP support (#584).
@@ -166,6 +168,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Fixed
 
 - A send that was already out when an outgoing hook moved to another URL or kind no longer counts toward the new address's failure streak, and no longer brings back an old post id after the hook moves away and back (#878).
+- Web Settings no longer reloads over unsaved edits when a setting changes on another device. An edit not saved yet in any Settings form (color rules, swipe buttons, keep cleared, webhooks, themes and more, not only snooze times) is kept, and each form says the setting changed elsewhere (#883).
 - Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
 

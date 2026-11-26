@@ -784,7 +784,6 @@
   const snzTyped = () => snz.times.value.split(',').map(v => v.trim()).filter(Boolean);
   const snzValue = v => v.replace(/^(\d+)d$/, (_, n) => `${n * 24}h`);
   const snzSaved = snz && snz.default.value;
-  const snzDirty = () => snz && (snz.times.value !== snz.times.defaultValue || snz.default.value !== snzSaved);
   if (snz) {
     // The Default list follows the Times box as it is typed, so a time just added can be the default (#182).
     const labels = Object.fromEntries([...snz.default.options].map(o => [o.value, o.text]));
@@ -871,7 +870,8 @@
   const sil = $('[data-silence-form]');
   const tkeep = $('[data-topic-keep]');
   const swp = $('[data-swipe-settings]');
-  const forms = [snz, disp, keep, sil, tkeep, swp];
+  const crf = $('[data-color-rules]');
+  const forms = [snz, disp, keep, sil, tkeep, crf, swp];
   const lock = on => forms.forEach(f => f && [...f.elements].forEach(c => { c.disabled = on; }));
   // Settings: swipe buttons (#161), three places per side. A sign-in that may
   // not change settings gets 403, and the form then stays read-only.
@@ -905,6 +905,55 @@
     lock(false);
     status.textContent = r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   });
+
+  // Settings: color rules (#165). The list is edited here and saved whole;
+  // a preset replaces it. A green close to clrd's clear color gets a note.
+  const crRules = () => crf ? [...crf.querySelectorAll('[data-color-rule]')].map(li => {
+    const v = n => li.querySelector(`[name=${n}]`).value;
+    return { topic: v('topic'), tag: v('tag'), priority_min: +v('priority_min'), priority_max: +v('priority_max'), title: v('title'), color: v('color').toUpperCase(), style: v('style') };
+  }) : [];
+  const crKey = rs => JSON.stringify(rs.map(r => ({ ...r, color: r.color.toUpperCase() }))), crSaved = crKey(crRules());
+  const crRow = r => {
+    const li = crf.querySelector('[data-color-new]').content.firstElementChild.cloneNode(true);
+    for (const [k, v] of Object.entries(r)) li.querySelector(`[name=${k}]`).value = v;
+    return li;
+  };
+  const crGreen = () => {
+    const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const clr = rgb(getComputedStyle(document.documentElement).getPropertyValue('--clear').trim());
+    const n = [...crf.querySelectorAll('ol [name=color]')].flatMap((c, i) => {
+      const [r, g, b] = rgb(c.value);
+      return (g > r + 40 && g > b + 20) || Math.hypot(r - clr[0], g - clr[1], b - clr[2]) < 60 ? [i + 1] : [];
+    });
+    $('[data-color-green]').textContent = n.length ? `Rule ${n.join(', ')}: green means cleared in clrd, so a green card can look done. Pick another color if that could confuse.` : '';
+  };
+  if (crf) {
+    crGreen();
+    crf.addEventListener('input', crGreen);
+    crf.addEventListener('click', e => {
+      const b = e.target.closest('[data-cr]');
+      if (!b) return;
+      const list = crf.querySelector('ol'), li = b.closest('li'), act = b.dataset.cr;
+      const hues = ['#2563EB', '#DC2626', '#7C3AED', '#EA580C', '#0891B2', '#DB2777', '#CA8A04', '#4F46E5', '#64748B'];
+      if (act === 'up') li.previousElementSibling?.before(li);
+      else if (act === 'down') li.nextElementSibling?.after(li);
+      else if (act === 'del') li.remove();
+      else if (act === 'add') list.append(crRow({}));
+      else if (act === 'severity') list.replaceChildren(...[['5', '#DC2626'], ['4', '#EA580C'], ['3', '#CA8A04']].map(([p, color]) => crRow({ priority_min: p, priority_max: p, color })));
+      else list.replaceChildren(...[...new Set([...document.querySelectorAll('[data-live=topics] [data-name]')].map(a => a.dataset.name))].slice(0, 50).map((topic, i) => crRow({ topic, color: hues[i % hues.length] })));
+      if (b.isConnected) b.focus();
+      $('[data-color-none]').hidden = list.children.length > 0;
+      crGreen();
+    });
+    crf.addEventListener('submit', async e => {
+      e.preventDefault();
+      lock(true);
+      const r = await fetch('/api/v1/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ color_rules: crRules() }) }).catch(() => null);
+      if (r && r.ok) return location.reload();
+      lock(false);
+      $('[data-color-status]').textContent = await subsWhy(r);
+    });
+  }
 
   // Settings: how long cleared messages are kept (#250). Before a save that
   // deletes anything, say how many go and ask.
@@ -1422,6 +1471,17 @@
     if (on) { clearTimeout(staleTimer); staleTimer = null; offline.hidden = true; }
     else staleTimer ??= setTimeout(() => { offline.hidden = false; }, 180000);
   };
+  // What every Settings field held once the page was set up: a live settings change from
+  // another device reloads the page only while no field has an unsaved edit (#182, #883).
+  // Settings forms only, not a card's snooze box. ponytail: rows a script adds or removes
+  // later are not tracked, except color rules, which are compared whole.
+  const fieldNow = e => /^(checkbox|radio)$/.test(e.type) ? e.checked : e.value;
+  const asLoaded = new Map([...document.querySelectorAll('[data-settings-group] form')].flatMap(f => [...f.elements]).filter(e => !/^(submit|button|reset|file|fieldset)$/.test(e.type)).map(e => [e, fieldNow(e)]));
+  const edited = () => {
+    const ed = new Set([...asLoaded].filter(([e, v]) => e.isConnected && fieldNow(e) !== v).map(([e]) => e.form));
+    if (crf && crKey(crRules()) !== crSaved) ed.add(crf); // a color rule added or removed (#165)
+    return ed;
+  };
   function connect() {
     const u = new URL(B + '/api/v1/ws', location.href);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1443,17 +1503,22 @@
       else if (m.type === 'reset') reset();
       else if (m.type === 'devices') refresh(); // a device connected, caught up or dropped: redraw the dots (#295)
       else if (m.type === 'settings') {
-        // Snooze times or formatting changed on another device: the cards are stale.
-        // Snooze edits not saved here yet are kept; saving them replaces the other change (#182).
+        // Settings changed on another device: the cards and the forms are stale.
+        // Edits not saved here yet are kept; saving them replaces the other change (#182, #883).
         const st = m.settings || {};
         if (st.theme) syncPalette(st);
         if (st.color_rules) refresh(); // recolor the cards (#165)
+        if (crf && st.color_rules && crKey(st.color_rules) !== crSaved) $('[data-color-status]').textContent = 'Color rules changed on another device. Saving here replaces that change.';
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
-        const stale = () => snzDirty() ? ($('[data-snooze-status]').textContent = 'Settings changed on another device. Saving here replaces that change.') : reset();
+        const stale = () => {
+          const ed = edited();
+          if (!ed.size) return reset();
+          ed.forEach(f => { const n = f && [...f.querySelectorAll('[role=status]')].pop(); if (n) n.textContent = 'Settings changed on another device. Saving here replaces that change.'; });
+        };
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
-        else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) reset(); // a stale form would save the old period back
+        else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) stale();
         else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
-        else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) reset(); // the buttons and the form would be stale
+        else if ('swipe_start' in st && [st.swipe_start, st.swipe_end].map(s => (s || []).map(a => `${a} `).join('')).join('|') !== `${shell.dataset.swipeStart}|${shell.dataset.swipeEnd}`) stale(); // the buttons would be stale too
       }
       else if (m.notification) {
         if (m.type === 'state' && cleared(m.notification.state)) syncAlerts(m.notification.id, m.seq);

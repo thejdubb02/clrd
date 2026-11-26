@@ -2097,7 +2097,6 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
         "swipe" to app.configured, "formatting" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && (canRead || rejected)), // rejected: a publish-only phone may still unlink itself (#643)
         "senders" to (app.configured && !rejected && senders.value != null),
-        "client-cert" to (a.id == 0), // only the first server presents one for now (#78)
     )
     val shown = SETTINGS.filter {
         open[it.id] != false && settingMatches(query, ctx.getString(it.label), it.desc?.let(ctx::getString), it.keywords)
@@ -2180,15 +2179,16 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             "client-cert" -> {
                 Title(R.string.client_cert)
                 Explain(R.string.client_cert_explain)
-                val alias by app.clientCert.collectAsState()
+                val alias by a.clientCert.collectAsState() // the server this screen was opened for (#78)
                 Text(alias ?: stringResource(R.string.client_cert_none), color = b.body, fontSize = 14.sp)
                 Row {
                     TextButton(onClick = {
-                        val host = app.serverUrl.toHttpUrlOrNull()
+                        val host = a.serverUrl.toHttpUrlOrNull()
+                        val at = a.certOrigin() // the address the picker shows; a pick that returns after a move is dropped
                         // Android's own picker: the key stays in the key store, clrd only learns its name.
-                        (ctx as? android.app.Activity)?.let { android.security.KeyChain.choosePrivateKeyAlias(it, { a -> if (a != null) app.pickClientCert(a) }, null, null, host?.host, host?.port ?: -1, alias) }
+                        (ctx as? android.app.Activity)?.let { android.security.KeyChain.choosePrivateKeyAlias(it, { pick -> if (pick != null) a.pickClientCert(pick, at) }, null, null, host?.host, host?.port ?: -1, alias) }
                     }) { Text(stringResource(R.string.client_cert_pick), color = b.ink) }
-                    if (alias != null) TextButton(onClick = { app.pickClientCert(null) }) { Text(stringResource(R.string.client_cert_remove), color = b.ink) }
+                    if (alias != null) TextButton(onClick = { a.pickClientCert(null) }) { Text(stringResource(R.string.client_cert_remove), color = b.ink) }
                 }
             }
             "battery" -> battery?.let { prompt ->
