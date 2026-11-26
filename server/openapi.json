@@ -3660,7 +3660,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "With it, the body is the file and the message comes from Message (default \"You received a file: <name>\"). Also X-Filename, File, f"
+      "description": "With a valid Attach URL, this labels the link and the body stays the message. Otherwise the body is the file and Message sets its caption (default \"You received a file: <name>\"). Also X-Filename, File, f"
      },
      {
       "name": "Message",
@@ -3840,7 +3840,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "With it, the body is the file and the message comes from Message (default \"You received a file: <name>\"). Also X-Filename, File, f"
+      "description": "With a valid Attach URL, this labels the link and the body stays the message. Otherwise the body is the file and Message sets its caption (default \"You received a file: <name>\"). Also X-Filename, File, f"
      },
      {
       "name": "Message",

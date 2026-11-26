@@ -498,7 +498,7 @@ type implicitUploadBody struct {
 }
 
 // isUpload reports a request whose body is a file: a multipart native publish
-// an ntfy publish with a file name, or a Pushover publish. Those stream to disk.
+// an ntfy publish with a file name and no external URL, or a Pushover publish. Those stream to disk.
 func isUpload(r *http.Request) bool {
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
 		return false
@@ -511,7 +511,7 @@ func isUpload(r *http.Request) bool {
 		return r.Method == http.MethodPost && mt == "multipart/form-data"
 	}
 	p := strings.TrimPrefix(r.URL.Path, "/")
-	return p != "" && strings.Count(p, "/") <= 1 && ntfyFilename(r) != "" // /{topic} or /{topic}/{sid}
+	return p != "" && strings.Count(p, "/") <= 1 && ntfyFilename(r) != "" && ntfyAttachURL(r) == "" // /{topic} or /{topic}/{sid}
 }
 
 // ServeHTTP routes to a mount when one matches, else to the API.

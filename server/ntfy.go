@@ -399,7 +399,7 @@ func parseDuration(v string) (time.Duration, error) {
 func (s *Server) ntfyImplicitUpload(r *http.Request) bool {
 	if !s.opt.NtfyImplicitUploads || (r.Method != http.MethodPost && r.Method != http.MethodPut) ||
 		ntfyFilename(r) != "" || param(r, "Template", "Tpl") != "" || r.URL.Query().Get("template") != "" ||
-		ntfyIcon(param(r, "Attach", "A")) != "" {
+		ntfyAttachURL(r) != "" {
 		return false
 	}
 	_, pattern := s.mux.Handler(r)
@@ -421,9 +421,10 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	tok := s.ntfyAuth(r)
 	s.noteIgnored(r)
 	live := ntfyCacheOff(param(r, "X-Cache", "Cache")) // sent to open streams, stored nowhere (live.go)
-	file := ntfyFilename(r)
-	if r.Method == http.MethodGet {
-		file = "" // GET /{topic}/publish has no body to be the file
+	name, attach := ntfyFilename(r), ntfyAttachURL(r)
+	file := name
+	if attach != "" || r.Method == http.MethodGet {
+		file = "" // an external URL makes the filename a label, not an upload
 	}
 	selector := param(r, "Template", "Tpl")
 	inline := ntfyMarkdown(selector)
@@ -515,11 +516,13 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 			in.Message = ntfyPlainMessage(r)
 		}
 	}
-	if in.Message == "" && file != "" {
-		in.Message = "You received a file: " + cleanName(file)
+	if attach != "" {
+		in.Attachment = &Attachment{URL: attach, Name: name}
+	} else {
+		name = file
 	}
-	if a := ntfyIcon(param(r, "Attach", "A")); a != "" { // same rule as icon: a bad URL is dropped
-		in.Attachment = &Attachment{URL: a}
+	if in.Message == "" && name != "" {
+		in.Message = "You received a file: " + cleanName(name)
 	}
 	var err error
 	in.Title = title
@@ -604,8 +607,10 @@ func ntfyPlainMessage(r *http.Request) string {
 	return strings.ReplaceAll(param(r, "X-Message", "Message", "M"), `\n`, "\n")
 }
 
-// ntfyFilename is the file name that makes a ntfy publish body a file.
-func ntfyFilename(r *http.Request) string { return param(r, "Filename", "File", "F") }
+// ntfyFilename labels an attachment. Without an external URL it names an upload.
+func ntfyFilename(r *http.Request) string { return param(r, "X-Filename", "Filename", "File", "F") }
+
+func ntfyAttachURL(r *http.Request) string { return ntfyIcon(param(r, "X-Attach", "Attach", "A")) }
 
 func (s *Server) ntfyReply(w http.ResponseWriter, ctx context.Context, tok *Token, in PublishInput) error {
 	n, err := s.Publish(ctx, tok, in)
@@ -681,7 +686,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	var attach string
 	_ = json.Unmarshal(in.Attach, &attach)
 	if attach == "" {
-		attach = param(r, "Attach", "A")
+		attach = ntfyAttachURL(r)
 	}
 	if attach = ntfyIcon(attach); attach != "" {
 		if in.Filename == "" {

@@ -1212,9 +1212,10 @@ and `initialize` reports `version` as `serverInfo.version`.
   server's zone; an unknown one is a 400 only when there is a delay),
   `X-Icon` (sets `icon`; a
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
-  is dropped), `X-Filename`/`Filename`/`File`/`f` (with it, the body is the
-  file and the message comes from `X-Message`/`Message`/`m`, default "You
-  received a file: <name>"), `X-Markdown`/`Markdown`/`md` (`no`/`false`/`0` publishes
+  is dropped), `X-Filename`/`Filename`/`File`/`f` (labels a valid external
+  attachment while the body remains the message. Without an external
+  attachment, the body is the file and the message comes from
+  `X-Message`/`Message`/`m`, default "You received a file: <name>"), `X-Markdown`/`Markdown`/`md` (`no`/`false`/`0` publishes
   plain text, section 2.1), `X-Email` (ignored, documented),
   plus clrd's own `X-Id` = `external_id`. Any of these headers may carry
   RFC 2047 encoded words (`=?UTF-8?B?...?=`, `=?UTF-8?Q?...?=`), decoded as
