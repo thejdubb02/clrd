@@ -1,0 +1,138 @@
+<script type="text/javascript">
+    RED.nodes.registerType('clrd-server', {
+        category: 'config',
+        defaults: { url: { value: '', required: true } },
+        credentials: { token: { type: 'password' } },
+        label() { return this.url || 'clrd server'; }
+    });
+
+    RED.nodes.registerType('clrd', {
+        category: 'network',
+        color: '#CAE7D7',
+        defaults: {
+            name: { value: '' },
+            server: { value: '', type: 'clrd-server', required: true },
+            operation: { value: 'send', required: true },
+            topic: { value: '' },
+            duration: { value: '1h' }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: 'font-awesome/fa-bell',
+        label() { return this.name || 'clrd ' + this.operation; },
+        oneditprepare() {
+            const operation = $('#node-input-operation');
+            const showFields = () => {
+                $('#node-input-topic').closest('.form-row').toggle(operation.val() === 'send');
+                $('#node-input-duration').closest('.form-row').toggle(operation.val() === 'snooze');
+            };
+            operation.on('change', showFields);
+            showFields();
+        }
+    });
+
+    RED.nodes.registerType('clrd-events', {
+        category: 'network',
+        color: '#CAE7D7',
+        defaults: {
+            name: { value: '' },
+            server: { value: '', type: 'clrd-server', required: true },
+            event: { value: 'created', required: true },
+            topic: { value: '' },
+            interval: { value: 5, required: true, validate: RED.validators.number() }
+        },
+        inputs: 0,
+        outputs: 1,
+        icon: 'font-awesome/fa-bell',
+        label() { return this.name || 'clrd events'; }
+    });
+</script>
+
+<script type="text/html" data-template-name="clrd-server">
+    <div class="form-row">
+        <label for="node-config-input-url">Server URL</label>
+        <input type="text" id="node-config-input-url" placeholder="https://clrd.example.com">
+    </div>
+    <div class="form-row">
+        <label for="node-config-input-token">API Token</label>
+        <input type="password" id="node-config-input-token">
+    </div>
+</script>
+
+<script type="text/html" data-template-name="clrd">
+    <div class="form-row">
+        <label for="node-input-server">Server</label>
+        <input type="text" id="node-input-server">
+    </div>
+    <div class="form-row">
+        <label for="node-input-operation">Operation</label>
+        <select id="node-input-operation">
+            <option value="send">Send</option>
+            <option value="acknowledge">Acknowledge</option>
+            <option value="clear">Clear</option>
+            <option value="resolve">Resolve</option>
+            <option value="snooze">Snooze</option>
+        </select>
+    </div>
+    <div class="form-row">
+        <label for="node-input-topic">Topic</label>
+        <input type="text" id="node-input-topic" placeholder="alerts">
+    </div>
+    <div class="form-row">
+        <label for="node-input-duration">Duration</label>
+        <input type="text" id="node-input-duration" placeholder="1h">
+    </div>
+    <div class="form-row">
+        <label for="node-input-name">Name</label>
+        <input type="text" id="node-input-name">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="clrd">
+    <p>Send a clrd notification or change an existing notification's state.</p>
+    <h3>Input</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">string | object</span></dt>
+        <dd>For Send, a message string or an object with <code>message</code> and
+        optional <code>topic</code>, <code>title</code>, <code>external_id</code> and
+        <code>priority</code>. For state changes, a clrd notification ID or an
+        object with <code>id</code> and optional snooze <code>duration</code>.</dd>
+    </dl>
+    <h3>Output</h3>
+    <p><code>msg.payload</code> is the notification returned by clrd.</p>
+</script>
+
+<script type="text/html" data-template-name="clrd-events">
+    <div class="form-row">
+        <label for="node-input-server">Server</label>
+        <input type="text" id="node-input-server">
+    </div>
+    <div class="form-row">
+        <label for="node-input-event">Event</label>
+        <select id="node-input-event">
+            <option value="created">New Notification</option>
+            <option value="state">State Change</option>
+        </select>
+    </div>
+    <div class="form-row">
+        <label for="node-input-topic">Topic</label>
+        <input type="text" id="node-input-topic" placeholder="All readable topics">
+    </div>
+    <div class="form-row">
+        <label for="node-input-interval">Interval (s)</label>
+        <input type="number" min="1" max="3600" id="node-input-interval">
+    </div>
+    <div class="form-row">
+        <label for="node-input-name">Name</label>
+        <input type="text" id="node-input-name">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="clrd-events">
+    <p>Poll clrd for new notifications or state changes. Each deployment starts
+    from the current event position.</p>
+    <h3>Output</h3>
+    <p><code>msg.payload</code> is the clrd event with <code>type</code>,
+    <code>seq</code> and <code>notification</code>. <code>msg.topic</code>
+    is the notification topic.</p>
+</script>

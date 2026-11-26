@@ -77,11 +77,28 @@ export class Client {
     return this.#req("GET", `/api/v1/notifications/${e(id)}`);
   }
 
-  list({ topic, state = "open", limit } = {}) {
+  list({ topic, state = "open", limit, subscribed } = {}) {
     const q = new URLSearchParams({ state });
     if (topic) q.set("topic", topic);
     if (limit) q.set("limit", String(limit));
+    if (subscribed === "all") q.set("subscribed", subscribed);
     return this.#req("GET", `/api/v1/notifications?${q}`);
+  }
+
+  /** Poll one page of events. Start at the current head when there is no cursor. */
+  async pollEvents(cursor, { topic } = {}) {
+    if (cursor) {
+      const q = new URLSearchParams({ since: String(cursor.seq), subscribed: "all" });
+      if (topic) q.set("topics", topic);
+      try {
+        const { events, seq, epoch } = await this.#req("GET", `/api/v1/events?${q}`);
+        if (epoch === cursor.epoch) return { events, cursor: { seq, epoch }, reset: false };
+      } catch (error) {
+        if (!(error instanceof ClrdError && error.status === 410 && error.code === "reset")) throw error;
+      }
+    }
+    const { seq, epoch } = await this.list({ limit: 1 });
+    return { events: [], cursor: { seq, epoch }, reset: Boolean(cursor) };
   }
 
   #byKey(action, topicOrId, externalId) {

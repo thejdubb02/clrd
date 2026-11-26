@@ -1,0 +1,57 @@
+{
+  "name": "n8n-nodes-clrd",
+  "version": "0.1.0",
+  "description": "Send, manage and receive clrd notifications in n8n",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/thejdubb02/clrd",
+  "author": {
+    "name": "Justin Willhite",
+    "email": "5132924+thejdubb02@users.noreply.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thejdubb02/clrd.git",
+    "directory": "sdk/n8n"
+  },
+  "keywords": [
+    "n8n-community-node-package",
+    "clrd",
+    "notifications"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && node copy-sdk.cjs",
+    "lint": "eslint credentials nodes package.json",
+    "test": "node --test test.cjs",
+    "prepack": "npm run build"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": [
+      "dist/credentials/ClrdApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Clrd.node.js",
+      "dist/nodes/ClrdTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/eslint-plugin-community-nodes": "0.42.0",
+    "@typescript-eslint/parser": "8.70.0",
+    "eslint": "9.29.0",
+    "n8n-workflow": "2.49.4",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "peerDependenciesMeta": {
+    "n8n-workflow": { "optional": true }
+  }
+}

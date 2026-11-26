@@ -98,3 +98,41 @@ test("README links to the repo", () => {
   const readme = readFileSync(new URL("./README.md", import.meta.url), "utf8");
   assert.match(readme, /https:\/\/github\.com\/thejdubb02\/clrd/);
 });
+
+test("event polling starts at the head and follows the cursor through filtered pages", async () => {
+  const paths = [];
+  const responses = [
+    { notifications: [{ id: "old" }], seq: 5, epoch: "db" },
+    { events: [], seq: 505, epoch: "db" },
+    { events: [{ type: "created", seq: 506 }], seq: 506, epoch: "db" },
+  ];
+  const client = new Client({ url, fetch: async (path) => {
+    paths.push(new URL(path).search);
+    return Response.json(responses.shift());
+  } });
+  const start = await client.pollEvents();
+  assert.deepEqual(start, { events: [], cursor: { seq: 5, epoch: "db" }, reset: false });
+  const empty = await client.pollEvents(start.cursor, { topic: "infra" });
+  const page = await client.pollEvents(empty.cursor, { topic: "infra" });
+  assert.deepEqual(page, {
+    events: [{ type: "created", seq: 506 }], cursor: { seq: 506, epoch: "db" }, reset: false,
+  });
+  assert.deepEqual(paths, ["?state=open&limit=1", "?since=5&subscribed=all&topics=infra", "?since=505&subscribed=all&topics=infra"]);
+});
+
+test("event polling drops stale history on reset or epoch change, and propagates auth errors", async () => {
+  const head = { seq: 3, epoch: "new" };
+  for (const response of [
+    Response.json({ error: "cursor expired", code: "reset" }, { status: 410 }),
+    Response.json({ events: [{ seq: 2 }], ...head }),
+  ]) {
+    const replies = [response, Response.json(head)];
+    const client = new Client({ url, fetch: async () => replies.shift() });
+    assert.deepEqual(await client.pollEvents({ seq: 1, epoch: "old" }), {
+      events: [], cursor: head, reset: true,
+    });
+    assert.equal(replies.length, 0);
+  }
+  const denied = new Client({ url, fetch: async () => Response.json({ code: "forbidden" }, { status: 403 }) });
+  await assert.rejects(denied.pollEvents(head), { status: 403, code: "forbidden" });
+});
