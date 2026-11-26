@@ -676,8 +676,9 @@ saved one, the seq numbers belong to another database (a server reinstalled or
 started on a new file), so they treat it exactly like `reset`: drop the cursor
 and local state, fetch the open list fresh, and carry on from the new seq. A
 client with no saved epoch just saves the one it sees. A database restored
-from a backup keeps the epoch it had, so on a clean stop the server also writes
-the epoch and its head seq to `<db>.epoch` next to the database. At startup, a
+from a backup keeps the epoch it had, so the server also writes the epoch and
+its head seq to `<db>.epoch` next to the database: at start, every minute while
+it runs, and on a clean stop (a crash leaves at most the last minute out). At startup, a
 database whose head seq is below the saved one, or whose epoch differs from
 the saved one, was restored or swapped: the server picks a new epoch, and
 clients start over.
