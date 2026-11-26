@@ -109,7 +109,8 @@ offline catches up the moment it reconnects.
   turn them on in Settings; needs HTTPS), silences
   started and ended from Settings, subscribe and unsubscribe per topic (from
   a card or Settings, every device you sign in to follows), a dot for each linked device (up to six)
-  showing which are connected, a Light, Dark or System theme, phone width. Settings sit in six
+  showing which are connected, built-in and custom color themes that follow
+  you across browsers, and a layout that fits phone widths. Settings sit in six
   sections with a search box that also finds a setting by keywords such as
   "do not disturb", and an About section shows the running version and
   what changed in each version, with a dismissible What's new note after an update.
