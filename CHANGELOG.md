@@ -167,6 +167,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- ntfy subscribe: `since=latest` now replays the newest message of each topic in a multi-topic subscribe, not only the newest one overall, and a replay keeps at most 10 MB per topic (the newest messages), saying so with ntfy's `X-Messages-Truncated: 1` header, as ntfy does (#845).
 - Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
 

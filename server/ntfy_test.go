@@ -229,7 +229,7 @@ func TestNtfyScheduled(t *testing.T) {
 }
 
 func TestNtfySubscribe(t *testing.T) {
-	_, ts, admin := newTest(t)
+	s, ts, admin := newTest(t)
 	var ids []string
 	for _, msg := range []string{"one", "two\nlines", "three"} {
 		_, out := raw(t, "POST", ts.URL+"/alerts", admin, msg, nil)
@@ -259,6 +259,33 @@ func TestNtfySubscribe(t *testing.T) {
 	}
 	if l := poll("/alerts/json?poll=1&since=10m"); len(l) != 3 {
 		t.Fatalf("since duration: %v", l)
+	}
+	// since=latest is per topic, as in ntfy (#845): the newest of each.
+	if l := poll("/alerts,other/json?poll=1&since=latest"); len(l) != 2 || ntfyDecode(t, l[0]).Message != "three" || ntfyDecode(t, l[1]).Message != "elsewhere" {
+		t.Fatalf("since latest, two topics: %v", l)
+	}
+	// A replay keeps each topic's newest events that fit the cap, oldest
+	// dropped, and says so with ntfy's header (#845).
+	{
+		// room for the newest two alerts only
+		s.db.QueryRow(`SELECT SUM(length(data)) + 1 FROM (SELECT data FROM events WHERE topic = 'alerts' ORDER BY seq DESC LIMIT 2)`).Scan(&ntfyReplayMax)
+		t.Cleanup(func() { ntfyReplayMax = 10 << 20 })
+		req, _ := http.NewRequest("GET", ts.URL+"/alerts,other/json?poll=1", nil)
+		req.SetBasicAuth("", admin)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		l := lines(string(body))
+		if resp.Header.Get("X-Messages-Truncated") != "1" || len(l) != 3 || ntfyDecode(t, l[0]).Message != "two\nlines" {
+			t.Fatalf("capped replay: header %q, %d lines: %v", resp.Header.Get("X-Messages-Truncated"), len(l), l)
+		}
+	}
+	ntfyReplayMax = 10 << 20
+	if code, out := raw(t, "GET", ts.URL+"/alerts/json?poll=1", admin, "", nil); code != 200 || len(lines(out)) != 3 {
+		t.Fatalf("uncapped: %d %v", code, out)
 	}
 	if l := poll("/alerts/raw?poll=1"); strings.Join(l, "|") != "one|two lines|three" {
 		t.Fatalf("raw: %v", l)
