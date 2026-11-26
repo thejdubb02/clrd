@@ -71,7 +71,9 @@ jobs:
         run: go run ./server/cmd/pack
       - run: go vet -tags packed ./...
       - name: test, packed build (what ships)
-        run: go test -tags packed $(command -v gcc >/dev/null && echo -race) -count=1 ./...
+        # Only the embeds differ from the plain build, which already ran with
+        # -race, so this pass skips it (#922).
+        run: go test -tags packed -count=1 ./...
       - name: static build and size budget
         # Same flags as the Dockerfile, so this is the size people download.
         run: |
