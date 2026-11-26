@@ -1,0 +1,1 @@
+- Contributors can record a pending change in its own file, avoiding merge conflicts when several pull requests update the changelog.
