@@ -4,7 +4,7 @@
 
 mod common;
 
-use clrd_core::{Engine, Error, Next, Server, Status};
+use clrd_core::{Engine, Error, Next, Notification, Server, Status};
 use common::{settle, state_path, wait, Client, Fake, Recorder, TOKEN};
 use serde_json::json;
 
@@ -315,6 +315,23 @@ fn a_repeat_missed_while_offline_does_not_ring() {
         Next::Ready
     );
     assert_eq!(log.log(), ["show a alert", "show a quiet"]);
+}
+
+/// After a reset (a resubscribed topic, a pruned log, a new epoch) the open
+/// list is shown quietly, as Android does and SPEC section 2.3 says: one
+/// reset must not ring for every open card at once.
+#[test]
+fn the_open_list_after_a_reset_is_quiet() {
+    let (mut e, log, _) = live_engine();
+    e.handle(&frame(1, "created", "a", json!({}))).unwrap();
+    let card = |id: &str| Notification {
+        id: id.into(),
+        state: "active".into(),
+        ..Default::default()
+    };
+    e.replace_all(vec![card("a"), card("b")], 9, "e1".into())
+        .unwrap();
+    assert_eq!(log.log(), ["show a alert", "show a quiet", "show b quiet"]);
 }
 
 /// A card hidden and shown again while this computer was offline (#646) is
