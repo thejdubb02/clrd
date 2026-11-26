@@ -858,7 +858,7 @@
   {{if not .Snap.CanSenders}}<p class="text-body text-sm">Only an admin token for every topic can see stats.</p>
   {{else}}{{with .Snap.Stats}}
   <p class="text-body text-sm/relaxed"><strong class="tabular-nums" data-total>{{.Total}}</strong> notifications, {{.Answered}} answered with a reply button. Volume times are UTC.</p>
-  <p class="text-body text-sm">{{.Connected}} connected now. {{.SelfCleared}} cleared by their sender, {{.ClearedByPerson}} by a person.</p>
+  <p class="text-body text-sm">{{.Connected}} connected now. {{.SelfCleared}} cleared by their sender, {{.ClearedByPerson}} by someone else.</p>
   {{if .Quiet}}<section class="bg-card rounded-xl border p-4" aria-labelledby="st-quiet">
     <h2 id="st-quiet" class="text-sm font-medium">Gone quiet</h2>
     <ul class="text-sm">{{range .Quiet}}<li><a class="underline" href="{{base}}/app/senders/{{.SenderID}}">{{.Name}}</a> ({{.Topic}})</li>{{end}}</ul>
@@ -868,7 +868,7 @@
       <caption class="mb-2 text-left text-sm font-medium">Notifications by hour of day and day of week, server time</caption>
       <thead><tr><td></td>{{range $hour, $_ := index .WeekHours 0}}<th scope="col">{{$hour}}</th>{{end}}</tr></thead>
       <tbody>{{range .Heatmap}}<tr><th scope="row" class="text-left">{{.Day}}</th>
-        {{range .Cells}}<td title="{{.Count}}"><span class="sr-only">{{.Count}}</span><span class="block h-4 rounded-sm" style="background: var(--color-primary); opacity: {{.Opacity}}" aria-hidden="true"></span></td>{{end}}
+        {{range .Cells}}<td title="{{.Count}}"><span class="sr-only">{{.Count}}</span><svg viewBox="0 0 16 16" class="h-4 w-full" aria-hidden="true"><rect width="15" height="15" rx="2" class="fill-primary" fill-opacity="{{.Opacity}}"/></svg></td>{{end}}
       </tr>{{end}}</tbody>
     </table>
   </section>

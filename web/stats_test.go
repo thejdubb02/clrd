@@ -56,9 +56,9 @@ func TestStatsPage(t *testing.T) {
 		`data-live="stats"`, `<th scope="col">Cleared</th>`, ">1m</td>",
 		`href="/api/v1/stats?days=1&amp;format=csv">CSV</a>`,
 		"Notifications by hour of day and day of week, server time",
-		`scope="row" class="text-left">Friday</th>`, `<td title="2">`, `opacity: 0.5"`,
+		`scope="row" class="text-left">Friday</th>`, `<td title="2">`, `fill-opacity="0.5"`,
 		`>up 2</span>`, `>down 1</span>`, `>new</span>`,
-		"4 connected now. 1 cleared by their sender, 1 by a person.",
+		"4 connected now. 1 cleared by their sender, 1 by someone else.",
 		"Gone quiet", `href="/app/senders/tok-1">nas</a> (missing-backup)`,
 		"Delivery health", `<th scope="col">Webhooks</th>`, `<th scope="col">Web Push</th>`,
 	} {
