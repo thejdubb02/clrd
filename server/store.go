@@ -918,6 +918,9 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 	if err := tok.need(ScopePublish, in.Topic); err != nil {
 		return nil, err
 	}
+	if tok != serverToken && strings.HasPrefix(in.ExternalID, hookOffPrefix) {
+		return nil, errf(400, "bad_request", "external_id prefix %s is reserved", hookOffPrefix)
+	}
 	if err := s.gateDeviceActions(ctx, s.db, &in); err != nil {
 		return nil, err
 	}
@@ -1027,6 +1030,9 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 				in.Topic, in.ExternalID)
 			if err == nil {
+				if strings.HasPrefix(in.ExternalID, hookOffPrefix) && (n.sender != "" || n.Title != hookOffTitle) {
+					return nil, errf(409, "conflict", "webhook notice key is already used by an existing alert")
+				}
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
 				n.ReplyText = ""
@@ -1227,6 +1233,9 @@ func (s *Server) Edit(ctx context.Context, tok *Token, id, message string) (*Not
 
 // ActByKey applies ack or resolve to the open notification with topic and external_id.
 func (s *Server) ActByKey(ctx context.Context, tok *Token, topic, externalID, action, via string) (*Notification, error) {
+	if tok != nil && tok != serverToken && strings.HasPrefix(externalID, hookOffPrefix) {
+		return nil, errf(400, "bad_request", "external_id prefix %s is reserved", hookOffPrefix)
+	}
 	return s.act(ctx, tok, action, via, nil, true, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
 		topic, externalID)
 }
