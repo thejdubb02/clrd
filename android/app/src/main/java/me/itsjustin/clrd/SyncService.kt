@@ -152,7 +152,7 @@ class ActionReceiver : BroadcastReceiver() {
             if (app.shadeClears) app.swiped(id, server, acct)
             return
         }
-        if (intent.action == Tray.ACTION_DEVICE) { // a sender's http or broadcast button (#449)
+        if (intent.action == Tray.ACTION_DEVICE) { // a sender's copy, HTTP or broadcast button
             val r = goAsync()
             DeviceAction.run(ctx, acct, id, intent.getIntExtra(Tray.EXTRA_INDEX, -1), intent.getLongExtra(Tray.EXTRA_SEQ, -1), server) { r.finish() }
             return
@@ -163,7 +163,7 @@ class ActionReceiver : BroadcastReceiver() {
             val r = goAsync()
             // Android shows a spinner until the row is posted again: once the answer is saved, or at once if it cannot be sent.
             val repost = { acct.tray.repost(id); r.finish() }
-            if (body != null) acct.actAll(listOf(id), "reply", body, server, App.VIA_TRAY_BUTTON, gen, repost)
+            if (body != null) acct.actAll(listOf(id), "reply", body, server, App.VIA_TRAY_BUTTON, gen = gen, done = repost)
             else app.acts.execute {
                 android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, R.string.reply_text_invalid, android.widget.Toast.LENGTH_LONG).show() }
                 repost()
@@ -180,6 +180,6 @@ class ActionReceiver : BroadcastReceiver() {
             else -> return
         }
         val r = goAsync() // keep the process alive until the action is saved (and probably sent)
-        acct.actAll(listOf(id), action, body, server, App.VIA_TRAY_BUTTON, gen) { r.finish() }
+        acct.actAll(listOf(id), action, body, server, App.VIA_TRAY_BUTTON, gen = gen) { r.finish() }
     }
 }

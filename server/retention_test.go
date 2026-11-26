@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -203,5 +205,119 @@ func TestKeepDefaultPreview(t *testing.T) {
 	}
 	if code, _ := call(t, ts, "GET", "/api/v1/counts?keep_cleared_days=-1", admin, nil); code != 400 {
 		t.Fatalf("keep_cleared_days=-1: want 400, got %d", code)
+	}
+}
+
+func TestNtfyCacheTopics(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	publish := func(topic, message string, delay *time.Time) string {
+		t.Helper()
+		body := map[string]any{"topic": topic, "message": message}
+		if delay != nil {
+			body["snooze_until"] = delay
+		}
+		code, out := call(t, ts, "POST", "/api/v1/notifications", admin, body)
+		if code != 200 {
+			t.Fatalf("publish: %d %v", code, out)
+		}
+		return out["id"].(string)
+	}
+	old := publish("cache", "old cache body", nil)
+	acked := publish("cache", "old acked body", nil)
+	if code, out := call(t, ts, "POST", "/api/v1/notifications/"+acked+"/ack", admin, nil); code != 200 {
+		t.Fatalf("acknowledge: %d %v", code, out)
+	}
+	unlisted := publish("inbox", "old inbox body", nil)
+	future := time.Now().Add(time.Hour)
+	pending := publish("cache", "deliver later", &future)
+	age := time.Now().Add(-2 * time.Hour)
+	if _, err := s.db.Exec("UPDATE notifications SET updated_at = ?", ms(age)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("UPDATE events SET created_at = ?", ms(age)); err != nil {
+		t.Fatal(err)
+	}
+	fresh := publish("cache", "still recent", nil)
+	s.opt.Retention = time.Hour
+	assertExists := func(id string, expected int) {
+		t.Helper()
+		if code, out := call(t, ts, "GET", "/api/v1/notifications/"+id, admin, nil); code != expected {
+			t.Fatalf("notification %s: %d, want %d: %v", id, code, expected, out)
+		}
+	}
+	if err := s.prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	assertExists(old, 200) // the default keeps active rows even after the event expires
+
+	t.Setenv("CLRD_NTFY_CACHE_TOPICS", "bad/topic")
+	if _, err := ConfigFromEnv(); err == nil {
+		t.Fatal("invalid cache topic was accepted")
+	}
+	t.Setenv("CLRD_NTFY_CACHE_TOPICS", "cache")
+	opt, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.opt.NtfyCacheTopics = opt.NtfyCacheTopics
+	device := mkToken(t, s, "phone", []string{ScopeRead}, nil)
+	deviceID := s.lookupToken(ctx, device).ID
+	if code, out := call(t, ts, "PUT", "/api/v1/devices/"+deviceID+"/clears", device, map[string]bool{"everywhere": false}); code != 200 {
+		t.Fatalf("device clears: %d %v", code, out)
+	}
+	since := s.CurrentSeq()
+	if code, out := call(t, ts, "POST", "/api/v1/notifications/"+old+"/dismiss", device, nil); code != 200 {
+		t.Fatalf("device-only dismiss: %d %v", code, out)
+	}
+	ws := dialWS(t, ts.URL, admin, since)
+	ws.until(func(m msg) bool { return m.Type == "ready" })
+	if err := s.prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	assertExists(old, 404)
+	assertExists(acked, 404)
+	removed := ws.until(isState(old, Resolved))
+	if removed.Type != EventState || removed.Notification.Message != "" {
+		t.Fatalf("state event after eviction: %+v", removed.Notification)
+	}
+	for _, id := range []string{unlisted, pending, fresh} {
+		assertExists(id, 200)
+	}
+
+	// Native and ntfy replay include the eviction without the old payload.
+	code, out := call(t, ts, "GET", "/api/v1/events?since="+strconv.FormatInt(since, 10), device, nil)
+	if code != 200 || !strings.Contains(fmt.Sprint(out["events"]), old) || strings.Contains(fmt.Sprint(out["events"]), "old cache body") {
+		t.Fatalf("native replay: %d %v", code, out)
+	}
+	code, replay := raw(t, "GET", ts.URL+"/cache/json?poll=1&since=all", admin, "", nil)
+	if code != 200 || strings.Contains(replay, "old cache body") || !strings.Contains(replay, "still recent") {
+		t.Fatalf("ntfy replay: %d %s", code, replay)
+	}
+	code, replay = raw(t, "GET", ts.URL+"/cache/json?poll=1&since=all&message=old+cache+body", admin, "", nil)
+	foundDelete := false
+	for _, line := range lines(replay) {
+		m := ntfyDecode(t, line)
+		foundDelete = foundDelete || m.Event == "message_delete" && m.SequenceID == old
+	}
+	if code != 200 || !foundDelete || strings.Contains(replay, "old cache body") {
+		t.Fatalf("filtered ntfy replay: %d %s", code, replay)
+	}
+	code, replay = raw(t, "GET", ts.URL+"/cache/json?poll=1&since=latest", admin, "", nil)
+	if code != 200 || !strings.Contains(replay, "still recent") || strings.Contains(replay, "message_delete") {
+		t.Fatalf("latest ntfy replay: %d %s", code, replay)
+	}
+
+	if _, err := s.db.Exec("UPDATE notifications SET snooze_until = ? WHERE id = ?", ms(time.Now().Add(-time.Second)), pending); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.wakeSnoozed(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := call(t, ts, "GET", "/api/v1/notifications/"+pending, admin, nil); code != 200 || out["state"] != Active {
+		t.Fatalf("delayed notification should have a fresh retention window: %d %v", code, out)
 	}
 }

@@ -47,7 +47,7 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
 
         /**
          * Android shows 3 buttons at most. The sender's replies come first (at most 3, until someone answers),
-         * then up to 2 sender links (http and https only) or device actions (http and broadcast, #449), then ours fill what is left in this order:
+         * then up to 2 sender links (http and https only) or device actions (copy, HTTP and broadcast), then ours fill what is left in this order:
          * Ack (unless acked already), Clear, Snooze.
          * A swipe still clears, so Clear is never the only way out. Pure, so it is unit tested on the JVM.
          */
@@ -58,7 +58,7 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
             val replies = if (fitsTray(n.message) && n.file?.isImage != true) replies(n) else emptyList()
             val links = objs.mapIndexedNotNull { i, o ->
                 val url = o.optString("url")
-                if (DeviceAction.isDevice(o)) return@mapIndexedNotNull TrayButton(o.optString("label"), if (o.optString("label").isBlank()) R.string.tray_open else 0, device = i)
+                if (DeviceAction.isDevice(o)) return@mapIndexedNotNull deviceButton(o, i)
                 // Web links only, and short: a huge URL would not fit through Binder and would crash the post.
                 if (url.length > 2048 || (!url.startsWith("https://", true) && !url.startsWith("http://", true))) null
                 // Android matches intent schemes case-sensitively, so HTTPS://x must become https://x
@@ -66,6 +66,16 @@ data class TrayButton(val label: String = "", val res: Int = 0, val url: String?
             }.take(minOf(2, 3 - replies.size))
             val ours = listOfNotNull(ACK.takeIf { n.state != Notif.ACKNOWLEDGED }, CLEAR, SNOOZE).take(3 - replies.size - links.size)
             return replies + links + listOf(ACK, SNOOZE, CLEAR).filter { it in ours } // ours keep their usual order
+        }
+
+        private fun deviceButton(o: JSONObject, index: Int): TrayButton {
+            val label = o.optString("label")
+            val fallback = if (DeviceAction.copyValue(o) != null) R.string.copy else R.string.tray_open
+            return TrayButton(label, if (label.isBlank()) fallback else 0, device = index)
+        }
+
+        fun copies(n: Notif): List<TrayButton> = if (n.isFinal) emptyList() else objs(n).mapIndexedNotNull { index, o ->
+            DeviceAction.copyValue(o)?.let { deviceButton(o, index) }
         }
 
         /** The sender's answer buttons, at most 3, until someone answers. The app card shows them too. */

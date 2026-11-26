@@ -576,7 +576,7 @@ private fun ServerHome(app: App, battery: Intent?, resumes: Int, scan: () -> Uni
                                         if (tab == Tab.Inbox) CardAction(snoozeFor, { app.act(n.id, "snooze", Snooze.body(snooze.default)) },
                                             moved = snooze.times.map { t -> stringResource(R.string.snooze_for, snoozeLabel(t)) to { app.act(n.id, "snooze", Snooze.body(t)) } }) { SnoozeButton(app, n.id) } else null,
                                         CardAction(clearLabel, { clear(n) }, strong = true),
-                                    ))
+                                    ), copyAccount = a)
                                 }
                             }
                             }
@@ -795,7 +795,10 @@ internal class CardAction(
  * go there first, so the last one (Clear) always shows whole, at any width or font size (#734).
  */
 @Composable
-internal fun Card(n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), actions: List<CardAction> = emptyList(), end: @Composable () -> Unit = {}) {
+internal fun Card(
+    n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), actions: List<CardAction> = emptyList(),
+    copyAccount: Account? = null, end: @Composable () -> Unit = {},
+) {
     val b = LocalBrand.current
     // Tap to read the whole message; tap again to fold it.
     var open by rememberSaveable(n.id) { mutableStateOf(false) }
@@ -845,6 +848,19 @@ internal fun Card(n: Notif, menu: List<Pair<String, () -> Unit>> = emptyList(), 
                     TextButton(onClick = { if (a.text) typing = true else App.of(ctx).act(n.id, "reply", org.json.JSONObject().put("reply", a.reply).put("seq", n.seq).toString()) }) { Text(a.label, color = b.ink) }
                 }
                 answers.firstOrNull { it.text }?.let { a -> if (typing) ReplyBox(n, a) { typing = false } }
+            }
+            // The topic reader shows a fetched snapshot and does not store its rows in Room.
+            if (copyAccount != null) {
+                val copies = TrayButton.copies(n)
+                val server = copyAccount.serverUrl
+                if (copies.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    copies.forEach { a ->
+                        val label = if (a.res != 0) stringResource(a.res) else a.label
+                        TextButton(onClick = { DeviceAction.run(ctx, copyAccount, n.id, a.device!!, n.seq, server, App.VIA_APP) {} }) {
+                            Text(label, color = b.ink)
+                        }
+                    }
+                }
             }
             // What was typed, as plain text: never Markdown (#153).
             if (n.replyText.isNotEmpty() && open) Text(stringResource(R.string.answered_text, n.replyText), color = b.body, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, end = 8.dp))

@@ -423,6 +423,46 @@ func TestNtfyFilters(t *testing.T) {
 	}
 }
 
+func TestNtfyCORSRetryAfter(t *testing.T) {
+	s, ts, admin := newTest(t)
+	s.topicLimit = newLimiter(1, time.Hour)
+	const origin = "https://ntfy.sh"
+	if code, m := call(t, ts, "PUT", "/api/v1/ntfy/origins", admin, map[string]any{"origins": []string{origin}}); code != 200 {
+		t.Fatalf("set origins: %d %v", code, m)
+	}
+	for _, c := range []struct {
+		origin string
+		status int
+	}{
+		{origin, 200},
+		{origin, 429},
+		{"https://elsewhere.example", 403},
+	} {
+		req, err := http.NewRequest("PUT", ts.URL+"/alerts", strings.NewReader("notice"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+admin)
+		req.Header.Set("Origin", c.origin)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != c.status {
+			t.Fatalf("%s: status %d, want %d", c.origin, res.StatusCode, c.status)
+		}
+		expose := res.Header.Get("Access-Control-Expose-Headers")
+		if c.status == 429 && (res.Header.Get("Retry-After") == "" || expose != "Retry-After" ||
+			res.Header.Get("Access-Control-Allow-Origin") != origin) {
+			t.Errorf("allowed origin cannot read the retry delay: %v", res.Header)
+		}
+		if c.status == 403 && (expose != "" || res.Header.Get("Access-Control-Allow-Origin") != "") {
+			t.Errorf("denied origin got CORS headers: %v", res.Header)
+		}
+	}
+}
+
 // A page on another site is refused on the ntfy routes (requests, preflight
 // and WebSocket) until an admin allows its origin; requests with no Origin
 // (phones, scripts) and clrd's own pages pass. The native API never answers

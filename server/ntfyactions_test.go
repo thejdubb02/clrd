@@ -25,6 +25,7 @@ func TestNtfyCopyActions(t *testing.T) {
 		clear                                  bool
 	}{
 		{"short", "/short", "x", "copy, Copy code, 123456", "Copy code", "123456", false},
+		{"quoted", "/quoted", "x", `copy, "label=Copy code", "url=https://example.com"`, "label=Copy code", "url=https://example.com", false},
 		{"named", "/named", "x", "copy, Copy code, value=' a,b ', clear=true", "Copy code", " a,b ", true},
 		{"json", "/", `{"topic":"json","message":"x","actions":[{"action":"copy","label":"Copy code","value":"123456","clear":false},{"action":"copy","label":"Empty"},{"action":"copy","label":"Big","value":"` + strings.Repeat("x", maxCopyText+1) + `"}]}`, "", "Copy code", "123456", false},
 	} {

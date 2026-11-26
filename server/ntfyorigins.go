@@ -63,6 +63,7 @@ func (s *Server) ntfyCORS(w http.ResponseWriter, r *http.Request) error {
 	default:
 		return errf(403, "forbidden", "requests from %s are not allowed: an admin can add it with PUT /api/v1/ntfy/origins", o)
 	}
+	h.Add("Access-Control-Expose-Headers", "Retry-After")
 	return nil
 }
 
