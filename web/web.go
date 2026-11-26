@@ -33,6 +33,7 @@ import (
 
 	"github.com/thejdubb02/clrd"
 	"github.com/thejdubb02/clrd/internal/gzfs"
+	"github.com/thejdubb02/clrd/internal/sounds"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
@@ -1435,6 +1436,18 @@ func Handler(api API, baseURL string) http.Handler {
 		statics.ServeHTTP(w, r)
 	})
 	mux.Handle("GET /assets/", cached("/assets/", assets))
+	// Sounds are rendered on request instead of embedded (#912); ServeContent
+	// answers Range requests, which Safari needs to play audio.
+	mux.HandleFunc("GET /assets/sounds/{file}", func(w http.ResponseWriter, r *http.Request) {
+		name, ok := strings.CutSuffix(r.PathValue("file"), ".wav")
+		b, found := sounds.WAV(name)
+		if !ok || !found {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		http.ServeContent(w, r, name+".wav", time.Time{}, bytes.NewReader(b))
+	})
 	// Card colors (#165): the CSP allows no inline styles, so each color on a
 	// page is a class from here, with the text color that reads on it.
 	mux.HandleFunc("GET /card-colors.css", func(w http.ResponseWriter, r *http.Request) {

@@ -441,9 +441,9 @@ means the same sound on a phone, the web inbox and a desktop:
 
 The six built-in sounds are `assets/sounds/<name>.wav` (16-bit mono PCM at
 8000 to 22050 Hz, the lowest rate that holds the sound's tones, under 40 KB
-each), served by the binary at `/assets/sounds/<name>.wav`. The
+each), rendered by the binary from the same code (`internal/sounds`, not embedded) and served at `/assets/sounds/<name>.wav`. The
 Android build packs the same files. They are generated from sine waves by
-`go run ./assets/sounds/_gen` (no samples, so they ship under Apache-2.0); to
+`go run ./internal/sounds/gen` (no samples, so they ship under Apache-2.0); to
 change a sound, change the generator and commit both. New names may be added;
 a name is never renamed or reused for a different sound. A client that gets a
 name it does not know plays `default`.
