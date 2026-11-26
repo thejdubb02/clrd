@@ -919,7 +919,7 @@ func (s Service) Snippet(b, topic, secret string) string {
 	case "ntfy":
 		return "curl -H \"Authorization: Bearer " + secret + "\" -d \"" + msg + "\" " + b + "/" + topic
 	case "gotify":
-		return "curl \"" + b + "/message?token=" + secret + "\" -F \"message=" + msg + "\""
+		return "curl -H \"X-Gotify-Key: " + secret + "\" " + b + "/message -F \"message=" + msg + "\"" // a header, so access logs keep no key
 	case "pushover":
 		return "curl " + b + "/1/messages.json --form-string \"token=" + secret + "\" \\\n  --form-string \"user=clrd\" --form-string \"message=" + msg + "\""
 	}

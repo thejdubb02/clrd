@@ -517,6 +517,34 @@ func TestAddService(t *testing.T) {
 	if count() != n-1 {
 		t.Error("Revoke it on the waiting page left the token")
 	}
+
+	// Gotify's key goes in a header, never the query string access logs keep.
+	_, page, _ = postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"gotify"}, "topic": {"dev"}})
+	gk := regexp.MustCompile(`<code data-secret>(clrd_[A-Za-z0-9]+)</code>`).FindStringSubmatch(page)
+	if gk == nil || !strings.Contains(page, `X-Gotify-Key: `+gk[1]) || strings.Contains(page, "token="+gk[1]) {
+		t.Fatal("the Gotify snippet does not send its key in X-Gotify-Key alone")
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/message", strings.NewReader(url.Values{"message": {"hi"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Gotify-Key", gk[1])
+	if code, out, _ := send(t, http.DefaultClient, req); code != 200 {
+		t.Errorf("Gotify publish with X-Gotify-Key: %d %s", code, out)
+	}
+
+	// A topic named like the Gotify route still takes its webhook as one.
+	_, page, _ = postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"github"}, "topic": {"message"}})
+	mk := regexp.MustCompile(`<code data-secret>(clrd_[A-Za-z0-9]+)</code>`).FindStringSubmatch(page)
+	if mk == nil {
+		t.Fatal("no secret for the topic message")
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/message?template=github&auth="+base64.RawURLEncoding.EncodeToString([]byte("Bearer "+mk[1])), strings.NewReader(string(body)))
+	req.Header.Set("X-GitHub-Event", "issues")
+	if code, out, _ := send(t, http.DefaultClient, req); code != 200 {
+		t.Fatalf("webhook to the topic message: %d %s", code, out)
+	}
+	if sd, err := s.Sender(ctx, mustTok(t, s, raw), mustTok(t, s, mk[1]).ID); err != nil || sd.Template != "github" {
+		t.Errorf("sender of the topic message %+v %v, want template github", sd, err)
+	}
 }
 
 // TestSenderRotateShownOnlyWhereItWorks (#830 review): for every kind of
