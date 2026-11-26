@@ -99,3 +99,34 @@ func TestLiveID(t *testing.T) {
 		t.Fatal("a stored id read as live")
 	}
 }
+
+func TestNtfyCacheOffValues(t *testing.T) {
+	s, ts, admin := newTest(t)
+	for _, tc := range []struct {
+		name, method, path, body string
+		headers                  map[string]string
+		live                     bool
+	}{
+		{"false header", "PUT", "/alerts", "live", map[string]string{"Cache": "FALSE"}, true},
+		{"zero header", "POST", "/alerts", "live", map[string]string{"X-Cache": "0"}, true},
+		{"prefixed query", "GET", "/alerts/publish?message=live&cache=yes&x-cache=0", "", nil, true},
+		{"json", "POST", "/", `{"topic":"alerts","message":"live","cache":"false"}`, nil, true},
+		{"json query fallback", "POST", "/?x-cache=false", `{"topic":"alerts","message":"live"}`, nil, true},
+		{"header wins", "POST", "/alerts?x-cache=0", "kept", map[string]string{"Cache": "true"}, false},
+		{"explicit json wins", "POST", "/", `{"topic":"alerts","message":"kept","cache":"true"}`, map[string]string{"Cache": "0"}, false},
+		{"unknown stays cached", "POST", "/alerts?cache=typo", "kept", nil, false},
+		{"default stays cached", "POST", "/alerts", "kept", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := s.CurrentSeq()
+			code, body := raw(t, tc.method, ts.URL+tc.path, admin, tc.body, tc.headers)
+			if code != 200 {
+				t.Fatalf("publish: %d %s", code, body)
+			}
+			m := ntfyDecode(t, body)
+			if strings.HasPrefix(m.ID, "l") != tc.live || (s.CurrentSeq() == before) != tc.live {
+				t.Fatalf("publish ID %q, seq %d -> %d, want live=%v", m.ID, before, s.CurrentSeq(), tc.live)
+			}
+		})
+	}
+}

@@ -378,6 +378,12 @@ func delayTime(v string, now time.Time) (time.Time, error) {
 
 var errNoCache = errf(400, "bad_request", "Cache: no is not supported with a webhook template")
 
+// Only explicit off values opt out of delivery to the inbox and replay.
+func ntfyCacheOff(v string) bool {
+	b := ntfyMarkdown(strings.TrimSpace(v))
+	return b != nil && !*b
+}
+
 func parseDuration(v string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(v, "d"); ok {
 		n, err := strconv.Atoi(days)
@@ -414,7 +420,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	}
 	tok := s.ntfyAuth(r)
 	s.noteIgnored(r)
-	live := strings.EqualFold(param(r, "Cache"), "no") // sent to open streams, stored nowhere (live.go)
+	live := ntfyCacheOff(param(r, "X-Cache", "Cache")) // sent to open streams, stored nowhere (live.go)
 	file := ntfyFilename(r)
 	if r.Method == http.MethodGet {
 		file = "" // GET /{topic}/publish has no body to be the file
@@ -655,11 +661,11 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.noteIgnored(r, unknown...)
 	if in.Cache == "" {
-		in.Cache = param(r, "Cache")
+		in.Cache = param(r, "X-Cache", "Cache")
 	}
 	p := PublishInput{Topic: in.Topic, Message: in.Message, Title: in.Title, Priority: in.Priority, Tags: in.Tags,
 		Click: in.Click, ExternalID: in.ExternalID, Status: in.Status, Markdown: in.Markdown,
-		Live: strings.EqualFold(in.Cache, "no"), dropDevice: true}
+		Live: ntfyCacheOff(in.Cache), dropDevice: true}
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
 	if icon == "" {
