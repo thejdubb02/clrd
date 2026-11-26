@@ -132,7 +132,7 @@ fn real_server() {
         [
             "show ghost quiet".to_string(),
             "close ghost".to_string(),
-            format!("show {c} alert")
+            format!("show {c} quiet")
         ]
     );
     assert!(third.engine.lock().unwrap().seq() < 999_999);

@@ -8,7 +8,8 @@ is not released yet: there is nothing to install from here today.
 - `core/`: the sync client, in Rust, with no window or GUI code. It follows
   `docs/SPEC.md` section 3: it reads the event stream over a WebSocket,
   replays from its last sequence number after a drop, and starts over from
-  the open list when the server sends `reset` or its epoch changes. The
+  the open list, shown quietly, when the server sends `reset` or its epoch
+  changes. The
   device token is sent only as an `Authorization` header, never in a URL.
 
   It also holds everything else that touches the OS or the server: system
