@@ -73,6 +73,8 @@ class Account(private val ctx: Context, val id: Int) {
         }
     }
 
+    private companion object { const val CONFIG_GEN = "config_gen" }
+
     /** Forgets the pick when account 0 is emptied; its file loses the keys in the same removal. */
     internal fun dropClientCert() {
         certPick = null to null
@@ -112,6 +114,12 @@ class Account(private val ctx: Context, val id: Int) {
     /** The Send box's send in flight, kept here so a rotation does not forget it (#523), and one per server (#78). */
     val sender by lazy { Sender { app.io.execute(it) } }
 
+    /** Typed answers this server refused, by notification id, so the reply box opens with them again (#153); per server, as ids are (#860). */
+    val drafts = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** Held while this server's queue is sent (#860): one sender per server, so another server's slow send never waits on it. */
+    internal val sendLock = Any()
+
     /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
     val clientCert by lazy { MutableStateFlow(prefs.getString("client_cert", null)) }
 
@@ -126,8 +134,11 @@ class Account(private val ctx: Context, val id: Int) {
      */
     val configLock = Any()
 
-    /** Bumped on every server or token switch. A store made before the bump is fenced off. */
-    @Volatile var configGen = 0
+    /**
+     * Bumped on every server or token switch. A store made before the bump is fenced off. Saved, as tray taps carry it
+     * (#860): one from before a new token at the same address is refused, after a restart too.
+     */
+    @Volatile var configGen = prefs.getInt(CONFIG_GEN, 0)
 
     private var sendNotBefore = 0L // System.nanoTime(); a busy server's Retry-After, touched only on [App.sends]
     private var sendNotBeforeGen = 0 // the settings it came from; another server is not busy
@@ -154,8 +165,8 @@ class Account(private val ctx: Context, val id: Int) {
      */
     fun saveSound(name: String): Boolean = synchronized(configLock) {
         val s = Sounds.known(name)
-        val dropped = tray.createChannels(s)
-        prefs.edit().putString("sound", s).commit()
+        // Under the phone-wide channel lock (#860): another server's change must not read the old sound while the new channels exist.
+        val dropped = synchronized(app) { tray.createChannels(s).also { prefs.edit().putString("sound", s).commit() } }
         soundNow.value = s
         RoomStore(app, this).reconcile()
         dropped
@@ -370,7 +381,8 @@ class Account(private val ctx: Context, val id: Int) {
             // Old server's rows, cursor and queue must not reach the new one. Blanking the token
             // and bumping configGen fence the old client (RoomStore.ifMine) and keeps the service from starting
             // one; a crash before the final save leaves the app unconfigured, never mixed.
-            synchronized(configLock) { configGen++; token = "" }
+            synchronized(configLock) { configGen++; prefs.edit().putInt(CONFIG_GEN, configGen).apply(); token = "" }
+            drafts.clear() // the old server's typed answers, keyed by its ids (#860)
             val old = sync
             sync = null
             old?.stop()
@@ -402,18 +414,18 @@ class Account(private val ctx: Context, val id: Int) {
 
     /**
      * A user action from the tray or the inbox; see [App.act]. Saved first, shown locally at once, then sent.
-     * One for a server that is no longer configured, or that waited across a Settings switch, is dropped.
+     * One for a server that is no longer configured, or that waited across a Settings switch, is dropped, and so is
+     * a tray tap whose [gen] (the sign-in it was posted for) is not this one.
      */
     internal fun actAll(
         ids: List<String>, action: String, rawBody: String, server: String?, via: String,
-        expectedSeq: Long? = null, done: () -> Unit,
+        expectedSeq: Long? = null, gen: Int = configGen, done: () -> Unit,
     ) {
         val json = JSONObject(rawBody)
         val until = if (action == "snooze" || action == "reopen") snoozeEnd(json) else null
         // #508: a snooze sent late (offline) ends when this phone and its Undo say; see snoozeWire
         if (action == "snooze" && until != null) json.put(ENDS, until)
         val body = json.put("via", via).toString()
-        val gen = configGen // read now, not when the save runs
         app.acts.execute {
             try {
                 val local = when (action) {

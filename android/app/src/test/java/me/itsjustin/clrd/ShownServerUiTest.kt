@@ -142,6 +142,26 @@ class ShownServerUiTest {
         }
     }
 
+    /** A server whose token was cleared stays in the Servers list (#860), so either one can still be opened. */
+    @Test fun aServerWithItsTokenClearedStaysListed() {
+        bg { b.saveServer("https://b.example", "") }
+        rule.setContent { SettingsScreen(app, null, 0) {} }
+        assertEquals(2, rule.onAllNodesWithText(s(R.string.server_remove)).fetchSemanticsNodes().size)
+    }
+
+    /** Settings will not move a server to an address another server on this phone already uses (#860). */
+    @Test fun settingsRefusesAnAddressAnotherServerUses() {
+        val was = app.account.serverUrl
+        rule.setContent { SettingsScreen(app, null, 0) {} }
+        rule.onAllNodesWithText(s(R.string.server_url))[0].performScrollTo().performTextReplacement("https://b.example")
+        rule.onAllNodesWithText(s(R.string.save_and_test))[0].performScrollTo().performClick()
+        drain()
+        rule.waitForIdle()
+        assertEquals(was, app.account.serverUrl)
+        assertEquals("ta", app.account.token)
+        rule.onNodeWithText(app.getString(R.string.server_already, "https://b.example")).assertExists()
+    }
+
     /** A send still going on one server leaves the other server's Send box free. */
     @Test fun eachServerHasItsOwnSendBox() {
         val gate = CountDownLatch(1)
