@@ -125,6 +125,9 @@ offline catches up the moment it reconnects.
   six built-in notification sounds (or the phone's default, or none), kept
   on the server so an agent can set it. Trusts
   certificate authorities you install, for a server on a home-lab CA.
+  Settings, About shows the app's and the server's version side by side and
+  What's new (from the server, or the app's own copy offline), with a
+  dismissible note after the app updates.
 - **Add devices by QR code.** Sign a new browser in by scanning its code with
   the app, or link a phone from Settings in a signed-in browser. Both screens
   show the same 4-digit number, so no token is typed or copied.
