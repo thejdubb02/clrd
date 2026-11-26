@@ -1188,7 +1188,10 @@ and `initialize` reports `version` as `serverInfo.version`.
   file and the message comes from `X-Message`/`Message`/`m`, default "You
   received a file: <name>"), `X-Markdown`/`Markdown`/`md` (`no`/`false`/`0` publishes
   plain text, section 2.1), `X-Email` (ignored, documented),
-  plus clrd's own `X-Id` = `external_id`. `X-Template`/`Template`/`tpl` set
+  plus clrd's own `X-Id` = `external_id`. Any of these headers may carry
+  RFC 2047 encoded words (`=?UTF-8?B?...?=`, `=?UTF-8?Q?...?=`), decoded as
+  ntfy does; a value that cannot be decoded is kept as sent. Query values
+  are taken as they are. `X-Template`/`Template`/`tpl` set
   to yes/true/1 makes the message, title and priority Go templates over the
   JSON body, as in ntfy (any other `?template=` value is a webhook template,
   below). A body over 4096 bytes without a file
