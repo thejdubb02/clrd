@@ -1221,7 +1221,8 @@ and `initialize` reports `version` as `serverInfo.version`.
   plus clrd's own `X-Id` = `external_id`. Any of these headers may carry
   RFC 2047 encoded words (`=?UTF-8?B?...?=`, `=?UTF-8?Q?...?=`), decoded as
   ntfy does; a value that cannot be decoded is kept as sent. Query values
-  are taken as they are. `X-Template`/`Template`/`tpl` set
+  are taken as they are. The title, priority and tags also accept the URL
+  names `x-title`, `x-priority` and `x-tags`. `X-Template`/`Template`/`tpl` set
   to yes/true/1 makes the message, title and priority Go templates over the
   JSON body. Other selectors on a JSON POST or PUT can load `name.yml`
   from `CLRD_NTFY_TEMPLATE_DIR` (unset disables disk lookup). Existing saved

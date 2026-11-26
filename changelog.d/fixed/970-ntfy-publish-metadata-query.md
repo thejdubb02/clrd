@@ -1,0 +1,1 @@
+- Honor `x-title`, `x-priority` and `x-tags` in ntfy publish URLs.

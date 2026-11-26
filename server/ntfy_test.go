@@ -931,3 +931,29 @@ func TestNtfyPrefixedDelayQuery(t *testing.T) {
 		}
 	}
 }
+
+func TestNtfyPrefixedPublishMetadataQuery(t *testing.T) {
+	_, ts, admin := newTest(t)
+	const query = "?m=ready&x-title=Backup&x-priority=high&x-tags=backup,daily&title=ignored&priority=low&tags=ignored"
+	for _, tc := range []struct {
+		name, method, path, body string
+		headers                  map[string]string
+		title                    string
+		priority                 int
+		tags                     []string
+	}{
+		{"GET publish", "GET", "/alerts/publish", "", nil, "Backup", 4, []string{"backup", "daily"}},
+		{"JSON fallback", "POST", "/", `{"topic":"alerts"}`, nil, "Backup", 4, []string{"backup", "daily"}},
+		{"headers win", "POST", "/alerts", "ready",
+			map[string]string{"Title": "Header", "Prio": "max", "Tag": "header"}, "Header", 5, []string{"header"}},
+		{"JSON wins", "POST", "/", `{"topic":"alerts","title":"JSON","priority":1,"tags":[]}`,
+			nil, "JSON", 1, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, out := raw(t, tc.method, ts.URL+tc.path+query, admin, tc.body, tc.headers)
+			if m := ntfyDecode(t, out); code != 200 || m.Title != tc.title || m.Priority != tc.priority || !slices.Equal(m.Tags, tc.tags) {
+				t.Fatalf("publish: %d %s, want title %q, priority %d and tags %v", code, out, tc.title, tc.priority, tc.tags)
+			}
+		})
+	}
+}
