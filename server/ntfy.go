@@ -10,12 +10,14 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 )
@@ -275,6 +277,23 @@ func parseDuration(v string) (time.Duration, error) {
 	return time.ParseDuration(v)
 }
 
+// ntfyImplicitUpload reports publishes whose bodies may be detected as files.
+func (s *Server) ntfyImplicitUpload(r *http.Request) bool {
+	if !s.opt.NtfyImplicitUploads || (r.Method != http.MethodPost && r.Method != http.MethodPut) ||
+		ntfyFilename(r) != "" || param(r, "Template", "Tpl") != "" || r.URL.Query().Get("template") != "" ||
+		ntfyIcon(param(r, "Attach", "A")) != "" {
+		return false
+	}
+	_, pattern := s.mux.Handler(r)
+	switch pattern {
+	case "PUT /{topic}", "PUT /{topic}/{sid}", "POST /{topic}", "POST /{topic}/{sid}":
+		return true
+	case "POST /message":
+		return !hasGotifyKey(r)
+	}
+	return false
+}
+
 // ntfyPublish: PUT/POST /{topic}[/{sid}] with the body as the message, or
 // GET /{topic}/publish with everything in the query. Never the cookie.
 func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
@@ -302,15 +321,25 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		in.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
 	}
 	title, prio := param(r, "Title", "Ti", "T"), param(r, "Priority", "Prio", "P")
+	payload := io.Reader(r.Body)
 	if file == "" {
 		body, err := io.ReadAll(io.LimitReader(r.Body, ntfyMaxBody+1))
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return errf(408, "timeout", "request body too slow")
+		}
 		if err != nil {
-			return err
+			return errf(400, "bad_request", "cannot read request body")
 		}
-		if len(body) > ntfyMaxBody {
-			return errf(413, "too_large", "message longer than %d bytes (send a file with X-Filename)", ntfyMaxBody)
+		if candidate, ok := r.Body.(*implicitUploadBody); ok && (len(body) > ntfyMaxBody || !utf8.Valid(body)) {
+			file = "attachment"
+			payload = io.MultiReader(bytes.NewReader(body), r.Body)
+			http.NewResponseController(w).SetReadDeadline(candidate.deadline)
+		} else {
+			if len(body) > ntfyMaxBody {
+				return errf(413, "too_large", "message longer than %d bytes (send a file with X-Filename)", ntfyMaxBody)
+			}
+			in.Message = strings.TrimSpace(string(body))
 		}
-		in.Message = strings.TrimSpace(string(body))
 		if tpl {
 			msg := param(r, "Message", "M")
 			if err := ntfyTemplate(r, body, &msg, &title, &prio); err != nil {
@@ -343,7 +372,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	}
 	in.Status = param(r, "Status")
 	if file != "" {
-		n, err := s.PublishFile(r.Context(), tok, in, file, r.Body)
+		n, err := s.PublishFile(r.Context(), tok, in, file, payload)
 		if err != nil {
 			return err
 		}

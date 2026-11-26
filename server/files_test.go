@@ -308,3 +308,75 @@ func TestSlowUploadOutlivesBodyDeadline(t *testing.T) {
 }
 
 func hasKey(m map[string]any, k string) bool { _, ok := m[k]; return ok }
+
+func TestNtfyImplicitUploads(t *testing.T) {
+	s, ts, admin := newTest(t)
+	big := "<html>" + strings.Repeat("x", maxBody)
+	if code, _ := raw(t, "PUT", ts.URL+"/alerts/k", admin, big, nil); code != 413 {
+		t.Fatalf("implicit uploads were enabled by default: %d", code)
+	}
+	t.Setenv("CLRD_NTFY_IMPLICIT_UPLOADS", "on")
+	options, err := ConfigFromEnv()
+	if err != nil || !options.NtfyImplicitUploads {
+		t.Fatalf("implicit uploads option: %v", err)
+	}
+	s.opt.NtfyImplicitUploads = options.NtfyImplicitUploads
+
+	for _, c := range []struct{ path, body, contentType string }{
+		{"/alerts/k", big, "application/octet-stream"},
+		{"/message", string(pngBytes), "image/png"},
+	} {
+		code, out := raw(t, "POST", ts.URL+c.path, admin, c.body, nil)
+		if code != 200 {
+			t.Fatalf("implicit upload: %d %s", code, out)
+		}
+		m := ntfyDecode(t, out)
+		if m.Attachment == nil || m.Attachment.Name != "attachment" ||
+			m.Attachment.Size != int64(len(c.body)) || m.Message != "You received a file: attachment" {
+			t.Fatalf("implicit attachment: %s", out)
+		}
+		u, err := url.Parse(m.Attachment.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, body := download(t, ts, u.Path, admin)
+		if res.StatusCode != 200 || string(body) != c.body || res.Header.Get("Content-Type") != c.contentType {
+			t.Fatalf("implicit download: %d %v", res.StatusCode, res.Header)
+		}
+	}
+	code, out := raw(t, "POST", ts.URL+"/alerts", admin, strings.Repeat("x", ntfyMaxBody), nil)
+	if code != 200 || ntfyDecode(t, out).Attachment != nil {
+		t.Fatalf("short text became a file: %d", code)
+	}
+	for _, h := range []map[string]string{
+		{"X-Template": "yes"},
+		{"X-Attach": "https://example.com/file"},
+	} {
+		if code, _ := raw(t, "POST", ts.URL+"/alerts", admin, strings.Repeat("x", ntfyMaxBody+1), h); code != 413 {
+			t.Fatalf("text-only publish was inferred as a file: %d %v", code, h)
+		}
+	}
+}
+
+func TestNtfyImplicitUploadsKeepLimits(t *testing.T) {
+	s, ts, admin := newTest(t)
+	s.opt.NtfyImplicitUploads = true
+	s.opt.AttachmentMax = int64(len(pngBytes) - 1)
+	url := ts.URL + "/alerts"
+	for _, c := range []struct {
+		token string
+		want  int
+	}{{"", 401}, {mkToken(t, s, "other", []string{ScopePublish}, []string{"other"}), 403}, {admin, 413}} {
+		if code, out := raw(t, "PUT", url, c.token, string(pngBytes), nil); code != c.want {
+			t.Errorf("implicit upload status %d, want %d: %s", code, c.want, out)
+		}
+	}
+	s.opt.AttachmentMax = int64(len(pngBytes))
+	s.opt.AttachmentTotal = s.opt.AttachmentMax - 1
+	if code, out := raw(t, "PUT", url, admin, string(pngBytes), nil); code != 507 {
+		t.Errorf("implicit upload exceeded total quota: %d %s", code, out)
+	}
+	if f := files(t, s); len(f) != 0 {
+		t.Fatalf("refused implicit uploads left files: %v", f)
+	}
+}
