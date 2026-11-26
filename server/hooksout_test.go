@@ -488,6 +488,32 @@ func TestHooksOutRetryAfter(t *testing.T) {
 	}
 }
 
+// A delivery queued for one destination never goes to another (#871).
+func TestHooksOutURLChangeDropsPending(t *testing.T) {
+	s, ts, admin := newTest(t)
+	path := "/api/v1/topics/ops/hooks/h"
+	pending := func() (n int) {
+		s.db.QueryRow(`SELECT count(*) FROM hook_deliveries WHERE topic = 'ops' AND name = 'h'`).Scan(&n)
+		return
+	}
+	save := func(url string) {
+		t.Helper()
+		if code, h := call(t, ts, "PUT", path, admin, map[string]any{"url": url}); code != 200 {
+			t.Fatalf("save %s: %d %v", url, code, h)
+		}
+	}
+	save("https://a.example/hook")
+	s.db.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at) VALUES ('ops', 'h', 1, 'posted', '{}', 0, 0)`)
+	save("https://a.example/hook")
+	if n := pending(); n != 1 {
+		t.Fatalf("same url dropped the pending delivery: %d", n)
+	}
+	save("https://b.example/hook")
+	if n := pending(); n != 0 {
+		t.Fatalf("%d deliveries still queued for the old url", n)
+	}
+}
+
 func TestHooksOutDiscord(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()
