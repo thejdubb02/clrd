@@ -1,0 +1,1 @@
+- ntfy subscriptions accept the poll and since headers and short aliases, so clients using them get the requested cached messages and polling closes the stream.

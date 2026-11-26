@@ -216,7 +216,11 @@ func param(r *http.Request, names ...string) string {
 		if n == "Priority" && (strings.Contains(h, "u=") || h == "i") {
 			h = "" // browsers send RFC 9218 "Priority: u=3, i" on HTTP/2 and 3; not ours
 		}
-		for _, v := range []string{r.Header.Get("X-" + n), h} {
+		var prefixed string
+		if !strings.HasPrefix(n, "X-") {
+			prefixed = r.Header.Get("X-" + n)
+		}
+		for _, v := range []string{prefixed, h} {
 			if v != "" {
 				if d, err := new(mime.WordDecoder).DecodeHeader(v); err == nil {
 					return d
@@ -824,9 +828,9 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				return err
 			}
 		}
-		q := r.URL.Query()
-		poll := q.Get("poll") == "1" || q.Get("poll") == "true"
-		sinceArg := q.Get("since")
+		pollParam := ntfyMarkdown(strings.TrimSpace(param(r, "X-Poll", "Poll", "Po")))
+		poll := pollParam != nil && *pollParam
+		sinceArg := strings.TrimSpace(param(r, "X-Since", "Since", "Si"))
 		if sinceArg == "" && poll {
 			sinceArg = "all"
 		}

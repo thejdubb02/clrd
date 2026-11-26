@@ -802,3 +802,53 @@ func TestNtfyReplayTopicRanges(t *testing.T) {
 	}
 	check(3, 4)
 }
+
+func TestNtfySubscribeReplayAliases(t *testing.T) {
+	_, ts, admin := newTest(t)
+	for _, msg := range []string{"first", "second"} {
+		if code, out := raw(t, "POST", ts.URL+"/alerts", admin, msg, nil); code != 200 {
+			t.Fatalf("publish %q: %d %s", msg, code, out)
+		}
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, tc := range []struct {
+		name, query string
+		headers     map[string]string
+		want        []string
+	}{
+		{"headers beat query", "?poll=no&since=none", map[string]string{"X-Poll": "YES", "X-Since": "latest"}, []string{"second"}},
+		{"short query aliases", "?po=yes&si=latest", nil, []string{"second"}},
+		{"prefixed query aliases", "?x-poll=1&x-since=latest", nil, []string{"second"}},
+		{"canonical yes", "?poll=yes&since=latest", nil, []string{"second"}},
+		{"poll defaults to all", "", map[string]string{"X-Poll": "1"}, []string{"first", "second"}},
+		{"header since none", "?poll=1", map[string]string{"X-Since": "none"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", ts.URL+"/alerts/json"+tc.query, nil)
+			req.SetBasicAuth("", admin)
+			for key, value := range tc.headers {
+				req.Header.Set(key, value)
+			}
+			res, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			if res.StatusCode != 200 {
+				t.Fatalf("status %d", res.StatusCode)
+			}
+			sc := bufio.NewScanner(res.Body)
+			for _, want := range tc.want {
+				if !sc.Scan() {
+					t.Fatalf("missing message %q: %v", want, sc.Err())
+				}
+				if m := ntfyDecode(t, sc.Text()); m.Event != "message" || m.Message != want {
+					t.Fatalf("got %+v, want message %q", m, want)
+				}
+			}
+			if sc.Scan() || sc.Err() != nil {
+				t.Fatalf("poll did not end after replay: %q, %v", sc.Text(), sc.Err())
+			}
+		})
+	}
+}
