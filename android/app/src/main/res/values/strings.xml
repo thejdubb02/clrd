@@ -249,6 +249,23 @@
         <item quantity="other">%1$d notifications</item>
     </plurals>
     <string name="about">clrd %1$s. No tracking, no Google services.</string>
+    <string name="section_about">About</string>
+    <string name="about_title">Version</string>
+    <string name="about_explain">This app\'s version and the server\'s, and what changed in each version</string>
+    <string name="about_app">This app: clrd %1$s</string>
+    <string name="about_server">Server: clrd %1$s</string>
+    <string name="about_server_loading">Server: checking</string>
+    <string name="about_server_unreached">Server: not reached</string>
+    <string name="about_server_newer">The server runs a newer version than this app.</string>
+    <string name="about_app_newer">This app is newer than the server.</string>
+    <string name="about_differ">This app and the server run different versions.</string>
+    <string name="whats_new">What\'s new</string>
+    <string name="whats_new_note">Show What\'s new after an update</string>
+    <string name="whats_new_offline">The server could not be reached, so this is the copy built into the app.</string>
+    <string name="whats_new_unreleased">Not in a version yet</string>
+    <string name="whats_new_all">Every version, older ones too</string>
+    <string name="updated_to">Updated to clrd %1$s</string>
+    <string name="dismiss">Dismiss</string>
 
     <!-- Android notification channels (shown in the system notification settings) -->
     <string name="channel_p1">Min priority</string>
