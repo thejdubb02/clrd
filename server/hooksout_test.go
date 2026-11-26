@@ -1012,6 +1012,9 @@ func TestHooksOutSlack(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT remote_id FROM hook_posts WHERE name = 'slack' AND id = ?`, a["id"]).Scan(&remote); err != nil || remote != "C999/123.456" {
 		t.Fatalf("kept post: %q, %v", remote, err)
 	}
+	// Only the channel matters: a save that changes anything else in the URL
+	// keeps the message ids, so the dismiss below still edits the post (#870).
+	save("C0123&unused=1")
 	api("POST", "/api/v1/notifications/"+a["id"].(string)+"/dismiss", nil)
 	deliver()
 	got := checkHits("chat.postMessage", "chat.update", "reactions.add")
