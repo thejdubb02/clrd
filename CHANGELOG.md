@@ -19,6 +19,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Added
 
 - Slack outgoing hooks post notifications, edit them on state changes, and add acknowledgment and clear reactions (#166)
+- ntfy publish: headers carrying RFC 2047 encoded words (for example `Title: =?UTF-8?B?...?=`, as ntfy clients send non-ASCII text) are decoded, the same as on ntfy (#842).
 
 - Desktop: the tray's About menu always has What's new (the server's history, or the project's when this computer is not linked), says plainly when this app is older or newer than the server, and reads "What's new in" the version for the first start after an update until it is opened (#580).
 - Web: Add a service on the Senders page. Pick a service (GitHub, Grafana, Sentry and the other webhook templates, or curl, ntfy, Gotify, Pushover), name it and pick a topic; clrd makes a token that can only publish to that topic and shows it once with a ready-to-paste URL or command and the service's guide, then says connected when its first message arrives (#119).
