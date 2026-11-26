@@ -12,9 +12,9 @@ package mcp
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,12 +28,6 @@ import (
 // MaxWait caps wait_for_reply. Keep it under the server's WriteTimeout and any
 // proxy idle timeout in front of it.
 var MaxWait = 600 * time.Second
-
-// tools is the tools/list answer, kept as JSON so it costs no init code
-// (#683). Edit tools.json by hand; TestInitializeAndList checks the names.
-//
-//go:embed tools.json
-var tools []byte
 
 // viaMCP marks a state change an agent made, so the log tells it from a person's tap.
 var viaMCP = map[string]any{"via": "mcp"}
@@ -134,6 +128,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "ping":
 		writeRPC(w, req.ID, map[string]any{}, nil)
 	case "tools/list":
+		tools, _ := fs.ReadFile(toolsFS, "tools.json") // embedded: cannot fail
 		writeRPC(w, req.ID, map[string]any{"tools": json.RawMessage(tools)}, nil)
 	case "tools/call":
 		var p struct {
@@ -619,6 +614,8 @@ var restTools = map[string]struct {
 	"tokens":              {"GET", "/api/v1/tokens", false},
 	"create_token":        {"POST", "/api/v1/tokens", false},
 	"revoke_token":        {"DELETE", "/api/v1/tokens/{id}", false},
+	"rename_token":        {"PUT", "/api/v1/tokens/{id}", false},
+	"rotate_token":        {"POST", "/api/v1/tokens/{id}/rotate", false},
 	"create_agent_invite": {"POST", "/api/v1/agents/invite", false},
 	"users":               {"GET", "/api/v1/users", false},
 	"create_user":         {"POST", "/api/v1/users", false},

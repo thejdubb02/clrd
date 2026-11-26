@@ -403,6 +403,7 @@ type Sender struct {
 	Rules     SenderRules    `json:"rules"`
 	Changes   []SenderChange `json:"-"` // its rule changes, newest first: its own page only
 	ID        string         `json:"id"`
+	TokenID   string         `json:"token_id"` // "" for anonymous: no rename, rotate or revoke
 	Name      string         `json:"name"`
 	Kind      string         `json:"kind"`
 	Template  string         `json:"template"`
@@ -414,6 +415,7 @@ type Sender struct {
 	Topics    map[string]int `json:"topics"`
 	Recent    []Notification `json:"recent"`
 	Form      *RulesForm     `json:"-"` // a refused save, shown again
+	Secret    string         `json:"-"` // its new secret, on the page a rotate draws only
 }
 
 // KindLabel names the kind for people.
@@ -445,6 +447,9 @@ type RulesForm struct {
 }
 
 type rulesFormKey struct{}
+
+// secretKey carries a rotated token's new secret to the page it is shown on.
+type secretKey struct{}
 
 // oneKey carries the snapshot of the one notification /app/n/{id} shows (#822).
 type oneKey struct{}
@@ -861,6 +866,11 @@ type API interface {
 	// the form was drawn from; a newer change refuses the save (#543).
 	SetSenderRules(r *http.Request, id string, rules SenderRules, base int64) error
 	UndoSenderChange(r *http.Request, id string, seq int64) error
+	// RenameToken, RotateToken (the new secret, shown once) and RevokeToken
+	// manage a sender's token from its page (#119).
+	RenameToken(r *http.Request, id, name string) error
+	RotateToken(r *http.Request, id string) (string, error)
+	RevokeToken(r *http.Request, id string) error
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
@@ -1448,6 +1458,9 @@ func Handler(api API, baseURL string) http.Handler {
 			if fm, ok := r.Context().Value(rulesFormKey{}).(*RulesForm); ok && snap.Sender != nil && status == 200 {
 				snap.Sender.Form, status = fm, http.StatusBadRequest
 			}
+			if sec, ok := r.Context().Value(secretKey{}).(string); ok && snap.Sender != nil {
+				snap.Sender.Secret = sec
+			}
 			// A new tip on each visit; the send-a-test tip while nothing has ever arrived.
 			ts, tip := tips(base(r), q.Topic, snap.Topics), 0
 			if c["active"]+c["acknowledged"]+c["snoozed"]+c["dismissed"]+c["resolved"] > 0 {
@@ -1503,7 +1516,8 @@ func Handler(api API, baseURL string) http.Handler {
 		app(view)(w, r.WithContext(context.WithValue(r.Context(), oneKey{}, &snap)))
 	})
 	// A sender's rules (#119): save them all, or undo one change, as a plain
-	// form post. The server checks the full admin.
+	// form post; or rename, rotate or revoke its token, whose id is the
+	// sender's own. The server checks the full admin.
 	mux.HandleFunc("POST /app/senders/{id}", func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 		if err := r.ParseForm(); err != nil {
@@ -1516,6 +1530,19 @@ func Handler(api API, baseURL string) http.Handler {
 			seq, perr := strconv.ParseInt(u, 10, 64)
 			if err = perr; err == nil {
 				err = api.UndoSenderChange(r, id, seq)
+			}
+		} else if f.Has("token_name") {
+			err = api.RenameToken(r, id, f.Get("token_name"))
+		} else if f.Has("rotate") {
+			var secret string
+			if secret, err = api.RotateToken(r, id); err == nil { // shown on this page, never in a URL
+				app("sender")(w, r.WithContext(context.WithValue(r.Context(), secretKey{}, secret)))
+				return
+			}
+		} else if f.Has("revoke") {
+			if err = api.RevokeToken(r, id); err == nil { // the sender went with it
+				http.Redirect(w, r, "/app/senders", http.StatusSeeOther)
+				return
 			}
 		} else if !f.Has("priority_min") || !f.Has("priority_max") || !f.Has("base_seq") {
 			// Not the rules form: never read a missing field as "clear it".

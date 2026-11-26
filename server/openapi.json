@@ -2406,7 +2406,37 @@
     }
    }
   },
+  "/api/v1/tokens/{id}/rotate": {
+   "post": {
+    "summary": "Give a token a new secret, returned once as token",
+    "description": "Admin with no topic limit. Same id, so sender rules, history and grants stay. The old secret stops at once and the browsers and phones signed in with it are revoked. Typed-in tokens only: a Gotify or Pushover key, an ntfy user's token, a browser or phone and a CLRD_CONFIG token get 409.",
+    "tags": ["auth"],
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object", "properties": {"id": {"type": "string"}, "token": {"type": "string"}}}}}},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"},
+     "409": {"$ref": "#/components/responses/Error"}
+    }
+   }
+  },
   "/api/v1/tokens/{id}": {
+   "put": {
+    "summary": "Rename a token",
+    "description": "Admin with no topic limit. Empty name is 400; a CLRD_CONFIG token gets 409 (it is named in that file).",
+    "tags": ["auth"],
+    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}}}}},
+    "responses": {
+     "200": {"description": "OK", "content": {"application/json": {"schema": {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}}}}}},
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"},
+     "404": {"$ref": "#/components/responses/Error"},
+     "409": {"$ref": "#/components/responses/Error"}
+    }
+   },
    "delete": {
     "summary": "Revoke a token (open streams close at once)",
     "tags": [

@@ -18,6 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Rename, rotate and revoke a sender's token from its page in the web inbox, over the API (`PUT /api/v1/tokens/{id}`, `POST /api/v1/tokens/{id}/rotate`) or from an agent (`rename_token`, `rotate_token`). A rotated token keeps its id, rules and history; the old secret and the browsers signed in with it stop at once (#119).
 - Android: Settings, Display, Formatting and links has the four switches the web inbox has (Markdown, web addresses as links, site icons, link previews). With link previews on, an opened message shows a card with the page title, summary and image, fetched by your server, and each topic's preview choice from the web is followed (#107).
 - Android: a "Swipe clears everywhere" setting, off by default. With it on, swiping one notification out of the shade clears it on every device; swiping a group away or Clear all on several still only hides them on the phone (#271).
 - Android: Settings, Devices has a "Clears everywhere" switch for this phone. Turn it off and clearing a notification on the phone hides it there only. Only an allowed device can change it; a phone that is not allowed is told so beside the switch (#767).

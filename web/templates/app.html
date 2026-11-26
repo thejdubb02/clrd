@@ -516,7 +516,7 @@
             <div><button class="btn" data-variant="outline">Save webhook</button></div>
           </form>
         </details>
-        <form method="post" action="{{base}}/app/hooks" data-hook-delete="{{.Name}}">
+        <form method="post" action="{{base}}/app/hooks" data-confirm="Delete the webhook {{.Name}} and its delivery log?">
           <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
           <button class="btn" data-variant="outline" data-size="sm" name="delete" value="1">Delete</button>
         </form>
@@ -550,7 +550,7 @@
             <div><button class="btn" data-variant="outline">Save template</button></div>
           </form>
         </details>
-        <form method="post" action="{{base}}/app/templates" data-template-delete="{{.Name}}">
+        <form method="post" action="{{base}}/app/templates" data-confirm="Delete the template {{.Name}}?">
           <input type="hidden" name="topic" value="{{.Topic}}"><input type="hidden" name="name" value="{{.Name}}">
           <button class="btn" data-variant="outline" data-size="sm" name="delete" value="1">Delete</button>
         </form>
@@ -754,6 +754,20 @@
   {{else}}<p class="text-body text-sm">No sender with that id. <a class="underline" href="{{base}}/app/senders">See every sender</a>.</p>{{end}}
 </div>
 {{if and .Snap.CanSenders .Snap.Sender}}{{with .Snap.Sender}}{{/* outside data-live: a live refresh must not undo a half-filled form */}}
+{{if .TokenID}}<section class="mt-6 grid max-w-2xl gap-3" aria-labelledby="token-h">
+  <h2 id="token-h" class="text-base font-semibold">Token</h2>
+  {{with .Secret}}<div class="bg-card grid gap-2 rounded-xl border p-4" role="status"><p class="text-body text-sm/relaxed">The new secret, shown this once: copy it now. The old one no longer works.</p>
+    <pre tabindex="0" class="bg-muted/50 w-full border-transparent text-start whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-secret>{{.}}</code></pre>
+    <div class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="ghost" data-size="sm" data-secret-copy>{{template "i-copy"}}Copy</button></div></div>{{end}}
+  <form class="bg-card grid gap-4 rounded-xl border p-4" method="post" action="{{base}}/app/senders/{{.ID}}">
+    <div class="field"><label for="t-name">Name</label><input id="t-name" name="token_name" type="text" autocomplete="off" required value="{{.Name}}"></div>
+    <div><button class="btn" data-variant="outline">Rename</button></div>
+  </form>
+  <div class="flex flex-wrap gap-2">
+    {{if eq .Kind "token" "person"}}<form method="post" action="{{base}}/app/senders/{{.ID}}" data-confirm="Give {{.Name}} a new secret? The old one stops at once, and browsers and phones signed in with it are signed out."><button class="btn" data-variant="outline" name="rotate" value="1">Rotate secret</button></form>{{end}}
+    <form method="post" action="{{base}}/app/senders/{{.ID}}" data-confirm="Revoke {{.Name}}? It can no longer send, and this sender, its rules and its log go too."><button class="btn" data-variant="destructive" name="revoke" value="1">Revoke</button></form>
+  </div>
+</section>{{end}}
 <section class="mt-6 grid max-w-2xl gap-3" aria-labelledby="rules-h" data-rules>
   <h2 id="rules-h" class="text-base font-semibold">Rules</h2>
   <p class="text-body text-sm/relaxed">Off until you set one. They apply to everything this sender publishes from now on.</p>

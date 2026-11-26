@@ -1102,6 +1102,43 @@
   "name": "revoke_token"
  },
  {
+  "description": "Rename an API token by its id from tokens (a sender's token_id). Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Token id",
+     "type": "string"
+    },
+    "name": {
+     "description": "New name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "name"
+   ],
+   "type": "object"
+  },
+  "name": "rename_token"
+ },
+ {
+  "description": "Give an API token a new secret, in the result once as token. Same id, so its sender rules, history and grants stay. The old secret stops at once, and browsers and phones signed in with it are signed out. Typed-in tokens only. Needs an admin token.",
+  "inputSchema": {
+   "properties": {
+    "id": {
+     "description": "Token id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "name": "rotate_token"
+ },
+ {
   "description": "Invite an agent: one short single-use string it claims to get its own user and token, held to these topics (read and publish) and denied for approval requests. Returns invite (clrd://agent?...) and url (https form; a GET gives the agent a plain-text guide). Hand either to the agent, privately: whoever claims it first gets the access. Needs an admin token.",
   "inputSchema": {
    "properties": {

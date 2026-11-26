@@ -159,7 +159,7 @@ func TestInitializeAndList(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "send,list,topics,counts,format_check,format_dismiss,settings,get,update,mark,ack,resolve,snooze,wait_for_reply,devices,device_log,unlink,sound,subscriptions,request_approve,"+
 		"dismiss,reopen,clear,silences,silence,end_silence,set_topic,templates,set_template,delete_template,preview_template,"+
-		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,version,ntfy_ignored,senders,stats,sender,set_sender,sender_changes,undo_sender_change" {
+		"hooks,set_hook,preview_hook,hook_allow,set_hook_allow,delete_hook,hook_deliveries,tokens,create_token,revoke_token,rename_token,rotate_token,create_agent_invite,users,create_user,set_user_grants,delete_user,set_token_user,create_gotify_app,create_pushover_app,ntfy_anonymous,set_ntfy_anonymous,ntfy_origins,set_ntfy_origins,server_env,version,ntfy_ignored,senders,stats,sender,set_sender,sender_changes,undo_sender_change" {
 		t.Fatalf("tools: %v", names)
 	}
 	send := out["result"].(map[string]any)["tools"].([]any)[0].(map[string]any)
