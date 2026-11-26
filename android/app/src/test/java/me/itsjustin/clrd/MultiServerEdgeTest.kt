@@ -200,9 +200,7 @@ class MultiServerEdgeTest {
             app.account.actAll(listOf("a"), "ack", "{}", null, App.VIA_APP) {}
             assertTrue(arrived.await(10, TimeUnit.SECONDS))
             b.actAll(listOf("a"), "ack", "{}", null, App.VIA_APP) {}
-            val until = System.currentTimeMillis() + 5000
-            while (bg { b.db.dao().pending() }.isNotEmpty() && System.currentTimeMillis() < until) Thread.sleep(50)
-            assertEquals("B's send waited on account 0's", emptyList<Pending>(), bg { b.db.dao().pending() })
+            assertNotNull("B's send waited on account 0's", fast.takeRequest(5, TimeUnit.SECONDS))
             b.db.close()
         } finally {
             release.countDown()
