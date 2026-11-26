@@ -249,13 +249,16 @@ func (o one) Snapshot(*http.Request, Query) (Snapshot, error) {
 	return Snapshot{Items: []Notification{o.n}}, nil
 }
 
-// A notification's link redirects inside the sub-path to its state's view (#814).
-func TestNotificationLinkRedirect(t *testing.T) {
+// A notification's link is a page with its card alone, under its state's
+// view, linking back to that view inside the sub-path (#814, #822).
+func TestNotificationLinkPage(t *testing.T) {
 	for state, want := range map[string]string{"active": "/clrd/app?", "acknowledged": "/clrd/app?", "snoozed": "/clrd/app/snoozed?", "dismissed": "/clrd/app/cleared?", "resolved": "/clrd/app/cleared?"} {
 		w := httptest.NewRecorder()
 		Handler(one{n: Notification{ID: "n1", Topic: "a b", State: state}}, "https://h.example/clrd").ServeHTTP(w, httptest.NewRequest("GET", "/app/n/n1", nil))
-		if loc := w.Header().Get("Location"); w.Code != 303 || loc != want+"topic=a+b#t-n1" || w.Header().Get("Cache-Control") != "no-store" {
-			t.Errorf("%s: %d to %q", state, w.Code, loc)
+		body := w.Body.String()
+		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || strings.Count(body, `id="t-`) != 1 || !strings.Contains(body, `id="t-n1"`) ||
+			!strings.Contains(body, `href="`+want+`topic=a%20b#t-n1" data-back`) || !strings.Contains(body, `method="get" action="`+strings.TrimSuffix(want, "?")+`"`) {
+			t.Errorf("%s: %d, want its card alone, and a link back and search on %s", state, w.Code, want)
 		}
 	}
 	if code, body := get(t, Handler(none{}, ""), "/app/n/n1"); code != 404 || !strings.Contains(body, "This notification is gone") {

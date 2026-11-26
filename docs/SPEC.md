@@ -1502,9 +1502,11 @@ rules. Its token lives in the OS keychain and is sent only as an
   landing and docs pages.
 - Routes: `/` landing (public), `/docs/*` (public, from `docs/*.md`),
   `/app` inbox (login), `/app/snoozed`, `/app/cleared`, `/app/settings`,
-  `/app/n/{id}` (one notification: redirects to the view its state is in now,
-  at its card; not found, 404, when it is gone or in a topic the token cannot
-  read; #814),
+  `/app/n/{id}` (one notification: a page with its card alone, in any state,
+  under the view its state is in now, with a link back to that view; a card
+  this device cleared for itself alone shows as cleared; card actions come
+  back to this page; not found, 404, when it is gone or in a topic the token
+  cannot read; #814, #822),
   `/app/ui` (the component guide: every component in every state, no sign-in).
 - Inbox layout per brand: 248 px sidebar (logo, Inbox/Snoozed/Cleared with
   mono counts, TOPICS list, "In sync on N devices" card), cards with priority

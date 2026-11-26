@@ -446,6 +446,9 @@ type RulesForm struct {
 
 type rulesFormKey struct{}
 
+// oneKey carries the one notification /app/n/{id} shows (#822).
+type oneKey struct{}
+
 // FormRules are the rules the form shows: a refused save's, else the saved.
 func (s Sender) FormRules() SenderRules {
 	if s.Form != nil {
@@ -1384,7 +1387,8 @@ func Handler(api API, baseURL string) http.Handler {
 	app := func(view string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			states := views[view]
-			if states == nil { // settings: no list, the rest of the snapshot still counts
+			one, _ := r.Context().Value(oneKey{}).(*Notification)
+			if states == nil || one != nil { // settings: no list, the rest of the snapshot still counts
 				states = []string{}
 			}
 			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings",
@@ -1429,6 +1433,9 @@ func Handler(api API, baseURL string) http.Handler {
 				return
 			}
 			w.Header().Set("Cache-Control", "no-store")
+			if one != nil {
+				snap.Items = []Notification{*one}
+			}
 			c := snap.Counts
 			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender", "stats": "Stats", "gone": "Not found"}
 			if snap.Sender != nil {
@@ -1448,13 +1455,14 @@ func Handler(api API, baseURL string) http.Handler {
 			page(w, "app", status, struct {
 				meta
 				View, Heading, Topic, Q, Here string
+				One                           *Notification
 				Snap                          Snapshot
 				Inbox, Snoozed, Cleared       int
 				Tips                          []Tip
 				Tip                           int
 			}{
 				meta: meta{Title: badge(c["active"]+c["acknowledged"]) + titles[view] + ": clrd", Path: r.URL.Path, Base: base(r)},
-				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), Snap: snap, Tips: ts, Tip: tip,
+				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), One: one, Snap: snap, Tips: ts, Tip: tip,
 				Inbox:   c["active"] + c["acknowledged"],
 				Snoozed: c["snoozed"],
 				Cleared: c["dismissed"] + c["resolved"],
@@ -1469,10 +1477,11 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/senders", app("senders"))
 	mux.HandleFunc("GET /app/stats", app("stats"))
 	mux.HandleFunc("GET /app/senders/{id}", app("sender"))
-	// One notification's own address (#814), as a GitHub issue links it: it
-	// opens the view its state is in now, at its card. Signed out, or gone,
-	// it is the sign-in page or a not found page. A card older than the
-	// newest 500 of its state in its topic is past the page (webLimit).
+	// One notification's own address (#814), as a GitHub issue links it: a
+	// page with its card alone, in any state, under the view that state is
+	// in (#822), so a card past a list's newest 500 or cleared on this device
+	// alone is still there. Signed out, or gone, it is the sign-in page or a
+	// not found page.
 	mux.HandleFunc("GET /app/n/{id}", func(w http.ResponseWriter, r *http.Request) {
 		snap, err := api.Snapshot(r, Query{ID: r.PathValue("id")})
 		if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrUnauthorized) {
@@ -1484,14 +1493,13 @@ func Handler(api API, baseURL string) http.Handler {
 			app("gone")(w, r)
 			return
 		}
-		n, p := snap.Items[0], "/app"
+		n, view := snap.Items[0], "inbox"
 		for v, states := range views {
-			if v != "inbox" && slices.Contains(states, n.State) {
-				p += "/" + v
+			if slices.Contains(states, n.State) {
+				view = v
 			}
 		}
-		w.Header().Set("Cache-Control", "no-store")
-		http.Redirect(w, r, p+"?topic="+url.QueryEscape(n.Topic)+"#t-"+url.PathEscape(n.ID), http.StatusSeeOther)
+		app(view)(w, r.WithContext(context.WithValue(r.Context(), oneKey{}, &n)))
 	})
 	// A sender's rules (#119): save them all, or undo one change, as a plain
 	// form post. The server checks the full admin.
