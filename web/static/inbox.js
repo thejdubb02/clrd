@@ -418,7 +418,7 @@
       if (r.status === 401) return location.reload(); // signed out: show the sign-in page
       // One notification's page: 404 means it was deleted (pruned, no event) or
       // its topic is no longer ours. Show the server's gone page; no retry (#826).
-      if (r.status === 404 && location.pathname.includes('/app/n/')) return cards().length && location.reload();
+      if (r.status === 404 && /\/app\/n\/[^/]+$/.test(location.pathname)) return cards().length && location.reload();
       if (!r.ok) throw r.status;
       const html = await r.text();
       if (mine !== gen) return;
