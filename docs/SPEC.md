@@ -1238,8 +1238,10 @@ and `initialize` reports `version` as `serverInfo.version`.
   prompt or a reply button), at most 10 an hour per hook (pending deliveries
   count at any age). The issue body starts with a hidden mark
   `<!-- clrd TOPIC/HOOK/ID -->` (query-escaped); before opening, clrd lists
-  the repo's newest issues and adopts one with that mark, so a lost reply
-  never opens a second. The issue title is prefixed with `[clrd <topic>] `,
+  the repo's newest 50 issues (GitHub counts pull requests among them) and
+  adopts one with that mark, so a lost reply does not open a second unless
+  more than 50 issues or pull requests were opened in the repo before the
+  retry. The issue title is prefixed with `[clrd <topic>] `,
   and issues carry the `clrd` and `priority:<min|low|default|high|urgent>`
   labels. When `CLRD_BASE_URL` is set, the body links back to the notification
   at `/app/n/{id}`, which finds it in any state until it is pruned. The body puts the sender's text in a fenced block it
