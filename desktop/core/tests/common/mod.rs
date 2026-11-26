@@ -109,16 +109,6 @@ impl Fake {
         self.inner.lock().unwrap().event("repeat", id);
     }
 
-    /// A message with no notification, as marks, settings and future types send.
-    pub fn send_raw(&self, kind: &str) {
-        let mut i = self.inner.lock().unwrap();
-        i.seq += 1;
-        let ev = json!({"seq": i.seq, "type": kind});
-        i.live.retain(|tx| tx.send(ev.to_string()).is_ok());
-        let seq = i.seq;
-        i.events.push((seq, ev));
-    }
-
     pub fn offline(&self) {
         let mut i = self.inner.lock().unwrap();
         i.online = false;

@@ -33,7 +33,6 @@ tauri-build = "2"
 # For the shared fake server in ../core/tests/common.
 serde_json = "1"
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
-ureq = { version = "3", default-features = false, features = ["json"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 zbus = { version = "6", default-features = false, features = ["default-rt", "service"] }

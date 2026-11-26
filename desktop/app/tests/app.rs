@@ -238,8 +238,7 @@ say();
     ))
     .unwrap();
     // Nor is the word of some other program on the bus.
-    let stranger =
-        zbus::block_on(zbus::connection::Builder::address(bus.1.as_str()).build()).unwrap();
+    let stranger = bus.connect();
     zbus::block_on(stranger.emit_signal(
         None::<&str>,
         PATH,

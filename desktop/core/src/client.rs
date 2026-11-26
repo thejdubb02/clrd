@@ -153,11 +153,6 @@ impl Server {
         .map(|_| ())
     }
 
-    /// The address this was made with, without a trailing slash.
-    pub fn base(&self) -> &str {
-        &self.base
-    }
-
     /// The server's version, for the About entry. `None` when it cannot be
     /// read, which includes a server from before `/api/v1/version` existed:
     /// the entry is then left out, and nothing else depends on this.
