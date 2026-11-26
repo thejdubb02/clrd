@@ -18,7 +18,7 @@ Tested against ntfy v2.38.1.
 | `everyone` rules and `auth-default-access` | A token named `anonymous`, used only on the ntfy routes and only for requests with no credentials at all. |
 | Admin users | Admin tokens. |
 | Messages | Notifications, with their original times. Sequence updates merge into one notification, a sequence delete arrives dismissed, a delayed message arrives snoozed until its time. |
-| Attachments | Uploaded files are copied in. External links are kept as links. |
+| Attachments | Uploaded files are copied in. External links are kept as links. Set `CLRD_NTFY_IMPLICIT_UPLOADS=on` for senders that omit the filename: an ordinary publish over 4096 bytes or with invalid UTF-8 becomes an upload. The existing file limits and access checks apply. |
 | Headers with non-ASCII text sent as RFC 2047 encoded words (`Title: =?UTF-8?B?...?=`) | Decoded the same way, in the title, message, tags, file name and the other publish headers. |
 | Publish URLs with `?tpl=yes` (or `X-Template: yes`, `?template=yes`) | Work as they are: the message, title and priority are Go templates over the JSON body, so `m={{.text}}&p={{if .channel}}2{{else}}4{{end}}` renders. `range`, `printf` and template calls are refused, as in [custom webhooks](integrations/custom-webhooks.md). |
 | Named .yml templates from ntfy's `template-dir` | Set `CLRD_NTFY_TEMPLATE_DIR` and copy the files there. Use the same `?template=name`, `?tpl=name` or `X-Template: name` selector on a POST or PUT with a JSON body. See [Named templates](#named-templates) for supported syntax. |

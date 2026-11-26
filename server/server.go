@@ -55,6 +55,8 @@ type Options struct {
 	// off by default (#661).
 	Metrics bool
 
+	NtfyImplicitUploads bool // CLRD_NTFY_IMPLICIT_UPLOADS=on, off by default
+
 	Attachments     string // CLRD_ATTACHMENTS, default "attachments" next to DB
 	AttachmentMax   int64  // CLRD_ATTACHMENT_MAX_MB, bytes, default 15 MB
 	AttachmentTotal int64  // CLRD_ATTACHMENT_TOTAL_MB, bytes, default 5000 MB
@@ -83,6 +85,11 @@ func ConfigFromEnv() (Options, error) {
 	}
 	o.Attachments = os.Getenv("CLRD_ATTACHMENTS")
 	o.NtfyTemplateDir = os.Getenv("CLRD_NTFY_TEMPLATE_DIR")
+	if v := os.Getenv("CLRD_NTFY_IMPLICIT_UPLOADS"); v == "on" {
+		o.NtfyImplicitUploads = true
+	} else if v != "" && v != "off" {
+		return o, fmt.Errorf("CLRD_NTFY_IMPLICIT_UPLOADS: want on or off, got %q", v)
+	}
 	switch v := os.Getenv("CLRD_PUBLIC_PAGES"); v {
 	case "", "on":
 	case "off":
@@ -408,7 +415,7 @@ func (s *Server) effectiveEnv() map[string]string {
 	for i, p := range o.TrustedProxies {
 		proxies[i] = p.String()
 	}
-	public, hookAllow, metrics := "on", "on", "off"
+	public, hookAllow, metrics, implicitUploads := "on", "on", "off", "off"
 	if o.HidePublicPages {
 		public = "off"
 	}
@@ -418,6 +425,9 @@ func (s *Server) effectiveEnv() map[string]string {
 	if o.Metrics {
 		metrics = "on"
 	}
+	if o.NtfyImplicitUploads {
+		implicitUploads = "on"
+	}
 	rate := func(n int) string { return strconv.Itoa(max(n, 0)) } // -1 is off, set as 0
 	return map[string]string{
 		"CLRD_LISTEN": o.Listen, "CLRD_DB": o.DB, "CLRD_BASE_URL": base, "CLRD_RETENTION": o.Retention.String(),
@@ -425,7 +435,8 @@ func (s *Server) effectiveEnv() map[string]string {
 		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
 		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
 		"CLRD_CONFIG": o.Config, "CLRD_HOOK_ALLOW": hookAllow, "CLRD_METRICS": metrics,
-		"CLRD_NTFY_TEMPLATE_DIR": o.NtfyTemplateDir,
+		"CLRD_NTFY_TEMPLATE_DIR":     o.NtfyTemplateDir,
+		"CLRD_NTFY_IMPLICIT_UPLOADS": implicitUploads,
 	}
 }
 
@@ -455,6 +466,11 @@ const maxBody = 1 << 20 // no route takes more, except a file upload
 
 // uploadTimeout bounds a file upload, which streams instead of being buffered.
 var uploadTimeout = 10 * time.Minute
+
+type implicitUploadBody struct {
+	io.ReadCloser
+	deadline time.Time
+}
 
 // isUpload reports a request whose body is a file: a multipart native publish
 // an ntfy publish with a file name, or a Pushover publish. Those stream to disk.
@@ -507,6 +523,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadTimeout))
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
+	} else if r.ContentLength != 0 && mounted == nil && s.ntfyImplicitUpload(r) {
+		// The handler peeks under the message deadline before opting into the
+		// attachment deadline. The file writer enforces the file cap.
+		now := time.Now()
+		http.NewResponseController(w).SetReadDeadline(now.Add(bodyTimeout))
+		r.Body = &implicitUploadBody{http.MaxBytesReader(w, r.Body, s.opt.AttachmentMax+maxBody), now.Add(uploadTimeout)}
 	} else if r.ContentLength > maxBody { // refused by its declared length, before a slow read can time out
 		s.fail(w, errf(413, "too_large", "request body over %d bytes", maxBody))
 		return

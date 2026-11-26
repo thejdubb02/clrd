@@ -34,6 +34,7 @@ priority: "{{ if .urgent }}5{{ else }}3{{ end }}"
 		t.Fatalf("template dir config: %q %v", opt.NtfyTemplateDir, err)
 	}
 	opt.DB = filepath.Join(t.TempDir(), "clrd.db")
+	opt.NtfyImplicitUploads = true // named bodies still use the JSON path and its limit
 	s, err := New(opt)
 	if err != nil {
 		t.Fatal(err)
