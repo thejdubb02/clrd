@@ -255,6 +255,24 @@ work. The path cannot start with `/api`. In Caddy, `handle /clrd/*` with the sam
 the same block as `location /clrd/`. In the Android app, enter the full
 address with the path.
 
+## Publish and subscribe from the command line
+
+The server binary also works as a client. Set `CLRD_TOKEN` to a token with
+publish or read access as needed. The commands use the local listen port by
+default. For a remote server, set `CLRD_URL` to its HTTPS base URL, including
+any sub-path.
+
+```sh
+clrd publish --title "Disk space" --priority high --tags infra,disk infra "Disk is 91% full"
+clrd poll --since 1h infra,ops
+clrd subscribe infra,ops
+```
+
+Publish prints the server's JSON reply. Poll prints stored events as
+newline-delimited JSON and exits, with retained history as the default.
+Subscribe streams new events as they happen until stopped with Ctrl+C. Use
+`--since` to start a stream with replay.
+
 ## Health
 
 `GET /healthz` returns `{"ok":true,"seq":N}`. The Docker image runs

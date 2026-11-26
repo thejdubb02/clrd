@@ -65,8 +65,12 @@ func run(args []string) error {
 		return importCmd(opt, args)
 	case "agent":
 		return agentCmd(opt, args)
+	case "publish", "poll", "subscribe":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return messageCmd(ctx, opt, cmd, args, os.Stdout)
 	}
-	return fmt.Errorf("unknown command %q (want serve, token, agent, import or health; see clrd help)", cmd)
+	return fmt.Errorf("unknown command %q (see clrd help)", cmd)
 }
 
 const usage = `clrd: self-hosted notifications. Dismiss once, gone everywhere.
@@ -78,6 +82,11 @@ const usage = `clrd: self-hosted notifications. Dismiss once, gone everywhere.
   clrd import ntfy --auth-file user.db --cache-file cache.db --default-access deny-all [--dry-run]
   clrd import gotify --db gotify.db [--clear-older-than 720h] [--dry-run]
   clrd health                  exit 0 if the local server answers /healthz
+  clrd publish [--title text] [--priority high] [--tags a,b] topic [message]
+  clrd poll [--since all] topic[,topic]
+  clrd subscribe [--since none] topic[,topic]
+
+Publish, poll and subscribe use CLRD_TOKEN and CLRD_URL (default local server).
 
 Settings are optional environment variables: CLRD_LISTEN (:8080), CLRD_DB
 (see the first log line), CLRD_BASE_URL (your public https URL), and more in
