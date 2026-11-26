@@ -462,6 +462,49 @@ localStorage.setItem('clrd.theme', 'dark');
     assert_eq!(fake.reports()[seen], "true", "the kept pick at start");
 }
 
+/// A custom theme's colors reach the app and are kept for the This computer
+/// page (#939). Anything but seven plain colors is refused whole, since they
+/// come from the server's page.
+#[test]
+fn a_custom_themes_colors_are_kept_and_anything_else_refused() {
+    const CUSTOM: &str = r#"<!doctype html><title>custom</title><script>
+const r = document.documentElement;
+const paint = body => {
+  r.dataset.scheme = 'light';
+  for (const [t, v] of [['--background', '#fafafa'], ['--foreground', '#101010'], ['--body', body],
+    ['--border', '#cccccc'], ['--clear', '#00aa55'], ['--clear-foreground', '#000000'], ['--destructive', '#bb2200']]) r.style.setProperty(t, v);
+};
+paint('url(x)');
+setInterval(async () => {
+  if ((await (await fetch(location.href)).text()).includes('GO ' + 'GOOD')) paint('#202020');
+}, 300);
+</script>"#;
+
+    let fake = Fake::start();
+    fake.set_page(CUSTOM);
+    let (bus, _daemon, _keys, home) = linked(&fake);
+    let _portal = portal(&bus, Default::default());
+    let _app = Group(
+        app(&bus, &home, &[])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("xvfb-run is needed for this test"),
+    );
+    let kept = home.join("data/org.clrd.desktop/theme");
+    let holds = |what: &str, want: &str| {
+        wait_long(what, || {
+            std::fs::read_to_string(&kept).is_ok_and(|text| text == want)
+        })
+    };
+    holds("a bad color is refused, the scheme kept", "light");
+    fake.set_page(&format!("{CUSTOM}<!-- GO GOOD -->"));
+    holds(
+        "the colors are kept",
+        "light:fafafa-101010-202020-cccccc-00aa55-000000-bb2200",
+    );
+}
+
 /// A GTK theme that is dark by its name ("Adwaita-dark") gives way when the
 /// desktop asks for light, and comes back when it no longer does (#703).
 #[test]
