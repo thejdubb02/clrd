@@ -38,7 +38,8 @@ class SyncService : Service() {
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_RESTART) all.forEach { a -> a.sync?.stop()?.also { a.sync = null } }
-        for ((a, store, api) in ready) if (a.sync == null) {
+        for ((a, store, api) in ready) synchronized(a.configLock) { // a server removed meanwhile gets no client
+            if (a.sync != null || a.removed) return@synchronized
             app.io.execute { store.reconcile() } // the tray is empty after a reboot; refill it quietly
             a.sync = SyncClient(a.http, api, store, onStatus = { status(a, it) }, onSettings = store::settings, onDevices = { app.devicesChanged.value++ }).also { it.start() }
         }

@@ -2126,7 +2126,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             "stack" -> Toggle(R.string.stack, R.string.stack_explain, stack) { on ->
                 stack = on
                 app.stack = on
-                app.io.execute { RoomStore(app).reconcile() } // reposts every row in or out of its stack
+                app.io.execute { app.accounts.forEach { RoomStore(app, it).reconcile() } } // reposts every row in or out of its stack, on every server
             }
             "drop-cleared" -> Toggle(R.string.drop_cleared, R.string.drop_cleared_explain, drop) { on ->
                 drop = on

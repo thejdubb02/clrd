@@ -187,7 +187,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
     /** Post one row again, quietly, as Room has it: clears the spinner Android shows after an inline reply (#153). */
     fun repost(id: String) {
         if (acct.removed) return // a closed database would open again and bring the deleted file back
-        val n = acct.db.dao().get(id) ?: return
+        val n = runCatching { acct.db.dao().get(id) }.getOrNull() ?: return // closed by a remove in between
         apply(TrayStep.plan(n, acct.muted).let { if (it is TrayStep.Show) TrayStep.Show(n, silent = true) else it })
     }
 

@@ -64,6 +64,7 @@ class App : Application() {
         return account(id)!!.also {
             it.serverUrl = url
             it.token = token
+            it.tray.createChannels() // a sound another server never used may have no channels yet
             if (it.configured) SyncService.start(this)
         }
     }
@@ -82,9 +83,11 @@ class App : Application() {
             }
             a
         }
-        synchronized(a.configLock) { a.configGen++ }
-        a.sync?.stop()
-        a.sync = null
+        synchronized(a.configLock) { // with the service's start under the same lock, no client can arrive after this
+            a.configGen++
+            a.sync?.stop()
+            a.sync = null
+        }
         io.execute {
             if (id == 0) {
                 a.saveServer("", "")
