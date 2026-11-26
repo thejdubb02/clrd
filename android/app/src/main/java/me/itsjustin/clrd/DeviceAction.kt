@@ -53,12 +53,12 @@ object DeviceAction {
      * Runs button [index] of row [id] as shown at [seq]. Clears the row everywhere when the button asks and it worked;
      * a failure says so in a toast and leaves the row. [done] runs once, on any path.
      */
-    fun run(ctx: Context, id: String, index: Int, seq: Long, server: String?, done: () -> Unit) {
+    fun run(ctx: Context, acct: Account, id: String, index: Int, seq: Long, server: String?, done: () -> Unit) {
         val app = App.of(ctx)
         // acts, not io: io may be blocked on the network, and this must fit the receiver's 10 s budget.
         app.acts.execute {
             val o = runCatching {
-                app.db.dao().get(id)?.takeIf { it.seq == seq && (server == null || server == app.serverUrl) }
+                acct.db.dao().get(id)?.takeIf { it.seq == seq && !acct.removed && (server == null || server == acct.serverUrl) }
                     ?.let { TrayButton.objs(it).getOrNull(index) }?.takeIf(::isDevice)
             }.getOrNull()
             if (o == null) { toast(app, app.getString(R.string.device_changed)); done(); return@execute }
@@ -66,8 +66,8 @@ object DeviceAction {
             fun finish(ok: Boolean) {
                 if (!ok) toast(app, app.getString(R.string.device_failed, label))
                 // Only the version tapped: a row edited while the request ran is left for the person to see.
-                val clear = ok && o.optBoolean("clear") && runCatching { app.db.dao().get(id)?.seq == seq }.getOrDefault(false)
-                if (clear) app.act(id, "dismiss", "{}", server, App.VIA_TRAY_BUTTON) { done() } else done()
+                val clear = ok && o.optBoolean("clear") && runCatching { acct.db.dao().get(id)?.seq == seq }.getOrDefault(false)
+                if (clear) acct.actAll(listOf(id), "dismiss", "{}", server, App.VIA_TRAY_BUTTON) { done() } else done()
             }
             intent(o)?.let { i ->
                 finish(runCatching { app.sendBroadcast(i) }.isSuccess)
@@ -76,7 +76,7 @@ object DeviceAction {
             val req = request(o) ?: return@execute finish(false)
             // A bare client: the clrd token is never sent to a sender's address, and no redirect carries the
             // sender's headers to another host. 8 s leaves room in the receiver's budget to save a clear.
-            app.http.newBuilder().pingInterval(0, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
+            acct.http.newBuilder().pingInterval(0, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
                 .callTimeout(8, TimeUnit.SECONDS).build()
                 .newCall(req).enqueue(object : Callback {
                     override fun onFailure(call: Call, e: IOException) = finish(false)

@@ -11,6 +11,8 @@ notification on every device without anyone touching it.
 | [MCP](mcp.md) (Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Zed, Codex CLI, Gemini CLI) | today | yes (agent calls `resolve`) | `/mcp` mounted | Claude Code: `claude mcp add`, then `claude mcp list` connects. Every tool (send, list, topics, get, update, ack, snooze, resolve, and `wait_for_reply` with an answer) is called through the real `mcp-remote` bridge that Claude Desktop uses. The other clients: setup in the guide, not run |
 | [Agent invite](agent-invite.md): one string gives an agent its own user and token | today | not applicable | native API only | server tests: invite, guide page, claim once, topic limits, approvals denied, unlink; the CLI command |
 | [Claude Code plugin](claude-code.md) | today | no | `/mcp` mounted | the plugin's hook script against clrd: finished and waiting pings, a permission prompt allowed from the phone and refused from the agent's token, bad URLs refused; `claude plugin validate`. Claude Code itself running the hooks: checked by hand, not in CI |
+| [n8n](n8n.md) | from source | yes | native API only | node tests for actions and events against simulated responses |
+| [Node-RED](node-red.md) | from source | yes | native API only | node tests for actions and events against a local test server |
 | [Home Assistant](home-assistant.md) `rest_command` | today | yes | native API only | the `rest_command` templates rendered with Jinja2 and posted; Home Assistant itself not run |
 | [Gatus](gatus.md) | today | yes | publish honours `status: resolved` | Gatus 5.17: down, then up |
 | [Uptime Kuma](uptime-kuma.md) | today | yes | publish honours `status: resolved` | Uptime Kuma 1.23: down, then up |
@@ -35,7 +37,8 @@ notification on every device without anyone touching it.
 | Home Assistant ntfy integration | today | no | ntfy publish | not run |
 | [Outgoing webhooks](webhooks-out.md): clrd tells your service when someone dismisses, acks, resolves, snoozes or replies | today | not applicable | a saved outgoing webhook (admin) | server tests: delivery, signature, retry, turn-off; the guide's receiver not run |
 
-Everything in "Needs on the server" is in the server. "Checked in CI" is what
+The automation nodes run in the automation nodes workflow. For the other
+guides, "Checked in CI" is what
 [`test/integrations`](../../test/integrations/) runs against a live clrd on
 every change to the server, the guides or the SDKs, using the guide's own text
 and, where it can, the real tool at the version named.

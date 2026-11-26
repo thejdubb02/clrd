@@ -48,6 +48,20 @@ export interface ListOptions {
   topic?: string;
   state?: "open" | "all" | State;
   limit?: number;
+  /** Include readable topics even if the owner is unsubscribed. */
+  subscribed?: "all";
+}
+
+export interface EventCursor {
+  seq: number;
+  epoch: string;
+}
+
+export interface NotificationEvent {
+  seq: number;
+  type: string;
+  notification?: Notification;
+  via?: string;
 }
 
 export declare class ClrdError extends Error {
@@ -69,6 +83,11 @@ export declare class Client {
   unmark(id: string): Promise<Notification>;
   get(id: string): Promise<Notification>;
   list(opts?: ListOptions): Promise<unknown>;
+  pollEvents(cursor?: EventCursor, opts?: { topic?: string }): Promise<{
+    events: NotificationEvent[];
+    cursor: EventCursor;
+    reset: boolean;
+  }>;
 }
 
 export declare function send(topic: string, message: string, opts?: SendOptions): Promise<Notification>;

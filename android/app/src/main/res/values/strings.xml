@@ -74,6 +74,8 @@
     <!-- Connection status in the always-on notification -->
     <string name="service_offline">Offline, retrying</string>
     <string name="service_busy">Server busy, retrying later</string>
+    <!-- The sync notice when the phone talks to more than one server (#78) and every one is in sync. Always 2 or more. -->
+    <string name="service_servers">Connected to %1$d servers</string>
     <string name="service_token_rejected">Token rejected. Check Settings.</string>
 
     <!-- Settings -->

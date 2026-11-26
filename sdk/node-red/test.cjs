@@ -1,0 +1,117 @@
+const assert = require('node:assert/strict');
+const { EventEmitter, once } = require('node:events');
+const { createServer } = require('node:http');
+const { test } = require('node:test');
+const register = require('./clrd.js');
+
+async function runtime(t, reply) {
+    const requests = [];
+    const server = createServer(async (req, res) => {
+        let body = '';
+        for await (const part of req) body += part;
+        requests.push({ path: req.url, method: req.method, auth: req.headers.authorization, body: body && JSON.parse(body) });
+        const { status = 200, json } = reply(requests.length - 1);
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(json));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    t.after(() => {
+        server.closeAllConnections();
+        return new Promise((done) => server.close(done));
+    });
+
+    const types = new Map();
+    let credentials;
+    let configNode;
+    register({
+        nodes: {
+            createNode(node, config) {
+                const emitter = new EventEmitter();
+                node.on = emitter.on.bind(emitter);
+                node.once = emitter.once.bind(emitter);
+                node.removeListener = emitter.removeListener.bind(emitter);
+                node.emit = emitter.emit.bind(emitter);
+                if (config === serverConfig) node.credentials = credentials;
+                node.status = () => {};
+                node.send = (msg) => emitter.emit('message', msg);
+                node.error = (error) => emitter.emit('error', error);
+                node.warn = (warning) => emitter.emit('warning', warning);
+            },
+            getNode: () => configNode,
+            registerType(name, Constructor, opts) {
+                types.set(name, Constructor);
+                if (name === 'clrd-server') {
+                    assert.deepEqual(opts.credentials, { token: { type: 'password' } });
+                    credentials = { token: 'test-token' };
+                }
+            },
+        },
+    });
+    const serverConfig = { url: `http://127.0.0.1:${server.address().port}` };
+    configNode = new (types.get('clrd-server'))(serverConfig);
+    return {
+        requests,
+        node(type, config) {
+            const node = new (types.get(type))(config);
+            t.after(() => node.emit('close'));
+            return node;
+        },
+    };
+}
+
+function input(node, msg) {
+    return new Promise((resolve, reject) => {
+        let output;
+        node.emit('input', msg, (result) => { output = result; }, (error) => {
+            if (error) reject(error);
+            else resolve(output);
+        });
+    });
+}
+
+test('action maps every operation and keeps the rest of the message', { timeout: 5000 }, async (t) => {
+    const app = await runtime(t, (i) => ({ json: { id: String(i) } }));
+    const values = [
+        ['send', { message: 'Disk full', title: 'Alert', external_id: 'disk', priority: 4 }],
+        ['acknowledge', 'abc/123'],
+        ['clear', { id: 'abc/123' }],
+        ['resolve', 'abc/123'],
+        ['snooze', { id: 'abc/123', duration: '15m' }],
+    ];
+    for (const [i, [operation, payload]] of values.entries()) {
+        const node = app.node('clrd', { operation, topic: 'infra', duration: '1h' });
+        assert.deepEqual(await input(node, { payload, marker: 'kept' }), { payload: { id: String(i) }, marker: 'kept' });
+    }
+    const idPath = '/api/v1/notifications/abc%2F123';
+    assert.deepEqual(app.requests, [
+        ['/api/v1/notifications', { topic: 'infra', message: 'Disk full', title: 'Alert', external_id: 'disk', priority: 4 }],
+        [idPath + '/ack', ''],
+        [idPath + '/dismiss', ''],
+        [idPath + '/resolve', ''],
+        [idPath + '/snooze', { for: '15m' }],
+    ].map(([path, body]) => ({ path, body, method: 'POST', auth: 'Bearer test-token' })));
+});
+
+test('action reports API failures through done', { timeout: 5000 }, async (t) => {
+    const app = await runtime(t, () => ({ status: 403, json: { error: 'forbidden' } }));
+    await assert.rejects(input(app.node('clrd', { operation: 'clear' }), { payload: 'id' }), /403: forbidden/);
+});
+
+test('event input skips history and stops polling on close', { timeout: 5000 }, async (t) => {
+    const notification = { id: 'a', topic: 'infra' };
+    const event = { seq: 12, type: 'state', notification };
+    const pages = [
+        { notifications: [{ id: 'old' }], seq: 10, epoch: 'db' },
+        { events: [{ seq: 11, type: 'created', notification }, event], seq: 12, epoch: 'db' },
+    ];
+    const app = await runtime(t, (i) => ({ json: pages[i] }));
+    const node = app.node('clrd-events', { event: 'state', topic: 'infra', interval: 1 });
+    assert.deepEqual(await once(node, 'message'), [{ payload: event, topic: 'infra' }]);
+    node.emit('close');
+    await new Promise((done) => setTimeout(done, 1100));
+    assert.deepEqual(app.requests.map((request) => request.path), [
+        '/api/v1/notifications?state=open&limit=1',
+        '/api/v1/events?since=10&subscribed=all&topics=infra',
+    ]);
+});

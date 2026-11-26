@@ -41,7 +41,7 @@ class DeviceActionTest {
     private fun runIt(n: Notif, index: Int, seq: Long = n.seq) {
         bg { dao.applyAll(listOf(n), n.seq) }
         val done = CountDownLatch(1)
-        DeviceAction.run(app, n.id, index, seq, "https://a.example") { done.countDown() }
+        DeviceAction.run(app, app.account, n.id, index, seq, "https://a.example") { done.countDown() }
         assert(done.await(10, TimeUnit.SECONDS))
         app.acts.submit {}.get(10, TimeUnit.SECONDS)
         shadowOf(Looper.getMainLooper()).idle()

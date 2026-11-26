@@ -1,0 +1,4 @@
+{
+  "entry": ["credentials/*.credentials.ts", "nodes/*.node.ts", "test.cjs"],
+  "ignoreUnresolved": ["../client.mjs"]
+}

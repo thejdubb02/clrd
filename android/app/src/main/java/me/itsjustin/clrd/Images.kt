@@ -24,7 +24,11 @@ import java.util.concurrent.TimeUnit
  * any failure means no picture, and the notification looks as it did before icons.
  */
 class Images(private val app: App) {
-    private val http by lazy { app.http.newBuilder().callTimeout(15, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build() }
+    private val http by lazy { limits(app.http) }
+    private val plainHttp by lazy { limits(app.plainHttp) } // a server past the first never gets account 0's certificate (#78)
+    private fun limits(h: OkHttpClient) = h.newBuilder().callTimeout(15, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
+    /** "/api/v1/files/x" is another file on each server, so another account's pictures are cached apart (#78). */
+    private fun key(px: Int, url: String, a: Account) = if (a.id == 0) "$px $url" else "${a.id} $px $url"
     /** Its own threads, so a slow image host never holds up sync or a tap. */
     val pool = Executors.newFixedThreadPool(2)
     private val cache = object : LruCache<String, Bitmap>(24 shl 20) {
@@ -58,26 +62,26 @@ class Images(private val app: App) {
             .onSuccess { Toast.makeText(ctx, ctx.getString(R.string.downloading, name), Toast.LENGTH_SHORT).show() }
     }
 
-    fun cached(url: String, px: Int): Bitmap? = cache.get("$px $url")
+    fun cached(url: String, px: Int, a: Account = app.account): Bitmap? = cache.get(key(px, url, a))
 
     /** Blocking. A failed URL is not tried again for 10 minutes. */
-    fun load(url: String, px: Int): Bitmap? {
-        val key = "$px $url"
+    fun load(url: String, px: Int, a: Account = app.account): Bitmap? {
+        val key = key(px, url, a)
         cache.get(key)?.let { return it }
         if (System.currentTimeMillis() - (failedAt[key] ?: 0) < RETRY_MS) return null
-        val (base, token) = synchronized(app.configLock) { app.serverUrl to app.token }
-        val bmp = request(url, base, token)?.let { fetch(http, it, MAX_BYTES) }?.let { decode(it, px) }
+        val (base, token) = synchronized(a.configLock) { a.serverUrl to a.token }
+        val bmp = request(url, base, token)?.let { fetch(if (a.id == 0) http else plainHttp, it, MAX_BYTES) }?.let { decode(it, px) }
         if (bmp == null) failedAt[key] = System.currentTimeMillis() else cache.put(key, bmp)
         return bmp
     }
 
     /** Starts [load] in the background unless it is cached, running or failed lately. [done] runs once a new picture arrives. */
-    fun prefetch(url: String, px: Int, done: () -> Unit) {
-        val key = "$px $url"
+    fun prefetch(url: String, px: Int, a: Account = app.account, done: () -> Unit) {
+        val key = key(px, url, a)
         if (cache.get(key) != null || System.currentTimeMillis() - (failedAt[key] ?: 0) < RETRY_MS || !loading.add(key)) return
         pool.execute {
             try {
-                if (load(url, px) != null) done()
+                if (load(url, px, a) != null) done()
             } finally {
                 loading.remove(key)
             }
