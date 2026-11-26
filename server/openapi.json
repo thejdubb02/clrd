@@ -280,6 +280,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -296,7 +297,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
-    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; over CLRD_ATTACHMENT_TOTAL_MB is a 507. Over the per-token or per-topic publish rate (CLRD_RATE_TOKEN, CLRD_RATE_TOPIC) is a 429 with Retry-After.",
+    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; exceeding CLRD_ATTACHMENT_TOTAL_MB or failing to write the upload to disk returns 507. Over the per-token or per-topic publish rate (CLRD_RATE_TOKEN, CLRD_RATE_TOPIC) is a 429 with Retry-After.",
     "requestBody": {
      "required": true,
      "content": {
@@ -373,6 +374,7 @@
      }
     },
     "parameters": [
+     {"$ref": "#/components/parameters/SubscriptionView"},
      {
       "name": "topic",
       "in": "query",
@@ -403,10 +405,8 @@
      {
       "name": "limit",
       "in": "query",
-      "required": false,
-      "schema": {
-       "type": "integer"
-      }
+      "schema": {"type": "integer", "default": 100, "maximum": 500},
+      "description": "Values over 500 are capped. A missing or nonpositive value uses 100."
      },
      {
       "name": "before",
@@ -563,6 +563,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
+    "requestBody": {"$ref": "#/components/requestBodies/StateChange"},
     "parameters": [
      {
       "name": "id",
@@ -752,6 +753,7 @@
        "schema": {
         "type": "object",
         "properties": {
+         "via": {"$ref": "#/components/schemas/StateVia"},
          "reply": {
           "type": "string",
           "example": "yes"
@@ -808,6 +810,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
+    "requestBody": {"$ref": "#/components/requestBodies/StateChange"},
     "parameters": [
      {
       "name": "id",
@@ -854,6 +857,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
+    "requestBody": {"$ref": "#/components/requestBodies/StateChange"},
     "parameters": [
      {
       "name": "id",
@@ -900,6 +904,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
+    "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"via": {"$ref": "#/components/schemas/StateVia"}, "until": {"type": "string", "format": "date-time", "description": "A future time reopens directly into snoozed state. A past time reopens normally."}}}}}},
     "parameters": [
      {
       "name": "id",
@@ -933,6 +938,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "409": {"$ref": "#/components/responses/Error"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -943,7 +949,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
-    "description": "Give for (Go duration, d allowed) or until.",
+    "description": "Give for (Go duration, d allowed) or until. The time must be in the future. If both are supplied, until wins. Snoozing a dismissed or resolved notification returns 409.",
     "parameters": [
      {
       "name": "id",
@@ -962,6 +968,7 @@
        "schema": {
         "type": "object",
         "properties": {
+         "via": {"$ref": "#/components/schemas/StateVia"},
          "for": {
           "type": "string",
           "example": "1h"
@@ -1017,10 +1024,7 @@
        "schema": {
         "type": "object",
         "properties": {
-         "via": {
-          "type": "string",
-          "description": "How the clear was made, recorded on each state event"
-         },
+         "via": {"$ref": "#/components/schemas/StateVia"},
          "topic": {
           "type": "string"
          },
@@ -1165,6 +1169,9 @@
            ]
           }
          },
+         "snooze_intervals": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string"}, "description": "Distinct Go durations from 1m to 744h. If an update drops the default without setting a new one, the first entry becomes the default."},
+         "snooze_default": {"type": "string", "description": "Must be one of snooze_intervals."},
+         "topic_keep_cleared_days": {"type": "object", "additionalProperties": {"type": ["integer", "null"], "minimum": 0, "maximum": 36500}, "description": "Per-topic retention for cleared notifications. 0 keeps them forever. Null drops an override. Needs scope admin on each affected topic."},
          "swipe_start": {
           "$ref": "#/components/schemas/SwipeButtons"
          },
@@ -1461,17 +1468,15 @@
      "notifications"
     ],
     "parameters": [
+     {"$ref": "#/components/parameters/SubscriptionView"},
      {
       "name": "keep_cleared_days",
       "in": "query",
       "required": false,
-      "schema": {
-       "type": "integer",
-       "minimum": 0,
-       "maximum": 36500
-      },
-      "description": "Preview a keep_cleared_days value before saving it."
-     }
+      "schema": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 36500}, {"const": "default"}]},
+      "description": "Preview a keep value, or use default to preview removing a topic override."
+     },
+     {"name": "topic", "in": "query", "description": "Restricts would_remove to one topic. Without it, the preview counts topics without an override.", "schema": {"type": "string"}}
     ],
     "responses": {
      "200": {
@@ -1495,7 +1500,10 @@
         }
        }
       }
-     }
+     },
+     "400": {"$ref": "#/components/responses/Error"},
+     "401": {"$ref": "#/components/responses/Error"},
+     "403": {"$ref": "#/components/responses/Error"}
     }
    }
   },
@@ -1504,6 +1512,9 @@
     "summary": "Topics with open counts",
     "tags": [
      "notifications"
+    ],
+    "parameters": [
+     {"$ref": "#/components/parameters/SubscriptionView"}
     ],
     "responses": {
      "200": {
@@ -1527,6 +1538,7 @@
              "icon": {
               "type": "string"
              },
+             "device_actions": {"type": "boolean", "description": "True when the topic accepts HTTP and broadcast actions. Omitted otherwise."},
              "subscribed": {
               "type": "boolean",
               "description": "Whether the asking token's view includes this topic (#617). Always true for a token that is not filtered."
@@ -1616,6 +1628,7 @@
           "type": "string",
           "description": "Expected interval between messages, a Go duration from 1m to 8784h such as \"25h\", or \"\" to turn it off. The timer starts when set."
          },
+         "device_actions": {"type": "boolean", "description": "Allows HTTP and broadcast actions on the topic. Default false. Requires scope admin on the topic."},
          "format_check": {
           "type": "boolean",
           "description": "false leaves the topic out of the format check; true (the default) puts it back."
@@ -1639,9 +1652,9 @@
           "icon": {
            "type": "string"
           },
-          "checkin": {
-           "type": "string"
-          }
+          "checkin": {"type": "string"},
+          "format_check": {"type": "boolean"},
+          "device_actions": {"type": "boolean"}
          }
         }
        }
@@ -2835,8 +2848,9 @@
     ],
     "parameters": [
      {"name": "to", "in": "query", "description": "End, unix ms. Default now.", "schema": {"type": "integer"}},
-     {"name": "days", "in": "query", "description": "Days back from to when from is not given. Default 7.", "schema": {"type": "integer", "minimum": 1}},
+     {"name": "days", "in": "query", "description": "Days back from to when from is not given. Default 7.", "schema": {"type": "integer", "minimum": 1, "maximum": 366}},
      {"name": "from", "in": "query", "description": "Start, unix ms. At most 366 days before to.", "schema": {"type": "integer"}},
+     {"name": "group", "in": "query", "description": "Split each hour by topic, sender, or priority.", "schema": {"type": "string", "enum": ["topic", "sender", "priority"]}},
      {"name": "format", "in": "query", "description": "Output format: json (default) or csv.", "schema": {"type": "string", "enum": ["json", "csv"]}}
     ],
     "responses": {
@@ -2851,8 +2865,13 @@
           "to": {"type": "integer"},
           "total": {"type": "integer"},
           "answered": {"type": "integer", "description": "A reply action was tapped."},
+          "week_hours": {"type": "array", "description": "Seven weekdays, starting Sunday, each with 24 hourly counts in the server local time zone.", "items": {"type": "array", "items": {"type": "integer"}}},
+          "cleared": {"type": "integer"},
+          "self_cleared": {"type": "integer"},
+          "connected": {"type": "integer", "description": "Number of open client streams."},
+          "quiet": {"type": "array", "items": {"type": "object", "properties": {"sender_id": {"type": "string"}, "name": {"type": "string"}, "topic": {"type": "string"}}}},
           "priorities": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Count per priority, keyed \"1\" to \"5\"."},
-          "hours": {"type": "array", "description": "Count per UTC hour that had any, oldest first.", "items": {"type": "object", "properties": {"at": {"type": "integer"}, "count": {"type": "integer"}}}},
+          "hours": {"type": "array", "description": "Count per UTC hour that had any, oldest first.", "items": {"type": "object", "properties": {"at": {"type": "integer"}, "count": {"type": "integer"}, "by": {"type": "object", "additionalProperties": {"type": "integer"}}}}},
           "topics": {"type": "array", "items": {"$ref": "#/components/schemas/StatsGroup"}},
           "senders": {"type": "array", "description": "Keyed by the top token id of the sending tree, \"\" for clrd's own alerts.", "items": {"$ref": "#/components/schemas/StatsGroup"}},
           "cleared_by": {"type": "array", "description": "Cleared messages keyed by the name of who cleared them.", "items": {"$ref": "#/components/schemas/StatsGroup"}},
@@ -3135,7 +3154,7 @@
     ],
     "responses": {
      "101": {
-      "description": "Upgrade. Frames are Event JSON: replay after since, then {\"type\":\"ready\",\"seq\":N}, then live. {\"type\":\"reset\"} means the cursor is gone: drop local state and fetch GET /api/v1/notifications?state=open, keeping the connection."
+      "description": "Upgrade. Frames are JSON: replay after since, settings, then ready (seq, epoch, mark_id), then live events and settings or device-list updates. A subscriptions message has seq and may include request_id. {\"type\":\"reset\"} means the cursor is gone: drop local state and fetch GET /api/v1/notifications?state=open, keeping the connection."
      },
      "400": {
       "$ref": "#/components/responses/Error"
@@ -3148,6 +3167,8 @@
      }
     },
     "parameters": [
+     {"$ref": "#/components/parameters/SubscriptionView"},
+     {"$ref": "#/components/parameters/LastEventID"},
      {
       "name": "since",
       "in": "query",
@@ -3214,8 +3235,10 @@
       "$ref": "#/components/responses/Error"
      }
     },
-    "description": "410 with code reset when since is older than the log or ahead of the server.",
+    "description": "410 with code reset when since is older than the log, ahead of the server, or the subscription view changed after it. The response seq is the next cursor, even when events is empty.",
     "parameters": [
+     {"$ref": "#/components/parameters/SubscriptionView"},
+     {"$ref": "#/components/parameters/LastEventID"},
      {
       "name": "since",
       "in": "query",
@@ -3241,7 +3264,7 @@
       "schema": {
        "type": "integer"
       },
-      "description": "Max 500"
+      "description": "Default and maximum 500. The limit counts log entries scanned, so the filtered result may contain fewer events."
      }
     ]
    }
@@ -3254,7 +3277,7 @@
     ],
     "responses": {
      "200": {
-      "description": "Same messages as the WebSocket, one per data: line, with id: seq.",
+      "description": "Same messages as the WebSocket, one per data: line, with id: seq on notification events and ready. Subscription changes, settings, device-list updates and reset have no id.",
       "content": {
        "text/event-stream": {
         "schema": {
@@ -3274,6 +3297,8 @@
      }
     },
     "parameters": [
+     {"$ref": "#/components/parameters/SubscriptionView"},
+     {"$ref": "#/components/parameters/LastEventID"},
      {
       "name": "since",
       "in": "query",
@@ -3291,15 +3316,6 @@
        "type": "string"
       },
       "description": "Optional comma list of topics to filter to."
-     },
-     {
-      "name": "Last-Event-ID",
-      "in": "header",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "Wins over since"
      }
     ]
    }
@@ -3334,6 +3350,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
+    "requestBody": {"$ref": "#/components/requestBodies/StateChange"},
     "parameters": [
      {
       "name": "topic",
@@ -3384,6 +3401,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
+    "requestBody": {"$ref": "#/components/requestBodies/StateChange"},
     "parameters": [
      {
       "name": "topic",
@@ -3435,6 +3453,7 @@
       "description": "Gotify's message shape (id, appid, message, title, priority, date, extras), or a ntfy message without a Gotify key",
       "content": {"application/json": {"schema": {"type": "object"}}}
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {"description": "Gotify error shape: error, errorCode, errorDescription", "content": {"application/json": {"schema": {"type": "object"}}}},
      "401": {"description": "Gotify error shape", "content": {"application/json": {"schema": {"type": "object"}}}},
      "403": {"description": "Gotify error shape", "content": {"application/json": {"schema": {"type": "object"}}}}
@@ -3541,6 +3560,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -3555,6 +3575,8 @@
      }
     },
     "parameters": [
+     {"$ref": "#/components/parameters/NtfyTimezone"},
+     {"$ref": "#/components/parameters/NtfyCache"},
      {
       "name": "topic",
       "in": "path",
@@ -3570,7 +3592,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also X-Title, t"
+      "description": "Also X-Title or query options title, x-title, ti, t."
      },
      {
       "name": "Priority",
@@ -3579,7 +3601,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority or query options priority, x-priority, prio, p."
      },
      {
       "name": "Tags",
@@ -3588,7 +3610,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Comma list. Also X-Tags, ta"
+      "description": "Comma list. Also X-Tags or query options tags, x-tags, tag, ta."
      },
      {
       "name": "Click",
@@ -3615,7 +3637,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+      "description": "Publish as snoozed until a Unix time, duration, RFC3339 time or time of day, at most 3 days ahead. Header aliases: X-Delay, At, X-At, In and X-In. Query options: delay, at, in and their x- prefixed forms."
      },
      {
       "name": "X-Id",
@@ -3721,6 +3743,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -3735,6 +3758,8 @@
      }
     },
     "parameters": [
+     {"$ref": "#/components/parameters/NtfyTimezone"},
+     {"$ref": "#/components/parameters/NtfyCache"},
      {
       "name": "topic",
       "in": "path",
@@ -3750,7 +3775,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also X-Title, t"
+      "description": "Also X-Title or query options title, x-title, ti, t."
      },
      {
       "name": "Priority",
@@ -3759,7 +3784,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority or query options priority, x-priority, prio, p."
      },
      {
       "name": "Tags",
@@ -3768,7 +3793,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Comma list. Also X-Tags, ta"
+      "description": "Comma list. Also X-Tags or query options tags, x-tags, tag, ta."
      },
      {
       "name": "Click",
@@ -3795,7 +3820,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+      "description": "Publish as snoozed until a Unix time, duration, RFC3339 time or time of day, at most 3 days ahead. Header aliases: X-Delay, At, X-At, In and X-In. Query options: delay, at, in and their x- prefixed forms."
      },
      {
       "name": "X-Id",
@@ -3903,6 +3928,8 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
+     "507": {"$ref": "#/components/responses/Error"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -3914,6 +3941,8 @@
      }
     },
     "parameters": [
+     {"$ref": "#/components/parameters/NtfyTimezone"},
+     {"$ref": "#/components/parameters/NtfyCache"},
      {
       "name": "topic",
       "in": "path",
@@ -3938,7 +3967,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also X-Title, t"
+      "description": "Also X-Title or query options title, x-title, ti, t."
      },
      {
       "name": "Priority",
@@ -3947,7 +3976,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority or query options priority, x-priority, prio, p."
      },
      {
       "name": "Tags",
@@ -3956,7 +3985,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Comma list. Also X-Tags, ta"
+      "description": "Comma list. Also X-Tags or query options tags, x-tags, tag, ta."
      },
      {
       "name": "Click",
@@ -3983,7 +4012,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+      "description": "Publish as snoozed until a Unix time, duration, RFC3339 time or time of day, at most 3 days ahead. Header aliases: X-Delay, At, X-At, In and X-In. Query options: delay, at, in and their x- prefixed forms."
      },
      {
       "name": "X-Id",
@@ -4052,6 +4081,8 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
+     "507": {"$ref": "#/components/responses/Error"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4063,6 +4094,8 @@
      }
     },
     "parameters": [
+     {"$ref": "#/components/parameters/NtfyTimezone"},
+     {"$ref": "#/components/parameters/NtfyCache"},
      {
       "name": "topic",
       "in": "path",
@@ -4087,7 +4120,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also X-Title, t"
+      "description": "Also X-Title or query options title, x-title, ti, t."
      },
      {
       "name": "Priority",
@@ -4096,7 +4129,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority or query options priority, x-priority, prio, p."
      },
      {
       "name": "Tags",
@@ -4105,7 +4138,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Comma list. Also X-Tags, ta"
+      "description": "Comma list. Also X-Tags or query options tags, x-tags, tag, ta."
      },
      {
       "name": "Click",
@@ -4132,7 +4165,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+      "description": "Publish as snoozed until a Unix time, duration, RFC3339 time or time of day, at most 3 days ahead. Header aliases: X-Delay, At, X-At, In and X-In. Query options: delay, at, in and their x- prefixed forms."
      },
      {
       "name": "X-Id",
@@ -4183,6 +4216,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4234,6 +4268,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4283,6 +4318,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4334,6 +4370,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4383,6 +4420,7 @@
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4421,37 +4459,14 @@
      "ntfy"
     ],
     "responses": {
-     "200": {
-      "description": "The message, or counts with template",
-      "content": {
-       "application/json": {
-        "schema": {
-         "anyOf": [
-          {
-           "$ref": "#/components/schemas/NtfyMessage"
-          },
-          {
-           "type": "object",
-           "properties": {
-            "published": {
-             "type": "integer"
-            },
-            "resolved": {
-             "type": "integer"
-            }
-           }
-          }
-         ]
-        }
-       }
-      }
-     },
+     "200": {"description": "The published message.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NtfyMessage"}}}},
      "413": {
       "$ref": "#/components/responses/Error"
      },
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4481,37 +4496,14 @@
      "ntfy"
     ],
     "responses": {
-     "200": {
-      "description": "The message, or counts with template",
-      "content": {
-       "application/json": {
-        "schema": {
-         "anyOf": [
-          {
-           "$ref": "#/components/schemas/NtfyMessage"
-          },
-          {
-           "type": "object",
-           "properties": {
-            "published": {
-             "type": "integer"
-            },
-            "resolved": {
-             "type": "integer"
-            }
-           }
-          }
-         ]
-        }
-       }
-      }
-     },
+     "200": {"description": "The published message.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NtfyMessage"}}}},
      "413": {
       "$ref": "#/components/responses/Error"
      },
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4547,7 +4539,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also t"
+      "description": "Also x-title, ti, t."
      },
      {
       "name": "priority",
@@ -4556,7 +4548,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also p"
+      "description": "Also x-priority, prio, p."
      },
      {
       "name": "tags",
@@ -4565,7 +4557,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also ta"
+      "description": "Also x-tags, tag, ta."
      }
     ]
    }
@@ -4577,37 +4569,14 @@
      "ntfy"
     ],
     "responses": {
-     "200": {
-      "description": "The message, or counts with template",
-      "content": {
-       "application/json": {
-        "schema": {
-         "anyOf": [
-          {
-           "$ref": "#/components/schemas/NtfyMessage"
-          },
-          {
-           "type": "object",
-           "properties": {
-            "published": {
-             "type": "integer"
-            },
-            "resolved": {
-             "type": "integer"
-            }
-           }
-          }
-         ]
-        }
-       }
-      }
-     },
+     "200": {"description": "The published message.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NtfyMessage"}}}},
      "413": {
       "$ref": "#/components/responses/Error"
      },
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4643,7 +4612,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also t"
+      "description": "Also x-title, ti, t."
      },
      {
       "name": "priority",
@@ -4652,7 +4621,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also p"
+      "description": "Also x-priority, prio, p."
      },
      {
       "name": "tags",
@@ -4661,7 +4630,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also ta"
+      "description": "Also x-tags, tag, ta."
      }
     ]
    }
@@ -4673,37 +4642,14 @@
      "ntfy"
     ],
     "responses": {
-     "200": {
-      "description": "The message, or counts with template",
-      "content": {
-       "application/json": {
-        "schema": {
-         "anyOf": [
-          {
-           "$ref": "#/components/schemas/NtfyMessage"
-          },
-          {
-           "type": "object",
-           "properties": {
-            "published": {
-             "type": "integer"
-            },
-            "resolved": {
-             "type": "integer"
-            }
-           }
-          }
-         ]
-        }
-       }
-      }
-     },
+     "200": {"description": "The published message.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/NtfyMessage"}}}},
      "413": {
       "$ref": "#/components/responses/Error"
      },
      "404": {
       "$ref": "#/components/responses/Error"
      },
+     "429": {"$ref": "#/components/responses/RateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4739,7 +4685,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also t"
+      "description": "Also x-title, ti, t."
      },
      {
       "name": "priority",
@@ -4748,7 +4694,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also p"
+      "description": "Also x-priority, prio, p."
      },
      {
       "name": "tags",
@@ -4757,7 +4703,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also ta"
+      "description": "Also x-tags, tag, ta."
      }
     ]
    }
@@ -4779,6 +4725,7 @@
        }
       }
      },
+     "429": {"$ref": "#/components/responses/NtfyRateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4797,26 +4744,11 @@
       "schema": {
        "type": "string"
       },
-      "description": "One topic or a comma list"
+      "description": "Up to 150 distinct comma-separated topic names."
      },
-     {
-      "name": "since",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "all, latest, none, a message id, a unix time or a duration (10m)"
-     },
-     {
-      "name": "poll",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "1: send what is stored, then close"
-     },
+     {"name": "since", "in": "query", "description": "all, latest, none, a message ID, Unix time or a duration like 10m. Default: start at the present for a live stream, or replay retained events for a poll. Headers X-Since and Since, and query aliases si and x-since also work.", "schema": {"type": "string"}},
+     {"name": "poll", "in": "query", "description": "1, yes or true returns a finite replay and closes. Headers X-Poll and Poll, and query aliases po and x-poll also work.", "schema": {"type": "string"}},
+     {"name": "scheduled", "in": "query", "description": "1, yes or true includes delayed and snoozed messages in replay (aliases sched and x-scheduled).", "schema": {"type": "string"}},
      {
       "$ref": "#/components/parameters/NtfyFilterId"
      },
@@ -4852,6 +4784,7 @@
        }
       }
      },
+     "429": {"$ref": "#/components/responses/NtfyRateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4870,26 +4803,11 @@
       "schema": {
        "type": "string"
       },
-      "description": "One topic or a comma list"
+      "description": "Up to 150 distinct comma-separated topic names."
      },
-     {
-      "name": "since",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "all, latest, none, a message id, a unix time or a duration (10m)"
-     },
-     {
-      "name": "poll",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "1: send what is stored, then close"
-     },
+     {"name": "since", "in": "query", "description": "all, latest, none, a message ID, Unix time or a duration like 10m. Default: start at the present for a live stream, or replay retained events for a poll. Headers X-Since and Since, and query aliases si and x-since also work.", "schema": {"type": "string"}},
+     {"name": "poll", "in": "query", "description": "1, yes or true returns a finite replay and closes. Headers X-Poll and Poll, and query aliases po and x-poll also work.", "schema": {"type": "string"}},
+     {"name": "scheduled", "in": "query", "description": "1, yes or true includes delayed and snoozed messages in replay (aliases sched and x-scheduled).", "schema": {"type": "string"}},
      {
       "$ref": "#/components/parameters/NtfyFilterId"
      },
@@ -4925,6 +4843,7 @@
        }
       }
      },
+     "429": {"$ref": "#/components/responses/NtfyRateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -4943,26 +4862,11 @@
       "schema": {
        "type": "string"
       },
-      "description": "One topic or a comma list"
+      "description": "Up to 150 distinct comma-separated topic names."
      },
-     {
-      "name": "since",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "all, latest, none, a message id, a unix time or a duration (10m)"
-     },
-     {
-      "name": "poll",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "1: send what is stored, then close"
-     },
+     {"name": "since", "in": "query", "description": "all, latest, none, a message ID, Unix time or a duration like 10m. Default: start at the present for a live stream, or replay retained events for a poll. Headers X-Since and Since, and query aliases si and x-since also work.", "schema": {"type": "string"}},
+     {"name": "poll", "in": "query", "description": "1, yes or true returns a finite replay and closes. Headers X-Poll and Poll, and query aliases po and x-poll also work.", "schema": {"type": "string"}},
+     {"name": "scheduled", "in": "query", "description": "1, yes or true includes delayed and snoozed messages in replay (aliases sched and x-scheduled).", "schema": {"type": "string"}},
      {
       "$ref": "#/components/parameters/NtfyFilterId"
      },
@@ -4991,6 +4895,7 @@
      "101": {
       "description": "One NtfyMessage JSON per frame. Auth by header or ?auth= (base64 of an Authorization value)."
      },
+     "429": {"$ref": "#/components/responses/NtfyRateLimited"},
      "400": {
       "$ref": "#/components/responses/Error"
      },
@@ -5009,26 +4914,11 @@
       "schema": {
        "type": "string"
       },
-      "description": "One topic or a comma list"
+      "description": "Up to 150 distinct comma-separated topic names."
      },
-     {
-      "name": "since",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "all, latest, none, a message id, a unix time or a duration (10m)"
-     },
-     {
-      "name": "poll",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      },
-      "description": "1: send what is stored, then close"
-     },
+     {"name": "since", "in": "query", "description": "all, latest, none, a message ID, Unix time or a duration like 10m. Default: start at the present for a live stream, or replay retained events for a poll. Headers X-Since and Since, and query aliases si and x-since also work.", "schema": {"type": "string"}},
+     {"name": "poll", "in": "query", "description": "1, yes or true returns a finite replay and closes. Headers X-Poll and Poll, and query aliases po and x-poll also work.", "schema": {"type": "string"}},
+     {"name": "scheduled", "in": "query", "description": "1, yes or true includes delayed and snoozed messages in replay (aliases sched and x-scheduled).", "schema": {"type": "string"}},
      {
       "$ref": "#/components/parameters/NtfyFilterId"
      },
@@ -6116,7 +6006,20 @@
     "description": "ntfy style: the token as password (or user)."
    }
   },
+  "requestBodies": {
+   "StateChange": {"content": {"application/json": {"schema": {"type": "object", "properties": {"via": {"$ref": "#/components/schemas/StateVia"}}}}}}
+  },
   "responses": {
+   "RateLimited": {
+    "description": "Rate limited. Retry-After gives the wait in seconds.",
+    "headers": {"Retry-After": {"schema": {"type": "integer", "minimum": 1}}},
+    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+   },
+   "NtfyRateLimited": {
+    "description": "Request rate or concurrent stream limit reached. Retry-After is sent for a request rate limit.",
+    "headers": {"Retry-After": {"schema": {"type": "integer", "minimum": 1}}},
+    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+   },
    "Error": {
     "description": "Error",
     "content": {
@@ -6216,6 +6119,7 @@
     "properties": {
      "key": {"type": "string"},
      "count": {"type": "integer"},
+     "previous": {"type": "integer", "description": "For a topic or sender, count in the previous equally long interval."},
      "open": {"type": "integer", "description": "Not cleared yet."},
      "cleared": {"type": "integer"},
      "clear_median_ms": {"type": "integer", "description": "Median time from publish to first dismiss or resolve; 0 when none cleared."},
@@ -6445,6 +6349,12 @@
      "code"
     ]
    },
+   "StateVia": {
+    "type": "string",
+    "pattern": "^[a-z][a-z0-9_]{0,31}$",
+    "default": "api",
+    "description": "How the state change was made. The server records api if omitted or invalid."
+   },
    "Action": {
     "type": "object",
     "description": "Set exactly one of url, reply, copy, http or broadcast. At most 3 reply actions; reply values are 1 to 64 of A-Z a-z 0-9 _ - and unique. At most one reply action may set text: true; answering it needs typed text.",
@@ -6465,6 +6375,9 @@
       "example": "yes",
       "pattern": "^[A-Za-z0-9_-]{1,64}$"
      },
+     "clear": {"type": "boolean", "description": "Asks the client to clear the notification after taking the action."},
+     "http": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}, "method": {"type": "string", "default": "POST"}, "headers": {"type": "object", "additionalProperties": {"type": "string"}}, "body": {"type": "string"}}},
+     "broadcast": {"type": "object", "properties": {"intent": {"type": "string"}, "extras": {"type": "object", "additionalProperties": {"type": "string"}}}},
      "text": {
       "type": "boolean",
       "description": "This reply action is answered with typed text (reply route body text)."
@@ -6496,17 +6409,18 @@
       "type": "string",
       "enum": [
        "markdown",
-       "text"
+       "text",
+       ""
       ],
-      "description": "How clients show message: markdown (default) or plain text. Events from before this field existed have none: treat as markdown."
+      "description": "How clients show message: markdown (default) or plain text. Treat an empty or missing format as markdown."
      },
      "priority": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 5
      },
      "tags": {
-      "type": "array",
+      "type": ["array", "null"],
       "items": {
        "type": "string"
       }
@@ -6523,7 +6437,7 @@
       "description": "The sender's card color, #RRGGBB, or empty. The user's color_rules (settings) win over it. Missing in old events: treat as empty."
      },
      "actions": {
-      "type": "array",
+      "type": ["array", "null"],
       "items": {
        "$ref": "#/components/schemas/Action"
       }
@@ -6560,6 +6474,8 @@
      "state_by": {
       "type": "string"
      },
+     "state_by_id": {"type": "string", "description": "ID of the device or token that set the state."},
+     "live": {"type": "boolean", "description": "True for a live-only publish or a publish discarded by a sender rule. The notification is not stored."},
      "snooze_until": {
       "type": [
        "string",
@@ -6610,14 +6526,14 @@
      },
      "changed": {
       "type": "boolean",
-      "description": "Only in the answer to a state change (ack, snooze, dismiss, resolve, reopen): false when the notification already had that state and no event was written."
+      "description": "On ack, snooze, dismiss, resolve and reopen replies: true when the action wrote an event, false on a no-op. A snooze writes an event even if until is unchanged."
      },
      "devices": {
-      "type": "array",
+      "type": ["array", "null"],
       "items": {
        "type": "string"
       },
-      "description": "Token ids it alerts on; every other reader gets it silenced. Always present, [] for every device."
+      "description": "Token ids it alerts on; every other reader gets it silenced. An empty array or null means no restriction."
      },
      "marks": {
       "type": "array",
@@ -6758,6 +6674,7 @@
       },
       "description": "Only these devices alert: names (any case) or token ids from GET /api/v1/devices, each one able to read the topic, else 400. Every other reader gets it silenced. Omit for every device."
      },
+     "live": {"type": "boolean", "description": "Send only to open ntfy streams. Creates no stored notification or replay event."},
      "status": {
       "type": "string",
       "enum": [
@@ -6786,8 +6703,7 @@
        "updated",
        "state",
        "repeat",
-       "ready",
-       "reset"
+       "mark"
       ]
      },
      "notification": {
@@ -6800,10 +6716,6 @@
      "only": {
       "type": "string",
       "description": "Set on an event for one device only: the token id of the device whose clear stays on it (Clears apply everywhere off, docs/SPEC.md section 2). No other token receives it."
-     },
-     "epoch": {
-      "type": "string",
-      "description": "On ready only. This database's id. A different one from the saved one means: treat it like reset."
      }
     },
     "required": [
@@ -6943,26 +6855,7 @@
      },
      "actions": {
       "type": "array",
-      "items": {
-       "type": "object",
-       "properties": {
-        "id": {
-         "type": "string"
-        },
-        "action": {
-         "type": "string"
-        },
-        "label": {
-         "type": "string"
-        },
-        "url": {
-         "type": "string"
-        },
-        "clear": {
-         "type": "boolean"
-        }
-       }
-      }
+      "items": {"$ref": "#/components/schemas/NtfyAction"}
      },
      "attachment": {
       "type": "object",
@@ -6989,6 +6882,22 @@
       ],
       "description": "Present when the notification's format is markdown; absent for plain text."
      }
+    }
+   },
+   "NtfyAction": {
+    "type": "object",
+    "properties": {
+     "id": {"type": "string"},
+     "action": {"type": "string", "enum": ["view", "copy", "http", "broadcast"]},
+     "label": {"type": "string"},
+     "url": {"type": "string"},
+     "value": {"type": "string", "description": "Clipboard text for copy."},
+     "method": {"type": "string"},
+     "headers": {"type": "object", "additionalProperties": {"type": "string"}},
+     "body": {"type": "string"},
+     "intent": {"type": "string"},
+     "extras": {"type": "object", "additionalProperties": {"type": "string"}},
+     "clear": {"type": "boolean"}
     }
    },
    "NtfyPublish": {
@@ -7025,21 +6934,10 @@
      },
      "actions": {
       "type": "array",
-      "items": {
-       "type": "object",
-       "properties": {
-        "action": {
-         "type": "string"
-        },
-        "label": {
-         "type": "string"
-        },
-        "url": {
-         "type": "string"
-        }
-       }
-      }
+      "items": {"$ref": "#/components/schemas/NtfyAction"}
      },
+     "timezone": {"type": "string", "description": "IANA time zone for a delay expressed as a time of day. Defaults to the server's local zone."},
+     "cache": {"type": "string", "description": "no, false or 0 sends only to open ntfy streams. Default is to store and replay."},
      "delay": {
       "type": "string"
      },
@@ -7184,6 +7082,9 @@
       },
       "description": "Per-topic override of link_previews. A token limited to some topics only sees its own."
      },
+     "snooze_intervals": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string"}, "default": ["1h", "4h"]},
+     "snooze_default": {"type": "string", "default": "1h"},
+     "topic_keep_cleared_days": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Per-topic retention overrides for cleared notifications."},
      "swipe_start": {
       "$ref": "#/components/schemas/SwipeButtons",
       "description": "Buttons a swipe toward the start of the line (to the left) reveals, first nearest the edge. Default [\"clear\", \"snooze\"]."
@@ -7279,6 +7180,30 @@
    }
   },
   "parameters": {
+   "LastEventID": {
+    "name": "Last-Event-ID",
+    "in": "header",
+    "schema": {"type": "string"},
+    "description": "When nonempty, overrides the since query parameter."
+   },
+   "SubscriptionView": {
+    "name": "subscribed",
+    "in": "query",
+    "schema": {"type": "string", "enum": ["mine", "all"]},
+    "description": "mine asks to follow the owner's subscriptions even on a typed-in token. all includes all readable topics, even ones the owner has unsubscribed from. With neither value, linked devices and tokens attached to a user follow the owner's subscriptions."
+   },
+   "NtfyTimezone": {
+    "name": "Timezone",
+    "in": "header",
+    "schema": {"type": "string"},
+    "description": "IANA zone for a delay specified as a time of day. Defaults to the server's zone. Also X-Timezone or the timezone and x-timezone query options."
+   },
+   "NtfyCache": {
+    "name": "Cache",
+    "in": "header",
+    "schema": {"type": "string"},
+    "description": "no, false or 0 sends only to open ntfy streams. Default is to store and replay. Also X-Cache or the cache query parameter."
+   },
    "NtfyFilterId": {
     "name": "id",
     "in": "query",
@@ -7286,7 +7211,7 @@
     "schema": {
      "type": "string"
     },
-    "description": "Only the message with this ntfy id. Also read from the X-Id or Id header."
+    "description": "Only the message with this ntfy id (query alias x-id). Also read from the X-Id or Id header."
    },
    "NtfyFilterMessage": {
     "name": "message",
@@ -7295,7 +7220,7 @@
     "schema": {
      "type": "string"
     },
-    "description": "Only messages with exactly this body (alias m). Also read from the X-Message or Message header."
+    "description": "Only messages with exactly this body (query aliases m and x-message). Also read from the X-Message or Message header."
    },
    "NtfyFilterTitle": {
     "name": "title",
@@ -7304,7 +7229,7 @@
     "schema": {
      "type": "string"
     },
-    "description": "Only messages with exactly this title (alias t). Also read from the X-Title or Title header."
+    "description": "Only messages with exactly this title (query aliases t and x-title). Also read from the X-Title or Title header."
    },
    "NtfyFilterPriority": {
     "name": "priority",
@@ -7313,7 +7238,7 @@
     "schema": {
      "type": "string"
     },
-    "description": "Comma list of priorities (1-5 or min, low, default, high, max); a message matches any of them (aliases prio, p). Also read from the X-Priority or Priority header."
+    "description": "Comma list of priorities (1-5 or min, low, default, high, max); a message matches any of them (query aliases prio, p and x-priority). Also read from the X-Priority or Priority header."
    },
    "NtfyFilterTags": {
     "name": "tags",
@@ -7322,7 +7247,7 @@
     "schema": {
      "type": "string"
     },
-    "description": "Comma list of tags; a message must have all of them (aliases tag, ta). Also read from the X-Tags or Tags header."
+    "description": "Comma list of tags; a message must have all of them (query aliases tag, ta and x-tags). Also read from the X-Tags or Tags header."
    }
   }
  }

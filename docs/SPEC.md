@@ -327,9 +327,11 @@ given (a topic mapped to `null` drops its override); both need scope read. A
 token limited to some topics sees and sets only those topics' overrides and
 cannot change the four switches or the snooze times (403). `snooze_intervals`
 is the list of snooze times clients offer (1 to 8 Go durations such as `15m`
-or `48h`, each above 0 and at most 31 days, no two the same length) and
+or `48h`, from 1 minute to 31 days, no two the same length) and
 `snooze_default` is the one a plain tap uses; it must be in the list. A list
-without the current default makes its first entry the default.
+without the current default makes its first entry the default unless the
+request sets a new default. The initial choices are `1h` and `4h`, with `1h`
+as the default.
 `keep_cleared_days` is how many days a dismissed or resolved notification is
 kept after it was cleared (its `updated_at`); `0` keeps them forever. Open
 notifications stay by default. With `CLRD_NTFY_CACHE_TOPICS` set to exact
@@ -686,10 +688,14 @@ clients start over.
 Also `GET /api/v1/events?since=<seq>&limit=500` for clients that poll. Use
 `subscribed=all` to poll all readable topics without restarting the cursor
 when subscriptions are edited. The endpoint returns
-`{"events":[...],"seq":<current>,"epoch":"<id>"}`, or HTTP 410 with code `reset`. SSE at
+`{"events":[...],"seq":<next cursor>,"epoch":"<id>"}`, or HTTP 410 with code
+`reset`. Use the returned `seq` for the next poll even if `events` is empty.
+The limit (default and maximum 500) counts log entries scanned before
+filtering. The cursor reaches the current seq once the log is caught up. SSE at
 `GET /api/v1/events/sse?since=<seq>` sends the same JSON objects as the
-WebSocket (events, `settings`, `ready`, `reset`), one per `data:` line, and
-honours `Last-Event-ID` (`settings` and `reset` carry no `id:`).
+WebSocket, one per `data:` line, and honours `Last-Event-ID`. Notification
+events and `ready` carry `id:`. Subscription-change events are followed by
+a reset and advance the cursor on the next `ready`.
 
 Browsers cannot set headers on a WebSocket, so the WebSocket and SSE accept
 the session cookie (same-origin only) as well as a Bearer token. Same origin
@@ -908,20 +914,23 @@ scheme.
 Native (JSON in, JSON out, errors as `{"error":"...","code":"..."}`).
 Codes: `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found`
 404, `conflict` 409, `reset` 410, `gone` 410 (pairing, linking),
-`rate_limited` 429 (with `Retry-After` in seconds), `busy` 429 (pairing,
-linking), `internal` 500.
+`too_large` 413, `rate_limited` 429 (with `Retry-After` in seconds for
+time-based limits), `busy` 429 (pairing, linking), `internal` 500,
+`storage_full` 507 (attachment quota exceeded or disk write failed).
 
-Notifications always carry every field except `requested_topic` and
-`changed`: `""` for unset strings, `[]` for `tags` and `actions`, `null` for
-`snooze_until`. List returns
+Stored notifications carry every field except `requested_topic`, `changed`
+and `live`: `""` for unset strings, `[]` for `tags` and `actions`, `null` for
+`snooze_until`. Shortened responses to publishes and resolves can have
+`null` arrays and an empty format. List returns
 `{"notifications":[...],"seq":<current>,"epoch":"<id>"}`, newest first; page with
 `before=<last id>`; `limit` defaults to 100, max 500. Fetch the list, then open
-the WebSocket with `since=<seq>` from that response. Setting the state a
-notification already has returns it unchanged with no new event (two phones
-dismissing at once is normal), with `"changed": false` so a client retrying an
-action does not take the row's seq as its own change (#693). Any answer that
-wrote an event says `"changed": true`, including a snooze that sets a new
-`until`. The ntfy endpoints answer in ntfy's format, without this field. Reopening a dismissed row whose `external_id`
+the WebSocket with `since=<seq>` from that response. The ack, snooze,
+dismiss, resolve and reopen responses say `"changed": true` when the action
+wrote an event and `false` on a no-op, such as dismissing a row that is
+already dismissed. A snooze writes an event even if it repeats the same
+`until`. Clients can tell whether the returned seq belongs to their action
+(#693). The ntfy endpoints answer in ntfy's format, without
+this field. Reopening a dismissed row whose `external_id`
 has since been reused returns 409.
 
 Topic names: `[A-Za-z0-9_-]{1,64}`. Reserved (the server and mounted pages
@@ -937,7 +946,7 @@ own these paths): `api`, `app`, `assets`, `docs`, `healthz`, `login`,
 | PATCH | `/api/v1/notifications/{id}` | Body `{"message":"..."}`: replace the message of an open notification in place (same id and state, an `updated` event). Scope publish on its topic; 409 once dismissed or resolved, or if it has reply buttons (a tap answers the text shown; link buttons are fine). |
 | POST | `/api/v1/notifications/{id}/ack` | Acknowledge. |
 | POST | `/api/v1/notifications/{id}/reply` | Body `{"reply":"yes"}`, plus `"text"` for a text action and optional `"seq"`, `"via"`: answer with one of its reply actions (section 2). 400 if not one of them, or the text is missing, not wanted or over 1000 characters, 409 if already answered or final, 403 `approve_denied` from a device not allowed to approve, 403 `own_request` from the token tree that sent it, 202 with a confirm prompt from an ask device (section 4). |
-| POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. |
+| POST | `/api/v1/notifications/{id}/snooze` | Body `{"for":"1h"}` or `{"until":"RFC3339"}`. If both are set, `until` wins. The time must be in the future. A dismissed or resolved notification returns 409. |
 | POST | `/api/v1/notifications/{id}/mark` | Body `{"mark":"seen"\|"actioned","note"?,"link"?}`: set your mark (section 2). Scope read on its topic. Changes no state. |
 | DELETE | `/api/v1/notifications/{id}/mark` | Remove your own mark. |
 | POST | `/api/v1/notifications/{id}/dismiss` | User clears it. |
@@ -996,6 +1005,7 @@ resolved`), `ntfy_import` and `cache-expiry` (the cache retention prune).
 | POST | `/api/v1/silences` | Body `{"topic","tag","for":"8h"}` or `"until":"RFC3339"` instead of `for` (exactly one, at most 8784h ahead), optional `comment`. Needs `topic`, `tag` or both. Returns 201 and the silence. Scope publish on the topic; no topic (every topic) needs a token without a topic list. |
 | DELETE | `/api/v1/silences/{id}` | End a silence early. Same scope as creating it. 204. |
 | GET/PUT | `/api/v1/settings` | Display settings (section 2.1). PUT changes only the fields given. |
+| GET/PUT/DELETE | `/api/v1/push` | Get the browser's subscription status and public VAPID key, save a subscription, or remove it (section 9). PUT and DELETE return 204. |
 | GET | `/api/v1/favicon?host=` | A site's icon, or a fallback (section 2.1). |
 | GET | `/api/v1/preview?url=&topic=` | A link's preview card; 403 while previews are off (section 2.1). |
 | GET | `/api/v1/devices` | Devices (tokens) seen in the last 10 min, from the same set `?all=1` shows: `{devices:[{id,name,last_seen_at}]}`. With `?all=1`: every linked device, `{devices:[{id,name,detail,kind,via,via_id,linked_at,last_seen_at,this,can_unlink,sound,approve,clears_everywhere,can_approve,connected,caught_up,synced_seq}]}`; `detail` is the browser and system or what the app sent (section 4, absent when unknown); `kind` is `token`, `browser` or `phone`. `via` and `via_id` are the name and id of the token or device it hangs under (absent for a token), `approve` is its setting from "Who may approve" in section 4, `clears_everywhere` its "Clears everywhere" option (section 2, true by default). `can_approve` is true only on the caller's own row (`this`), when the caller may change who approves: `approve` is `allowed` and the token is on every topic. `connected` is true while the device has a stream open, `caught_up` once one of them has sent `ready`, and `synced_seq` is the last event seq that device's stream has passed, sent to it or not visible to it, leaving out another device's own clears (0 when not connected); compare it with the current seq from your own stream. The inbox draws one dot per device from this list, green when `connected` and `caught_up`, and counts the green ones as "In sync on N devices". The server cannot see whether the device applied it, only that it was sent. A full admin sees every token; anyone else sees the token they signed in with, the browsers signed in with it, the phones linked from those and the browsers those phones approved. Never a secret or hash. |
@@ -1211,6 +1221,8 @@ and `initialize` reports `version` as `serverInfo.version`.
   days ahead; anything else is a 400), `X-Timezone`/`Timezone` (or the
   `timezone` JSON field: the IANA zone a time of day is read in, else the
   server's zone; an unknown one is a 400 only when there is a delay),
+  also available as query options `delay`, `at`, `in`, `timezone` and
+  their `x-` prefixed forms,
   `X-Icon` (sets `icon`; a
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
   is dropped), `X-Filename`/`Filename`/`File`/`f` (labels a valid external
@@ -1220,9 +1232,12 @@ and `initialize` reports `version` as `serverInfo.version`.
   plain text, section 2.1), `X-Email` (ignored, documented),
   plus clrd's own `X-Id` = `external_id`. Any of these headers may carry
   RFC 2047 encoded words (`=?UTF-8?B?...?=`, `=?UTF-8?Q?...?=`), decoded as
-  ntfy does; a value that cannot be decoded is kept as sent. Query values
-  are taken as they are. The title, priority and tags also accept the URL
-  names `x-title`, `x-priority` and `x-tags`. `X-Template`/`Template`/`tpl` set
+  ntfy does; a value that cannot be decoded is kept as sent. On a plain
+  publish, the message header or query option expands literal `\n` into a
+  line break. The message body keeps its own escaping. The title, priority
+  and tags also accept the query names `x-title`, `x-priority` and `x-tags`.
+  `X-Cache`/`Cache` values `no`, `false` and `0` send only to open ntfy streams.
+  `X-Template`/`Template`/`tpl` set
   to yes/true/1 makes the message, title and priority Go templates over the
   JSON body. Other selectors on a JSON POST or PUT can load `name.yml`
   from `CLRD_NTFY_TEMPLATE_DIR` (unset disables disk lookup). Existing saved
@@ -1269,7 +1284,8 @@ and `initialize` reports `version` as `serverInfo.version`.
 - The bundled `clrd publish`, `clrd poll` and `clrd subscribe` commands
   use these routes. Poll and subscribe print newline-delimited JSON.
   See [command examples](self-host.md#publish-and-subscribe-from-the-command-line).
-- Webhook-friendly: `GET /{topic}/publish?message=...` and `/{topic}/trigger`.
+- Webhook-friendly: `GET /{topic}/publish?message=...`, `/{topic}/send` and
+  `/{topic}/trigger`. All return the published message.
 - Alertmanager/Grafana/Gatus: a payload with `status: resolved` and a stable
   key (alert fingerprint / `X-Id`) resolves instead of creating. Mapping in `docs/integrations/`.
 - Webhooks in: `POST /{topic}?template=<name>` maps a service's JSON to
@@ -1293,9 +1309,12 @@ and `initialize` reports `version` as `serverInfo.version`.
   the address is public or in a listed network and the port is 80, 443 or
   listed. `CLRD_HOOK_ALLOW=off` (section 7) locks the list empty: saved
   entries are ignored at send time, GET adds `"locked": true` and PUT is 403
-  `locked`. Non-2xx is tried again from 30 s, doubling, 8 tries in all; 24 h of failures turns
-  it off with a notification on the topic. Each try uses the hook's URL,
-  secret and body saved at that moment. A hook with `"kind": "discord"`
+  `locked`. Non-2xx is tried again from 30 s, doubling, 8 tries in all.
+  A non-2xx `Retry-After` can extend the wait by setting a longer interval,
+  capped at an hour. After 24 h of failures the hook is turned off with a
+  notification on the topic. Changing its URL or kind discards its queued
+  deliveries. Otherwise retries use the current secret and body.
+  A hook with `"kind": "discord"`
   (#166, #673; no body or secret) instead posts each new active notification
   (and each scheduled notification when it wakes) to
   its Discord webhook URL with `?wait=true`, keeps the message id, and on each
@@ -1389,7 +1408,9 @@ Full ntfy parity checklist lives in issue #2; tick it off there.
 
 ## 6. MCP (`/mcp`, streamable HTTP, Bearer auth)
 
-Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, attachment?, repeat?, repeat_times?, live?, devices?)`, `list(topic?, state?)`,
+Tools: `send(topic, message, title?, format?, priority?, id?, actions?, icon?, color?, attachment?, repeat?, repeat_times?, live?, devices?, click?, expires?, reopen?, snooze_until?, tags?)`.
+With a reused ID, MCP `send` defaults `reopen` to true. Set it to false to keep
+an acknowledged notification in that state. Other tools include `list(topic?, state?)`,
 `topics()`, `counts(keep_cleared_days?, topic?)`, `format_check(topic?, by?)`, `format_dismiss(topic, rule, sender_id?, dismissed?)` (the format
 check below, same JSON), `settings(...)` (no arguments reads
 the settings, arguments change those fields), `get(id)`, `update(id, message)` (edit the message in place, for progress),
@@ -1445,6 +1466,8 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   `CLRD_RETENTION` (`720h` for final rows and events; the
   `keep_cleared_days` setting overrides it once set),
   `CLRD_NTFY_TEMPLATE_DIR` (directory of named ntfy templates, unset disables lookup),
+  `CLRD_NTFY_IMPLICIT_UPLOADS` (`off`; `on` enables file detection on ordinary
+  ntfy topic publishes, as described in section 5),
   `CLRD_NTFY_CACHE_TOPICS` (unset; exact topics separated by commas where
   active and acknowledged notifications age out under `CLRD_RETENTION`),
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to
@@ -1490,8 +1513,9 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
 - `Dockerfile` (distroless or scratch) and `docker-compose.yml` example.
 - Tests: `go test ./...` must cover publish, external_id upsert, each state
   change, replay from seq, and the two-client sync proof (issue #1).
-- No telemetry. The only outbound calls are the favicon and link preview
-  fetches of section 2.1, made when a client asks for them.
+- No telemetry. The server fetches favicons and link previews on request
+  (section 2.1). When configured, it also sends outgoing webhooks (section 5)
+  and Web Push (section 9).
 
 ## 8. Android
 
