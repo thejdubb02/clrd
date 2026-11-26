@@ -1002,10 +1002,10 @@ func TestHooksOutSlack(t *testing.T) {
 		return slices.Clone(hits)
 	}
 	save("C0123")
-	_, a := api("POST", "/api/v1/notifications", map[string]any{"topic": "ops", "title": "Disk full", "message": "Check <!channel> backup"})
+	_, a := api("POST", "/api/v1/notifications", map[string]any{"topic": "ops", "title": "Disk full", "message": "Check <!channel> src/**/backup"})
 	deliver()
 	p := checkHits("chat.postMessage")[0].body
-	if p["channel"] != "C0123" || p["text"] != "*Disk full*\nCheck &lt;!channel&gt; backup" || p["unfurl_links"] != false {
+	if p["channel"] != "C0123" || p["text"] != "*Disk full*\nCheck &lt;!channel&gt; src/**/backup" || p["unfurl_links"] != false {
 		t.Fatalf("post: %+v", p)
 	}
 	var remote string

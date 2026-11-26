@@ -405,8 +405,14 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 	}
 	var reqs []hookReq
 	if j.kind == "slack" {
-		// Slack mrkdwn: escape &<> so a title cannot ping @channel, then swap Discord markup.
-		text := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "**", "*", "~~", "~", "\n-# ", "\n").Replace(discordText(n, j.event))
+		// Slack mrkdwn: escape &<> so a title cannot ping @channel, then swap the
+		// Discord markup on the title line and status line only, not in the message.
+		text := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(discordText(n, j.event))
+		head, rest, _ := strings.Cut(text, "\n")
+		if i := strings.LastIndex(rest, "\n-# "); i >= 0 {
+			rest = rest[:i+1] + rest[i+4:]
+		}
+		text = strings.NewReplacer("**", "*", "~~", "~").Replace(head) + "\n" + rest
 		if j.event == "posted" {
 			reqs = []hookReq{{"POST", slackAPI + "chat.postMessage", map[string]any{"channel": u.Query().Get("channel"), "text": text, "unfurl_links": false}}}
 		} else {
@@ -486,7 +492,7 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 				switch {
 				case r.url == slackAPI+"reactions.add" && m.Error == "already_reacted":
 					continue
-				case r.url == slackAPI+"chat.update" && (m.Error == "message_not_found" || m.Error == "channel_not_found"):
+				case r.url == slackAPI+"chat.update" && m.Error == "message_not_found":
 					return 204, nil
 				}
 				return code, fmt.Errorf("Slack API error: %s", m.Error)
