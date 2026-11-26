@@ -1529,7 +1529,7 @@ internal fun senderEmpty(s: org.json.JSONObject) = when {
  * Only a full admin may list them; for any other token the server says no and this stays hidden.
  */
 @Composable
-private fun SenderSettings(app: App, resumes: Int, state: androidx.compose.runtime.MutableState<List<org.json.JSONObject>?>) {
+internal fun SenderSettings(app: App, resumes: Int, state: androidx.compose.runtime.MutableState<List<org.json.JSONObject>?>) {
     val b = LocalBrand.current
     val ctx = LocalContext.current
     val server by app.saved.collectAsState()
@@ -1555,7 +1555,13 @@ private fun SenderSettings(app: App, resumes: Int, state: androidx.compose.runti
     list.forEach { s ->
         val id = s.optString("id")
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { open = if (open == id) null else id }.padding(vertical = 4.dp)) {
-            Text(s.optString("name"), color = b.ink)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val icon = rememberPicture(s.optJSONObject("rules")?.optString("icon").orEmpty(), Images.ICON_PX)
+                if (icon != null) Image(icon, null, Modifier.size(24.dp).clip(RoundedCornerShape(6.dp))
+                    .background(b.iconTile).padding(if (b.iconTile == Color.Transparent) 0.dp else 1.dp)
+                    .testTag("sender-icon-$id"), contentScale = ContentScale.Crop)
+                Text(s.optString("name"), color = b.ink)
+            }
             val kind = stringResource(senderKind(s.optString("kind")))
             val template = s.optString("template").takeIf { it.isNotEmpty() }?.let { ", " + ctx.getString(R.string.sender_template, it) }.orEmpty()
             val seen = millisOf(s.optString("last_seen"))?.let { ago(ctx, it) }.orEmpty()
