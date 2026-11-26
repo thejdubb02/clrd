@@ -47,9 +47,9 @@
       <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="how">How it works</h2>
       <ol class="mt-5 grid list-decimal gap-3.5 ps-5 marker:font-mono marker:text-sm marker:text-muted-foreground [&_strong]:text-foreground [&_strong]:font-semibold">
         <li><strong>Send.</strong> A script, a monitor or an AI agent posts an alert to a topic.</li>
-        <li><strong>It arrives everywhere.</strong> Subscribed devices receive the alert. An open web inbox can play a sound, and supported browsers can show a system notification with the inbox closed after you turn on Browser notifications. Link another device with a QR code.</li>
+        <li><strong>It arrives everywhere.</strong> Every phone, tablet and browser signed in to that topic shows it, an open web inbox plays the sound you picked, and a browser with notifications turned on in Settings shows one even with clrd closed. Adding a device is one QR code scan.</li>
         <li><strong>Clear it anywhere.</strong> Swipe it aside and tap Clear in the phone app, click Clear on the web (on a phone, swipe a card and tap Clear), or let the sender resolve it when the fault is fixed.</li>
-        <li><strong>Every device follows.</strong> The server syncs a clear to other inboxes and Android notification trays. A device can keep its own clears local by turning off Clears everywhere.</li>
+        <li><strong>Every device follows.</strong> The server owns the state, so the alert leaves every inbox and every phone tray. A device can keep its own clears local by turning off Clears everywhere.</li>
       </ol>
       <p class="mt-4"><a class="underline" href="{{base}}/docs/web-app">Install the web inbox</a> on your phone or computer.</p>
     </div>
@@ -67,7 +67,7 @@
   <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="states">More than read and unread</h2>
   <p class="mt-2 mb-8 max-w-[60ch] text-lg">An alert is active, cleared, acknowledged, resolved or snoozed, and every device on its topic sees which. Anyone who can read the topic can also mark it as seen or dealt with.</p>
   <dl class="grid border-t sm:grid-cols-2 lg:grid-cols-4 [&>div]:grid [&>div]:content-start [&>div]:gap-3 [&>div]:border-b [&>div]:py-5 sm:[&>div]:pe-5 lg:[&>div]:border-b-0 lg:[&>div+div]:border-s lg:[&>div+div]:ps-5">
-    <div><dt><span class="badge" data-state="dismissed">Cleared</span></dt><dd>A synced clear removes the alert from every inbox.</dd></div>
+    <div><dt><span class="badge" data-state="dismissed">Cleared</span></dt><dd>You cleared it. Gone from every device.</dd></div>
     <div><dt><span class="badge" data-state="acknowledged">Acknowledged</span></dt><dd>Someone is on it. It stays in the inbox and stops buzzing.</dd></div>
     <div><dt><span class="badge" data-state="resolved">Resolved</span></dt><dd>The sender cleared it because the fault is fixed. Monitors close their own alerts by id.</dd></div>
     <div><dt><span class="badge" data-state="snoozed">Snoozed</span></dt><dd>Hidden until a time you pick, then it comes back and notifies again.</dd></div>
@@ -108,11 +108,11 @@
       <div><dt>Home Assistant</dt><dd>Use the ntfy integration or a <code>rest_command</code>.</dd></div>
       <div><dt>GitHub Actions</dt><dd>One curl step at the end of a job.</dd></div>
       <div><dt>Alertmanager</dt><dd>Point a webhook receiver at <code>/{topic}?template=alertmanager</code>. Resolved alerts clear on every device.</dd></div>
-      <div><dt>GitHub, Sentry, Stripe, Jira</dt><dd>Use the matching template on <code>/{topic}?template=github</code> (or <code>sentry</code>, <code>stripe</code>, <code>jira</code>). clrd checks signatures when you configure a secret.</dd></div>
-      <div><dt>Homelab</dt><dd>Built-in templates for Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the *arr apps.</dd></div>
+      <div><dt>GitHub, Sentry, Stripe, Jira</dt><dd>Use the matching template on <code>/{topic}?template=github</code> (or <code>sentry</code>, <code>stripe</code>, <code>jira</code>). clrd checks signatures when you configure a secret. Closed issues clear.</dd></div>
+      <div><dt>Homelab</dt><dd>Built-in templates for Healthchecks.io, Proxmox VE, Zabbix, Netdata, Jellyfin and the *arr apps. Recoveries clear.</dd></div>
       <div><dt>Any webhook</dt><dd>Save a template that maps any service's JSON to a notification.</dd></div>
       <div><dt>Webhooks out</dt><dd>Tell your own service when someone dismisses, acks, resolves, snoozes or replies. Retried, logged, signed when you set a secret, and shaped the way Slack or Discord wants.</dd></div>
-      <div><dt>ntfy clients</dt><dd>Use the ntfy app or CLI with clrd's compatible publish and subscribe routes.</dd></div>
+      <div><dt>Any ntfy client</dt><dd>The ntfy app, CLI and libraries publish and subscribe unchanged.</dd></div>
       <div><dt>Gotify senders</dt><dd>Scripts and tools that post to Gotify's <code>/message</code> keep working with a clrd app token, Watchtower too.</dd></div>
       <div><dt>Pushover scripts</dt><dd>Scripts that post to Pushover's <code>/1/messages.json</code> keep working with a clrd app key.</dd></div>
     </dl>
@@ -134,7 +134,7 @@
       <table class="mt-3 w-full border-collapse text-sm [&_td]:border-b [&_td]:py-3 [&_td]:pe-3 [&_td]:align-top [&_th]:border-b [&_th]:py-3 [&_th]:pe-3 [&_th]:text-start [&_th]:align-top [&_tbody_th]:text-foreground [&_tbody_th]:w-[44%] [&_tbody_th]:font-medium [&_thead_th]:meta [&_thead_th]:font-normal [&_.yes]:text-clear [&_.yes]:font-medium">
         <thead><tr><th scope="col"><span class="sr-only">Situation</span></th><th scope="col">ntfy</th><th scope="col">clrd</th></tr></thead>
         <tbody>
-          <tr><th scope="row">You clear an alert on one device</th><td>The others keep it</td><td class="yes">Gone everywhere by default</td></tr>
+          <tr><th scope="row">You clear an alert on one device</th><td>The others keep it</td><td class="yes">Gone everywhere</td></tr>
           <tr><th scope="row">The sender clears an alert</th><td class="yes">Gone everywhere</td><td class="yes">Gone everywhere</td></tr>
           <tr><th scope="row">Someone takes an alert</th><td>No shared state</td><td class="yes">Acknowledged, with who</td></tr>
           <tr><th scope="row">A phone was offline</th><td>Catches up on messages</td><td class="yes">Catches up on messages and clears</td></tr>
@@ -164,7 +164,7 @@
   <div class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-18 [&_pre]:bg-background [&_pre]:mb-3">
     <div>
       <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="self-host">Self-host it</h2>
-      <p>One Go binary and one SQLite file. No Redis, message broker or hosted account is required. clrd sends no telemetry.</p>
+      <p>One Go binary and one SQLite file. No Redis, no message broker, no account on anyone else's service. clrd sends no telemetry, and the only pages it fetches are site icons and link previews your devices ask for.</p>
       <p class="mt-3">The only setting you need is the HTTPS address your proxy serves it on. Open the setup link it prints to make your admin token, scan the Link a phone code with the app and approve it, and send. Check-ins, webhooks, icons and snooze times are optional, and server settings, topics, tokens and webhooks are all on the REST API, so an AI agent can set them up for you.</p>
       <p class="text-muted-foreground mt-3 text-sm">The Compose file builds the image from source. You can also build the binary with Go 1.24 or newer. See <a href="{{base}}/docs/self-host#server-environment">optional server settings</a>.</p>
     </div>
@@ -182,9 +182,9 @@ docker compose logs clrd</code></pre>
 <section class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-18" aria-labelledby="android">
   <div>
     <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="android">The Android app</h2>
-    <p>Built for Android 8 and newer without Google Play Services. Link several servers and switch between their inboxes. When a server syncs a clear, the app removes the matching tray alert.</p>
+    <p>Built for F-Droid. No Google Play Services, so it runs on GrapheneOS, LineageOS and any phone without Google. It removes an alert from the tray the moment it is cleared anywhere else. The app supports Android 8 or newer. Link several servers and switch between their inboxes.</p>
     <p class="mt-3">Notifications from one topic can stack together in the tray (off until you turn it on). Reply, copy and link buttons work from the tray. The app trusts certificate authorities you install, so a home-lab server works over HTTPS.</p>
-    <p class="text-muted-foreground mt-3 text-sm"><a href="https://github.com/thejdubb02/clrd/blob/main/android/README.md#install-from-the-clrd-f-droid-repo">Install from clrd's own F-Droid repository</a>.</p>
+    <p class="text-muted-foreground mt-3 text-sm">Not in the main F-Droid catalog yet. <a href="https://github.com/thejdubb02/clrd/blob/main/android/README.md#install-from-the-clrd-f-droid-repo">Install from clrd's own F-Droid repository</a>.</p>
   </div>
   <div>
     <h2 class="text-foreground text-[28px]/tight font-semibold tracking-[-0.035em] sm:text-[32px]" id="source">Open source</h2>

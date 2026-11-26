@@ -42,7 +42,7 @@ by `android/app/src/test/java/me/itsjustin/clrd/ScreensTest.kt`.
 > **Status: early, no tagged release yet.** The server, web inbox, Android app
 > and SDKs have tests that run in CI, and so do the integration guides (see the
 > [integrations table](docs/integrations/README.md) for what each one runs). The Android app
-> is available from [clrd's own F-Droid repo](android/README.md#install-from-the-clrd-f-droid-repo).
+> is not in the main F-Droid catalog yet. It is available from [clrd's own F-Droid repo](android/README.md#install-from-the-clrd-f-droid-repo).
 > See [CHANGELOG.md](CHANGELOG.md).
 
 ## Why clrd
@@ -83,7 +83,8 @@ offline catches up the moment it reconnects.
   Settings or by an agent, the same in every browser (not in the Android app
   yet) ([docs/color-rules.md](docs/color-rules.md)).
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
-  WebSocket, Basic auth), or use the bundled [clrd CLI commands](docs/self-host.md#publish-and-subscribe-from-the-command-line).
+  WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
+  You can also use the bundled [clrd CLI commands](docs/self-host.md#publish-and-subscribe-from-the-command-line).
   See [server settings](docs/self-host.md#server-environment) for optional ntfy
   retention, disk templates and rate limits.
 - **Gotify senders work.** `POST /message` with an app token, as Gotify
