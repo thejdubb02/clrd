@@ -1,12 +1,8 @@
 # Home Assistant
 
-Two options.
-
-**Built-in ntfy integration** (HA 2025.5+): add it with server URL
-`https://clrd.example.com` and your `clrd_...` token as the access token.
-Publish only, no resolve.
-
-**`rest_command`** (works with the native API today, and can resolve):
+Use Home Assistant's [RESTful Command](https://www.home-assistant.io/integrations/rest_command/)
+to send an alert when a condition starts and clear it everywhere when the
+condition ends. Use a clrd token with `publish` scope on the `home` topic.
 
 `secrets.yaml`:
 
@@ -35,7 +31,9 @@ rest_command:
       authorization: !secret clrd_bearer
 ```
 
-## Auto-resolve: garage door left open
+Replace `clrd.example.com` in both commands with your server address.
+
+## Clear the alert when the garage door closes
 
 ```yaml
 automation:
@@ -58,4 +56,7 @@ automation:
         data: {topic: home, id: garage-open}
 ```
 
-Close the door and the alert disappears from every phone.
+Restart Home Assistant after saving the configuration. Leaving the door open
+for ten minutes sends the alert. Closing it resolves the alert everywhere
+using the same topic and ID. If there is no open alert for that key, the
+resolve call returns 404.

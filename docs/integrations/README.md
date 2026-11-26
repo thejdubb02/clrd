@@ -8,7 +8,7 @@ notification on every device without anyone touching it.
 | [curl](curl.md) | today | yes | native API only | every snippet, including the cron script |
 | [SDKs](../../sdk/) (Python, JS, Go) | today | yes | native API only | each README usage example (Python, JS, Go); the install lines are not run, as they fetch from GitHub |
 | [GitHub Actions](github-actions.md) | today | yes | native API only | the action on a real runner (send, resolve, resolve with nothing open), checked against the guide's YAML; the steps without the action, as written |
-| [MCP](mcp.md) (Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Zed, Codex CLI, Gemini CLI) | today | yes (agent calls `resolve`) | `/mcp` mounted | Claude Code: `claude mcp add`, then `claude mcp list` connects. Every tool (send, list, topics, get, update, ack, snooze, resolve, and `wait_for_reply` with an answer) is called through the real `mcp-remote` bridge that Claude Desktop uses. The other clients: setup in the guide, not run |
+| [MCP](mcp.md) (Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Zed, Codex CLI, Gemini CLI) | today | yes (agent calls `resolve`) | `/mcp` mounted | Claude Code: `claude mcp add`, then `claude mcp list` connects. CI checks the tool list and calls send, list, topics, get, update, ack, snooze, resolve, and `wait_for_reply` through the real `mcp-remote` bridge that Claude Desktop uses. The other clients: setup in the guide, not run |
 | [Agent invite](agent-invite.md): one string gives an agent its own user and token | today | not applicable | native API only | server tests: invite, guide page, claim once, topic limits, approvals denied, unlink; the CLI command |
 | [Claude Code plugin](claude-code.md) | today | no | `/mcp` mounted | the plugin's hook script against clrd: finished and waiting pings, a permission prompt allowed from the phone and refused from the agent's token, bad URLs refused; `claude plugin validate`. Claude Code itself running the hooks: checked by hand, not in CI |
 | [n8n](n8n.md) | from source | yes | native API only | node tests for actions and events against simulated responses |
@@ -34,7 +34,6 @@ notification on every device without anyone touching it.
 | [ntfy clients](ntfy-clients.md) | today | by key, via `X-Id` | ntfy publish/subscribe, Basic auth | ntfy CLI 2.14: publish, subscribe, Basic auth; then resolve by key |
 | [Gotify senders](gotify.md) | today | no | Gotify publish, `POST /message` with a one-topic token or Gotify app key | the guide's token call, curl `-F` and Apprise 1.9 lines; gotify CLI 2.4 push; the guide's app key call and Watchtower 1.7 `gotify://` |
 | [Pushover senders](pushover.md) | today | no | Pushover publish, `POST /1/messages.json` with a Pushover app key or one-topic token | the guide's app key and curl lines against a running clrd |
-| Home Assistant ntfy integration | today | no | ntfy publish | not run |
 | [Outgoing webhooks](webhooks-out.md): clrd tells your service when someone dismisses, acks, resolves, snoozes or replies | today | not applicable | a saved outgoing webhook (admin) | server tests: delivery, signature, retry, turn-off; the guide's receiver not run |
 
 The automation nodes run in the automation nodes workflow. For the other
