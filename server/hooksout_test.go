@@ -463,7 +463,9 @@ func TestHooksOutMovedWhileQueued(t *testing.T) {
 	if err := s.deliverHooks(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if mu.Lock(); strings.Contains(string(got), last) {
+	if mu.Lock(); len(got) == 0 {
+		t.Fatal("no send reached the old URL, so the move never ran")
+	} else if strings.Contains(string(got), last) {
 		t.Fatal("the 9th send went to the old URL after the move")
 	}
 	mu.Unlock()

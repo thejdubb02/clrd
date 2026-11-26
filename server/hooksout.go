@@ -993,7 +993,9 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	return s.clearHookOff(ctx, topic, name) // on again: its off notice is out of date (#893)
+	// On again: its off notice is out of date (#893). The save is in, so a
+	// client that hangs up now must not leave the notice behind.
+	return s.clearHookOff(context.WithoutCancel(ctx), topic, name)
 }
 
 // DeleteHook removes a hook and its delivery log.
