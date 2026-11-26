@@ -968,12 +968,14 @@ type ntfyFilter struct {
 }
 
 func ntfyFilters(r *http.Request) (f ntfyFilter, err error) {
-	f.id, f.message, f.title = param(r, "Id"), param(r, "Message", "M"), param(r, "Title", "T")
-	if b := ntfyMarkdown(param(r, "Scheduled", "Sched")); b != nil {
+	f.id = param(r, "X-Id", "Id")
+	f.message = param(r, "X-Message", "Message", "M")
+	f.title = param(r, "X-Title", "Title", "T")
+	if b := ntfyMarkdown(param(r, "X-Scheduled", "Scheduled", "Sched")); b != nil {
 		f.sched = *b
 	}
-	f.tags = splitList(param(r, "Tags", "Tag", "Ta"))
-	for _, v := range splitList(param(r, "Priority", "Prio", "P")) {
+	f.tags = splitList(param(r, "X-Tags", "Tags", "Tag", "Ta"))
+	for _, v := range splitList(param(r, "X-Priority", "Priority", "Prio", "P")) {
 		p, err := ntfyPriority(v)
 		if err != nil {
 			return f, err
