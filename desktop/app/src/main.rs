@@ -71,7 +71,8 @@ fn seen_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 }
 
 /// How this app's version stands to the server's, for the About menu. Only
-/// plain x.y.z versions are compared; anything else says nothing.
+/// x.y.z is compared, a pre-release or build suffix left out; anything that
+/// is not x.y.z says nothing.
 fn version_note(app: &str, server: &str) -> Option<&'static str> {
     let parse = |v: &str| -> Option<(u64, u64, u64)> {
         let mut n = v.split(['-', '+']).next()?.split('.').map(str::parse);
@@ -861,13 +862,13 @@ fn main() {
             let app = app.handle();
             // A first start ever shows no note: there is nothing it updated
             // from. A start on a version the user has not seen marks What's
-            // new in the About menu until it is opened.
+            // new in the About menu until it is opened. A computer linked by
+            // a version from before this note counts as updated.
             if let Ok(path) = seen_file(app) {
+                let updated = |on: bool| app.state::<Shell>().updated.store(on, Ordering::Relaxed);
                 match std::fs::read_to_string(&path) {
-                    Ok(seen) => app
-                        .state::<Shell>()
-                        .updated
-                        .store(seen.trim() != env!("CARGO_PKG_VERSION"), Ordering::Relaxed),
+                    Ok(seen) => updated(seen.trim() != env!("CARGO_PKG_VERSION")),
+                    Err(_) if path.with_file_name("state.json").exists() => updated(true),
                     Err(_) => {
                         let _ = std::fs::write(path, env!("CARGO_PKG_VERSION"));
                     }
