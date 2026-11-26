@@ -13,6 +13,16 @@ ntfy publish --token clrd_... --title "Disk 91%" --priority high \
 ntfy subscribe --token clrd_... clrd.example.com/infra
 ```
 
+## Publish options
+
+For `POST /` with a JSON body, specify `topic` in JSON. You can mix JSON
+fields with ntfy headers or query parameters, for example `Actions: view,
+Open, https://example.com/report` and `?delay=30m`. For options accepted in
+more than one place, populated JSON fields take precedence, followed by
+headers and then query parameters. An empty JSON array clears out header
+or query tags and actions, and `"markdown": false` keeps the message plain.
+For a raw publish, `Content-Type: text/markdown` selects Markdown.
+
 ## ntfy Android / iOS app
 
 Add a subscription with "Use another server" set to
