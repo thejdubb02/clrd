@@ -55,6 +55,9 @@ rate limits to decide when to retry.
 
 ## Request and stream limits
 
+Each ntfy subscription can name up to 150 distinct topics. Repeat names
+count once. Use another subscription for any remaining topics.
+
 Operators can [set per-address limits](../self-host.md#server-environment)
 for ntfy API requests and open subscriptions. Both are off by default.
 Clients that hit the request rate get HTTP 429 and a `Retry-After` header.

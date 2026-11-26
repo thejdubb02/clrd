@@ -1243,7 +1243,8 @@ and `initialize` reports `version` as `serverInfo.version`.
   JSON, and the filename describes an external attachment. For a raw publish,
   `Content-Type: text/markdown` selects Markdown even with `Markdown: no`.
 - `GET /{topics}/json`, `/{topics}/sse`, `/{topics}/ws`, `/{topics}/raw` with
-  comma-separated topic names, `since=` (`none`, `all`, `latest`, unix time,
+  up to 150 distinct comma-separated topic names (repeats count once),
+  `since=` (`none`, `all`, `latest`, unix time,
   duration or message ID), `poll=1` for a finite replay, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
   list). `scheduled=1` (or `sched=1`) also lists messages sent with a delay

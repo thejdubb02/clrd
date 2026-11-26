@@ -230,6 +230,41 @@ func TestNtfyScheduled(t *testing.T) {
 	}
 }
 
+func TestNtfySubscribeTopicLimit(t *testing.T) {
+	_, ts, admin := newTest(t)
+	topics := make([]string, 151)
+	for i := range topics {
+		topics[i] = fmt.Sprintf("topic%d", i)
+	}
+	exact := strings.Join(topics[:150], ",")
+	repeated := exact + "," + topics[0] + "," + topics[12]
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", ts.URL+"/"+repeated+"/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.SetBasicAuth("", admin)
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	scan := bufio.NewScanner(res.Body)
+	if res.StatusCode != 200 || !scan.Scan() {
+		t.Fatalf("subscribe with 150 distinct topics and duplicates: %d %v", res.StatusCode, scan.Err())
+	}
+	if opened := ntfyDecode(t, scan.Text()); opened.Event != "open" || opened.Topic != exact {
+		t.Fatalf("open event did not list distinct topics in order: %+v", opened)
+	}
+	res.Body.Close()
+
+	path := ts.URL + "/" + strings.Join(topics, ",") + "/json?poll=1"
+	if code, out := raw(t, "GET", path, admin, "", nil); code != 400 || !strings.Contains(out, "at most 150 topics") {
+		t.Fatalf("151 distinct topics: %d %s", code, out)
+	}
+}
+
 func TestNtfySubscribe(t *testing.T) {
 	s, ts, admin := newTest(t)
 	var ids []string
