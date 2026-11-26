@@ -1,0 +1,1 @@
+- Desktop: after the server resets the sync (a topic subscribed again, a long time offline, a restored server), the open notifications come back quietly instead of each one popping up with a sound (#971).

@@ -205,7 +205,8 @@ impl<S: Sink> Engine<S> {
     }
 
     /// The server's open list is the truth: what it no longer lists comes
-    /// down, and the cursor and epoch are the list's.
+    /// down, the rest shows quietly (SPEC section 2.3, as Android does), and
+    /// the cursor and epoch are the list's.
     pub fn replace_all(
         &mut self,
         open: Vec<Notification>,
@@ -216,10 +217,10 @@ impl<S: Sink> Engine<S> {
         for id in self.state.open.keys().filter(|id| !stays(id)) {
             self.sink.close(id);
         }
-        // What stays is kept, so apply() knows it is showing and stays quiet.
-        self.state.open.retain(|id, _| stays(id));
-        for n in open {
-            self.apply(n, false);
+        self.state.open.clear();
+        for n in open.into_iter().filter(Notification::shows) {
+            self.sink.show(&n, false);
+            self.state.open.insert(n.id.clone(), n);
         }
         self.state.seq = seq;
         self.state.epoch = epoch;

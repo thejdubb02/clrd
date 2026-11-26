@@ -117,7 +117,7 @@ fn pruned_log_falls_back_to_the_open_list() {
     fake.online();
 
     wait("caught up", || {
-        has(&c.log.log(), "close a") && has(&c.log.log(), "show b alert")
+        has(&c.log.log(), "close a") && has(&c.log.log(), "show b quiet")
     });
     assert_eq!(list_requests(&fake), 1);
     wait("cursor is the list's", || {
