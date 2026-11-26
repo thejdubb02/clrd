@@ -489,14 +489,14 @@
     -d '{"topic":"test","message":"Hello from clrd"}' \
     {{.Base}}/api/v1/notifications</code></pre>
     </section>
-    {{if .Snap.CanHooks}}<section id="webhooks" data-setting data-keywords="webhook, outgoing, callback, post, integration, discord, github" class="grid gap-3" data-hooks>
+    {{if .Snap.CanHooks}}<section id="webhooks" data-setting data-keywords="webhook, outgoing, callback, post, integration, discord, slack, github" class="grid gap-3" data-hooks>
       <h3 id="hooks-h" class="text-base font-semibold">Webhooks</h3>
       <p class="text-body text-sm/relaxed">Send a topic's answers to another app as they happen: each dismiss, acknowledge, resolve, snooze or action tap is posted to your URL as JSON. <a class="underline" href="{{base}}/docs/integrations/webhooks-out">How webhooks work</a></p>
       {{range .Snap.Hooks}}<div class="bg-card grid gap-3 rounded-xl border p-4" data-hook="{{.Topic}}/{{.Name}}">
         <div class="grid gap-1">
           <h4 class="text-sm font-semibold [overflow-wrap:anywhere]">{{.Name}} <span class="meta font-normal">on {{.Topic}}</span></h4>
           <p class="meta [overflow-wrap:anywhere]">{{.URL}}</p>
-          <p class="meta">{{if eq .Kind "discord"}}Discord. {{else if eq .Kind "github"}}GitHub. {{end}}Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .Body}} Custom body.{{end}}{{if .HasSecret}} Signed with a secret.{{end}}</p>
+          <p class="meta">{{if eq .Kind "discord"}}Discord. {{else if eq .Kind "slack"}}Slack. {{else if eq .Kind "github"}}GitHub. {{end}}Sends {{$h := .}}{{$n := 0}}{{range hookEvents}}{{if $h.Sends .Name}}{{if $n}}, {{end}}{{$n = add $n 1}}{{.Label}}{{end}}{{end}}.{{if .Body}} Custom body.{{end}}{{if and .HasSecret (ne .Kind "slack")}} Signed with a secret.{{end}}</p>
           {{if not .Enabled}}<p class="text-destructive text-sm" data-hook-off>Turned off after a day of failed deliveries. Fix the receiver, then save it again to turn it back on.</p>
           {{else if .FailingSince}}<p class="text-destructive text-sm">Failing since {{clock .FailingSince}}. It turns off after a day of failures.</p>{{end}}
         </div>
@@ -636,9 +636,10 @@
   <select id="{{$id}}-kind" class="input" name="kind" aria-describedby="{{$id}}-kind-hint">
     <option value=""{{if eq .Kind ""}} selected{{end}}>Webhook (POST JSON)</option>
     <option value="discord"{{if eq .Kind "discord"}} selected{{end}}>Discord (post and edit)</option>
+    <option value="slack"{{if eq .Kind "slack"}} selected{{end}}>Slack</option>
     <option value="github"{{if eq .Kind "github"}} selected{{end}}>GitHub (open and close issues)</option>
   </select>
-  <p id="{{$id}}-kind-hint" class="meta">Discord takes a Discord webhook URL with no body or secret. GitHub takes <code>https://api.github.com/repos/OWNER/REPO</code> and a token in Secret.</p></div>
+  <p id="{{$id}}-kind-hint" class="meta">Discord takes a Discord webhook URL with no body or secret. GitHub takes <code>https://api.github.com/repos/OWNER/REPO</code> and a token in Secret. Slack: Bot token with chat:write and reactions:write; URL <code>https://slack.com/api/chat.postMessage?channel=C0123</code>.</p></div>
 <div class="grid gap-1.5"><label class="label" for="{{$id}}-url">URL</label>
   <input id="{{$id}}-url" class="input" type="url" name="url" value="{{.URL}}" required maxlength="2048" placeholder="https://" autocomplete="off" spellcheck="false"></div>
 <fieldset class="grid gap-2"><legend class="label mb-1">Send</legend>

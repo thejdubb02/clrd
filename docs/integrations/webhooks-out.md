@@ -159,6 +159,24 @@ check first the way it does for GitHub issues.
 The webhook URL holds a token, so treat it like a password: only admins can
 see it, and delivery errors leave it out.
 
+## Slack: post, edit and react
+
+Create an app at [Slack API](https://api.slack.com/apps), add the
+`chat:write` and `reactions:write` bot token scopes under OAuth &
+Permissions, and install the app in your workspace. Invite the bot to
+the channel and copy the channel ID from the channel details.
+
+In Settings > Webhooks, pick Slack and paste the bot token into Secret.
+Set the URL to `https://slack.com/api/chat.postMessage?channel=C0123` with
+your channel ID in place of `C0123`. With the API or MCP, use
+`"kind": "slack"` and put the bot token in `secret`. Leave the body
+template empty.
+
+clrd posts new notifications and edits the message when the notification
+changes. It adds eyes on acknowledgment and a check mark on dismissal or
+resolution. Slack API errors appear in the delivery log. The bot token is
+write only.
+
 ## GitHub: open an issue, close it when cleared
 
 Give a hook `"kind": "github"`, the repo's API URL and a GitHub token that
@@ -213,7 +231,8 @@ does not open an issue.
 
 ## Retries and turning off
 
-Any 2xx answer is a success. Anything else, a redirect or no answer within 10
+A 2xx answer is a success when the destination accepts the delivery. Slack
+can return an API error with HTTP 200. Anything else, a redirect or no answer within 10
 seconds is a failure, and clrd tries again after 30 seconds, then doubling,
 8 tries in all (about an hour). Deliveries can arrive out of order; use `seq`
 to order them.

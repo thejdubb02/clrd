@@ -18,6 +18,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Slack outgoing hooks post notifications, edit them on state changes, and add acknowledgment and clear reactions (#166)
+
 - Desktop: the tray's About menu always has What's new (the server's history, or the project's when this computer is not linked), says plainly when this app is older or newer than the server, and reads "What's new in" the version for the first start after an update until it is opened (#580).
 - Web: Add a service on the Senders page. Pick a service (GitHub, Grafana, Sentry and the other webhook templates, or curl, ntfy, Gotify, Pushover), name it and pick a topic; clrd makes a token that can only publish to that topic and shows it once with a ready-to-paste URL or command and the service's guide, then says connected when its first message arrives (#119).
 - Server and web: a sender can have its own icon, set in the rules form on its page, over the API (`PUT /api/v1/senders/{id}` `{"icon":"https://..."}`) or from an agent (`set_sender`). Its notifications that bring no icon get it, before the topic's icon; it shows on the Senders list and page, and the change can be undone like the other rules (#119).

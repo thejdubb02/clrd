@@ -5355,8 +5355,8 @@
          },
          "kind": {
           "type": "string",
-          "enum": ["", "discord", "github"],
-          "description": "discord: url is a Discord webhook URL. Each new notification is posted there, and a state change in events edits that message (a status line, the title struck through once cleared or resolved). Takes no body or secret. github: url is https://api.github.com/repos/OWNER/REPO and secret a GitHub token that can write issues. Each new notification opens an issue (not for anonymous senders or questions, at most 10 an hour), a state change in events comments on it, and a clear or resolve closes it. Takes no body."
+          "enum": ["", "discord", "slack", "github"],
+          "description": "discord: url is a Discord webhook URL. Each new notification is posted there, and a state change in events edits that message (a status line, the title struck through once cleared or resolved). Takes no body or secret. slack: url is https://slack.com/api/chat.postMessage?channel=CHANNEL and secret is a bot token. Posts and edits Slack messages and adds reactions. Takes no body. github: url is https://api.github.com/repos/OWNER/REPO and secret a GitHub token that can write issues. Each new notification opens an issue (not for anonymous senders or questions, at most 10 an hour), a state change in events comments on it, and a clear or resolve closes it. Takes no body."
          }
         }
        }
