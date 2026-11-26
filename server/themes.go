@@ -27,6 +27,12 @@ type ThemeSettings struct {
 	DeviceTheme string       `json:"device_theme,omitempty"`
 }
 
+// ownerDisplay contains the settings shared by an owner's devices.
+type ownerDisplay struct {
+	ThemeSettings
+	SingleKeyShortcuts *bool `json:"single_key_shortcuts,omitempty"`
+}
+
 func validTheme(name string) bool {
 	switch name {
 	case defaultTheme, "high-contrast", "midnight", "custom":
@@ -94,8 +100,8 @@ func themeKey(ctx context.Context, q querier, id string) (string, error) {
 	return "theme:t:" + top, err
 }
 
-func readTheme(ctx context.Context, q querier, id string) (ThemeSettings, error) {
-	st := ThemeSettings{Theme: defaultTheme}
+func readOwnerDisplay(ctx context.Context, q querier, id string) (ownerDisplay, error) {
+	st := ownerDisplay{ThemeSettings: ThemeSettings{Theme: defaultTheme}}
 	key, err := themeKey(ctx, q, id)
 	if err == nil {
 		err = settingJSON(ctx, q, key, &st)
@@ -103,12 +109,12 @@ func readTheme(ctx context.Context, q querier, id string) (ThemeSettings, error)
 	return st, err
 }
 
-func saveTheme(ctx context.Context, tx *sql.Tx, tok *Token, p SettingsPatch) error {
+func saveOwnerDisplay(ctx context.Context, tx *sql.Tx, tok *Token, p SettingsPatch) error {
 	key, err := themeKey(ctx, tx, tok.ID)
 	if err != nil {
 		return err
 	}
-	st := ThemeSettings{Theme: defaultTheme}
+	st := ownerDisplay{ThemeSettings: ThemeSettings{Theme: defaultTheme}}
 	err = settingJSON(ctx, tx, key, &st)
 	if err != nil {
 		return err
@@ -132,6 +138,9 @@ func saveTheme(ctx context.Context, tx *sql.Tx, tok *Token, p SettingsPatch) err
 	if st.Theme == "custom" && st.ThemeColors == nil {
 		return errf(400, "bad_request", "custom needs theme_colors")
 	}
+	if p.SingleKeyShortcuts != nil {
+		st.SingleKeyShortcuts = p.SingleKeyShortcuts
+	}
 	return putSettingJSON(ctx, tx, key, st)
 }
 
@@ -150,8 +159,8 @@ func (s *Server) setDeviceTheme(ctx context.Context, tok *Token, id, theme strin
 		defer tx.Rollback()
 	}
 	if err == nil && theme == "custom" {
-		var st ThemeSettings
-		st, err = readTheme(ctx, tx, id)
+		var st ownerDisplay
+		st, err = readOwnerDisplay(ctx, tx, id)
 		if err == nil && st.ThemeColors == nil {
 			err = errf(400, "bad_request", "custom needs the device owner's theme_colors")
 		}

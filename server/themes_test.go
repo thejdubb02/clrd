@@ -103,3 +103,25 @@ func TestBrowserThemeAfterSigningInAgain(t *testing.T) {
 		t.Fatalf("found %d theme rows for deleted sessions: %v", rows, err)
 	}
 }
+
+func TestSingleKeyShortcutsPerOwner(t *testing.T) {
+	s, ts, admin := newTest(t)
+	owner := mkToken(t, s, "work", []string{ScopeRead}, []string{"alerts"})
+	_, browser := browserIn(t, s, ts, owner, installA)
+	const path = "/api/v1/settings"
+	if code, out := call(t, ts, "GET", path, owner, nil); code != 200 || out["single_key_shortcuts"] != true {
+		t.Fatalf("expected on by default: %d %v", code, out)
+	}
+	if code, out := call(t, ts, "PUT", path, browser.Value, map[string]any{"single_key_shortcuts": false}); code != 200 || out["single_key_shortcuts"] != false {
+		t.Fatalf("set from a limited browser: %d %v", code, out)
+	}
+	if code, out := call(t, ts, "GET", path, admin, nil); code != 200 || out["single_key_shortcuts"] != true {
+		t.Fatalf("different owner was affected: %d %v", code, out)
+	}
+	if code, out := call(t, ts, "PUT", path, owner, map[string]any{"theme": "midnight"}); code != 200 || out["single_key_shortcuts"] != false || out["theme"] != "midnight" {
+		t.Fatalf("same owner did not keep shortcuts off when saving theme: %d %v", code, out)
+	}
+	if code, out := call(t, ts, "PUT", path, owner, map[string]any{"single_key_shortcuts": true}); code != 200 || out["single_key_shortcuts"] != true || out["theme"] != "midnight" {
+		t.Fatalf("re-enable shortcuts and retain theme: %d %v", code, out)
+	}
+}

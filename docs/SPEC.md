@@ -1706,6 +1706,7 @@ JavaScript off the web page shows every section and no search box.
 | Notifications | `muted-topics` | Muted topics | mute, topic, pop up, quiet | Android |
 | Notifications | `battery` | Battery | battery, background, delayed, killed, optimization | Android |
 | Inbox | `stack` | Stack by topic | group, fold, bundle, collapse | both |
+| Inbox | `keyboard-shortcuts` | Keyboard shortcuts | keys, commands, accessibility | web |
 | Inbox | `swipe` | Swipe buttons | swipe, gesture, slide, buttons | both |
 | Inbox | `full-swipe` | Full swipe acts | swipe, fast, gesture, one move | Android |
 | Inbox | `snooze` | Snooze times | later, remind, postpone, default time | both |
@@ -1753,6 +1754,16 @@ State chips (bg / text): active `#FCE9DF`/`#9A3412`, acknowledged
 Rules: no gradients, flat fills, 1px hairlines, radius 6 (chips, inputs), 8
 (buttons, menus) and 12 (cards, dialogs), square-cornered chips for state, orange only when something needs you, green means it went away. A user's color rules (section 2.1) color their own cards, gradient included; clrd's own chrome keeps these rules. Dark
 mode swaps paper and ink, and accents use the lighter dark mode values above where given. Each app offers System (the default, follows the device), Light and Dark in Display, Appearance. Wordmark `clrd`, Geist 600, letter-spacing -0.05em.
+
+### Single-character shortcuts (#963)
+
+The web inbox's Keyboard shortcuts switch controls letter and punctuation
+shortcuts and two-key sequences such as G then I. It defaults to on.
+`GET /api/v1/settings` and the settings stream return `single_key_shortcuts`.
+Change it with `PUT /api/v1/settings` or MCP `settings` using
+`{"single_key_shortcuts":false}`. The setting needs read scope and follows
+the user, or the top token and its linked devices when there is no user.
+Tab, Enter, and Ctrl or Cmd+K remain available with the switch off.
 
 ### Color themes (#584)
 

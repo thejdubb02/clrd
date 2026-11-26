@@ -1,0 +1,1 @@
+- Web inbox: turn off letter and punctuation shortcuts in Settings or through the API and MCP. The choice follows your signed-in browsers, and Ctrl or Cmd+K still opens Commands (#963).

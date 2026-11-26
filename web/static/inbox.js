@@ -1538,6 +1538,29 @@
   const keys = { c: 'dismiss', r: 'restore', a: 'ack', s: 'snooze', j: 'next', k: 'prev', '/': 'search' };
   const go = { i: B + '/app', s: B + '/app/snoozed', c: B + '/app/cleared', ',': B + '/app/settings' };
   let g = 0;
+  const shortcutSwitch = $('[data-single-key-shortcuts]');
+  let shortcutsOn = !shell.hasAttribute('data-no-single-key');
+  function setShortcuts(enabled) {
+    shortcutsOn = enabled;
+    shell.toggleAttribute('data-no-single-key', !enabled);
+    if (shortcutSwitch) shortcutSwitch.checked = enabled;
+    g = 0;
+  }
+  shortcutSwitch?.addEventListener('change', async () => {
+    const status = $('[data-shortcut-status]');
+    const enabled = shortcutSwitch.checked;
+    shortcutSwitch.disabled = true;
+    const r = await fetch('/api/v1/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ single_key_shortcuts: enabled }) }).catch(() => null);
+    const saved = r?.ok && await r.json().catch(() => null);
+    shortcutSwitch.disabled = false;
+    if (typeof saved?.single_key_shortcuts === 'boolean') {
+      setShortcuts(saved.single_key_shortcuts);
+      status.textContent = shortcutsOn ? 'Single-character shortcuts on.' : 'Single-character shortcuts off.';
+    } else {
+      setShortcuts(shortcutsOn);
+      status.textContent = 'Could not save shortcuts.';
+    }
+  });
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return palette && (palette.open ? palette.close() : openPalette()); }
     const t = e.target;
@@ -1547,11 +1570,12 @@
       return;
     }
     const k = e.key.toLowerCase();
+    if (k === 'enter' && t.matches && t.matches('[data-stack]')) { g = 0; e.preventDefault(); return t.querySelector('[data-stack-toggle]').click(); }
+    if (!shortcutsOn) return;
     if (g && Date.now() - g < 1200 && go[k]) { e.preventDefault(); g = 0; location.href = go[k]; return; }
     g = k === 'g' ? Date.now() : 0;
     if (k === 'g' || e.shiftKey && k !== '?') return;
     if (k === '?') { e.preventDefault(); return openPalette(); }
-    if (k === 'enter' && t.matches && t.matches('[data-stack]')) { e.preventDefault(); return t.querySelector('[data-stack-toggle]').click(); }
     if (keys[k] && list) { e.preventDefault(); run[keys[k]](); }
   });
 
@@ -1602,6 +1626,7 @@
         // Edits not saved here yet are kept; saving them replaces the other change (#182, #883).
         const st = m.settings || {};
         if (st.theme) syncPalette(st);
+        if (typeof st.single_key_shortcuts === 'boolean' && st.single_key_shortcuts !== shortcutsOn) setShortcuts(st.single_key_shortcuts);
         if (st.color_rules) refresh(); // recolor the cards (#165)
         if (crf && st.color_rules && crKey(st.color_rules) !== crSaved) $('[data-color-status]').textContent = 'Color rules changed on another device. Saving here replaces that change.';
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)

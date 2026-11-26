@@ -48,7 +48,7 @@ func ntfyMarkdown(v string) *bool {
 
 // Settings contains server display options and the asking device's preferences.
 type Settings struct {
-	ThemeSettings
+	ownerDisplay
 	RenderFormatting bool `json:"render_formatting"`
 	Autolink         bool `json:"autolink"`
 	Favicons         bool `json:"favicons"`
@@ -258,6 +258,8 @@ type SettingsPatch struct {
 	Sound             *string          `json:"sound"`       // this device's own sound
 	UnlinkIdle        *int             `json:"unlink_idle_browsers_days"`
 	GitHubHooksPaused *bool            `json:"github_hooks_paused"`
+
+	SingleKeyShortcuts *bool `json:"single_key_shortcuts"`
 }
 
 // Settings returns the display settings as tok may see them: a token
@@ -302,7 +304,11 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 		st.Subscriptions, err = s.subSettings(ctx, tok)
 	}
 	if err == nil {
-		st.ThemeSettings, err = readTheme(ctx, s.db, tok.ID)
+		st.ownerDisplay, err = readOwnerDisplay(ctx, s.db, tok.ID)
+		if st.SingleKeyShortcuts == nil {
+			on := true
+			st.SingleKeyShortcuts = &on
+		}
 	}
 	if err == nil {
 		err = settingJSON(ctx, s.db, "theme:d:"+tok.ID, &st.DeviceTheme)
@@ -485,8 +491,8 @@ func (s *Server) UpdateSettings(ctx context.Context, tok *Token, p SettingsPatch
 			}
 		}
 	}
-	if err == nil && (p.Theme != nil || p.ThemeColors != nil) {
-		err = saveTheme(ctx, tx, tok, p)
+	if err == nil && (p.Theme != nil || p.ThemeColors != nil || p.SingleKeyShortcuts != nil) {
+		err = saveOwnerDisplay(ctx, tx, tok, p)
 	}
 	if err == nil {
 		raw, _ := json.Marshal(st)

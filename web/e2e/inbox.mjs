@@ -341,6 +341,34 @@ try {
   assert.ok(Math.abs(new Date(tapped.snooze_until) - before - 2 * 3600e3) < 60e3, `tap snoozed until ${tapped.snooze_until}, not the 2 hour default`);
   // The Settings form saves the list; a default left out of it falls back to its first entry.
   await sp.goto(`${base}/app/settings`);
+  // #963: the saved switch controls page-wide keystrokes in other open
+  // inboxes, while modified shortcuts and regular controls still work.
+  const shortcutSwitch = sp.getByRole('switch', { name: 'Single-character shortcuts' });
+  assert.ok(await shortcutSwitch.isChecked(), 'single-character shortcuts must default to on');
+  const keyPage = await sp.context().newPage();
+  await keyPage.goto(base + '/app');
+  await keyPage.keyboard.press('/');
+  await keyPage.locator('#q:focus').waitFor();
+  await keyPage.locator('#q').blur();
+  await shortcutSwitch.uncheck();
+  await keyPage.locator('[data-no-single-key]').waitFor({ state: 'attached' });
+  await keyPage.reload();
+  await keyPage.locator('[data-no-single-key]').waitFor({ state: 'attached' });
+  await keyPage.keyboard.press('/');
+  assert.equal(await keyPage.locator('#q:focus').count(), 0);
+  await keyPage.keyboard.press('g');
+  await keyPage.keyboard.press(',');
+  assert.equal(new URL(keyPage.url()).pathname, '/app');
+  await keyPage.keyboard.press('Control+k');
+  await keyPage.locator('#palette[open] #palette-input:focus').waitFor();
+  await keyPage.keyboard.press('Escape');
+  await keyPage.getByRole('button', { name: 'Commands' }).press('Enter');
+  await keyPage.locator('#palette[open] #palette-input:focus').waitFor();
+  await keyPage.keyboard.press('Escape');
+  assert.equal((await sp.request.put(base + '/api/v1/settings', { data: { single_key_shortcuts: true } })).status(), 200);
+  await keyPage.locator('[data-no-single-key]').waitFor({ state: 'detached' });
+  await until(sp, () => document.querySelector('[data-single-key-shortcuts]').checked);
+  await keyPage.close();
   await sp.getByLabel('Times').fill('30m, 1d');
   await sp.getByLabel('Default').selectOption('24h'); // a time just typed can be the default before saving
   // While the save is on its way, the forms are locked: the reload after it would drop an edit (#214).

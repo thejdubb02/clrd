@@ -144,6 +144,8 @@
 /* Radius rule (docs/SPEC.md section 10): inputs are 6, like chips. Basecoat
    ships 8. Unlayered, so it wins over the component layer. */
 :where(input:not([type='checkbox'], [type='radio'], [type='hidden']), textarea, select, .input-group) { border-radius: 6px; }
+[data-no-single-key] [data-shortcut], body:has([data-no-single-key]) #palette [data-shortcut] { display: none; }
+
 /* A color input under .input shrinks to a 6 px sliver; give the swatch room. */
 .input[type='color'] { width: 3rem; height: 2.25rem; padding: 2px; }
 

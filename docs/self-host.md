@@ -160,6 +160,11 @@ send `theme: custom` and all six `theme_colors` from the
 [theme contract](SPEC.md#color-themes-584). clrd checks text and state colors
 for contrast before saving. Use `device_theme` in MCP for a device override.
 
+In **Settings > Inbox > Keyboard shortcuts**, turn off **Single-character
+shortcuts** to disable shortcuts like `C` and `/` across your signed-in
+browsers. Ctrl or Cmd+K still opens the command palette. Agents can send
+`{"single_key_shortcuts":false}` through the API or MCP `settings` tool.
+
 ### Server environment
 
 | Variable | Default | Meaning |

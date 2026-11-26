@@ -150,6 +150,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	snap.Sound = ds.Sound
 	palette, _ := json.Marshal(ds.ThemeSettings)
 	snap.Palette = string(palette)
+	snap.DisableSingleKeyShortcuts = ds.SingleKeyShortcuts != nil && !*ds.SingleKeyShortcuts
 	want := map[string]bool{}
 	for _, st := range q.States {
 		want[st] = true
