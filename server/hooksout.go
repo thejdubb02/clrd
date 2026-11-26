@@ -524,10 +524,12 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 // it to another channel, where that id means nothing (#795).
 func (s *Server) keepPost(ctx context.Context, j hookJob, id, remote string) error {
 	ctx, at := context.WithoutCancel(ctx), j.url
-	if j.kind == "discord" { // a save that only changed wait is the same channel (#816)
+	// A save that only changed wait (#816), or a Slack URL apart from its
+	// channel (#870), is the same channel.
+	if same := map[string]func(string) string{"discord": discordURL, "slack": slackURL}[j.kind]; same != nil {
 		var now string
-		_ = s.db.QueryRowContext(ctx, `SELECT url FROM hooks_out WHERE topic = ? AND name = ? AND kind = 'discord'`, j.topic, j.name).Scan(&now)
-		if discordURL(now) == discordURL(j.url) {
+		_ = s.db.QueryRowContext(ctx, `SELECT url FROM hooks_out WHERE topic = ? AND name = ? AND kind = ?`, j.topic, j.name, j.kind).Scan(&now)
+		if same(now) == same(j.url) {
 			at = now
 		}
 	}
