@@ -1,6 +1,5 @@
 {{define "app"}}{{template "head" .}}<meta name="robots" content="noindex">
 <script src="{{static "vendor/basecoat.min.js"}}" defer></script>
-<script src="{{static "vendor/command.min.js"}}" defer></script>
 <script src="{{static "inbox.js"}}" defer></script>
 </head>
 <body>
@@ -654,39 +653,39 @@
   <div class="command">
     <header>
       {{template "i-search"}}
-      <input type="text" id="palette-input" aria-label="Find a command or topic" placeholder="Type a command or a topic" autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="true" aria-controls="palette-menu">
+      <input type="text" id="palette-input" aria-label="Find a command or topic" placeholder="Type a command or a topic" autocomplete="off" autocorrect="off" spellcheck="false" aria-autocomplete="list" role="combobox" aria-expanded="false" aria-controls="palette-menu">
     </header>
-    <div role="menu" id="palette-menu" aria-orientation="vertical" data-empty="No command matches.">
+    <div role="listbox" aria-label="Matching commands" id="palette-menu" hidden>
       {{if ne .View "settings"}}<div role="group" aria-labelledby="pal-card">
         <span data-heading id="pal-card">Selected notification</span>
-        {{if eq .View "cleared"}}<div role="menuitem" data-cmd="restore" data-keywords="reopen undo">{{template "i-rotate-ccw"}}Restore <kbd class="kbd" data-shortcut>R</kbd></div>
-        {{else}}<div role="menuitem" data-cmd="dismiss" data-keywords="dismiss done">{{template "i-check"}}Clear <kbd class="kbd" data-shortcut>C</kbd></div>{{end}}
-        {{if ne .View "cleared"}}<div role="menuitem" data-cmd="ack" data-keywords="acknowledge">{{template "i-reply"}}Acknowledge <kbd class="kbd" data-shortcut>A</kbd></div>
-        <div role="menuitem" data-cmd="snooze" data-keywords="later hour">{{template "i-clock"}}Snooze <kbd class="kbd" data-shortcut>S</kbd></div>{{end}}
-        <div role="menuitem" data-cmd="next" data-keywords="down select">{{template "i-chevron-down"}}Next <kbd class="kbd" data-shortcut>J</kbd></div>
-        <div role="menuitem" data-cmd="prev" data-keywords="up select">{{template "i-chevron-up"}}Previous <kbd class="kbd" data-shortcut>K</kbd></div>
+        {{if eq .View "cleared"}}<div role="option" data-cmd="restore" data-keywords="reopen undo">{{template "i-rotate-ccw"}}Restore <kbd class="kbd" data-shortcut aria-hidden="true">R</kbd></div>
+        {{else}}<div role="option" data-cmd="dismiss" data-keywords="dismiss done">{{template "i-check"}}Clear <kbd class="kbd" data-shortcut aria-hidden="true">C</kbd></div>{{end}}
+        {{if ne .View "cleared"}}<div role="option" data-cmd="ack" data-keywords="acknowledge">{{template "i-reply"}}Acknowledge <kbd class="kbd" data-shortcut aria-hidden="true">A</kbd></div>
+        <div role="option" data-cmd="snooze" data-keywords="later hour">{{template "i-clock"}}Snooze <kbd class="kbd" data-shortcut aria-hidden="true">S</kbd></div>{{end}}
+        <div role="option" data-cmd="next" data-keywords="down select">{{template "i-chevron-down"}}Next <kbd class="kbd" data-shortcut aria-hidden="true">J</kbd></div>
+        <div role="option" data-cmd="prev" data-keywords="up select">{{template "i-chevron-up"}}Previous <kbd class="kbd" data-shortcut aria-hidden="true">K</kbd></div>
       </div>
-      <hr role="separator">
       <div role="group" aria-labelledby="pal-list">
         <span data-heading id="pal-list">This list</span>
-        <div role="menuitem" data-cmd="search" data-keywords="find filter">{{template "i-search"}}Search <kbd class="kbd" data-shortcut>/</kbd></div>
-        {{if and (eq .View "inbox") (not .One)}}<div role="menuitem" data-cmd="clear-all" data-keywords="dismiss everything">{{template "i-check-check"}}Clear all</div>{{end}}
+        <div role="option" data-cmd="search" data-keywords="find filter">{{template "i-search"}}Search <kbd class="kbd" data-shortcut aria-hidden="true">/</kbd></div>
+        {{if and (eq .View "inbox") (not .One)}}<div role="option" data-cmd="clear-all" data-keywords="dismiss everything">{{template "i-check-check"}}Clear all</div>{{end}}
       </div>
-      <hr role="separator">{{end}}
+      {{end}}
       <div role="group" aria-labelledby="pal-go">
         <span data-heading id="pal-go">Go to</span>
-        <a role="menuitem" href="{{base}}/app" data-keywords="home">{{template "i-inbox"}}Inbox <kbd class="kbd" data-shortcut>G I</kbd></a>
-        <a role="menuitem" href="{{base}}/app/snoozed" data-keywords="later">{{template "i-clock"}}Snoozed <kbd class="kbd" data-shortcut>G S</kbd></a>
-        <a role="menuitem" href="{{base}}/app/cleared" data-keywords="done history restore">{{template "i-check-check"}}Cleared <kbd class="kbd" data-shortcut>G C</kbd></a>
-        <a role="menuitem" href="{{base}}/app/settings" data-keywords="devices token">{{template "i-settings"}}Settings <kbd class="kbd" data-shortcut>G ,</kbd></a>
+        <a role="option" tabindex="-1" href="{{base}}/app" data-keywords="home">{{template "i-inbox"}}Inbox <kbd class="kbd" data-shortcut aria-hidden="true">G I</kbd></a>
+        <a role="option" tabindex="-1" href="{{base}}/app/snoozed" data-keywords="later">{{template "i-clock"}}Snoozed <kbd class="kbd" data-shortcut aria-hidden="true">G S</kbd></a>
+        <a role="option" tabindex="-1" href="{{base}}/app/cleared" data-keywords="done history restore">{{template "i-check-check"}}Cleared <kbd class="kbd" data-shortcut aria-hidden="true">G C</kbd></a>
+        <a role="option" tabindex="-1" href="{{base}}/app/settings" data-keywords="devices token">{{template "i-settings"}}Settings <kbd class="kbd" data-shortcut aria-hidden="true">G ,</kbd></a>
       </div>
-      {{with .Snap.Topics}}<hr role="separator">
+      {{with .Snap.Topics}}
       <div role="group" aria-labelledby="pal-topics">
         <span data-heading id="pal-topics">Topics</span>
-        {{range .}}<a role="menuitem" href="{{base}}/app?topic={{.Name}}" data-keywords="topic">{{template "i-hash"}}{{.Name}} <span class="meta ms-auto">{{.Open}}</span></a>
+        {{range .}}<a role="option" tabindex="-1" href="{{base}}/app?topic={{.Name}}" data-keywords="topic">{{template "i-hash"}}{{.Name}} <span class="meta ms-auto">{{.Open}}</span></a>
         {{end}}
       </div>{{end}}
     </div>
+    <p class="meta px-3 not-empty:py-2" role="status" data-command-status></p>
   </div>
 </dialog>{{end}}
 {{define "hook-fields"}}{{$h := .}}{{$id := print "hk-" .Topic "/" .Name}}

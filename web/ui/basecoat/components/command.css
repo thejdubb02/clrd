@@ -66,7 +66,7 @@
     @apply w-full bg-transparent outline-hidden disabled:cursor-not-allowed disabled:opacity-50;
   }
 
-  .command [role='menu'] {
+  .command :is([role='menu'], [role='listbox']) {
     @apply overflow-x-hidden overflow-y-auto outline-hidden;
     scrollbar-width: none;
 
@@ -75,12 +75,12 @@
     }
   }
 
-  .command [role='menuitem'] {
+  .command :is([role='menuitem'], [role='option']) {
     @apply aria-hidden:hidden relative flex w-full cursor-default items-center outline-hidden select-none disabled:pointer-events-none disabled:opacity-50 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0;
   }
 
-  .command [role='menuitem'].active,
-  .command [role='menuitem'][data-selected='true'] {
+  .command :is([role='menuitem'], [role='option']).active,
+  .command :is([role='menuitem'], [role='option'])[data-selected='true'] {
     @apply bg-muted text-foreground;
   }
 
@@ -88,7 +88,7 @@
     @apply overflow-hidden;
   }
 
-  .command [role='group']:not(:has([role='menuitem']:not([aria-hidden='true']))) {
+  .command [role='group']:not(:has(:is([role='menuitem'], [role='option']):not([aria-hidden='true']))) {
     @apply hidden;
   }
 
@@ -108,29 +108,29 @@
     @apply ms-auto opacity-0;
   }
 
-  .command [role='menuitem'][data-checked='true'] [data-indicator],
-  .command [role='menuitem'][aria-selected='true'] [data-indicator],
-  .command [role='menuitem'][data-selected='true'] [data-indicator] {
+  .command :is([role='menuitem'], [role='option'])[data-checked='true'] [data-indicator],
+  .command :is([role='menuitem'], [role='option'])[aria-selected='true'] [data-indicator],
+  .command :is([role='menuitem'], [role='option'])[data-selected='true'] [data-indicator] {
     @apply opacity-100;
   }
 
-  .command [role='menuitem']:has([data-shortcut]) [data-indicator] {
+  .command :is([role='menuitem'], [role='option']):has([data-shortcut]) [data-indicator] {
     @apply hidden;
   }
 
-  .command [role='menu']:not(:has([role='menuitem']:not([aria-hidden='true'])))::before {
+  .command :is([role='menu'], [role='listbox']):not(:has(:is([role='menuitem'], [role='option']):not([aria-hidden='true'])))::before {
     @apply flex items-center justify-center truncate;
   }
 
-  .command [role='menu'][data-empty]:not(:has([role='menuitem']:not([aria-hidden='true'])))::before {
+  .command :is([role='menu'], [role='listbox'])[data-empty]:not(:has(:is([role='menuitem'], [role='option']):not([aria-hidden='true'])))::before {
     @apply content-[attr(data-empty)];
   }
 
-  .command [role='menu']:not([data-empty]):not(:has([role='menuitem']:not([aria-hidden='true'])))::before {
+  .command :is([role='menu'], [role='listbox']):not([data-empty]):not(:has(:is([role='menuitem'], [role='option']):not([aria-hidden='true'])))::before {
     @apply content-['No_results_found'];
   }
 
-  .command:not([data-command-initialized]) [role='menuitem']:not([aria-disabled='true']):not(:disabled):hover {
+  .command:not([data-command-initialized]) :is([role='menuitem'], [role='option']):not([aria-disabled='true']):not(:disabled):hover {
     @apply bg-muted text-foreground;
   }
 

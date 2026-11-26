@@ -243,11 +243,11 @@
     @apply ps-1.5 text-base md:text-sm placeholder:text-muted-foreground;
   }
 
-  .command [role='menu'] {
+  .command :is([role='menu'], [role='listbox']) {
     @apply max-h-72 scroll-py-1;
   }
 
-  .command [role='menu']:not(:has([role='menuitem']:not([aria-hidden='true'])))::before {
+  .command :is([role='menu'], [role='listbox']):not(:has(:is([role='menuitem'], [role='option']):not([aria-hidden='true'])))::before {
     @apply py-6 text-center text-sm;
   }
 
@@ -263,11 +263,11 @@
     @apply bg-border -mx-1 h-px;
   }
 
-  .command [role='menuitem'] {
+  .command :is([role='menuitem'], [role='option']) {
     @apply gap-2 rounded-sm px-2 py-1.5 text-sm [&_svg:not([class*='size-'])]:size-4 in-[.command-dialog]:rounded-lg;
   }
 
-  .command [role='menuitem'].active {
+  .command :is([role='menuitem'], [role='option']).active {
     @apply bg-muted text-foreground [&_svg]:text-foreground;
   }
 
@@ -275,7 +275,7 @@
     @apply text-muted-foreground text-xs tracking-widest;
   }
 
-  .command [role='menuitem'].active [data-shortcut] {
+  .command :is([role='menuitem'], [role='option']).active [data-shortcut] {
     @apply text-foreground;
   }
 

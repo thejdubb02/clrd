@@ -77,6 +77,35 @@ try {
   const fresh = await (await page.request.get(base + '/app/settings')).text();
   assert.ok(fresh.includes('id="snz-h"') && !fresh.includes('data-format-check'), 'a fresh install shows the format check');
 
+  // The command combobox exposes one active result without moving text focus.
+  await page.getByRole('button', { name: 'Commands' }).press('Enter');
+  const commandDialog = page.getByRole('dialog', { name: 'Commands' });
+  const commandInput = commandDialog.getByRole('combobox', { name: 'Find a command or topic' });
+  const assertCommand = async name => {
+    const option = commandDialog.getByRole('option', { name, exact: true, selected: true });
+    assert.equal(await option.count(), 1);
+    assert.equal(await commandInput.getAttribute('aria-activedescendant'), await option.getAttribute('id'));
+    assert.equal(await commandInput.evaluate(input => input === document.activeElement), true);
+  };
+  await assertCommand('Clear');
+  await page.keyboard.press('ArrowDown');
+  await assertCommand('Acknowledge');
+  await commandInput.fill('clear');
+  await commandInput.press('End');
+  await assertCommand('Cleared');
+  await commandInput.press('Home');
+  await assertCommand('Clear');
+  await commandInput.fill('no-such-command');
+  assert.equal(await commandDialog.getByRole('status').textContent(), 'No command matches.');
+  assert.equal(await commandInput.getAttribute('aria-activedescendant'), null);
+  assert.equal(await commandInput.getAttribute('aria-expanded'), 'false');
+  await commandInput.fill('find');
+  await assertCommand('Search');
+  await page.keyboard.press('Enter');
+  await until(page, () => document.activeElement.id === 'q');
+  assert.equal(await commandDialog.isVisible(), false);
+  await page.locator('#q').blur();
+
   // Empty first run: one tip card, send-a-test first; Next moves on, and Copy
   // holds this instance's own address.
   const tip = page.locator('[data-tip]:visible');
