@@ -1001,6 +1001,9 @@ func (e *apiError) Error() string { return e.msg }
 // without one shows the next step.
 const noToken = "missing or invalid token: send Authorization: Bearer <token>; make one with `clrd token create --name me` on the server, or in the web app under Settings"
 
+// Keep error construction out of line to avoid duplicating it at each call site.
+//
+//go:noinline
 func errf(status int, code, format string, args ...any) error {
 	return &apiError{status: status, code: code, msg: fmt.Sprintf(format, args...)}
 }
