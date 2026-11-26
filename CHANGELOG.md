@@ -168,6 +168,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Fixed
 
 - A GitHub hook send that fails while GitHub hooks are being paused still keeps GitHub's Retry-After, so it does not retry early after the resume (#881).
+- Web Settings no longer reloads over unsaved edits when a setting changes on another device. An edit not saved yet in any Settings form (color rules, swipe buttons, keep cleared, webhooks, themes and more, not only snooze times) is kept, and each form says the setting changed elsewhere (#883).
 - Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
 
