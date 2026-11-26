@@ -612,17 +612,18 @@ private fun Header(app: App) {
     val b = LocalBrand.current
     val saved by app.saved.collectAsState()
     val servers = remember(saved) { app.servers }
+    val shown by app.shown.collectAsState()
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.app_name), style = Wordmark, color = b.ink)
         // More than one server (#78): the one shown, and a tap picks another. One server shows nothing new.
         if (servers.size > 1) Box(Modifier.padding(start = 12.dp, end = 8.dp).weight(1f)) {
-            Text(stringResource(R.string.server_switch, app.shown.value.host), style = Mono, color = b.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { menu = true }.padding(6.dp).testTag("server-switch"))
+            Text(stringResource(R.string.server_switch, shown.host), style = Mono, color = b.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { menu = true }.padding(6.dp).testTag("server-switch"))
             DropdownMenu(menu, { menu = false }) {
                 servers.forEach { a -> DropdownMenuItem(text = { Text(a.host) }, onClick = { menu = false; app.show(a.id) }) }
             }
         } else Spacer(Modifier.weight(1f))
-        SyncState(app.shown.value)
+        SyncState(shown)
     }
 }
 
@@ -651,11 +652,12 @@ private fun SyncState(a: Account) {
 private fun ServerList(app: App, saved: Int) {
     val b = LocalBrand.current
     val servers = remember(saved) { app.servers }
+    val shown by app.shown.collectAsState()
     var removing by remember { mutableStateOf<Account?>(null) }
     if (servers.size > 1) servers.forEach { a ->
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f).clickable(role = Role.Button) { app.show(a.id) }.padding(vertical = 6.dp)) {
-                Text(a.host, color = b.ink, fontWeight = if (a.id == app.shown.value.id) FontWeight.SemiBold else null)
+                Text(a.host, color = b.ink, fontWeight = if (a.id == shown.id) FontWeight.SemiBold else null)
                 SyncState(a)
             }
             TextButton(onClick = { removing = a }) { Text(stringResource(R.string.server_remove), color = b.signal) }
@@ -896,7 +898,7 @@ internal fun rememberPicture(url: String, px: Int): ImageBitmap? {
     if (url.isEmpty()) return null
     val app = App.of(LocalContext.current)
     val images = app.images
-    val a = app.shown.value
+    val a by app.shown.collectAsState()
     var bmp by remember(url) { mutableStateOf(images.cached(url, px, a)) }
     LaunchedEffect(url) {
         if (bmp == null) bmp = withContext(images.dispatcher) { images.load(url, px, a) }
@@ -2096,7 +2098,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
         "battery" to (battery != null && app.configured), "muted-topics" to topics.isNotEmpty(),
         "swipe" to app.configured, "formatting" to app.configured, "snooze" to (app.configured && canRead), "devices" to (app.configured && (canRead || rejected)), // rejected: a publish-only phone may still unlink itself (#643)
         "senders" to (app.configured && !rejected && senders.value != null),
-        "client-cert" to (app.shown.value.id == 0), // only the first server presents one for now (#78)
+        "client-cert" to (a.id == 0), // only the first server presents one for now (#78)
     )
     val shown = SETTINGS.filter {
         open[it.id] != false && settingMatches(query, ctx.getString(it.label), it.desc?.let(ctx::getString), it.keywords)
