@@ -270,6 +270,8 @@ func ntfyDelay(v, tz string) (*time.Time, error) {
 	return &t, nil
 }
 
+var spokenDuration = regexp.MustCompile(`^(\d+) ?([a-z]+)$`)
+
 const errDelay = "invalid delay %q: use a unix time, a duration like 30m, an RFC 3339 time or a time like tomorrow 10am"
 
 // delayTime is ntfyDelay's parser, with the clock (and its zone) passed in.
@@ -287,13 +289,13 @@ func delayTime(v string, now time.Time) (time.Time, error) {
 		return t, nil
 	}
 	f := strings.Fields(strings.NewReplacer(",", " ", " am", "am", " pm", "pm").Replace(strings.ToLower(v)))
-	if len(f) == 2 { // "2 days", "30 minutes"
-		if n, err := strconv.Atoi(f[0]); err == nil && n >= 0 && n <= 36500 {
+	if m := spokenDuration.FindStringSubmatch(strings.Join(f, " ")); m != nil { // "2 days", "30min"
+		if n, err := strconv.Atoi(m[1]); err == nil && n <= 36500 {
 			for _, u := range []struct {
 				names string
 				d     time.Duration
 			}{{" d day days ", 24 * time.Hour}, {" h hr hrs hour hours ", time.Hour}, {" m min mins minute minutes ", time.Minute}, {" s sec secs second seconds ", time.Second}} {
-				if strings.Contains(u.names, " "+f[1]+" ") {
+				if strings.Contains(u.names, " "+m[2]+" ") {
 					return now.Add(time.Duration(n) * u.d), nil
 				}
 			}

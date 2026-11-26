@@ -542,7 +542,7 @@ func TestDelayTime(t *testing.T) {
 		"10am": day(26, 10, 0), "8:30pm": day(25, 20, 30), "17:05": day(25, 17, 5), "noon": day(26, 12, 0),
 		"tomorrow, 3pm": day(26, 15, 0), "3 PM tomorrow": day(26, 15, 0), "Tuesday, 7am": time.Date(2026, 12, 1, 7, 0, 0, 0, zone),
 		"wed 2pm": time.Date(2026, 12, 2, 14, 0, 0, 0, zone), "Wednesday 3pm": day(25, 15, 0),
-		"2 days": now.Add(48 * time.Hour), "90 minutes": now.Add(90 * time.Minute), "30m": now.Add(30 * time.Minute),
+		"2 days": now.Add(48 * time.Hour), "30min": now.Add(30 * time.Minute), "90 minutes": now.Add(90 * time.Minute), "30m": now.Add(30 * time.Minute),
 		"2026-11-26T10:00:00Z": time.Date(2026, 11, 26, 10, 0, 0, 0, time.UTC), "2026-11-26T09:00:00+09:00": day(25, 19, 0),
 	} {
 		if got, err := delayTime(v, now); err != nil || !got.Equal(want) {
@@ -570,7 +570,8 @@ func TestNtfyDelayTimezone(t *testing.T) {
 			hdr = nil
 		}
 		code, out := raw(t, "POST", ts.URL+c.path, admin, cmp.Or(c.body, "m"), hdr)
-		if at := time.Unix(ntfyDecode(t, out).Time, 0).In(tokyo); code != 200 || at.Hour() != 10 || at.Minute() != 0 {
+		at := time.Unix(ntfyDecode(t, out).Time, 0).In(tokyo)
+		if ahead := time.Until(at); code != 200 || at.Hour() != 10 || at.Minute() != 0 || ahead <= 0 || ahead > 24*time.Hour {
 			t.Errorf("%s: 10am in Tokyo came back as %v: %d %s", c.path, at, code, out)
 		}
 	}
