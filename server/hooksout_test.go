@@ -145,8 +145,11 @@ func TestHooksOut(t *testing.T) {
 	}
 	status.Store(200)
 	call(t, ts, "PUT", "/api/v1/topics/alerts/hooks/gh", admin, map[string]any{"url": url})
+	if off := one(t, s, "alerts", "webhook-off-gh"); off.State != "resolved" {
+		t.Fatalf("turned back on, notice still %s", off.State) // #893
+	}
 	s.deliverHooks(ctx)
-	if len(hits()) != before+1 {
+	if len(hits()) != before+2 { // the pending one, and the notice resolving
 		t.Fatalf("pending delivery not sent after turning back on: %d", len(hits())-before)
 	}
 	if code, _ := call(t, ts, "DELETE", "/api/v1/topics/alerts/hooks/gh", admin, nil); code != 200 {
@@ -370,6 +373,22 @@ func TestHooksOutRaces(t *testing.T) {
 	}
 	one(t, s, "alerts", "webhook-off-gh")
 
+	// #893: a save lands between the turn-off and its notice (the trigger
+	// plays it), so the notice it could not clear is cleared after.
+	save()
+	c = queued()
+	s.db.Exec(`UPDATE hooks_out SET failing_since = ?`, ms(old))
+	s.db.Exec(`DELETE FROM notifications WHERE external_id = 'webhook-off-gh'`)
+	s.db.Exec(`CREATE TRIGGER resave AFTER UPDATE OF enabled ON hooks_out WHEN NEW.enabled = 0 BEGIN UPDATE hooks_out SET enabled = 1 WHERE rowid = NEW.rowid; END`)
+	err := s.recordHook(ctx, c, 500, nil)
+	s.db.Exec(`DROP TRIGGER resave`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off := one(t, s, "alerts", "webhook-off-gh"); off.State != "resolved" {
+		t.Fatalf("hook back on, notice still %s", off.State)
+	}
+
 	// #878: a last try to the old URL fails just before a save moves the hook.
 	// The save keeps failed rows, but the new URL's streak still starts clean.
 	save()
@@ -412,6 +431,42 @@ func TestHooksOutRaces(t *testing.T) {
 	if s.db.QueryRow(`SELECT count(*) FROM hook_posts`).Scan(&kept); kept != 1 {
 		t.Fatal("a post to the same URL was dropped")
 	}
+}
+
+// #892: the first of 9 sends moves the hook while the 9th waits for one of
+// the 8 slots; the 9th then sends nothing to the old URL.
+func TestHooksOutMovedWhileQueued(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	s.fetch.allow = func(netip.Addr, string) bool { return true }
+	var move sync.Once
+	var mu sync.Mutex
+	var got []byte
+	old, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		got = append(got, b...)
+		mu.Unlock()
+		move.Do(func() { // a send that ends frees a slot, so the 9th waits for the move
+			if err := s.SaveHook(ctx, serverToken, "alerts", "gh", OutHook{URL: "https://y.test/"}, false, false); err != nil {
+				t.Error(err)
+			}
+		})
+	})
+	call(t, ts, "PUT", "/api/v1/topics/alerts/hooks/gh", admin, map[string]any{"url": old.URL})
+	var last string
+	for range 9 {
+		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m"})
+		last = n["id"].(string)
+		call(t, ts, "POST", "/api/v1/notifications/"+last+"/resolve", admin, nil)
+	}
+	if err := s.deliverHooks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if mu.Lock(); strings.Contains(string(got), last) {
+		t.Fatal("the 9th send went to the old URL after the move")
+	}
+	mu.Unlock()
 }
 
 // A body template (#239): the receiver gets its own JSON shape, signed as

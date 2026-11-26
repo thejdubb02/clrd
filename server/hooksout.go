@@ -304,6 +304,13 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 		sem <- struct{}{}
 		go func() {
 			defer func() { <-sem; wg.Done() }()
+			// A save that moved or turned off the hook while this job waited
+			// for a slot took its delivery away: send nothing (#892).
+			var mine bool
+			if errs[i] = s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM hook_deliveries d JOIN hooks_out h ON h.topic = d.topic AND h.name = d.name
+				WHERE d.id = ? AND d.status = 'pending' AND h.enabled = 1 AND h.rev = ?)`, j.id, j.rev).Scan(&mine); !mine {
+				return
+			}
 			code, sendErr := s.sendHook(ctx, j)
 			if ctx.Err() != nil {
 				return // shutting down: try again next start
@@ -816,6 +823,24 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 			Title: "Webhook turned off", Format: FormatText,
 			Message: fmt.Sprintf("Webhook %q to %s failed for %.0f hours and is now off. Last error: %s. Save it again to turn it back on.",
 				j.name, host, hookDisableAfter.Hours(), msg)})
+		// A save between the turn-off and the notice turned it back on and
+		// found no notice to clear yet: clear it here (#893).
+		var on bool
+		if err == nil {
+			err = s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND enabled = 1)`, j.topic, j.name).Scan(&on)
+		}
+		if err == nil && on {
+			err = s.clearHookOff(ctx, j.topic, j.name)
+		}
+	}
+	return err
+}
+
+// clearHookOff resolves a hook's "Webhook turned off" notice, if it has one.
+func (s *Server) clearHookOff(ctx context.Context, topic, name string) error {
+	_, err := s.ActByKey(ctx, serverToken, topic, "webhook-off-"+name, "resolve", "webhook_on")
+	if isNotFound(err) {
+		return nil
 	}
 	return err
 }
@@ -965,7 +990,10 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 		topic, name, h.URL, string(events), h.Secret, h.Body, h.Kind, moved, keepSecret, keepBody); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return s.clearHookOff(ctx, topic, name) // on again: its off notice is out of date (#893)
 }
 
 // DeleteHook removes a hook and its delivery log.
