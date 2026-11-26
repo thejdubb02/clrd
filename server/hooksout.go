@@ -386,7 +386,7 @@ func (s *Server) hookDo(ctx context.Context, req *http.Request, max int64) (int,
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, max))
 	if ra := resp.Header.Get("Retry-After"); ra != "" && (resp.StatusCode < 200 || resp.StatusCode > 299) {
 		wait, err := strconv.Atoi(ra)
-		d := time.Duration(wait) * time.Second
+		d := time.Duration(min(wait, 3600)) * time.Second // capped first, so a huge value cannot wrap
 		if t, terr := http.ParseTime(ra); err != nil && terr == nil {
 			d = time.Until(t)
 		}

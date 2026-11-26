@@ -484,7 +484,7 @@ func TestHooksOutRetryAfter(t *testing.T) {
 		if gap != want || !strings.Contains(msg, "retry after") {
 			t.Fatalf("Retry-After %s: next try in %ds (%q), want %ds", wait, gap, msg, want)
 		}
-		wait = "86400"
+		wait = "9223372037" // would wrap a Duration if not capped first
 	}
 }
 
