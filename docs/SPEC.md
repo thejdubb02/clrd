@@ -1220,7 +1220,12 @@ and `initialize` reports `version` as `serverInfo.version`.
   made absolute from `CLRD_BASE_URL`). Unlike ntfy, clrd's file URLs need a
   token, so a third-party ntfy app that fetches files without one gets 401.
 - `POST /` with ntfy JSON body (`topic`, `message`, `title`, `priority`, `tags`,
-  `icon`, `attach`, `filename`, ...).
+  `icon`, `attach`, `filename`, ...). Headers and query parameters fill
+  omitted options, including actions, delay, Markdown, cache, and the message
+  ID. Headers win over query parameters. Non-empty JSON fields win over both,
+  as do explicit JSON arrays and the Markdown boolean. The topic comes from
+  JSON, and the filename describes an external attachment. For a raw publish,
+  `Content-Type: text/markdown` selects Markdown even with `Markdown: no`.
 - `GET /{topic}/json`, `/{topic}/sse`, `/{topic}/ws`, `/{topic}/raw` with `since=`
   (`all`, unix time, duration, message id) and `poll=1`, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
