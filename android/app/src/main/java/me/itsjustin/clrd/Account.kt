@@ -47,9 +47,12 @@ class Account(private val ctx: Context, val id: Int) {
 
     /**
      * This server's own client (#78): its own client certificate (#152) and its own connection pool, so no
-     * server ever gets another's certificate or reuses a connection that sent it.
+     * server ever gets another's certificate or reuses a connection that sent it. A pick swaps in a new pool:
+     * a connection busy at the change goes back to the old one, which nothing uses again (#887).
      */
-    val http by lazy {
+    val http get() = repicked ?: first
+    @Volatile private var repicked: okhttp3.OkHttpClient? = null
+    private val first by lazy {
         okhttp3.OkHttpClient.Builder()
             .sslSocketFactory(certKeys.socketFactory, certKeys.trustManager)
             .pingInterval(45, java.util.concurrent.TimeUnit.SECONDS) // notices a dead connection the server ping alone would not
@@ -68,7 +71,9 @@ class Account(private val ctx: Context, val id: Int) {
         clientCert.value = alias
         app.io.execute {
             certKeys.renew()
-            http.connectionPool.evictAll()
+            val old = http
+            repicked = first.newBuilder().connectionPool(okhttp3.ConnectionPool()).build()
+            old.connectionPool.evictAll()
             if (configured) SyncService.start(app, restart = true)
         }
     }

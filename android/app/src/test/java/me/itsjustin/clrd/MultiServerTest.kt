@@ -219,8 +219,10 @@ class MultiServerTest {
         val b = app.addAccount("https://b.example:8443", "tb")
         assertTrue("each server has its own client and pool", app.account.http !== b.http && app.account.http.connectionPool !== b.http.connectionPool)
         app.show(b.id)
+        val pool = b.http.connectionPool
         app.pickClientCert("key-b") // Settings picks for the shown server
         drain()
+        assertTrue("a connection busy at the pick is never used again (#887)", b.http.connectionPool !== pool)
         assertEquals("key-b", b.clientCert.value)
         assertEquals("https://b.example:8443", b.prefs.getString("client_cert_origin", null))
         assertNull(app.account.clientCert.value)

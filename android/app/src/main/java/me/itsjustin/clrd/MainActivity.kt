@@ -2107,8 +2107,9 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
     LaunchedEffect(saved, resumes, rejected) {
         if (rejected) { senders.value = null; reads = false } // nothing fetched with the old answer stays on screen
         if (rejected || !app.configured) return@LaunchedEffect
-        val api = app.api()
+        val a = app.shown.value
         app.io.execute {
+            val api = a.api() // read here, behind a certificate pick already queued, so it never gets the retired client (#887)
             runCatching { api.get("/api/v1/settings") }.onSuccess { reads = true }.onFailure { if ((it as? HttpError)?.isAuth == true) reads = false }
             senders.value = runCatching { objects(org.json.JSONObject(api.get("/api/v1/senders")), "senders") }.getOrNull()
         }

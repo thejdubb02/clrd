@@ -28,7 +28,7 @@ fun retryAfterMs(r: Response): Long? = r.header("Retry-After")?.trim()?.toLongOr
 data class OpenList(val rows: List<Notif>, val seq: Long, val epoch: String)
 
 /** Blocking REST client for docs/SPEC.md section 5. Call off the main thread. */
-class Api(private val http: OkHttpClient, baseUrl: String, private val token: String) {
+class Api(internal val http: OkHttpClient, baseUrl: String, private val token: String) {
     val base = baseUrl.trimEnd('/')
 
     fun post(path: String, body: String = "{}"): String =
