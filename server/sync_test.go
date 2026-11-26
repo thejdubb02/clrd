@@ -296,6 +296,65 @@ func TestEpoch(t *testing.T) {
 	}
 }
 
+// A crash skips Close, so the running server keeps the epoch file current
+// itself: a backup restored after a crash still reads as going back in time.
+func TestEpochRestoreAfterCrash(t *testing.T) {
+	old := epochEvery
+	t.Cleanup(func() { epochEvery = old })
+	epochEvery = 20 * time.Millisecond
+	opt := Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	s, err := New(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s)
+	admin := mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	saved := func() { // waits for the file to hold the head
+		want := fmt.Sprintf("%s %d\n", s.Epoch(), s.CurrentSeq())
+		for end := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+			if b, _ := os.ReadFile(opt.DB + ".epoch"); string(b) == want {
+				return
+			}
+			if time.Now().After(end) {
+				t.Fatalf("epoch file never reached %q", want)
+			}
+		}
+	}
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "kept"})
+	saved() // past the first write at start, so only a later tick can record "lost"
+	backup := filepath.Join(t.TempDir(), "backup.db")
+	if _, err := s.db.Exec(`VACUUM INTO ?`, backup); err != nil {
+		t.Fatal(err)
+	}
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "t", "message": "lost"})
+	saved()
+	cancel()
+	<-done
+	ts.Close()
+	was := s.Epoch()
+	s.db.Close() // the crash: no Close, so nothing is written on the way down
+	b, err := os.ReadFile(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(opt.DB + "-wal")
+	os.Remove(opt.DB + "-shm")
+	if err := os.WriteFile(opt.DB, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := New(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	if restored.Epoch() == was {
+		t.Fatalf("backup restored after a crash kept epoch %q", was)
+	}
+}
+
 func TestSnoozeWakes(t *testing.T) {
 	old := wakeEvery
 	t.Cleanup(func() { wakeEvery = old })

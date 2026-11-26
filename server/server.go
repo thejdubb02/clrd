@@ -353,6 +353,13 @@ func New(opt Options) (*Server, error) {
 		s.ntfySubs = make(map[string]int)
 	}
 	s.hub.subs = map[chan Event]*stream{}
+	// The epoch file (see below) before the head: a running server rewrites it,
+	// so read first, its seq is never above the head read after (#954).
+	var sideEpoch string
+	var high int64
+	if b, err := os.ReadFile(opt.DB + ".epoch"); err == nil {
+		fmt.Sscan(string(b), &sideEpoch, &high)
+	}
 	var seq, pruned int64
 	if err := db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'events'`).Scan(&seq); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		db.Close()
@@ -372,14 +379,9 @@ func New(opt Options) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
-	// A restored backup keeps its epoch, so the sidecar (written on Close)
-	// remembers the highest seq handed out: a head below it means the database
-	// went back in time, and clients must start over (issue #63).
-	var sideEpoch string
-	var high int64
-	if b, err := os.ReadFile(opt.DB + ".epoch"); err == nil {
-		fmt.Sscan(string(b), &sideEpoch, &high)
-	}
+	// A restored backup keeps its epoch, so the sidecar (written while running
+	// and on Close) remembers the highest seq handed out: a head below it means
+	// the database went back in time, and clients must start over (issue #63).
 	// Another epoch there means a database swapped in under it, such as the same backup restored twice.
 	if sideEpoch != "" && (sideEpoch != strconv.FormatInt(epoch, 36) || seq < high) {
 		epoch = rand.Int64()
@@ -411,11 +413,22 @@ func New(opt Options) (*Server, error) {
 	return s, nil
 }
 
-// Close records the epoch and head seq next to the database (see New), then closes it.
-func (s *Server) Close() error {
+// epochEvery is how often Run saves the epoch file, so a crash, which skips
+// Close, leaves at most this much out of it (#954).
+var epochEvery = time.Minute
+
+// saveEpoch records the epoch and head seq next to the database (see New).
+// Best effort, so it never marks the job failing in /healthz.
+func (s *Server) saveEpoch(context.Context) error {
 	if err := os.WriteFile(s.opt.DB+".epoch", fmt.Appendf(nil, "%s %d\n", s.epoch, s.seq.Load()), 0o600); err != nil {
 		s.log.Warn("could not write the epoch file", "err", err)
 	}
+	return nil
+}
+
+// Close saves the epoch file, then closes the database.
+func (s *Server) Close() error {
+	s.saveEpoch(context.Background())
 	return s.db.Close()
 }
 
@@ -622,6 +635,7 @@ func (s *Server) Run(ctx context.Context) error {
 	job("unlink idle browsers", time.Hour, s.unlinkIdle)
 	job("cache sweep", time.Hour, s.fetch.sweep)
 	job("webhooks out", hookEvery, s.deliverHooks)
+	job("epoch file", epochEvery, s.saveEpoch)
 	wg.Add(1)
 	go func() { defer wg.Done(); s.pushLoop(jctx) }()
 	srv := &http.Server{Addr: s.opt.Listen, Handler: s, ReadHeaderTimeout: 10 * time.Second,

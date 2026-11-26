@@ -1,0 +1,1 @@
+- A backup restored after a crash now resets clients too: the server saves its epoch file every minute, not only on a clean stop (#954).
