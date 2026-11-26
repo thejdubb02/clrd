@@ -222,6 +222,7 @@ func TestTools(t *testing.T) {
 		{"request_approve", map[string]any{"approve": "allowed"}, "POST /api/v1/devices/approve-request", map[string]any{"approve": "allowed", "topic": ""}},
 		{"set_sender", map[string]any{"id": "tk1", "routes": map[string]any{"*": []any{"infra"}}}, "PUT /api/v1/senders/tk1", map[string]any{"routes": map[string]any{"*": []any{"infra"}}}},
 		{"undo_sender_change", map[string]any{"id": "tk1", "seq": 3}, "POST /api/v1/senders/tk1/changes/3/undo", map[string]any{}},
+		{"settings", map[string]any{"single_key_shortcuts": false}, "PUT /api/v1/settings", map[string]any{"single_key_shortcuts": false}},
 		{"settings", nil, "GET /api/v1/settings", nil},
 		{"settings", map[string]any{"theme": "custom", "theme_colors": map[string]any{"bg": "#ffffff"}}, "PUT /api/v1/settings", map[string]any{"theme": "custom", "theme_colors": map[string]any{"bg": "#ffffff"}}},
 		{"device_theme", map[string]any{"id": "d1", "theme": ""}, "PUT /api/v1/devices/d1", map[string]any{"theme": ""}},

@@ -6,7 +6,7 @@
 <body>
 <a class="skip" href="#main">Skip to notifications</a>
 {{$base := printf "%s/app" base}}{{if eq .View "snoozed" "cleared"}}{{$base = printf "%s/app/%s" base .View}}{{end}}
-<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-ver="{{about.Version}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-tkeep="{{range $t, $v := .Snap.TopicKeepClearedDays}}{{$t}}={{$v}};{{end}}" data-sound="{{.Snap.Sound}}" data-swipe-start="{{range .Snap.SwipeStart}}{{.}} {{end}}" data-swipe-end="{{range .Snap.SwipeEnd}}{{.}} {{end}}">
+<div class="grid min-h-dvh grid-cols-1 md:grid-cols-[248px_minmax(0,1fr)]" data-inbox{{if .Snap.DisableSingleKeyShortcuts}} data-no-single-key{{end}} data-view="{{.View}}" data-seq="{{.Snap.Seq}}" data-epoch="{{.Snap.Epoch}}" data-me="{{.Snap.Me}}" data-me-id="{{.Snap.MeID}}" data-ver="{{about.Version}}" data-snooze="{{.Snap.SnoozeDefault}}{{range .Snap.SnoozeIntervals}},{{.}}{{end}}" data-fmt="{{.Snap.Formatting}},{{.Snap.Autolink}},{{.Snap.Favicons}},{{.Snap.LinkPreviews}}" data-tprev="{{range $t, $v := .Snap.TopicPreviews}}{{$t}}={{$v}};{{end}}" data-keep="{{.Snap.KeepClearedDays}}" data-tkeep="{{range $t, $v := .Snap.TopicKeepClearedDays}}{{$t}}={{$v}};{{end}}" data-sound="{{.Snap.Sound}}" data-swipe-start="{{range .Snap.SwipeStart}}{{.}} {{end}}" data-swipe-end="{{range .Snap.SwipeEnd}}{{.}} {{end}}">
   <aside class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3 md:sticky md:top-0 md:h-dvh md:flex-col md:flex-nowrap md:items-stretch md:gap-6 md:overflow-y-auto md:border-e md:border-b-0 md:px-3 md:py-5">
     <div class="md:px-2">{{template "brand" "/app"}}</div>
     <nav class="order-2 -mx-1 flex min-w-0 basis-full gap-1 overflow-x-auto px-1 md:order-none md:mx-0 md:flex-col md:overflow-visible md:px-0" aria-label="Views" data-live="views">
@@ -44,7 +44,7 @@
         <label class="sr-only" for="q">Search notifications</label>
         <input id="q" type="search" name="q" value="{{.Q}}" placeholder="Search" autocomplete="off" data-search>
         <span data-align="inline-start">{{template "i-search"}}</span>
-        <kbd class="kbd js-only max-md:hidden" data-align="inline-end">/</kbd>
+        <kbd class="kbd js-only max-md:hidden" data-align="inline-end" data-shortcut>/</kbd>
       </form>
     </header>
     <div data-live="unsub">{{if .Snap.Unsubscribed}}<div class="alert mb-4" role="status" data-unsub-banner>{{template "i-circle-alert"}}<h2>Not subscribed to {{.Topic}}</h2><section>New notifications here skip your inbox and devices.
@@ -309,6 +309,12 @@
       <h3 id="inbox-h" class="text-base font-semibold">Stack by topic</h3>
       <p class="text-body text-sm/relaxed">With stacking on, two or more notifications from one topic show as one card in the inbox. This setting is for this browser only.</p>
       <label class="label"><input type="checkbox" role="switch" class="input" data-stack-setting> Stack by topic</label>
+    </section>
+    <section id="keyboard-shortcuts" data-setting data-keywords="keys, keyboard, commands, accessibility" class="js-only grid gap-3">
+      <h3 class="text-base font-semibold">Keyboard shortcuts</h3>
+      <p id="keyboard-shortcuts-hint" class="text-body text-sm/relaxed">Turn off letter and punctuation shortcuts across your signed-in browsers. You can still use Tab, Enter, and the command palette.</p>
+      <label class="label"><input type="checkbox" role="switch" class="input" aria-describedby="keyboard-shortcuts-hint" data-single-key-shortcuts{{if not .Snap.DisableSingleKeyShortcuts}} checked{{end}}> Single-character shortcuts</label>
+      <p class="meta" role="status" data-shortcut-status></p>
     </section>
     <section id="swipe" data-setting data-keywords="swipe, gesture, slide, buttons" class="js-only grid gap-3">
       <h3 id="swp-h" class="text-base font-semibold">Swipe buttons</h3>

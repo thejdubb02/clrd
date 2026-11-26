@@ -257,6 +257,10 @@
      "type": "string",
      "enum": ["default", "high-contrast", "midnight", "custom"]
     },
+    "single_key_shortcuts": {
+     "description": "Enable letter and punctuation shortcuts for the signed-in owner's web inboxes. On by default.",
+     "type": "boolean"
+    },
     "theme_colors": {
      "description": "Six #RRGGBB colors for the custom theme. All required and checked for contrast.",
      "type": "object",

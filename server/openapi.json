@@ -1128,6 +1128,7 @@
           "description": "Color theme shared by the asking device's owner."
          },
          "theme_colors": {"$ref": "#/components/schemas/ThemeColors"},
+         "single_key_shortcuts": {"type": "boolean", "default": true, "description": "Letter and punctuation shortcuts for the asking owner's web inboxes."},
          "keep_cleared_days": {
           "type": "integer",
           "minimum": 0,
@@ -7034,6 +7035,7 @@
      "theme": {"type": "string", "enum": ["default", "high-contrast", "midnight", "custom"]},
      "theme_colors": {"$ref": "#/components/schemas/ThemeColors"},
      "device_theme": {"type": "string", "description": "The asking device's override, omitted when following the owner's theme."},
+     "single_key_shortcuts": {"type": "boolean", "default": true, "description": "The asking owner's web inbox shortcut preference."},
      "subscriptions": {
       "type": "object",
       "description": "Read only, change it with PUT /api/v1/subscriptions (#617). topics maps each topic the owner chose to whether it is subscribed.",

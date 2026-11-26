@@ -616,7 +616,8 @@ type Snapshot struct {
 	MeID   string // its token id, the state_by_id its own actions get (names can repeat)
 	MarkID string // the by_id its marks get: its person, or the top of its token tree
 
-	Palette string // server-saved inbox theme, as JSON
+	Palette                   string // server-saved inbox theme, as JSON
+	DisableSingleKeyShortcuts bool
 	// Snooze times on each card's menu (Go durations) and the one a tap uses.
 	SnoozeIntervals []string
 	SnoozeDefault   string
