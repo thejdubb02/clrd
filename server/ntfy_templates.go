@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,24 +17,25 @@ func readNtfyTemplate(dir, name string) (map[string]string, error) {
 		return nil, errf(400, "bad_request", "invalid named template: use letters, digits, _ and -, at most 64")
 	}
 	bad := errf(400, "bad_request", "named template %q is unreadable or is not a regular .yml file", name)
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return nil, bad
-	}
-	defer root.Close()
-	file := name + ".yml"
-	info, err := root.Lstat(file)
+	file := filepath.Join(dir, name+".yml")
+	info, err := os.Lstat(file)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, errf(400, "bad_request", "unknown named template %q", name)
 	}
 	if err != nil || !info.Mode().IsRegular() {
 		return nil, bad
 	}
-	f, err := root.Open(file)
+	f, err := os.Open(file)
 	if err != nil {
 		return nil, bad
 	}
 	defer f.Close()
+	// Check the open file before reading. An operator replacing a file
+	// between the two calls must not turn a symlink into a template.
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(info, opened) {
+		return nil, bad
+	}
 	b, err := io.ReadAll(io.LimitReader(f, ntfyTemplateFileMax+1))
 	if err != nil {
 		return nil, bad
