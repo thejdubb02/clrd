@@ -168,6 +168,8 @@ for contrast before saving. Use `device_theme` in MCP for a device override.
 | `CLRD_ATTACHMENT_TOTAL_MB` | `5000` | Space all stored files may use together, in MB. Uploads past it get 507. |
 | `CLRD_RATE_TOKEN` | `60` | Publishes a minute one token may send, with a burst of the same size. Past it gets 429 with `Retry-After`. `0` turns it off. |
 | `CLRD_RATE_TOPIC` | `60` | Publishes a minute one topic may take from all tokens together. `0` turns it off. |
+| `CLRD_NTFY_REQUESTS_PER_MINUTE` | `0` | ntfy API requests per minute per client address, with a burst of the same size. Over the limit, clients get 429 with `Retry-After`. `0` turns it off. |
+| `CLRD_NTFY_MAX_SUBSCRIPTIONS` | `0` | Maximum open ntfy subscriptions per client address. Polls do not occupy a slot. `0` turns it off. |
 | `CLRD_TRUSTED_PROXIES` | unset | Comma-separated CIDRs or addresses of your reverse proxies, for example `127.0.0.1,172.16.0.0/12`. Only these may set the client address with `X-Forwarded-For`, and the link scheme with `X-Forwarded-Proto`. Unset, any loopback or private-network peer may. |
 | `CLRD_HOOK_ALLOW` | `on` | `off` locks the [webhook LAN allow list](integrations/webhooks-out.md#receivers-on-your-lan) empty: webhooks reach only public addresses on ports 80 and 443, whatever an admin saved, and no token can change it. Set it on a box that runs other services on loopback or a private network. |
 | `CLRD_METRICS` | `off` | `on` exposes Prometheus metrics at `GET /metrics` (requires an admin token with no topic limit). |

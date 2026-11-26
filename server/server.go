@@ -64,6 +64,9 @@ type Options struct {
 	RateToken int // CLRD_RATE_TOKEN, publishes a minute per token, default 60, -1 off
 	RateTopic int // CLRD_RATE_TOPIC, publishes a minute per topic, default 60, -1 off
 
+	NtfyRequestsPerMinute int // CLRD_NTFY_REQUESTS_PER_MINUTE, per client address, 0 off
+	NtfyMaxSubscriptions  int // CLRD_NTFY_MAX_SUBSCRIPTIONS, per client address, 0 off
+
 	// TrustedProxies (CLRD_TRUSTED_PROXIES, comma-separated CIDRs or
 	// addresses) are the only peers whose X-Forwarded-For is read. Unset,
 	// any loopback or private-network peer is trusted.
@@ -124,13 +127,18 @@ func ConfigFromEnv() (Options, error) {
 	for _, v := range []struct {
 		env string
 		to  *int
-	}{{"CLRD_RATE_TOKEN", &o.RateToken}, {"CLRD_RATE_TOPIC", &o.RateTopic}} {
+		off int
+	}{
+		{"CLRD_RATE_TOKEN", &o.RateToken, -1}, {"CLRD_RATE_TOPIC", &o.RateTopic, -1},
+		{"CLRD_NTFY_REQUESTS_PER_MINUTE", &o.NtfyRequestsPerMinute, 0},
+		{"CLRD_NTFY_MAX_SUBSCRIPTIONS", &o.NtfyMaxSubscriptions, 0},
+	} {
 		if e := os.Getenv(v.env); e != "" {
 			n, err := strconv.Atoi(e)
 			if err != nil || n < 0 || n > 1e6 {
-				return o, fmt.Errorf("%s: want publishes a minute (0 turns it off), got %q", v.env, e)
+				return o, fmt.Errorf("%s: want a whole number from 0 to 1000000 (0 turns it off), got %q", v.env, e)
 			}
-			*v.to = cmp.Or(n, -1)
+			*v.to = cmp.Or(n, v.off)
 		}
 	}
 	for _, v := range strings.Split(os.Getenv("CLRD_TRUSTED_PROXIES"), ",") {
@@ -248,14 +256,17 @@ type Server struct {
 	pushq    chan Event
 	pushHTTP *http.Client
 
-	seen       sync.Map // token id -> time last written to last_seen_at
-	pwLimit    *limiter // ntfy password attempts per address
-	tokLimit   *limiter // publishes per token, nil when off
-	topicLimit *limiter // publishes per topic, nil when off
-	setupMu    sync.Mutex
-	setupCode  string
-	pairMu     sync.Mutex
-	pairs      map[string]*pairing // browser sign-ins waiting for approval, by code (pair.go)
+	seen         sync.Map // token id -> time last written to last_seen_at
+	pwLimit      *limiter // ntfy password attempts per address
+	tokLimit     *limiter // publishes per token, nil when off
+	topicLimit   *limiter // publishes per topic, nil when off
+	ntfyReqLimit *limiter // ntfy requests per address, nil when off
+	ntfySubsMu   sync.Mutex
+	ntfySubs     map[string]int // open ntfy streams per address
+	setupMu      sync.Mutex
+	setupCode    string
+	pairMu       sync.Mutex
+	pairs        map[string]*pairing // browser sign-ins waiting for approval, by code (pair.go)
 
 	settingsChanged signal // fires after every settings change
 	devicesChanged  signal // fires when a stream connects, catches up or ends (#300)
@@ -317,6 +328,12 @@ func New(opt Options) (*Server, error) {
 	}
 	s := &Server{opt: opt, baseSet: baseSet, db: db, log: opt.Logger, mux: http.NewServeMux(), prefix: strings.TrimSuffix(base.Path, "/"),
 		pwLimit: newLimiter(10, time.Minute), tokLimit: perMinute(opt.RateToken), topicLimit: perMinute(opt.RateTopic)}
+	if opt.NtfyRequestsPerMinute > 0 {
+		s.ntfyReqLimit = perMinute(opt.NtfyRequestsPerMinute)
+	}
+	if opt.NtfyMaxSubscriptions > 0 {
+		s.ntfySubs = make(map[string]int)
+	}
 	s.hub.subs = map[chan Event]*stream{}
 	var seq, pruned int64
 	if err := db.QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'events'`).Scan(&seq); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -424,7 +441,8 @@ func (s *Server) effectiveEnv() map[string]string {
 		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
 		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
 		"CLRD_CONFIG": o.Config, "CLRD_HOOK_ALLOW": hookAllow, "CLRD_METRICS": metrics,
-		"CLRD_NTFY_IMPLICIT_UPLOADS": implicitUploads,
+		"CLRD_NTFY_IMPLICIT_UPLOADS":    implicitUploads,
+		"CLRD_NTFY_REQUESTS_PER_MINUTE": rate(o.NtfyRequestsPerMinute), "CLRD_NTFY_MAX_SUBSCRIPTIONS": rate(o.NtfyMaxSubscriptions),
 	}
 }
 
