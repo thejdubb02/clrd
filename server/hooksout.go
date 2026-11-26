@@ -542,10 +542,12 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 // it to another channel, where that id means nothing (#795).
 func (s *Server) keepPost(ctx context.Context, j hookJob, id, remote string) error {
 	ctx, at := context.WithoutCancel(ctx), j.url
-	if j.kind == "discord" { // a save that only changed wait is the same channel (#816)
+	// A save that only changed wait (#816), or a Slack URL apart from its
+	// channel (#870), is the same channel.
+	if same := map[string]func(string) string{"discord": discordURL, "slack": slackURL}[j.kind]; same != nil {
 		var now string
-		_ = s.db.QueryRowContext(ctx, `SELECT url FROM hooks_out WHERE topic = ? AND name = ? AND kind = 'discord'`, j.topic, j.name).Scan(&now)
-		if discordURL(now) == discordURL(j.url) {
+		_ = s.db.QueryRowContext(ctx, `SELECT url FROM hooks_out WHERE topic = ? AND name = ? AND kind = ?`, j.topic, j.name, j.kind).Scan(&now)
+		if same(now) == same(j.url) {
 			at = now
 		}
 	}
@@ -573,6 +575,17 @@ func discordURL(s string) string {
 	q.Del("wait")
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+// slackURL keeps only the channel: clrd sends nothing else from the URL, so
+// a save that changes any other part is the same channel and keeps its
+// message ids (#870).
+func slackURL(s string) string {
+	u, err := url.Parse(s)
+	if err != nil {
+		return s
+	}
+	return slackAPI + "chat.postMessage?channel=" + url.QueryEscape(u.Query().Get("channel"))
 }
 
 func discordReqs(u url.URL, n *Notification, event, remote string) []hookReq {
@@ -903,6 +916,9 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	if h.Kind == "slack" && (!strings.HasPrefix(h.URL, slackAPI+"chat.postMessage?") || u.Query().Get("channel") == "") {
 		return errf(400, "bad_request", "a slack webhook url is %schat.postMessage?channel=CHANNEL", slackAPI)
 	}
+	if h.Kind == "slack" {
+		h.URL = slackURL(h.URL)
+	}
 	events, _ := json.Marshal(h.Events)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -928,6 +944,9 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	_ = tx.QueryRowContext(ctx, `SELECT url, kind FROM hooks_out WHERE topic = ? AND name = ?`, topic, name).Scan(&oldURL, &oldKind)
 	if oldKind == "discord" {
 		oldURL = discordURL(oldURL) // a hook saved before #816 may still carry wait
+	}
+	if oldKind == "slack" {
+		oldURL = slackURL(oldURL) // a hook saved before #870 may carry other params
 	}
 	if oldURL != h.URL || oldKind != h.Kind {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?`, topic, name); err != nil {
