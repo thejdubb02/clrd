@@ -1002,10 +1002,10 @@ func TestHooksOutSlack(t *testing.T) {
 		return slices.Clone(hits)
 	}
 	save("C0123")
-	_, a := api("POST", "/api/v1/notifications", map[string]any{"topic": "ops", "title": "Disk full", "message": "Check <!channel> src/**/backup"})
+	_, a := api("POST", "/api/v1/notifications", map[string]any{"topic": "ops", "title": "Disk full", "message": "Check <!channel> src/**/backup\n-# Runbook"})
 	deliver()
 	p := checkHits("chat.postMessage")[0].body
-	if p["channel"] != "C0123" || p["text"] != "*Disk full*\nCheck &lt;!channel&gt; src/**/backup" || p["unfurl_links"] != false {
+	if p["channel"] != "C0123" || p["text"] != "*Disk full*\nCheck &lt;!channel&gt; src/**/backup\n-# Runbook" || p["unfurl_links"] != false {
 		t.Fatalf("post: %+v", p)
 	}
 	var remote string
@@ -1016,7 +1016,7 @@ func TestHooksOutSlack(t *testing.T) {
 	deliver()
 	got := checkHits("chat.postMessage", "chat.update", "reactions.add")
 	u, r := got[1].body, got[2].body
-	if u["channel"] != "C999" || u["ts"] != "123.456" || !strings.HasPrefix(fmt.Sprint(u["text"]), "~*Disk full*~") || strings.Contains(fmt.Sprint(u["text"]), "-# ") || !strings.Contains(fmt.Sprint(u["text"]), "Cleared by ") {
+	if u["channel"] != "C999" || u["ts"] != "123.456" || !strings.HasPrefix(fmt.Sprint(u["text"]), "~*Disk full*~") || !strings.Contains(fmt.Sprint(u["text"]), "\n-# Runbook\nCleared by ") {
 		t.Fatalf("update: %+v", u)
 	}
 	if r["channel"] != "C999" || r["timestamp"] != "123.456" || r["name"] != "white_check_mark" {

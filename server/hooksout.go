@@ -405,14 +405,8 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 	}
 	var reqs []hookReq
 	if j.kind == "slack" {
-		// Slack mrkdwn: escape &<> so a title cannot ping @channel, then swap the
-		// Discord markup on the title line and status line only, not in the message.
-		text := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(discordText(n, j.event))
-		head, rest, _ := strings.Cut(text, "\n")
-		if i := strings.LastIndex(rest, "\n-# "); i >= 0 {
-			rest = rest[:i+1] + rest[i+4:]
-		}
-		text = strings.NewReplacer("**", "*", "~~", "~").Replace(head) + "\n" + rest
+		// Escape &<> so the text cannot ping @channel.
+		text := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(discordText(n, j.event, true))
 		if j.event == "posted" {
 			reqs = []hookReq{{"POST", slackAPI + "chat.postMessage", map[string]any{"channel": u.Query().Get("channel"), "text": text, "unfurl_links": false}}}
 		} else {
@@ -571,7 +565,7 @@ func discordReqs(u url.URL, n *Notification, event, remote string) []hookReq {
 		method, u.Path = "PATCH", strings.TrimSuffix(u.Path, "/")+"/messages/"+url.PathEscape(remote)
 	}
 	u.RawQuery = q.Encode()
-	return []hookReq{{method, u.String(), map[string]any{"content": discordText(n, event), "allowed_mentions": map[string]any{"parse": []string{}}}}}
+	return []hookReq{{method, u.String(), map[string]any{"content": discordText(n, event, false),"allowed_mentions": map[string]any{"parse": []string{}}}}}
 }
 
 // githubMark starts the body of the issue a hook opens for n, so a retry can
@@ -703,15 +697,20 @@ func hookStatus(n *Notification, event string) string {
 }
 
 // discordText is the message: bold title, the text, and after a state change
-// a small status line. Discord allows 2000 characters.
-func discordText(n *Notification, event string) string {
+// a small status line. Discord allows 2000 characters. Slack mrkdwn marks
+// with single * and ~ and has no small text.
+func discordText(n *Notification, event string, slack bool) string {
 	head := n.Title
 	if head == "" {
 		head = n.Topic
 	}
-	head = "**" + head + "**"
+	bold, strike, small := "**", "~~", "\n-# "
+	if slack {
+		bold, strike, small = "*", "~", "\n"
+	}
+	head = bold + head + bold
 	if event == Dismissed || event == Resolved {
-		head = "~~" + head + "~~"
+		head = strike + head + strike
 	}
 	text := []rune(head + "\n" + n.Message)
 	if len(text) > 1900 {
@@ -722,7 +721,7 @@ func discordText(n *Notification, event string) string {
 		stEvent = n.State
 	}
 	if st := []rune(hookStatus(n, stEvent)); len(st) > 0 {
-		return string(text) + "\n-# " + string(st[:min(len(st), 90)])
+		return string(text) + small + string(st[:min(len(st), 90)])
 	}
 	return string(text)
 }
