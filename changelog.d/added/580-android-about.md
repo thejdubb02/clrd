@@ -1,0 +1,1 @@
+- Android Settings has an About section: this app's version and the server's side by side, a plain line when one is newer, and What's new read from the server (or the copy built into the app when the server cannot be reached). After the app updates, a dismissible What's new note shows at the top of the inbox; it can be turned off in Settings (#580).

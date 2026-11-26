@@ -1,0 +1,1 @@
+- Outgoing hooks: a send waiting for a free slot no longer posts to the old URL after a save moves the hook, and turning a hook back on clears its "Webhook turned off" notice, even when the save races the turn-off (#892, #893).
