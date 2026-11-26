@@ -3637,7 +3637,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+      "description": "Publish as snoozed until a Unix time, duration, RFC3339 time or time of day, at most 3 days ahead. Header aliases: X-Delay, At, X-At, In and X-In. Query options: delay, at, in and their x- prefixed forms."
      },
      {
       "name": "X-Id",
@@ -3820,7 +3820,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+      "description": "Publish as snoozed until a Unix time, duration, RFC3339 time or time of day, at most 3 days ahead. Header aliases: X-Delay, At, X-At, In and X-In. Query options: delay, at, in and their x- prefixed forms."
      },
      {
       "name": "X-Id",
@@ -4012,7 +4012,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+      "description": "Publish as snoozed until a Unix time, duration, RFC3339 time or time of day, at most 3 days ahead. Header aliases: X-Delay, At, X-At, In and X-In. Query options: delay, at, in and their x- prefixed forms."
      },
      {
       "name": "X-Id",
@@ -4165,7 +4165,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Unix time or duration: publish as snoozed until then. Also X-Delay, In, At"
+      "description": "Publish as snoozed until a Unix time, duration, RFC3339 time or time of day, at most 3 days ahead. Header aliases: X-Delay, At, X-At, In and X-In. Query options: delay, at, in and their x- prefixed forms."
      },
      {
       "name": "X-Id",
@@ -7196,7 +7196,7 @@
     "name": "Timezone",
     "in": "header",
     "schema": {"type": "string"},
-    "description": "IANA zone for a delay specified as a time of day. Defaults to the server's zone. Also X-Timezone or the timezone query parameter."
+    "description": "IANA zone for a delay specified as a time of day. Defaults to the server's zone. Also X-Timezone or the timezone and x-timezone query options."
    },
    "NtfyCache": {
     "name": "Cache",

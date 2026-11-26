@@ -559,7 +559,9 @@ func ntfyDetails(r *http.Request, in *PublishInput, actions []ntfyAction, delay,
 	} else {
 		in.Actions = ntfyActionList(actions)
 	}
-	if in.SnoozeUntil, err = ntfyDelay(cmp.Or(delay, param(r, "Delay", "At", "In")), cmp.Or(timezone, param(r, "Timezone"))); err != nil {
+	delay = cmp.Or(delay, param(r, "X-Delay", "Delay", "X-At", "At", "X-In", "In"))
+	timezone = cmp.Or(timezone, param(r, "X-Timezone", "Timezone"))
+	if in.SnoozeUntil, err = ntfyDelay(delay, timezone); err != nil {
 		return err
 	}
 	if in.Markdown == nil {

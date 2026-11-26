@@ -1221,6 +1221,8 @@ and `initialize` reports `version` as `serverInfo.version`.
   days ahead; anything else is a 400), `X-Timezone`/`Timezone` (or the
   `timezone` JSON field: the IANA zone a time of day is read in, else the
   server's zone; an unknown one is a 400 only when there is a delay),
+  also available as query options `delay`, `at`, `in`, `timezone` and
+  their `x-` prefixed forms,
   `X-Icon` (sets `icon`; a
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
   is dropped), `X-Filename`/`Filename`/`File`/`f` (labels a valid external
