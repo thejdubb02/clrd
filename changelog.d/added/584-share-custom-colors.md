@@ -1,0 +1,1 @@
+- Web inbox: export your custom colors as a theme code or paste someone else's code to preview and save their colors (#584).

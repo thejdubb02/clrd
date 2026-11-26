@@ -1757,6 +1757,13 @@ cards falls below 3:1, or the Euclidean distance between urgent and clear
 in 8-bit sRGB is less than 80. Each rejection names the failed check.
 The web editor previews valid picks and shows the same checks before saving.
 
+The editor can share a custom palette as one line,
+`clrd-theme:1:Custom:#bg,#card,#text,#clear,#urgent,#snooze`, with each
+color represented by six hex digits after `#`. The name is a label in the
+code, up to 64 characters and without a colon or line break. Imports use
+the same color and contrast checks, open a draft, and take effect on other
+devices when saved.
+
 Derive line, slate and body by mixing 12%, 60% and 85% ink over paper in sRGB.
 High contrast uses 65% ink for outlines. Slate and body fall back to ink if
 the mix fails 4.5:1. A chip mixes 15% of its state color over surface, with
