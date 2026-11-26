@@ -1306,12 +1306,15 @@ func loadDocs() (map[string]doc, []doc) {
 	)
 	m := map[string]doc{}
 	add := func(p string) error {
-		src, err := fs.ReadFile(clrd.Files, p)
-		if err != nil {
-			return err
-		}
-		if p == "CHANGELOG.md" { // the binary carries recent versions only (#580)
-			src = append(src, "\nEvery version, older ones too: [full history on GitHub]("+clrd.FullHistory+").\n"...)
+		var src []byte
+		if p == "CHANGELOG.md" {
+			src = []byte(clrd.Changelog + "\nEvery version, older ones too: [full history on GitHub](" + clrd.FullHistory + ").\n")
+		} else {
+			var err error
+			src, err = fs.ReadFile(clrd.Files, p)
+			if err != nil {
+				return err
+			}
 		}
 		var b bytes.Buffer
 		if err := md.Convert(src, &b); err != nil {
