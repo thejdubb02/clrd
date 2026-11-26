@@ -460,16 +460,18 @@ func TestServerEnvAndGrantsOverAPI(t *testing.T) {
 	code, out := call(t, ts, "GET", "/api/v1/server", admin, nil)
 	env, _ := out["env"].(map[string]any)
 	if code != 200 || env["CLRD_RATE_TOKEN"] != "60" || env["CLRD_BASE_URL"] != "" || env["CLRD_PUBLIC_PAGES"] != "on" ||
-		env["CLRD_RETENTION"] != "720h0m0s" || env["CLRD_DB"] != s.DBPath() || len(env) != 14 || env["CLRD_HOOK_ALLOW"] != "on" || env["CLRD_METRICS"] != "off" {
+		env["CLRD_RETENTION"] != "720h0m0s" || env["CLRD_DB"] != s.DBPath() || len(env) != 15 || env["CLRD_HOOK_ALLOW"] != "on" || env["CLRD_METRICS"] != "off" ||
+		env["CLRD_NTFY_IMPLICIT_UPLOADS"] != "off" {
 		t.Fatalf("server settings: %d %v", code, out)
 	}
-	s2, err := New(Options{DB: filepath.Join(t.TempDir(), "c.db"), BaseURL: "https://u:pw@clrd.example.com/c", RateToken: -1})
+	s2, err := New(Options{DB: filepath.Join(t.TempDir(), "c.db"), BaseURL: "https://u:pw@clrd.example.com/c", RateToken: -1, NtfyImplicitUploads: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s2.Close()
-	if e := s2.effectiveEnv(); e["CLRD_BASE_URL"] != "https://u:xxxxx@clrd.example.com/c" || e["CLRD_RATE_TOKEN"] != "0" {
-		t.Errorf("base URL password or rate off: %v", e)
+	if e := s2.effectiveEnv(); e["CLRD_BASE_URL"] != "https://u:xxxxx@clrd.example.com/c" || e["CLRD_RATE_TOKEN"] != "0" ||
+		e["CLRD_NTFY_IMPLICIT_UPLOADS"] != "on" {
+		t.Errorf("server settings with overrides: %v", e)
 	}
 
 	if code, out := call(t, ts, "POST", "/api/v1/tokens", admin, map[string]any{"name": "x", "scopes": []string{"read"},
