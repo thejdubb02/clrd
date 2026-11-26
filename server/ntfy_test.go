@@ -818,6 +818,7 @@ func TestNtfySubscribeReplayAliases(t *testing.T) {
 	}{
 		{"headers beat query", "?poll=no&since=none", map[string]string{"X-Poll": "YES", "X-Since": "latest"}, []string{"second"}},
 		{"short query aliases", "?po=yes&si=latest", nil, []string{"second"}},
+		{"prefixed query aliases", "?x-poll=1&x-since=latest", nil, []string{"second"}},
 		{"canonical yes", "?poll=yes&since=latest", nil, []string{"second"}},
 		{"poll defaults to all", "", map[string]string{"X-Poll": "1"}, []string{"first", "second"}},
 		{"header since none", "?poll=1", map[string]string{"X-Since": "none"}, nil},

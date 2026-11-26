@@ -4,8 +4,8 @@ clrd speaks ntfy's publish and subscribe protocol, so ntfy's own tools work:
 `PUT|POST /{topic}`, `POST /` JSON, `GET /{topic}/json|sse|ws|raw` in ntfy's
 message format, and Basic auth with a token as the password. Use `poll`
 or `X-Poll` to read cached messages and close the stream, and `since` or
-`X-Since` to select where replay starts. The short aliases `po` and `si`
-also work.
+`X-Since` to select where replay starts. Query aliases include `po`, `si`,
+`x-poll` and `x-since`.
 
 ## ntfy CLI
 
