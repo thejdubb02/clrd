@@ -44,7 +44,7 @@ val LightBrand = Brand(
 // Dark surface, line and text greys are not in the spec yet; picked to keep the same contrast steps.
 val DarkBrand = Brand(
     ink = Color(0xFFF5F3EE), paper = Color(0xFF0F1114), surface = Color(0xFF181B20), line = Color(0xFF2C3036),
-    slate = Color(0xFF9AA3AE), body = Color(0xFFC9CDD3), clear = Color(0xFF3DDC97),
+    slate = Color(0xFF98A1AC), body = Color(0xFFC9CDD3), clear = Color(0xFF3DDC97), signal = Color(0xFFF97316), // slate, clear and signal: SPEC section 10 (#583)
     iconTile = Color(0xFFF5F3EE), // paper, as on the web inbox
 )
 

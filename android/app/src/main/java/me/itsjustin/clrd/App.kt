@@ -2,7 +2,6 @@ package me.itsjustin.clrd
 
 import android.app.Application
 import android.content.Context
-import androidx.room.Room
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -12,14 +11,16 @@ import java.util.concurrent.TimeUnit
 
 /** App-wide singletons. Small enough that a DI framework would be the bigger thing. */
 class App : Application() {
-    val db by lazy { Room.databaseBuilder(this, Db::class.java, "clrd.db").build() }
+    /** The server this phone talks to (#78). Its settings and database; the members below that name a server read it. */
+    val account by lazy { Account(this, 0) }
+    val db get() = account.db
     /** Client certificate alias picked in Settings (#152), or none. Offered only to the server's own host. */
-    val clientCert by lazy { MutableStateFlow(prefs.getString("client_cert", null)) }
+    val clientCert by lazy { MutableStateFlow(account.prefs.getString("client_cert", null)) }
     /** The server origin the certificate was picked for. A moved server gets no certificate until it is picked again. */
     private fun origin(u: okhttp3.HttpUrl) = "${u.scheme}://${u.host}:${u.port}"
     private val certKeys by lazy {
         ClientCertKeys({ clientCert.value }, {
-            serverUrl.toHttpUrlOrNull()?.takeIf { origin(it) == prefs.getString("client_cert_origin", null) }?.let { it.host to it.port }
+            serverUrl.toHttpUrlOrNull()?.takeIf { origin(it) == account.prefs.getString("client_cert_origin", null) }?.let { it.host to it.port }
         }) { a ->
             runCatching { // a removed key or revoked access means no certificate, not a crash
                 val k = android.security.KeyChain.getPrivateKey(this, a)
@@ -37,6 +38,7 @@ class App : Application() {
     }
     val tray by lazy { Tray(this) }
     val images by lazy { Images(this) }
+    /** This phone's own choices, whichever server it talks to. Per-server settings live in [Account.prefs]. */
     val prefs by lazy { getSharedPreferences("clrd", Context.MODE_PRIVATE) }
     val io = Executors.newSingleThreadExecutor()
     /** User actions only, and they never wait on the network, so a tray tap is saved within its goAsync() deadline. */
@@ -67,15 +69,15 @@ class App : Application() {
     @Volatile var configGen = 0
 
 
-    var serverUrl: String
-        get() = prefs.getString("url", "").orEmpty()
-        set(v) = prefs.edit().putString("url", v.trim().trimEnd('/')).apply()
+    var serverUrl: String // not "by account::": that would open the account before the app has a context
+        get() = account.serverUrl
+        set(v) { account.serverUrl = v }
     var token: String
-        get() = prefs.getString("token", "").orEmpty()
-        set(v) = prefs.edit().putString("token", v.trim()).apply()
+        get() = account.token
+        set(v) { account.token = v }
     var muted: Set<String>
-        get() = prefs.getStringSet("muted", emptySet()).orEmpty()
-        set(v) = prefs.edit().putStringSet("muted", v).apply()
+        get() = account.prefs.getStringSet("muted", emptySet()).orEmpty()
+        set(v) = account.prefs.edit().putStringSet("muted", v).apply()
 
     /**
      * Stack by topic (#108), in the tray and the app's list. Off until a person turns it on (#465), as on the web;
@@ -124,7 +126,7 @@ class App : Application() {
 
     /** Picks or removes the client certificate (#152). Open connections used the old one, so they close and sync reconnects. */
     fun pickClientCert(alias: String?) {
-        prefs.edit().putString("client_cert", alias).putString("client_cert_origin", serverUrl.toHttpUrlOrNull()?.let(::origin)).apply()
+        account.prefs.edit().putString("client_cert", alias).putString("client_cert_origin", serverUrl.toHttpUrlOrNull()?.let(::origin)).apply()
         clientCert.value = alias
         io.execute {
             certKeys.renew()
@@ -138,7 +140,7 @@ class App : Application() {
     fun pickAppearance(v: String) { appearance.value = v; prefs.edit().putString("appearance", v).apply() }
 
     /** This phone's notification sound (docs/SPEC.md section 2.2). Unset means the phone's own default. Change it with [saveSound]. */
-    val sound: String get() = Sounds.known(prefs.getString("sound", null))
+    val sound: String get() = Sounds.known(account.prefs.getString("sound", null))
 
     /**
      * Switches the sound: new channels first, then the choice, then the old channels go and the tray is
@@ -148,7 +150,7 @@ class App : Application() {
     fun saveSound(name: String): Boolean = synchronized(configLock) {
         val s = Sounds.known(name)
         val dropped = tray.createChannels(s)
-        prefs.edit().putString("sound", s).commit()
+        account.prefs.edit().putString("sound", s).commit()
         soundNow.value = s
         RoomStore(this).reconcile()
         dropped
@@ -161,11 +163,11 @@ class App : Application() {
      * A choice made on this phone that the server does not have yet (refused, offline, or made before #289).
      * It wins over the server's until the server takes it, the same as the web inbox.
      */
-    val soundPending: String? get() = prefs.getString("sound_pending", null)
+    val soundPending: String? get() = account.prefs.getString("sound_pending", null)
 
     /** The person picked [name] in Settings: play it here at once, then tell the server. Call on [io]. Returns [pushSound]'s answer. */
     fun pickSound(name: String): String? {
-        prefs.edit().putString("sound_pending", Sounds.known(name)).commit() // first, so a crash after it cannot let the server's old choice win
+        account.prefs.edit().putString("sound_pending", Sounds.known(name)).commit() // first, so a crash after it cannot let the server's old choice win
         saveSound(name)
         return pushSound()
     }
@@ -179,7 +181,7 @@ class App : Application() {
         if (!configured) return getString(R.string.sound_phone_only, getString(R.string.sound_no_server))
         return try {
             api().put("/api/v1/settings", JSONObject().put("sound", s).toString())
-            if (soundPending == s) prefs.edit().remove("sound_pending").commit()
+            if (soundPending == s) account.prefs.edit().remove("sound_pending").commit()
             null
         } catch (e: Exception) { // a bad saved address throws IllegalArgumentException, not IOException
             getString(R.string.sound_phone_only, (e as? HttpError)?.message ?: getString(R.string.sound_no_connection))
@@ -196,34 +198,30 @@ class App : Application() {
         else if (Sounds.known(name) != sound && saveSound(name)) tray.dndNotice() // not picked here, so Settings' note may go unseen (#380)
     }
 
-    /**
-     * The server database the saved seq belongs to. Saved after the rows, not with them: a crash
-     * in between only means one more reset on the next connect.
-     */
     var epoch: String
-        get() = prefs.getString("epoch", "").orEmpty()
-        set(v) = prefs.edit().putString("epoch", v).apply()
+        get() = account.epoch
+        set(v) { account.epoch = v }
 
     /** The shared snooze times, as the server last sent them (every connect sends them). */
-    val snooze by lazy { MutableStateFlow(prefs.getString("snooze", null)?.let { runCatching { Snooze.from(org.json.JSONObject(it)) }.getOrNull() } ?: Snooze()) }
+    val snooze by lazy { MutableStateFlow(account.prefs.getString("snooze", null)?.let { runCatching { Snooze.from(org.json.JSONObject(it)) }.getOrNull() } ?: Snooze()) }
 
     /** The buttons a swipe on a card shows (#161), as the server last sent them; the defaults until it does. */
-    val swipes by lazy { MutableStateFlow(Swipes.parse(prefs.getString("swipes", null))) }
+    val swipes by lazy { MutableStateFlow(Swipes.parse(account.prefs.getString("swipes", null))) }
 
     /** The favicons setting (#107): a site icon beside each link on a card. On until the server says otherwise. */
-    val favicons by lazy { MutableStateFlow(prefs.getBoolean("favicons", true)) }
+    val favicons by lazy { MutableStateFlow(account.prefs.getBoolean("favicons", true)) }
 
     /** The render_formatting setting (#107): off shows every message as plain text. On until the server says otherwise. */
-    val formatting by lazy { MutableStateFlow(prefs.getBoolean("render_formatting", true)) }
+    val formatting by lazy { MutableStateFlow(account.prefs.getBoolean("render_formatting", true)) }
 
     /** The autolink setting (#107): off leaves bare web addresses as text; written links stay links. On until the server says otherwise. */
-    val autolink by lazy { MutableStateFlow(prefs.getBoolean("autolink", true)) }
+    val autolink by lazy { MutableStateFlow(account.prefs.getBoolean("autolink", true)) }
 
     /** The link_previews setting (#107): a card with the page's title and picture under an open message's first link. Off until the server says otherwise. */
-    val linkPreviews by lazy { MutableStateFlow(prefs.getBoolean("link_previews", false)) }
+    val linkPreviews by lazy { MutableStateFlow(account.prefs.getBoolean("link_previews", false)) }
 
     /** topic_previews (#107): a topic's own preview choice, over [linkPreviews]. */
-    val topicPreviews by lazy { MutableStateFlow(onOff(prefs.getString("topic_previews", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() })) }
+    val topicPreviews by lazy { MutableStateFlow(onOff(account.prefs.getString("topic_previews", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() })) }
 
     /** The four display switches by their server names, each with its out-of-the-box value. */
     private val display get() = mapOf("render_formatting" to (formatting to true), "autolink" to (autolink to true), "favicons" to (favicons to true), "link_previews" to (linkPreviews to false))
@@ -240,14 +238,14 @@ class App : Application() {
      */
     fun saveSwipes(next: Swipes, api: Api = api()): String? {
         // On success the server has it: a restart before its echo keeps it.
-        return putSettings(api, next.json(), { swipes.value = next }, { prefs.edit().putString("swipes", next.json()).apply() }) { swipes.value = Swipes.parse(prefs.getString("swipes", null)) }
+        return putSettings(api, next.json(), { swipes.value = next }, { account.prefs.edit().putString("swipes", next.json()).apply() }) { swipes.value = Swipes.parse(account.prefs.getString("swipes", null)) }
     }
 
     /** Sends one display switch from Settings (#107), like [saveSwipes]. A formatting change redraws the shade at once, quietly. Call on [io]. */
     fun saveDisplay(key: String, on: Boolean, api: Api = api()): String? {
         val (flow, default) = display.getValue(key)
         fun set(v: Boolean) { if (flow.value != v) { flow.value = v; if (key == "render_formatting") RoomStore(this).reconcile() } }
-        return putSettings(api, org.json.JSONObject().put(key, on).toString(), { set(on) }, { prefs.edit().putBoolean(key, on).apply() }) { set(prefs.getBoolean(key, default)) }
+        return putSettings(api, org.json.JSONObject().put(key, on).toString(), { set(on) }, { account.prefs.edit().putBoolean(key, on).apply() }) { set(account.prefs.getBoolean(key, default)) }
     }
 
     /** Shows [body] at once and PUTs it; null when the server took it or this token may not change it ([swipesLocked]), else why not. */
@@ -264,7 +262,7 @@ class App : Application() {
     }
 
     /** This account's topic subscriptions (#617), as the server last sent them; null from a server without them. */
-    internal val subs by lazy { MutableStateFlow(Subs.of(prefs.getString("subs", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() })) }
+    internal val subs by lazy { MutableStateFlow(Subs.of(account.prefs.getString("subs", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() })) }
 
     /** `GET /api/v1/subscriptions`; null from a server without the route. Call on [io]. */
     internal fun loadSubs(api: Api = api()): SubsList? = try {
@@ -284,7 +282,7 @@ class App : Application() {
     } catch (e: Exception) { (e as? HttpError)?.message ?: getString(R.string.sound_no_connection) }
 
     /** The `by_id` this phone's marks get on the current server, "" until a `ready` says (#451). */
-    val markId by lazy { MutableStateFlow(prefs.getString("mark_id", "").orEmpty()) }
+    val markId by lazy { MutableStateFlow(account.prefs.getString("mark_id", "").orEmpty()) }
 
     /**
      * Sets this phone's mark on a card, or removes it when [kind] is null (#451). Sent now, not queued: a mark
@@ -313,31 +311,31 @@ class App : Application() {
         if (o.has("keep_cleared_days")) { // the server's keep for cleared rows (#261): drop what it deleted
             val keep = org.json.JSONObject().put("days", o.optInt("keep_cleared_days", KEEP_DAYS))
                 .put("topics", o.optJSONObject("topic_keep_cleared_days") ?: org.json.JSONObject())
-            prefs.edit().putString("keep", keep.toString()).apply()
+            account.prefs.edit().putString("keep", keep.toString()).apply()
             io.execute { pruneCleared() }
         }
         if (o.has("swipe_start") || o.has("swipe_end")) { // the buttons a swipe shows (#161); an older server sends neither
-            val w = Swipes.from(o, Swipes.parse(prefs.getString("swipes", null)))
-            prefs.edit().putString("swipes", w.json()).apply()
+            val w = Swipes.from(o, Swipes.parse(account.prefs.getString("swipes", null)))
+            account.prefs.edit().putString("swipes", w.json()).apply()
             swipes.value = w
         }
         for ((key, d) in display) {
             if (!o.has(key)) continue
             val on = o.optBoolean(key, d.second)
-            prefs.edit().putBoolean(key, on).apply()
+            account.prefs.edit().putBoolean(key, on).apply()
             d.first.value = on
         }
         if (o.has("topic_previews")) {
             val t = o.optJSONObject("topic_previews")
-            prefs.edit().apply { if (t == null) remove("topic_previews") else putString("topic_previews", t.toString()) }.apply()
+            account.prefs.edit().apply { if (t == null) remove("topic_previews") else putString("topic_previews", t.toString()) }.apply()
             topicPreviews.value = onOff(t)
         }
         // Every settings message is the whole view, so no subscriptions object means a server without them (#617).
         val sub = o.optJSONObject("subscriptions")
-        prefs.edit().apply { if (sub == null) remove("subs") else putString("subs", sub.toString()) }.apply()
+        account.prefs.edit().apply { if (sub == null) remove("subs") else putString("subs", sub.toString()) }.apply()
         subs.value = Subs.of(sub)
         val s = Snooze.from(o) ?: return
-        prefs.edit().putString("snooze", s.json()).apply()
+        account.prefs.edit().putString("snooze", s.json()).apply()
         snooze.value = s
     }
 
@@ -346,7 +344,7 @@ class App : Application() {
      * A topic's own keep wins over the global one; 0 means the server keeps them forever.
      */
     fun pruneCleared(now: Long = System.currentTimeMillis()) {
-        val k = runCatching { org.json.JSONObject(prefs.getString("keep", null) ?: "{}") }.getOrDefault(org.json.JSONObject())
+        val k = runCatching { org.json.JSONObject(account.prefs.getString("keep", null) ?: "{}") }.getOrDefault(org.json.JSONObject())
         fun before(days: Int) = now - (if (days in 1..KEEP_DAYS) days else KEEP_DAYS) * 24 * 3600_000L
         val topics = k.optJSONObject("topics") ?: org.json.JSONObject()
         val own = topics.keys().asSequence().toList()
@@ -358,7 +356,7 @@ class App : Application() {
         dao.pruneAnswers()
     }
 
-    val configured get() = serverUrl.isNotEmpty() && token.isNotEmpty()
+    val configured get() = account.configured
 
     fun api() = Api(http, serverUrl, token)
 
@@ -385,7 +383,7 @@ class App : Application() {
                 db.dao().forget()
                 epoch = ""
                 // The old server's snooze times are not the new one's; defaults until its settings message arrives.
-                prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").remove("favicons").remove("render_formatting").remove("autolink").remove("link_previews").remove("topic_previews").apply() // a choice the old server refused is not the new one's
+                account.prefs.edit().remove("snooze").remove("sound_pending").remove("keep").remove("mark_id").remove("swipes").remove("subs").remove("favicons").remove("render_formatting").remove("autolink").remove("link_previews").remove("topic_previews").apply() // a choice the old server refused is not the new one's
                 snooze.value = Snooze()
                 swipes.value = Swipes()
                 favicons.value = true
@@ -415,8 +413,8 @@ class App : Application() {
 
     /** A sound picked before the server kept it (#282) goes to the server once, on the next connect. */
     internal fun moveSound() {
-        if (!prefs.getBoolean("sound_moved", false)) {
-            prefs.edit().apply { if (sound != Sounds.DEFAULT) putString("sound_pending", sound) }.putBoolean("sound_moved", true).apply()
+        if (!account.prefs.getBoolean("sound_moved", false)) {
+            account.prefs.edit().apply { if (sound != Sounds.DEFAULT) putString("sound_pending", sound) }.putBoolean("sound_moved", true).apply()
         }
     }
 
@@ -450,8 +448,8 @@ class App : Application() {
      * phone; clearing happens in the app, the web or the API. A new alert for one shows it again.
      */
     var trayHidden: Set<String>
-        get() = prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
-        set(v) = prefs.edit().putStringSet("tray_hidden", v).apply()
+        get() = account.prefs.getStringSet("tray_hidden", emptySet()).orEmpty()
+        set(v) = account.prefs.edit().putStringSet("tray_hidden", v).apply()
 
     /** The app is on screen (#598): only then may a change move a card. */
     @Volatile var front = false
@@ -539,8 +537,8 @@ class App : Application() {
 private const val FOLLOW_RELOAD = "follow_reload"
 
 /** [Store] backed by Room, driving the tray. */
-class RoomStore(private val app: App) : Store {
-    private val dao = app.db.dao()
+class RoomStore(private val app: App, private val acct: Account = app.account) : Store {
+    private val dao = acct.db.dao()
 
     /** The settings generation this store syncs for. After a switch in Settings its reads and writes are dropped. */
     private val gen = app.configGen
@@ -583,15 +581,15 @@ class RoomStore(private val app: App) : Store {
 
     override fun replaceAll(open: List<Notif>, seq: Long, epoch: String) = ifMine {
         val waiting = waiting()
-        val sameDb = epoch.isEmpty() || app.epoch.isEmpty() || epoch == app.epoch
+        val sameDb = epoch.isEmpty() || acct.epoch.isEmpty() || epoch == acct.epoch
         app.tray.reconcile(dao.replaceAll(open, seq, sameDb).filter { it.id !in waiting }, app.muted)
-        if (epoch.isNotEmpty()) app.epoch = epoch
-        app.prefs.edit().remove(FOLLOW_RELOAD).apply() // what it holds is the followed set now (#764)
+        if (epoch.isNotEmpty()) acct.epoch = epoch
+        acct.prefs.edit().remove(FOLLOW_RELOAD).apply() // what it holds is the followed set now (#764)
         app.outside.value++
     }
 
-    override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) app.epoch else "" } // another server's epoch says nothing here
-    override fun saveEpoch(epoch: String) = ifMine { app.epoch = epoch }
+    override fun epoch() = synchronized(app.configLock) { if (gen == app.configGen) acct.epoch else "" } // another server's epoch says nothing here
+    override fun saveEpoch(epoch: String) = ifMine { acct.epoch = epoch }
     /** A settings message, kept only while this is still the server in Settings: one already in hand at a switch would undo the reset (#568). */
     fun settings(o: org.json.JSONObject): Boolean {
         var reload = false
@@ -601,14 +599,14 @@ class RoomStore(private val app: App) : Store {
             app.saveSettings(o)
             if (fmt != app.formatting.value) app.tray.reconcile(dao.openNow().filter { it.id !in waiting() }, app.muted) // #809: quietly, in the new look
             val now = app.subs.value?.filtered == true
-            if (!was && now) app.prefs.edit().putBoolean(FOLLOW_RELOAD, true).apply()
-            reload = now && app.prefs.getBoolean(FOLLOW_RELOAD, false)
+            if (!was && now) acct.prefs.edit().putBoolean(FOLLOW_RELOAD, true).apply()
+            reload = now && acct.prefs.getBoolean(FOLLOW_RELOAD, false)
         }
         // Now following a set it did not before (#764): what this phone holds may include topics it no longer
         // shows. The mark stays until a reload lands, so a failed one is tried again on the next connect.
         return reload
     }
-    override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { app.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
+    override fun saveMarkId(id: String) = ifMine { if (app.markId.value != id) { acct.prefs.edit().putString("mark_id", id).apply(); app.markId.value = id } }
 
     override fun pending() = synchronized(app.configLock) { if (gen == app.configGen) dao.pending() else emptyList() } // never send the new server's queue to the old one
     /**
