@@ -1,0 +1,1 @@
+- ntfy publish: scheduled messages accept the forms ntfy's docs list, adding RFC 3339 times (`2026-12-01T10:00:00Z`), spoken durations (`2 days`) and times of day (`10am`, `tomorrow, 3pm`, `Tuesday 7am`), read in the sender's `X-Timezone` when given. Anything else is refused with a clear 400 (#841).
