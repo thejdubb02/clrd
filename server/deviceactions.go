@@ -113,10 +113,21 @@ func (s *Server) gateDeviceActions(ctx context.Context, q querier, in *PublishIn
 	case on:
 		return nil
 	case in.dropDevice:
-		in.Actions = slices.DeleteFunc(slices.Clone(in.Actions), isDeviceAction)
+		in.Actions = withoutDeviceActions(slices.Clone(in.Actions))
 		return nil
 	}
 	return errf(403, "forbidden", "topic %q does not take http or broadcast actions: an admin turns them on with device_actions", in.Topic)
+}
+
+func withoutDeviceActions(actions []Action) []Action {
+	kept := actions[:0]
+	for _, a := range actions {
+		if !isDeviceAction(a) {
+			kept = append(kept, a)
+		}
+	}
+	clear(actions[len(kept):])
+	return kept
 }
 
 // SetTopicDeviceActions turns http and broadcast actions on or off for a

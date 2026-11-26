@@ -97,6 +97,20 @@ func (s *Server) keepCleared(st Settings) time.Duration {
 	return days(*st.KeepClearedDays)
 }
 
+// shortestKeep is the shortest time any cleared notification is kept.
+func (s *Server) shortestKeep(st Settings) time.Duration {
+	shortest := s.opt.Retention
+	if keep := s.keepCleared(st); keep > 0 && keep < shortest {
+		shortest = keep
+	}
+	for _, k := range st.TopicKeepClearedDays {
+		if d := days(k); d > 0 && d < shortest {
+			shortest = d
+		}
+	}
+	return shortest
+}
+
 func days(n int) time.Duration { return time.Duration(n) * 24 * time.Hour }
 
 // defaultUnlinkIdleDays is unlink_idle_browsers_days until an admin sets it.
@@ -266,7 +280,14 @@ func (s *Server) Settings(ctx context.Context, tok *Token) (Settings, error) {
 			delete(st.TopicKeepClearedDays, t)
 		}
 	}
-	st.ColorRules = slices.DeleteFunc(st.ColorRules, func(r ColorRule) bool { return r.Topic != "" && !tok.Allows(r.Topic) })
+	rules := st.ColorRules[:0]
+	for _, r := range st.ColorRules {
+		if r.Topic == "" || tok.Allows(r.Topic) {
+			rules = append(rules, r)
+		}
+	}
+	clear(st.ColorRules[len(rules):])
+	st.ColorRules = rules
 	if st.KeepClearedDays == nil { // filled on reads only, so a save never pins CLRD_RETENTION
 		d := int((s.opt.Retention + 24*time.Hour - 1) / (24 * time.Hour))
 		st.KeepClearedDays = &d

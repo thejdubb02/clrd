@@ -395,6 +395,7 @@ type Query struct {
 	Senders bool     // fill Senders (the Senders page, #119)
 	Sender  string   // fill Sender with this one, or ErrNotFound
 	Stats   int      // fill Stats for this many days back (the Stats page, #120); 0 = none
+	Group   string   // with Stats: split volume by topic, sender or priority
 	ID      string   // fill Items with this one notification, any state, and nothing else, or ErrNotFound (#814)
 }
 
@@ -1261,7 +1262,14 @@ func tips(b, topic string, topics []Topic) []Tip {
 		{Icon: "bell-ring", Title: "Pick a sound", Text: "Choose the sound this browser plays when a notification arrives, or turn it off.", Link: "/app/settings#sound-h", LinkText: "Sound settings"},
 	}
 	if len(topics) == 0 {
-		ts = slices.DeleteFunc(ts, func(t Tip) bool { return t.Icon == "hash" })
+		for i, t := range ts {
+			if t.Icon == "hash" {
+				copy(ts[i:], ts[i+1:])
+				ts[len(ts)-1] = Tip{}
+				ts = ts[:len(ts)-1]
+				break
+			}
+		}
 	}
 	return ts
 }
@@ -1510,6 +1518,7 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 			if view == "stats" {
 				q.Stats = statsDays(r.URL.Query().Get("days"))
+				q.Group = statsGroup(r.URL.Query().Get("group"))
 			}
 			snap, err := api.Snapshot(r, q)
 			status := 200

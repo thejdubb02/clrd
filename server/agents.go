@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -267,9 +268,9 @@ type guideLimits struct {
 func (l guideLimits) text() string {
 	rate := "no publish limit"
 	if l.PublishPerMinute > 0 {
-		rate = fmt.Sprintf("%d publishes a minute", l.PublishPerMinute)
+		rate = strconv.Itoa(l.PublishPerMinute) + " publishes a minute"
 	}
-	return fmt.Sprintf("%s, attachments up to %d MB.", rate, l.AttachmentMaxBytes>>20)
+	return rate + ", attachments up to " + strconv.FormatInt(l.AttachmentMaxBytes>>20, 10) + " MB."
 }
 
 func (s *Server) guide(base string, iv *invite) agentGuide {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -203,14 +204,14 @@ func gotifySlug(name string, id int64, used map[string]bool) string {
 		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-')
 	}), "-")
 	if base = strings.Trim(base[:min(len(base), 56)], "-"); base == "" {
-		base = fmt.Sprintf("app-%d", id)
+		base = "app-" + strconv.FormatInt(id, 10)
 	}
 	if reserved[base] {
 		base += "-app"
 	}
 	t := base
 	for i := 2; used[t]; i++ {
-		t = fmt.Sprintf("%s-%d", base, i)
+		t = base + "-" + strconv.Itoa(i)
 	}
 	used[t] = true
 	return t
