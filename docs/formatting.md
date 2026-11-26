@@ -42,9 +42,11 @@ messages with shortcodes clrd does not know and shows one of them.
 
 Settings live on the server, so a change on one device shows on all of them.
 Change the formatting, link, site icon and link preview switches under
-Messages on the web inbox's Settings page, and each topic's preview choice
-under Link previews by topic, or any setting with the API. The snooze times
-and default can also be changed in the Android app's Settings.
+Messages on the web inbox's Settings page or under Display, Formatting and
+links in the Android app's Settings, each topic's preview choice under Link
+previews by topic on the web, or any setting with the API. The snooze times
+and default can also be changed in the Android app's Settings. On the phone,
+a preview card shows under a message once you open it.
 
 | Setting | Default | What it does |
 |---|---|---|

@@ -124,6 +124,13 @@
     <string name="swipe_settings">Swipe buttons</string>
     <string name="swipe_explain">The buttons a swipe on a card shows, numbered from the screen edge. Tap to add or take one off. Saved on your server, so every device shows the same. This app has no Resolve button yet, so it skips that one.</string>
     <string name="swipe_locked">This token can see the swipe buttons but not change them. Change them from a device signed in with a full token.</string>
+    <string name="formatting_settings">Formatting and links</string>
+    <string name="formatting_explain">How messages show. Saved on your server, so every device shows the same. Your server fetches site icons and previews, so the sites never see this phone.</string>
+    <string name="formatting_locked">This token can see these switches but not change them. Change them from a device signed in with a full token.</string>
+    <string name="render_formatting">Show Markdown formatting</string>
+    <string name="autolink">Turn web addresses into links</string>
+    <string name="favicons">Show site icons next to links</string>
+    <string name="link_previews">Show link previews (on an opened card)</string>
     <string name="swipe_left">Swipe left</string>
     <string name="swipe_right">Swipe right</string>
     <string name="swipe_resolve">Resolve</string>
