@@ -1,0 +1,1 @@
+- Web inbox: screen readers can follow the active command or topic as you filter and move through command palette results.

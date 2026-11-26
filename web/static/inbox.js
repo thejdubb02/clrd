@@ -1496,19 +1496,76 @@
     });
   }
 
-  // Command palette (Ctrl or Cmd+K) and single-key shortcuts. The palette
-  // lists every shortcut; Basecoat's command.js filters it and runs Enter.
-  const palette = $('#palette');
+  // The combobox keeps focus in its input and exposes one active option.
+  const palette = $('#palette'), commandInput = $('#palette-input'), commandList = $('#palette-menu');
+  const options = [...(commandList?.querySelectorAll('[role=option]') || [])];
+  const groups = [...(commandList?.querySelectorAll('[role=group]') || [])];
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   if (mac) document.querySelectorAll('[data-mod]').forEach(k => { k.textContent = '\u2318 K'; });
-  const openPalette = () => {
+  options.forEach((option, index) => {
+    option.id = `command-${index + 1}`;
+    option.setAttribute('aria-selected', 'false');
+  });
+  let activeCommand = null;
+  function activateCommand(option) {
+    if (activeCommand) {
+      activeCommand.classList.remove('active');
+      activeCommand.setAttribute('aria-selected', 'false');
+    }
+    activeCommand = option;
+    if (!option) return commandInput.removeAttribute('aria-activedescendant');
+    option.classList.add('active');
+    option.setAttribute('aria-selected', 'true');
+    commandInput.setAttribute('aria-activedescendant', option.id);
+    const listBounds = commandList.getBoundingClientRect(), bounds = option.getBoundingClientRect();
+    if (bounds.top < listBounds.top) commandList.scrollTop += bounds.top - listBounds.top;
+    else if (bounds.bottom > listBounds.bottom) commandList.scrollTop += bounds.bottom - listBounds.bottom;
+  }
+  const availableCommands = () => options.filter(option => !option.hidden);
+  function filterCommands() {
+    const query = commandInput.value.trim().toLowerCase();
+    for (const option of options) {
+      option.hidden = !(option.textContent.toLowerCase().includes(query) ||
+        option.dataset.keywords?.toLowerCase().split(/\s+/).some(word => word.includes(query)));
+      option.setAttribute('aria-hidden', String(option.hidden));
+    }
+    for (const group of groups) group.hidden = !group.querySelector('[role=option]:not([hidden])');
+    const first = availableCommands()[0];
+    commandList.hidden = !first;
+    commandInput.setAttribute('aria-expanded', String(!!first));
+    $('[data-command-status]').textContent = first ? '' : 'No command matches.';
+    activateCommand(first);
+  }
+  function openPalette() {
     if (!palette || palette.open) return;
-    const input = palette.querySelector('input');
-    input.value = '';
-    input.dispatchEvent(new Event('input'));
+    commandInput.value = '';
     palette.showModal();
-  };
-  palette && palette.addEventListener('click', e => { if (e.target === palette) palette.close(); }); // click on the dim
+    filterCommands();
+  }
+  if (palette) {
+    commandInput.addEventListener('input', filterCommands);
+    commandInput.addEventListener('keydown', e => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter') { e.preventDefault(); activeCommand?.click(); return; }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault();
+      const visible = availableCommands(), at = visible.indexOf(activeCommand);
+      if (e.key === 'Home' || e.key === 'End') return activateCommand(e.key === 'Home' ? visible[0] : visible.at(-1));
+      activateCommand(visible[Math.max(0, Math.min(visible.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))]);
+    });
+    commandList.addEventListener('mousemove', e => {
+      const option = e.target.closest('[role=option]');
+      if (option && option !== activeCommand) activateCommand(option);
+    });
+    palette.addEventListener('click', e => {
+      if (e.target === palette || e.target.closest('[role=option]')) palette.close();
+    });
+    palette.addEventListener('close', () => {
+      if (palette.open) return;
+      commandInput.setAttribute('aria-expanded', 'false');
+      activateCommand(null);
+    });
+  }
   const search = $('[data-search]');
   // Each command presses the selected card's own button, so Undo and errors work the same.
   const press = (sel, c = selected() || shown()[0]) => {

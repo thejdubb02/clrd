@@ -589,11 +589,15 @@ func TestStaticVersioned(t *testing.T) {
 			named[p+" "+m[1]] = true
 		}
 	}
-	for _, k := range []string{"/ app.css", "/app app.css", "/app inbox.js", "/app vendor/basecoat.min.js", "/app vendor/command.min.js",
+	for _, k := range []string{"/ app.css", "/app app.css", "/app inbox.js", "/app vendor/basecoat.min.js",
 		"/app/ui app.css", "/app/ui vendor/basecoat.min.js", "/app/ui vendor/command.min.js", "/app/settings pair.js"} {
 		if !named[k] {
 			t.Errorf("%s: not named", k)
 		}
+	}
+
+	if named["/app vendor/command.min.js"] {
+		t.Error("the inbox should load only its own command controller")
 	}
 
 	// Each GET runs once with the current hash, an old one and none.
