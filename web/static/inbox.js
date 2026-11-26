@@ -881,11 +881,6 @@
     s.append(...[['', 'None'], ['clear', 'Clear'], ['snooze', 'Snooze'], ['ack', 'Ack'], ['resolve', 'Resolve']].map(([v, t]) => new Option(t, v, false, (sides[d.dataset.side][i] || '') === v)));
     return s;
   })));
-  // What each form held when the page loaded: a live change from another device
-  // reloads Settings only while none of them has unsaved edits (#182, #883).
-  const contents = f => JSON.stringify([...new FormData(f)]);
-  const loaded = forms.map(f => f && contents(f));
-  const unsaved = () => forms.some((f, i) => f && contents(f) !== loaded[i]);
   swp && swp.addEventListener('submit', async e => {
     e.preventDefault();
     const pick = side => [...swp.querySelectorAll(`select[name=${side}]`)].map(s => s.value).filter(Boolean);
@@ -1426,6 +1421,12 @@
     if (on) { clearTimeout(staleTimer); staleTimer = null; offline.hidden = true; }
     else staleTimer ??= setTimeout(() => { offline.hidden = false; }, 180000);
   };
+  // What every Settings field held once the page was set up: a live settings change from
+  // another device reloads the page only while no field has an unsaved edit (#182, #883).
+  // Settings forms only, not a card's snooze box. ponytail: rows a script adds or removes later are not tracked.
+  const fieldNow = e => /^(checkbox|radio)$/.test(e.type) ? e.checked : e.value;
+  const asLoaded = new Map([...document.querySelectorAll('[data-settings-group] form')].flatMap(f => [...f.elements]).filter(e => !/^(submit|button|reset|file|fieldset)$/.test(e.type)).map(e => [e, fieldNow(e)]));
+  const edited = () => new Set([...asLoaded].filter(([e, v]) => e.isConnected && fieldNow(e) !== v).map(([e]) => e.form));
   function connect() {
     const u = new URL(B + '/api/v1/ws', location.href);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1453,7 +1454,11 @@
         if (st.theme) syncPalette(st);
         if (st.color_rules) refresh(); // recolor the cards (#165)
         if (st.sound) { serverSound = st.sound; if (soundSel && !localSound()) soundSel.value = st.sound; } // set here, on another device or by an agent (#297)
-        const stale = () => unsaved() ? forms.forEach(f => { const n = f?.querySelector('[role=status]'); if (n) n.textContent = 'Settings changed on another device. Saving here replaces that change.'; }) : reset();
+        const stale = () => {
+          const ed = edited();
+          if (!ed.size) return reset();
+          ed.forEach(f => { const n = f?.querySelector('[role=status]'); if (n) n.textContent = 'Settings changed on another device. Saving here replaces that change.'; });
+        };
         if (st.snooze_default && [st.snooze_default, ...(st.snooze_intervals || [])].join(',') !== shell.dataset.snooze) stale();
         else if ('keep_cleared_days' in st && (`${st.keep_cleared_days}` !== shell.dataset.keep || Object.entries(st.topic_keep_cleared_days || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tkeep)) stale();
         else if ('render_formatting' in st &&(`${st.render_formatting},${st.autolink},${st.favicons},${st.link_previews}` !== shell.dataset.fmt || Object.entries(st.topic_previews || {}).sort().map(([k, v]) => `${k}=${v};`).join('') !== shell.dataset.tprev)) stale();
