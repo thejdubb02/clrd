@@ -7,12 +7,13 @@
 <p align="center"><strong>Self-hosted push notifications. Dismiss once, gone everywhere.</strong></p>
 
 Send an alert with one HTTP call. It shows up on your Android phone, your tablet
-and the web inbox. Clear it on any one of them (in the phone app, or Clear on
-the web) and it clears on all the others. Swiping a phone notification away
-only hides it on that phone, unless you turn on "Swipe clears everywhere". When the problem fixes itself, the sender resolves it and it clears
-everywhere without anyone touching it.
+and the web inbox. Clear it in the app or web inbox and the other devices
+catch up when they sync. Turn off "Clears everywhere" on a device to keep its
+clears local. Swiping a phone notification away only hides it on that phone
+unless you turn on "Swipe clears everywhere". A sender can resolve the alert
+when the problem is fixed.
 
-Getting started needs one setting: start it with `CLRD_BASE_URL` set to the
+For a setup behind an HTTPS proxy, start it with `CLRD_BASE_URL` set to the
 HTTPS address your proxy serves it on, open the setup link it prints to make
 your admin token, scan the Link a phone code with the app and approve it, and
 send. Everything else (check-ins, webhooks, icons, snooze times, display
@@ -36,14 +37,12 @@ ntfy 2.38.1: 77.5 MB) and the Android app is a 1.9 MB APK (measured
 
 The web pictures are made by `web/e2e/screens.mjs` with `SET=readme` against the
 real server and fixed demo data, and the Android pictures are rendered on the JVM
-by `android/app/src/test/java/me/itsjustin/clrd/ScreensTest.kt`, so both show the
-apps as they are on `main`.
+by `android/app/src/test/java/me/itsjustin/clrd/ScreensTest.kt`.
 
 > **Status: early, no tagged release yet.** The server, web inbox, Android app
 > and SDKs have tests that run in CI, and so do the integration guides (see the
 > [integrations table](docs/integrations/README.md) for what each one runs). The Android app
-> is not in the main F-Droid catalog yet; every Android change on `main` goes to clrd's own
-> F-Droid repo ([how to add it](android/README.md#install-from-the-clrd-f-droid-repo)).
+> is available from [clrd's own F-Droid repo](android/README.md#install-from-the-clrd-f-droid-repo).
 > See [CHANGELOG.md](CHANGELOG.md).
 
 ## Why clrd
@@ -51,8 +50,8 @@ apps as they are on `main`.
 clrd publishes and subscribes the [ntfy](https://github.com/binwiederhier/ntfy)
 way. The difference: in ntfy, when you clear a notification on one
 device, your other devices keep it. clrd keeps every notification's state on
-the server, so a clear anywhere clears it everywhere, and a phone that was
-offline catches up the moment it reconnects.
+the server, so a synced clear reaches other devices, including phones
+that catch up after being offline.
 
 ## Features
 
@@ -84,7 +83,9 @@ offline catches up the moment it reconnects.
   Settings or by an agent, the same in every browser (not in the Android app
   yet) ([docs/color-rules.md](docs/color-rules.md)).
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
-  WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
+  WebSocket, Basic auth), or use the bundled [clrd CLI commands](docs/self-host.md#publish-and-subscribe-from-the-command-line).
+  See [server settings](docs/self-host.md#server-environment) for optional ntfy
+  retention, disk templates and rate limits.
 - **Gotify senders work.** `POST /message` with an app token, as Gotify
   takes it, so Apprise, the gotify CLI, Watchtower and curl scripts keep
   sending. See
@@ -96,7 +97,7 @@ offline catches up the moment it reconnects.
   changed. See [Pushover senders](docs/integrations/pushover.md).
 - **Imports an ntfy server.** `clrd import ntfy` brings over users, passwords,
   tokens, per-topic access rules, message history and attachments, so you can
-  swap the hostname and keep every credential. See
+  swap the hostname and keep the supported credentials. See
   [Switch from ntfy](docs/migrate-from-ntfy.md).
   Email is not supported.
 - **Files and icons.** Agents and scripts can attach a file or an icon to a
@@ -110,7 +111,7 @@ offline catches up the moment it reconnects.
   palette, a Send box for a quick note to your phone, a sound for new
   notifications (pick one in Settings, silenced ones stay quiet), system
   notifications through Web Push even with the tab closed (off until you
-  turn them on in Settings; needs HTTPS), silences
+  turn them on in Settings on a supported browser; needs HTTPS or localhost), silences
   started and ended from Settings, subscribe and unsubscribe per topic (from
   a card or Settings, every device you sign in to follows), a dot for each linked device (up to six)
   showing which are connected, built-in and custom color themes that follow
@@ -119,7 +120,8 @@ offline catches up the moment it reconnects.
   "do not disturb", and an About section shows the running version and
   what changed in each version, with a dismissible What's new note after an update.
 - **Android app.** Kotlin, no Google Play Services, so it runs on GrapheneOS
-  and LineageOS. Reply and link buttons in the tray, notifications stacked by
+  and LineageOS on Android 8 or newer. It can receive from several servers.
+  Reply, copy and link buttons in the tray, notifications stacked by
   topic if you turn it on (off by default), Share and Copy, Markdown formatting and tappable links, a Send
   button for a quick note to your other devices. A choice of
   six built-in notification sounds (or the phone's default, or none), kept
