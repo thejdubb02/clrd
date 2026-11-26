@@ -80,6 +80,9 @@ offline catches up the moment it reconnects.
   times by default ([docs/repeat.md](docs/repeat.md)).
   A silence mutes a topic or tag until a set time
   ([docs/silences.md](docs/silences.md)).
+- **Color rules.** Color cards by topic, tag, priority or title text, set in
+  Settings or by an agent, the same in every browser (not in the Android app
+  yet) ([docs/color-rules.md](docs/color-rules.md)).
 - **ntfy compatible.** Publish and subscribe the ntfy way (JSON, SSE,
   WebSocket, Basic auth), so most ntfy scripts and the ntfy app work unchanged.
 - **Gotify senders work.** `POST /message` with an app token, as Gotify
@@ -185,6 +188,7 @@ dismisses, acks, resolves, snoozes or replies. Setup for each, and which ones re
 - [docs/formatting.md](docs/formatting.md): Markdown, emoji, display settings and the format check
 - [docs/repeat.md](docs/repeat.md): alerts that ring again until someone acts, 10 more times by default
 - [docs/silences.md](docs/silences.md): mute a topic or tag until a set time
+- [docs/color-rules.md](docs/color-rules.md): color cards by topic, tag, priority or title
 - [docs/migrate-from-ntfy.md](docs/migrate-from-ntfy.md): switch from ntfy
 - [docs/migrate-from-gotify.md](docs/migrate-from-gotify.md): switch from Gotify
 - [docs/integrations/README.md](docs/integrations/README.md): every integration guide and what its test runs
