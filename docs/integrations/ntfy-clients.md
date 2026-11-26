@@ -7,6 +7,10 @@ or `X-Poll` to read cached messages and close the stream, and `since` or
 `X-Since` to select where replay starts. Query aliases include `po`, `si`,
 `x-poll` and `x-since`.
 
+On a plain publish, `X-Message` and the `message` or `m` query options
+turn a literal `\n` into a line break. A message sent in the body keeps its
+original text.
+
 ## ntfy CLI
 
 ```sh

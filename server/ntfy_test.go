@@ -888,3 +888,31 @@ func TestNtfySubscribeReplayAliases(t *testing.T) {
 		})
 	}
 }
+
+func TestNtfyMessageParamNewlines(t *testing.T) {
+	_, ts, admin := newTest(t)
+	const (
+		escaped = `one\ntwo`
+		decoded = "one\ntwo"
+	)
+	for _, tc := range []struct {
+		name, method, path, body string
+		headers                  map[string]string
+		want                     string
+	}{
+		{"message header", "POST", "/lines", "", map[string]string{"X-Message": escaped}, decoded},
+		{"query alias", "GET", "/lines/publish?m=one%5Cntwo", "", nil, decoded},
+		{"prefixed query", "GET", "/lines/publish?x-message=one%5Cntwo", "", nil, decoded},
+		{"plain body wins", "POST", "/lines", escaped, map[string]string{"X-Message": "ignored"}, escaped},
+		{"json body stays literal", "POST", "/", `{"topic":"lines","message":"one\\ntwo"}`, nil, escaped},
+		{"json header fallback", "POST", "/", `{"topic":"lines"}`, map[string]string{"X-Message": escaped}, decoded},
+		{"template escape stays literal", "POST", "/lines", `{}`, map[string]string{"Template": "yes", "Message": `{{ "one\\ntwo" }}`}, escaped},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, out := raw(t, tc.method, ts.URL+tc.path, admin, tc.body, tc.headers)
+			if code != 200 || ntfyDecode(t, out).Message != tc.want {
+				t.Fatalf("publish: %d %s, want %q", code, out, tc.want)
+			}
+		})
+	}
+}
