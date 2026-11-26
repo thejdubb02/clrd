@@ -60,6 +60,37 @@ struct Shell {
     opening: Mutex<()>,
     /// "Closing clears everywhere", read once the app knows its folder.
     close_clears: OnceLock<CloseClears>,
+    /// This version runs for the first time after an update and What's new
+    /// has not been opened since (#580).
+    updated: AtomicBool,
+}
+
+/// The version this computer last opened What's new on, or ran first.
+fn seen_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(state_file(app)?.with_file_name("seen-version"))
+}
+
+/// How this app's version stands to the server's, for the About menu. Only
+/// plain x.y.z versions are compared; anything else says nothing.
+fn version_note(app: &str, server: &str) -> Option<&'static str> {
+    let parse = |v: &str| -> Option<(u64, u64, u64)> {
+        let mut n = v.split(['-', '+']).next()?.split('.').map(str::parse);
+        let v = (n.next()?.ok()?, n.next()?.ok()?, n.next()?.ok()?);
+        n.next().is_none().then_some(v)
+    };
+    match parse(app)?.cmp(&parse(server)?) {
+        std::cmp::Ordering::Less => Some("This app is older than the server"),
+        std::cmp::Ordering::Greater => Some("This app is newer than the server"),
+        std::cmp::Ordering::Equal => None,
+    }
+}
+
+/// Where What's new opens: the linked server's history, or the project's
+/// own when this computer is not linked.
+fn news_url(base: Option<&str>) -> String {
+    base.map_or(format!("{SOURCE}/blob/main/CHANGELOG.md"), |b| {
+        format!("{b}/docs/changelog")
+    })
 }
 
 fn close_clears(app: &AppHandle) -> Result<&CloseClears, String> {
@@ -118,9 +149,19 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     if shell.device.linked().is_some() {
         if let Some(v) = shell.version.lock().unwrap().as_ref() {
             about = about.item(&quiet(format!("Server {v}"))?);
+            if let Some(note) = version_note(env!("CARGO_PKG_VERSION"), v) {
+                about = about.item(&quiet(note.into())?);
+            }
         }
-        about = about.text("news", "What's new");
     }
+    about = about.text(
+        "news",
+        if shell.updated.load(Ordering::Relaxed) {
+            concat!("What's new in ", env!("CARGO_PKG_VERSION"))
+        } else {
+            "What's new"
+        },
+    );
     let about = about.text("source", "Source code").build()?;
     MenuBuilder::new(app)
         .item(&quiet(status_line(&shell))?)
@@ -148,8 +189,14 @@ fn on_menu(app: &AppHandle, id: &str) {
         "open" => open_main(app),
         "device" => open_device(app),
         "news" => {
-            if let Some(linked) = app.state::<Shell>().device.linked() {
-                open_outside(&format!("{}/docs/changelog", linked.base));
+            let shell = app.state::<Shell>();
+            let linked = shell.device.linked();
+            open_outside(&news_url(linked.as_ref().map(|l| l.base.as_str())));
+            if shell.updated.swap(false, Ordering::Relaxed) {
+                if let Ok(path) = seen_file(app) {
+                    let _ = std::fs::write(path, env!("CARGO_PKG_VERSION"));
+                }
+                refresh_tray(app);
             }
         }
         "source" => open_outside(SOURCE),
@@ -797,6 +844,7 @@ fn main() {
             note: Mutex::default(),
             opening: Mutex::default(),
             close_clears: OnceLock::new(),
+            updated: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             state,
@@ -811,6 +859,20 @@ fn main() {
         ])
         .setup(move |app| {
             let app = app.handle();
+            // A first start ever shows no note: there is nothing it updated
+            // from. A start on a version the user has not seen marks What's
+            // new in the About menu until it is opened.
+            if let Ok(path) = seen_file(app) {
+                match std::fs::read_to_string(&path) {
+                    Ok(seen) => app
+                        .state::<Shell>()
+                        .updated
+                        .store(seen.trim() != env!("CARGO_PKG_VERSION"), Ordering::Relaxed),
+                    Err(_) => {
+                        let _ = std::fs::write(path, env!("CARGO_PKG_VERSION"));
+                    }
+                }
+            }
             let tray = tray_library() && build_tray(app).is_ok();
             if !tray {
                 eprintln!(
@@ -889,4 +951,38 @@ fn main() {
             api.prevent_exit();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_about_menu_says_which_side_is_older() {
+        assert_eq!(version_note("0.1.0", "0.1.0"), None);
+        assert_eq!(
+            version_note("0.1.0", "0.2.0"),
+            Some("This app is older than the server")
+        );
+        assert_eq!(
+            version_note("0.10.0", "0.9.3"),
+            Some("This app is newer than the server")
+        );
+        assert_eq!(version_note("1.2.3-rc1", "1.2.3"), None);
+        assert_eq!(version_note("0.1.0", "dev"), None);
+        assert_eq!(version_note("0.1", "0.1.0"), None);
+        assert_eq!(version_note("0.1.0.4", "0.1.0"), None);
+    }
+
+    #[test]
+    fn whats_new_opens_the_servers_history_or_the_projects() {
+        assert_eq!(
+            news_url(Some("https://clrd.example")),
+            "https://clrd.example/docs/changelog"
+        );
+        assert_eq!(
+            news_url(None),
+            "https://github.com/thejdubb02/clrd/blob/main/CHANGELOG.md"
+        );
+    }
 }
