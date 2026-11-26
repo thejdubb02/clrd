@@ -322,12 +322,18 @@ func (s *Server) DeleteToken(ctx context.Context, id string) error {
 }
 
 // RevokeToken is DeleteToken for an admin with no topic limit
-// (DELETE /api/v1/tokens/{id}).
+// (DELETE /api/v1/tokens/{id}). A CLRD_CONFIG token is refused: the next
+// start would make it again from the file (#832).
 func (s *Server) RevokeToken(ctx context.Context, tok *Token, id string) error {
 	if err := tok.needFullAdmin(); err != nil {
 		return err
 	}
-	return s.DeleteToken(ctx, id)
+	err := s.deleteTokenIf(ctx, id, `SELECT id FROM tokens WHERE id = ? AND config = 0`, id)
+	var one int
+	if isNotFound(err) && s.db.QueryRowContext(ctx, `SELECT 1 FROM tokens WHERE id = ?`, id).Scan(&one) == nil {
+		return errf(409, "conflict", "a token from CLRD_CONFIG is revoked by removing it from that file")
+	}
+	return err
 }
 
 // RenameToken names token id (PUT /api/v1/tokens/{id}), cleaned as a device
