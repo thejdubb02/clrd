@@ -1,0 +1,1 @@
+- A send that was already out when an outgoing hook moved to another URL or kind no longer counts toward the new address's failure streak, and no longer brings back an old post id after the hook moves away and back (#878).

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -243,25 +244,125 @@ func ntfyPriority(v string) (int, error) {
 	return 0, errf(400, "bad_request", "invalid priority %q", v)
 }
 
-// ntfyDelay reads a unix time or a duration (30m, 2h, 1d), at most 3 days
-// ahead like ntfy's default limit.
-func ntfyDelay(v string) (*time.Time, error) {
-	if v == "" {
+// ntfyDelay reads when a delayed message fires, in the forms ntfy documents:
+// a unix time, a duration (30m, 2h, 1d, 2 days), an RFC 3339 time, or a time
+// of day (10am, 8:30pm, tomorrow 3pm, Tuesday, 7am). tz is an IANA zone name
+// for the time of day, else the server's own zone. At most 3 days ahead, like
+// ntfy's default limit. A timezone with no delay is ignored, as on ntfy.
+func ntfyDelay(v, tz string) (*time.Time, error) {
+	if v = strings.TrimSpace(v); v == "" {
 		return nil, nil
 	}
-	var t time.Time
-	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-		t = time.Unix(n, 0)
-	} else if d, err := parseDuration(v); err == nil {
-		t = time.Now().Add(d)
-	}
-	if !t.IsZero() {
-		if t.After(time.Now().Add(72 * time.Hour)) {
-			return nil, errf(400, "bad_request", "delay %q is more than 3 days ahead", v)
+	loc := time.Local
+	if tz != "" {
+		l, err := time.LoadLocation(tz)
+		if err != nil {
+			return nil, errf(400, "bad_request", "invalid timezone %q: use an IANA name like America/New_York", tz)
 		}
-		return &t, nil
+		loc = l
 	}
-	return nil, errf(400, "bad_request", "invalid delay %q: use a unix time or a duration like 30m", v)
+	now := time.Now().In(loc)
+	t, err := delayTime(v, now)
+	if err != nil {
+		return nil, err
+	}
+	if t.After(now.Add(72 * time.Hour)) {
+		return nil, errf(400, "bad_request", "delay %q is more than 3 days ahead", v)
+	}
+	return &t, nil
+}
+
+var spokenDuration = regexp.MustCompile(`^(\d+) ?([a-z]+)$`)
+
+const errDelay = "invalid delay %q: use a unix time, a duration like 30m, an RFC 3339 time or a time like tomorrow 10am"
+
+// delayTime is ntfyDelay's parser, with the clock (and its zone) passed in.
+func delayTime(v string, now time.Time) (time.Time, error) {
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return time.Unix(n, 0), nil
+	}
+	if d, err := parseDuration(v); err == nil {
+		return now.Add(d), nil
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		if !t.After(now) {
+			return t, errf(400, "bad_request", "delay %q is in the past", v)
+		}
+		return t, nil
+	}
+	f := strings.Fields(strings.NewReplacer(",", " ", " am", "am", " pm", "pm").Replace(strings.ToLower(v)))
+	if m := spokenDuration.FindStringSubmatch(strings.Join(f, " ")); m != nil { // "2 days", "30min"
+		if n, err := strconv.Atoi(m[1]); err == nil && n <= 36500 {
+			for _, u := range []struct {
+				names string
+				d     time.Duration
+			}{{" d day days ", 24 * time.Hour}, {" h hr hrs hour hours ", time.Hour}, {" m min mins minute minutes ", time.Minute}, {" s sec secs second seconds ", time.Second}} {
+				if strings.Contains(u.names, " "+m[2]+" ") {
+					return now.Add(time.Duration(n) * u.d), nil
+				}
+			}
+		}
+	}
+	// A day word and a time of day, each at most once, in either order.
+	day, clock := -1, -1 // days ahead, minutes after midnight
+	weekday := false
+	for _, w := range f {
+		c := -1
+		switch w {
+		case "noon":
+			c = 12 * 60
+		case "midnight":
+			c = 0
+		default:
+			for _, layout := range []string{"3pm", "3:04pm", "15:04"} {
+				if t, err := time.Parse(layout, w); err == nil {
+					c = t.Hour()*60 + t.Minute()
+					break
+				}
+			}
+		}
+		d := -1
+		if w == "today" {
+			d = 0
+		} else if w == "tomorrow" {
+			d = 1
+		} else {
+			for i := range 7 {
+				if name := strings.ToLower(time.Weekday(i).String()); w == name || w == name[:3] {
+					d, weekday = (i-int(now.Weekday())+7)%7, true
+				}
+			}
+		}
+		switch {
+		case c >= 0 && clock < 0:
+			clock = c
+		case d >= 0 && day < 0:
+			day = d
+		default:
+			return now, errf(400, "bad_request", errDelay, v)
+		}
+	}
+	if clock < 0 {
+		if day < 0 {
+			return now, errf(400, "bad_request", errDelay, v)
+		}
+		clock = now.Hour()*60 + now.Minute()
+	}
+	at := func(d int) time.Time {
+		return time.Date(now.Year(), now.Month(), now.Day()+d, clock/60, clock%60, 0, 0, now.Location())
+	}
+	t := at(max(day, 0))
+	if !t.After(now) {
+		switch {
+		case day < 0: // a bare time already gone today means tomorrow, as on ntfy
+			t = at(1)
+		case weekday:
+			t = at(day + 7)
+		default:
+			return t, errf(400, "bad_request", "delay %q is in the past", v)
+		}
+	}
+	return t, nil
 }
 
 var errNoCache = errf(400, "bad_request", "Cache: no is not supported with a webhook template")
@@ -367,7 +468,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if in.Priority, err = ntfyPriority(prio); err != nil {
 		return err
 	}
-	if err := ntfyDetails(r, &in, nil, ""); err != nil {
+	if err := ntfyDetails(r, &in, nil, "", ""); err != nil {
 		return err
 	}
 	in.Status = param(r, "Status")
@@ -384,7 +485,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 
 // ntfyDetails parses options common to raw and JSON publishes. JSON can
 // explicitly turn Markdown off or supply an empty list of actions.
-func ntfyDetails(r *http.Request, in *PublishInput, actions []ntfyAction, delay string) error {
+func ntfyDetails(r *http.Request, in *PublishInput, actions []ntfyAction, delay, timezone string) error {
 	var err error
 	if actions == nil {
 		in.Actions, err = ntfyActions(param(r, "Actions", "Action"))
@@ -394,10 +495,7 @@ func ntfyDetails(r *http.Request, in *PublishInput, actions []ntfyAction, delay 
 	} else {
 		in.Actions = ntfyActionList(actions)
 	}
-	if delay == "" {
-		delay = param(r, "Delay", "At", "In")
-	}
-	if in.SnoozeUntil, err = ntfyDelay(delay); err != nil {
+	if in.SnoozeUntil, err = ntfyDelay(cmp.Or(delay, param(r, "Delay", "At", "In")), cmp.Or(timezone, param(r, "Timezone"))); err != nil {
 		return err
 	}
 	if in.Markdown == nil {
@@ -472,6 +570,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		Filename   string          `json:"filename"`
 		Actions    []ntfyAction    `json:"actions"`
 		Delay      string          `json:"delay"`
+		Timezone   string          `json:"timezone"`
 		ID         string          `json:"id"`
 		SequenceID string          `json:"sequence_id"`
 		ExternalID string          `json:"external_id"`
@@ -548,7 +647,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 	}
-	if err := ntfyDetails(r, &p, in.Actions, in.Delay); err != nil {
+	if err := ntfyDetails(r, &p, in.Actions, in.Delay, in.Timezone); err != nil {
 		return err
 	}
 	return s.ntfyReply(w, r.Context(), s.ntfyAuth(r), p)
@@ -556,7 +655,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 
 // ntfyJSONKeys are the JSON publish fields clrd reads; any other key is logged as ignored.
 var ntfyJSONKeys = map[string]bool{"topic": true, "message": true, "title": true, "priority": true, "tags": true,
-	"click": true, "icon": true, "attach": true, "filename": true, "actions": true, "delay": true, "id": true,
+	"click": true, "icon": true, "attach": true, "filename": true, "actions": true, "delay": true, "timezone": true, "id": true,
 	"sequence_id": true, "external_id": true, "status": true, "cache": true, "markdown": true}
 
 // ntfyIgnoredParams are ntfy publish options clrd accepts but does not act on.

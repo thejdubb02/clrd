@@ -215,6 +215,7 @@ type hookJob struct {
 	kind               string
 	tmpl               string // the hook's body template, rendered at each try
 	attempts           int
+	rev                int64 // the hook's rev when claimed; a new URL or kind changes it (#878)
 }
 
 // parseHookBody compiles a hook's body template with the incoming
@@ -272,7 +273,7 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 	}
 	// ponytail: a discord hook sends one delivery per tick, oldest first, so an
 	// edit never passes the post it edits; a burst of 100 takes about 200 s.
-	rows, err := s.db.QueryContext(ctx, `SELECT d.id, d.topic, d.name, d.event, h.url, h.secret, d.body, h.body, h.kind, d.attempts
+	rows, err := s.db.QueryContext(ctx, `SELECT d.id, d.topic, d.name, d.event, h.url, h.secret, d.body, h.body, h.kind, d.attempts, h.rev
 		FROM hook_deliveries d JOIN hooks_out h ON h.topic = d.topic AND h.name = d.name
 		WHERE d.status = 'pending' AND d.next_at <= ? AND h.enabled = 1 AND (h.kind != 'github' OR NOT ?)
 		AND (h.kind = '' OR NOT EXISTS (SELECT 1 FROM hook_deliveries p
@@ -283,7 +284,7 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 	var jobs []hookJob
 	for rows.Next() {
 		var j hookJob
-		if err := rows.Scan(&j.id, &j.topic, &j.name, &j.event, &j.url, &j.secret, &j.body, &j.tmpl, &j.kind, &j.attempts); err != nil {
+		if err := rows.Scan(&j.id, &j.topic, &j.name, &j.event, &j.url, &j.secret, &j.body, &j.tmpl, &j.kind, &j.attempts, &j.rev); err != nil {
 			rows.Close()
 			return err
 		}
@@ -545,22 +546,12 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 }
 
 // keepPost records the remote message or issue id, but only while the hook
-// still has the URL and kind it was sent with: a save during the send moved
-// it to another channel, where that id means nothing (#795).
+// still points where it was sent: a save during the send moved it to another
+// channel, where that id means nothing (#795), even one that moved back (#878).
 func (s *Server) keepPost(ctx context.Context, j hookJob, id, remote string) error {
-	ctx, at := context.WithoutCancel(ctx), j.url
-	// A save that only changed wait (#816), or a Slack URL apart from its
-	// channel (#870), is the same channel.
-	if same := map[string]func(string) string{"discord": discordURL, "slack": slackURL}[j.kind]; same != nil {
-		var now string
-		_ = s.db.QueryRowContext(ctx, `SELECT url FROM hooks_out WHERE topic = ? AND name = ? AND kind = ?`, j.topic, j.name, j.kind).Scan(&now)
-		if same(now) == same(j.url) {
-			at = now
-		}
-	}
-	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id)
-		SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ? AND kind = ?)`,
-		j.topic, j.name, id, remote, j.topic, j.name, at, j.kind)
+	_, err := s.db.ExecContext(context.WithoutCancel(ctx), `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id)
+		SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND rev = ?)`,
+		j.topic, j.name, id, remote, j.topic, j.name, j.rev)
 	return err
 }
 
@@ -774,15 +765,16 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 	t := now()
 	// mine limits each hook update to a delivery that still exists: a hook
 	// deleted while this send was out took its deliveries with it, and one
-	// saved since under the same name must not inherit this outcome (#240).
-	const mine = ` AND EXISTS (SELECT 1 FROM hook_deliveries WHERE id = ?)`
+	// saved since under the same name must not inherit this outcome (#240),
+	// nor one that moved to another URL or kind during the send (#878).
+	const mine = ` AND rev = ? AND EXISTS (SELECT 1 FROM hook_deliveries WHERE id = ?)`
 	if sendErr == nil && code >= 200 && code < 300 {
 		if _, err := s.db.ExecContext(ctx, `UPDATE hook_deliveries SET status = 'ok', attempts = attempts + 1, code = ?, error = '', updated_at = ? WHERE id = ?`,
 			code, ms(t), j.id); err != nil {
 			return err
 		}
 		// Only while on: a hook another send just turned off keeps its streak.
-		_, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET failing_since = NULL WHERE topic = ? AND name = ? AND enabled = 1`+mine, j.topic, j.name, j.id)
+		_, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET failing_since = NULL WHERE topic = ? AND name = ? AND enabled = 1`+mine, j.topic, j.name, j.rev, j.id)
 		return err
 	}
 	msg := "HTTP " + strconv.Itoa(code)
@@ -807,11 +799,11 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET failing_since = COALESCE(failing_since, ?) WHERE topic = ? AND name = ?`+mine,
-		ms(t), j.topic, j.name, j.id); err != nil {
+		ms(t), j.topic, j.name, j.rev, j.id); err != nil {
 		return err
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE hooks_out SET enabled = 0 WHERE topic = ? AND name = ? AND enabled = 1 AND failing_since <= ?`+mine,
-		j.topic, j.name, ms(t.Add(-hookDisableAfter)), j.id)
+		j.topic, j.name, ms(t.Add(-hookDisableAfter)), j.rev, j.id)
 	if err != nil {
 		return err
 	}
@@ -951,7 +943,8 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	if oldKind == "slack" {
 		oldURL = slackURL(oldURL) // a hook saved before #870 may carry other params
 	}
-	if oldURL != h.URL || oldKind != h.Kind {
+	moved := oldURL != h.URL || oldKind != h.Kind
+	if moved {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?`, topic, name); err != nil {
 			return err
 		}
@@ -962,11 +955,14 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	// Saving again turns a hook back on and starts a fresh failure streak.
 	// Keep an existing secret only when the kind stays the same, so switching
 	// github -> plain never carries a GitHub token to an arbitrary URL (#673).
-	if _, err := tx.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret, body, kind) VALUES (?, ?, ?, ?, ?, ?, ?)
+	// rev is random, not a count, so a hook deleted and made again never
+	// matches a send claimed before (#878).
+	if _, err := tx.ExecContext(ctx, `INSERT INTO hooks_out (topic, name, url, events, secret, body, kind, rev) VALUES (?, ?, ?, ?, ?, ?, ?, random())
 		ON CONFLICT(topic, name) DO UPDATE SET url = excluded.url, events = excluded.events, kind = excluded.kind,
+		rev = CASE WHEN ? THEN excluded.rev ELSE hooks_out.rev END,
 		secret = CASE WHEN ? AND excluded.secret = '' AND hooks_out.kind = excluded.kind THEN hooks_out.secret ELSE excluded.secret END,
 		body = CASE WHEN ? AND excluded.body = '' THEN hooks_out.body ELSE excluded.body END, enabled = 1, failing_since = NULL`,
-		topic, name, h.URL, string(events), h.Secret, h.Body, h.Kind, keepSecret, keepBody); err != nil {
+		topic, name, h.URL, string(events), h.Secret, h.Body, h.Kind, moved, keepSecret, keepBody); err != nil {
 		return err
 	}
 	return tx.Commit()
