@@ -15,6 +15,10 @@ const ids = ['claude', 'codex', 'gemini', 'grok', 'opencode', 'cursor', 'vscode'
 const code = (i) => String(i).repeat(22);
 const token = (i) => 'clrd_' + String(i).repeat(32);
 
+const claimData = (i, grants = ['agents', 'build'].map((topic) => ({ topic, scopes: ['read', 'publish'] }))) => ({
+  token: token(i), name: 'fixture-agent', guide: { grants },
+});
+
 function run(argv, env, input = '') {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, argv, { env });
@@ -57,7 +61,7 @@ async function fixture(t) {
     await rm(home, { recursive: true, force: true });
   });
   responders.set('/clrd/api/v1/agents/claim', ({ body }) => ({
-    data: { token: token(body.code[0]), name: 'fixture-agent' },
+    data: claimData(body.code[0]),
   }));
   responders.set('/clrd/api/v1/devices/this', () => ({ status: 204 }));
   return {
@@ -154,7 +158,7 @@ test('recovers a claimed invite when an editor changes configuration during setu
   const file = await f.put('.gemini/settings.json', '{ "editor": "before" }');
   f.responders.set('/clrd/api/v1/agents/claim', async () => {
     await writeFile(file, '{ "editor": "after" }');
-    return { data: { token: token(0), name: 'fixture-agent' } };
+    return { data: claimData(0) };
   });
   const first = await f.setup(['--agents', 'gemini'], code(0) + '\n');
   assert.equal(first.status, 1);
@@ -237,4 +241,89 @@ test('refuses to move a key from an edited TOML block into another table', { tim
   assert.match(removed.err, /Existing or edited clrd configuration/);
   assert.equal(await readFile(config, 'utf8'), edited);
   assert.equal(f.calls.length, 1);
+});
+
+test('rejects reserved topic names before prompting for invites', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const result = await f.setup(['--agents', 'claude', '--topic', 'ApI'], code(0) + '\n');
+  assert.equal(result.status, 1);
+  assert.match(result.err, /reserved by clrd/);
+  assert.deepEqual(f.calls, []);
+});
+
+test('validates the invite grant before adding hooks', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  let grants = [{ topic: 'other', scopes: ['read', 'publish'] }];
+  f.responders.set('/clrd/api/v1/agents/claim', () => ({ data: claimData(0, grants) }));
+  const setup = ['--agents', 'claude', '--topic', 'build-daily'];
+  const wrongTopic = await f.setup(setup, code(0) + '\n');
+  assert.equal(wrongTopic.status, 1);
+  assert.match(wrongTopic.err, /needs publish on "build-daily"/);
+
+  grants = [{ topic: 'build-*', scopes: ['publish'] }];
+  const publishOnly = await f.setup([...setup, '--phone-approvals'], code(1) + '\n');
+  assert.equal(publishOnly.status, 1);
+  assert.match(publishOnly.err, /needs read on "build-daily"/);
+  assert.equal(existsSync(join(f.home, '.claude.json')), false);
+  assert.equal(existsSync(join(f.root, 'runtime.mjs')), false);
+  assert.deepEqual(f.calls.map(({ method }) => method), ['POST', 'DELETE', 'POST', 'DELETE']);
+
+  const accepted = await f.setup(setup, code(2) + '\n');
+  assert.equal(accepted.status, 0, accepted.err);
+  assert.ok(existsSync(f.state('claude')));
+});
+
+test('skipping or conflicting with every agent leaves no runtime files', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  await f.put('.claude.json', '{"mcpServers":{"clrd":{"command":"keep"}}}');
+  const result = await f.setup(['--agents', 'claude,codex'], '\n');
+  assert.equal(result.status, 1);
+  assert.match(result.out, /Skipped Codex CLI/);
+  assert.deepEqual(f.calls, []);
+  assert.equal(existsSync(join(f.root, 'runtime.mjs')), false);
+  assert.equal(existsSync(join(f.root, 'connection.mjs')), false);
+});
+
+test('signal cancellation stops prompts and releases the lock', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const child = spawn(process.execPath, [cli, f.url, '--no-browser', '--agents', 'claude,codex'], { env: f.env });
+  t.after(() => child.kill());
+  let stderr = '';
+  child.stderr.setEncoding('utf8').on('data', (part) => {
+    const wasPrompted = stderr.includes('Create an invite for Claude Code');
+    stderr += part;
+    if (!wasPrompted && stderr.includes('Create an invite for Claude Code')) child.kill('SIGINT');
+  });
+  const [status, signal] = await once(child, 'close');
+  assert.equal(signal, null);
+  assert.equal(status, 130);
+  assert.match(stderr, /Setup cancelled/);
+  assert.doesNotMatch(stderr, /Create an invite for Codex/);
+  assert.equal(existsSync(join(f.root, 'install.lock')), false);
+  assert.deepEqual(f.calls, []);
+});
+
+test('warns about changed options for a connected agent', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const args = ['--agents', 'claude'];
+  assert.equal((await f.setup(args, code(0) + '\n')).status, 0);
+  const initial = await readFile(f.state('claude'), 'utf8');
+  const runtimePath = join(f.root, 'runtime.mjs');
+  const runtime = await readFile(runtimePath, 'utf8');
+  await writeFile(runtimePath, '// old helper');
+  const rerun = await f.setup([...args, '--topic', 'build', '--no-notifications']);
+  assert.equal(rerun.status, 0, rerun.err);
+  assert.match(rerun.err, /Existing settings were kept/);
+  assert.equal(await readFile(f.state('claude'), 'utf8'), initial);
+  assert.equal(await readFile(runtimePath, 'utf8'), runtime);
+  assert.equal(f.calls.length, 1);
+});
+
+test('MCP startup exits with failure when the connection is missing', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const runtime = fileURLToPath(new URL('./runtime.mjs', import.meta.url));
+  const result = await run([runtime, 'mcp', f.state('claude')], f.env);
+  assert.equal(result.status, 1);
+  assert.match(result.err, /clrd connection is unavailable/);
+  assert.equal(result.out, '');
 });

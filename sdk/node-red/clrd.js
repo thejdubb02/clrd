@@ -6,9 +6,10 @@ module.exports = function register(RED) {
         this.url = config.url;
 
         this.connect = async (signal) => {
-            const url = new URL(this.url.trim());
+            const value = this.url?.trim();
+            const url = value && URL.canParse(value) ? new URL(value) : null;
             const token = this.credentials?.token?.trim();
-            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+            if (!url || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
                 throw new Error('Enter the clrd HTTP or HTTPS server URL without credentials, query or fragment');
             }
             if (!token) throw new Error('Enter a clrd API token');
@@ -71,6 +72,7 @@ module.exports = function register(RED) {
         const delay = Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600 ? seconds * 1000 : 5000;
         let timer;
         let cursor;
+        let nextDelay = delay;
 
         this.on('close', () => {
             controller.abort();
@@ -86,6 +88,7 @@ module.exports = function register(RED) {
                 const page = await client.pollEvents(cursor, { topic: config.topic });
                 if (controller.signal.aborted) return;
                 cursor = page.cursor;
+                nextDelay = delay;
                 this.status({ fill: 'green', shape: 'dot', text: 'polling' });
                 if (page.reset) this.warn('clrd event history reset; resuming from the current head');
                 for (const event of page.events) {
@@ -95,10 +98,11 @@ module.exports = function register(RED) {
                 }
             } catch (error) {
                 if (controller.signal.aborted) return;
+                nextDelay = Math.min(nextDelay * 2, Math.max(delay, 60_000));
                 this.status({ fill: 'red', shape: 'ring', text: 'poll failed' });
                 this.error(error);
             }
-            if (!controller.signal.aborted) timer = setTimeout(poll, delay);
+            if (!controller.signal.aborted) timer = setTimeout(poll, nextDelay);
         };
         void poll();
     }

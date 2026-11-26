@@ -23,6 +23,7 @@ const dataHome = isAbsolute(process.env.XDG_DATA_HOME ?? '')
 const root = join(dataHome, 'create-clrd');
 const runtime = join(root, 'runtime.mjs');
 const runtimeFiles = ['runtime.mjs', 'connection.mjs'];
+const reservedTopics = new Set(['api', 'app', 'assets', 'docs', 'healthz', 'login', 'logout', 'mcp', 'setup', 'static', 'v1']);
 
 function openBrowser(url) {
   const opener = spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], {
@@ -33,7 +34,7 @@ function openBrowser(url) {
   opener.unref();
 }
 
-function invitePrompt() {
+function invitePrompt(cancel) {
   const silent = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
   const input = createInterface({
     input: process.stdin,
@@ -41,7 +42,7 @@ function invitePrompt() {
     terminal: Boolean(process.stdin.isTTY),
     crlfDelay: Infinity,
   });
-  input.on('SIGINT', () => input.close());
+  input.on('SIGINT', cancel);
   const lines = input[Symbol.asyncIterator]();
   return {
     async read(label, topic) {
@@ -76,9 +77,41 @@ async function claim(server, value) {
     body: JSON.stringify({ code: inviteCode(value, server) }),
   });
   if (!response.ok) throw new Error(`clrd could not claim the invite (HTTP ${response.status}). Check it or ask for a fresh invite.`);
-  const { token, name } = await response.json();
+  const { token, name, guide } = await response.json();
   if (!/^clrd_[A-Za-z0-9]{32}$/.test(token ?? '')) throw new Error('clrd returned an invalid token');
-  return { token, name };
+  return { token, name, grants: Array.isArray(guide?.grants) ? guide.grants : [] };
+}
+
+function topicMatches(pattern, topic) {
+  const [start, ...parts] = pattern.split('*');
+  if (!parts.length) return start === topic;
+  const end = parts.pop();
+  if (!topic.startsWith(start) || !topic.endsWith(end) || topic.length < start.length + end.length) return false;
+  let middle = topic.slice(start.length, topic.length - end.length);
+  return parts.every((part) => {
+    const index = middle.indexOf(part);
+    if (index < 0) return false;
+    middle = middle.slice(index + part.length);
+    return true;
+  });
+}
+
+function permits(grants, topic, scope) {
+  for (const grant of grants) {
+    if (typeof grant?.topic !== 'string' || !topicMatches(grant.topic.toLowerCase(), topic.toLowerCase())) continue;
+    const has = Array.isArray(grant.scopes) && grant.scopes.includes(scope);
+    if (topicMatches(grant.topic, topic)) return has;
+    if (!has) return false;
+  }
+  return false;
+}
+
+async function installRuntime() {
+  for (const name of runtimeFiles) {
+    const path = join(root, name);
+    const source = new URL('./' + name, import.meta.url);
+    await replaceTarget(path, await readTarget(path), await readFile(source, 'utf8'));
+  }
 }
 
 async function localState(path) {
@@ -94,14 +127,22 @@ async function install(agent, server, flags, getInvite) {
   const { file, state } = await localState(path);
   if (state && state.server !== server) throw new Error('Already connected to a different clrd server. Remove the connection first.');
   if (state?.phase === 'active') {
+    await installRuntime();
     console.log(label + ' is already connected.');
+    if ((flags.topic !== undefined && flags.topic !== state.topic) ||
+        (flags['no-notifications'] && state.options?.notifications !== false) ||
+        (flags['phone-approvals'] && state.options?.phoneApprovals !== true)) {
+      console.warn('Existing settings were kept. Remove and reconnect ' + label + ' to change its setup.');
+    }
     return;
   }
 
   const topic = state?.topic ?? flags.topic ?? 'agents';
-  const edits = state?.edits ?? await agentEdits(
-    agent, runtime, path, flags['phone-approvals'], !flags['no-notifications'],
-  );
+  const options = {
+    phoneApprovals: Boolean(flags['phone-approvals'] && (agent === 'claude' || agent === 'codex')),
+    notifications: !flags['no-notifications'],
+  };
+  const edits = state?.edits ?? await agentEdits(agent, runtime, path, options.phoneApprovals, options.notifications);
   const apply = await prepareEdits(edits, state ? 'resume' : 'add');
   let pending = state;
   if (!pending) {
@@ -110,7 +151,16 @@ async function install(agent, server, flags, getInvite) {
       console.log('Skipped ' + label + '.');
       return;
     }
-    pending = { ...await claim(server, value), server, label, topic, edits, phase: 'pending' };
+    const { grants, ...identity } = await claim(server, value);
+    pending = { ...identity, server, label, topic, options, edits, phase: 'pending' };
+    const required = options.phoneApprovals ? ['read', 'publish'] : edits.length > 1 ? ['publish'] : [];
+    const missing = required.filter((scope) => !permits(grants, topic, scope));
+    if (missing.length) {
+      try { await unlinkAgent(pending); } catch {
+        console.error('Could not unlink the rejected agent. Unlink it under clrd Settings, Linked devices.');
+      }
+      throw new Error(`The invite needs ${missing.join(' and ')} on "${topic}". Create a new invite for this topic.`);
+    }
     try {
       await replaceTarget(path, file, JSON.stringify(pending) + '\n');
     } catch (error) {
@@ -121,6 +171,7 @@ async function install(agent, server, flags, getInvite) {
       throw error;
     }
   }
+  await installRuntime();
   await apply();
   await replaceTarget(path, await readTarget(path), JSON.stringify({ ...pending, phase: 'active' }) + '\n');
   console.log('Connected ' + label + '.');
@@ -163,7 +214,10 @@ async function main() {
   }
   if (!['linux', 'darwin'].includes(process.platform)) throw new Error('Use create-clrd on Linux or macOS');
   if (positionals.length !== (flags.remove ? 0 : 1)) throw new Error(usage);
-  if (flags.topic !== undefined && !/^[A-Za-z0-9_-]{1,64}$/.test(flags.topic)) throw new Error('Invalid topic name');
+  if (flags.topic !== undefined) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(flags.topic)) throw new Error('Invalid topic name');
+    if (reservedTopics.has(flags.topic.toLowerCase())) throw new Error('This topic name is reserved by clrd');
+  }
   const names = flags.agents === undefined
     ? (flags.remove ? Object.keys(agents) : detectAgents())
     : [...new Set(flags.agents.split(',').map((name) => name.trim()))];
@@ -177,18 +231,19 @@ async function main() {
     throw error;
   });
   let prompt;
+  let interrupted = false;
+  const cancel = () => {
+    interrupted = true;
+    prompt?.close();
+  };
+  process.on('SIGINT', cancel);
   try {
-    if (server) {
-      for (const name of runtimeFiles) {
-        const path = join(root, name);
-        const source = new URL('./' + name, import.meta.url);
-        await replaceTarget(path, await readTarget(path), await readFile(source, 'utf8'));
-      }
-    }
     for (const agent of names) {
+      if (interrupted) break;
       try {
         if (flags.remove) await remove(agent);
-        else await install(agent, server, flags, (label, topic) => {
+        else await install(agent, server, flags, async (label, topic) => {
+          if (interrupted) throw new Error('Setup cancelled');
           if (!prompt) {
             const settings = server + '/app/settings#add-agent';
             process.stderr.write('In clrd Settings, open Linked devices and select Add agent.\n' + settings + '\n');
@@ -196,11 +251,14 @@ async function main() {
             if (flags['phone-approvals']) {
               process.stderr.write('Claude Code and Codex permission prompts will send tool details to this clrd server.\n');
             }
-            prompt = invitePrompt();
+            prompt = invitePrompt(cancel);
           }
-          return prompt.read(label, topic);
+          const value = await prompt.read(label, topic);
+          if (interrupted) throw new Error('Setup cancelled');
+          return value;
         });
       } catch (error) {
+        if (interrupted) break;
         console.error(agents[agent].label + ': ' + error.message);
         process.exitCode = 1;
       }
@@ -217,6 +275,11 @@ async function main() {
   } finally {
     prompt?.close();
     await rmdir(lock);
+    process.off('SIGINT', cancel);
+  }
+  if (interrupted) {
+    console.error('Setup cancelled.');
+    process.exitCode = 130;
   }
 }
 

@@ -97,6 +97,20 @@ func (s *Server) keepCleared(st Settings) time.Duration {
 	return days(*st.KeepClearedDays)
 }
 
+// shortestKeep is the shortest time any cleared notification is kept.
+func (s *Server) shortestKeep(st Settings) time.Duration {
+	shortest := s.opt.Retention
+	if keep := s.keepCleared(st); keep > 0 && keep < shortest {
+		shortest = keep
+	}
+	for _, k := range st.TopicKeepClearedDays {
+		if d := days(k); d > 0 && d < shortest {
+			shortest = d
+		}
+	}
+	return shortest
+}
+
 func days(n int) time.Duration { return time.Duration(n) * 24 * time.Hour }
 
 // defaultUnlinkIdleDays is unlink_idle_browsers_days until an admin sets it.

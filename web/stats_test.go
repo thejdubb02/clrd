@@ -21,16 +21,31 @@ func (s statsAPI) Snapshot(_ *http.Request, q Query) (Snapshot, error) {
 	if q.Stats > 0 && s.admin {
 		from := time.Date(2026, 1, 2, 0, 30, 0, 0, time.UTC).UnixMilli()
 		hour := int64(time.Hour / time.Millisecond)
-		snap.Stats = &Stats{From: from, To: from + 24*hour, Total: 3, Answered: 1, Days: q.Stats,
+		snap.Stats = &Stats{From: from, To: from + 24*hour, Total: 3, Answered: 1, Days: q.Stats, Group: q.Group, Cleared: 2, SelfCleared: 1, Connected: 4,
+			Quiet:      []StatsQuiet{{SenderID: "tok-1", Name: "nas", Topic: "missing-backup"}},
 			Priorities: map[string]int{"5": 2, "3": 1},
 			Hours:      []StatsBucket{{At: from - from%hour, Count: 2}, {At: from - from%hour + 3*hour, Count: 1}},
-			Topics:     []StatsGroup{{Key: "home", Count: 3, Open: 1, Cleared: 2, ClearMedianMS: 45000, ClearP90MS: 3*3600000 + 5*60000}},
-			Senders:    []StatsGroup{{Key: "", Count: 2, Open: 2}, {Key: "tok-1", Name: "nas", Count: 1, Cleared: 1}},
+			Topics:     []StatsGroup{{Key: "home", Count: 3, Previous: &prev1, Open: 1, Cleared: 2, ClearMedianMS: 45000, ClearP90MS: 3*3600000 + 5*60000}},
+			Senders:    []StatsGroup{{Key: "", Count: 2, Previous: &prev3, Open: 2}, {Key: "tok-1", Name: "nas", Count: 1, Previous: &prev0, Cleared: 1}},
 			ClearedBy:  []StatsGroup{{Key: "web", Count: 2, Cleared: 2, ClearMedianMS: 60000}},
 			Flappers:   []StatsFlapper{{Topic: "home", ExternalID: "disk-full", Count: 2}},
 			Delivery:   []StatsDelivery{{Topic: "home", Webhooks: 3, WebPush: 1}}}
+		snap.Stats.WeekHours[time.Friday][0] = 2
+		snap.Stats.WeekHours[time.Friday][3] = 1
+		if q.Group == "topic" {
+			snap.Stats.Hours[0].By = map[string]int{"home": 2}
+			snap.Stats.Hours[1].By = map[string]int{"home": 1}
+		}
 	}
 	return snap, nil
+}
+
+var prev0, prev1, prev3 = 0, 1, 3
+
+func TestStatsTrendUnknown(t *testing.T) {
+	if got := (StatsGroup{Count: 2}).Trend(); got != "" {
+		t.Fatalf("no previous count gave trend %q", got)
+	}
 }
 
 func TestStatsPage(t *testing.T) {
@@ -48,11 +63,24 @@ func TestStatsPage(t *testing.T) {
 		">Anonymous</td>", ">nas</td>", ">45s</td>", ">3h 5m</td>", "disk-full",
 		`data-live="stats"`, `<th scope="col">Cleared</th>`, ">1m</td>",
 		`href="/api/v1/stats?days=1&amp;format=csv">CSV</a>`,
+		"Notifications by hour of day and day of week, server time",
+		`scope="row" class="text-left">Friday</th>`, `<td title="2">`, `fill-opacity="0.5"`,
+		`>up 2</span>`, `>down 1</span>`, `>new</span>`,
+		"4 connected now. 1 cleared by their sender, 1 by someone else.",
+		"Gone quiet", `href="/app/senders/tok-1">nas</a> (missing-backup)`,
 		"Delivery health", `<th scope="col">Webhooks</th>`, `<th scope="col">Web Push</th>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("stats page has no %q", want)
 		}
+	}
+	if n := strings.Count(body, `<td title="`); n != 7*24 {
+		t.Errorf("heatmap has %d cells", n)
+	}
+	if code, grouped := get(t, h, "/app/stats?days=1&group=topic"); code != 200 ||
+		!strings.Contains(grouped, `group=topic" aria-current="page">By topic`) ||
+		!strings.Contains(grouped, `<th scope="row">Fri, Jan 2</th><td class="tabular-nums">3</td>`) {
+		t.Errorf("grouped stats returned %d or is missing the daily total", code)
 	}
 	if n := strings.Count(body, " UTC: "); n != 25 {
 		t.Errorf("%d bars for a day that spans 25 hours, want 25 (empty hours kept)", n)

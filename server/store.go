@@ -1570,15 +1570,7 @@ func (s *Server) prune(ctx context.Context) error {
 	keep := s.keepCleared(st)
 	// Events go once the shortest keep in use has passed, so a replay never
 	// brings back a notification a prune removed.
-	shortest := s.opt.Retention
-	if keep > 0 && keep < shortest {
-		shortest = keep
-	}
-	for _, k := range st.TopicKeepClearedDays {
-		if d := days(k); d > 0 && d < shortest {
-			shortest = d
-		}
-	}
+	shortest := s.shortestKeep(st)
 	evCutoff := cutoff
 	if shortest < s.opt.Retention {
 		evCutoff = ms(now.Add(-shortest))

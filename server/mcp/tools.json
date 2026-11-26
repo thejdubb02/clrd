@@ -921,7 +921,7 @@
      "type": "array"
     },
     "kind": {
-     "description": "discord: url is a Discord webhook URL; each new notification is posted there and a state change edits that message to say who cleared it. Takes no body or secret. github: url is https://api.github.com/repos/OWNER/REPO and secret a GitHub token that can write issues; each new notification opens an issue (not for anonymous senders or questions, at most 10 an hour), a state change comments on it, a clear or resolve closes it. Empty for a plain webhook",
+     "description": "discord: url is a Discord webhook URL; each new notification is posted there and a state change edits that message to say who cleared it. Takes no body or secret. slack: url is https://slack.com/api/chat.postMessage?channel=CHANNEL and secret is a bot token with chat:write and reactions:write. Posts and edits Slack messages and adds reactions. Takes no body. github: url is https://api.github.com/repos/OWNER/REPO and secret a GitHub token that can write issues; each new notification opens an issue (not for anonymous senders or questions, at most 10 an hour), a state change comments on it, a clear or resolve closes it. Empty for a plain webhook",
      "type": "string"
     },
     "name": {
@@ -1478,12 +1478,17 @@
   "name": "senders"
  },
  {
-  "description": "Traffic numbers for the last days (default 7): total, answered questions, count per priority, count per UTC hour, top topics, senders (top token id) and clearers with how many are still open and the median and p90 time to clear in ms, and flappers (an external id that fired more than once). Answers questions like which services were noisiest this week or which alerts nobody clears. Needs an admin token without a topic list.",
+  "description": "Traffic numbers for the last days (default 7): total, answered, priorities, UTC hourly counts, weekday-by-hour counts in the server's local time, top topics and senders with previous-period counts, clearers and time to clear, repeat alerts, and delivery failures. Includes total and same-token clears, current quiet alarms, and live client streams. Needs an admin token without a topic list.",
   "inputSchema": {
    "properties": {
     "days": {
      "description": "How many days back from now, 1 to 366",
      "type": "integer"
+    },
+    "group": {
+     "description": "Split UTC hourly counts by topic, sender or priority",
+     "type": "string",
+     "enum": ["topic", "sender", "priority"]
     }
    },
    "type": "object"

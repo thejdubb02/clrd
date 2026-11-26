@@ -395,6 +395,7 @@ type Query struct {
 	Senders bool     // fill Senders (the Senders page, #119)
 	Sender  string   // fill Sender with this one, or ErrNotFound
 	Stats   int      // fill Stats for this many days back (the Stats page, #120); 0 = none
+	Group   string   // with Stats: split volume by topic, sender or priority
 	ID      string   // fill Items with this one notification, any state, and nothing else, or ErrNotFound (#814)
 }
 
@@ -705,7 +706,7 @@ type Hook struct {
 	Name         string         `json:"name"`
 	URL          string         `json:"url"`
 	Events       []string       `json:"events"`
-	Kind         string         `json:"kind"` // "", "discord" or "github" (#673)
+	Kind         string         `json:"kind"` // "", "discord", "slack" or "github" (#673)
 	Body         string         `json:"body"` // a body template; "" sends the event (#239)
 	HasSecret    bool           `json:"has_secret"`
 	Enabled      bool           `json:"enabled"`
@@ -1517,6 +1518,7 @@ func Handler(api API, baseURL string) http.Handler {
 			}
 			if view == "stats" {
 				q.Stats = statsDays(r.URL.Query().Get("days"))
+				q.Group = statsGroup(r.URL.Query().Get("group"))
 			}
 			snap, err := api.Snapshot(r, q)
 			status := 200

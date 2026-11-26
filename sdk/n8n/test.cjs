@@ -103,3 +103,54 @@ test('manual sample includes readable unsubscribed topics and leaves the live cu
   ]);
   assert.deepEqual(ctx.staticData, {});
 });
+
+test('action rejects invalid expressions before requesting clrd', async () => {
+  const items = [
+    { operation: 'send', topic: '', message: 'message' },
+    { operation: 'send', topic: 'infra', message: '  ' },
+    { operation: 'clear', notificationId: '..' },
+    { operation: 'acknowledge', notificationId: undefined },
+    { operation: 'toString', notificationId: 'abc' },
+  ];
+  const ctx = context(items, () => assert.fail('Invalid input must make no request'));
+  ctx.continueOnFail = () => true;
+  const [output] = await new Clrd().execute.call(ctx);
+  assert.deepEqual(output.map(({ json, pairedItem }) => [pairedItem, json.error]), [
+    [0, 'Enter a topic using 1 to 64 letters, digits, underscores or hyphens'],
+    [1, 'Enter a notification message'],
+    [2, 'Enter a valid notification ID'],
+    [3, 'Enter a valid notification ID'],
+    [4, 'Select a clrd operation'],
+  ]);
+  assert.deepEqual(ctx.requests, []);
+});
+
+test('credential test distinguishes authorized tokens, rejected tokens and malformed URLs', async () => {
+  const ClrdApi = nodeClass('credentials/ClrdApi.credentials.js');
+  const credentials = new ClrdApi();
+  const data = { url: 'https://clrd.example.com/clrd/', token: 'test-token' };
+  const cases = [
+    [200, { inbox: 0 }, 'OK'],
+    [403, { code: 'forbidden', error: 'token lacks the read scope' }, 'OK'],
+    [403, { code: 'forbidden', error: 'request rejected' }, 'Error'],
+    [401, { code: 'unauthorized' }, 'Error'],
+  ];
+  for (const [statusCode, body, expected] of cases) {
+    const result = await credentials.test.call({
+      helpers: {
+        async request(options) {
+          assert.equal(options.uri, 'https://clrd.example.com/clrd/api/v1/counts');
+          assert.equal(options.headers.Authorization, 'Bearer test-token');
+          assert.equal(options.followRedirect, false);
+          return { statusCode, body };
+        },
+      },
+    }, { data });
+    assert.equal(result.status, expected);
+  }
+  const invalid = await credentials.test.call({
+    helpers: { request() { assert.fail('Malformed URL must make no request'); } },
+  }, { data: { ...data, url: 'clrd.example.com' } });
+  assert.equal(invalid.status, 'Error');
+  assert.match(invalid.message, /Enter the clrd HTTP or HTTPS server URL/);
+});

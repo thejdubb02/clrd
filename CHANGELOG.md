@@ -18,6 +18,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- Slack outgoing hooks post notifications, edit them on state changes, and add acknowledgment and clear reactions (#166)
+- Stats adds a server-time heatmap, prior-period trends, volume breakdowns, same-token clears, quiet alarms, and live connections on the Stats page and API (#120).
 - Integrations: n8n and Node-RED nodes can send, clear, acknowledge, resolve and snooze clrd notifications, and start workflows on new notifications or state changes (#113). Available to build from source.
 - Install the web inbox on a phone or computer, with an offline screen and opt-in browser notifications. Clear or resolve an alert on another device and the open inbox removes its browser notification. Browser subscriptions can also be managed through MCP (#164).
 - SDKs: the source-only create-clrd installer connects local AI agents to clrd with individual invites, configures MCP and hooks, and can remove the connections (#154).
@@ -163,6 +165,11 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
+- create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
+
+- Saving a Slack hook again keeps its posted message ids unless the channel changes, so later state changes still edit the original message (#870).
+- Automation nodes report invalid credentials and inputs more clearly, and the Node-RED trigger slows its retries when polling fails (#862).
 - Event polling with `subscribed=all` keeps its cursor through subscription edits, so automation triggers can deliver notifications queued between polls (#868).
 
 - Server: a GitHub issue hook still finds the issue it already opened after the issue was edited on GitHub's website, so a retried delivery does not open a second one (#827).
