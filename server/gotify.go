@@ -41,11 +41,16 @@ func gotifyBearer(r *http.Request) string {
 	return k
 }
 
+func hasGotifyKey(r *http.Request) bool {
+	_, header := r.Header["X-Gotify-Key"]
+	return header || r.URL.Query().Has("token") || gotifyBearer(r) != ""
+}
+
 // gotifyMessage: POST /message. Without a Gotify key this is ntfy's publish
 // to the topic "message", as before.
 func (s *Server) gotifyMessage(w http.ResponseWriter, r *http.Request) error {
 	// A key that is sent but empty is a wrong key, never the ntfy path.
-	if _, hdr := r.Header["X-Gotify-Key"]; !hdr && !r.URL.Query().Has("token") && gotifyBearer(r) == "" {
+	if !hasGotifyKey(r) {
 		r.SetPathValue("topic", "message")
 		return s.ntfyPublish(w, r)
 	}
