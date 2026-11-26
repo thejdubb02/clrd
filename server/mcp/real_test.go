@@ -60,6 +60,9 @@ func TestAgainstRealServer(t *testing.T) {
 	if got := call("wait_for_reply", map[string]any{"id": id, "timeout_s": 5}); got["reply"] != "acknowledged" || got["by"] != "agent" {
 		t.Fatalf("wait_for_reply: %v", got)
 	}
+	if got := call("send", map[string]any{"topic": "agents", "message": "updated", "id": "deploy-1", "reopen": false}); got["id"] != id || got["state"] != "acknowledged" {
+		t.Fatalf("send should update without reopening: %v", got)
+	}
 	// Reusing an acknowledged key for a new question must not inherit the old answer.
 	if again := call("send", map[string]any{"topic": "agents", "message": "deploy again?", "id": "deploy-1"}); again["id"] != id || again["state"] != "active" {
 		t.Fatalf("resend: %v", again)
@@ -331,14 +334,14 @@ func TestTokenCheckedUpFront(t *testing.T) {
 	}
 }
 
-// A tapped reply button reaches the agent as answer, live and on a later call.
-func TestReplyButtons(t *testing.T) {
+func senderAndPhone(t *testing.T, sender string) (*server.Server, string, *server.Token) {
+	t.Helper()
 	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
-	_, raw, err := s.CreateToken(context.Background(), "agent", "allowed", []string{"read", "publish"}, nil)
+	t.Cleanup(func() { s.Close() })
+	_, raw, err := s.CreateToken(context.Background(), sender, "allowed", []string{"read", "publish"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,6 +349,12 @@ func TestReplyButtons(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return s, raw, phone
+}
+
+// A tapped reply button reaches the agent as answer, live and on a later call.
+func TestReplyButtons(t *testing.T) {
+	s, raw, phone := senderAndPhone(t, "agent")
 	h := New(s)
 	call := func(name string, args map[string]any) map[string]any {
 		t.Helper()
@@ -417,19 +426,7 @@ func TestApproveSummary(t *testing.T) {
 }
 
 func TestApproveHook(t *testing.T) {
-	s, err := server.New(server.Options{DB: filepath.Join(t.TempDir(), "clrd.db"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	_, raw, err := s.CreateToken(context.Background(), "laptop", "allowed", []string{"read", "publish"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	phone, _, err := s.CreateToken(context.Background(), "pixel-9", "allowed", []string{"read"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, raw, phone := senderAndPhone(t, "laptop")
 	h := New(s)
 	body := `{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf build"},"cwd":"/home/me/app"}`
 	ask := func(auth, query string, tap string) (int, map[string]any) {

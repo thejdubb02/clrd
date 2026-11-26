@@ -25,6 +25,8 @@ Send options include an HTTP(S) `icon`, an external `attachment` with
 `{ label: "Copy ID", copy: "build-42" }`. Reuse `id` on the same topic
 to update an open notification. Set `reopen: true` to return an acknowledged
 notification to active during an update.
+Other typed send options include `format`, `color`, `snooze_until`
+(an RFC3339 timestamp), `expires`, `repeat`, `repeat_times`, `live`, and `devices`.
 
 Tests: `npm test`
 

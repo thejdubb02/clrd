@@ -47,8 +47,14 @@ Keys are URL-encoded in the resolve path, so spaces and slashes (`feature/x`) ar
 Pin `@main` to a tag or commit once releases exist.
 
 Inputs: `url` (your server, required), `token`, `topic`, `id`,
-`message`, `title`, `priority` (1 to 5, default 3), `resolve` (`true` to
+`message`, `title`, `priority` (1 to 5, default 3), `options`, `resolve` (`true` to
 resolve instead of send).
+
+`options` is a JSON object of native send options. For example, use
+`{"icon":"https://example.com/build.png","actions":[{"label":"Copy ID","copy":"build-42"}],"reopen":true}`.
+An `attachment` object can link an existing file with `url` and an optional
+`name`. Use the dedicated inputs for the topic, message, title, priority,
+stable ID, and resolve operation.
 
 ## Without the action
 

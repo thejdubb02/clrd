@@ -64,12 +64,17 @@ class Client:
                 raise ClrdError(e.code, raw.decode(errors="replace")) from None
         return json.loads(raw) if raw else None
 
-    def send(self, topic, message, title=None, priority=None, id=None, tags=None, click=None, actions=None):
+    def send(self, topic, message, title=None, priority=None, id=None, tags=None, click=None, actions=None,
+             *, icon=None, attachment=None, color=None, format=None, reopen=None, snooze_until=None,
+             expires=None, repeat=None, repeat_times=None, live=None, devices=None):
         """Publish. id is your stable key (external_id): sending again with it
         updates the open notification, resolve(topic, id) clears it."""
         body = {"topic": topic, "message": message}
         for k, v in (("title", title), ("priority", priority), ("external_id", id),
-                     ("tags", tags), ("click", click), ("actions", actions)):
+                     ("tags", tags), ("click", click), ("actions", actions),
+                     ("icon", icon), ("attachment", attachment), ("color", color), ("format", format),
+                     ("reopen", reopen), ("snooze_until", snooze_until), ("expires", expires),
+                     ("repeat", repeat), ("repeat_times", repeat_times), ("live", live), ("devices", devices)):
             if v is not None:
                 body[k] = v
         return self._req("POST", "/api/v1/notifications", body)
@@ -144,6 +149,7 @@ def main(argv=None):
     s.add_argument("-t", "--title")
     s.add_argument("-p", "--priority", type=int, choices=range(1, 6))
     s.add_argument("--id", help="stable key, so resolve can clear it later")
+    s.add_argument("--options", type=json.loads, default={}, metavar="JSON", help="additional send options as a JSON object")
     for name in ("resolve", "ack"):
         r = sub.add_parser(name, help=f"{name} by server id, or by topic and key")
         r.add_argument("topic_or_id")
@@ -165,7 +171,12 @@ def main(argv=None):
     c = Client()
     try:
         if a.cmd == "send":
-            out = c.send(a.topic, a.message, title=a.title, priority=a.priority, id=a.id)
+            if not isinstance(a.options, dict):
+                s.error("--options must be a JSON object")
+            try:
+                out = c.send(a.topic, a.message, title=a.title, priority=a.priority, id=a.id, **a.options)
+            except TypeError as e:
+                s.error(f"invalid --options: {e}")
         elif a.cmd in ("resolve", "ack"):
             out = getattr(c, a.cmd)(a.topic_or_id, a.key)
         elif a.cmd == "dismiss":

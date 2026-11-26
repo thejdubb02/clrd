@@ -35,4 +35,15 @@ Errors raise `clrd.ClrdError` with `.status` and `.code`.
 
 Tests: `python3 -m unittest test_clrd.py`
 
+`send` accepts keyword options including `icon`, an external `attachment`
+with `url` and optional `name`, and copy actions such as
+`{"label": "Copy", "copy": "build-42"}`. Reuse `id` on the same topic to
+update an open notification. Pass `reopen=True` to return an acknowledged
+notification to active when updating it. Delivery options include
+`snooze_until` (an RFC3339 timestamp), `expires`, `repeat`, `repeat_times`,
+`live`, and `devices`.
+For the Python CLI, pass these as a JSON object using `send --options`.
+Keep the topic and message positional and use `--title`, `--priority`, or `--id`
+for those fields.
+
 Source: [github.com/thejdubb02/clrd](https://github.com/thejdubb02/clrd)

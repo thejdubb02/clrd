@@ -3,6 +3,7 @@
     python3 test_action.py
 """
 import http.server
+import json
 import os
 import pathlib
 import subprocess
@@ -17,10 +18,12 @@ SCRIPT = textwrap.dedent(yml.split("run: |\n", 1)[1])
 class Fake(http.server.BaseHTTPRequestHandler):
     status = 200
     hits = []
+    bodies = []
 
     def do_POST(self):
         Fake.hits.append(self.path)
-        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        Fake.bodies.append(json.loads(raw) if raw else None)
         self.send_response(Fake.status)
         if Fake.status == 302:
             self.send_header("Location", "https://elsewhere.example/")
@@ -42,9 +45,9 @@ class ActionTest(unittest.TestCase):
         cls.srv.shutdown()
 
     def run_action(self, status, **inputs):
-        Fake.status, Fake.hits = status, []
+        Fake.status, Fake.hits, Fake.bodies = status, [], []
         env = dict(os.environ, CLRD_URL=f"http://127.0.0.1:{self.srv.server_port}", CLRD_TOKEN="clrd_test",
-                   TOPIC="ci", KEY="build-1", MESSAGE="failed", TITLE="", PRIORITY="3", RESOLVE="false")
+                   TOPIC="ci", KEY="build-1", MESSAGE="failed", TITLE="", PRIORITY="3", RESOLVE="false", OPTIONS="{}")
         env.update(inputs)
         return subprocess.run(["bash", "-c", SCRIPT], env=env, capture_output=True, text=True)
 
@@ -59,6 +62,19 @@ class ActionTest(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("set url", r.stdout)
         self.assertEqual(Fake.hits, [])
+
+    def test_send_options(self):
+        options = dict(icon="https://example.com/build.png", attachment={"url": "https://example.com/report.pdf"},
+                       actions=[{"label": "Copy", "copy": "build-1"}], reopen=True, format="text")
+        override = dict(topic="elsewhere", priority=5, External_ID="ignored", Status="resolved", TITLE="ignored")
+        r = self.run_action(200, OPTIONS=json.dumps(options | override))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(Fake.bodies, [dict(topic="ci", message="failed", priority=3, external_id="build-1", **options)])
+
+        for options in ("[]", "null", "{broken"):
+            r = self.run_action(200, OPTIONS=options)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertEqual(Fake.hits, [])
 
     def test_resolve(self):
         for status, ok in [(200, True), (404, True), (302, False), (500, False)]:

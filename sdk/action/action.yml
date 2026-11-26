@@ -25,6 +25,9 @@ inputs:
   priority:
     description: 1 to 5 (send only)
     default: "3"
+  options:
+    description: Optional JSON object with native send options, such as icon, attachment, actions or reopen
+    default: "{}"
   resolve:
     description: "true resolves the open notification with this topic and id instead of sending"
     default: "false"
@@ -40,6 +43,7 @@ runs:
         MESSAGE: ${{ inputs.message }}
         TITLE: ${{ inputs.title }}
         PRIORITY: ${{ inputs.priority }}
+        OPTIONS: ${{ inputs.options }}
         RESOLVE: ${{ inputs.resolve }}
       run: |
         set -euo pipefail
@@ -54,12 +58,16 @@ runs:
           case "$code" in 2??|404) echo "clrd resolve: $code" ;; *) echo "::error::clrd resolve failed: $code"; exit 1 ;; esac
         else
           # Only 2xx is a send. curl -f would let a 3xx (wrong URL) pass as success.
-          code=$(jq -n --arg topic "$TOPIC" --arg message "$MESSAGE" --arg title "$TITLE" \
-                --arg id "$KEY" --argjson priority "$PRIORITY" \
-            '{topic:$topic, message:$message, priority:$priority}
+          payload=$(jq -en --arg topic "$TOPIC" --arg message "$MESSAGE" --arg title "$TITLE" \
+                --arg id "$KEY" --argjson priority "$PRIORITY" --argjson options "$OPTIONS" \
+            'if ($options | type) != "object" then error("options must be a JSON object") else $options end
+             | with_entries(select(.key | IN("icon", "attachment", "actions", "reopen",
+                "format", "markdown", "color", "tags", "click", "snooze_until",
+                "expires", "repeat", "repeat_times", "live", "devices")))
+             + {topic:$topic, message:$message, priority:$priority}
              + (if $title != "" then {title:$title} else {} end)
-             + (if $id != "" then {external_id:$id} else {} end)' |
-          curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
+             + (if $id != "" then {external_id:$id} else {} end)')
+          code=$(printf '%s' "$payload" | curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $CLRD_TOKEN" \
             -H "Content-Type: application/json" --data @- \
             "${CLRD_URL%/}/api/v1/notifications")
           case "$code" in 2??) echo "clrd: sent to $TOPIC" ;; *) echo "::error::clrd send failed: $code"; exit 1 ;; esac

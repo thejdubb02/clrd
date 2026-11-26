@@ -20,23 +20,27 @@ import (
 
 // Notification is the server's notification (docs/SPEC.md section 2).
 type Notification struct {
-	ID          string     `json:"id"`
-	Topic       string     `json:"topic"`
-	ExternalID  string     `json:"external_id,omitempty"`
-	Title       string     `json:"title,omitempty"`
-	Message     string     `json:"message"`
-	Priority    int        `json:"priority"`
-	Tags        []string   `json:"tags,omitempty"`
-	Click       string     `json:"click,omitempty"`
-	Actions     []Action   `json:"actions,omitempty"`
-	Reply       string     `json:"reply,omitempty"` // the reply action tapped, if any
-	State       string     `json:"state"`
-	StateBy     string     `json:"state_by,omitempty"`
-	SnoozeUntil *time.Time `json:"snooze_until,omitempty"`
-	Marks       []Mark     `json:"marks,omitempty"` // who saw or actioned it; a mark never clears it
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	Seq         int64      `json:"seq"`
+	ID          string      `json:"id"`
+	Topic       string      `json:"topic"`
+	ExternalID  string      `json:"external_id,omitempty"`
+	Title       string      `json:"title,omitempty"`
+	Message     string      `json:"message"`
+	Priority    int         `json:"priority"`
+	Tags        []string    `json:"tags,omitempty"`
+	Click       string      `json:"click,omitempty"`
+	Icon        string      `json:"icon,omitempty"`
+	Color       string      `json:"color,omitempty"`
+	Format      string      `json:"format,omitempty"`
+	Attachment  *Attachment `json:"attachment,omitempty"`
+	Actions     []Action    `json:"actions,omitempty"`
+	Reply       string      `json:"reply,omitempty"` // the reply action tapped, if any
+	State       string      `json:"state"`
+	StateBy     string      `json:"state_by,omitempty"`
+	SnoozeUntil *time.Time  `json:"snooze_until,omitempty"`
+	Marks       []Mark      `json:"marks,omitempty"` // who saw or actioned it; a mark never clears it
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	Seq         int64       `json:"seq"`
 }
 
 // Mark is one reader's mark on a notification (docs/SPEC.md section 2).
@@ -49,24 +53,45 @@ type Mark struct {
 	At   time.Time `json:"at"`
 }
 
-// Action is a button on a notification: a link (URL) or an answer (Reply),
-// never both. A tapped Reply shows up as Notification.Reply.
+// Action is a link, an answer, or text to copy. Set one of URL, Reply or Copy.
 type Action struct {
 	Label string `json:"label"`
 	URL   string `json:"url,omitempty"`
 	Reply string `json:"reply,omitempty"`
+	Copy  string `json:"copy,omitempty"`
+	Clear bool   `json:"clear,omitempty"`
+	Text  bool   `json:"text,omitempty"`
+}
+
+// Attachment links an external file. Type and Size describe server uploads in responses.
+type Attachment struct {
+	URL  string `json:"url"`
+	Name string `json:"name,omitempty"`
+	Type string `json:"type,omitempty"`
+	Size int64  `json:"size,omitempty"`
 }
 
 // Message is what Send publishes. ID is your stable key (external_id).
 type Message struct {
-	Topic    string   `json:"topic"`
-	Message  string   `json:"message"`
-	Title    string   `json:"title,omitempty"`
-	Priority int      `json:"priority,omitempty"`
-	ID       string   `json:"external_id,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
-	Click    string   `json:"click,omitempty"`
-	Actions  []Action `json:"actions,omitempty"`
+	Topic       string      `json:"topic"`
+	Message     string      `json:"message"`
+	Title       string      `json:"title,omitempty"`
+	Priority    int         `json:"priority,omitempty"`
+	ID          string      `json:"external_id,omitempty"`
+	Tags        []string    `json:"tags,omitempty"`
+	Click       string      `json:"click,omitempty"`
+	Actions     []Action    `json:"actions,omitempty"`
+	Icon        string      `json:"icon,omitempty"`
+	Color       string      `json:"color,omitempty"`
+	Format      string      `json:"format,omitempty"`
+	Attachment  *Attachment `json:"attachment,omitempty"`
+	Reopen      bool        `json:"reopen,omitempty"`
+	SnoozeUntil *time.Time  `json:"snooze_until,omitempty"`
+	Expires     string      `json:"expires,omitempty"`
+	Repeat      string      `json:"repeat,omitempty"`
+	RepeatTimes int         `json:"repeat_times,omitempty"`
+	Live        bool        `json:"live,omitempty"`
+	Devices     []string    `json:"devices,omitempty"`
 }
 
 // Error is a non-2xx answer from the server.

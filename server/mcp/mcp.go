@@ -328,16 +328,13 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 			return nil, err
 		}
 		body := map[string]any{"topic": str(a, "topic"), "message": str(a, "message")}
-		for _, k := range []string{"title", "format", "icon", "color"} {
+		for _, k := range []string{"title", "format", "icon", "color", "click", "repeat", "expires", "snooze_until"} {
 			if v := str(a, k); v != "" {
 				body[k] = v
 			}
 		}
 		if v, ok := num(a, "priority"); ok {
 			body["priority"] = int(v)
-		}
-		if v := str(a, "repeat"); v != "" {
-			body["repeat"] = v
 		}
 		if v, ok := a["live"].(bool); ok && v {
 			body["live"] = true
@@ -351,6 +348,9 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		if v, ok := a["actions"].([]any); ok {
 			body["actions"] = v
 		}
+		if v, ok := a["tags"]; ok {
+			body["tags"] = v
+		}
 		if v, ok := a["devices"]; ok {
 			body["devices"] = v // anything but a list of strings is the server's 400, never a send to everyone
 		}
@@ -363,6 +363,13 @@ func (h *Handler) call(r *http.Request, name string, a map[string]any) (any, err
 		// Core keeps an existing row's state when a key is reused, so a new
 		// question could inherit the last answer. Reopen it in the same write.
 		body["reopen"] = true
+		if v, exists := a["reopen"]; exists {
+			reopen, ok := v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("reopen must be a boolean")
+			}
+			body["reopen"] = reopen
+		}
 		return h.api(r, "POST", "/api/v1/notifications", body)
 	case "list":
 		q := url.Values{}

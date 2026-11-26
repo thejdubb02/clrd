@@ -1,6 +1,7 @@
 export type State = "active" | "acknowledged" | "snoozed" | "dismissed" | "resolved";
 
-export type SendAction = { label: string } & ({ url: string } | { copy: string });
+export type SendAction = { label: string; clear?: boolean } &
+  ({ url: string } | { copy: string } | { reply: string; text?: boolean });
 
 export interface Attachment {
   url: string;
@@ -17,8 +18,10 @@ export interface Notification {
   tags?: string[];
   click?: string;
   icon?: string;
+  color?: string;
+  format?: "markdown" | "text";
   attachment?: (Attachment & { type?: string; size?: number }) | null;
-  actions?: { label: string; url: string; copy?: string }[];
+  actions?: { label: string; url: string; copy?: string; reply?: string; text?: boolean; clear?: boolean }[];
   state: State;
   state_by?: string;
   snooze_until?: string | null;
@@ -55,6 +58,14 @@ export interface SendOptions {
   actions?: SendAction[];
   /** Make an existing acknowledged notification active when updating its stable key. */
   reopen?: boolean;
+  color?: string;
+  format?: "markdown" | "text";
+  snooze_until?: string;
+  expires?: string;
+  repeat?: string;
+  repeat_times?: number;
+  live?: boolean;
+  devices?: string[];
 }
 
 export interface ListOptions {
