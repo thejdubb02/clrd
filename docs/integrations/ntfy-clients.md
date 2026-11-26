@@ -47,6 +47,8 @@ curl -X PUT -H "Authorization: Bearer clrd_..." \
 
 `["*"]` lets every site in, as ntfy does. `GET` the same path shows the list.
 The MCP tools are `ntfy_origins` and `set_ntfy_origins`.
+Allowed origins can read the `Retry-After` response header on time-based
+rate limits to decide when to retry.
 
 ## Auto-resolve
 
