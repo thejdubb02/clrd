@@ -223,7 +223,7 @@ func TestNtfyScheduled(t *testing.T) {
 	if got := msgs(""); strings.Join(got, ",") != "now" {
 		t.Fatalf("plain poll: %v", got)
 	}
-	for _, q := range []string{"&scheduled=1", "&sched=yes"} {
+	for _, q := range []string{"&scheduled=1", "&sched=yes", "&x-scheduled=yes"} {
 		if got := msgs(q); strings.Join(got, ",") != "soon,now" {
 			t.Fatalf("%s: %v", q, got)
 		}
@@ -396,7 +396,8 @@ func TestNtfyFilters(t *testing.T) {
 	keep := ntfyDecode(t, out).ID
 	raw(t, "POST", ts.URL+"/f", admin, "drop", map[string]string{"Title": "cpu", "Priority": "low", "Tags": "a"})
 	for _, q := range []string{"id=" + keep, "message=keep", "m=keep", "title=disk", "t=disk", "priority=high", "p=4,5", "prio=max,high",
-		"tags=a,b", "ta=b", "tag=b"} {
+		"tags=a,b", "ta=b", "tag=b", "x-id=" + keep, "x-message=keep", "x-title=disk", "x-priority=high", "x-tags=b",
+		"x-title=disk&title=cpu"} {
 		code, out := raw(t, "GET", ts.URL+"/f/json?poll=1&"+q, admin, "", nil)
 		if l := lines(out); code != 200 || len(l) != 1 || ntfyDecode(t, l[0]).Message != "keep" {
 			t.Errorf("%s: %d %v", q, code, l)
@@ -405,7 +406,7 @@ func TestNtfyFilters(t *testing.T) {
 	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1", admin, "", nil); len(lines(out)) != 2 {
 		t.Fatalf("no filter: %v", lines(out))
 	}
-	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1", admin, "", map[string]string{"X-Title": "cpu"}); len(lines(out)) != 1 || ntfyDecode(t, lines(out)[0]).Message != "drop" {
+	if _, out := raw(t, "GET", ts.URL+"/f/json?poll=1&x-title=disk", admin, "", map[string]string{"X-Title": "cpu"}); len(lines(out)) != 1 || ntfyDecode(t, lines(out)[0]).Message != "drop" {
 		t.Errorf("filter by header: %v", lines(out))
 	}
 	// A browser's RFC 9218 Priority header is not a filter, and does not hide ?priority=.
