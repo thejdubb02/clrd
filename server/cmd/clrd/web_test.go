@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thejdubb02/clrd/server"
 )
@@ -609,5 +610,60 @@ func TestSubscriptionsOnRealServer(t *testing.T) {
 	post(url.Values{"was": {"1:home", "0:work"}, "on": {"home", "work"}})
 	if body := get("/app"); !strings.Contains(body, "deploy done") {
 		t.Error("inbox: work missing after subscribing again")
+	}
+}
+
+// A GitHub issue links one notification at /app/n/{id} (#814): it opens the
+// view its state is in now, at its card, after a clear or snooze too; signed
+// out it is the sign-in page, and gone or in a topic the token cannot read it
+// is the same not found page.
+func TestNotificationLink(t *testing.T) {
+	s, ts, raw := realServer(t)
+	ctx := context.Background()
+	c := browser()
+	publish(t, ts, raw, "home", "disk full")
+	tok := mustTok(t, s, raw)
+	list, _ := s.List(ctx, tok, server.ListQuery{State: "active"})
+	id := list[0].ID
+	code, page, _ := fetch(t, c, ts.URL+"/app/n/"+id)
+	if code != 401 || strings.Contains(page, "disk full") || !strings.Contains(page, `value="/app/n/`+id+`"`) {
+		t.Fatalf("signed out: %d, want the sign-in page coming back here", code)
+	}
+	if code, body := submit(t, c, ts.URL, page, raw, ""); code != 200 || !strings.Contains(body, `id="t-`+id+`"`) {
+		t.Fatalf("sign in from the link: %d, want its card", code)
+	}
+	soon := time.Now().Add(time.Hour)
+	for _, step := range []struct {
+		act, path string
+		until     *time.Time
+	}{{"", "/app", nil}, {"ack", "/app", nil}, {"snooze", "/app/snoozed", &soon}, {"dismiss", "/app/cleared", nil}, {"reopen", "/app", nil}, {"resolve", "/app/cleared", nil}} {
+		if step.act != "" {
+			if _, err := s.Act(ctx, tok, id, step.act, "api", step.until); err != nil {
+				t.Fatal(step.act, err)
+			}
+		}
+		code, body, at := fetch(t, c, ts.URL+"/app/n/"+id)
+		if code != 200 || at.Path != step.path || at.Query().Get("topic") != "home" || !strings.Contains(body, `id="t-`+id+`"`) {
+			t.Errorf("after %q: %d at %s, want its card at %s?topic=home", step.act, code, at, step.path)
+		}
+	}
+	// A token for another topic, and an id that is not there, both get the
+	// not found page, never the notification.
+	_, other, err := s.CreateToken(ctx, "work only", "allowed", []string{"read"}, []string{"work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []string{id, "nope"} {
+		req, _ := http.NewRequest("GET", ts.URL+"/app/n/"+u, nil)
+		req.Header.Set("Authorization", "Bearer "+other)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 404 || strings.Contains(string(b), "disk full") || !strings.Contains(string(b), "This notification is gone") {
+			t.Errorf("%s by a work-only token: %d, want the not found page", u, res.StatusCode)
+		}
 	}
 }

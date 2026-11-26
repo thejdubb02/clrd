@@ -115,6 +115,17 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	}
 	ctx := r.Context()
 	snap := web.Snapshot{Seq: a.s.CurrentSeq(), Epoch: a.s.Epoch(), Me: tok.Name, MeID: tok.ID} // seq first, so replay cannot skip an event
+	// One notification's link (#814): in a topic it may not read, not found too.
+	if q.ID != "" {
+		n, err := a.s.Get(ctx, tok, q.ID)
+		if code, _ := server.PublicError(err); code == http.StatusNotFound || code == http.StatusForbidden {
+			return snap, web.ErrNotFound
+		} else if err != nil {
+			return snap, err
+		}
+		snap.Items = make([]web.Notification, 1)
+		return snap, convert(n, &snap.Items[0])
+	}
 	counts, err := a.s.Counts(ctx, tok)
 	if err != nil {
 		return snap, err

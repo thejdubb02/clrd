@@ -131,6 +131,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Changed
 
+- Server: the link in a GitHub issue opened by a hook now goes to `/app/n/<id>`, which opens that notification in the inbox, snoozed or cleared view, wherever it is now, instead of an inbox link that found nothing once it was cleared or snoozed (#814).
 - Desktop: Unlink is one call to the server, `DELETE /api/v1/devices/this`, so it works whatever the computer's token may do (#643).
 - Android: the phone unlinks itself with `DELETE /api/v1/devices/this`. A phone linked with a publish-only token, which cannot see Linked devices, now gets an "Unlink this phone" button in Settings, Devices (#643).
 - Android: a stack's Clear all shows only in the inbox, as on the web. The Snoozed tab no longer offers to clear a whole stack of snoozed notifications at once (#108).
