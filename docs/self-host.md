@@ -163,6 +163,7 @@ for contrast before saving. Use `device_theme` in MCP for a device override.
 | `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. This is the starting value: once someone sets "Keep cleared messages" in Settings (or `keep_cleared_days` over the API or MCP), that setting wins, and a topic can have its own value (in Settings under "By topic", or `topic_keep_cleared_days`). Open messages stay by default. |
 | `CLRD_NTFY_CACHE_TOPICS` | unset | Comma-separated exact topic names whose active and acknowledged notifications age out after `CLRD_RETENTION` since their last update. The hourly prune leaves snoozed and delayed messages alone until they wake. |
 | `CLRD_NTFY_IMPLICIT_UPLOADS` | `off` | Set to `on` to accept unnamed large or binary ntfy publishes as attachments. File limits and authorization still apply. |
+| `CLRD_NTFY_TEMPLATE_DIR` | unset | Directory of operator-managed ntfy `.yml` templates, read on publish. See [named templates](migrate-from-ntfy.md#named-templates). |
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
 | `CLRD_PUBLIC_PAGES` | `on` | `off` hides the landing page and docs on a private server: `/` goes to the inbox, `/docs` is 404, and `robots.txt` asks every crawler to stay out. |
 | `CLRD_ATTACHMENT_MAX_MB` | `15` | Largest file one notification can carry, in MB. |

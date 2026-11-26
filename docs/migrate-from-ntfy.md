@@ -21,12 +21,49 @@ Tested against ntfy v2.38.1.
 | Attachments | Uploaded files are copied in. External links are kept as links. Set `CLRD_NTFY_IMPLICIT_UPLOADS=on` for senders that omit the filename: an ordinary publish over 4096 bytes or with invalid UTF-8 becomes an upload. The existing file limits and access checks apply. |
 | Headers with non-ASCII text sent as RFC 2047 encoded words (`Title: =?UTF-8?B?...?=`) | Decoded the same way, in the title, message, tags, file name and the other publish headers. |
 | Publish URLs with `?tpl=yes` (or `X-Template: yes`, `?template=yes`) | Work as they are: the message, title and priority are Go templates over the JSON body, so `m={{.text}}&p={{if .channel}}2{{else}}4{{end}}` renders. `range`, `printf` and template calls are refused, as in [custom webhooks](integrations/custom-webhooks.md). |
+| Named .yml templates from ntfy's `template-dir` | Set `CLRD_NTFY_TEMPLATE_DIR` and copy the files there. Use the same `?template=name`, `?tpl=name` or `X-Template: name` selector on a POST or PUT with a JSON body. See [Named templates](#named-templates) for supported syntax. |
 
 What does not carry over, and the dry run lists each one with a count:
 tiers and their limits, topic reservations (the access they give is kept,
 the ownership is not), phone numbers, email addresses, billing, web push
 subscriptions (browsers subscribe again), and web app sign-ins (tokens that
 expire; sign in again).
+
+## Named templates
+
+Disk templates are off until you set `CLRD_NTFY_TEMPLATE_DIR` to an existing
+directory. Mount it read-only for the server. Put each file in that directory
+as `name.yml`, with at most 64 letters, digits, underscores or hyphens in the
+name. Boolean selectors (`yes`, `true`, `1`, `no`, `false`, `0`, ignoring
+case) are reserved for inline templating. clrd reads the file on each publish,
+so replacing a file takes effect on
+the next request. The file must be regular and at most 32 KiB.
+
+For example, save this as `alarms.yml`:
+
+```yaml
+title: 'Alert: {{ .name }}'
+message: |
+  Level: {{ .level }}
+  Node: {{ .node }}
+priority: '4'
+```
+
+Select it with `X-Template: alarms` or `?template=alarms`, and send the JSON
+body `{"name":"disk","level":"warning","node":"storage-1"}` to the topic.
+An existing saved or built-in webhook selected by `?template=` takes
+precedence and keeps its credentials and response format. A disk template
+uses the normal ntfy publish response. Omitted template fields keep the
+corresponding request parameters. An empty message defaults to `triggered`.
+Publishing still needs topic access.
+
+The file is a flat YAML mapping with `title`, `message` and `priority`. Use
+plain or single-quoted strings, double-quoted strings with JSON escapes, or
+literal `|` blocks. Convert folded blocks to literal blocks or quoted strings,
+and expand any aliases before copying. Use clrd's
+[template functions and limits](integrations/custom-webhooks.md). For example,
+`range`, `printf`, and calls to other templates are refused. The JSON body
+has the same 4096-byte limit as inline ntfy templates.
 
 ## Optional message cache retention
 
