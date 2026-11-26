@@ -611,6 +611,17 @@ func TestSenderRotateShownOnlyWhereItWorks(t *testing.T) {
 		if id == fromFile && (shown || strings.Contains(page, `name="token_name"`)) {
 			t.Error("a CLRD_CONFIG token's page offers rename or rotate")
 		}
+		if id == fromFile { // the next start makes it again from the file (#832)
+			if strings.Contains(page, `name="revoke"`) {
+				t.Error("a CLRD_CONFIG token's page offers revoke")
+			}
+			if code, _ := api("DELETE", "/api/v1/tokens/"+id, ""); code != 409 {
+				t.Errorf("revoke a CLRD_CONFIG token: %d, want 409", code)
+			}
+			if code, _ := api("PUT", "/api/v1/senders/"+id, `{}`); code != 200 {
+				t.Errorf("a refused revoke dropped the sender: %d", code)
+			}
+		}
 	}
 }
 
