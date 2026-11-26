@@ -20,6 +20,7 @@ Tested against ntfy v2.38.1.
 | Messages | Notifications with their original times. Sequence updates merge into one notification, a sequence clear becomes acknowledged, a sequence delete becomes dismissed, and a delayed message stays snoozed until its delivery time. |
 | Attachments | Uploaded files are copied in. External links are kept as links. Set `CLRD_NTFY_IMPLICIT_UPLOADS=on` for senders that omit the filename: an ordinary publish over 4096 bytes or with invalid UTF-8 becomes an upload. The existing file limits and access checks apply. |
 | Headers with non-ASCII text sent as RFC 2047 encoded words (`Title: =?UTF-8?B?...?=`) | Decoded the same way, in the title, message, tags, file name and the other publish headers. |
+| Publish and subscribe URL parameters | Use the lowercase names, including `x-` where ntfy lists it. Headers take precedence over URL parameters. On JSON publishes, non-empty fields, explicit arrays and the Markdown boolean take precedence over both. |
 | Publish URLs with `?tpl=yes` (or `X-Template: yes`, `?template=yes`) | Work as they are: the message, title and priority are Go templates over the JSON body, so `m={{.text}}&p={{if .channel}}2{{else}}4{{end}}` renders. `range`, `printf` and template calls are refused, as in [custom webhooks](integrations/custom-webhooks.md). |
 | Named .yml templates from ntfy's `template-dir` | Set `CLRD_NTFY_TEMPLATE_DIR` and copy the files there. Use the same `?template=name`, `?tpl=name` or `X-Template: name` selector on a POST or PUT with a JSON body. See [Named templates](#named-templates) for supported syntax. |
 
@@ -49,10 +50,11 @@ message: |
 priority: '4'
 ```
 
-Select it with `X-Template: alarms` or `?template=alarms`, and send the JSON
+Select it with `X-Template: alarms`, `?x-template=alarms` or `?template=alarms`, and send the JSON
 body `{"name":"disk","level":"warning","node":"storage-1"}` to the topic.
-An existing saved or built-in webhook selected by `?template=` takes
-precedence and keeps its credentials and response format. A disk template
+The `?template=` parameter takes precedence over `?x-template=` and
+`?tpl=`. Saved or built-in webhooks selected by `?template=` keep their
+credentials and response format. A disk template
 uses the normal ntfy publish response. Omitted template fields keep the
 corresponding request parameters. An empty message defaults to `triggered`.
 Publishing still needs topic access.

@@ -385,8 +385,16 @@ func TestNtfyIgnoredLog(t *testing.T) {
 	raw(t, "POST", ts.URL+"/alerts", pub, "hi", map[string]string{"Markdown": "yes", "X-Email": "a@example.com"})
 	raw(t, "POST", ts.URL+"/alerts?md=1", pub, "hi", nil)
 	raw(t, "POST", ts.URL+"/", pub, `{"topic":"alerts","message":"hi","markdown":true,"call":"yes","<b>":1}`, nil)
+	for _, alias := range []string{"x-email", "x-e-mail", "x-call", "x-firebase", "x-unifiedpush", "x-poll-id"} {
+		if code, out := raw(t, "POST", ts.URL+"/alerts?"+alias+"=yes", pub, "hi", nil); code != 200 {
+			t.Errorf("%s: %d %s", alias, code, out)
+		}
+	}
 	c, b := bearer(t, "GET", ts.URL+"/api/v1/ntfy/ignored", admin, "")
-	for _, want := range []string{`"name":"Email","count":1`, `"json:call"`, `"json:(other)"`} {
+	for _, want := range []string{
+		`"name":"Email","count":3`, `"name":"Call","count":1`, `"name":"Firebase","count":1`,
+		`"name":"UnifiedPush","count":1`, `"name":"Poll-Id","count":1`, `"json:call"`, `"json:(other)"`,
+	} {
 		if c != 200 || !strings.Contains(b, want) {
 			t.Errorf("lacks %s: %d %s", want, c, b)
 		}
