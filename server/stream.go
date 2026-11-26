@@ -166,9 +166,9 @@ func rawFor(tok *Token, e Event) []byte {
 // ready carries the seq it is ready at, which can be 0). It is ntfy's: the
 // stream also takes live-only messages, which never move the seq, and
 // opened (if set) runs once it is subscribed, so none sent after is missed.
-func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []string, opened func() error,
+func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []string, floors string, opened func() error,
 	send func(msg []byte, seq int64) error, ping func() error) error {
-	return s.followWith(ctx, tok, since, topics, false, true, opened, send, ping)
+	return s.followWith(ctx, tok, since, topics, false, true, floors, opened, send, ping)
 }
 
 // followWith is follow; withSettings also sends a settings message just
@@ -176,7 +176,7 @@ func (s *Server) follow(ctx context.Context, tok *Token, since int64, topics []s
 // A tok with a view follows its owner's subscriptions (#617): the view is
 // read again here, after subscribing, and on every change of that set.
 func (s *Server) followWith(ctx context.Context, tok *Token, since int64, topics []string, withSettings, live bool,
-	opened func() error, send func(msg []byte, seq int64) error, ping func() error) error {
+	floors string, opened func() error, send func(msg []byte, seq int64) error, ping func() error) error {
 	sub, st := s.hub.subscribe(tok.ID, live) // first, so nothing committed during replay is missed
 	s.devicesChanged.fire()
 	defer func() {
@@ -261,7 +261,7 @@ replay:
 		if _, gone := s.revoked.Load(tok.ID); gone { // a long replay may send nothing visible
 			return errRevoked
 		}
-		evs, err := s.eventsAfter(ctx, since, 500)
+		evs, err := s.replayEventsAfter(ctx, since, 500, floors)
 		if err == errReset { // pruned under us mid-replay: the view may be older than the reset too
 			head, err := resync()
 			if err != nil {
@@ -461,7 +461,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, tok *Token) er
 	}
 	defer c.CloseNow()
 	ctx := c.CloseRead(r.Context())
-	err = s.followWith(ctx, followsSubs(r, tok), sinceParam(r), splitList(r.URL.Query().Get("topics")), true, false, nil,
+	err = s.followWith(ctx, followsSubs(r, tok), sinceParam(r), splitList(r.URL.Query().Get("topics")), true, false, "", nil,
 		func(msg []byte, _ int64) error {
 			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
@@ -507,7 +507,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, tok *Token) e
 	write := func(format string, args ...any) error {
 		return flushWrite(rc, w, fmt.Appendf(nil, format, args...))
 	}
-	s.followWith(r.Context(), followsSubs(r, tok), sinceParam(r), splitList(r.URL.Query().Get("topics")), true, false, nil,
+	s.followWith(r.Context(), followsSubs(r, tok), sinceParam(r), splitList(r.URL.Query().Get("topics")), true, false, "", nil,
 		func(msg []byte, seq int64) error {
 			if seq >= 0 { // ready too, so EventSource drops a Last-Event-ID from before a reset
 				return write("id: %d\ndata: %s\n\n", seq, msg)

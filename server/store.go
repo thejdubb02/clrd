@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS events (
   data TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS events_topic_seq ON events(topic, seq);
 CREATE TABLE IF NOT EXISTS tokens (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -2077,22 +2078,57 @@ func checkImageURL(field, v string) error {
 	return nil
 }
 
-// eventsAfter returns up to limit logged events with seq > since, oldest
-// first. seq has no gaps, so a missing since+1 means a prune ran between the
-// caller's check and this query: that is a 410 reset, never a silent skip.
+// eventsAfter returns up to limit logged events with seq > since, oldest first.
 func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Event, error) {
+	return s.replayEventsAfter(ctx, since, limit, "")
+}
+
+// For ntfy, take the next window at the first eligible seq. Each topic gets
+// its own indexed lower bound. Limiting the window by seq lets SQLite sort at
+// most one batch, even if the remaining history is large. The first row also
+// reports the earliest global seq after since, in the same SQLite snapshot,
+// so a filtered gap can be told from a prune.
+const ntfyReplaySQL = `
+WITH ranges AS MATERIALIZED (
+	SELECT key AS topic, max(value, ? + 1) AS start FROM json_each(?)
+), first AS MATERIALIZED (
+	SELECT MIN((SELECT seq FROM events WHERE topic = r.topic AND seq >= r.start ORDER BY seq LIMIT 1)) AS seq
+	FROM ranges r
+)
+SELECT COALESCE((SELECT MIN(seq) FROM events WHERE seq > ?), 0) AS seq, '' AS topic, '' AS data, 0 AS kind
+UNION ALL
+SELECT e.seq, e.topic, e.data, 1
+FROM first CROSS JOIN ranges r CROSS JOIN events e INDEXED BY events_topic_seq
+WHERE e.topic = r.topic AND e.seq BETWEEN max(first.seq, r.start) AND first.seq + ? - 1
+ORDER BY kind, seq`
+
+func (s *Server) replayEventsAfter(ctx context.Context, since int64, limit int, floors string) ([]Event, error) {
 	head := s.seq.Load() // stored only after commit, so every seq <= head was written
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, topic, data FROM events WHERE seq > ? ORDER BY seq LIMIT ?`, since, limit)
+	q := `SELECT seq, topic, data, 1 FROM events WHERE seq > ? ORDER BY seq LIMIT ?`
+	args := []any{since, limit}
+	if floors != "" {
+		q, args = ntfyReplaySQL, []any{since, floors, since, limit}
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Event
+	var first int64
 	for rows.Next() {
 		var e Event
 		var topic, data string
-		if err := rows.Scan(&e.Seq, &topic, &data); err != nil {
+		var kind int
+		if err := rows.Scan(&e.Seq, &topic, &data, &kind); err != nil {
 			return nil, err
+		}
+		if kind == 0 {
+			first = e.Seq
+			continue
+		}
+		if floors == "" && first == 0 {
+			first = e.Seq
 		}
 		e.Raw, e.Notification = []byte(data), &Notification{Topic: topic}
 		if strings.Contains(data, `"devices":["`) { // only a targeted event pays for a decode (#82)
@@ -2110,7 +2146,9 @@ func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Eve
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if (len(out) > 0 && out[0].Seq != since+1) || (len(out) == 0 && since < head) {
+	// The global event log has no gaps. A missing since+1 means it was
+	// pruned between the caller's check and this query.
+	if (first != 0 && first != since+1) || (first == 0 && since < head) {
 		return nil, errReset
 	}
 	return out, nil

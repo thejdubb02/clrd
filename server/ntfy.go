@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -788,6 +789,12 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 			lo = min(lo, f-1)
 		}
 		since = max(since, lo)
+		for _, t := range topics {
+			// If even the newest event exceeds the cap, skip only the
+			// historical part. Events after cur are always replayed.
+			floor[t] = min(floor[t], cur+1)
+		}
+		floors, _ := json.Marshal(floor)
 		if truncated {
 			w.Header().Set("X-Messages-Truncated", "1") // ntfy's header; a no-op on the WebSocket
 		}
@@ -850,7 +857,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		// prune (before or during replay) restarts from the oldest event left,
 		// up to 3 times, then goes on from now.
 		resets := 0
-		s.follow(ctx, tok, since, topics, opened, func(raw []byte, seq int64) error {
+		s.follow(ctx, tok, since, topics, string(floors), opened, func(raw []byte, seq int64) error {
 			if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
 				if poll {
 					return errStop
@@ -868,9 +875,6 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				return err
 			}
 			if e.Type == EventMark { // ntfy has no marks; sending it again would alert again
-				return nil
-			}
-			if f, ok := floor[e.Notification.Topic]; ok && seq < f {
 				return nil
 			}
 			if !f.pass(e.Notification, ntfyMsgID(e.Notification, seq)) {
@@ -1000,12 +1004,15 @@ func (s *Server) ntfyFloors(ctx context.Context, since, cur int64, latest bool, 
 		FROM events WHERE seq > ? AND seq <= ? AND type != ? AND data NOT LIKE '%"only":"%' AND topic IN (` + placeholders(len(topics)) + `)) GROUP BY topic`
 	args := []any{ntfyReplayMax, ntfyReplayMax, since, cur, EventMark}
 	if latest {
-		q = `SELECT topic, MAX(seq), 0 FROM events WHERE seq > ? AND seq <= ? AND type != ? AND data NOT LIKE '%"only":"%'
-			AND topic IN (` + placeholders(len(topics)) + `) GROUP BY topic`
-		args = args[2:]
-	}
-	for _, t := range topics {
-		args = append(args, t)
+		q = `SELECT t.value, (SELECT seq FROM events
+			WHERE topic = t.value AND seq > ? AND seq <= ? AND type != ? AND data NOT LIKE '%"only":"%'
+			ORDER BY seq DESC LIMIT 1), 0 FROM json_each(?) t`
+		t, _ := json.Marshal(topics)
+		args = append(args[2:], string(t))
+	} else {
+		for _, t := range topics {
+			args = append(args, t)
+		}
 	}
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -1015,12 +1022,14 @@ func (s *Server) ntfyFloors(ctx context.Context, since, cur int64, latest bool, 
 	floor, truncated := map[string]int64{}, false
 	for rows.Next() {
 		var t string
-		var seq int64
+		var seq sql.NullInt64
 		var cut bool
 		if err := rows.Scan(&t, &seq, &cut); err != nil {
 			return nil, false, err
 		}
-		floor[t], truncated = seq, truncated || cut
+		if seq.Valid {
+			floor[t], truncated = seq.Int64, truncated || cut
+		}
 	}
 	return floor, truncated, rows.Err()
 }
