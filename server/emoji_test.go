@@ -12,6 +12,8 @@ func TestEmojify(t *testing.T) {
 		":warning: server: Stopping server": "⚠️ server: Stopping server",
 		"done :white_check_mark::tada:":     "done ✅🎉",
 		":+1: and :-1:":                     "👍 and 👎",
+		":star_struck: :face_in_clouds:":    "🤩 😶‍🌫️",
+		":check: and `:shushing_face:`":     "✔️ and `:shushing_face:`",
 		"at 10:30:15 a:b:c":                 "at 10:30:15 a:b:c",
 		"x:fire: y:fire:z":                  "x:fire: y:fire:z",
 		":no_such_name: :Fire:":             ":no_such_name: :Fire:",
@@ -30,6 +32,20 @@ func TestEmojify(t *testing.T) {
 	}
 }
 
+func TestEmojiAliasTable(t *testing.T) {
+	last, count := "", 0
+	for line := range strings.SplitSeq(strings.TrimSuffix(emojiAliases, "\n"), "\n") {
+		alias, emoji, ok := strings.Cut(line, "\t")
+		if !ok || alias <= last || emoji == "" || emojiAlias(alias) != emoji {
+			t.Fatalf("invalid or unreadable alias: %q", line)
+		}
+		last, count = alias, count+1
+	}
+	if count < 1900 || emojiAlias("no_such_name") != "" || emojiAlias("zzz~") != "" {
+		t.Fatal("incomplete table or incorrect missing-alias lookup")
+	}
+}
+
 // The API, the stream and the ntfy endpoint send the emoji; the stored row
 // keeps the text as it came in; tags that name an emoji go before the title.
 func TestEmojiServed(t *testing.T) {
@@ -37,11 +53,11 @@ func TestEmojiServed(t *testing.T) {
 	ws := dialWS(t, ts.URL, admin, 0)
 	ws.until(func(m msg) bool { return m.Type == "ready" })
 	code, _ := raw(t, "POST", ts.URL+"/infra", admin, "deploy :rocket: at 10:30:15",
-		map[string]string{"Title": ":warning: server: Stopping server", "Tags": "rotating_light,disk"})
+		map[string]string{"Title": ":warning: server: Stopping server", "Tags": "rotating_light,shushing_face,disk"})
 	if code != 200 {
 		t.Fatalf("ntfy publish: %d", code)
 	}
-	want := "🚨 ⚠️ server: Stopping server"
+	want := "🚨🤫 ⚠️ server: Stopping server"
 	if m := ws.until(func(m msg) bool { return m.Notification != nil }); m.Notification.Title != want ||
 		m.Notification.Message != "deploy 🚀 at 10:30:15" {
 		t.Fatalf("stream: %+v", m.Notification)
@@ -57,7 +73,7 @@ func TestEmojiServed(t *testing.T) {
 	}
 	// ntfy apps add the tags' emoji themselves: theirs has only the shortcodes.
 	_, out2 := raw(t, "GET", ts.URL+"/infra/json?poll=1", admin, "", nil)
-	if m := ntfyDecode(t, strings.TrimSpace(out2)); m.Title != "⚠️ server: Stopping server" {
+	if m := ntfyDecode(t, strings.TrimSpace(out2)); m.Title != "⚠️ server: Stopping server" || strings.Join(m.Tags, ",") != "rotating_light,shushing_face,disk" {
 		t.Fatalf("ntfy poll: %+v", m)
 	}
 	// No title: the tags' emoji go before the message.

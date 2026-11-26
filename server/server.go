@@ -722,8 +722,8 @@ func (s *Server) routesSetup() {
 	s.route("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Add("Vary", "Accept-Encoding")
-		if !gzfs.Serve(w, r, apiDoc, "openapi.json") {
-			http.ServeFileFS(w, r, apiDoc, "openapi.json")
+		if !gzfs.Serve(w, r, serverFiles, "openapi.json") {
+			http.ServeFileFS(w, r, serverFiles, "openapi.json")
 		}
 		return nil
 	})

@@ -80,8 +80,9 @@ Setting it again replaces it; only the author changes or removes it. A mark
 writes a `mark` event (section 3) and moves `updated_at`. A publish that
 updates the row by `external_id` keeps its marks.
 
-**Emoji (#306):** `title` and `message` are sent with common GitHub and
-Slack shortcodes shown as the emoji (`:warning:` becomes ⚠️), and a tag that
+**Emoji (#306):** `title` and `message` render emoji shortcodes from the
+gemoji alias table (`:warning:` becomes ⚠️). The table includes ntfy's
+documented emoji tags. A tag that
 names an emoji (`rotating_light`, `warning`) goes in front of the title, or of
 the message when there is no title, as ntfy apps show it. Unknown names, text
 inside backticks and strings like `10:30:15` or `a:b:c` stay as typed. The
