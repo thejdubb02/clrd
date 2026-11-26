@@ -2175,6 +2175,9 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                     } catch (e: Exception) {
                         ctx.getString(R.string.test_unreachable, e.message)
                     }
+                    // Saved even though the test failed: the save stopped this server's sync, so start it again to
+                    // connect once the network is back. No restart, so the other servers stay connected.
+                    if (!adding && result != ctx.getString(R.string.test_ok)) SyncService.start(ctx)
                 }
             },
             colors = ButtonDefaults.buttonColors(containerColor = b.ink, contentColor = b.paper),

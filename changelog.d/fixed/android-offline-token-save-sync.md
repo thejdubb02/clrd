@@ -1,0 +1,1 @@
+- Android: a server address or token saved in Settings while the phone cannot reach the server now starts sync for it anyway, so the phone connects and catches up as soon as the network is back. Before, the save stopped sync and nothing started it again until the app was reopened.
