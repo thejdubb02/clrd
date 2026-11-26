@@ -18,6 +18,8 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
+- ntfy compatibility: opt in to treating unnamed large or binary publishes as file uploads with the existing attachment limits (#851).
+
 - Web Settings has a Color rules section: add, order and delete rules, with Severity and By topic presets and a note when a color looks like clrd's clear green; docs page docs/color-rules.md. Inbox cards now show their rule colors on a running server, which did not serve the card colors stylesheet (#165).
 - Slack outgoing hooks post notifications, edit them on state changes, and add acknowledgment and clear reactions (#166)
 - Stats adds a server-time heatmap, prior-period trends, volume breakdowns, same-token clears, quiet alarms, and live connections on the Stats page and API (#120).
@@ -168,6 +170,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Fixed
 
 - A send that was already out when an outgoing hook moved to another URL or kind no longer counts toward the new address's failure streak, and no longer brings back an old post id after the hook moves away and back (#878).
+- A GitHub hook send that fails while GitHub hooks are being paused still keeps GitHub's Retry-After, so it does not retry early after the resume (#881).
 - Web Settings no longer reloads over unsaved edits when a setting changes on another device. An edit not saved yet in any Settings form (color rules, swipe buttons, keep cleared, webhooks, themes and more, not only snooze times) is kept, and each form says the setting changed elsewhere (#883).
 - Changing an outgoing hook's URL drops deliveries still queued for the old address, so they never post to the new one (#871).
 - create-clrd cancels cleanly, checks invite permissions before adding hooks, and explains when a rerun keeps existing settings (#864).
@@ -175,6 +178,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 - Outgoing hooks honor a rate-limited receiver's Retry-After (up to an hour) instead of retrying sooner and burning an attempt (#859).
 - Saving a Slack hook again keeps its posted message ids unless the channel changes, so later state changes still edit the original message (#870).
 - Automation nodes report invalid credentials and inputs more clearly, and the Node-RED trigger slows its retries when polling fails (#862).
+- Web: signing in again on the same browser keeps its theme override, and saving another setting keeps your unsaved palette draft (#867).
 - Event polling with `subscribed=all` keeps its cursor through subscription edits, so automation triggers can deliver notifications queued between polls (#868).
 
 - Server: a GitHub issue hook still finds the issue it already opened after the issue was edited on GitHub's website, so a retried delivery does not open a second one (#827).

@@ -1472,12 +1472,17 @@ func TestHooksOutGitHubPauseHolds(t *testing.T) {
 	s, ts, admin := newTest(t)
 	ctx := context.Background()
 	s.fetch.allow = func(netip.Addr, string) bool { return true }
-	var pauseOnFind, findFails atomic.Bool
+	var pauseOnFind, findFails, findWait atomic.Bool
 	var posts, closes atomic.Int64
 	gh, _ := counter(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			if pauseOnFind.Load() { // the pause lands mid-send, after the batch read
 				s.db.Exec(`UPDATE settings SET value = json_set(value, '$.github_hooks_paused', json('true')) WHERE key = 'display'`)
+			}
+			if findWait.Load() {
+				w.Header().Set("Retry-After", "120")
+				w.WriteHeader(429)
+				return
 			}
 			if findFails.Load() {
 				w.WriteHeader(502)
@@ -1538,6 +1543,20 @@ func TestHooksOutGitHubPauseHolds(t *testing.T) {
 	if n, a := pending(); posts.Load() != 0 || n != 1 || a != 0 {
 		t.Fatalf("paused mid-batch, lookup failed: posts=%d pending=%d attempts=%d", posts.Load(), n, a)
 	}
+	// The same with a Retry-After: the try still does not count, but the
+	// delivery waits as GitHub asked, past the resume (#881).
+	setPaused(false)
+	pauseOnFind.Store(true)
+	findWait.Store(true)
+	s.deliverHooks(ctx)
+	pauseOnFind.Store(false)
+	findWait.Store(false)
+	var next int64
+	s.db.QueryRow(`SELECT next_at FROM hook_deliveries WHERE name = 'gh' AND status = 'pending'`).Scan(&next)
+	if n, a := pending(); n != 1 || a != 0 || next < ms(time.Now().Add(100*time.Second)) {
+		t.Fatalf("paused mid-batch, Retry-After: pending=%d attempts=%d, next_at %d ms from now", n, a, next-ms(time.Now()))
+	}
+	s.db.Exec(`UPDATE hook_deliveries SET next_at = 0 WHERE name = 'gh'`)
 	setPaused(false)
 	s.deliverHooks(ctx)
 	if n, _ := pending(); posts.Load() != 1 || n != 0 {

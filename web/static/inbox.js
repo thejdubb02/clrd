@@ -194,6 +194,7 @@
     });
     addEventListener('storage', e => { if (e.key === 'clrd.theme') themeSel.value = e.newValue || ''; });
   }
+  const store = (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* storage can be disabled */ } };
   const colors = window.clrdPalette;
   const paletteForm = $('[data-palette-form]');
   let savedPalette = colors.initial, draftPalette = false, savingPalette = false;
@@ -228,8 +229,11 @@
       if (theme.value === 'custom') st.theme_colors = Object.fromEntries(Object.keys(colors.starter).map(k => [k, fields.elements[k].value]));
       return st;
     };
-    renderPalette();
-    fields.addEventListener('input', () => {
+    // Settings saves reload the page. Keep this draft in the current tab
+    // and restore it only for the same signed-in device and database.
+    const draftKey = 'clrd-palette-draft';
+    const scope = JSON.stringify([B, epoch, shell.dataset.meId]);
+    function previewPalette() {
       draftPalette = true;
       const st = patch();
       $('[data-palette-colors]').hidden = !st.theme_colors;
@@ -241,7 +245,20 @@
         colors.show(st);
         if (themeSel) themeSel.disabled = !!st.theme_colors;
       }
-    });
+    }
+    renderPalette();
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(draftKey));
+      if (draft?.scope === scope) {
+        theme.value = draft.st.theme;
+        for (const key of Object.keys(colors.starter)) {
+          if (draft.st.theme_colors?.[key]) fields.elements[key].value = draft.st.theme_colors[key];
+        }
+        previewPalette();
+      }
+    } catch { /* storage can be disabled */ }
+    fields.addEventListener('input', previewPalette);
+    addEventListener('pagehide', () => store(draftKey, draftPalette ? JSON.stringify({ scope, st: patch() }) : null));
     $('[data-palette-cancel]').addEventListener('click', () => {
       draftPalette = false;
       syncPalette(savedPalette);
@@ -801,7 +818,6 @@
   const subsPut = body => fetch('/api/v1/subscriptions', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
   const subsWhy = async r => r ? ((await r.json().catch(() => ({}))).error || `Not saved (${r.status}).`) : 'Not saved: no connection.';
   const approvalsOff = t => confirm(`Agents send their approval requests to ${t}. Unsubscribe, and those requests stop reaching you. Unsubscribe anyway?`);
-  const store = (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* private window: no Undo after the reload */ } };
   let unsubDone = null;
   try { unsubDone = JSON.parse(sessionStorage.getItem('clrd-unsub')); } catch { /* as above */ }
   if (Array.isArray(unsubDone)) {
