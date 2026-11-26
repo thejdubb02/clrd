@@ -36,7 +36,7 @@ func followTok(t *testing.T, s *Server, c Token, since int64, opened func() erro
 	out, done := make(chan frame, 100), make(chan struct{})
 	go func() {
 		defer close(done)
-		s.followWith(ctx, &c, since, nil, false, false, opened, func(msg []byte, _ int64) error {
+		s.followWith(ctx, &c, since, nil, false, false, "", opened, func(msg []byte, _ int64) error {
 			var f frame
 			json.Unmarshal(msg, &f)
 			if gate != nil {

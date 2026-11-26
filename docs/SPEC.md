@@ -180,8 +180,12 @@ replaces `repeat` with its own (none if it gave none). ntfy subscribers get
 each re-alert as a new message. The web inbox plays its sound again on a
 `repeat` event, and the Android app alerts again even while it is showing.
 
-**Actions:** each action is a link (`url`) or an answer button (`reply`),
-exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
+**Actions:** each action sets exactly one of `url` (link), `reply` (answer),
+`copy` (clipboard text), `http` or `broadcast`. For example,
+`{"label":"Copy code","copy":"123456"}` supplies text to copy. Copy text
+is limited to 4096 bytes and works on any topic. The web inbox copies the
+value to the clipboard and clears the card after a successful copy if the
+action sets `clear: true`. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
 notification, and there are at most 3 reply actions (an Android tray entry
 shows 3). Tapping one posts it to `/api/v1/notifications/{id}/reply`, which
 sets `reply`, sets the state to `acknowledged` with `state_by` = the device,
@@ -441,9 +445,9 @@ means the same sound on a phone, the web inbox and a desktop:
 
 The six built-in sounds are `assets/sounds/<name>.wav` (16-bit mono PCM at
 8000 to 22050 Hz, the lowest rate that holds the sound's tones, under 40 KB
-each), served by the binary at `/assets/sounds/<name>.wav`. The
+each), rendered by the binary from the same code (`internal/sounds`, not embedded) and served at `/assets/sounds/<name>.wav`. The
 Android build packs the same files. They are generated from sine waves by
-`go run ./assets/sounds/_gen` (no samples, so they ship under Apache-2.0); to
+`go run ./internal/sounds/gen` (no samples, so they ship under Apache-2.0); to
 change a sound, change the generator and commit both. New names may be added;
 a name is never renamed or reused for a different sound. A client that gets a
 name it does not know plays `default`.
@@ -1172,6 +1176,9 @@ its data):
 - After an update to a new version, the web inbox shows a small, dismissible
   What's new note on the first open (quiet on a browser's first visit ever),
   linking to Settings, About; each browser can turn the note off in Settings.
+  The Android app does the same for its own version: after the app updates,
+  a dismissible note at the top of the inbox opens What's new; quiet on the
+  first open ever, and off with the switch in Settings, About.
 
 `/docs/changelog` renders the combined changelog; a private server hides it with the
 rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
@@ -1183,8 +1190,9 @@ and `initialize` reports `version` as `serverInfo.version`.
   `X-Priority`/`Priority`/`p` (1-5 or min/low/default/high/urgent),
   `X-Tags`/`Tags`, `X-Click`, `X-Actions` (JSON or the short form, where
   a quoted value keeps its spaces and `\"` or `\'` is the quote itself;
-  `view`, `http` and `broadcast`, the last two only on a topic with
-  `device_actions` on, else dropped; `copy` is dropped), `X-Delay`/`Delay`/`X-At`/`At`/`X-In`/`In` (a unix
+  `view`, `copy`, `http` and `broadcast`, the last two only on a topic with
+  `device_actions` on, else dropped. For copy, use `copy, Label, value`
+  or set `value` in JSON), `X-Delay`/`Delay`/`X-At`/`At`/`X-In`/`In` (a unix
   time, a duration such as `30m`, `1d` or `2 days`, an RFC 3339 time, or a
   time of day such as `10am`, `8:30pm`, `noon`, `tomorrow, 3pm` or
   `Tuesday 7am`; a bare time already past today means tomorrow; at most 3
@@ -1212,7 +1220,12 @@ and `initialize` reports `version` as `serverInfo.version`.
   made absolute from `CLRD_BASE_URL`). Unlike ntfy, clrd's file URLs need a
   token, so a third-party ntfy app that fetches files without one gets 401.
 - `POST /` with ntfy JSON body (`topic`, `message`, `title`, `priority`, `tags`,
-  `icon`, `attach`, `filename`, ...).
+  `icon`, `attach`, `filename`, ...). Headers and query parameters fill
+  omitted options, including actions, delay, Markdown, cache, and the message
+  ID. Headers win over query parameters. Non-empty JSON fields win over both,
+  as do explicit JSON arrays and the Markdown boolean. The topic comes from
+  JSON, and the filename describes an external attachment. For a raw publish,
+  `Content-Type: text/markdown` selects Markdown even with `Markdown: no`.
 - `GET /{topic}/json`, `/{topic}/sse`, `/{topic}/ws`, `/{topic}/raw` with `since=`
   (`all`, unix time, duration, message id) and `poll=1`, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
@@ -1649,7 +1662,7 @@ JavaScript off the web page shows every section and no search box.
 | Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
 | Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
 | Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
-| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2) |
+| About | `about` | Version | version, what's new, changelog, release, update, build | both. Web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2). Android: this app's version and the shown server's side by side with a plain line when one is newer, What's new from the server or, when it cannot be reached, the released versions built into the app, and the phone's switch for its after-update note |
 
 The Android version line stays at the foot of the page, outside the sections.
 

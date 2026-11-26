@@ -216,6 +216,13 @@ class App : Application() {
         get() = prefs.getBoolean("stack", false)
         set(v) = prefs.edit().putBoolean("stack", v).apply()
 
+    /** The after-update What's new note (#580), on by default; off records this version so no note waits. */
+    var whatsNew: Boolean
+        get() = prefs.getBoolean("whats_new", true)
+        set(v) { prefs.edit().putBoolean("whats_new", v).apply(); if (!v) seenVersion(BuildConfig.VERSION_NAME) }
+
+    fun seenVersion(v: String) = prefs.edit().putString("seen_version", v).apply()
+
     /** Remove cleared items from this phone as soon as they are cleared (#151). Off by default; the server keeps its own copy either way. */
     /** A lone swipe in the shade clears everywhere (#271). Off out of the box: a swipe only hides it here (#265). */
     var shadeClears: Boolean
@@ -326,7 +333,7 @@ class App : Application() {
         const val KEEP_DAYS = 7
 
         /** The keys in the "clrd" file that belong to the phone, not to account 0's server (#78). "dnd_lost" is account 0's since #860, kept as before; "config_gen" is kept so a sign-in number never comes back. */
-        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id", "shown_server", "config_gen")
+        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id", "shown_server", "config_gen", "whats_new", "seen_version")
     }
 }
 

@@ -255,6 +255,24 @@ work. The path cannot start with `/api`. In Caddy, `handle /clrd/*` with the sam
 the same block as `location /clrd/`. In the Android app, enter the full
 address with the path.
 
+## Publish and subscribe from the command line
+
+The server binary also works as a client. Set `CLRD_TOKEN` to a token with
+publish or read access as needed. The commands use the local listen port by
+default. For a remote server, set `CLRD_URL` to its HTTPS base URL, including
+any sub-path.
+
+```sh
+clrd publish --title "Disk space" --priority high --tags infra,disk infra "Disk is 91% full"
+clrd poll --since 1h infra,ops
+clrd subscribe infra,ops
+```
+
+Publish prints the server's JSON reply. Poll prints stored events as
+newline-delimited JSON and exits, with retained history as the default.
+Subscribe streams new events as they happen until stopped with Ctrl+C. Use
+`--since` to start a stream with replay.
+
 ## Health
 
 `GET /healthz` returns `{"ok":true,"seq":N}`. The Docker image runs
@@ -310,7 +328,12 @@ Anonymous topics are off until an admin sets them, with
 right now and is stored nowhere, so it never shows in the inbox or a replay.
 It cannot be delayed, repeated, carry a file or an `Id`.
 
-`view` action buttons work everywhere. `http` and `broadcast` buttons are
+`view` action buttons work everywhere. The server also accepts `copy` action
+buttons on any topic and passes them to ntfy subscribers. In the web inbox,
+the button copies its value to the clipboard and clears the notification
+after a successful copy if the action sets `clear`. Use
+`copy, Copy code, 123456` in `X-Actions` or set `value` in the JSON action.
+`http` and `broadcast` buttons are
 stored and passed to ntfy apps once an admin turns them on for the topic
 (`{"device_actions":true}` on `PUT /api/v1/topics/{topic}`, or the MCP tool
 `set_topic`); until then they are dropped. clrd's own app does not run them

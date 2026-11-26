@@ -2,12 +2,13 @@ package server
 
 import (
 	"bufio"
-	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -230,7 +231,7 @@ func TestNtfyScheduled(t *testing.T) {
 }
 
 func TestNtfySubscribe(t *testing.T) {
-	_, ts, admin := newTest(t)
+	s, ts, admin := newTest(t)
 	var ids []string
 	for _, msg := range []string{"one", "two\nlines", "three"} {
 		_, out := raw(t, "POST", ts.URL+"/alerts", admin, msg, nil)
@@ -260,6 +261,33 @@ func TestNtfySubscribe(t *testing.T) {
 	}
 	if l := poll("/alerts/json?poll=1&since=10m"); len(l) != 3 {
 		t.Fatalf("since duration: %v", l)
+	}
+	// since=latest is per topic, as in ntfy (#845): the newest of each.
+	if l := poll("/alerts,other/json?poll=1&since=latest"); len(l) != 2 || ntfyDecode(t, l[0]).Message != "three" || ntfyDecode(t, l[1]).Message != "elsewhere" {
+		t.Fatalf("since latest, two topics: %v", l)
+	}
+	// A replay keeps each topic's newest events that fit the cap, oldest
+	// dropped, and says so with ntfy's header (#845).
+	{
+		// room for the newest two alerts only
+		s.db.QueryRow(`SELECT SUM(length(data)) + 1 FROM (SELECT data FROM events WHERE topic = 'alerts' ORDER BY seq DESC LIMIT 2)`).Scan(&ntfyReplayMax)
+		t.Cleanup(func() { ntfyReplayMax = 10 << 20 })
+		req, _ := http.NewRequest("GET", ts.URL+"/alerts,other/json?poll=1", nil)
+		req.SetBasicAuth("", admin)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		l := lines(string(body))
+		if resp.Header.Get("X-Messages-Truncated") != "1" || len(l) != 3 || ntfyDecode(t, l[0]).Message != "two\nlines" {
+			t.Fatalf("capped replay: header %q, %d lines: %v", resp.Header.Get("X-Messages-Truncated"), len(l), l)
+		}
+	}
+	ntfyReplayMax = 10 << 20
+	if code, out := raw(t, "GET", ts.URL+"/alerts/json?poll=1", admin, "", nil); code != 200 || len(lines(out)) != 3 {
+		t.Fatalf("uncapped: %d %v", code, out)
 	}
 	if l := poll("/alerts/raw?poll=1"); strings.Join(l, "|") != "one|two lines|three" {
 		t.Fatalf("raw: %v", l)
@@ -515,6 +543,50 @@ func TestExternalIDWithSlash(t *testing.T) {
 	}
 }
 
+func TestNtfyMixedPublishOptions(t *testing.T) {
+	_, ts, admin := newTest(t)
+	const topic = "mixed"
+	at := time.Now().Add(time.Hour).Unix()
+	t.Run("header and query fallback", func(t *testing.T) {
+		code, out := raw(t, "POST", fmt.Sprintf("%s/?in=%d&sid=mixed-id&md=no&filename=report.txt", ts.URL, at),
+			admin, `{"topic":"mixed"}`, map[string]string{
+				"Message": "from header",
+				"Actions": "view, Open, https://example.com/report",
+				"Attach":  "https://example.com/file",
+			})
+		m := ntfyDecode(t, out)
+		if code != 200 || m.Topic != topic || m.Message != "from header" || m.Time != at || m.SequenceID != "mixed-id" ||
+			m.ContentType != "" || len(m.Actions) != 1 || m.Actions[0].URL != "https://example.com/report" ||
+			m.Attachment == nil || m.Attachment.Name != "report.txt" || m.Attachment.URL != "https://example.com/file" {
+			t.Fatalf("mixed publish: %d %s", code, out)
+		}
+	})
+	t.Run("JSON wins", func(t *testing.T) {
+		body := fmt.Sprintf(`{"topic":"mixed","message":"from JSON","delay":"%d","sequence_id":"json-id","markdown":false,"tags":[],"actions":[],"cache":"yes"}`, at)
+		code, out := raw(t, "POST", ts.URL+"/?delay=invalid&sid=query-id&md=yes&tags=query",
+			admin, body, map[string]string{"Message": "from header", "Actions": "[invalid", "Cache": "no"})
+		m := ntfyDecode(t, out)
+		if code != 200 || m.Message != "from JSON" || m.Time != at || m.SequenceID != "json-id" ||
+			m.ContentType != "" || len(m.Actions) != 0 || len(m.Tags) != 0 {
+			t.Fatalf("JSON precedence: %d %s", code, out)
+		}
+	})
+	t.Run("Markdown media type", func(t *testing.T) {
+		code, out := raw(t, "PUT", ts.URL+"/mixed", admin, "**bold**",
+			map[string]string{"Content-Type": "text/markdown; charset=utf-8", "Markdown": "no"})
+		if m := ntfyDecode(t, out); code != 200 || m.ContentType != "text/markdown" {
+			t.Fatalf("Markdown media type: %d %s", code, out)
+		}
+	})
+	t.Run("invalid fallback is rejected", func(t *testing.T) {
+		for _, h := range []map[string]string{{"Actions": "[invalid"}, {"Delay": "later-ish"}} {
+			if code, out := raw(t, "POST", ts.URL+"/", admin, `{"topic":"mixed","message":"hello"}`, h); code != 400 {
+				t.Errorf("invalid option %v: %d %s", h, code, out)
+			}
+		}
+	})
+}
+
 // Review fixes on PR #11: an empty topic list, a lowercase auth scheme and a
 // delay past ntfy's 3-day limit.
 func TestNtfyEdgeInputs(t *testing.T) {
@@ -564,12 +636,16 @@ func TestNtfyDelayTimezone(t *testing.T) {
 	if err != nil {
 		t.Skip("no timezone database")
 	}
-	for _, c := range []struct{ path, body string }{{"/tz", ""}, {"/", `{"topic":"tz","message":"m","delay":"10am","timezone":"Asia/Tokyo"}`}} {
-		hdr := map[string]string{"At": "10am", "X-Timezone": "Asia/Tokyo"}
-		if c.body != "" {
-			hdr = nil
-		}
-		code, out := raw(t, "POST", ts.URL+c.path, admin, cmp.Or(c.body, "m"), hdr)
+	for _, c := range []struct {
+		path, body string
+		hdr        map[string]string
+	}{
+		{"/tz", "m", map[string]string{"At": "10am", "X-Timezone": "Asia/Tokyo"}},
+		{"/?timezone=Mars/Base", `{"topic":"tz","message":"m","delay":"10am","timezone":"Asia/Tokyo"}`, map[string]string{"Timezone": "Mars/Base"}},
+		{"/?at=10am&timezone=Mars/Base", `{"topic":"tz","message":"m"}`, map[string]string{"Timezone": "Asia/Tokyo"}},
+		{"/?at=10am&timezone=Asia/Tokyo", `{"topic":"tz","message":"m"}`, nil},
+	} {
+		code, out := raw(t, "POST", ts.URL+c.path, admin, c.body, c.hdr)
 		at := time.Unix(ntfyDecode(t, out).Time, 0).In(tokyo)
 		if ahead := time.Until(at); code != 200 || at.Hour() != 10 || at.Minute() != 0 || ahead <= 0 || ahead > 24*time.Hour {
 			t.Errorf("%s: 10am in Tokyo came back as %v: %d %s", c.path, at, code, out)
@@ -627,7 +703,7 @@ func TestNtfyRestartKeepsLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var got []string
-	err := s.follow(ctx, s.lookupToken(ctx, admin), 0, []string{"alerts"}, nil, func(msg []byte, seq int64) error {
+	err := s.follow(ctx, s.lookupToken(ctx, admin), 0, []string{"alerts"}, `{"alerts":0}`, nil, func(msg []byte, seq int64) error {
 		switch {
 		case seq < 0 && len(got) == 0:
 			got = append(got, "reset")
@@ -647,4 +723,42 @@ func TestNtfyRestartKeepsLive(t *testing.T) {
 	if err != nil || strings.Join(got, " ") != "reset kept ready live" {
 		t.Fatalf("got %q, %v", got, err)
 	}
+}
+
+func TestNtfyReplayTopicRanges(t *testing.T) {
+	s, ts, admin := newTest(t)
+	for _, topic := range []string{"quiet", "busy", "unrelated", "busy", "unrelated", "recent", "busy"} {
+		if code, _ := raw(t, "PUT", ts.URL+"/"+topic, admin, topic, nil); code != 200 {
+			t.Fatalf("publish on %s: %d", topic, code)
+		}
+	}
+	ctx := context.Background()
+	const floors = `{"quiet":1,"busy":4,"recent":0}`
+	check := func(since int64, want ...int64) {
+		t.Helper()
+		evs, err := s.replayEventsAfter(ctx, since, 2, floors)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make([]int64, 0, len(evs))
+		for _, e := range evs {
+			got = append(got, e.Seq)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("since %d: got %v, want %v", since, got, want)
+		}
+	}
+	check(0, 1)
+	check(1, 4)
+	check(4, 6, 7)
+	check(7)
+	check(5, 6, 7)
+
+	if _, err := s.db.Exec(`DELETE FROM events WHERE seq <= 3`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.replayEventsAfter(ctx, 1, 2, floors); err != errReset {
+		t.Fatalf("pruned gap: %v", err)
+	}
+	check(3, 4)
 }

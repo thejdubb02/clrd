@@ -4,7 +4,7 @@
   "inputSchema": {
    "properties": {
     "actions": {
-     "description": "Optional buttons, each with one of reply, url, http or broadcast. Answer buttons: [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]; wait_for_reply returns the tapped one as answer. Add \"text\":true to one reply button to let the human type an answer (at most 1000 characters), returned as text. http and broadcast need the topic's device_actions on (set_topic).",
+     "description": "Optional buttons, each with one of reply, url, copy, http or broadcast. Answer buttons: [{\"label\":\"Yes\",\"reply\":\"yes\"},{\"label\":\"No\",\"reply\":\"no\"}]; wait_for_reply returns the tapped one as answer. Add \"text\":true to one reply button to let the human type an answer (at most 1000 characters), returned as text. http and broadcast need the topic's device_actions on (set_topic).",
      "items": {
       "properties": {
        "broadcast": {
@@ -14,6 +14,10 @@
        "clear": {
         "description": "Clear the notification after the button runs",
         "type": "boolean"
+       },
+       "copy": {
+        "description": "Clipboard text, from 1 to 4096 bytes",
+        "type": "string"
        },
        "http": {
         "description": "Request the reader's device sends: {method (POST if empty), url, headers, body}",

@@ -147,7 +147,7 @@ func TestStreamMidStartGrantChange(t *testing.T) {
 		t.Fatal("set grants")
 	}
 	var got []string
-	s.follow(ctx, stale, 0, nil, nil, func(msg []byte, seq int64) error {
+	s.follow(ctx, stale, 0, nil, "", nil, func(msg []byte, seq int64) error {
 		if got = append(got, string(msg)); strings.Contains(string(msg), `"type":"ready"`) {
 			cancel()
 		}
@@ -163,7 +163,7 @@ func TestStreamMidStartGrantChange(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel2()
 	got = nil
-	err := s.follow(ctx2, s.lookupToken(ctx2, out["token"].(string)), 0, nil, nil, func(msg []byte, seq int64) error {
+	err := s.follow(ctx2, s.lookupToken(ctx2, out["token"].(string)), 0, nil, "", nil, func(msg []byte, seq int64) error {
 		if got = append(got, string(msg)); strings.Contains(string(msg), "secret") {
 			call(t, srv, "PUT", "/api/v1/users/"+uid, admin, map[string]any{"grants": []Grant{{Topic: "work", Scopes: []string{ScopeRead}}}})
 		}

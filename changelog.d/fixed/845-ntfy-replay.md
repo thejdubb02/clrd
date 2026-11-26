@@ -1,0 +1,1 @@
+- ntfy subscribe: `since=latest` now replays the newest message of each topic in a multi-topic subscribe, not only the newest one overall, and a replay keeps at most 10 MB per topic (the newest messages), saying so with ntfy's `X-Messages-Truncated: 1` header, as ntfy does (#845).
