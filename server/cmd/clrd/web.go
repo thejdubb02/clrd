@@ -488,6 +488,10 @@ func (a webAPI) RotateToken(r *http.Request, id string) (string, error) {
 	if a.s.Under(r.Context(), tok.ID, id) {
 		return "", errOwnToken
 	}
+	// The sender page is where the new secret shows, once: no sender, no rotate.
+	if _, err := a.s.Sender(r.Context(), tok, id); err != nil {
+		return "", webError(err)
+	}
 	raw, err := a.s.RotateToken(r.Context(), tok, id)
 	return raw, webError(err)
 }

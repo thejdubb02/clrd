@@ -242,6 +242,53 @@ func TestRenameRotateToken(t *testing.T) {
 	}
 }
 
+// What holds the old secret's token across a rotate gets nothing under the
+// new one (#119): a sign-in that authenticated just before, a pairing and a
+// phone link it approved, and a stream that subscribes just after.
+func TestRotateCutsStaleHolders(t *testing.T) {
+	s, ts, admin := newTest(t)
+	ctx := context.Background()
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	stale := s.lookupToken(ctx, typed) // as a racing request loaded it
+	pc := browser(t)
+	_, p, _ := pairSend(t, pc, "POST", ts.URL+"/api/v1/pair", "", nil)
+	pairCode, _ := p["code"].(string)
+	if code, _, _ := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/pair/"+pairCode+"/approve", typed, nil); code != 200 {
+		t.Fatalf("approve pairing: %d", code)
+	}
+	_, l, _ := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/link", typed, nil)
+	lc, _ := l["code"].(string)
+	if code, _ := linkClaim(t, ts.URL, lc, phoneSecret); code != 202 {
+		t.Fatalf("link claim: %d", code)
+	}
+	if code, _, _ := pairSend(t, browser(t), "POST", ts.URL+"/api/v1/link/"+lc+"/approve", typed, nil); code != 200 {
+		t.Fatalf("approve link: %d", code)
+	}
+	if code, _ := call(t, ts, "POST", "/api/v1/tokens/"+stale.ID+"/rotate", admin, nil); code != 200 {
+		t.Fatalf("rotate: %d", code)
+	}
+
+	if _, _, err := s.childToken(ctx, stale, stale.ID, "late browser", false); err == nil {
+		t.Error("a sign-in on the old secret finished after the rotate and made a session")
+	}
+	if code, _, _ := pairSend(t, pc, "POST", ts.URL+"/api/v1/pair/claim", "", map[string]string{"code": pairCode}); code != 401 {
+		t.Errorf("claim a pairing approved before the rotate: %d, want 401", code)
+	}
+	if code, _ := linkClaim(t, ts.URL, lc, phoneSecret); code != 401 {
+		t.Errorf("claim a phone link approved before the rotate: %d, want 401", code)
+	}
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE parent_id = ?`, stale.ID).Scan(&n)
+	if n != 0 {
+		t.Errorf("%d sessions under the rotated token, want 0", n)
+	}
+	sctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := s.follow(sctx, stale, 0, nil, nil, func([]byte, int64) error { return nil }, func() error { return nil }); !errors.Is(err, errRevoked) {
+		t.Errorf("a stream on the old secret, subscribing after the rotate: %v, want revoked", err)
+	}
+}
+
 func TestDeviceName(t *testing.T) {
 	for _, c := range [][2]string{
 		{firefoxLinux, "Firefox on Linux"},

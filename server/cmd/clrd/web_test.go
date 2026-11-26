@@ -334,7 +334,11 @@ func TestSenderTokenForms(t *testing.T) {
 	}
 
 	// Someone who is no full admin changes nothing.
-	_, reader, _ := s.CreateToken(ctx, "reader", "", []string{"read"}, nil)
+	rt, reader, _ := s.CreateToken(ctx, "reader", "", []string{"read"}, nil)
+	// A token that never sent has no sender page to show a new secret on.
+	if code, _, _ := post(c, rt.ID, url.Values{"rotate": {"1"}}); code == 200 || api(reader, "GET", "/api/v1/topics", "") != 200 {
+		t.Fatalf("rotate a token with no sender: %d, want refused and the token kept", code)
+	}
 	other := signedIn(reader)
 	for _, v := range []url.Values{{"token_name": {"x"}}, {"rotate": {"1"}}, {"revoke": {"1"}}} {
 		if code, _, _ := post(other, cam.ID, v); code == 200 {

@@ -63,6 +63,7 @@ type Token struct {
 	view       *view      // its subscriptions filter once loaded (subs.go); nil until then
 	union      []*Token   // set: may what any of these may (an admin's ?for=<user>, subs.go)
 	follow     bool       // subscribed=mine: a typed-in token with no user follows its own set (#764)
+	hash       string     // its secret's hash as loaded: a rotate since changes it (#119)
 }
 
 // limited reports whether the token is held to some topics.
@@ -245,21 +246,21 @@ func (s *Server) CreateToken(ctx context.Context, name, approve string, scopes, 
 
 func (s *Server) createToken(ctx context.Context, t *Token) (*Token, string, error) {
 	raw := tokenPrefix + randomString(32)
-	t.ID, t.CreatedAt = randomString(12), now()
-	if err := insertToken(ctx, s.db, t, hashToken(raw)); err != nil {
+	t.ID, t.CreatedAt, t.hash = randomString(12), now(), hashToken(raw)
+	if err := insertToken(ctx, s.db, t, t.hash); err != nil {
 		return nil, "", err
 	}
 	return t, raw, nil
 }
 
-const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve, COALESCE(user_id, '')`
+const tokenCols = `id, name, scopes, topics, grants, created_at, last_seen_at, approve, COALESCE(user_id, ''), hash`
 
 func scanToken(r scanner) (*Token, error) {
 	var t Token
 	var scopes, topics, grants string
 	var created int64
 	var seen sql.NullInt64
-	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve, &t.User); err != nil {
+	if err := r.Scan(&t.ID, &t.Name, &scopes, &topics, &grants, &created, &seen, &t.Approve, &t.User, &t.hash); err != nil {
 		return nil, err
 	}
 	if grants != "" {
@@ -682,8 +683,11 @@ func (s *Server) linkDevice(ctx context.Context, access *Token, parentID, name s
 	}
 	var res sql.Result
 	if err == nil {
-		// Only while the parent exists, so a racing revoke cannot miss this one.
-		res, err = s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id, phone) SELECT ?, id, ? FROM tokens WHERE id = ?`, st.ID, phone, parentID)
+		// Only while the parent exists and access keeps the secret it came
+		// with, so a racing revoke or rotate cannot miss this one (#119). A
+		// pairing or phone link approved before a rotate fails here too.
+		res, err = s.db.ExecContext(ctx, `INSERT INTO sessions (token_id, parent_id, phone) SELECT ?, id, ? FROM tokens
+		  WHERE id = ? AND EXISTS (SELECT 1 FROM tokens WHERE id = ? AND hash = ?)`, st.ID, phone, parentID, access.ID, access.hash)
 	}
 	if err == nil {
 		if n, _ := res.RowsAffected(); n == 0 {
