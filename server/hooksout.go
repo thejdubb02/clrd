@@ -565,7 +565,7 @@ func discordReqs(u url.URL, n *Notification, event, remote string) []hookReq {
 		method, u.Path = "PATCH", strings.TrimSuffix(u.Path, "/")+"/messages/"+url.PathEscape(remote)
 	}
 	u.RawQuery = q.Encode()
-	return []hookReq{{method, u.String(), map[string]any{"content": discordText(n, event, false),"allowed_mentions": map[string]any{"parse": []string{}}}}}
+	return []hookReq{{method, u.String(), map[string]any{"content": discordText(n, event, false), "allowed_mentions": map[string]any{"parse": []string{}}}}}
 }
 
 // githubMark starts the body of the issue a hook opens for n, so a retry can
