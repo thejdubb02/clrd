@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -529,6 +530,56 @@ func TestNtfyEdgeInputs(t *testing.T) {
 	}
 	if code, body := raw(t, "POST", ts.URL+"/edge", admin, "hi", map[string]string{"X-Delay": "4d"}); code != 400 {
 		t.Fatalf("delay of 4 days: %d %s", code, body)
+	}
+}
+
+// ntfy's schedule forms (#841), on a fixed clock: Wednesday 2026-11-25 14:30.
+func TestDelayTime(t *testing.T) {
+	zone := time.FixedZone("X", -5*3600)
+	now := time.Date(2026, 11, 25, 14, 30, 20, 0, zone)
+	day := func(d, h, m int) time.Time { return time.Date(2026, 11, d, h, m, 0, 0, zone) }
+	for v, want := range map[string]time.Time{
+		"10am": day(26, 10, 0), "8:30pm": day(25, 20, 30), "17:05": day(25, 17, 5), "noon": day(26, 12, 0),
+		"tomorrow, 3pm": day(26, 15, 0), "3 PM tomorrow": day(26, 15, 0), "Tuesday, 7am": time.Date(2026, 12, 1, 7, 0, 0, 0, zone),
+		"wed 2pm": time.Date(2026, 12, 2, 14, 0, 0, 0, zone), "Wednesday 3pm": day(25, 15, 0),
+		"2 days": now.Add(48 * time.Hour), "90 minutes": now.Add(90 * time.Minute), "30m": now.Add(30 * time.Minute),
+		"2026-11-26T10:00:00Z": time.Date(2026, 11, 26, 10, 0, 0, 0, time.UTC), "2026-11-26T09:00:00+09:00": day(25, 19, 0),
+	} {
+		if got, err := delayTime(v, now); err != nil || !got.Equal(want) {
+			t.Errorf("%q: got %v %v, want %v", v, got, err, want)
+		}
+	}
+	for _, v := range []string{"soonish", "today 9am", "2026-11-25T10:00:00Z", "tomorrow tomorrow", "10am 11am", "next tuesday", "2 fortnights", "25pm"} {
+		if got, err := delayTime(v, now); err == nil {
+			t.Errorf("%q: want an error, got %v", v, got)
+		}
+	}
+}
+
+// A time of day is read in the sender's timezone, from a header or JSON; a
+// bad timezone is refused only when there is a delay to read it for (#841).
+func TestNtfyDelayTimezone(t *testing.T) {
+	_, ts, admin := newTest(t)
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Skip("no timezone database")
+	}
+	for _, c := range []struct{ path, body string }{{"/tz", ""}, {"/", `{"topic":"tz","message":"m","delay":"10am","timezone":"Asia/Tokyo"}`}} {
+		hdr := map[string]string{"At": "10am", "X-Timezone": "Asia/Tokyo"}
+		if c.body != "" {
+			hdr = nil
+		}
+		code, out := raw(t, "POST", ts.URL+c.path, admin, cmp.Or(c.body, "m"), hdr)
+		if at := time.Unix(ntfyDecode(t, out).Time, 0).In(tokyo); code != 200 || at.Hour() != 10 || at.Minute() != 0 {
+			t.Errorf("%s: 10am in Tokyo came back as %v: %d %s", c.path, at, code, out)
+		}
+	}
+	if code, out := raw(t, "POST", ts.URL+"/tz", admin, "m", map[string]string{"At": "10am", "Timezone": "Mars/Base"}); code != 400 ||
+		!strings.Contains(out, "timezone") {
+		t.Errorf("bad timezone with a delay: %d %s", code, out)
+	}
+	if code, out := raw(t, "POST", ts.URL+"/tz", admin, "m", map[string]string{"Timezone": "Mars/Base"}); code != 200 {
+		t.Errorf("bad timezone without a delay: %d %s", code, out)
 	}
 }
 
