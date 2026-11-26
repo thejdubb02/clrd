@@ -51,6 +51,7 @@ priority: "{{ if .urgent }}5{{ else }}3{{ end }}"
 	}{
 		{"/alerts?template=alarm", nil},
 		{"/alerts?tpl=alarm", nil},
+		{"/alerts?x-template=alarm", nil},
 		{"/alerts", map[string]string{"X-Template": "alarm"}},
 	} {
 		code, out := raw(t, "POST", ts.URL+v.path, pub, payload, v.hdr)
@@ -79,6 +80,7 @@ priority: "{{ if .urgent }}5{{ else }}3{{ end }}"
 		code                    int
 	}{
 		{"/elsewhere?template=alarm", pub, payload, "may not publish", 403},
+		{"/elsewhere?x-template=alarm", pub, payload, "may not publish", 403},
 		{"/alerts?template=alarm", "", payload, "missing or invalid token", 401},
 		{"/alerts?template=missing", pub, payload, "unknown named template", 400},
 		{"/alerts?template=..%2Falarm", pub, payload, "invalid named template", 400},
@@ -88,6 +90,7 @@ priority: "{{ if .urgent }}5{{ else }}3{{ end }}"
 		{"/alerts?template=alarm", pub, "not JSON", "body must be JSON", 400},
 		{"/alerts?template=alarm", pub, payload + "{}", "one JSON value", 400},
 		{"/alerts?template=alarm", pub, strings.Repeat("x", ntfyMaxBody+1), "message longer", 413},
+		{"/alerts?x-template=alarm", pub, strings.Repeat("x", ntfyMaxBody+1), "message longer", 413},
 	} {
 		if code, out := raw(t, "POST", ts.URL+v.path, v.token, v.body, nil); code != v.code || !strings.Contains(out, v.want) {
 			t.Errorf("%s: got %d %s, want %d with %q", v.path, code, out, v.code, v.want)
@@ -97,8 +100,10 @@ priority: "{{ if .urgent }}5{{ else }}3{{ end }}"
 		map[string]any{"message": "saved {{ .name }}", "secret": "a-shared-test-secret"}); code != 200 {
 		t.Fatalf("save overlapping webhook: %d %v", code, out)
 	}
-	if code, out := raw(t, "POST", ts.URL+"/alerts?template=alarm", pub, payload, nil); code != 401 || !strings.Contains(out, "signature or secret") {
-		t.Fatalf("named file should not bypass saved webhook credentials: %d %s", code, out)
+	for _, query := range []string{"?template=alarm", "?template=alarm&x-template=yes"} {
+		if code, out := raw(t, "POST", ts.URL+"/alerts"+query, pub, payload, nil); code != 401 || !strings.Contains(out, "signature or secret") {
+			t.Fatalf("%s: saved webhook must still require credentials: %d %s", query, code, out)
+		}
 	}
 	t.Run("symlink", func(t *testing.T) {
 		if err := os.Symlink(filepath.Join(dir, "limited.yml"), filepath.Join(dir, "alias.yml")); err != nil {

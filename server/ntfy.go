@@ -229,8 +229,9 @@ func param(r *http.Request, names ...string) string {
 			}
 		}
 	}
+	query := r.URL.Query()
 	for _, n := range names {
-		if v := r.URL.Query().Get(strings.ToLower(n)); v != "" {
+		if v := query.Get(strings.ToLower(n)); v != "" {
 			return v
 		}
 	}
@@ -398,7 +399,7 @@ func parseDuration(v string) (time.Duration, error) {
 // ntfyImplicitUpload reports publishes whose bodies may be detected as files.
 func (s *Server) ntfyImplicitUpload(r *http.Request) bool {
 	if !s.opt.NtfyImplicitUploads || (r.Method != http.MethodPost && r.Method != http.MethodPut) ||
-		ntfyFilename(r) != "" || param(r, "Template", "Tpl") != "" || r.URL.Query().Get("template") != "" ||
+		ntfyFilename(r) != "" || param(r, "Template", "X-Template", "Tpl") != "" ||
 		ntfyAttachURL(r) != "" {
 		return false
 	}
@@ -426,7 +427,8 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	if attach != "" || r.Method == http.MethodGet {
 		file = "" // an external URL makes the filename a label, not an upload
 	}
-	selector := param(r, "Template", "Tpl")
+	// Keep ?template= ahead of its URL aliases because it can select a saved webhook.
+	selector := param(r, "Template", "X-Template", "Tpl")
 	inline := ntfyMarkdown(selector)
 	yes := inline != nil && *inline
 	tpl := yes && file == "" && r.Method != http.MethodGet
@@ -466,7 +468,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	}
 	in := PublishInput{Topic: r.PathValue("topic"), ExternalID: r.PathValue("sid"), Live: live, dropDevice: true}
 	if in.ExternalID == "" {
-		in.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
+		in.ExternalID = param(r, "Id", "X-Sequence-Id", "Sequence-Id", "Sid")
 	}
 	title := param(r, "X-Title", "Title", "Ti", "T")
 	prio := param(r, "X-Priority", "Priority", "Prio", "P")
@@ -490,7 +492,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 			in.Message = strings.TrimSpace(string(body))
 		}
 		if tpl || named != nil {
-			msg := param(r, "Message", "M")
+			msg := param(r, "X-Message", "Message", "M")
 			useMessage := named != nil || msg != ""
 			fields := map[string]*string{"message": &msg, "title": &title, "priority": &prio}
 			if named != nil {
@@ -528,8 +530,8 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 	var err error
 	in.Title = title
 	in.Tags = splitList(param(r, "X-Tags", "Tags", "Tag", "Ta"))
-	in.Click = param(r, "Click")
-	in.Icon = ntfyIcon(param(r, "Icon"))
+	in.Click = param(r, "X-Click", "Click")
+	in.Icon = ntfyIcon(param(r, "X-Icon", "Icon"))
 	if in.Priority, err = ntfyPriority(prio); err != nil {
 		return err
 	}
@@ -553,7 +555,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 func ntfyDetails(r *http.Request, in *PublishInput, actions []ntfyAction, delay, timezone string) error {
 	var err error
 	if actions == nil {
-		in.Actions, err = ntfyActions(param(r, "Actions", "Action"))
+		in.Actions, err = ntfyActions(param(r, "X-Actions", "Actions", "Action"))
 		if err != nil {
 			return err
 		}
@@ -570,7 +572,7 @@ func ntfyDetails(r *http.Request, in *PublishInput, actions []ntfyAction, delay,
 		if kind == "text/markdown" {
 			in.Format = FormatMarkdown
 		} else {
-			in.Markdown = ntfyMarkdown(param(r, "Markdown", "Md"))
+			in.Markdown = ntfyMarkdown(param(r, "X-Markdown", "Markdown", "Md"))
 		}
 	}
 	return nil
@@ -683,7 +685,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	var icon string
 	_ = json.Unmarshal(in.Icon, &icon)
 	if icon == "" {
-		icon = param(r, "Icon")
+		icon = param(r, "X-Icon", "Icon")
 	}
 	p.Icon = ntfyIcon(icon)
 	var attach string
@@ -703,7 +705,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if p.ExternalID == "" {
-		p.ExternalID = param(r, "Id", "Sequence-Id", "Sid")
+		p.ExternalID = param(r, "Id", "X-Sequence-Id", "Sequence-Id", "Sid")
 	}
 	if p.Status == "" {
 		p.Status = param(r, "Status")
@@ -720,7 +722,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 		p.Tags = splitList(param(r, "X-Tags", "Tags", "Tag", "Ta"))
 	}
 	if p.Click == "" {
-		p.Click = param(r, "Click")
+		p.Click = param(r, "X-Click", "Click")
 	}
 	if p.Priority == 0 {
 		if p.Priority, err = ntfyPriority(param(r, "X-Priority", "Priority", "Prio", "P")); err != nil {
@@ -739,8 +741,14 @@ var ntfyJSONKeys = map[string]bool{"topic": true, "message": true, "title": true
 	"sequence_id": true, "external_id": true, "status": true, "cache": true, "markdown": true}
 
 // ntfyIgnoredParams are ntfy publish options clrd accepts but does not act on.
-var ntfyIgnoredParams = [][]string{{"Email", "E-Mail", "Mail", "E"}, {"Call"},
-	{"Firebase"}, {"UnifiedPush", "Up"}, {"Poll-Id"}}
+// The first name in each group is the label in the ignored-option report.
+var ntfyIgnoredParams = [][]string{
+	{"Email", "X-Email", "X-E-Mail", "E-Mail", "Mail", "E"},
+	{"Call", "X-Call"},
+	{"Firebase", "X-Firebase"},
+	{"UnifiedPush", "X-UnifiedPush", "Up"},
+	{"Poll-Id", "X-Poll-Id"},
+}
 
 var ignoredName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,40}$`)
 

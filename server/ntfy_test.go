@@ -759,6 +759,11 @@ func TestNtfyInlineTemplate(t *testing.T) {
 	if code, out = raw(t, "POST", ts.URL+"/wsg?template=yes&m={{.text}}", admin, `{"text": "t"}`, nil); code != 200 || ntfyDecode(t, out).Message != "t" {
 		t.Fatalf("?template=yes is ntfy's inline form, not a saved template named yes: %d %s", code, out)
 	}
+	for _, query := range []string{"?x-template=yes&x-message={{.text}}", "?tpl=yes&x-message={{.text}}"} {
+		if code, out = raw(t, "POST", ts.URL+"/wsg"+query, admin, `{"text":"rendered"}`, nil); code != 200 || ntfyDecode(t, out).Message != "rendered" {
+			t.Errorf("%s: %d %s", query, code, out)
+		}
+	}
 	if code, out = raw(t, "POST", ts.URL+"/wsg?tpl=yes&m={{.text}}", admin, `not json`, nil); code != 400 {
 		t.Fatalf("non-JSON body with tpl=yes: %d %s", code, out)
 	}
@@ -953,6 +958,44 @@ func TestNtfyPrefixedPublishMetadataQuery(t *testing.T) {
 			code, out := raw(t, tc.method, ts.URL+tc.path+query, admin, tc.body, tc.headers)
 			if m := ntfyDecode(t, out); code != 200 || m.Title != tc.title || m.Priority != tc.priority || !slices.Equal(m.Tags, tc.tags) {
 				t.Fatalf("publish: %d %s, want title %q, priority %d and tags %v", code, out, tc.title, tc.priority, tc.tags)
+			}
+		})
+	}
+}
+
+func TestNtfyRemainingPublishQueryAliases(t *testing.T) {
+	_, ts, admin := newTest(t)
+	const query = "?x-sequence-id=from-query&x-click=https://example.com/click&x-icon=https://example.com/icon" +
+		"&x-markdown=yes&x-actions=view%2COpen%2Chttps://example.com/action" +
+		"&sequence-id=bare-id&click=https://example.com/bare&icon=https://example.com/bare&markdown=no"
+	for _, tc := range []struct {
+		name, method, path, body string
+		headers                  map[string]string
+		id, click, icon          string
+		markdown                 bool
+		action                   string
+	}{
+		{"topic publish", "POST", "/aliases", "ready", nil,
+			"from-query", "https://example.com/click", "https://example.com/icon", true, "https://example.com/action"},
+		{"JSON fallback", "POST", "/", `{"topic":"aliases","message":"ready"}`, nil,
+			"from-query", "https://example.com/click", "https://example.com/icon", true, "https://example.com/action"},
+		{"headers win", "PUT", "/aliases", "ready",
+			map[string]string{"Sid": "from-header", "Click": "https://example.com/header-click", "Icon": "https://example.com/header-icon",
+				"Md": "no", "Action": "view, Open, https://example.com/header-action"},
+			"from-header", "https://example.com/header-click", "https://example.com/header-icon", false, "https://example.com/header-action"},
+		{"JSON wins", "POST", "/", `{"topic":"aliases","message":"ready","sequence_id":"from-json","click":"https://example.com/json-click","icon":"https://example.com/json-icon","markdown":false,"actions":[]}`, nil,
+			"from-json", "https://example.com/json-click", "https://example.com/json-icon", false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, out := raw(t, tc.method, ts.URL+tc.path+query, admin, tc.body, tc.headers)
+			m := ntfyDecode(t, out)
+			if code != 200 || m.SequenceID != tc.id || m.Click != tc.click || m.Icon != tc.icon ||
+				(m.ContentType == "text/markdown") != tc.markdown {
+				t.Fatalf("publish: %d %s", code, out)
+			}
+			if tc.action == "" && len(m.Actions) != 0 ||
+				tc.action != "" && (len(m.Actions) != 1 || m.Actions[0].URL != tc.action) {
+				t.Fatalf("actions: %s, want URL %q", out, tc.action)
 			}
 		})
 	}
