@@ -37,11 +37,12 @@ import (
 
 // Options configure a Server. ConfigFromEnv fills them from CLRD_* variables.
 type Options struct {
-	Listen    string        // CLRD_LISTEN, default ":8080"
-	DB        string        // CLRD_DB, default DefaultDB()
-	BaseURL   string        // CLRD_BASE_URL, public URL used in links; unset, links use the address the request came in on
-	Retention time.Duration // CLRD_RETENTION, default 720h
-	Logger    *slog.Logger  // default slog.Default()
+	Listen          string        // CLRD_LISTEN, default ":8080"
+	DB              string        // CLRD_DB, default DefaultDB()
+	BaseURL         string        // CLRD_BASE_URL, public URL used in links; unset, links use the address the request came in on
+	Retention       time.Duration // CLRD_RETENTION, default 720h
+	NtfyCacheTopics []string      // CLRD_NTFY_CACHE_TOPICS, opt-in age-based retention
+	Logger          *slog.Logger  // default slog.Default()
 
 	// HidePublicPages (CLRD_PUBLIC_PAGES=off) is for a private server: / goes to
 	// the inbox, /docs and /sitemap.xml are 404, and robots.txt disallows all.
@@ -84,6 +85,12 @@ func ConfigFromEnv() (Options, error) {
 			return o, fmt.Errorf("CLRD_RETENTION: want a duration like 720h, got %q", v)
 		}
 		o.Retention = d
+	}
+	o.NtfyCacheTopics = splitList(os.Getenv("CLRD_NTFY_CACHE_TOPICS"))
+	for _, topic := range o.NtfyCacheTopics {
+		if err := validTopic(topic); err != nil {
+			return o, fmt.Errorf("CLRD_NTFY_CACHE_TOPICS: %w", err)
+		}
 	}
 	o.Attachments = os.Getenv("CLRD_ATTACHMENTS")
 	if v := os.Getenv("CLRD_NTFY_IMPLICIT_UPLOADS"); v == "on" {
@@ -441,7 +448,7 @@ func (s *Server) effectiveEnv() map[string]string {
 		"CLRD_ATTACHMENT_TOTAL_MB": strconv.FormatInt(o.AttachmentTotal>>20, 10), "CLRD_PUBLIC_PAGES": public,
 		"CLRD_RATE_TOKEN": rate(o.RateToken), "CLRD_RATE_TOPIC": rate(o.RateTopic), "CLRD_TRUSTED_PROXIES": strings.Join(proxies, ","),
 		"CLRD_CONFIG": o.Config, "CLRD_HOOK_ALLOW": hookAllow, "CLRD_METRICS": metrics,
-		"CLRD_NTFY_IMPLICIT_UPLOADS":    implicitUploads,
+		"CLRD_NTFY_IMPLICIT_UPLOADS": implicitUploads, "CLRD_NTFY_CACHE_TOPICS": strings.Join(o.NtfyCacheTopics, ","),
 		"CLRD_NTFY_REQUESTS_PER_MINUTE": rate(o.NtfyRequestsPerMinute), "CLRD_NTFY_MAX_SUBSCRIPTIONS": rate(o.NtfyMaxSubscriptions),
 	}
 }

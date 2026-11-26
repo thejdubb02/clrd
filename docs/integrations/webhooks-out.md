@@ -244,6 +244,9 @@ URL, secret and body template saved at that moment, so saving a fix also
 fixes the retries already queued. A webhook with nothing to send stays on;
 the next failure after 24 hours of failing turns it off at once.
 
+Saving the webhook resolves its turn-off notice. Publisher alerts on the
+same topic keep their own keys and state.
+
 `GET /api/v1/topics/alerts/hooks/github/deliveries` shows the last 100
 deliveries: status (`pending`, `ok` or `failed`), tries, the last HTTP code
 or error, and when the next try is due.

@@ -28,6 +28,15 @@ the ownership is not), phone numbers, email addresses, billing, web push
 subscriptions (browsers subscribe again), and web app sign-ins (tokens that
 expire; sign in again).
 
+## Optional message cache retention
+
+Set `CLRD_NTFY_CACHE_TOPICS` to a comma-separated list of exact topic names
+to age out their active and acknowledged notifications. The hourly prune
+removes these after `CLRD_RETENTION` since their last update. Snoozed messages
+and scheduled sends survive until they wake, when their age starts again.
+Other topics keep the normal clrd inbox behavior. Cleared rows are still
+governed by the keep-cleared settings. See [server settings](self-host.md#settings).
+
 ## 1. Look first
 
 Stop ntfy so its files are not changing, then run a dry run. It reads ntfy's

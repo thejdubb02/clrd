@@ -1,19 +1,17 @@
-// Command _gen writes clrd's built-in notification sounds as WAV files into
-// assets/sounds. Every sound is synthesised here from sine waves, so the files
-// are ours to ship under Apache-2.0 (no samples, no third-party audio).
+// Package sounds makes clrd's built-in notification sounds (docs/SPEC.md
+// section 2.2). Every sound is synthesised from sine waves, so they are ours
+// to ship under Apache-2.0 (no samples, no third-party audio).
 //
-// Regenerate from the repo root: go run ./assets/sounds/_gen
-//
-// The leading underscore keeps this directory out of ./... and out of
-// go:embed, so the binary ships only the .wav files.
-package main
+// The server renders a WAV on request instead of embedding the files, which
+// keeps about 90 KB out of the binary. The same files are committed under
+// assets/sounds for the Android app; regenerate them from the repo root with
+// go run ./internal/sounds/gen.
+package sounds
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
-	"os"
-	"path/filepath"
-	"runtime"
 )
 
 // rateFor picks the lowest common sample rate (Hz, mono, 16-bit) that holds
@@ -97,30 +95,24 @@ func render(notes []note, rate float64) []int16 {
 	return out
 }
 
-func writeWAV(path string, s []int16, rate int) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	n := uint32(len(s) * 2)
-	hdr := []any{[4]byte{'R', 'I', 'F', 'F'}, 36 + n, [4]byte{'W', 'A', 'V', 'E'},
-		[4]byte{'f', 'm', 't', ' '}, uint32(16), uint16(1), uint16(1), uint32(rate), uint32(rate * 2), uint16(2), uint16(16),
-		[4]byte{'d', 'a', 't', 'a'}, n, s}
-	for _, v := range hdr {
-		if err := binary.Write(f, binary.LittleEndian, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// Names lists the built-in sounds.
+var Names = []string{"chime", "ding", "pop", "bell", "alert", "soft"}
 
-func main() {
-	_, self, _, _ := runtime.Caller(0)
-	for name, notes := range sounds {
-		r := rateFor(notes)
-		if err := writeWAV(filepath.Join(filepath.Dir(self), "..", name+".wav"), render(notes, float64(r)), r); err != nil {
-			panic(err)
-		}
+// WAV renders a built-in sound as a 16-bit mono WAV file, or returns false
+// for an unknown name. Nothing is cached: a sound takes under a millisecond.
+func WAV(name string) ([]byte, bool) {
+	notes, ok := sounds[name]
+	if !ok {
+		return nil, false
 	}
+	r := rateFor(notes)
+	s := render(notes, float64(r))
+	n := uint32(len(s) * 2)
+	var b bytes.Buffer
+	for _, v := range []any{[4]byte{'R', 'I', 'F', 'F'}, 36 + n, [4]byte{'W', 'A', 'V', 'E'},
+		[4]byte{'f', 'm', 't', ' '}, uint32(16), uint16(1), uint16(1), uint32(r), uint32(r * 2), uint16(2), uint16(16),
+		[4]byte{'d', 'a', 't', 'a'}, n, s} {
+		binary.Write(&b, binary.LittleEndian, v) // a bytes.Buffer never fails
+	}
+	return b.Bytes(), true
 }

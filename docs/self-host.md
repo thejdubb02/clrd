@@ -160,7 +160,8 @@ for contrast before saving. Use `device_theme` in MCP for a device override.
 | `CLRD_LISTEN` | `:8080` | Address to listen on. |
 | `CLRD_DB` | `/data/clrd.db` if it exists, else `~/.local/share/clrd/clrd.db` (or under `$XDG_DATA_HOME`) | SQLite file. Its folder must be writable (WAL files live next to it). |
 | `CLRD_BASE_URL` | unset: links use the address the browser opened clrd on | Public URL, used in the setup and phone pairing links. Set it to your https URL behind a proxy; a proxy that rewrites the host or drops the port then still works for clrd's own pages. A path in it (`https://example.com/clrd`) serves everything under that path. |
-| `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. This is the starting value: once someone sets "Keep cleared messages" in Settings (or `keep_cleared_days` over the API or MCP), that setting wins, and a topic can have its own value (in Settings under "By topic", or `topic_keep_cleared_days`). Open and snoozed messages are never deleted. |
+| `CLRD_RETENTION` | `720h` | How long dismissed and resolved rows, and the event log, are kept. This is the starting value: once someone sets "Keep cleared messages" in Settings (or `keep_cleared_days` over the API or MCP), that setting wins, and a topic can have its own value (in Settings under "By topic", or `topic_keep_cleared_days`). Open messages stay by default. |
+| `CLRD_NTFY_CACHE_TOPICS` | unset | Comma-separated exact topic names whose active and acknowledged notifications age out after `CLRD_RETENTION` since their last update. The hourly prune leaves snoozed and delayed messages alone until they wake. |
 | `CLRD_NTFY_IMPLICIT_UPLOADS` | `off` | Set to `on` to accept unnamed large or binary ntfy publishes as attachments. File limits and authorization still apply. |
 | `CLRD_ATTACHMENTS` | `attachments` next to the database | Folder for uploaded files. |
 | `CLRD_PUBLIC_PAGES` | `on` | `off` hides the landing page and docs on a private server: `/` goes to the inbox, `/docs` is 404, and `robots.txt` asks every crawler to stay out. |
@@ -257,6 +258,24 @@ work. The path cannot start with `/api`. In Caddy, `handle /clrd/*` with the sam
 the same block as `location /clrd/`. In the Android app, enter the full
 address with the path.
 
+## Publish and subscribe from the command line
+
+The server binary also works as a client. Set `CLRD_TOKEN` to a token with
+publish or read access as needed. The commands use the local listen port by
+default. For a remote server, set `CLRD_URL` to its HTTPS base URL, including
+any sub-path.
+
+```sh
+clrd publish --title "Disk space" --priority high --tags infra,disk infra "Disk is 91% full"
+clrd poll --since 1h infra,ops
+clrd subscribe infra,ops
+```
+
+Publish prints the server's JSON reply. Poll prints stored events as
+newline-delimited JSON and exits, with retained history as the default.
+Subscribe streams new events as they happen until stopped with Ctrl+C. Use
+`--since` to start a stream with replay.
+
 ## Health
 
 `GET /healthz` returns `{"ok":true,"seq":N}`. The Docker image runs
@@ -312,7 +331,12 @@ Anonymous topics are off until an admin sets them, with
 right now and is stored nowhere, so it never shows in the inbox or a replay.
 It cannot be delayed, repeated, carry a file or an `Id`.
 
-`view` action buttons work everywhere. `http` and `broadcast` buttons are
+`view` action buttons work everywhere. The server also accepts `copy` action
+buttons on any topic and passes them to ntfy subscribers. In the web inbox,
+the button copies its value to the clipboard and clears the notification
+after a successful copy if the action sets `clear`. Use
+`copy, Copy code, 123456` in `X-Actions` or set `value` in the JSON action.
+`http` and `broadcast` buttons are
 stored and passed to ntfy apps once an admin turns them on for the topic
 (`{"device_actions":true}` on `PUT /api/v1/topics/{topic}`, or the MCP tool
 `set_topic`); until then they are dropped. clrd's own app does not run them
