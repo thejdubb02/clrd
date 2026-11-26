@@ -245,8 +245,11 @@ type one struct {
 	n Notification
 }
 
-func (o one) Snapshot(*http.Request, Query) (Snapshot, error) {
-	return Snapshot{Items: []Notification{o.n}}, nil
+func (o one) Snapshot(_ *http.Request, q Query) (Snapshot, error) {
+	if q.ID != "" { // the card's own read, before any later one
+		return Snapshot{Items: []Notification{o.n}, Seq: 7}, nil
+	}
+	return Snapshot{Items: []Notification{o.n}, Seq: 9}, nil
 }
 
 // A notification's link is a page with its card alone, under its state's
@@ -257,8 +260,9 @@ func TestNotificationLinkPage(t *testing.T) {
 		Handler(one{n: Notification{ID: "n1", Topic: "a b", State: state}}, "https://h.example/clrd").ServeHTTP(w, httptest.NewRequest("GET", "/app/n/n1", nil))
 		body := w.Body.String()
 		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || strings.Count(body, `id="t-`) != 1 || !strings.Contains(body, `id="t-n1"`) ||
-			!strings.Contains(body, `href="`+want+`topic=a%20b#t-n1" data-back`) || !strings.Contains(body, `method="get" action="`+strings.TrimSuffix(want, "?")+`"`) {
-			t.Errorf("%s: %d, want its card alone, and a link back and search on %s", state, w.Code, want)
+			!strings.Contains(body, `href="`+want+`topic=a%20b#t-n1" data-back`) || !strings.Contains(body, `method="get" action="`+strings.TrimSuffix(want, "?")+`"`) ||
+			!strings.Contains(body, `data-seq="7"`) || strings.Contains(body, "clear-all") {
+			t.Errorf("%s: %d, want its card alone, a link back and search on %s, replay from the card's read, no Clear all", state, w.Code, want)
 		}
 	}
 	if code, body := get(t, Handler(none{}, ""), "/app/n/n1"); code != 404 || !strings.Contains(body, "This notification is gone") {

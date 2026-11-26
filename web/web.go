@@ -446,7 +446,7 @@ type RulesForm struct {
 
 type rulesFormKey struct{}
 
-// oneKey carries the one notification /app/n/{id} shows (#822).
+// oneKey carries the snapshot of the one notification /app/n/{id} shows (#822).
 type oneKey struct{}
 
 // FormRules are the rules the form shows: a refused save's, else the saved.
@@ -1387,7 +1387,7 @@ func Handler(api API, baseURL string) http.Handler {
 	app := func(view string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			states := views[view]
-			one, _ := r.Context().Value(oneKey{}).(*Notification)
+			one, _ := r.Context().Value(oneKey{}).(*Snapshot)
 			if states == nil || one != nil { // settings: no list, the rest of the snapshot still counts
 				states = []string{}
 			}
@@ -1433,8 +1433,9 @@ func Handler(api API, baseURL string) http.Handler {
 				return
 			}
 			w.Header().Set("Cache-Control", "no-store")
-			if one != nil {
-				snap.Items = []Notification{*one}
+			var card *Notification
+			if one != nil { // the card and the seq replay starts from, from one read: nothing in between is skipped
+				snap.Items, snap.Seq, snap.Epoch, card = one.Items, one.Seq, one.Epoch, &one.Items[0]
 			}
 			c := snap.Counts
 			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender", "stats": "Stats", "gone": "Not found"}
@@ -1462,7 +1463,7 @@ func Handler(api API, baseURL string) http.Handler {
 				Tip                           int
 			}{
 				meta: meta{Title: badge(c["active"]+c["acknowledged"]) + titles[view] + ": clrd", Path: r.URL.Path, Base: base(r)},
-				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), One: one, Snap: snap, Tips: ts, Tip: tip,
+				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), One: card, Snap: snap, Tips: ts, Tip: tip,
 				Inbox:   c["active"] + c["acknowledged"],
 				Snoozed: c["snoozed"],
 				Cleared: c["dismissed"] + c["resolved"],
@@ -1493,13 +1494,13 @@ func Handler(api API, baseURL string) http.Handler {
 			app("gone")(w, r)
 			return
 		}
-		n, view := snap.Items[0], "inbox"
+		view := "inbox"
 		for v, states := range views {
-			if slices.Contains(states, n.State) {
+			if slices.Contains(states, snap.Items[0].State) {
 				view = v
 			}
 		}
-		app(view)(w, r.WithContext(context.WithValue(r.Context(), oneKey{}, &n)))
+		app(view)(w, r.WithContext(context.WithValue(r.Context(), oneKey{}, &snap)))
 	})
 	// A sender's rules (#119): save them all, or undo one change, as a plain
 	// form post. The server checks the full admin.
