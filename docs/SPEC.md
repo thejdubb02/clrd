@@ -1179,6 +1179,9 @@ its data):
 - After an update to a new version, the web inbox shows a small, dismissible
   What's new note on the first open (quiet on a browser's first visit ever),
   linking to Settings, About; each browser can turn the note off in Settings.
+  The Android app does the same for its own version: after the app updates,
+  a dismissible note at the top of the inbox opens What's new; quiet on the
+  first open ever, and off with the switch in Settings, About.
 
 `/docs/changelog` renders the combined changelog; a private server hides it with the
 rest of `/docs`, the endpoint stays. MCP: `version()` returns the same JSON,
@@ -1219,7 +1222,12 @@ and `initialize` reports `version` as `serverInfo.version`.
   made absolute from `CLRD_BASE_URL`). Unlike ntfy, clrd's file URLs need a
   token, so a third-party ntfy app that fetches files without one gets 401.
 - `POST /` with ntfy JSON body (`topic`, `message`, `title`, `priority`, `tags`,
-  `icon`, `attach`, `filename`, ...).
+  `icon`, `attach`, `filename`, ...). Headers and query parameters fill
+  omitted options, including actions, delay, Markdown, cache, and the message
+  ID. Headers win over query parameters. Non-empty JSON fields win over both,
+  as do explicit JSON arrays and the Markdown boolean. The topic comes from
+  JSON, and the filename describes an external attachment. For a raw publish,
+  `Content-Type: text/markdown` selects Markdown even with `Markdown: no`.
 - `GET /{topic}/json`, `/{topic}/sse`, `/{topic}/ws`, `/{topic}/raw` with `since=`
   (`all`, unix time, duration, message id) and `poll=1`, and ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
@@ -1658,7 +1666,7 @@ JavaScript off the web page shows every section and no search box.
 | Integrations | `test-send` | Send a test notification | test, curl, publish, try, api | web |
 | Integrations | `webhooks` | Webhooks | webhook, outgoing, callback, post, integration | web, admin only |
 | Integrations | `templates` | Webhook templates | incoming, template, github, grafana, json | web |
-| About | `about` | Version | version, what's new, changelog, release, update, build | web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2) |
+| About | `about` | Version | version, what's new, changelog, release, update, build | both. Web: the running version, What's new, and the per-browser switch for the after-update note (section 5.2). Android: this app's version and the shown server's side by side with a plain line when one is newer, What's new from the server or, when it cannot be reached, the released versions built into the app, and the phone's switch for its after-update note |
 
 The Android version line stays at the foot of the page, outside the sections.
 

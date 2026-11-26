@@ -498,6 +498,7 @@ private fun ServerHome(app: App, battery: Intent?, resumes: Int, scan: () -> Uni
                 app.sender.confirm { if (app.sender.done) sending = false; snackbar.showSnackbar(ctx.getString(R.string.send_done)) }
             }
             if (sending) SendBox(app, topic.orEmpty(), close = { sending = false })
+            if (tab == Tab.Inbox) UpdateNote(app)
             when (tab) {
                 Tab.Settings -> SettingsScreen(app, battery, resumes, scan)
                 else -> {
@@ -2240,6 +2241,7 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
             "snooze" -> SnoozeSettings(app)
             "devices" -> DeviceSettings(app, resumes)
             "senders" -> SenderSettings(app, resumes, senders)
+            "about" -> AboutBlock(app, a) { Title(R.string.about_title) }
         }
     }
 
