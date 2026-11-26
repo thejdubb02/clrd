@@ -73,7 +73,9 @@ optional `note` (at most 200 characters) and `link` (http or https), with
 `POST /api/v1/notifications/{id}/mark`. Each mark is
 `{"by":"stew","by_id":"...","mark":"actioned","note":"filed relay#512","link":"https://...","at":"<RFC3339>"}`.
 A mark never changes the state, so it clears and hides nothing for anyone;
-everyone who reads the topic sees it on the card. There is one mark per
+everyone who reads the topic sees it on the card. A mark is only ever set by
+hand: opening, reading or listing a card never marks it `seen`, on any
+client. There is one mark per
 author: a token attached to a person marks as that person (`by_id` is the
 person's id), any other token as the token its device tree starts from.
 Setting it again replaces it; only the author changes or removes it. A mark
