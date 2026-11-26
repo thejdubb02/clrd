@@ -533,7 +533,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 	if err != nil {
 		return err
 	}
-	if since < s.pruned.Load() || since > cur || since < tok.view.seq {
+	resetSeq := tok.view.seq
+	if tok.view.all {
+		resetSeq = tok.view.moved
+	}
+	if since < s.pruned.Load() || since > cur || since < resetSeq {
 		return errReset
 	}
 	evs, err := s.eventsAfter(r.Context(), since, limit)
@@ -548,7 +552,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 	out := []json.RawMessage{}
 	next := since
 	for _, e := range evs {
-		if tok.view.changedBy(e) { // the set changed within this page: start over
+		if !tok.view.all && tok.view.changedBy(e) { // the filtered view changed within this page
 			return errReset
 		}
 		if visible(tok, topics, e.Notification.Topic) && hid.passes(tok, e) {

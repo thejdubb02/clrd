@@ -170,8 +170,10 @@ func TestSubsDetachResets(t *testing.T) {
 	call(t, ts, "PUT", "/api/v1/tokens/"+id+"/user", admin, map[string]any{"user": u["id"]})
 	stale := s.CurrentSeq()
 	call(t, ts, "PUT", "/api/v1/tokens/"+id+"/user", admin, map[string]any{"user": ""})
-	if code, _ := call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d", stale), laptop, nil); code != 410 {
-		t.Fatalf("stale since after detach: %d", code)
+	for _, query := range []string{"", "&subscribed=all"} {
+		if code, _ := call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d%s", stale, query), laptop, nil); code != 410 {
+			t.Fatalf("stale since after detach (%q): %d", query, code)
+		}
 	}
 }
 
@@ -617,5 +619,34 @@ func TestSubscribedMine(t *testing.T) {
 	narrow := mkToken(t, s, "narrow", []string{ScopeRead}, []string{"infra"})
 	if _, out := call(t, ts, "GET", "/api/v1/notifications?subscribed=mine", narrow, nil); strings.Contains(topicsOf(out), "chat") {
 		t.Fatalf("asking showed more than the token reads: %v", topicsOf(out))
+	}
+}
+
+// A subscription edit does not invalidate polling across all readable topics.
+func TestEventsAllKeepSubscriptionCursor(t *testing.T) {
+	s, ts, admin := newTest(t)
+	browser := childOf(t, s, admin)
+	before := s.CurrentSeq()
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "chat", "message": "before"})
+	call(t, ts, "PUT", "/api/v1/subscriptions", browser, map[string]any{"topics": map[string]any{"chat": false}})
+	call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "chat", "message": "after"})
+
+	code, page := call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d&subscribed=all&topics=chat", before), browser, nil)
+	if code != 200 || page["seq"] != float64(s.CurrentSeq()) {
+		t.Fatalf("poll after subscription edit: %d %v", code, page)
+	}
+	events := page["events"].([]any)
+	if len(events) != 2 {
+		t.Fatalf("expected both notifications without the subscription marker: %v", events)
+	}
+	for i, want := range []string{"before", "after"} {
+		event := events[i].(map[string]any)
+		if event["type"] != "created" || event["notification"].(map[string]any)["message"] != want {
+			t.Fatalf("event %d: %v", i, event)
+		}
+	}
+	code, _ = call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d", before), browser, nil)
+	if code != 410 {
+		t.Fatalf("filtered view should still reset: %d", code)
 	}
 }
