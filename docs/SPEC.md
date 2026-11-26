@@ -1117,9 +1117,10 @@ that one topic, and shows the secret and a ready-to-paste URL or command once,
 with a link to the service's guide. The page then waits for the token's first
 message and links its sender page once it arrives (live with JavaScript, a
 Check again link without). The Android app
-lists them in Settings with the same rules (the silence alarm's `expect` and
-`alert_topic` below included, `icon` not yet), change log and Undo, for the same admins, and
-sends one field per change; for anyone else the section stays hidden.
+lists them in Settings with their icons, change log and Undo, for the same
+admins. It edits the same rules, including the silence alarm, and sends one
+field per change. Set the icon from the web, REST or MCP. For anyone else
+the section stays hidden.
 
 The silence alarm: `expect` (a duration, 1m to 8784h, like `"25h"`; `""`
 for off) makes the server watch the sender. When it has sent nothing,
@@ -1219,8 +1220,13 @@ and `initialize` reports `version` as `serverInfo.version`.
   ntfy does; a value that cannot be decoded is kept as sent. Query values
   are taken as they are. `X-Template`/`Template`/`tpl` set
   to yes/true/1 makes the message, title and priority Go templates over the
-  JSON body, as in ntfy (any other `?template=` value is a webhook template,
-  below). By default, a body over 4096 bytes without a file name is a 413.
+  JSON body. Other selectors on a JSON POST or PUT can load `name.yml`
+  from `CLRD_NTFY_TEMPLATE_DIR` (unset disables disk lookup). Existing saved
+  or built-in webhooks selected by `?template=` take precedence. Disk
+  templates need publish access to the topic, use the normal ntfy publish
+  response and share the inline renderer limits. See
+  [supported file syntax](migrate-from-ntfy.md#named-templates).
+  By default, a body over 4096 bytes without a file name is a 413.
   With `CLRD_NTFY_IMPLICIT_UPLOADS=on`, ordinary topic publishes with a body
   over 4096 bytes or invalid UTF-8 become uploaded files named `attachment`.
   The same file limits, access checks and safe download types apply. Templates
@@ -1422,6 +1428,7 @@ failed send (502) or a request over 4000 characters (413) sends the agent back t
   requests without the path are still answered, for a proxy that strips it),
   `CLRD_RETENTION` (`720h` for final rows and events; the
   `keep_cleared_days` setting overrides it once set),
+  `CLRD_NTFY_TEMPLATE_DIR` (directory of named ntfy templates, unset disables lookup),
   `CLRD_NTFY_CACHE_TOPICS` (unset; exact topics separated by commas where
   active and acknowledged notifications age out under `CLRD_RETENTION`),
   `CLRD_ATTACHMENTS` (folder for uploaded files, default `attachments` next to

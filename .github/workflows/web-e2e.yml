@@ -53,20 +53,31 @@ jobs:
       - name: build
         # The packed build, as it ships (#690).
         run: go run ./server/cmd/pack && CGO_ENABLED=0 go build -tags packed -o "$RUNNER_TEMP/clrd" ./server/cmd/clrd
-      - name: inbox in Chromium
+      - name: inbox and screenshots in Chromium, side by side
+        # The two suites start their own servers on free ports, so they run at
+        # once (#922): the inbox suite spends over a minute waiting on server
+        # timers, and the screenshot suite fills that time. Its log prints after.
+        # The screenshot container keeps its own network, so the two servers
+        # can never pick the same port.
         run: |
-          docker run --rm --network host --init \
-            -v "$PWD/web/e2e:/pw/e2e:ro" -v "$RUNNER_TEMP/clrd:/usr/local/bin/clrd:ro" \
-            mcr.microsoft.com/playwright:v1.48.0-jammy \
-            sh -c 'cd /pw && npm i --silent --no-audit --no-fund playwright@1.48.0 && node e2e/inbox.mjs'
-      - name: screenshots, axe and console errors
-        run: |
+          img=mcr.microsoft.com/playwright:v1.48.0-jammy
+          docker pull -q "$img"
           mkdir -p "$RUNNER_TEMP/shots"
-          docker run --rm --network host --init \
+          docker run --rm --init \
             -v "$PWD/web/e2e:/pw/e2e:ro" -v "$RUNNER_TEMP/clrd:/usr/local/bin/clrd:ro" -v "$RUNNER_TEMP/shots:/shots" \
             -e OUT=/shots -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
-            mcr.microsoft.com/playwright:v1.48.0-jammy \
-            sh -c 'cd /pw && npm i --silent --no-audit --no-fund playwright@1.48.0 @axe-core/playwright@4.10.1 && node e2e/screens.mjs; rc=$?; chown -R "$HOST_UID:$HOST_GID" /shots; exit $rc'
+            "$img" \
+            sh -c 'cd /pw && npm i --silent --no-audit --no-fund playwright@1.48.0 @axe-core/playwright@4.10.1 && node e2e/screens.mjs; rc=$?; chown -R "$HOST_UID:$HOST_GID" /shots; exit $rc' \
+            > "$RUNNER_TEMP/screens.log" 2>&1 &
+          screens=$!
+          rc=0
+          docker run --rm --network host --init \
+            -v "$PWD/web/e2e:/pw/e2e:ro" -v "$RUNNER_TEMP/clrd:/usr/local/bin/clrd:ro" \
+            "$img" \
+            sh -c 'cd /pw && npm i --silent --no-audit --no-fund playwright@1.48.0 && node e2e/inbox.mjs' || rc=$?
+          wait "$screens" || rc=$((rc ? rc : $?))
+          echo "::group::screenshots, axe and console errors"; cat "$RUNNER_TEMP/screens.log"; echo "::endgroup::"
+          exit "$rc"
       - name: upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
