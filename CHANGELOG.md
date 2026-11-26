@@ -150,6 +150,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 ### Fixed
 
 - Android: dark mode uses the same quiet grey and urgent orange as the web inbox (`#98A1AC` and `#F97316`), so the two match side by side (#583).
+- Android: a display or swipe setting changed on the web while the phone was saving its own change now keeps the web's newer value, a link preview never follows a redirect away from your server, and an open message shows its preview right after previews are turned on (#818).
 - Server: a Discord webhook moved to a new URL now posts a scheduled or snoozed notification there when it wakes, instead of skipping it because the old URL had it, even when the move is saved while a post is going out. A wake also tries again a post that failed earlier (#795).
 - Server: pausing GitHub issue hooks (`github_hooks_paused`) now also stops a send already under way, and issues waiting out a pause longer than `CLRD_RETENTION` are no longer dropped, so they all go out on resume (#796).
 - Android: turning Markdown formatting on or off now redraws the notifications already in the shade at once, without a sound; and a link written as `<https://...>` shows without its brackets and stays a link even with automatic links off (#809).

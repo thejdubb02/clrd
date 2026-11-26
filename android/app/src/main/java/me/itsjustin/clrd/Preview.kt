@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +49,9 @@ internal data class LinkPreview(val url: String, val title: String, val descript
         fun load(app: App, url: String, topic: String): LinkPreview? {
             val key = "${app.serverUrl} ${app.token.hashCode()} $topic $url" // another server or account never sees this one's
             cache.get(key)?.let { return it }
-            val o = runCatching { JSONObject(app.api().get("/api/v1/preview?url=" + Uri.encode(url) + "&topic=" + Uri.encode(topic))) }.getOrNull() ?: return null
+            // No redirects (#818): a proxy in front of the server could send the phone to the linked site. A 3xx is an error, so no preview.
+            val api = Api(app.http.newBuilder().followRedirects(false).followSslRedirects(false).build(), app.serverUrl, app.token)
+            val o = runCatching { JSONObject(api.get("/api/v1/preview?url=" + Uri.encode(url) + "&topic=" + Uri.encode(topic))) }.getOrNull() ?: return null
             val title = o.optString("title")
             if (title.isEmpty()) return null
             return LinkPreview(url, title, o.optString("description"), o.optString("site_name"), picture(o.optString("image"))).also { cache.put(key, it) }
@@ -70,7 +73,8 @@ internal fun PreviewCard(n: Notif, text: AnnotatedString) {
     val b = LocalBrand.current
     val url = remember(text) { LinkPreview.firstLink(text) } ?: return
     var p by remember(url, n.topic) { mutableStateOf<LinkPreview?>(null) }
-    LaunchedEffect(url, n.topic) { p = withContext(app.images.dispatcher) { LinkPreview.load(app, url, n.topic) } }
+    val rev by app.settingsRev.collectAsState() // a switch saved after the first ask, which the server refused, asks again (#818)
+    LaunchedEffect(url, n.topic, rev) { p = withContext(app.images.dispatcher) { LinkPreview.load(app, url, n.topic) } ?: p }
     val shown = p ?: return
     val uri = LocalUriHandler.current
     Surface(
