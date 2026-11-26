@@ -174,6 +174,31 @@ class MultiServerEdgeTest {
         b.db.close()
     }
 
+    /** The untagged notice may be another server's: when it goes, each server still without the pass shows its own (#951). */
+    @Test fun anotherServerStillWithoutThePassGetsItsOwnNotice() {
+        val b = app.addAccount("https://b.example", "")
+        val c = app.addAccount("https://c.example", "")
+        app.tray.dndNotice() // the old untagged entry, maybe B's
+        b.prefs.edit().putBoolean("dnd_lost", true).apply() // B still lacks the pass
+        bg { app.removeAccount(c.id) }
+        drain()
+        assertNull(shadowOf(nm).getNotification(null, Tray.DND_ID))
+        assertNotNull(shadowOf(nm).getNotification("dnd${b.id}", Tray.DND_ID))
+        b.db.close()
+    }
+
+    /** A reply repost read under an old sign-in posts nothing once a new one has started (#951). */
+    @Test fun aStaleRepostPostsNothing() {
+        val gen = app.account.configGen
+        bg { app.account.saveServer("https://a.example", "new") }
+        bg { RoomStore(app).apply(listOf(row("a")), 1) } // the new sign-in's row, same id
+        nm.cancelAll()
+        bg { app.tray.repost("a", gen) }
+        assertNull(shadowOf(nm).getNotification("a", 0))
+        bg { app.tray.repost("a", app.account.configGen) }
+        assertNotNull(shadowOf(nm).getNotification("a", 0))
+    }
+
     /** A swipe checked under an old sign-in hides nothing once a new one has started (#943). */
     @Test fun aStaleSwipeHidesNothing() {
         val gen = app.account.configGen

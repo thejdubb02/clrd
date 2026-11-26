@@ -179,7 +179,7 @@ class MultiServerTest {
         assertNull(shadowOf(nm).getNotification(tag, 0))
         assertEquals(listOf(app.account), app.accounts)
         assertNull(app.account(b.id))
-        bg { RoomStore(app, b).reconcile(); b.tray.repost("a") } // work still queued for the removed server
+        bg { RoomStore(app, b).reconcile(); b.tray.repost("a", b.configGen) } // work still queued for the removed server
 
         val c = app.addAccount("https://c.example", "tc")
         assertNotEquals(b.id, c.id)

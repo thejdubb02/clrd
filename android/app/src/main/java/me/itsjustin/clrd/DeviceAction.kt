@@ -115,16 +115,17 @@ object DeviceAction {
             val req = request(o) ?: return@execute finish(false)
             // A bare client: the clrd token is never sent to a sender's address, and no redirect carries the
             // sender's headers to another host. 8 s leaves room in the receiver's budget to save a clear.
-            val call = acct.http.newBuilder().pingInterval(0, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
-                .callTimeout(8, TimeUnit.SECONDS).build()
+            var stale = false
+            acct.http.newBuilder().pingInterval(0, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
+                .callTimeout(8, TimeUnit.SECONDS)
+                // Checked once connected, just before the request is written: the queue, DNS or connect may outlast a sign-in (#951).
+                .addNetworkInterceptor { chain -> if (stillOurs {}) chain.proceed(chain.request()) else { stale = true; throw IOException("signed in again") } }
+                .build()
                 .newCall(req)
-            val sent = stillOurs {
-                call.enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) = finish(false)
+                .enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) = if (stale) changed() else finish(false)
                     override fun onResponse(call: Call, response: Response) = response.use { finish(it.isSuccessful) }
                 })
-            }
-            if (!sent) changed()
         }
     }
 
