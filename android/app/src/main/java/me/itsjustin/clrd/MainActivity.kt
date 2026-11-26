@@ -380,7 +380,7 @@ private enum class Tab(val label: Int, val icon: ImageVector) {
 }
 
 @Composable
-private fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
+internal fun Home(app: App, battery: Intent?, resumes: Int, scan: () -> Unit) {
     val b = LocalBrand.current
     var tab by rememberSaveable { mutableStateOf(if (app.configured) Tab.Inbox else Tab.Settings) }
     var topic by rememberSaveable { mutableStateOf<String?>(null) }
