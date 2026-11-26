@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONObject
+import kotlin.concurrent.thread
 
 /** One version's section of CHANGELOG.md: its sections in order, each with its one-line items (SPEC 5.2). */
 internal data class Release(val version: String, val date: String, val changes: List<Pair<String, List<String>>>)
@@ -99,13 +101,19 @@ internal fun versionGap(ctx: Context, app: String, server: String?): String? {
     return when { c < 0 -> ctx.getString(R.string.about_server_newer); c > 0 -> ctx.getString(R.string.about_app_newer); else -> null }
 }
 
+/** True when this app was installed earlier and has since been updated (not a fresh install). */
+internal fun wasUpdated(ctx: Context): Boolean = runCatching {
+    ctx.packageManager.getPackageInfo(ctx.packageName, 0).let { it.lastUpdateTime > it.firstInstallTime }
+}.getOrDefault(false)
+
 /**
  * The after-update note (SPEC 5.2): true when this app's version is new since the last open and the note is on.
- * The first open ever, or any open with the note off, records the version quietly.
+ * A fresh install, or any open with the note off, records the version quietly. With nothing recorded yet,
+ * [updated] tells an update from a build that predates the note apart from a fresh install.
  */
-internal fun updateNoteDue(app: App, version: String = BuildConfig.VERSION_NAME): Boolean {
+internal fun updateNoteDue(app: App, version: String = BuildConfig.VERSION_NAME, updated: Boolean = wasUpdated(app)): Boolean {
     val seen = app.prefs.getString("seen_version", null)
-    if (seen == null || !app.whatsNew) { if (seen != version) app.seenVersion(version); return false }
+    if ((seen == null && !updated) || !app.whatsNew) { if (seen != version) app.seenVersion(version); return false }
     return seen != version
 }
 
@@ -142,7 +150,10 @@ internal fun AboutBlock(app: App, a: Account, title: @Composable () -> Unit) {
     var v by remember(a) { mutableStateOf<Versions?>(null) }
     var open by rememberSaveable { mutableStateOf(false) }
     var on by remember { mutableStateOf(app.whatsNew) }
-    LaunchedEffect(a) { app.io.execute { v = loadVersions(ctx, a) } }
+    val status by a.status.collectAsState()
+    val live = status == SyncClient.Status.CONNECTED
+    // Its own thread, not app.io: a slow server must not hold up sends and saves. Read again on reconnect.
+    LaunchedEffect(a, live) { thread { loadVersions(ctx, a).let { if (v?.commit == null || it.commit != null) v = it } } }
     title()
     Text(stringResource(R.string.about_app, BuildConfig.VERSION_NAME), color = b.body, fontSize = 14.sp)
     val got = v
@@ -173,7 +184,7 @@ internal fun UpdateNote(app: App) {
     val done = { due = false; app.seenVersion(BuildConfig.VERSION_NAME) }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("update-note")) {
         Text(stringResource(R.string.updated_to, BuildConfig.VERSION_NAME), color = b.ink, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        TextButton(onClick = { val a = app.shown.value; app.io.execute { shown = loadVersions(ctx, a) } }) { Text(stringResource(R.string.whats_new), color = b.ink) }
+        TextButton(onClick = { val a = app.shown.value; thread { shown = loadVersions(ctx, a) } }) { Text(stringResource(R.string.whats_new), color = b.ink) }
         TextButton(onClick = done) { Text(stringResource(R.string.dismiss), color = b.slate) }
     }
     shown?.let { v ->

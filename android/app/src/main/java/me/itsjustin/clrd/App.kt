@@ -331,7 +331,7 @@ class App : Application() {
         const val KEEP_DAYS = 7
 
         /** The keys in the "clrd" file that belong to the phone, not to account 0's server (#78). */
-        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id", "shown_server")
+        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id", "shown_server", "whats_new", "seen_version")
     }
 }
 

@@ -120,15 +120,23 @@ class AboutTest {
     }
 
     @Test fun theNoteShowsOnceAfterAnUpdate() {
-        assertFalse(updateNoteDue(app, "0.1.0")) // first open ever: quiet
-        assertFalse(updateNoteDue(app, "0.1.0"))
-        assertTrue(updateNoteDue(app, "0.2.0"))
+        assertFalse(updateNoteDue(app, "0.1.0", updated = false)) // fresh install: quiet
+        assertFalse(updateNoteDue(app, "0.1.0", updated = true))
+        assertTrue(updateNoteDue(app, "0.2.0", updated = true))
         app.seenVersion("0.2.0") // dismissed or opened
         assertFalse(updateNoteDue(app, "0.2.0"))
         app.whatsNew = false
-        assertFalse(updateNoteDue(app, "0.3.0")) // off: the new version is recorded quietly
+        assertFalse(updateNoteDue(app, "0.3.0", updated = true)) // off: the new version is recorded quietly
         app.whatsNew = true
-        assertFalse(updateNoteDue(app, "0.3.0"))
+        assertFalse(updateNoteDue(app, "0.3.0", updated = true))
+    }
+
+    @Test fun anUpdateFromABuildBeforeTheNoteShowsIt() {
+        assertTrue(updateNoteDue(app, "0.2.0", updated = true)) // nothing recorded, but not a fresh install
+    }
+
+    @Test fun theNoteSettingsOutliveRemovingTheServer() {
+        assertTrue("whats_new" in App.PHONE_KEYS && "seen_version" in App.PHONE_KEYS)
     }
 
     private fun about() {
@@ -153,6 +161,14 @@ class AboutTest {
         rule.onNodeWithText("What's new").performScrollTo().performClick()
         rule.onNodeWithText("The server could not be reached, so this is the copy built into the app.").assertExists()
         rule.onNodeWithText("0.1.0  2026-11-23").assertExists()
+    }
+
+    @Test fun aReconnectReadsTheServerAgain() {
+        about()
+        rule.waitUntil(5_000) { runCatching { rule.onNodeWithText("Server: not reached").assertExists() }.isSuccess }
+        version = "99.0.0"
+        app.status.value = SyncClient.Status.CONNECTED
+        rule.waitUntil(5_000) { runCatching { rule.onNodeWithText("Server: clrd 99.0.0 · 0123456 · 2026-11-23").assertExists() }.isSuccess }
     }
 
     @Test fun theNoteOpensWhatsNewAndGoesAway() {
