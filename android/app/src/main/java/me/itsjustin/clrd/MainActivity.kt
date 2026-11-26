@@ -610,7 +610,7 @@ private fun ServerCleared(app: App, here: Int, newest: String?) {
 private fun Header(app: App) {
     val b = LocalBrand.current
     val saved by app.saved.collectAsState()
-    val servers = remember(saved) { app.servers }
+    val servers = remember(saved) { app.listed }
     val shown by app.shown.collectAsState()
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(20.dp, 12.dp, 20.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -650,7 +650,7 @@ private fun SyncState(a: Account) {
 @Composable
 private fun ServerList(app: App, saved: Int) {
     val b = LocalBrand.current
-    val servers = remember(saved) { app.servers }
+    val servers = remember(saved) { app.listed }
     val shown by app.shown.collectAsState()
     var removing by remember { mutableStateOf<Account?>(null) }
     if (servers.size > 1) servers.forEach { a ->
@@ -1239,13 +1239,14 @@ private fun MarkButton(app: App, n: Notif) {
 private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
     val b = LocalBrand.current
     val app = App.of(LocalContext.current)
-    var text by rememberSaveable { mutableStateOf(app.drafts[n.id].orEmpty()) }
+    val drafts = remember { app.drafts } // the server this box opened on, after a switch too (#860)
+    var text by rememberSaveable { mutableStateOf(drafts[n.id].orEmpty()) }
     val seq = rememberSaveable { n.seq } // the question as the box opened: an edit since then gets 409, never this answer
     val body = TrayButton.typed(a.reply!!, text, seq)
     // The box leaving for any reason but Send or Cancel (a 409, or an edit that drops the typed answer) keeps its text
     // for the next box (#516, #539), a rotation too, since the box closes when the screen is rebuilt.
     var ended by remember { mutableStateOf(false) }
-    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { keepDraft(app.drafts, n.id, text, ended) } }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { keepDraft(drafts, n.id, text, ended) } }
     // An earlier answer came back 409: this box answers the old question too. Close it.
     val changed0 = remember { app.changed[n.id] ?: 0 }
     LaunchedEffect(app.changed[n.id]) { if ((app.changed[n.id] ?: 0) != changed0) close() }
@@ -1260,7 +1261,7 @@ private fun ReplyBox(n: Notif, a: TrayButton, close: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = { ended = true; app.drafts.remove(n.id); app.act(n.id, "reply", body!!); close() }, enabled = body != null) {
+            TextButton(onClick = { ended = true; drafts.remove(n.id); app.act(n.id, "reply", body!!); close() }, enabled = body != null) {
                 Text(stringResource(R.string.reply_text_send), color = b.ink, fontWeight = FontWeight.SemiBold)
             }
         },
@@ -2133,7 +2134,8 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 app.io.execute {
                     // One slot per address: another try at a server this phone has would take its token and wipe its
                     // notifications. Checked here, in turn, so a second quick tap sees the server the first one added.
-                    if (adding && app.accountAt(newUrl) != null) { result = ctx.getString(R.string.server_already, newUrl); return@execute }
+                    // An edit may not take another server's address either (#860): a pairing link for it would find the wrong slot.
+                    if (app.accountAt(newUrl, if (adding) -1 else a.id) != null) { result = ctx.getString(R.string.server_already, newUrl); return@execute }
                     // Another server is tried first and kept only once it answers, so a typo adds nothing (#78).
                     if (!adding) a.saveServer(newUrl, newToken)
                     // /api/v1/topics needs the read scope, so this checks the URL and the token together.

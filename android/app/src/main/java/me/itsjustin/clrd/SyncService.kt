@@ -136,6 +136,9 @@ class ActionReceiver : BroadcastReceiver() {
         val app = App.of(ctx)
         // The server it came from (#78), in the data URI; none is account 0. A removed or unknown one is ignored.
         val acct = (intent.data?.getQueryParameter(Tray.QUERY_ACCOUNT) ?: "0").toIntOrNull()?.let(app::account) ?: return
+        // Posted for an earlier sign-in at this address (#860): never acts for the new one. Checked again under the lock in actAll.
+        val gen = intent.data?.getQueryParameter(Tray.QUERY_GEN)?.toIntOrNull() ?: 0
+        if (gen != acct.configGen) return
         if (intent.action == Tray.ACTION_DISMISS_STACK) { // a stack swiped away: hide here only (#265)
             val ids = intent.getStringArrayExtra(Tray.EXTRA_IDS).orEmpty()
             acct.trayHidden += ids
@@ -160,7 +163,7 @@ class ActionReceiver : BroadcastReceiver() {
             val r = goAsync()
             // Android shows a spinner until the row is posted again: once the answer is saved, or at once if it cannot be sent.
             val repost = { acct.tray.repost(id); r.finish() }
-            if (body != null) acct.actAll(listOf(id), "reply", body, server, App.VIA_TRAY_BUTTON, repost)
+            if (body != null) acct.actAll(listOf(id), "reply", body, server, App.VIA_TRAY_BUTTON, gen, repost)
             else app.acts.execute {
                 android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(app, R.string.reply_text_invalid, android.widget.Toast.LENGTH_LONG).show() }
                 repost()
@@ -177,6 +180,6 @@ class ActionReceiver : BroadcastReceiver() {
             else -> return
         }
         val r = goAsync() // keep the process alive until the action is saved (and probably sent)
-        acct.actAll(listOf(id), action, body, server, App.VIA_TRAY_BUTTON) { r.finish() }
+        acct.actAll(listOf(id), action, body, server, App.VIA_TRAY_BUTTON, gen) { r.finish() }
     }
 }

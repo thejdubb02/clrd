@@ -33,6 +33,8 @@ class App : Application() {
     val anyConfigured get() = accounts.any { it.configured }
     /** The servers set up on this phone. More than one brings the inbox switcher, the Servers list and the host in tray entries. */
     val servers get() = accounts.filter { it.configured }
+    /** The servers the switcher and the Servers list show: every one with an address, so one whose token was cleared can still be reached (#860). */
+    val listed get() = accounts.filter { it.serverUrl.isNotEmpty() }
 
     /**
      * The server the screens show (#78), remembered on this phone. Account 0 until another is picked, and when the
@@ -47,8 +49,8 @@ class App : Application() {
         shown.value = a
     }
 
-    /** The server at [url]'s address, if this phone has it. */
-    fun accountAt(url: String) = accounts.firstOrNull { it.serverUrl.isNotEmpty() && serverAddress(it.serverUrl) == serverAddress(url) }
+    /** The server at [url]'s address, if this phone has it, other than server [except]. */
+    fun accountAt(url: String, except: Int = -1) = accounts.firstOrNull { it.id != except && it.serverUrl.isNotEmpty() && serverAddress(it.serverUrl) == serverAddress(url) }
 
     /**
      * Saves a server from a setup link or Add server, then shows it. An address this phone has goes to that server,
@@ -140,8 +142,8 @@ class App : Application() {
     val io = Executors.newSingleThreadExecutor()
     /** User actions only, and they never wait on the network, so a tray tap is saved within its goAsync() deadline. */
     val acts = Executors.newSingleThreadExecutor()
-    /** Typed answers the server refused, by notification id, so the reply box opens with them again (#153). */
-    val drafts = java.util.concurrent.ConcurrentHashMap<String, String>()
+    /** The shown server's refused typed answers ([Account.drafts]). */
+    val drafts get() = cur.drafts
     /** Typed answers refused because the question changed (409), counted by notification id, so a reply box open on it closes (#516). */
     val changed = androidx.compose.runtime.mutableStateMapOf<String, Int>()
     val sender get() = cur.sender
@@ -282,7 +284,7 @@ class App : Application() {
      * [via] says how the person did it (docs/SPEC.md "via"), so the server log can answer "I did not clear that".
      */
     fun act(id: String, action: String, body: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) =
-        cur.actAll(listOf(id), action, body, server, via, done)
+        cur.actAll(listOf(id), action, body, server, via, done = done)
 
     /** One action on several rows from the inbox, such as a stack's Clear (#360): the dismisses go out as one clear call. */
     fun act(ids: List<String>, action: String, via: String = VIA_APP) = cur.actAll(ids, action, "{}", null, via) {}
@@ -323,7 +325,7 @@ class App : Application() {
         /** The most days of cleared history this phone keeps, whatever the server keeps. */
         const val KEEP_DAYS = 7
 
-        /** The keys in the "clrd" file that belong to the phone, not to account 0's server (#78). */
+        /** The keys in the "clrd" file that belong to the phone, not to account 0's server (#78). "dnd_lost" is account 0's since #860, kept as before. */
         val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id", "shown_server")
     }
 }
@@ -340,6 +342,7 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
     private inline fun ifMine(f: () -> Unit) = synchronized(acct.configLock) { if (gen == acct.configGen && !acct.removed) f() }
 
     override fun lastSeq() = dao.lastSeq() ?: 0
+    override val sendLock get() = acct.sendLock
 
     override fun apply(notifs: Collection<Notif>, seq: Long, quiet: Boolean, again: Boolean, answer: Boolean, shown: Map<String, Long>) = ifMine {
         // Only rows Room kept reach the tray, so an older event can never undo a newer state there.
@@ -420,8 +423,8 @@ class RoomStore(private val app: App, private val acct: Account = app.account) :
         }
         // A refused typed answer (400, 403) is kept for the reply box (#153); a changed question drops it.
         val typed = runCatching { JSONObject(p.body).optString("text") }.getOrDefault("")
-        if (outcome == "bad_request" || outcome == "approve_denied" || outcome == "own_request") { if (typed.isNotEmpty()) app.drafts[p.notifId] = typed }
-        else app.drafts.remove(p.notifId)
+        if (outcome == "bad_request" || outcome == "approve_denied" || outcome == "own_request") { if (typed.isNotEmpty()) acct.drafts[p.notifId] = typed }
+        else acct.drafts.remove(p.notifId)
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             if (outcome == "conflict") app.changed[p.notifId] = (app.changed[p.notifId] ?: 0) + 1 // Compose state, so on the main thread
             android.widget.Toast.makeText(app, text, android.widget.Toast.LENGTH_LONG).show()
