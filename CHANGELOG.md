@@ -18,7 +18,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Added
 
-- Web Settings has a Color rules section: add, order and delete rules, with Severity and By topic presets and a note when a color looks like clrd's clear green; docs page docs/color-rules.md (#165).
+- Web Settings has a Color rules section: add, order and delete rules, with Severity and By topic presets and a note when a color looks like clrd's clear green; docs page docs/color-rules.md. Inbox cards now show their rule colors on a running server, which did not serve the card colors stylesheet (#165).
 - Slack outgoing hooks post notifications, edit them on state changes, and add acknowledgment and clear reactions (#166)
 - Stats adds a server-time heatmap, prior-period trends, volume breakdowns, same-token clears, quiet alarms, and live connections on the Stats page and API (#120).
 - Integrations: n8n and Node-RED nodes can send, clear, acknowledge, resolve and snooze clrd notifications, and start workflows on new notifications or state changes (#113). Available to build from source.
