@@ -512,7 +512,7 @@ func (s *Server) ntfyPublish(w http.ResponseWriter, r *http.Request) error {
 		if named != nil {
 			in.Message = "triggered" // ntfy's default for an empty rendered message
 		} else if !tpl {
-			in.Message = param(r, "Message", "M")
+			in.Message = ntfyPlainMessage(r)
 		}
 	}
 	if in.Message == "" && file != "" {
@@ -599,6 +599,12 @@ func ntfyTemplate(r *http.Request, body []byte, fields map[string]*string) error
 }
 
 // ntfyFilename is the file name that makes a ntfy publish body a file.
+// Only plain message parameters use ntfy's escaped line breaks. Bodies
+// and template expressions already have their own escaping.
+func ntfyPlainMessage(r *http.Request) string {
+	return strings.ReplaceAll(param(r, "X-Message", "Message", "M"), `\n`, "\n")
+}
+
 func ntfyFilename(r *http.Request) string { return param(r, "Filename", "File", "F") }
 
 func (s *Server) ntfyReply(w http.ResponseWriter, ctx context.Context, tok *Token, in PublishInput) error {
@@ -697,7 +703,7 @@ func (s *Server) ntfyPublishJSON(w http.ResponseWriter, r *http.Request) error {
 	// Like ntfy, headers and query params fill what the JSON leaves out
 	// (Apprise sends X-Priority, X-Tags, X-Click next to a JSON body).
 	if p.Message == "" {
-		p.Message = param(r, "Message", "M")
+		p.Message = ntfyPlainMessage(r)
 	}
 	if p.Title == "" {
 		p.Title = param(r, "Title", "Ti", "T")

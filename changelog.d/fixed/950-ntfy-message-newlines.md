@@ -1,0 +1,1 @@
+- ntfy publishes turn escaped line breaks in message headers and query options into newlines. Messages sent in the body retain their literal text.
