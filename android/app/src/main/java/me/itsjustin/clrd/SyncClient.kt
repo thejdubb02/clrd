@@ -56,7 +56,12 @@ interface Store {
      * Marks [p] told first, so a resend, even after a restart, does not say it again (#383).
      */
     fun replyOutcome(p: Pending, outcome: String) {}
+
+    /** Held while [flushPending] sends this queue; every store of one server returns the same lock. One shared lock unless overridden. */
+    val sendLock: Any get() = sharedSendLock
 }
+
+private val sharedSendLock = Any()
 
 /**
  * Holds the WebSocket from docs/SPEC.md section 3.
@@ -301,8 +306,6 @@ class SyncClient(
     }
 }
 
-private val flushLock = Any()
-
 /** How a queued action was made ("" for one queued before it was recorded). */
 private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via") }.getOrDefault("")
 
@@ -313,10 +316,10 @@ private fun viaOf(p: Pending) = runCatching { JSONObject(p.body).optString("via"
  *
  * The server answers with the row after the change. It is saved before the action leaves the
  * queue, so an older event replayed after the send cannot bring a dismissed row back.
- * One sender at a time, process wide: a stopped client's sender stops at [live] instead of
- * sending again what its replacement already sent.
+ * One sender at a time per server ([Store.sendLock], #860): a stopped client's sender stops at [live]
+ * instead of sending again what its replacement already sent, and another server never waits on it.
  */
-fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }): Unit = synchronized(flushLock) {
+fun flushPending(store: Store, api: Api, live: () -> Boolean = { true }): Unit = synchronized(store.sendLock) {
     // Several dismisses in a row (a stack swiped away, #108) go out as one clear call, wherever they
     // are in the queue (#425), so an Ack queued first does not split it. In order, so a later reopen
     // of the same row still lands after its dismiss. One via per run, so the server logs each clear

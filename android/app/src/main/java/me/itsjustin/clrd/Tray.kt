@@ -117,17 +117,24 @@ class Tray(private val ctx: Context, private val acct: Account) {
     /** An entry of this account: its prefix, and for account 0 none of another account's. */
     private fun owns(tag: String?, prefix: String) = tag != null && tag.startsWith(prefix) && (acct.id != 0 || !OTHER.containsMatchIn(tag))
 
-    /** Adds this account to a tap's data URI, which is what PendingIntents match on. None means account 0. */
-    private fun Uri.Builder.account() = apply { if (acct.id != 0) appendQueryParameter(QUERY_ACCOUNT, "${acct.id}") }
+    /**
+     * Adds this account to a tap's data URI, which is what PendingIntents match on. None means account 0. And its sign-in
+     * ([Account.configGen], none for 0), so a tap from before a new token at the same address is refused (#860).
+     */
+    private fun Uri.Builder.account() = apply {
+        if (acct.id != 0) appendQueryParameter(QUERY_ACCOUNT, "${acct.id}")
+        if (acct.configGen != 0) appendQueryParameter(QUERY_GEN, "${acct.configGen}")
+    }
 
     /** An entry's subtext; with more than one server set up it names this one first (#78). */
     private fun sub(text: String) = if (App.of(ctx).servers.size > 1) ctx.getString(R.string.tray_server, acct.host, text) else text
 
     /**
      * Makes the channels for [sound] (see [Sounds]) and deletes the other sounds' channels. Posts go to the new ones.
-     * True when this change took the Urgent channel's Do Not Disturb pass with it.
+     * True when this change took the Urgent channel's Do Not Disturb pass with it. Channels are the phone's, so
+     * every server changes them under one lock, the [App] (#860), which [Account.saveSound] holds until its sound is saved.
      */
-    fun createChannels(sound: String = acct.sound): Boolean {
+    fun createChannels(sound: String = acct.sound): Boolean = synchronized(App.of(ctx)) {
         val uri = Sounds.uri(ctx, sound)
         val audio = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
         val names = listOf(R.string.channel_p1, R.string.channel_p2, R.string.channel_p3, R.string.channel_p4, R.string.channel_p5)
@@ -183,10 +190,12 @@ class Tray(private val ctx: Context, private val acct: Account) {
     /** True when a sound change dropped the Urgent channel's Do Not Disturb pass and the person has not set it again (#346). */
     @Synchronized // Settings and a sound change both read then write the flag; a stale false must not undo a fresh true
     fun dndLost(sound: String = acct.sound, replacedHadIt: Boolean = false): Boolean {
-        val prefs = App.of(ctx).prefs
-        val lost = Sounds.dndLost(prefs.getBoolean("dnd_lost", false), replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
+        // Per server (#860): another server's sync must not clear the note this one raised. Account 0's is the old phone-wide key.
+        val prefs = acct.prefs
+        val was = prefs.getBoolean("dnd_lost", false)
+        val lost = Sounds.dndLost(was, replacedHadIt, nm.getNotificationChannel(Sounds.channel(5, sound))?.canBypassDnd() == true)
         prefs.edit().putBoolean("dnd_lost", lost).apply()
-        if (!lost) nm.cancel(DND_ID) // turned back on: the tray notice has done its job
+        if (was && !lost) nm.cancel(DND_ID) // turned back on: the tray notice has done its job
         return lost
     }
 
@@ -293,7 +302,7 @@ class Tray(private val ctx: Context, private val acct: Account) {
             .setSubText(
                 sub(when {
                     n.reply.isNotEmpty() -> ctx.getString(R.string.tray_answered, n.replyText.ifEmpty { n.reply }, n.stateBy ?: ctx.getString(R.string.tray_another_device))
-                    app.drafts.containsKey(n.id) -> ctx.getString(R.string.tray_draft) // a tray reply cannot be prefilled; the app box has the text (#516)
+                    acct.drafts.containsKey(n.id) -> ctx.getString(R.string.tray_draft) // a tray reply cannot be prefilled; the app box has the text (#516)
                     n.state == Notif.ACKNOWLEDGED -> ctx.getString(R.string.tray_acked, n.stateBy ?: ctx.getString(R.string.tray_another_device))
                     else -> n.topic
                 }),
@@ -405,6 +414,8 @@ class Tray(private val ctx: Context, private val acct: Account) {
         private val OTHER = Regex("^(a|$GROUP)\\d+:")
         /** The account id in a tap's data URI (#78); absent means account 0. */
         const val QUERY_ACCOUNT = "account"
+        /** The sign-in a tap was posted for (#860); absent means 0. */
+        const val QUERY_GEN = "gen"
         /** The data of [inbox] past account 0, with [QUERY_ACCOUNT]; [MainActivity] matches on it. */
         const val OPEN = "clrd://open"
         const val SUMMARY_ID = 1
