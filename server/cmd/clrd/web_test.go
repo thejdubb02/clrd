@@ -11,13 +11,16 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/thejdubb02/clrd/server"
+	"github.com/thejdubb02/clrd/web"
 )
 
 // TestWebOnRealServer drives the mounted pages the way a browser does:
@@ -389,6 +392,158 @@ func TestSenderTokenForms(t *testing.T) {
 				t.Error("an anonymous sender's page shows token forms")
 			}
 		}
+	}
+}
+
+// TestAddService runs the Senders page's Add a service flow (#119) as a
+// browser without JavaScript: pick GitHub, get a one-topic publish token and
+// its webhook URL, post a real GitHub body to that URL, see it connected.
+func TestAddService(t *testing.T) {
+	s, ts, raw := realServer(t)
+	ctx := context.Background()
+	signedIn := func(tok string) *http.Client {
+		c := browser()
+		_, page, _ := fetch(t, c, ts.URL+"/app")
+		submit(t, c, ts.URL, page, tok, "")
+		return c
+	}
+	count := func() int {
+		all, _ := s.Tokens(ctx, time.Time{})
+		return len(all)
+	}
+	c := signedIn(raw)
+
+	// The list is what the server receives: every built-in template, both
+	// ways, and every service's docs page is there.
+	var hooks []string
+	for _, sv := range web.Services() {
+		if sv.Kind == "" {
+			hooks = append(hooks, sv.Key)
+		}
+		if code, _, _ := fetch(t, c, ts.URL+"/docs/integrations/"+sv.Doc); code != 200 {
+			t.Errorf("%s: docs page %s: %d", sv.Key, sv.Doc, code)
+		}
+	}
+	if b := server.BuiltinTemplates(); !slices.Equal(slices.Sorted(slices.Values(hooks)), slices.Sorted(slices.Values(b))) {
+		t.Errorf("services %v, built-in templates %v", hooks, b)
+	}
+	if _, page, _ := fetch(t, c, ts.URL+"/app/senders"); !strings.Contains(page, `href="/app/senders/add"`) {
+		t.Fatal("the Senders page does not link to Add a service")
+	}
+	if code, page, _ := fetch(t, c, ts.URL+"/app/senders/add"); code != 200 || !strings.Contains(page, `<option value="github">GitHub</option>`) {
+		t.Fatalf("add page: %d, no GitHub in the list", code)
+	}
+
+	// Anyone but a full admin mints nothing.
+	_, reader, _ := s.CreateToken(ctx, "reader", "", []string{"read"}, nil)
+	_, ops, _ := s.CreateToken(ctx, "ops admin", "", []string{"admin"}, []string{"dev"})
+	before := count()
+	for _, tok := range []string{reader, ops} {
+		o := signedIn(tok)
+		if code, _, _ := fetch(t, o, ts.URL+"/app/senders/add"); code != 403 {
+			t.Errorf("add page for a non full admin: %d, want 403", code)
+		}
+		if code, page, _ := postForm(t, o, ts.URL, "/app/senders/add", url.Values{"service": {"github"}, "topic": {"dev"}}); code == 200 || strings.Contains(page, "data-secret") {
+			t.Errorf("add by a non full admin: %d", code)
+		}
+	}
+	if code, _, _ := postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"nope"}, "topic": {"dev"}}); code != 400 {
+		t.Errorf("unknown service: %d, want 400", code)
+	}
+	for _, bad := range []string{"", "a/b", "../x", `a"b`, "a b", "a;id"} { // the form's pattern is only a hint; insertToken checks every topic
+		if code, page, _ := postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"curl"}, "topic": {bad}}); code != 400 || strings.Contains(page, "data-secret") {
+			t.Errorf("topic %q: %d, want 400", bad, code)
+		}
+	}
+	if n := count(); n != before+2 { // the two browsers signed in above, no service token
+		t.Fatalf("tokens %d, want %d", n, before+2)
+	}
+
+	code, page, res := postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"github"}, "name": {"ci"}, "topic": {"dev"}})
+	secret := regexp.MustCompile(`<code data-secret>(clrd_[A-Za-z0-9]+)</code>`).FindStringSubmatch(page)
+	if code != 200 || secret == nil || !strings.Contains(page, "Waiting for the first message") {
+		t.Fatalf("add: %d, no secret or no waiting state", code)
+	}
+	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("the page with the secret: Cache-Control %q, want no-store", cc)
+	}
+	auth := base64.RawURLEncoding.EncodeToString([]byte("Bearer " + secret[1]))
+	hook := ts.URL + "/dev?template=github&auth=" + auth
+	if !strings.Contains(page, "<code data-snippet>"+strings.ReplaceAll(hook, "&", "&amp;")+"</code>") || !strings.Contains(page, `href="/docs/integrations/github"`) {
+		t.Fatalf("no webhook URL %s or docs link on the page", hook)
+	}
+	tk := mustTok(t, s, secret[1])
+	if tk.Name != "ci" || !slices.Equal(tk.Scopes, []string{"publish"}) || !slices.Equal(tk.Topics, []string{"dev"}) {
+		t.Fatalf("token %+v, want ci, publish, dev only", tk)
+	}
+	here := regexp.MustCompile(`data-added="([^"]+)"`).FindStringSubmatch(page)
+	if here == nil {
+		t.Fatal("no address for the waiting page")
+	}
+	waiting := ts.URL + strings.ReplaceAll(here[1], "&amp;", "&")
+	if code, p, _ := fetch(t, c, waiting); code != 200 || !strings.Contains(p, "Waiting for the first message") || strings.Contains(p, secret[1]) || strings.Contains(p, auth) {
+		t.Fatalf("waiting page: %d, want waiting and no secret", code)
+	}
+
+	body, err := os.ReadFile("../../testdata/webhooks/github.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", hook, strings.NewReader(string(body)))
+	req.Header.Set("X-GitHub-Event", "issues")
+	if code, out, _ := send(t, http.DefaultClient, req); code != 200 {
+		t.Fatalf("post to the webhook URL: %d %s", code, out)
+	}
+	if code, p, _ := fetch(t, c, waiting); code != 200 || !strings.Contains(p, "Connected: 1 sent") || !strings.Contains(p, `href="/app/senders/`+tk.ID+`"`) {
+		t.Fatalf("after the first message: %d, want connected with its sender page", code)
+	}
+	if sd, err := s.Sender(ctx, mustTok(t, s, raw), tk.ID); err != nil || sd.Template != "github" {
+		t.Fatalf("sender %+v %v, want template github", sd, err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/notifications", strings.NewReader(`{"topic":"other","message":"x"}`))
+	req.Header.Set("Authorization", "Bearer "+secret[1])
+	if code, _, _ := send(t, http.DefaultClient, req); code != 403 {
+		t.Errorf("the service token in another topic: %d, want 403", code)
+	}
+
+	// The waiting page's Revoke it removes a token that never sent.
+	_, page, _ = postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"curl"}, "topic": {"dev"}})
+	unused := regexp.MustCompile(`<code data-secret>(clrd_[A-Za-z0-9]+)</code>`).FindStringSubmatch(page)
+	if unused == nil || !strings.Contains(page, `name="revoke"`) {
+		t.Fatal("no secret or no Revoke it on the waiting page")
+	}
+	n := count()
+	postForm(t, c, ts.URL, "/app/senders/"+mustTok(t, s, unused[1]).ID, url.Values{"revoke": {"1"}})
+	if count() != n-1 {
+		t.Error("Revoke it on the waiting page left the token")
+	}
+
+	// Gotify's key goes in a header, never the query string access logs keep.
+	_, page, _ = postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"gotify"}, "topic": {"dev"}})
+	gk := regexp.MustCompile(`<code data-secret>(clrd_[A-Za-z0-9]+)</code>`).FindStringSubmatch(page)
+	if gk == nil || !strings.Contains(page, `X-Gotify-Key: `+gk[1]) || strings.Contains(page, "token="+gk[1]) {
+		t.Fatal("the Gotify snippet does not send its key in X-Gotify-Key alone")
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/message", strings.NewReader(url.Values{"message": {"hi"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Gotify-Key", gk[1])
+	if code, out, _ := send(t, http.DefaultClient, req); code != 200 {
+		t.Errorf("Gotify publish with X-Gotify-Key: %d %s", code, out)
+	}
+
+	// A topic named like the Gotify route still takes its webhook as one.
+	_, page, _ = postForm(t, c, ts.URL, "/app/senders/add", url.Values{"service": {"github"}, "topic": {"message"}})
+	mk := regexp.MustCompile(`<code data-secret>(clrd_[A-Za-z0-9]+)</code>`).FindStringSubmatch(page)
+	if mk == nil {
+		t.Fatal("no secret for the topic message")
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/message?template=github&auth="+base64.RawURLEncoding.EncodeToString([]byte("Bearer "+mk[1])), strings.NewReader(string(body)))
+	req.Header.Set("X-GitHub-Event", "issues")
+	if code, out, _ := send(t, http.DefaultClient, req); code != 200 {
+		t.Fatalf("webhook to the topic message: %d %s", code, out)
+	}
+	if sd, err := s.Sender(ctx, mustTok(t, s, raw), mustTok(t, s, mk[1]).ID); err != nil || sd.Template != "github" {
+		t.Errorf("sender of the topic message %+v %v, want template github", sd, err)
 	}
 }
 

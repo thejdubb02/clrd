@@ -69,6 +69,7 @@ offline catches up the moment it reconnects.
   inbox, in the Android app's Settings or at `GET /api/v1/senders`. Pause, mute,
   cap the priority or reroute one sender from its web page or the app, and undo any change.
   Its web page can also raise an urgent alarm when that sender goes quiet too long.
+  Add a service on the Senders page makes a one-topic token and the URL to paste.
 - **Missed check-in alerts.** Give a topic an interval, say 25 hours, and clrd
   raises an urgent alert when a backup or cron job stops reporting in.
 - **Repeat and silence.** Send with `"repeat": "5m"` and the alert rings

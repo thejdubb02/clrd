@@ -1094,7 +1094,14 @@ URL) and Revoke (after a confirm, then back to the list). A `config`
 sender shows Revoke only, an anonymous sender none of these. The web page refuses to rotate or revoke the
 token the browser itself is signed in under, which would sign it out with
 the new secret unseen; the API and MCP allow it. The form sends `base_seq`, so saving a page drawn before a
-newer change is refused rather than undoing that change. The Android app
+newer change is refused rather than undoing that change.
+`/app/senders/add` (Add a service, only for an admin with no topic limit;
+anyone else gets 403) takes a service (a built-in webhook template, curl,
+ntfy, Gotify or Pushover), a name and a topic, makes a `publish` token for
+that one topic, and shows the secret and a ready-to-paste URL or command once,
+with a link to the service's guide. The page then waits for the token's first
+message and links its sender page once it arrives (live with JavaScript, a
+Check again link without). The Android app
 lists them in Settings with the same rules (the silence alarm's `expect` and
 `alert_topic` below included, `icon` not yet), change log and Undo, for the same admins, and
 sends one field per change; for anyone else the section stays hidden.

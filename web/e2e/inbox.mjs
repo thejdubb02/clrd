@@ -1700,6 +1700,27 @@ try {
     console.log('ok: Senders lists who sent what without JavaScript, opens one sender, 404s an unknown one and 403s a non-admin');
   }
 
+  // Add a service (#119): the page that shows the token waits for its first
+  // message and flips to connected live, with no reload.
+  {
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'add-web' } })).ok(), 'add sign-in');
+    const p = await ctx.newPage();
+    await p.goto(base + '/app/senders');
+    await p.getByRole('link', { name: 'Add a service' }).click();
+    await p.locator('#as-service').selectOption('curl');
+    await p.locator('#as-topic').fill('add-a');
+    await p.getByRole('button', { name: 'Add', exact: true }).click();
+    const secret = await p.locator('[data-secret]').innerText();
+    await p.locator('[data-live=added]').getByText('Waiting for the first message').waitFor();
+    assert.match(new URL(p.url()).search, /^\?id=/, 'the address bar left the form post');
+    await api(secret, '/api/v1/notifications', { topic: 'add-a', message: 'first' });
+    await p.locator('[data-live=added]').getByText('Connected: 1 sent').waitFor();
+    assert.equal(await p.locator('[data-secret]').innerText(), secret, 'the secret stays on screen after the flip');
+    await ctx.close();
+    console.log('ok: Add a service mints a one-topic token and flips to connected live on its first message');
+  }
+
   // Sender rules (#119 part 2): off until set; Pause drops what it sends,
   // the change log shows it, Undo puts it back, routes and priorities round
   // trip, bad routes and a non-admin get 400. No JavaScript.

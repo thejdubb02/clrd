@@ -974,10 +974,14 @@
   });
   // Settings, add an agent (#456): copy the invite string pair.js shows.
   document.addEventListener('click', async e => {
-    const b = e.target.closest('[data-agent-copy], [data-secret-copy]'); // or a sender's rotated secret (#119)
+    const b = e.target.closest('[data-agent-copy], [data-secret-copy], [data-snippet-copy]'); // or a sender's secret, or an added service's snippet (#119)
     if (!b) return;
-    try { await copyText(document.querySelector(b.matches('[data-agent-copy]') ? '[data-agent-invite]' : '[data-secret]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
+    try { await copyText(document.querySelector(b.matches('[data-agent-copy]') ? '[data-agent-invite]' : b.matches('[data-snippet-copy]') ? '[data-snippet]' : '[data-secret]').textContent); say('Copied.'); } catch { say('Could not copy.'); }
   });
+  // Add a service (#119): the address bar leaves the form post for the page
+  // that waits for its first message, so the live refresh loads that one.
+  const added = document.querySelector('[data-added]');
+  if (added) history.replaceState(null, '', added.dataset.added);
   // Settings, webhook body template (#495): show what a delivery would send.
   // The server renders it against a sample event and sends nothing (#241).
   document.querySelectorAll('[data-hook-preview]').forEach(d => { d.hidden = false; });

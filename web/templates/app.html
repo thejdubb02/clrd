@@ -13,7 +13,7 @@
       <a class="side-link" href="{{base}}/app"{{if eq .View "inbox"}} aria-current="page"{{end}}>{{template "i-inbox"}}Inbox <span class="count">{{.Inbox}}</span></a>
       <a class="side-link" href="{{base}}/app/snoozed"{{if eq .View "snoozed"}} aria-current="page"{{end}}>{{template "i-clock"}}Snoozed <span class="count">{{.Snoozed}}</span></a>
       <a class="side-link" href="{{base}}/app/cleared"{{if eq .View "cleared"}} aria-current="page"{{end}}>{{template "i-check-check"}}Cleared <span class="count">{{.Cleared}}</span></a>
-      {{if .Snap.CanSenders}}<a class="side-link" href="{{base}}/app/senders"{{if eq .View "senders" "sender"}} aria-current="page"{{end}}>{{template "i-bot"}}Senders</a>{{end}}
+      {{if .Snap.CanSenders}}<a class="side-link" href="{{base}}/app/senders"{{if eq .View "senders" "sender" "add"}} aria-current="page"{{end}}>{{template "i-bot"}}Senders</a>{{end}}
       {{if .Snap.CanSenders}}<a class="side-link" href="{{base}}/app/stats"{{if eq .View "stats"}} aria-current="page"{{end}}>{{template "i-layers"}}Stats</a>{{end}}
       <a class="side-link" href="{{base}}/app/settings"{{if eq .View "settings"}} aria-current="page"{{end}}>{{template "i-settings"}}Settings</a>
     </nav>
@@ -33,7 +33,7 @@
   <main id="main" class="w-full max-w-[920px] min-w-0 px-4 pt-4 pb-24 md:px-8 md:pt-5">
     <div class="alert mb-4" data-variant="destructive" role="alert" data-offline hidden>{{template "i-wifi-off"}}<h2>Lost the live connection</h2><section>This page may be out of date. Still trying. <a href="" class="underline">Reload</a></section></div>
     {{if ne .View "settings"}}{{with about}}<div class="alert mb-4" role="status" data-update-note hidden>{{template "i-book-open"}}<h2>Updated to clrd {{.Version}}</h2><section><div class="mt-2 flex flex-wrap items-center gap-2"><a class="btn" data-variant="outline" data-size="sm" href="{{base}}/app/settings#about" data-update-open>What's new</a><button type="button" class="btn" data-variant="ghost" data-size="sm" data-update-dismiss>Dismiss</button></div></section></div>{{end}}{{end}}
-    {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else if eq .View "stats"}}{{template "stats" .}}{{else}}
+    {{if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "senders" "sender"}}{{template "senders" .}}{{else if eq .View "add"}}{{template "addservice" .}}{{else if eq .View "stats"}}{{template "stats" .}}{{else}}
     <header class="mb-4 flex flex-wrap items-center gap-2 md:min-h-9 md:flex-nowrap">
       <h1 class="me-auto truncate text-xl font-semibold tracking-tight">{{with .One}}<a class="text-muted-foreground font-normal" href="{{$base}}?topic={{.Topic}}#t-{{.ID}}" data-back>{{$.Heading}}</a> / {{.Topic}}{{else}}{{.Heading}}{{end}}{{with .Topic}} <span class="text-muted-foreground font-normal" data-topic>in {{.}}</span>{{end}}</h1>
       {{if eq .View "inbox"}}<button type="button" class="btn js-only" data-variant="outline" data-send-open title="Send a notification">{{template "i-send"}}<span class="max-md:sr-only">Send</span></button>{{end}}
@@ -709,6 +709,7 @@
 <div class="grid max-w-2xl gap-3" data-live="senders">
   {{if not .Snap.CanSenders}}<p class="text-body text-sm">Only an admin token for every topic can see senders.</p>
   {{else if eq .View "senders"}}<p class="text-body text-sm/relaxed">Every token, app and person that has sent a notification here. A sender shows up with its first one.</p>
+  <div><a class="btn" data-variant="outline" href="{{base}}/app/senders/add">Add a service</a></div>
   {{if .Snap.Senders}}<div class="bg-card rounded-xl border">
     <table class="table">
       <thead><tr><th scope="col">Sender</th><th scope="col" class="max-sm:hidden">Topics</th><th scope="col">Sent</th><th scope="col">Last seen</th></tr></thead>
@@ -814,6 +815,38 @@
   {{else}}<p class="text-body text-sm">No changes yet.</p>{{end}}
 </section>
 {{end}}{{end}}
+{{end}}
+
+{{define "addservice"}}
+<header class="mb-6 flex min-h-9 items-center gap-2">
+  <h1 class="me-auto truncate text-xl font-semibold tracking-tight"><a class="text-muted-foreground font-normal" href="{{base}}/app/senders">Senders</a> / {{.Heading}}</h1>
+</header>
+<div class="grid max-w-2xl gap-3">
+  {{if not .Snap.CanSenders}}<p class="text-body text-sm">Only an admin token for every topic can add a service.</p>
+  {{else if .Added}}{{with .Added}}{{$a := .}}
+  {{with .Secret}}<div class="bg-card grid gap-2 rounded-xl border p-4" role="status"><p class="text-body text-sm/relaxed">Its token, shown this once: copy it now. It may only send, and only to the topic you picked.</p>
+    <pre tabindex="0" class="bg-muted/50 w-full border-transparent text-start whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-secret>{{.}}</code></pre>
+    <div class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="ghost" data-size="sm" data-secret-copy>{{template "i-copy"}}Copy</button></div></div>{{end}}
+  {{with .Snippet}}<div class="bg-card grid gap-2 rounded-xl border p-4"><p class="text-body text-sm/relaxed">{{if $a.Service.Kind}}Run this to send a test, or use it in your script.{{else}}Paste this into {{$a.Service.Name}} as its webhook URL. It carries the token.{{end}}</p>
+    <pre tabindex="0" class="bg-muted/50 w-full border-transparent text-start whitespace-pre-wrap [overflow-wrap:anywhere]"><code data-snippet>{{.}}</code></pre>
+    <div class="js-only [.no-copy_&]:hidden"><button type="button" class="btn" data-variant="ghost" data-size="sm" data-snippet-copy>{{template "i-copy"}}Copy</button></div></div>{{end}}
+  <p class="text-body text-sm"><a class="underline" href="{{base}}/docs/integrations/{{.Service.Doc}}">How to set up {{.Service.Name}}</a></p>
+  <div class="bg-card grid gap-2 rounded-xl border p-4" role="status" data-live="added" data-added="{{base}}{{.Here}}">
+    {{with .Sender}}<p class="text-body text-sm">Connected: {{.Count}} sent so far. <a class="underline" href="{{base}}/app/senders/{{.ID}}">Open its sender page</a></p>
+    {{else}}<p class="text-body text-sm">Waiting for the first message. <a class="underline" href="{{base}}{{$a.Here}}">Check again</a></p>
+    <form method="post" action="{{base}}/app/senders/{{$a.ID}}" data-confirm="Revoke this token? Nothing it was given to can send."><button class="btn" data-variant="ghost" data-size="sm" name="revoke" value="1">Revoke it</button></form>{{end}}
+  </div>{{end}}
+  {{else}}<p class="text-body text-sm/relaxed">Set up a service to send here. clrd makes it a token that may only send to one topic, then shows what to paste.</p>
+  <form class="bg-card grid gap-4 rounded-xl border p-4" method="post" action="{{base}}/app/senders/add">
+    <div class="grid gap-1.5"><label class="label" for="as-service">Service</label>
+      <select id="as-service" class="input w-auto" name="service">{{range services}}<option value="{{.Key}}">{{.Name}}</option>{{end}}</select></div>
+    <div class="field"><label for="as-name">Name</label><input id="as-name" name="name" type="text" autocomplete="off" placeholder="The service's name"></div>
+    <div class="grid gap-1.5"><label class="label" for="as-topic">Topic</label>
+      <input id="as-topic" class="input" name="topic" list="as-topics" required pattern="[A-Za-z0-9_\-]{1,64}" autocomplete="off" spellcheck="false" placeholder="alerts">
+      <datalist id="as-topics">{{range .Snap.Topics}}<option value="{{.Name}}"></option>{{end}}</datalist></div>
+    <div><button class="btn">Add</button></div>
+  </form>{{end}}
+</div>
 {{end}}
 
 {{define "stats"}}
