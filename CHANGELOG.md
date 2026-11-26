@@ -20,6 +20,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 - SDKs: the source-only create-clrd installer connects local AI agents to clrd with individual invites, configures MCP and hooks, and can remove the connections (#154).
 
+- Desktop: the tray's About menu always has What's new (the server's history, or the project's when this computer is not linked), says plainly when this app is older or newer than the server, and reads "What's new in" the version for the first start after an update until it is opened (#580).
 - Web: Add a service on the Senders page. Pick a service (GitHub, Grafana, Sentry and the other webhook templates, or curl, ntfy, Gotify, Pushover), name it and pick a topic; clrd makes a token that can only publish to that topic and shows it once with a ready-to-paste URL or command and the service's guide, then says connected when its first message arrives (#119).
 - Server and web: a sender can have its own icon, set in the rules form on its page, over the API (`PUT /api/v1/senders/{id}` `{"icon":"https://..."}`) or from an agent (`set_sender`). Its notifications that bring no icon get it, before the topic's icon; it shows on the Senders list and page, and the change can be undone like the other rules (#119).
 - Rename, rotate and revoke a sender's token from its page in the web inbox, over the API (`PUT /api/v1/tokens/{id}`, `POST /api/v1/tokens/{id}/rotate`) or from an agent (`rename_token`, `rotate_token`). A rotated token keeps its id, rules and history; the old secret and the browsers signed in with it stop at once (#119).
@@ -155,6 +156,7 @@ ones to `CHANGELOG-archive.md` in the repo when this file nears
 
 ### Fixed
 
+- Server: a GitHub issue hook still finds the issue it already opened after the issue was edited on GitHub's website, so a retried delivery does not open a second one (#827).
 - Server and web: a token from the server's config file can no longer be revoked from the sender page or the API (409), because the next restart made it again from the file and the revoke silently undid itself. Remove it from the file instead; the page now says so and hides Revoke (#832).
 - Web: the sender page no longer offers Rename or Rotate secret for a token set in the config file, which the server always refuses; it says to change it there. Senders carry `config: true` for such tokens (#119).
 - Web: a notification's own page shows "This notification is gone" once it is deleted or its topic is no longer yours, instead of keeping the card and retrying every few seconds (#826).
