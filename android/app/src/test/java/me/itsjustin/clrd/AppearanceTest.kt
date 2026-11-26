@@ -3,6 +3,7 @@ package me.itsjustin.clrd
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -52,5 +53,10 @@ class AppearanceTest {
     @Test @Config(qualifiers = "night") fun systemFollowsADarkDevice() {
         rule.setContent { ClrdTheme("system") { brand = LocalBrand.current } }
         assertSame(DarkBrand, brand)
+    }
+
+    @Test fun darkAccentsAreTheSpecValues() { // SPEC section 10, the values the web ships
+        fun hex(c: androidx.compose.ui.graphics.Color) = "#%06X".format(c.toArgb() and 0xFFFFFF)
+        assertEquals(listOf("#98A1AC", "#3DDC97", "#F97316"), listOf(hex(DarkBrand.slate), hex(DarkBrand.clear), hex(DarkBrand.signal)))
     }
 }
