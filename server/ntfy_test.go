@@ -230,6 +230,49 @@ func TestNtfyScheduled(t *testing.T) {
 	}
 }
 
+func TestNtfySubscribeAliases(t *testing.T) {
+	_, ts, admin := newTest(t)
+	for _, msg := range []string{"older", "latest"} {
+		if code, out := raw(t, "POST", ts.URL+"/alerts", admin, msg, nil); code != 200 {
+			t.Fatalf("publish: %d %s", code, out)
+		}
+	}
+	for _, tc := range []struct {
+		name, query, poll, since string
+	}{
+		{name: "headers", poll: "YES", since: "latest"},
+		{name: "short query", query: "?po=yes&si=latest"},
+		{name: "headers override query", query: "?poll=0&since=all", poll: "true", since: "latest"},
+		{name: "since header with canonical poll", query: "?poll=1", since: "latest"},
+		{name: "short since with canonical poll", query: "?poll=1&si=latest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, "GET", ts.URL+"/alerts/json"+tc.query, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.SetBasicAuth("", admin)
+			req.Header.Set("X-Poll", tc.poll)
+			req.Header.Set("X-Since", tc.since)
+			res, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("poll did not complete: %v", err)
+			}
+			got := lines(string(body))
+			if res.StatusCode != 200 || len(got) != 1 || ntfyDecode(t, got[0]).Message != "latest" {
+				t.Fatalf("want only the latest message: %d %s", res.StatusCode, body)
+			}
+		})
+	}
+}
+
 func TestNtfySubscribe(t *testing.T) {
 	s, ts, admin := newTest(t)
 	var ids []string

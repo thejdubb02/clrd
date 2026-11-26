@@ -50,6 +50,13 @@ The MCP tools are `ntfy_origins` and `set_ntfy_origins`.
 Allowed origins can read the `Retry-After` response header on time-based
 rate limits to decide when to retry.
 
+## Poll for cached messages
+
+Use `poll=1` (or `po=yes`) to read cached messages and close the connection.
+Use `since=` (or `si=`) to select which cached messages to read. For example,
+`/infra/json?po=yes&si=latest` returns the latest cached message. The
+`X-Poll` and `X-Since` headers override the query parameters.
+
 ## Request and stream limits
 
 Operators can [set per-address limits](../self-host.md#server-environment)

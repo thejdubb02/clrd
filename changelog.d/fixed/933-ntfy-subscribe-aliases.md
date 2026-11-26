@@ -1,0 +1,1 @@
+- ntfy subscriptions accept the poll and since headers and the short query aliases `po` and `si` (#933).

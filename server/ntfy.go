@@ -824,9 +824,9 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 				return err
 			}
 		}
-		q := r.URL.Query()
-		poll := q.Get("poll") == "1" || q.Get("poll") == "true"
-		sinceArg := q.Get("since")
+		pollFlag := ntfyMarkdown(strings.TrimSpace(param(r, "Poll", "Po")))
+		poll := pollFlag != nil && *pollFlag
+		sinceArg := strings.TrimSpace(param(r, "Since", "Si"))
 		if sinceArg == "" && poll {
 			sinceArg = "all"
 		}

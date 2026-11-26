@@ -1243,7 +1243,9 @@ and `initialize` reports `version` as `serverInfo.version`.
   `Content-Type: text/markdown` selects Markdown even with `Markdown: no`.
 - `GET /{topics}/json`, `/{topics}/sse`, `/{topics}/ws`, `/{topics}/raw` with
   comma-separated topic names, `since=` (`none`, `all`, `latest`, unix time,
-  duration or message ID), `poll=1` for a finite replay, and ntfy's filters
+  duration or message ID), and `poll=1` or `poll=yes` for a finite replay.
+  `po` and `si` are short query names. The `X-Poll` and `X-Since` headers
+  take precedence over query parameters. The routes also accept ntfy's filters
   `id`, `message`, `title`, `priority` (any of a list) and `tags` (all of a
   list). `scheduled=1` (or `sched=1`) also lists messages sent with a delay
   that have not fired yet, as a `message` at their delivery time, as ntfy
