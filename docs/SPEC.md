@@ -1189,7 +1189,14 @@ and `initialize` reports `version` as `serverInfo.version`.
   a quoted value keeps its spaces and `\"` or `\'` is the quote itself;
   `view`, `copy`, `http` and `broadcast`, the last two only on a topic with
   `device_actions` on, else dropped. For copy, use `copy, Label, value`
-  or set `value` in JSON), `X-Delay`, `X-Icon` (sets `icon`; a
+  or set `value` in JSON), `X-Delay`/`Delay`/`X-At`/`At`/`X-In`/`In` (a unix
+  time, a duration such as `30m`, `1d` or `2 days`, an RFC 3339 time, or a
+  time of day such as `10am`, `8:30pm`, `noon`, `tomorrow, 3pm` or
+  `Tuesday 7am`; a bare time already past today means tomorrow; at most 3
+  days ahead; anything else is a 400), `X-Timezone`/`Timezone` (or the
+  `timezone` JSON field: the IANA zone a time of day is read in, else the
+  server's zone; an unknown one is a 400 only when there is a delay),
+  `X-Icon` (sets `icon`; a
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
   is dropped), `X-Filename`/`Filename`/`File`/`f` (with it, the body is the
   file and the message comes from `X-Message`/`Message`/`m`, default "You

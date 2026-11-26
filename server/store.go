@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS hooks_out (
   failing_since INTEGER, -- first failure since the last 2xx
   body TEXT NOT NULL DEFAULT '', -- a template for the POST body; '' sends the event (#239)
   kind TEXT NOT NULL DEFAULT '', -- '' or discord (#166)
+  rev INTEGER NOT NULL DEFAULT 0, -- changes with url or kind (#878)
   PRIMARY KEY (topic, name)
 );
 -- The message a discord hook posted for a notification, to edit it (#166).
@@ -554,6 +555,10 @@ func openDB(path string) (*sql.DB, error) {
 			db.Close()
 			return nil, err
 		}
+	}
+	if err := addColumn(db, `ALTER TABLE hooks_out ADD COLUMN rev INTEGER NOT NULL DEFAULT 0`, "add hooks_out rev column"); err != nil {
+		db.Close()
+		return nil, err
 	}
 	if err := addColumn(db, `ALTER TABLE sessions ADD COLUMN phone INTEGER NOT NULL DEFAULT 0`, "add sessions phone column"); err != nil {
 		db.Close()
