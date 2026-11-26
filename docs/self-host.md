@@ -140,6 +140,21 @@ changes nothing. With an admin token in the file, no setup link is printed.
 
 ## Settings
 
+In the web inbox, open **Settings > Display > Appearance** to choose a color
+theme. Default keeps the original look. High contrast uses stronger outlines,
+and Midnight uses a black background in dark mode. Custom opens six color
+pickers with a preview. Save theme shares the choice across your signed-in
+browsers. Theme on this browser can override that choice. The Light or dark
+setting stays on this browser, and Custom uses the shade of its own background.
+
+Automate the same choices with `PUT /api/v1/settings` or the MCP `settings`
+tool. For example, send `{"theme":"high-contrast"}`. To use a custom theme,
+send `theme: custom` and all six `theme_colors` from the
+[theme contract](SPEC.md#color-themes-584). clrd checks text and state colors
+for contrast before saving. Use `device_theme` in MCP for a device override.
+
+### Server environment
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `CLRD_LISTEN` | `:8080` | Address to listen on. |

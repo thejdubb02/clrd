@@ -403,8 +403,38 @@
     <section id="appearance" data-setting data-keywords="theme, dark mode, light mode, colors, system" class="grid gap-3">
       <h3 id="look-h" class="text-base font-semibold">Appearance</h3>
       <p class="text-body text-sm/relaxed">System follows this device's light or dark setting. Each browser and phone keeps its own choice.</p>
-      <div class="js-only flex flex-wrap items-center gap-2"><label for="theme-pick" class="label">Theme</label>
+      <div class="js-only flex flex-wrap items-center gap-2"><label for="theme-pick" class="label">Light or dark</label>
         <select id="theme-pick" class="input w-auto" data-theme-setting><option value="">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+      <form class="js-only grid gap-3" data-palette-form>
+        <p class="text-body text-sm/relaxed">Your color theme follows you to other signed-in browsers. Custom colors decide their own light or dark mode.</p>
+        <fieldset class="grid gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <label for="palette-pick" class="label">Color theme</label>
+            <select id="palette-pick" class="input w-auto" name="theme">
+              <option value="default">Default</option><option value="high-contrast">High contrast</option><option value="midnight">Midnight</option><option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="flex flex-wrap gap-3" data-palette-colors hidden>
+            <label class="label">Background <input class="input w-auto" type="color" name="bg"></label>
+            <label class="label">Cards <input class="input w-auto" type="color" name="card"></label>
+            <label class="label">Text <input class="input w-auto" type="color" name="text"></label>
+            <label class="label">Clear <input class="input w-auto" type="color" name="clear"></label>
+            <label class="label">Urgent <input class="input w-auto" type="color" name="urgent"></label>
+            <label class="label">Snooze <input class="input w-auto" type="color" name="snooze"></label>
+          </div>
+          <div class="flex flex-wrap items-center gap-2" data-palette-actions hidden>
+            <button class="btn" type="submit">Save theme</button>
+            <button class="btn" type="button" data-variant="outline" data-palette-cancel>Cancel preview</button>
+          </div>
+        </fieldset>
+        <div class="flex flex-wrap items-center gap-2">
+          <label for="palette-device" class="label">Theme on this browser</label>
+          <select id="palette-device" class="input w-auto" name="override">
+            <option value="">Follow saved theme</option><option value="default">Default</option><option value="high-contrast">High contrast</option><option value="midnight">Midnight</option><option value="custom">Custom</option>
+          </select>
+        </div>
+        <p class="text-body text-sm" role="status" data-palette-status></p>
+      </form>
     </section>
   </section>
   <section class="grid gap-8" aria-labelledby="g-devices" data-settings-group>

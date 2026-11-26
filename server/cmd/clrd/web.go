@@ -148,6 +148,8 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	snap.Formatting, snap.Autolink, snap.Favicons = ds.RenderFormatting, ds.Autolink, ds.Favicons
 	snap.LinkPreviews, snap.TopicPreviews = ds.LinkPreviews, ds.TopicPreviews
 	snap.Sound = ds.Sound
+	palette, _ := json.Marshal(ds.ThemeSettings)
+	snap.Palette = string(palette)
 	want := map[string]bool{}
 	for _, st := range q.States {
 		want[st] = true

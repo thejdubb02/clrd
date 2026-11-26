@@ -225,6 +225,24 @@
   "description": "Read the server settings, or change them: pass only the fields to change. keep_cleared_days (0 = forever) deletes cleared messages older than that on the next hourly cleanup and needs an admin token; preview it with counts first.",
   "inputSchema": {
    "properties": {
+    "theme": {
+     "description": "The signed-in owner's saved color theme.",
+     "type": "string",
+     "enum": ["default", "high-contrast", "midnight", "custom"]
+    },
+    "theme_colors": {
+     "description": "Six #RRGGBB colors for the custom theme. All required and checked for contrast.",
+     "type": "object",
+     "required": ["bg", "card", "text", "clear", "urgent", "snooze"],
+     "properties": {
+      "bg": {"type": "string"},
+      "card": {"type": "string"},
+      "text": {"type": "string"},
+      "clear": {"type": "string"},
+      "urgent": {"type": "string"},
+      "snooze": {"type": "string"}
+     }
+    },
     "autolink": {
      "description": "Turn web addresses into links",
      "type": "boolean"
@@ -505,6 +523,18 @@
    "type": "object"
   },
   "name": "devices"
+ },
+ {
+  "name": "device_theme",
+  "description": "Set a color theme for a linked device. An empty theme follows its owner's saved choice. Custom uses the owner's saved colors.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {"type": "string", "description": "Device id from devices, or this for the calling device"},
+    "theme": {"type": "string", "enum": ["", "default", "high-contrast", "midnight", "custom"]}
+   },
+   "required": ["id", "theme"]
+  }
  },
  {
   "description": "Recent links, sign-ins and unlinks of those devices, newest first, with the device that did each.",
