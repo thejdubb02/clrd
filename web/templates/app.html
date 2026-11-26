@@ -852,19 +852,42 @@
 {{define "stats"}}
 <header class="mb-6 flex min-h-9 flex-wrap items-center gap-2">
   <h1 class="me-auto truncate text-xl font-semibold tracking-tight">Stats</h1>
-  {{with .Snap.Stats}}<nav class="flex gap-1" aria-label="Range">{{$d := .Days}}{{range .Ranges}}<a class="btn" data-size="sm" data-variant="{{if eq . $d}}secondary{{else}}ghost{{end}}" href="{{base}}/app/stats?days={{.}}"{{if eq . $d}} aria-current="page"{{end}}>{{if eq . 1}}24 hours{{else}}{{.}} days{{end}}</a>{{end}}<a class="btn" data-size="sm" data-variant="ghost" href="{{base}}/api/v1/stats?days={{$d}}&amp;format=csv">CSV</a></nav>{{end}}
+  {{with .Snap.Stats}}<nav class="flex gap-1" aria-label="Range">{{$d := .Days}}{{$g := .Group}}{{range .Ranges}}<a class="btn" data-size="sm" data-variant="{{if eq . $d}}secondary{{else}}ghost{{end}}" href="{{base}}/app/stats?days={{.}}{{if $g}}&amp;group={{$g}}{{end}}"{{if eq . $d}} aria-current="page"{{end}}>{{if eq . 1}}24 hours{{else}}{{.}} days{{end}}</a>{{end}}<a class="btn" data-size="sm" data-variant="ghost" href="{{base}}/api/v1/stats?days={{$d}}{{if $g}}&amp;group={{$g}}{{end}}&amp;format=csv">CSV</a></nav>{{end}}
 </header>
 <div class="grid max-w-3xl gap-4" data-stats data-live="stats">
   {{if not .Snap.CanSenders}}<p class="text-body text-sm">Only an admin token for every topic can see stats.</p>
   {{else}}{{with .Snap.Stats}}
-  <p class="text-body text-sm/relaxed"><strong class="tabular-nums" data-total>{{.Total}}</strong> notifications, {{.Answered}} answered with a reply button. Times are UTC.</p>
-  {{if .Total}}<section class="bg-card grid gap-2 rounded-xl border p-4" aria-labelledby="st-vol">
-    <h2 id="st-vol" class="text-sm font-medium">Volume {{if eq .Days 1}}per hour{{else}}per day{{end}}</h2>
+  <p class="text-body text-sm/relaxed"><strong class="tabular-nums" data-total>{{.Total}}</strong> notifications, {{.Answered}} answered with a reply button. Volume times are UTC.</p>
+  <p class="text-body text-sm">{{.Connected}} connected now. {{.SelfCleared}} cleared by their sender, {{.ClearedByPerson}} by a person.</p>
+  {{if .Quiet}}<section class="bg-card rounded-xl border p-4" aria-labelledby="st-quiet">
+    <h2 id="st-quiet" class="text-sm font-medium">Gone quiet</h2>
+    <ul class="text-sm">{{range .Quiet}}<li><a class="underline" href="{{base}}/app/senders/{{.SenderID}}">{{.Name}}</a> ({{.Topic}})</li>{{end}}</ul>
+  </section>{{end}}
+  <section class="bg-card overflow-x-auto rounded-xl border p-4">
+    <table class="w-full text-center text-xs">
+      <caption class="mb-2 text-left text-sm font-medium">Notifications by hour of day and day of week, server time</caption>
+      <thead><tr><td></td>{{range $hour, $_ := index .WeekHours 0}}<th scope="col">{{$hour}}</th>{{end}}</tr></thead>
+      <tbody>{{range .Heatmap}}<tr><th scope="row" class="text-left">{{.Day}}</th>
+        {{range .Cells}}<td title="{{.Count}}"><span class="sr-only">{{.Count}}</span><span class="block h-4 rounded-sm" style="background: var(--color-primary); opacity: {{.Opacity}}" aria-hidden="true"></span></td>{{end}}
+      </tr>{{end}}</tbody>
+    </table>
+  </section>
+  <section class="bg-card grid gap-2 rounded-xl border p-4" aria-labelledby="st-vol">
+    <h2 id="st-vol" class="text-sm font-medium">Volume {{if and (not .Group) (eq .Days 1)}}per hour{{else}}per day{{end}}</h2>
+    <nav class="flex flex-wrap gap-1" aria-label="Group volume">
+      {{$d := .Days}}{{$g := .Group}}{{range .GroupOptions}}<a class="btn" data-size="sm" data-variant="{{if eq .Key $g}}secondary{{else}}ghost{{end}}" href="{{base}}/app/stats?days={{$d}}{{if .Key}}&amp;group={{.Key}}{{end}}"{{if eq .Key $g}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}
+    </nav>
+    {{if not .Total}}<p class="text-body text-sm">Nothing arrived in this range.</p>
+    {{else if .Group}}{{$cols := .GroupColumns}}<div class="overflow-x-auto"><table class="table">
+      <thead><tr><th scope="col">Day (UTC)</th>{{range $cols}}<th scope="col">{{.Label}}</th>{{end}}</tr></thead>
+      <tbody>{{range .GroupDays}}{{$counts := .Counts}}<tr><th scope="row">{{.Label}}</th>{{range $cols}}<td class="tabular-nums">{{index $counts .Key}}</td>{{end}}</tr>{{end}}</tbody>
+    </table></div>
+    {{else}}
     <svg viewBox="0 0 600 100" preserveAspectRatio="none" class="h-28 w-full" role="img" aria-label="Notifications {{if eq .Days 1}}per hour{{else}}per day{{end}}">
       {{range .Bars}}<rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="1" class="fill-primary"><title>{{.Label}}: {{.Count}}</title></rect>{{end}}
-    </svg>
+    </svg>{{end}}
   </section>
-  <section class="bg-card rounded-xl border" aria-labelledby="st-prio">
+  {{if .Total}}<section class="bg-card rounded-xl border" aria-labelledby="st-prio">
     <h2 id="st-prio" class="px-4 pt-4 text-sm font-medium">Priority</h2>
     <table class="table"><tbody>{{range .PriorityRows}}<tr><td>{{.Name}}</td><td class="tabular-nums">{{.Count}}</td></tr>{{end}}</tbody></table>
   </section>
@@ -876,7 +899,7 @@
       <tbody>{{range .Flappers}}<tr><td class="whitespace-normal [overflow-wrap:anywhere]">{{.Topic}}</td><td class="whitespace-normal [overflow-wrap:anywhere]">{{.ExternalID}}</td><td class="tabular-nums">{{.Count}}</td></tr>{{end}}</tbody></table>
     {{else}}<p class="text-body px-4 pb-4 text-sm">None in this range.</p>{{end}}
   </section>
-  {{else}}<p class="text-body text-sm">Nothing arrived in this range.</p>{{end}}
+  {{end}}
   {{if or .Total .Delivery}}<section class="bg-card rounded-xl border" aria-labelledby="st-deliv">
     <h2 id="st-deliv" class="px-4 pt-4 text-sm font-medium">Delivery health</h2>
     <p class="text-body px-4 pt-1 text-sm">Failed outgoing webhook deliveries and Web Push sends per topic.</p>
@@ -893,7 +916,7 @@
   <h2 class="px-4 pt-4 text-sm font-medium">{{.Title}}</h2>
   {{if $rows}}<table class="table">
     <thead><tr><th scope="col">{{.Col}}</th><th scope="col">{{if $c}}Cleared{{else}}Sent{{end}}</th>{{if not $c}}<th scope="col">Open</th>{{end}}<th scope="col" title="Half are cleared faster than this">Median clear</th><th scope="col" class="max-sm:hidden" title="Nine in ten are cleared faster than this">90% clear</th></tr></thead>
-    <tbody>{{range $rows}}<tr><td class="whitespace-normal [overflow-wrap:anywhere]">{{.Label}}</td><td class="tabular-nums">{{.Count}}</td>{{if not $c}}<td class="tabular-nums">{{.Open}}</td>{{end}}
+    <tbody>{{range $rows}}<tr><td class="whitespace-normal [overflow-wrap:anywhere]">{{.Label}}</td><td class="tabular-nums">{{.Count}}{{if not $c}}{{with .Trend}} <span class="text-body text-xs">{{.}}</span>{{end}}{{end}}</td>{{if not $c}}<td class="tabular-nums">{{.Open}}</td>{{end}}
       <td class="tabular-nums">{{if .Cleared}}{{took .ClearMedianMS}}{{else}}-{{end}}</td><td class="tabular-nums max-sm:hidden">{{if .Cleared}}{{took .ClearP90MS}}{{else}}-{{end}}</td></tr>{{end}}</tbody>
   </table>{{else}}<p class="text-body px-4 pb-4 text-sm">None in this range.</p>{{end}}
 </section>

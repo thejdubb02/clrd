@@ -84,6 +84,13 @@ func TestWebOnRealServer(t *testing.T) {
 	if code, body := get("/app/stats?days=1"); code != 200 || !strings.Contains(body, "data-total>2</strong>") || !strings.Contains(body, ">phone</td>") {
 		t.Fatalf("stats: %d, want both notifications counted and sent by phone", code)
 	}
+	if code, body := get("/app/stats?days=1&group=topic"); code != 200 ||
+		!strings.Contains(body, "Notifications by hour of day and day of week, server time") ||
+		!strings.Contains(body, "0 cleared by their sender, 1 by a person.") ||
+		!strings.Contains(body, `<th scope="col">home</th><th scope="col">work</th>`) ||
+		!strings.Contains(body, `<td class="tabular-nums">1</td>`) {
+		t.Fatalf("grouped stats: %d, want a daily breakdown and the person clear", code)
+	}
 }
 
 // The link shows the card where no list does (#822): past the newest 500 of

@@ -39,17 +39,71 @@ func TestStats(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE notifications SET created_at = ? WHERE id = ?`, base+30*60_000, id); err != nil {
 		t.Fatal(err)
 	}
+	for i, topic := range []string{"disk", "disk", "web", "disk"} {
+		at := base - 86_400_000
+		if i == 3 {
+			at--
+		}
+		if _, err := s.db.Exec(`UPDATE notifications SET created_at = ? WHERE id = ?`, at, pub(topic, "")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tok := s.lookupToken(context.Background(), admin)
+	if _, err := s.db.Exec(`UPDATE senders SET alarm_topic = 'alarm' WHERE id = ?`, tok.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET state_by_id = 'another-token' WHERE created_at = ?`, base+2*3_600_000); err != nil {
+		t.Fatal(err)
+	}
+	_, cancelSub := s.Subscribe()
+	defer cancelSub()
+	ws := dialWS(t, ts.URL, admin, 0)
+	ws.until(func(m msg) bool { return m.Type == "ready" })
 	q := fmt.Sprintf("/api/v1/stats?from=%d&to=%d", base, base+86_400_000)
 	code, st := call(t, ts, "GET", q, admin, nil)
 	if code != 200 || st["total"] != 4.0 || st["priorities"].(map[string]any)["4"] != 4.0 {
 		t.Fatalf("stats: %d %v", code, st)
 	}
+	if st["cleared"] != 3.0 || st["self_cleared"] != 2.0 || st["connected"] != 1.0 {
+		t.Fatalf("cleared=%v self_cleared=%v connected=%v", st["cleared"], st["self_cleared"], st["connected"])
+	}
+	quiet := st["quiet"].([]any)
+	if len(quiet) != 1 {
+		t.Fatalf("quiet: %v", quiet)
+	}
+	alarm := quiet[0].(map[string]any)
+	if alarm["sender_id"] != tok.ID || alarm["name"] != tok.Name || alarm["topic"] != "alarm" {
+		t.Fatalf("quiet alarm: %v", alarm)
+	}
+	var wantWeek [7][24]float64
+	for _, offset := range []int64{0, 30 * 60_000, 3_600_000, 2 * 3_600_000} {
+		at := time.UnixMilli(base + offset).In(time.Local)
+		wantWeek[at.Weekday()][at.Hour()]++
+	}
+	week := st["week_hours"].([]any)
+	if len(week) != len(wantWeek) {
+		t.Fatalf("week has %d days", len(week))
+	}
+	for day, raw := range week {
+		row := raw.([]any)
+		if len(row) != len(wantWeek[day]) {
+			t.Fatalf("day %d has %d hours", day, len(row))
+		}
+		for hour, count := range row {
+			if count != wantWeek[day][hour] {
+				t.Fatalf("week[%d][%d] = %v, want %v", day, hour, count, wantWeek[day][hour])
+			}
+		}
+	}
 	hours := st["hours"].([]any)
+	if _, ok := hours[0].(map[string]any)["by"]; ok {
+		t.Fatal("ungrouped hour has a breakdown")
+	}
 	if len(hours) != 3 || hours[0].(map[string]any)["at"] != float64(base) || hours[0].(map[string]any)["count"] != 2.0 {
 		t.Fatalf("hours: %v", hours)
 	}
 	disk := st["topics"].([]any)[0].(map[string]any)
-	if disk["key"] != "disk" || disk["cleared"] != 3.0 || disk["open"] != 0.0 ||
+	if disk["key"] != "disk" || disk["previous"] != 2.0 || disk["cleared"] != 3.0 || disk["open"] != 0.0 ||
 		disk["clear_median_ms"] != 120_000.0 || disk["clear_p90_ms"] != 600_000.0 {
 		t.Fatalf("disk: %v", disk)
 	}
@@ -62,8 +116,44 @@ func TestStats(t *testing.T) {
 	if by := st["cleared_by"].([]any); len(by) != 1 || by[0].(map[string]any)["count"] != 3.0 {
 		t.Fatalf("cleared_by: %v", by)
 	}
-	if s := st["senders"].([]any); len(s) != 1 || s[0].(map[string]any)["count"] != 4.0 {
+	if s := st["senders"].([]any); len(s) != 1 || s[0].(map[string]any)["count"] != 4.0 || s[0].(map[string]any)["previous"] != 3.0 {
 		t.Fatalf("senders: %v", s)
+	}
+	emptyRange := fmt.Sprintf("/api/v1/stats?from=%d&to=%d", base-2, base-1)
+	if code, empty := call(t, ts, "GET", emptyRange, admin, nil); code != 200 ||
+		empty["total"] != 0.0 || len(empty["quiet"].([]any)) != 1 {
+		t.Fatalf("quiet alarm outside notification range: %d %v", code, empty)
+	}
+	for _, topic := range []string{"a", "b", "c", "d", "e"} {
+		if _, err := s.db.Exec(`UPDATE notifications SET created_at = ? WHERE id = ?`, base, pub(topic, "")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, grouped := call(t, ts, "GET", q+"&group=topic", admin, nil)
+	if code != 200 {
+		t.Fatalf("grouped stats: %d %v", code, grouped)
+	}
+	breakdown := grouped["hours"].([]any)[0].(map[string]any)["by"].(map[string]any)
+	if len(breakdown) != 6 || breakdown["other"] != 2.0 {
+		t.Fatalf("breakdown: %v", breakdown)
+	}
+	for _, topic := range []string{"disk", "a", "b", "c", "d"} {
+		if breakdown[topic] != 1.0 {
+			t.Errorf("breakdown %q: %v", topic, breakdown)
+		}
+	}
+	if c, _ := call(t, ts, "GET", q+"&group=bogus", admin, nil); c != 400 {
+		t.Fatalf("bad group: %d, want 400", c)
+	}
+	for group, key := range map[string]string{"sender": tok.ID, "priority": "4"} {
+		code, grouped := call(t, ts, "GET", q+"&group="+group, admin, nil)
+		if code != 200 {
+			t.Fatalf("group=%s: %d %v", group, code, grouped)
+		}
+		breakdown := grouped["hours"].([]any)[0].(map[string]any)["by"].(map[string]any)
+		if len(breakdown) != 1 || breakdown[key] != 7.0 {
+			t.Errorf("group=%s: %v", group, breakdown)
+		}
 	}
 	// Admins only, and only without a topic list; a bad range is refused.
 	for raw, want := range map[string]int{
@@ -347,7 +437,7 @@ func TestStatsDeliveryAndCSV(t *testing.T) {
 		t.Fatalf("bad format: %d, want 400", c)
 	}
 	// CSV export.
-	req, _ := http.NewRequest("GET", ts.URL+q+"&format=csv", nil)
+	req, _ := http.NewRequest("GET", ts.URL+q+"&format=csv&group=topic", nil)
 	req.Header.Set("Authorization", "Bearer "+admin)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -366,8 +456,14 @@ func TestStatsDeliveryAndCSV(t *testing.T) {
 		t.Fatalf("csv header: %v", recs)
 	}
 	joined := string(body)
+	local := time.UnixMilli(base + 1000).In(time.Local)
 	for _, want := range []string{
 		"summary,total,,2,",
+		"summary,cleared,,1,",
+		"summary,self_cleared,,1,",
+		fmt.Sprintf("week_hours,%d,%d,2,", local.Weekday(), local.Hour()),
+		"hour_by," + time.UnixMilli(base).Truncate(time.Hour).UTC().Format(time.RFC3339) + ",alerts,2,",
+		"topic_previous,alerts,,0,",
 		"topic,alerts,,2,1,1,",
 		"flapper,alerts,'=SUM(A1),2,",
 		"delivery_webhook,alerts,,2,",

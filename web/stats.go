@@ -9,18 +9,30 @@ import (
 
 // Stats is GET /api/v1/stats (docs/SPEC.md, #120) for the Stats page.
 type Stats struct {
-	From       int64           `json:"from"`
-	To         int64           `json:"to"`
-	Total      int             `json:"total"`
-	Answered   int             `json:"answered"`
-	Priorities map[string]int  `json:"priorities"`
-	Hours      []StatsBucket   `json:"hours"`
-	Topics     []StatsGroup    `json:"topics"`
-	Senders    []StatsGroup    `json:"senders"` // Key is the top token id; Name is filled from the senders list
-	ClearedBy  []StatsGroup    `json:"cleared_by"`
-	Flappers   []StatsFlapper  `json:"flappers"`
-	Delivery   []StatsDelivery `json:"delivery"`
-	Days       int             `json:"-"` // the range picked on the page
+	WeekHours   [7][24]int      `json:"week_hours"`
+	Cleared     int             `json:"cleared"`
+	SelfCleared int             `json:"self_cleared"`
+	Connected   int             `json:"connected"`
+	Quiet       []StatsQuiet    `json:"quiet"`
+	Group       string          `json:"-"`
+	From        int64           `json:"from"`
+	To          int64           `json:"to"`
+	Total       int             `json:"total"`
+	Answered    int             `json:"answered"`
+	Priorities  map[string]int  `json:"priorities"`
+	Hours       []StatsBucket   `json:"hours"`
+	Topics      []StatsGroup    `json:"topics"`
+	Senders     []StatsGroup    `json:"senders"` // Key is the top token id; Name is filled from the senders list
+	ClearedBy   []StatsGroup    `json:"cleared_by"`
+	Flappers    []StatsFlapper  `json:"flappers"`
+	Delivery    []StatsDelivery `json:"delivery"`
+	Days        int             `json:"-"` // the range picked on the page
+}
+
+type StatsQuiet struct {
+	SenderID string `json:"sender_id"`
+	Name     string `json:"name"`
+	Topic    string `json:"topic"`
 }
 
 type StatsDelivery struct {
@@ -30,14 +42,16 @@ type StatsDelivery struct {
 }
 
 type StatsBucket struct {
-	At    int64 `json:"at"` // unix ms, start of the UTC hour
-	Count int   `json:"count"`
+	At    int64          `json:"at"` // unix ms, start of the UTC hour
+	Count int            `json:"count"`
+	By    map[string]int `json:"by"`
 }
 
 type StatsGroup struct {
 	Key           string `json:"key"`
 	Name          string `json:"-"`
 	Count         int    `json:"count"`
+	Previous      int    `json:"previous"`
 	Open          int    `json:"open"`
 	Cleared       int    `json:"cleared"`
 	ClearMedianMS int64  `json:"clear_median_ms"`
@@ -62,6 +76,104 @@ func statsDays(v string) int {
 }
 
 func (s Stats) Ranges() []int { return StatsRanges }
+
+func statsGroup(v string) string {
+	switch v {
+	case "topic", "sender", "priority":
+		return v
+	}
+	return ""
+}
+
+type StatsGroupOption struct {
+	Key, Label string
+}
+
+func (s Stats) GroupOptions() []StatsGroupOption {
+	return []StatsGroupOption{{"", "None"}, {"topic", "By topic"}, {"sender", "By sender"}, {"priority", "By priority"}}
+}
+
+func (s Stats) ClearedByPerson() int { return s.Cleared - s.SelfCleared }
+
+type HeatCell struct {
+	Count   int
+	Opacity float64
+}
+
+type HeatRow struct {
+	Day   string
+	Cells [24]HeatCell
+}
+
+func (s Stats) Heatmap() [7]HeatRow {
+	peak := 1
+	for _, hours := range s.WeekHours {
+		peak = max(peak, slices.Max(hours[:]))
+	}
+	var rows [7]HeatRow
+	for day, hours := range s.WeekHours {
+		rows[day].Day = time.Weekday(day).String()
+		for hour, count := range hours {
+			opacity := float64(count) / float64(peak)
+			if count > 0 {
+				opacity = max(opacity, 0.15)
+			}
+			rows[day].Cells[hour] = HeatCell{count, opacity}
+		}
+	}
+	return rows
+}
+
+type StatsDay struct {
+	Label  string
+	Counts map[string]int
+}
+
+func (s Stats) GroupDays() []StatsDay {
+	const step = int64(24 * time.Hour / time.Millisecond)
+	var days []StatsDay
+	for _, h := range s.Hours {
+		label := time.UnixMilli(floorBucket(h.At, step)).UTC().Format("Mon, Jan 2")
+		if len(days) == 0 || days[len(days)-1].Label != label {
+			days = append(days, StatsDay{label, map[string]int{}})
+		}
+		for key, count := range h.By {
+			days[len(days)-1].Counts[key] += count
+		}
+	}
+	return days
+}
+
+func (s Stats) GroupColumns() []StatsGroup {
+	if s.Group == "priority" {
+		return []StatsGroup{{Key: "1"}, {Key: "2"}, {Key: "3"}, {Key: "4"}, {Key: "5"}}
+	}
+	rows := s.Topics
+	if s.Group == "sender" {
+		rows = s.Senders
+	}
+	cols := slices.Clone(rows[:min(len(rows), 5)])
+	if !slices.ContainsFunc(cols, func(g StatsGroup) bool { return g.Key == "other" }) {
+		for _, h := range s.Hours {
+			if h.By["other"] > 0 {
+				return append(cols, StatsGroup{Key: "other"})
+			}
+		}
+	}
+	return cols
+}
+
+func (g StatsGroup) Trend() string {
+	switch {
+	case g.Previous == 0 && g.Count > 0:
+		return "new"
+	case g.Count > g.Previous:
+		return fmt.Sprintf("up %d", g.Count-g.Previous)
+	case g.Count < g.Previous:
+		return fmt.Sprintf("down %d", g.Previous-g.Count)
+	}
+	return ""
+}
 
 // StatsTable is one of the page's top lists.
 type StatsTable struct {

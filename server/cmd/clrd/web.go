@@ -221,7 +221,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 	// Stats (#120): the same full admin check as GET /api/v1/stats.
 	if q.Stats > 0 && snap.CanSenders {
 		to := time.Now()
-		st, err := a.s.Stats(ctx, tok, to.Add(-time.Duration(q.Stats)*24*time.Hour), to)
+		st, err := a.s.GroupedStats(ctx, tok, to.Add(-time.Duration(q.Stats)*24*time.Hour), to, q.Group)
 		if err != nil {
 			return snap, err
 		}
@@ -229,6 +229,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 			return snap, err
 		}
 		snap.Stats.Days = q.Stats
+		snap.Stats.Group = q.Group
 		ss, err := a.s.Senders(ctx, tok) // a sender row per top token: its name
 		if err != nil {
 			return snap, err
