@@ -706,7 +706,7 @@ type Hook struct {
 	Name         string         `json:"name"`
 	URL          string         `json:"url"`
 	Events       []string       `json:"events"`
-	Kind         string         `json:"kind"` // "", "discord" or "github" (#673)
+	Kind         string         `json:"kind"` // "", "discord", "slack" or "github" (#673)
 	Body         string         `json:"body"` // a body template; "" sends the event (#239)
 	HasSecret    bool           `json:"has_secret"`
 	Enabled      bool           `json:"enabled"`

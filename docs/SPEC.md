@@ -974,7 +974,7 @@ resolved`) and `ntfy_import`.
 | DELETE | `/api/v1/topics/{topic}/templates/{name}` | Remove a saved template. Scope publish on the topic. |
 | POST | `/api/v1/topics/{topic}/templates/{name}/preview` | Dry run: `{payload, headers?, template?}` returns `{notifications}`, what a post of payload would publish, through the same render path, without storing or sending anything and without the secret check. `template` previews an unsaved one. Scope publish on the topic. |
 | GET | `/api/v1/topics/{topic}/hooks` | The topic's outgoing webhooks (secret hidden, `has_secret` shown). Admin. |
-| PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret","body"}`, replaces and turns it back on; `body` is an optional template, #239; `"kind": "discord"` posts and edits Discord messages, #166; `"kind": "github"` opens and closes GitHub issues, #168) or remove an outgoing webhook. Admin. |
+| PUT/DELETE | `/api/v1/topics/{topic}/hooks/{name}` | Save (body `{"url","events","secret","body"}`, replaces and turns it back on; `body` is an optional template, #239; `"kind": "discord"` posts and edits Discord messages, #166; `"kind": "slack"` posts and edits Slack messages and adds reactions, #166; `"kind": "github"` opens and closes GitHub issues, #168) or remove an outgoing webhook. Admin. |
 | GET | `/api/v1/topics/{topic}/hooks/{name}/deliveries` | The last 100 deliveries, newest first. Admin. |
 | POST | `/api/v1/topics/{topic}/hooks/preview` | Dry run a body template (`{"body","event"?}`, a sample event without one): returns `{"body"}` as a delivery would send it, sends nothing. Admin. |
 | GET/PUT | `/api/v1/hooks/allow` | Private networks and extra ports outgoing webhooks may reach: `{"networks":["192.168.1.0/24"],"ports":[8080]}`, both empty by default, plus `"locked"` (true under `CLRD_HOOK_ALLOW=off`, when PUT is 403 `locked`). PUT needs both fields (`[]` for none), at most 64 of each; a bare address is a single-address network. Full admin. |
@@ -1254,6 +1254,10 @@ and `initialize` reports `version` as `serverInfo.version`.
   save that changes only `wait` or the query order keeps its message ids; any other URL or kind change clears them
   (#816). A post whose reply is lost has no id, so a retry or a later wake
   posts again (a webhook cannot list messages to check first).
+  A hook with `"kind": "slack"` (#166) follows the Discord post and edit events.
+  Its URL is `https://slack.com/api/chat.postMessage?channel=CHANNEL`, its
+  secret is a bot token, and it takes no body template. It also reacts with
+  eyes on acknowledgment and a check mark on dismissal or resolution.
   A hook with `"kind": "github"` (#168; url
   `https://api.github.com/repos/OWNER/REPO`, secret a token sent as
   `Authorization: Bearer`, no body) opens an issue per new, unscheduled

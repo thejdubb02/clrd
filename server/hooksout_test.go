@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -487,7 +488,7 @@ func TestHooksOutDiscord(t *testing.T) {
 		}
 	})
 	path := "/api/v1/topics/ops/hooks/dc"
-	for _, bad := range []map[string]any{{"url": dc.URL, "kind": "slack"}, {"url": dc.URL, "kind": "discord", "body": `{}`}} {
+	for _, bad := range []map[string]any{{"url": dc.URL, "kind": "unknown"}, {"url": dc.URL, "kind": "discord", "body": `{}`}} {
 		if code, _ := call(t, ts, "PUT", path, admin, bad); code != 400 {
 			t.Fatalf("saved %v: %d", bad, code)
 		}
@@ -898,6 +899,152 @@ func TestHooksOutDiscordWaitKeepsPosts(t *testing.T) {
 	s.db.QueryRow(`SELECT count(*) FROM hook_posts WHERE id = ?`, n["id"]).Scan(&kept)
 	if kept != 1 {
 		t.Fatalf("wait dropped during a post: kept %d message ids, want 1", kept)
+	}
+}
+
+type slackTestTransport func(*http.Request) (*http.Response, error)
+
+func (f slackTestTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestHooksOutSlack(t *testing.T) {
+	s, err := New(Options{DB: filepath.Join(t.TempDir(), "clrd.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ctx := context.Background()
+	admin := mkToken(t, s, "admin", []string{ScopeAdmin}, nil)
+	api := func(method, path string, body any) (int, map[string]any) {
+		b, _ := json.Marshal(body)
+		req := httptest.NewRequest(method, path, strings.NewReader(string(b)))
+		req.Header.Set("Authorization", "Bearer "+admin)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, req)
+		var out map[string]any
+		json.Unmarshal(w.Body.Bytes(), &out)
+		return w.Code, out
+	}
+
+	const token = "xoxb-test"
+	type hit struct {
+		method, path, auth string
+		body               map[string]any
+	}
+	var mu sync.Mutex
+	var hits []hit
+	s.hookHTTP.Store(&http.Client{Transport: slackTestTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Scheme != "https" || r.URL.Host != "slack.com" {
+			return nil, errors.New("wrong Slack host")
+		}
+		h := hit{method: r.Method, path: r.URL.Path, auth: r.Header.Get("Authorization")}
+		json.NewDecoder(r.Body).Decode(&h.body)
+		mu.Lock()
+		defer mu.Unlock()
+		hits = append(hits, h)
+		reply := `{"ok":true}`
+		switch r.URL.Path {
+		case "/api/chat.postMessage":
+			reply = `{"ok":true,"channel":"C999","ts":"123.456"}`
+			if h.body["channel"] == "Cbad" {
+				reply = `{"ok":false,"error":"invalid_auth xoxb-test"}`
+			}
+		case "/api/chat.update":
+			if len(hits) == 7 {
+				reply = `{"ok":false,"error":"message_not_found"}`
+			}
+		case "/api/reactions.add":
+			reply = `{"ok":false,"error":"already_reacted"}`
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(reply))}, nil
+	})})
+	path := "/api/v1/topics/ops/hooks/slack"
+	postURL := slackAPI + "chat.postMessage"
+	for _, bad := range []map[string]any{
+		{"url": postURL + "?channel=C0123", "kind": "slack"},
+		{"url": postURL, "kind": "slack", "secret": token},
+		{"url": postURL + "?channel=", "kind": "slack", "secret": token},
+		{"url": postURL + "Other?channel=C0123", "kind": "slack", "secret": token},
+		{"url": "https://example.com/api/chat.postMessage?channel=C0123", "kind": "slack", "secret": token},
+		{"url": postURL + "?channel=C0123", "kind": "slack", "secret": token, "body": "{}"},
+	} {
+		if code, _ := api("PUT", path, bad); code != 400 {
+			t.Fatalf("invalid Slack save returned %d, want 400", code)
+		}
+	}
+	save := func(channel string) {
+		t.Helper()
+		if code, h := api("PUT", path, map[string]any{"url": postURL + "?channel=" + channel, "kind": "slack", "secret": token}); code != 200 ||
+			h["kind"] != "slack" || h["secret"] != nil || h["has_secret"] != true {
+			t.Fatalf("save: %d %v", code, h)
+		}
+	}
+	deliver := func() {
+		t.Helper()
+		if err := s.deliverHooks(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkHits := func(paths ...string) []hit {
+		t.Helper()
+		mu.Lock()
+		defer mu.Unlock()
+		if len(hits) != len(paths) {
+			t.Fatalf("want %v, got %+v", paths, hits)
+		}
+		for i, path := range paths {
+			if h := hits[i]; h.path != "/api/"+path || h.method != "POST" || h.auth != "Bearer "+token {
+				t.Fatalf("request %d: %+v", i, h)
+			}
+		}
+		return slices.Clone(hits)
+	}
+	save("C0123")
+	_, a := api("POST", "/api/v1/notifications", map[string]any{"topic": "ops", "title": "Disk full", "message": "Check <!channel> src/**/backup\n-# Runbook"})
+	deliver()
+	p := checkHits("chat.postMessage")[0].body
+	if p["channel"] != "C0123" || p["text"] != "*Disk full*\nCheck &lt;!channel&gt; src/**/backup\n-# Runbook" || p["unfurl_links"] != false {
+		t.Fatalf("post: %+v", p)
+	}
+	var remote string
+	if err := s.db.QueryRow(`SELECT remote_id FROM hook_posts WHERE name = 'slack' AND id = ?`, a["id"]).Scan(&remote); err != nil || remote != "C999/123.456" {
+		t.Fatalf("kept post: %q, %v", remote, err)
+	}
+	api("POST", "/api/v1/notifications/"+a["id"].(string)+"/dismiss", nil)
+	deliver()
+	got := checkHits("chat.postMessage", "chat.update", "reactions.add")
+	u, r := got[1].body, got[2].body
+	if u["channel"] != "C999" || u["ts"] != "123.456" || !strings.HasPrefix(fmt.Sprint(u["text"]), "~*Disk full*~") || !strings.Contains(fmt.Sprint(u["text"]), "\n-# Runbook\nCleared by ") {
+		t.Fatalf("update: %+v", u)
+	}
+	if r["channel"] != "C999" || r["timestamp"] != "123.456" || r["name"] != "white_check_mark" {
+		t.Fatalf("reaction: %+v", r)
+	}
+	_, b := api("POST", "/api/v1/notifications", map[string]any{"topic": "ops", "message": "second alert"})
+	deliver()
+	api("POST", "/api/v1/notifications/"+b["id"].(string)+"/ack", nil)
+	deliver()
+	got = checkHits("chat.postMessage", "chat.update", "reactions.add", "chat.postMessage", "chat.update", "reactions.add")
+	if got[5].body["name"] != "eyes" {
+		t.Fatalf("acknowledgment reaction: %+v", got[5])
+	}
+	api("POST", "/api/v1/notifications/"+b["id"].(string)+"/resolve", nil)
+	deliver()
+	checkHits("chat.postMessage", "chat.update", "reactions.add", "chat.postMessage", "chat.update", "reactions.add", "chat.update")
+	ds, err := s.HookDeliveries(ctx, serverToken, "ops", "slack", 10)
+	if err != nil || len(ds) != 5 || ds[0].Event != Resolved || ds[0].Code != 204 || ds[0].Status != "ok" || ds[0].Attempts != 1 || ds[1].Status != "ok" || ds[3].Status != "ok" {
+		t.Fatalf("deleted message and already-reacted deliveries: %+v, %v", ds, err)
+	}
+
+	save("Cbad")
+	api("POST", "/api/v1/notifications", map[string]any{"topic": "ops", "message": "bad auth"})
+	deliver()
+	ds, err = s.HookDeliveries(ctx, serverToken, "ops", "slack", 1)
+	if err != nil || len(ds) != 1 || ds[0].Status != "pending" || ds[0].Code != 200 || ds[0].Attempts != 1 ||
+		!strings.Contains(ds[0].Error, "invalid_auth") || strings.Contains(ds[0].Error, token) {
+		t.Fatalf("invalid auth delivery: %+v, %v", ds, err)
 	}
 }
 

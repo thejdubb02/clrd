@@ -49,14 +49,16 @@ type OutHook struct {
 	Enabled      bool       `json:"enabled"`
 	FailingSince *time.Time `json:"failing_since"`
 	Body         string     `json:"body"` // a template for the POST body; "" sends the event (#239)
-	Kind         string     `json:"kind"` // "" POSTs events; "discord" and "github" post, then follow up (#166, #168)
+	Kind         string     `json:"kind"` // "" POSTs events; "discord", "slack" and "github" post, then follow up (#166, #168)
 }
 
 // hookKinds: "discord" posts each new notification to a Discord webhook URL
 // and edits that message when its state changes (#166). "github" opens an
 // issue in a repo (URL https://api.github.com/repos/OWNER/REPO, secret a
 // token), comments on each state change and closes it once cleared (#168).
-var hookKinds = []string{"", "discord", "github"}
+var hookKinds = []string{"", "discord", "slack", "github"}
+
+const slackAPI = "https://slack.com/api/"
 
 // githubPerHour caps the issues one github hook opens: a flapping alert must
 // not bury a repo, or start a coding agent a hundred times. Deliveries still
@@ -145,7 +147,7 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 			}
 		}
 		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
-			SELECT topic, name, ?, 'posted', ?, ?, ? FROM hooks_out h WHERE topic = ? AND enabled = 1 AND (kind = 'discord'
+			SELECT topic, name, ?, 'posted', ?, ?, ? FROM hooks_out h WHERE topic = ? AND enabled = 1 AND (kind IN ('discord', 'slack')
 			OR kind = 'github' AND ? AND (SELECT count(*) FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name
 			AND d.event = 'posted' AND (d.status = 'pending' OR d.updated_at > ?)) < ?)`,
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, issue, ms(t.Add(-time.Hour)), githubPerHour)
@@ -155,7 +157,7 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 		n := e.Notification
 		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
 			SELECT h.topic, h.name, ?, 'updated', ?, ?, ? FROM hooks_out h
-			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
+			WHERE h.topic = ? AND h.enabled = 1 AND h.kind IN ('discord', 'slack')
 			  AND (EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
 			    OR EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND json_extract(d.body, '$.notification.id') = ?))`,
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, n.ID)
@@ -169,7 +171,7 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 		// counts only through hook_posts, which a new URL clears (#795).
 		if _, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
 			SELECT h.topic, h.name, ?, 'posted', ?, ?, ? FROM hooks_out h
-			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
+			WHERE h.topic = ? AND h.enabled = 1 AND h.kind IN ('discord', 'slack')
 			  AND NOT EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
 			  AND NOT EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND json_extract(d.body, '$.notification.id') = ?)`,
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, n.ID); err != nil {
@@ -178,7 +180,7 @@ func queueHooks(tx *sql.Tx, e *Event, t time.Time) error {
 		// Already-posted notification that was snoozed: edit it to drop the Snoozed status line.
 		_, err := tx.Exec(`INSERT INTO hook_deliveries (topic, name, seq, event, body, next_at, updated_at)
 			SELECT h.topic, h.name, ?, 'updated', ?, ?, ? FROM hooks_out h
-			WHERE h.topic = ? AND h.enabled = 1 AND h.kind = 'discord'
+			WHERE h.topic = ? AND h.enabled = 1 AND h.kind IN ('discord', 'slack')
 			  AND (EXISTS (SELECT 1 FROM hook_posts p WHERE p.topic = h.topic AND p.name = h.name AND p.id = ?)
 			    OR EXISTS (SELECT 1 FROM hook_deliveries d WHERE d.topic = h.topic AND d.name = h.name AND d.event = 'posted' AND d.status = 'pending' AND d.seq < ? AND json_extract(d.body, '$.notification.id') = ?))`,
 			e.Seq, string(e.Raw), ms(t), ms(t), n.Topic, n.ID, e.Seq, n.ID)
@@ -401,8 +403,27 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 	if err != nil {
 		return 0, errors.New("bad url")
 	}
-	reqs := discordReqs(*u, n, j.event, remote)
-	if j.kind == "github" {
+	var reqs []hookReq
+	if j.kind == "slack" {
+		// Escape &<> so the text cannot ping @channel.
+		text := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(discordText(n, j.event, true))
+		if j.event == "posted" {
+			reqs = []hookReq{{"POST", slackAPI + "chat.postMessage", map[string]any{"channel": u.Query().Get("channel"), "text": text, "unfurl_links": false}}}
+		} else {
+			channel, ts, _ := strings.Cut(remote, "/")
+			reqs = []hookReq{{"POST", slackAPI + "chat.update", map[string]string{"channel": channel, "ts": ts, "text": text}}}
+			reaction := ""
+			switch j.event {
+			case Dismissed, Resolved:
+				reaction = "white_check_mark"
+			case Acknowledged, "action":
+				reaction = "eyes"
+			}
+			if reaction != "" {
+				reqs = append(reqs, hookReq{"POST", slackAPI + "reactions.add", map[string]string{"channel": channel, "timestamp": ts, "name": reaction}})
+			}
+		}
+	} else if j.kind == "github" {
 		mark := githubMark(j.name, n)
 		if j.event == "posted" {
 			// A send whose reply was lost may have opened the issue: look first (#680).
@@ -427,6 +448,8 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 		} else if paused {
 			return 0, errGitHubPaused
 		}
+	} else {
+		reqs = discordReqs(*u, n, j.event, remote)
 	}
 	var code int
 	var resp []byte
@@ -438,16 +461,42 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "clrd")
-		if j.kind == "github" {
+		if j.kind == "github" || j.kind == "slack" {
 			req.Header.Set("Authorization", "Bearer "+j.secret)
+		}
+		if j.kind == "github" {
 			req.Header.Set("Accept", "application/vnd.github+json")
 			req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 		}
 		if code, resp, err = s.hookDo(ctx, req, hookReplyMax); err != nil || code < 200 || code > 299 {
-			if j.event != "posted" && (code == 410 || code == 404 && strings.Contains(string(resp), "10008")) {
+			if j.kind != "slack" && j.event != "posted" && (code == 410 || code == 404 && strings.Contains(string(resp), "10008")) {
 				return 204, nil // a deleted issue, or Discord's Unknown Message: nothing to edit
 			}
 			return code, err
+		}
+		if j.kind == "slack" {
+			var m struct {
+				OK                 bool
+				Error, Channel, TS string
+			}
+			if json.Unmarshal(resp, &m) != nil {
+				return code, errors.New("unreadable Slack reply")
+			}
+			if !m.OK {
+				switch {
+				case r.url == slackAPI+"reactions.add" && m.Error == "already_reacted":
+					continue
+				case r.url == slackAPI+"chat.update" && m.Error == "message_not_found":
+					return 204, nil
+				}
+				return code, fmt.Errorf("Slack API error: %s", m.Error)
+			}
+			if j.event == "posted" {
+				if m.Channel == "" || m.TS == "" {
+					return code, errors.New("no message id in Slack reply")
+				}
+				return code, s.keepPost(ctx, j, n.ID, m.Channel+"/"+m.TS)
+			}
 		}
 	}
 	if j.event == "posted" {
@@ -516,7 +565,7 @@ func discordReqs(u url.URL, n *Notification, event, remote string) []hookReq {
 		method, u.Path = "PATCH", strings.TrimSuffix(u.Path, "/")+"/messages/"+url.PathEscape(remote)
 	}
 	u.RawQuery = q.Encode()
-	return []hookReq{{method, u.String(), map[string]any{"content": discordText(n, event), "allowed_mentions": map[string]any{"parse": []string{}}}}}
+	return []hookReq{{method, u.String(), map[string]any{"content": discordText(n, event, false), "allowed_mentions": map[string]any{"parse": []string{}}}}}
 }
 
 // githubMark starts the body of the issue a hook opens for n, so a retry can
@@ -648,15 +697,20 @@ func hookStatus(n *Notification, event string) string {
 }
 
 // discordText is the message: bold title, the text, and after a state change
-// a small status line. Discord allows 2000 characters.
-func discordText(n *Notification, event string) string {
+// a small status line. Discord allows 2000 characters. Slack mrkdwn marks
+// with single * and ~ and has no small text.
+func discordText(n *Notification, event string, slack bool) string {
 	head := n.Title
 	if head == "" {
 		head = n.Topic
 	}
-	head = "**" + head + "**"
+	bold, strike, small := "**", "~~", "\n-# "
+	if slack {
+		bold, strike, small = "*", "~", "\n"
+	}
+	head = bold + head + bold
 	if event == Dismissed || event == Resolved {
-		head = "~~" + head + "~~"
+		head = strike + head + strike
 	}
 	text := []rune(head + "\n" + n.Message)
 	if len(text) > 1900 {
@@ -667,7 +721,7 @@ func discordText(n *Notification, event string) string {
 		stEvent = n.State
 	}
 	if st := []rune(hookStatus(n, stEvent)); len(st) > 0 {
-		return string(text) + "\n-# " + string(st[:min(len(st), 90)])
+		return string(text) + small + string(st[:min(len(st), 90)])
 	}
 	return string(text)
 }
@@ -696,6 +750,9 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 	msg := "HTTP " + strconv.Itoa(code)
 	if sendErr != nil {
 		msg = sendErr.Error()
+		if j.kind == "slack" && j.secret != "" {
+			msg = strings.ReplaceAll(msg, j.secret, "[hidden]")
+		}
 		if len(msg) > 300 {
 			msg = msg[:300]
 		}
@@ -790,7 +847,8 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	if topic == "" || name == "" {
 		return errf(400, "bad_request", "a webhook needs a topic and a name")
 	}
-	if u, err := url.Parse(h.URL); err != nil || len(h.URL) > 2048 || checkURL(u) != nil {
+	u, err := url.Parse(h.URL)
+	if err != nil || len(h.URL) > 2048 || checkURL(u) != nil {
 		return errf(400, "bad_request", "url must be an http(s) URL of at most 2048 characters")
 	}
 	if len(h.Events) == 0 {
@@ -805,21 +863,24 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 		return err
 	}
 	if !slices.Contains(hookKinds, h.Kind) {
-		return errf(400, "bad_request", "kind must be \"\", discord or github")
+		return errf(400, "bad_request", "kind must be \"\", discord, slack or github")
 	}
 	if h.Kind != "" && h.Body != "" || h.Kind == "discord" && h.Secret != "" {
 		return errf(400, "bad_request", "a %s webhook takes no body or secret: it sends its own message", h.Kind)
 	}
 	if h.Kind == "discord" {
-		keepSecret, keepBody = false, false // changing a signed/templated hook to discord drops both (#673)
+		keepSecret = false
 		h.URL = discordURL(h.URL)
 	}
-	if h.Kind == "github" {
+	if h.Kind != "" {
 		keepBody = false
 	}
-	// The token goes out as is, so only to GitHub: a new url cannot carry a kept token elsewhere.
+	// A GitHub hook can only send its token to the GitHub API.
 	if h.Kind == "github" && !strings.HasPrefix(h.URL, githubAPI) {
 		return errf(400, "bad_request", "a github webhook url is %sOWNER/REPO", githubAPI)
+	}
+	if h.Kind == "slack" && (!strings.HasPrefix(h.URL, slackAPI+"chat.postMessage?") || u.Query().Get("channel") == "") {
+		return errf(400, "bad_request", "a slack webhook url is %schat.postMessage?channel=CHANNEL", slackAPI)
 	}
 	events, _ := json.Marshal(h.Events)
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -827,13 +888,13 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 		return err
 	}
 	defer tx.Rollback()
-	if h.Kind == "github" && h.Secret == "" {
+	if (h.Kind == "github" || h.Kind == "slack") && h.Secret == "" {
 		var has int
 		if keepSecret {
-			_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM hooks_out WHERE topic = ? AND name = ? AND kind = 'github' AND secret != ''`, topic, name).Scan(&has)
+			_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM hooks_out WHERE topic = ? AND name = ? AND kind = ? AND secret != ''`, topic, name, h.Kind).Scan(&has)
 		}
 		if has == 0 {
-			return errf(400, "bad_request", "a github webhook needs a GitHub token in secret, one that can write issues")
+			return errf(400, "bad_request", "a %s webhook needs a token in secret", h.Kind)
 		}
 	}
 	// A new URL or kind is another channel: the old message ids mean nothing
