@@ -2,6 +2,8 @@
   "name": "clrd",
   "short_name": "clrd",
   "start_url": "app",
+  "scope": "app",
+  "display": "standalone",
   "background_color": "#F5F3EE",
   "theme_color": "#0B7A55",
   "icons": [

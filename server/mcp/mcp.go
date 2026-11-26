@@ -636,4 +636,7 @@ var restTools = map[string]struct {
 	"set_sender":          {"PUT", "/api/v1/senders/{id}", false},
 	"sender_changes":      {"GET", "/api/v1/senders/{id}/changes", false},
 	"undo_sender_change":  {"POST", "/api/v1/senders/{id}/changes/{seq}/undo", false},
+	"push":                {"GET", "/api/v1/push", false},
+	"set_push":            {"PUT", "/api/v1/push", false},
+	"delete_push":         {"DELETE", "/api/v1/push", false},
 }
