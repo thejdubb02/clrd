@@ -2,6 +2,7 @@ package clrd
 
 import (
 	"encoding/json"
+	"github.com/thejdubb02/clrd/internal/changelog"
 	"os"
 	"reflect"
 	"strings"
@@ -102,5 +103,15 @@ func TestVersionJSON(t *testing.T) {
 	}
 	if strings.Contains(string(VersionJSON()), ":null") {
 		t.Fatal("a null in the version JSON")
+	}
+}
+
+func TestEmbeddedChangelogMatchesSource(t *testing.T) {
+	want, _, err := changelog.Assemble(os.DirFS("."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Changelog != want {
+		t.Fatal("embedded changelog differs from assembled source")
 	}
 }
