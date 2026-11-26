@@ -80,3 +80,26 @@ func TestThemes(t *testing.T) {
 		}
 	}
 }
+
+func TestBrowserThemeAfterSigningInAgain(t *testing.T) {
+	s, ts, _ := newTest(t)
+	typed := mkToken(t, s, "laptop", []string{ScopeRead}, nil)
+	oldID, old := browserIn(t, s, ts, typed, installA)
+	if code, st := call(t, ts, "PUT", "/api/v1/devices/this", old.Value, map[string]any{"theme": "midnight"}); code != 200 || st["theme"] != "midnight" {
+		t.Fatalf("set theme: %d %v", code, st)
+	}
+	code, device, current := signIn(t, ts, `{"token":"`+typed+`","install":"`+installA+`"}`, firefoxLinux, old)
+	if code != 200 || current == nil || device["id"] == oldID {
+		t.Fatalf("replace browser session: %d %v", code, device)
+	}
+	if code, st := call(t, ts, "GET", "/api/v1/settings", current.Value, nil); code != 200 || st["device_theme"] != "midnight" {
+		t.Errorf("replacement lost the override: %d %v", code, st)
+	}
+	if code := withCookie(t, ts, "DELETE", "/api/v1/session", current); code != 204 {
+		t.Fatalf("sign out: %d", code)
+	}
+	var rows int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM settings WHERE key IN (?, ?)`, "theme:d:"+oldID, "theme:d:"+device["id"].(string)).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("found %d theme rows for deleted sessions: %v", rows, err)
+	}
+}

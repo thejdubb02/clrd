@@ -31,9 +31,9 @@ Run a local server with `CGO_ENABLED=0 go build -o clrd ./server/cmd/clrd && ./c
 - Run `gofmt` on Go code. Match the style of the code around your change.
 - **Keep the docs true.** If your change is something a user would notice, update
   in the same pull request:
-  - `CHANGELOG.md`, under `Unreleased`. CI checks this for changes to `server/`,
-    `web/`, `android/` and `sdk/`. A change no user would notice (tests, CI,
-    refactors) can skip it with the `no-changelog` label.
+  - One new file in [changelog.d](changelog.d/README.md). CI checks changes to
+    `server/`, `web/`, `android/` and `sdk/`. For tests, CI and refactors
+    with no user-visible change, use the `no-changelog` label.
   - `README.md` and the landing page (`web/templates/landing.html`) if a
     headline feature changes.
   - The matching page in `docs/`. The website serves `docs/` directly, so

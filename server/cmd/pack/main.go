@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/thejdubb02/clrd/internal/changelog"
 )
 
 // Each source (a folder or a file) is stored under out as name.gz. Templates
@@ -54,6 +56,13 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	md, _, err := changelog.Assemble(os.DirFS("."))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := packBytes([]byte(md), "packed/CHANGELOG.md.gz"); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func pack(src, dst string) error {
@@ -61,6 +70,10 @@ func pack(src, dst string) error {
 	if err != nil {
 		return err
 	}
+	return packBytes(b, dst)
+}
+
+func packBytes(b []byte, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}

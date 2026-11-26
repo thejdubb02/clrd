@@ -1,11 +1,11 @@
 # Changelog
 
-Every change a user would notice goes here, newest first. The format follows
+Released changes go here, newest version first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions
 follow [Semantic Versioning](https://semver.org/).
 
-Add your entry under `Unreleased`, in the section that fits (Added, Changed,
-Fixed, Removed, Security), as one line a user can understand.
+Pending changes live in [changelog.d](changelog.d/README.md). The server
+shows them under Unreleased, and the release command collects them here.
 
 The server binary carries this file and shows it as its version history.
 `go run ./server/cmd/cutversion X.Y.Z` cuts a version (`-summary-file F`

@@ -309,7 +309,14 @@ func (s *Server) deliverHooks(ctx context.Context) error {
 			}
 			if j.kind == "github" && (sendErr != nil || code < 200 || code > 299) {
 				if p, _ := githubHooksPaused(ctx, s.db); p {
-					return // paused mid-send: this try does not count (#796)
+					// Paused mid-send: this try does not count (#796), but
+					// GitHub's Retry-After still holds after the resume (#881).
+					if ra := hookWait(0); errors.As(sendErr, &ra) {
+						_, err := s.db.ExecContext(context.WithoutCancel(ctx), `UPDATE hook_deliveries SET next_at = max(next_at, ?) WHERE id = ? AND status = 'pending'`,
+							ms(now().Add(time.Duration(ra))), j.id)
+						errs[i] = err
+					}
+					return
 				}
 			}
 			errs[i] = s.recordHook(ctx, j, code, sendErr)
