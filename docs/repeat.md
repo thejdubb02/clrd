@@ -28,6 +28,8 @@ curl -H "Authorization: Bearer $CLRD_TOKEN" \
 ## What stops it
 
 - Acknowledge, snooze, dismiss or resolve, from any device or the API.
+  A dismiss kept local by turning off "Clears everywhere" leaves repeats
+  running on the other devices.
 - Tapping a reply action, since that acknowledges it.
 - Running out of `repeat_times`.
 

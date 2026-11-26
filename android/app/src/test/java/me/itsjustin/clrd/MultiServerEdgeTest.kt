@@ -148,6 +148,7 @@ class MultiServerEdgeTest {
         val b = app.addAccount("https://b.example", "")
         bg { b.saveSound("ding") }
         app.tray.dndNotice()
+        app.account.prefs.edit().putBoolean("dnd_lost", true).apply() // set with its notice, as dndLost does
         b.tray.dndNotice()
         b.prefs.edit().putBoolean("dnd_lost", true).apply()
         nm.getNotificationChannel(Sounds.channel(5, "ding")).setBypassDnd(true)
@@ -155,6 +156,32 @@ class MultiServerEdgeTest {
         assertNull(shadowOf(nm).getNotification("dnd${b.id}", Tray.DND_ID))
         assertNotNull("account 0's notice stays", shadowOf(nm).getNotification(null, Tray.DND_ID))
         b.db.close()
+    }
+
+    /** A notice server B raised before #921 had no tag; B's pass coming back takes it down, unless account 0 has its own up (#943). */
+    @Test fun anUntaggedNoticeFromBeforeTheUpgradeGoesWithItsServer() {
+        val b = app.addAccount("https://b.example", "")
+        bg { b.saveSound("ding") }
+        nm.getNotificationChannel(Sounds.channel(5, "ding")).setBypassDnd(true)
+        fun restoreB() { b.prefs.edit().putBoolean("dnd_lost", true).apply(); assertFalse(b.tray.dndLost()) }
+        app.tray.dndNotice() // the old untagged entry
+        app.account.prefs.edit().putBoolean("dnd_lost", true).apply()
+        restoreB()
+        assertNotNull("account 0's own notice stays", shadowOf(nm).getNotification(null, Tray.DND_ID))
+        app.account.prefs.edit().putBoolean("dnd_lost", false).apply()
+        restoreB()
+        assertNull(shadowOf(nm).getNotification(null, Tray.DND_ID))
+        b.db.close()
+    }
+
+    /** A swipe checked under an old sign-in hides nothing once a new one has started (#943). */
+    @Test fun aStaleSwipeHidesNothing() {
+        val gen = app.account.configGen
+        bg { app.account.saveServer("https://a.example", "new") }
+        assertFalse(app.account.hide(listOf("a"), gen))
+        assertEquals(emptySet<String>(), app.account.trayHidden)
+        assertTrue(app.account.hide(listOf("a"), app.account.configGen))
+        assertEquals(setOf("a"), app.account.trayHidden)
     }
 
     /** A changed question on server B moves only B's count, not account 0's entry with the same id (#921). */

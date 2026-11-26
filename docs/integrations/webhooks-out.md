@@ -234,14 +234,17 @@ does not open an issue.
 A 2xx answer is a success when the destination accepts the delivery. Slack
 can return an API error with HTTP 200. Anything else, a redirect or no answer within 10
 seconds is a failure, and clrd tries again after 30 seconds, then doubling,
-8 tries in all (about an hour). Deliveries can arrive out of order; use `seq`
+8 tries in all (about an hour without a server-requested wait). On a
+non-2xx reply, a valid `Retry-After` adds a longer wait when needed, capped
+at one hour per wait. Deliveries can arrive out of order; use `seq`
 to order them.
 
 If a webhook keeps failing for 24 hours, clrd turns it off and posts a
 notification to the topic saying so. Save it again to turn it back on.
-Deliveries still waiting then go out once it is back on. Each try uses the
-URL, secret and body template saved at that moment, so saving a fix also
-fixes the retries already queued. A webhook with nothing to send stays on;
+Deliveries still waiting can go out once it is back on at the same destination.
+Each try uses the saved secret and body template. Changing the destination
+URL or kind drops pending deliveries for the old destination. A webhook with
+nothing to send stays on;
 the next failure after 24 hours of failing turns it off at once.
 
 Saving the webhook resolves its turn-off notice. Publisher alerts on the

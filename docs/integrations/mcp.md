@@ -35,13 +35,13 @@ Tools:
 | `sound` | `id?, sound?` | Notification sounds, one choice per device. No arguments lists the valid names and the default (`default`, the device's own sound). With `id` from `devices` and `sound`, sets that device's sound; an unknown name is refused with the list. `devices` shows each device's current sound. |
 | `subscriptions` | `topics?, new_topics?, for?` | Which topics reach your devices. No arguments lists every topic you can read and whether it is subscribed. `topics: {"chat": false}` unsubscribes chat without clearing anything; `new_topics: false` makes topics that appear later start unsubscribed. A full admin adds `for` (a user id or token id) to set someone else's. A token with no user has no choices to store and is refused. |
 | `request_approve` | `approve, topic?` | Ask the user to let this token answer approval requests (`allowed`, or `ask`). Posts a Confirm prompt on `topic` (default `agents`); the setting changes only when an allowed device taps Confirm. `wait_for_reply` on the returned id gives `confirm` or `reject`. |
-| `dismiss` | `id` | Clear it on every device. `reopen` undoes it. |
+| `dismiss` | `id` | Clear it everywhere by default. Turning off "Clears everywhere" keeps the clear local to the calling device. `reopen` undoes it. |
 | `reopen` | `id` | Make it active again. |
-| `clear` | `topic` or `ids` | Dismiss every open notification in a topic, or the listed ones. Returns `cleared`. |
+| `clear` | `topic` or `ids` | Dismiss every open notification in a topic, or the listed ones. Follows the calling device's "Clears everywhere" setting. Returns `cleared`. |
 | `silences` | none | Silences that have not ended. |
 | `silence` | `topic?, tag?, for? or until?, comment?` | Mute a topic, a tag, or a tag in one topic until a set time (`for: "2h"`, or `until` in RFC 3339). Notifications still arrive and sync, without a sound. |
 | `end_silence` | `id` | End a silence now. |
-| `set_topic` | `topic, icon?, checkin?, format_check?` | Set the topic icon (an image URL), or a check-in timer (`"25h"`): the topic alerts when nothing arrives for that long. `""` turns either off. `format_check: false` leaves the topic out of the format check. |
+| `set_topic` | `topic, icon?, checkin?, format_check?, device_actions?` | Set the topic icon (an image URL), or a check-in timer (`"25h"`): the topic alerts when nothing arrives for that long. `""` turns either off. `format_check: false` leaves the topic out of the format check. `device_actions: true` allows HTTP and broadcast actions on the topic and requires admin on the topic. |
 | `templates` | `topic` | Incoming webhook templates, saved and built in. A service posts to `/{topic}?template={name}`. |
 | `set_template` | `topic, name, title?, message?, priority?, tags?, click?, id?, resolve?, each?, secret?` | Save how a service's JSON becomes a notification. Fields are Go templates over the posted JSON, e.g. `{{.alert.name}}`; `each` is a plain dotted path and `secret` a plain value. |
 | `delete_template` | `topic, name` | Delete a saved template. |

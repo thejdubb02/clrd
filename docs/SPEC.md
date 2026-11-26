@@ -676,8 +676,9 @@ saved one, the seq numbers belong to another database (a server reinstalled or
 started on a new file), so they treat it exactly like `reset`: drop the cursor
 and local state, fetch the open list fresh, and carry on from the new seq. A
 client with no saved epoch just saves the one it sees. A database restored
-from a backup keeps the epoch it had, so on a clean stop the server also writes
-the epoch and its head seq to `<db>.epoch` next to the database. At startup, a
+from a backup keeps the epoch it had, so the server also writes the epoch and
+its head seq to `<db>.epoch` next to the database: at start, every minute while
+it runs, and on a clean stop (a crash leaves at most the last minute out). At startup, a
 database whose head seq is below the saved one, or whose epoch differs from
 the saved one, was restored or swapped: the server picks a new epoch, and
 clients start over.
@@ -1212,9 +1213,10 @@ and `initialize` reports `version` as `serverInfo.version`.
   server's zone; an unknown one is a 400 only when there is a delay),
   `X-Icon` (sets `icon`; a
   bad URL is dropped, not refused), `X-Attach` (external attachment; a bad URL
-  is dropped), `X-Filename`/`Filename`/`File`/`f` (with it, the body is the
-  file and the message comes from `X-Message`/`Message`/`m`, default "You
-  received a file: <name>"), `X-Markdown`/`Markdown`/`md` (`no`/`false`/`0` publishes
+  is dropped), `X-Filename`/`Filename`/`File`/`f` (labels a valid external
+  attachment while the body remains the message. Without an external
+  attachment, the body is the file and the message comes from
+  `X-Message`/`Message`/`m`, default "You received a file: <name>"), `X-Markdown`/`Markdown`/`md` (`no`/`false`/`0` publishes
   plain text, section 2.1), `X-Email` (ignored, documented),
   plus clrd's own `X-Id` = `external_id`. Any of these headers may carry
   RFC 2047 encoded words (`=?UTF-8?B?...?=`, `=?UTF-8?Q?...?=`), decoded as

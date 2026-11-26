@@ -104,19 +104,27 @@ object DeviceAction {
                 }.getOrDefault(false))
                 return@execute
             }
+            // Sent under the lock, so a new sign-in after the lookup never lets the old row's button fire (#943).
+            fun stillOurs(send: () -> Unit) = synchronized(acct.configLock) { sameAccount().also { if (it) send() } }
+            fun changed() { toast(app, app.getString(R.string.device_changed)); done() }
             intent(o)?.let { i ->
-                finish(runCatching { app.sendBroadcast(i) }.isSuccess)
+                val sent = runCatching { stillOurs { app.sendBroadcast(i) } }
+                if (sent.getOrNull() == false) changed() else finish(sent.isSuccess)
                 return@execute
             }
             val req = request(o) ?: return@execute finish(false)
             // A bare client: the clrd token is never sent to a sender's address, and no redirect carries the
             // sender's headers to another host. 8 s leaves room in the receiver's budget to save a clear.
-            acct.http.newBuilder().pingInterval(0, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
+            val call = acct.http.newBuilder().pingInterval(0, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
                 .callTimeout(8, TimeUnit.SECONDS).build()
-                .newCall(req).enqueue(object : Callback {
+                .newCall(req)
+            val sent = stillOurs {
+                call.enqueue(object : Callback {
                     override fun onFailure(call: Call, e: IOException) = finish(false)
                     override fun onResponse(call: Call, response: Response) = response.use { finish(it.isSuccessful) }
                 })
+            }
+            if (!sent) changed()
         }
     }
 

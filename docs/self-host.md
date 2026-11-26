@@ -329,7 +329,8 @@ same key to clear it everywhere when the problem goes away. Send
 `?template=grafana`. Firing alerts appear and resolved alerts clear.
 
 Send a file as the body of a `PUT` or `POST` with `X-Filename`, or link to a
-file with `X-Attach`. The optional unnamed-upload setting is listed under
+file with `X-Attach`. When both are set, `X-Filename` names the link and the
+body stays the message. The optional unnamed-upload setting is listed under
 [Server environment](#server-environment). Use `X-Icon` for an icon URL.
 
 Anonymous topics are off until an admin sets them, with
