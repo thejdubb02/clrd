@@ -1,5 +1,6 @@
 package me.itsjustin.clrd
 
+import java.util.concurrent.CountDownLatch
 import android.Manifest
 import android.app.NotificationManager
 import android.content.Context
@@ -211,5 +212,37 @@ class MultiServerTest {
         assertEquals(listOf(app.account), app.accounts)
         assertEquals("https://home.example", app.accounts.single().serverUrl)
         assertTrue(app.anyConfigured)
+    }
+
+    /** Removal is marked in the same write that drops the server, before its cleanup is queued. */
+    @Test fun aRemovalIsMarkedBeforeItsCleanup() {
+        val b = app.addAccount("https://b.example", "tb")
+        val gate = CountDownLatch(1)
+        app.io.execute { gate.await(10, TimeUnit.SECONDS) }
+        app.removeAccount(b.id)
+        assertEquals("${b.id}", app.prefs.getString("removing", null))
+        gate.countDown()
+        drain()
+        assertEquals("", app.prefs.getString("removing", null))
+    }
+
+    /** The process died after the removal was saved and before its cleanup ran: the next start finishes it. */
+    @Test fun aRemovalTheProcessDidNotFinishIsFinishedOnTheNextStart() {
+        val b = app.addAccount("https://b.example", "tb")
+        bg { RoomStore(app, b).apply(listOf(row("a")), 1) }
+        val tag = "a${b.id}:a"
+        val prefsFile = File(app.applicationInfo.dataDir, "shared_prefs/clrd-${b.id}.xml")
+        val dbFile = app.getDatabasePath("clrd-${b.id}.db")
+        b.prefs.edit().commit()
+        bg { b.close() }
+        app.prefs.edit().putString("servers", "").putString("removing", "${b.id}").commit() // what the removal saved
+        assertTrue(prefsFile.exists() && dbFile.exists() && shadowOf(nm).getNotification(tag, 0) != null)
+
+        app.purgeRemoved()
+        drain()
+        assertFalse(prefsFile.exists())
+        assertFalse(dbFile.exists())
+        assertNull(shadowOf(nm).getNotification(tag, 0))
+        assertEquals("", app.prefs.getString("removing", null))
     }
 }

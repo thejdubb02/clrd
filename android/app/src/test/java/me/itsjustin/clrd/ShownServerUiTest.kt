@@ -1,5 +1,7 @@
 package me.itsjustin.clrd
 
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import android.content.Intent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.Role
@@ -114,5 +116,40 @@ class ShownServerUiTest {
         assertNull("the launcher", openedAccount(Intent(Intent.ACTION_MAIN).setClass(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)))
         assertNull("the sync notice", openedAccount(Intent(app, MainActivity::class.java)))
         assertNull("a pairing link", openedAccount(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("clrd://pair?x=1"))))
+    }
+
+    /** Two quick taps on Add server: the second sees the server the first added, and its token is kept. */
+    @Test fun aSecondQuickAddOfTheSameAddressSavesNothing() {
+        val c = MockWebServer().apply { dispatcher = server.dispatcher; start() }
+        try {
+            val url = serverAddress(c.url("/").toString())
+            rule.setContent { SettingsScreen(app, null, 0) {} }
+            rule.onNodeWithText(s(R.string.server_add)).performScrollTo().performClick()
+            rule.onAllNodesWithText(s(R.string.server_url))[1].performScrollTo().performTextReplacement(url)
+            val gate = CountDownLatch(1)
+            app.io.execute { gate.await(10, TimeUnit.SECONDS) }
+            rule.onAllNodesWithText(s(R.string.token))[1].performScrollTo().performTextReplacement("first")
+            rule.onAllNodesWithText(s(R.string.save_and_test))[1].performScrollTo().performClick()
+            rule.onAllNodesWithText(s(R.string.token))[1].performScrollTo().performTextReplacement("second")
+            rule.onAllNodesWithText(s(R.string.save_and_test))[1].performScrollTo().performClick()
+            gate.countDown()
+            drain()
+            assertEquals(3, app.accounts.size)
+            assertEquals("first", app.accountAt(url)!!.token)
+        } finally {
+            app.accountAt(c.url("/").toString())?.db?.close()
+            c.shutdown()
+        }
+    }
+
+    /** A send still going on one server leaves the other server's Send box free. */
+    @Test fun eachServerHasItsOwnSendBox() {
+        val gate = CountDownLatch(1)
+        app.io.execute { gate.await(10, TimeUnit.SECONDS) }
+        assertTrue(app.sender.send({}, { "" }))
+        app.show(b.id)
+        assertFalse(app.sender.busy)
+        gate.countDown()
+        drain()
     }
 }

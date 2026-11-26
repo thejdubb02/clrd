@@ -183,4 +183,20 @@ class ShownServerTest {
         assertEquals(listOf(0), app.accounts.map { it.id })
         assertEquals("https://c.example", app.serverUrl)
     }
+
+    /** Save and Test writes the address, then the token, under the lock: a reader in between waits for both. */
+    @Test fun addressAndTokenAreReadAsOnePair() {
+        val a = app.account
+        val inside = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val w = kotlin.concurrent.thread { synchronized(a.configLock) { a.serverUrl = "https://b.example"; inside.countDown(); release.await(5, TimeUnit.SECONDS); a.token = "tb" } }
+        inside.await(5, TimeUnit.SECONDS)
+        var got: Pair<String, String>? = null
+        val r = kotlin.concurrent.thread { got = a.creds() }
+        r.join(300) // without the lock it has read the new address with the old token by now
+        release.countDown()
+        r.join()
+        w.join()
+        assertEquals("https://b.example" to "tb", got)
+    }
 }

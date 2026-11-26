@@ -281,8 +281,7 @@ class MainActivity : ComponentActivity() {
         // The server this phone has at the link's address, else the one shown (#78), whose gate then says why not.
         val acct = app.accountAt(link.server)?.takeIf { it.configured } ?: app.shown.value
         // One snapshot: the gate and every request use the same server and token, never the link's server.
-        val url = acct.serverUrl
-        val token = acct.token
+        val (url, token) = acct.creds()
         when (pairGate(link, url, token)) {
             PairGate.NOT_SET_UP -> pair.value = PairUi.Note(getString(R.string.pair_not_set_up))
             PairGate.OTHER_SERVER -> pair.value = PairUi.Note(getString(R.string.pair_other_server, serverAddress(link.server)))
@@ -2132,9 +2131,10 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 val newUrl = serverAddress(url)
                 url = newUrl
                 val newToken = token.trim()
-                // One slot per address: another try at a server this phone has would take its token and wipe its notifications.
-                if (adding && app.accountAt(newUrl) != null) { result = ctx.getString(R.string.server_already, newUrl); return@Button }
                 app.io.execute {
+                    // One slot per address: another try at a server this phone has would take its token and wipe its
+                    // notifications. Checked here, in turn, so a second quick tap sees the server the first one added.
+                    if (adding && app.accountAt(newUrl) != null) { result = ctx.getString(R.string.server_already, newUrl); return@execute }
                     // Another server is tried first and kept only once it answers, so a typo adds nothing (#78).
                     if (!adding) a.saveServer(newUrl, newToken)
                     // /api/v1/topics needs the read scope, so this checks the URL and the token together.

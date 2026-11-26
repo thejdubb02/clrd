@@ -113,7 +113,8 @@ class App : Application() {
         val a = synchronized(this) {
             val a = account(id) ?: return
             if (id != 0) {
-                prefs.edit().putString("servers", (ids() - id).joinToString(",")).commit()
+                // With a marker, so a removal the process did not live to finish is finished on the next start.
+                prefs.edit().putString("servers", (ids() - id).joinToString(",")).putString("removing", (removing() + id).joinToString(",")).commit()
                 others.remove(id)
                 a.removed = true
             }
@@ -138,16 +139,26 @@ class App : Application() {
                 a.clientCert.value = null
                 a.soundNow.value = a.sound
                 a.tray.createChannels() // back on the default sound, whose channels an earlier change may have deleted
-            } else {
-                a.close()
-                deleteSharedPreferences("clrd-$id")
-                deleteDatabase("clrd-$id.db") // with its -wal and -shm
-            }
-            a.tray.clear()
+                a.tray.clear()
+            } else purge(a)
             redraw() // already on io, so a drain after the removal covers it; one server left drops the host
             if (!anyConfigured) stopService(android.content.Intent(this, SyncService::class.java)) else SyncService.start(this)
         }
     }
+    private fun removing() = prefs.getString("removing", null).orEmpty().split(',').mapNotNull { it.toIntOrNull() }
+
+    /** A removed server's file, database and tray entries go, then its marker. Call on [io]. */
+    private fun purge(a: Account) {
+        a.close()
+        deleteSharedPreferences("clrd-${a.id}")
+        deleteDatabase("clrd-${a.id}.db") // with its -wal and -shm
+        a.tray.clear()
+        synchronized(this) { prefs.edit().putString("removing", (removing() - a.id).joinToString(",")).commit() }
+    }
+
+    /** Finishes removals a killed process left behind; [onCreate] runs it. */
+    internal fun purgeRemoved() = removing().forEach { id -> io.execute { purge(Account(this, id).also { it.removed = true }) } }
+
     val images by lazy { Images(this) }
     /** This phone's own choices, whichever server it talks to. Per-server settings live in [Account.prefs]. */
     val prefs by lazy { getSharedPreferences("clrd", Context.MODE_PRIVATE) }
@@ -158,8 +169,7 @@ class App : Application() {
     val drafts = java.util.concurrent.ConcurrentHashMap<String, String>()
     /** Typed answers refused because the question changed (409), counted by notification id, so a reply box open on it closes (#516). */
     val changed = androidx.compose.runtime.mutableStateMapOf<String, Int>()
-    /** The Send box's send in flight, kept here so a rotation does not forget it (#523). */
-    val sender by lazy { Sender { io.execute(it) } }
+    val sender get() = cur.sender
     /** Sends for [act] while no sync service runs. One at a time, so a hung send queues the next instead of piling up threads. */
     internal val sends = Executors.newSingleThreadExecutor()
 
@@ -294,6 +304,7 @@ class App : Application() {
         super.onCreate()
         account.tray.createChannels()
         account.moveSound()
+        purgeRemoved()
     }
 
     /**
