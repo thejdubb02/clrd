@@ -289,7 +289,7 @@ class App : Application() {
      * [via] says how the person did it (docs/SPEC.md "via"), so the server log can answer "I did not clear that".
      */
     fun act(id: String, action: String, body: String = "{}", server: String? = null, via: String = VIA_APP, done: () -> Unit = {}) =
-        cur.actAll(listOf(id), action, body, server, via, done)
+        cur.actAll(listOf(id), action, body, server, via, done = done)
 
     /** One action on several rows from the inbox, such as a stack's Clear (#360): the dismisses go out as one clear call. */
     fun act(ids: List<String>, action: String, via: String = VIA_APP) = cur.actAll(ids, action, "{}", null, via) {}

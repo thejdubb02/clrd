@@ -1,9 +1,14 @@
 package me.itsjustin.clrd
 
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PersistableBundle
 import android.widget.Toast
 import okhttp3.Call
 import okhttp3.Callback
@@ -17,16 +22,30 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * ntfy's http and broadcast buttons (#401, #449). The server keeps them off a topic until an admin turns
- * device_actions on, so the phone runs what it gets. The tap carries only the row id, its seq and the button's
- * index: the request itself is read back from Room, so headers and body never sit in a PendingIntent.
+ * ntfy's copy, HTTP and broadcast buttons. The tap carries only the row id, its seq and the button's index.
+ * The action is read back from Room, so its value, headers and body never sit in a PendingIntent.
  */
 object DeviceAction {
     /** ntfy's default, so a Tasker profile made for ntfy picks clrd's broadcasts up unchanged. */
     const val DEFAULT_INTENT = "io.heckel.ntfy.USER_ACTION"
     private val METHODS = setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
 
-    fun isDevice(o: JSONObject) = o.optJSONObject("http") != null || o.optJSONObject("broadcast") != null
+    fun copyValue(o: JSONObject): String? = (o.opt("copy") as? String)?.takeIf { it.isNotEmpty() }
+
+    fun isDevice(o: JSONObject) = copyValue(o) != null || o.optJSONObject("http") != null || o.optJSONObject("broadcast") != null
+
+    private fun copy(ctx: Context, value: String): Boolean {
+        val clipboard = ctx.getSystemService(ClipboardManager::class.java) ?: return false
+        val clip = ClipData.newPlainText("", value)
+        if (Build.VERSION.SDK_INT >= 33) {
+            clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
+        }
+        clipboard.setPrimaryClip(clip)
+        if (Build.VERSION.SDK_INT < 33) {
+            Handler(Looper.getMainLooper()).post { Toast.makeText(ctx, R.string.copied, Toast.LENGTH_SHORT).show() }
+        }
+        return true
+    }
 
     /** The request an http button sends, or null if it is not one we run (the server checked it too). */
     fun request(o: JSONObject): Request? {
@@ -53,21 +72,38 @@ object DeviceAction {
      * Runs button [index] of row [id] as shown at [seq]. Clears the row everywhere when the button asks and it worked;
      * a failure says so in a toast and leaves the row. [done] runs once, on any path.
      */
-    fun run(ctx: Context, acct: Account, id: String, index: Int, seq: Long, server: String?, done: () -> Unit) {
+    fun run(ctx: Context, acct: Account, id: String, index: Int, seq: Long, server: String?, via: String = App.VIA_TRAY_BUTTON, done: () -> Unit) {
         val app = App.of(ctx)
+        val gen = acct.configGen
+        fun sameAccount() = acct.configGen == gen && !acct.removed && (server == null || server == acct.serverUrl)
         // acts, not io: io may be blocked on the network, and this must fit the receiver's 10 s budget.
         app.acts.execute {
             val o = runCatching {
-                acct.db.dao().get(id)?.takeIf { it.seq == seq && !acct.removed && (server == null || server == acct.serverUrl) }
-                    ?.let { TrayButton.objs(it).getOrNull(index) }?.takeIf(::isDevice)
+                acct.db.dao().get(id)?.takeIf { it.seq == seq && sameAccount() }?.let { row ->
+                    TrayButton.objs(row).getOrNull(index)?.takeIf { isDevice(it) && (!row.isFinal || copyValue(it) == null) }
+                }
             }.getOrNull()
             if (o == null) { toast(app, app.getString(R.string.device_changed)); done(); return@execute }
-            val label = o.optString("label").ifBlank { app.getString(R.string.tray_open) }
+            val value = copyValue(o)
+            val label = o.optString("label").ifBlank { app.getString(if (value != null) R.string.copy else R.string.tray_open) }
             fun finish(ok: Boolean) {
                 if (!ok) toast(app, app.getString(R.string.device_failed, label))
-                // Only the version tapped: a row edited while the request ran is left for the person to see.
-                val clear = ok && o.optBoolean("clear") && runCatching { acct.db.dao().get(id)?.seq == seq }.getOrDefault(false)
-                if (clear) acct.actAll(listOf(id), "dismiss", "{}", server, App.VIA_TRAY_BUTTON) { done() } else done()
+                // The Room write checks the version again, even if sync edits it while the clear is queued.
+                val queued = ok && o.optBoolean("clear") && synchronized(acct.configLock) {
+                    if (!sameAccount()) false else {
+                        acct.actAll(listOf(id), "dismiss", "{}", server, via, expectedSeq = seq, done = done)
+                        true
+                    }
+                }
+                if (!queued) done()
+            }
+            if (value != null) {
+                finish(runCatching {
+                    synchronized(acct.configLock) {
+                        sameAccount() && acct.db.dao().get(id)?.let { it.seq == seq && !it.isFinal } == true && copy(app, value)
+                    }
+                }.getOrDefault(false))
+                return@execute
             }
             intent(o)?.let { i ->
                 finish(runCatching { app.sendBroadcast(i) }.isSuccess)

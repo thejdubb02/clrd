@@ -1,5 +1,8 @@
 package me.itsjustin.clrd
 
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import okhttp3.mockwebserver.MockResponse
@@ -9,6 +12,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,7 +23,7 @@ import org.robolectric.shadows.ShadowToast
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** ntfy's http and broadcast buttons run on the phone (#449). */
+/** ntfy's copy, HTTP and broadcast buttons run on the phone. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class DeviceActionTest {
@@ -52,6 +56,50 @@ class DeviceActionTest {
         val b = TrayButton.pick(row(acts))
         assertEquals(listOf(null, 1), b.take(2).map { it.device })
         assertEquals("Off", b[1].label)
+    }
+
+    @Test fun copyAppearsOnTheCardAndTrayAtTheSameIndex() {
+        val n = row(JSONArray().put(JSONObject().put("label", "Docs").put("url", "https://x.example"))
+            .put(JSONObject().put("label", "Copy code").put("copy", "code")))
+        val tray = TrayButton.pick(n).first { it.device != null }
+        assertEquals(1, tray.device)
+        assertEquals("Copy code", tray.label)
+        assertEquals(listOf(tray), TrayButton.copies(n))
+        assertTrue(TrayButton.copies(n.copy(state = Notif.DISMISSED)).isEmpty())
+    }
+
+    @Test fun copiesTheExactValuePrivatelyAndClearsOnlyWhenAsked() {
+        val clipboard = app.getSystemService(ClipboardManager::class.java)
+        val value = "  one-time code\n"
+        val action = JSONObject().put("copy", value)
+        runIt(row(JSONArray().put(action)), 0)
+        val clip = clipboard.primaryClip!!
+        assertEquals(value, clip.getItemAt(0).text)
+        assertTrue(clip.description.extras!!.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE))
+        assertEquals(Notif.ACTIVE, bg { dao.get("a") }!!.state)
+
+        runIt(row(JSONArray().put(action.put("clear", true)), seq = 2), 0)
+        assertEquals(Notif.DISMISSED, bg { dao.get("a") }!!.state)
+        assertEquals(0, web.requestCount)
+    }
+
+    @Test fun aStaleCopyDoesNotChangeTheClipboardOrClear() {
+        val clipboard = app.getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText("", "previous"))
+        val action = JSONObject().put("copy", "new").put("clear", true)
+        runIt(row(JSONArray().put(action), seq = 2), 0, seq = 1)
+        assertEquals("previous", clipboard.primaryClip!!.getItemAt(0).text)
+        assertEquals(Notif.ACTIVE, bg { dao.get("a") }!!.state)
+    }
+
+    @Test fun aQueuedClearDoesNotDismissANewerVersion() {
+        val n = row(JSONArray(), seq = 2)
+        bg { dao.applyAll(listOf(n), n.seq) }
+        val done = CountDownLatch(1)
+        app.account.actAll(listOf(n.id), "dismiss", "{}", "https://a.example", App.VIA_APP, expectedSeq = 1) { done.countDown() }
+        assertTrue(done.await(10, TimeUnit.SECONDS))
+        assertEquals(Notif.ACTIVE, bg { dao.get(n.id) }!!.state)
+        assertTrue(bg { dao.pending() }.isEmpty())
     }
 
     @Test fun requestIsBuiltAsSent() {
