@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("io.github.takahirom.roborazzi")
 }
 
 // Release signing is opt-in: with both variables set (as in the F-Droid repo
@@ -70,6 +71,11 @@ android {
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
 
+roborazzi {
+    // Committed PNGs for the README and site (#658).
+    outputDir.set(rootProject.layout.projectDirectory.dir("screenshots"))
+}
+
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 // The notification sounds live once in the repo (assets/sounds, docs/SPEC.md section 2.2) and ship
@@ -123,4 +129,7 @@ dependencies {
     testImplementation(composeBom)
     testImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // JVM screenshot tests under Robolectric (#658). Test only, never in the release APK.
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.39.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.39.0")
 }
