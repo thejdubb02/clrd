@@ -906,7 +906,7 @@ func TestNtfyMessageParamNewlines(t *testing.T) {
 		{"plain body wins", "POST", "/lines", escaped, map[string]string{"X-Message": "ignored"}, escaped},
 		{"json body stays literal", "POST", "/", `{"topic":"lines","message":"one\\ntwo"}`, nil, escaped},
 		{"json header fallback", "POST", "/", `{"topic":"lines"}`, map[string]string{"X-Message": escaped}, decoded},
-		{"template escape stays literal", "POST", "/lines", `{}`, map[string]string{"Template": "yes", "Message": `{{ printf "%s" "one\\ntwo" }}`}, escaped},
+		{"template escape stays literal", "POST", "/lines", `{}`, map[string]string{"Template": "yes", "Message": `{{ "one\\ntwo" }}`}, escaped},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			code, out := raw(t, tc.method, ts.URL+tc.path, admin, tc.body, tc.headers)
