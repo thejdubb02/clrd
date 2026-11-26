@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -230,7 +231,7 @@ func TestNtfyScheduled(t *testing.T) {
 }
 
 func TestNtfySubscribe(t *testing.T) {
-	_, ts, admin := newTest(t)
+	s, ts, admin := newTest(t)
 	var ids []string
 	for _, msg := range []string{"one", "two\nlines", "three"} {
 		_, out := raw(t, "POST", ts.URL+"/alerts", admin, msg, nil)
@@ -260,6 +261,33 @@ func TestNtfySubscribe(t *testing.T) {
 	}
 	if l := poll("/alerts/json?poll=1&since=10m"); len(l) != 3 {
 		t.Fatalf("since duration: %v", l)
+	}
+	// since=latest is per topic, as in ntfy (#845): the newest of each.
+	if l := poll("/alerts,other/json?poll=1&since=latest"); len(l) != 2 || ntfyDecode(t, l[0]).Message != "three" || ntfyDecode(t, l[1]).Message != "elsewhere" {
+		t.Fatalf("since latest, two topics: %v", l)
+	}
+	// A replay keeps each topic's newest events that fit the cap, oldest
+	// dropped, and says so with ntfy's header (#845).
+	{
+		// room for the newest two alerts only
+		s.db.QueryRow(`SELECT SUM(length(data)) + 1 FROM (SELECT data FROM events WHERE topic = 'alerts' ORDER BY seq DESC LIMIT 2)`).Scan(&ntfyReplayMax)
+		t.Cleanup(func() { ntfyReplayMax = 10 << 20 })
+		req, _ := http.NewRequest("GET", ts.URL+"/alerts,other/json?poll=1", nil)
+		req.SetBasicAuth("", admin)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		l := lines(string(body))
+		if resp.Header.Get("X-Messages-Truncated") != "1" || len(l) != 3 || ntfyDecode(t, l[0]).Message != "two\nlines" {
+			t.Fatalf("capped replay: header %q, %d lines: %v", resp.Header.Get("X-Messages-Truncated"), len(l), l)
+		}
+	}
+	ntfyReplayMax = 10 << 20
+	if code, out := raw(t, "GET", ts.URL+"/alerts/json?poll=1", admin, "", nil); code != 200 || len(lines(out)) != 3 {
+		t.Fatalf("uncapped: %d %v", code, out)
 	}
 	if l := poll("/alerts/raw?poll=1"); strings.Join(l, "|") != "one|two lines|three" {
 		t.Fatalf("raw: %v", l)
@@ -675,7 +703,7 @@ func TestNtfyRestartKeepsLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var got []string
-	err := s.follow(ctx, s.lookupToken(ctx, admin), 0, []string{"alerts"}, nil, func(msg []byte, seq int64) error {
+	err := s.follow(ctx, s.lookupToken(ctx, admin), 0, []string{"alerts"}, `{"alerts":0}`, nil, func(msg []byte, seq int64) error {
 		switch {
 		case seq < 0 && len(got) == 0:
 			got = append(got, "reset")
@@ -695,4 +723,42 @@ func TestNtfyRestartKeepsLive(t *testing.T) {
 	if err != nil || strings.Join(got, " ") != "reset kept ready live" {
 		t.Fatalf("got %q, %v", got, err)
 	}
+}
+
+func TestNtfyReplayTopicRanges(t *testing.T) {
+	s, ts, admin := newTest(t)
+	for _, topic := range []string{"quiet", "busy", "unrelated", "busy", "unrelated", "recent", "busy"} {
+		if code, _ := raw(t, "PUT", ts.URL+"/"+topic, admin, topic, nil); code != 200 {
+			t.Fatalf("publish on %s: %d", topic, code)
+		}
+	}
+	ctx := context.Background()
+	const floors = `{"quiet":1,"busy":4,"recent":0}`
+	check := func(since int64, want ...int64) {
+		t.Helper()
+		evs, err := s.replayEventsAfter(ctx, since, 2, floors)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make([]int64, 0, len(evs))
+		for _, e := range evs {
+			got = append(got, e.Seq)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("since %d: got %v, want %v", since, got, want)
+		}
+	}
+	check(0, 1)
+	check(1, 4)
+	check(4, 6, 7)
+	check(7)
+	check(5, 6, 7)
+
+	if _, err := s.db.Exec(`DELETE FROM events WHERE seq <= 3`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.replayEventsAfter(ctx, 1, 2, floors); err != errReset {
+		t.Fatalf("pruned gap: %v", err)
+	}
+	check(3, 4)
 }

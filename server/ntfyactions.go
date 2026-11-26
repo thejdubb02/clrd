@@ -6,16 +6,16 @@ import (
 	"unicode"
 )
 
-// ntfy's action buttons (#401): view, http and broadcast map onto Action;
-// copy and anything newer are dropped. http and broadcast reach a topic only
-// where an admin turned device_actions on (deviceactions.go); elsewhere a
-// ntfy publish drops them, as before, instead of failing.
+// ntfy's action buttons (#401): view, copy, http and broadcast map onto
+// Action. http and broadcast reach a topic only where an admin turned
+// device_actions on (deviceactions.go); elsewhere a ntfy publish drops them.
 
 type ntfyAction struct {
 	ID      string            `json:"id"`
 	Action  string            `json:"action"`
 	Label   string            `json:"label"`
 	URL     string            `json:"url,omitempty"`
+	Value   string            `json:"value,omitempty"`
 	Method  string            `json:"method,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    string            `json:"body,omitempty"`
@@ -30,6 +30,9 @@ func (a ntfyAction) action() (Action, bool) {
 	case "view":
 		out.URL = a.URL
 		return out, a.URL != ""
+	case "copy":
+		out.Copy = a.Value
+		return out, a.Value != "" && len(a.Value) <= maxCopyText // dropped, not refused, like other bad ntfy actions
 	case "http":
 		out.HTTP = &HTTPAction{Method: a.Method, URL: a.URL, Headers: a.Headers, Body: a.Body}
 	case "broadcast":
@@ -46,6 +49,8 @@ func ntfyActionOut(a Action) (ntfyAction, bool) {
 	switch {
 	case a.URL != "":
 		na.Action, na.URL = "view", a.URL
+	case a.Copy != "":
+		na.Action, na.Value = "copy", a.Copy
 	case a.HTTP != nil:
 		na.Action, na.URL, na.Method, na.Headers, na.Body = "http", a.HTTP.URL, a.HTTP.Method, a.HTTP.Headers, a.HTTP.Body
 	case a.Broadcast != nil:
@@ -138,12 +143,12 @@ func ntfySplitActions(v string) ([][]string, error) {
 	return append(acts, fields), nil
 }
 
-// ntfyShortAction reads one short-form action: action, label, url by
-// position, the rest as key=value, headers.X=... and extras.x=...
+// ntfyShortAction reads one short-form action: action, label, and url (or value
+// for copy) by position, the rest as key=value, headers.X=... and extras.x=...
 func ntfyShortAction(fields []string) ntfyAction {
 	var a ntfyAction
 	pos := []*string{&a.Action, &a.Label, &a.URL} // by index, as ntfy reads them
-	keys := map[string]*string{"action": &a.Action, "label": &a.Label, "url": &a.URL, "method": &a.Method, "body": &a.Body, "intent": &a.Intent}
+	keys := map[string]*string{"action": &a.Action, "label": &a.Label, "url": &a.URL, "value": &a.Value, "method": &a.Method, "body": &a.Body, "intent": &a.Intent}
 	for i, f := range fields {
 		rawK, v, eq := strings.Cut(f, "=")
 		rawK = strings.TrimSpace(rawK) // the splitter trimmed v, but not inside quotes
@@ -157,8 +162,9 @@ func ntfyShortAction(fields []string) ntfyAction {
 			a.Headers = setKey(a.Headers, rawK[len("headers."):], v)
 		case eq && strings.HasPrefix(k, "extras.") && len(k) > len("extras."):
 			a.Extras = setKey(a.Extras, rawK[len("extras."):], v)
+		case i == 2 && strings.EqualFold(a.Action, "copy"):
+			a.Value = f
 		case i < len(pos): // no key, or not one ntfy knows: "Show x=y", https://x?a=b
-
 			*pos[i] = f
 		}
 	}

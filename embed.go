@@ -13,7 +13,7 @@ import (
 	"github.com/thejdubb02/clrd/internal/changelog"
 )
 
-//go:embed docs assets CHANGELOG.md changelog.d
+//go:embed docs assets/*.* assets/fonts CHANGELOG.md changelog.d
 var files embed.FS
 
 // Files reads the same in both builds.

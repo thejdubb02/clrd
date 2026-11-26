@@ -819,8 +819,8 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 		if u, err := url.Parse(j.url); err == nil {
 			host = u.Host
 		}
-		_, err = s.Publish(ctx, serverToken, PublishInput{Topic: j.topic, ExternalID: "webhook-off-" + j.name, Priority: 4,
-			Title: "Webhook turned off", Format: FormatText,
+		_, err = s.Publish(ctx, serverToken, PublishInput{Topic: j.topic, hookNotice: j.name, Priority: 4,
+			Title: hookOffTitle, Format: FormatText,
 			Message: fmt.Sprintf("Webhook %q to %s failed for %.0f hours and is now off. Last error: %s. Save it again to turn it back on.",
 				j.name, host, hookDisableAfter.Hours(), msg)})
 		// A save between the turn-off and the notice turned it back on and
@@ -836,9 +836,20 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 	return err
 }
 
-// clearHookOff resolves a hook's "Webhook turned off" notice, if it has one.
+const hookOffTitle = "Webhook turned off"
+
+// clearHookOff resolves the server's notice and any remaining notice from
+// before they had their own identity. The legacy key could belong to a
+// publisher, so check where the alert came from before clearing it.
 func (s *Server) clearHookOff(ctx context.Context, topic, name string) error {
-	_, err := s.ActByKey(ctx, serverToken, topic, "webhook-off-"+name, "resolve", "webhook_on")
+	const openOnTopic = `topic = ? AND state NOT IN ('dismissed', 'resolved') AND `
+	_, err := s.act(ctx, serverToken, "resolve", "webhook_on", nil, true,
+		openOnTopic+`hook_notice = ? AND hook_notice != ''`, topic, name)
+	if err != nil && !isNotFound(err) {
+		return err
+	}
+	_, err = s.act(ctx, serverToken, "resolve", "webhook_on", nil, true,
+		openOnTopic+`external_id = ? AND sender = '' AND title = ?`, topic, "webhook-off-"+name, hookOffTitle)
 	if isNotFound(err) {
 		return nil
 	}

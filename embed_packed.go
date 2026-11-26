@@ -10,12 +10,13 @@ import (
 )
 
 // Docs and the assembled changelog are gzipped by server/cmd/pack (#690).
-// Assets are already compressed.
+// Assets are already compressed. The sounds are rendered on request
+// (internal/sounds), so assets/sounds stays out.
 //
 //go:embed packed
 var packed embed.FS
 
-//go:embed assets
+//go:embed assets/*.* assets/fonts
 var raw embed.FS
 
 var Files fs.FS = gzfs.New(packed, "packed", raw)

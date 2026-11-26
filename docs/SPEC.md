@@ -180,8 +180,12 @@ replaces `repeat` with its own (none if it gave none). ntfy subscribers get
 each re-alert as a new message. The web inbox plays its sound again on a
 `repeat` event, and the Android app alerts again even while it is showing.
 
-**Actions:** each action is a link (`url`) or an answer button (`reply`),
-exactly one of the two. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
+**Actions:** each action sets exactly one of `url` (link), `reply` (answer),
+`copy` (clipboard text), `http` or `broadcast`. For example,
+`{"label":"Copy code","copy":"123456"}` supplies text to copy. Copy text
+is limited to 4096 bytes and works on any topic. The web inbox copies the
+value to the clipboard and clears the card after a successful copy if the
+action sets `clear: true`. `reply` is `[A-Za-z0-9_-]{1,64}`, unique within the
 notification, and there are at most 3 reply actions (an Android tray entry
 shows 3). Tapping one posts it to `/api/v1/notifications/{id}/reply`, which
 sets `reply`, sets the state to `acknowledged` with `state_by` = the device,
@@ -441,9 +445,9 @@ means the same sound on a phone, the web inbox and a desktop:
 
 The six built-in sounds are `assets/sounds/<name>.wav` (16-bit mono PCM at
 8000 to 22050 Hz, the lowest rate that holds the sound's tones, under 40 KB
-each), served by the binary at `/assets/sounds/<name>.wav`. The
+each), rendered by the binary from the same code (`internal/sounds`, not embedded) and served at `/assets/sounds/<name>.wav`. The
 Android build packs the same files. They are generated from sine waves by
-`go run ./assets/sounds/_gen` (no samples, so they ship under Apache-2.0); to
+`go run ./internal/sounds/gen` (no samples, so they ship under Apache-2.0); to
 change a sound, change the generator and commit both. New names may be added;
 a name is never renamed or reused for a different sound. A client that gets a
 name it does not know plays `default`.
@@ -1186,8 +1190,9 @@ and `initialize` reports `version` as `serverInfo.version`.
   `X-Priority`/`Priority`/`p` (1-5 or min/low/default/high/urgent),
   `X-Tags`/`Tags`, `X-Click`, `X-Actions` (JSON or the short form, where
   a quoted value keeps its spaces and `\"` or `\'` is the quote itself;
-  `view`, `http` and `broadcast`, the last two only on a topic with
-  `device_actions` on, else dropped; `copy` is dropped), `X-Delay`/`Delay`/`X-At`/`At`/`X-In`/`In` (a unix
+  `view`, `copy`, `http` and `broadcast`, the last two only on a topic with
+  `device_actions` on, else dropped. For copy, use `copy, Label, value`
+  or set `value` in JSON), `X-Delay`/`Delay`/`X-At`/`At`/`X-In`/`In` (a unix
   time, a duration such as `30m`, `1d` or `2 days`, an RFC 3339 time, or a
   time of day such as `10am`, `8:30pm`, `noon`, `tomorrow, 3pm` or
   `Tuesday 7am`; a bare time already past today means tomorrow; at most 3

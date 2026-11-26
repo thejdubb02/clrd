@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -823,9 +824,28 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		if sinceArg == "" && poll {
 			sinceArg = "all"
 		}
+		cur := s.CurrentSeq() // before the floors: anything newer is replayed in full
 		since, err := s.ntfySince(r.Context(), sinceArg, topics)
 		if err != nil {
 			return err
+		}
+		floor, truncated, err := s.ntfyFloors(r.Context(), since, cur, sinceArg == "latest", topics)
+		if err != nil {
+			return err
+		}
+		lo := cur // a topic with nothing to replay needs nothing before now
+		for _, f := range floor {
+			lo = min(lo, f-1)
+		}
+		since = max(since, lo)
+		for _, t := range topics {
+			// If even the newest event exceeds the cap, skip only the
+			// historical part. Events after cur are always replayed.
+			floor[t] = min(floor[t], cur+1)
+		}
+		floors, _ := json.Marshal(floor)
+		if truncated {
+			w.Header().Set("X-Messages-Truncated", "1") // ntfy's header; a no-op on the WebSocket
 		}
 		f, err := ntfyFilters(r)
 		if err != nil {
@@ -886,7 +906,7 @@ func (s *Server) ntfySubscribe(format string) func(http.ResponseWriter, *http.Re
 		// prune (before or during replay) restarts from the oldest event left,
 		// up to 3 times, then goes on from now.
 		resets := 0
-		s.follow(ctx, tok, since, topics, opened, func(raw []byte, seq int64) error {
+		s.follow(ctx, tok, since, topics, string(floors), opened, func(raw []byte, seq int64) error {
 			if bytes.HasPrefix(raw, []byte(`{"type":"ready"`)) {
 				if poll {
 					return errStop
@@ -994,16 +1014,7 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 	case "all":
 		return 0, nil
 	case "latest":
-		var seq *int64
-		args := []any{EventMark} // the stream skips marks, so the latest message is never one
-		for _, t := range topics {
-			args = append(args, t)
-		}
-		err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM events WHERE type != ? AND data NOT LIKE '%"only":"%' AND topic IN (`+placeholders(len(topics))+`)`, args...).Scan(&seq)
-		if err != nil || seq == nil {
-			return cur, err
-		}
-		return *seq - 1, nil
+		return 0, nil // ntfyFloors keeps each topic's latest
 	}
 	if id, ok := strings.CutPrefix(v, "s"); ok && len(v) == 12 {
 		if n, err := strconv.ParseInt(id, 10, 64); err == nil {
@@ -1027,6 +1038,49 @@ func (s *Server) ntfySince(ctx context.Context, v string, topics []string) (int6
 		return 0, nil
 	}
 	return 0, errf(400, "bad_request", "invalid since %q", v)
+}
+
+// ntfyReplayMax caps a replay per topic, as ntfy's 10 MB message poll limit.
+var ntfyReplayMax = 10 << 20 // a var so a test can shrink it
+
+// ntfyFloors is the first seq each topic replays in (since, cur], as ntfy does
+// per topic (#845): its latest message for since=latest (marks and
+// device-only events never count), else the oldest of its newest events whose
+// bytes fit in ntfyReplayMax. truncated says some topic had more.
+func (s *Server) ntfyFloors(ctx context.Context, since, cur int64, latest bool, topics []string) (map[string]int64, bool, error) {
+	q := `SELECT topic, MIN(CASE WHEN run <= ? THEN seq ELSE 1 << 62 END), MAX(run > ?) FROM (
+		SELECT topic, seq, SUM(length(CAST(data AS BLOB))) OVER (PARTITION BY topic ORDER BY seq DESC) AS run
+		FROM events WHERE seq > ? AND seq <= ? AND type != ? AND data NOT LIKE '%"only":"%' AND topic IN (` + placeholders(len(topics)) + `)) GROUP BY topic`
+	args := []any{ntfyReplayMax, ntfyReplayMax, since, cur, EventMark}
+	if latest {
+		q = `SELECT t.value, (SELECT seq FROM events
+			WHERE topic = t.value AND seq > ? AND seq <= ? AND type != ? AND data NOT LIKE '%"only":"%'
+			ORDER BY seq DESC LIMIT 1), 0 FROM json_each(?) t`
+		t, _ := json.Marshal(topics)
+		args = append(args[2:], string(t))
+	} else {
+		for _, t := range topics {
+			args = append(args, t)
+		}
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	floor, truncated := map[string]int64{}, false
+	for rows.Next() {
+		var t string
+		var seq sql.NullInt64
+		var cut bool
+		if err := rows.Scan(&t, &seq, &cut); err != nil {
+			return nil, false, err
+		}
+		if seq.Valid {
+			floor[t], truncated = seq.Int64, truncated || cut
+		}
+	}
+	return floor, truncated, rows.Err()
 }
 
 // ntfyIcon keeps an http(s) icon URL and drops anything else, never a 400,

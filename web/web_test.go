@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/thejdubb02/clrd"
+	"github.com/thejdubb02/clrd/internal/sounds"
 )
 
 func get(t *testing.T, h http.Handler, path string) (int, string) {
@@ -408,6 +409,16 @@ func TestHostileNotification(t *testing.T) {
 	}
 }
 
+func TestCopyActionButton(t *testing.T) {
+	n := Notification{ID: "copy", Topic: "ops", Message: "Code ready", State: "active", CreatedAt: time.Now(),
+		Actions: []Action{{Label: "Copy code", Copy: `a"<&>`, Clear: true}}}
+	_, body := get(t, Handler(one{n: n}, ""), "/app")
+	want := `<button type="button" class="btn js-only" data-variant="outline" data-copy-action="a&#34;&lt;&amp;&gt;" data-copy-clear>Copy code</button>`
+	if !strings.Contains(body, want) {
+		t.Errorf("inbox missing %s", want)
+	}
+}
+
 // The shared color rule fixture every client runs (#165, SPEC Color rules).
 func TestColorRules(t *testing.T) {
 	b, err := os.ReadFile("../server/testdata/colorrules.json")
@@ -723,20 +734,29 @@ func TestAssets(t *testing.T) {
 func TestSounds(t *testing.T) {
 	h := Handler(NewFake(), "")
 	_, page := get(t, h, "/app/settings")
-	wavs, _ := fs.Glob(clrd.Files, "assets/sounds/*.wav")
-	if len(wavs) == 0 {
-		t.Fatal("no sounds in assets/sounds")
-	}
-	for _, opt := range append([]string{"default", "none"}, wavs...) {
-		name := strings.TrimSuffix(filepath.Base(opt), ".wav")
+	for _, name := range append([]string{"default", "none"}, sounds.Names...) {
 		if !strings.Contains(page, `<option value="`+name+`">`) {
 			t.Errorf("settings does not offer %q", name)
 		}
-		if strings.HasSuffix(opt, ".wav") {
-			if code, _ := get(t, h, "/assets/sounds/"+name+".wav"); code != 200 {
-				t.Errorf("%s: %d", name, code)
-			}
+	}
+	for _, name := range sounds.Names {
+		want, _ := os.ReadFile("../assets/sounds/" + name + ".wav")
+		r := httptest.NewRequest("GET", "/assets/sounds/"+name+".wav", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "audio/") || !bytes.Equal(w.Body.Bytes(), want) {
+			t.Errorf("%s: %d %q, %d bytes, want the %d of the committed file", name, w.Code, w.Header().Get("Content-Type"), w.Body.Len(), len(want))
 		}
+		// Safari plays audio only from a server that answers ranges.
+		r.Header.Set("Range", "bytes=0-3")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 206 || w.Body.String() != "RIFF" {
+			t.Errorf("%s range: %d %q", name, w.Code, w.Body.String())
+		}
+	}
+	if code, _ := get(t, h, "/assets/sounds/nope.wav"); code != 404 {
+		t.Errorf("unknown sound: %d", code)
 	}
 }
 
