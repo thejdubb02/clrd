@@ -186,6 +186,20 @@ test('runtime keeps tokens off command lines and handles MCP, notifications and 
   assert.deepEqual(JSON.parse(mcp.out), { jsonrpc: '2.0', id: 'request', result: { tools: [{ name: 'send' }] } });
   assert.ok(f.calls.filter((call) => call.path === '/clrd/mcp').every((call) => call.auth === 'Bearer ' + token(2)));
 
+  const send = {
+    jsonrpc: '2.0', id: 'send', method: 'tools/call',
+    params: { name: 'send', arguments: {
+      topic: 'agents', message: 'Finished', id: 'build-42',
+      icon: 'https://example.com/build.png',
+      attachment: { url: 'https://example.com/report.pdf', name: 'Report.pdf' },
+      actions: [{ label: 'Copy ID', copy: 'build-42' }],
+    } },
+  };
+  const io = await run(args, f.env, JSON.stringify(send) + '\n');
+  assert.equal(io.status, 0, io.err);
+  assert.equal(JSON.parse(io.out).id, 'send');
+  assert.deepEqual(f.calls.at(-1).body, send);
+
   f.responders.set('/clrd/api/v1/notifications', () => ({ data: {} }));
   const hookInput = '{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"example"}}\n';
   await run([args[0], 'notify', args[2]], f.env, hookInput);

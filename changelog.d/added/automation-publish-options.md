@@ -1,0 +1,1 @@
+- n8n and Node-RED can send icons, attachment links and copy actions, reopen keyed notifications on update, and trigger workflows on updates. The create-clrd guide shows the corresponding MCP send options.

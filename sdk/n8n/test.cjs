@@ -70,6 +70,26 @@ test('action surfaces API errors and can continue to the next item', async () =>
   ]]);
 });
 
+test('send forwards icon, attachment, copy actions and keyed reopen options', async () => {
+  const fields = {
+    id: 'build-42', icon: 'https://example.com/build.png', reopen: true,
+    attachmentUrl: 'https://example.com/report.pdf', attachmentName: 'Report.pdf',
+    actions: '[{"label":"Copy ID","copy":"build-42"}]',
+  };
+  const ctx = context([{ operation: 'send', topic: 'builds', message: 'Finished', additionalFields: fields }],
+    () => ({ statusCode: 200, body: { id: 'notification' } }));
+  await new Clrd().execute.call(ctx);
+  assert.deepEqual(ctx.requests, [['POST', '/api/v1/notifications', {
+    topic: 'builds', message: 'Finished', external_id: 'build-42', icon: fields.icon,
+    attachment: { url: fields.attachmentUrl, name: fields.attachmentName },
+    actions: [{ label: 'Copy ID', copy: 'build-42' }], reopen: true,
+  }]]);
+
+  const invalid = context([{ operation: 'send', topic: 'builds', message: 'Finished',
+    additionalFields: { actions: '{"copy":"build-42"}' } }], () => assert.fail('No request expected'));
+  await assert.rejects(new Clrd().execute.call(invalid), /Actions must be a JSON array/);
+});
+
 test('trigger skips old history, filters events, and advances its cursor', async () => {
   const notification = { id: 'a', topic: 'infra' };
   const event = { seq: 13, type: 'created', notification };
@@ -102,6 +122,20 @@ test('manual sample includes readable unsubscribed topics and leaves the live cu
     ['GET', '/api/v1/notifications?state=all&topic=infra&limit=1&subscribed=all', undefined],
   ]);
   assert.deepEqual(ctx.staticData, {});
+});
+
+test('trigger can select notification updates without matching creates', async () => {
+  const trigger = new ClrdTrigger();
+  const eventProperty = trigger.description.properties.find(({ name }) => name === 'event');
+  assert.ok(eventProperty.options.some(({ value }) => value === 'updated'));
+  const notification = { id: 'a', topic: 'infra', external_id: 'build-42' };
+  const event = { seq: 3, type: 'updated', notification };
+  const pages = [{ seq: 1, epoch: 'db' }, {
+    events: [{ seq: 2, type: 'created', notification }, event], seq: 3, epoch: 'db',
+  }];
+  const ctx = context([{ topic: 'infra', event: 'updated' }], (i) => ({ statusCode: 200, body: pages[i] }));
+  assert.equal(await trigger.poll.call(ctx), null);
+  assert.deepEqual(await trigger.poll.call(ctx), [[{ json: event }]]);
 });
 
 test('action rejects invalid expressions before requesting clrd', async () => {

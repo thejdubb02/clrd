@@ -1,8 +1,8 @@
 # Node-RED
 
 The clrd action node can send, acknowledge, clear, resolve or snooze a
-notification. The clrd events node starts a flow for new notifications
-or state changes.
+notification. The clrd events node starts a flow for new notifications,
+updates or state changes.
 
 ## Install from source
 
@@ -38,9 +38,16 @@ Alternatively pass an object:
   "message": "Disk 91%",
   "title": "Build host",
   "priority": 4,
-  "external_id": "build-disk"
+  "external_id": "build-disk",
+  "icon": "https://example.com/disk.png",
+  "attachment": {"url": "https://example.com/report.pdf", "name": "Report.pdf"},
+  "actions": [{"label": "Copy ID", "copy": "build-disk"}]
 }
 ```
+
+Reuse `external_id` on the same topic to update an open notification.
+Set `reopen: true` to make an acknowledged notification active on update.
+The attachment links to an existing file.
 
 For Acknowledge, Clear, Resolve or Snooze pass the server-assigned
 notification ID as `msg.payload` or as `msg.payload.id`. For Snooze, set the
@@ -50,7 +57,7 @@ Use a Catch node to handle request errors.
 
 ## Events
 
-Add a **clrd events** node. Choose New Notification or State Change, set
+Add a **clrd events** node. Choose New Notification, State Change or Updated Notification, set
 a polling interval in seconds, and optionally enter a topic. The flow gets
 one message per matching event, with the event in `msg.payload` and its
 topic in `msg.topic`. The event contains `type`, `seq` and

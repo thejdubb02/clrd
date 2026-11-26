@@ -39,11 +39,12 @@ module.exports = function register(RED) {
                 const payload = msg.payload;
                 if (config.operation === 'send') {
                     const fields = typeof payload === 'string' ? { message: payload } : payload;
-                    const { topic = config.topic, message, title, external_id: id, priority } = fields ?? {};
+                    const { topic = config.topic, message, title, external_id: id, priority,
+                        icon, attachment, actions, reopen } = fields ?? {};
                     if (!topic || typeof message !== 'string') {
                         throw new Error('Send needs a topic and a message string');
                     }
-                    msg.payload = await client.send(topic, message, { title, id, priority });
+                    msg.payload = await client.send(topic, message, { title, id, priority, icon, attachment, actions, reopen });
                 } else {
                     const id = typeof payload === 'string' ? payload : payload?.id;
                     if (typeof id !== 'string' || !id.trim()) throw new Error('Enter a notification ID in msg.payload');
