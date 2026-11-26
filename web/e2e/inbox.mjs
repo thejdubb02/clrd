@@ -413,9 +413,11 @@ try {
   await saveTheme.click();
   await until(themePeer, () => getComputedStyle(document.body).backgroundColor === 'rgb(241, 228, 210)');
   assert.equal(await themePeer.evaluate(() => document.documentElement.classList.contains('dark')), false, 'custom light background should use light controls');
+  assert.equal(await themePeer.evaluate(() => document.documentElement.dataset.scheme), 'light', 'custom theme did not tell the desktop app its scheme');
   const override = sp.getByLabel('Theme on this browser');
   await override.selectOption('high-contrast');
   await until(sp, () => getComputedStyle(document.body).backgroundColor === 'rgb(255, 255, 255)');
+  assert.equal(await sp.evaluate(() => document.documentElement.dataset.scheme), undefined, 'a built-in theme kept the custom scheme');
   assert.equal(await bg(themePeer), 'rgb(241, 228, 210)', 'device override changed the saved theme');
   await override.selectOption('');
   await until(sp, () => getComputedStyle(document.body).backgroundColor === 'rgb(241, 228, 210)');

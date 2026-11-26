@@ -620,14 +620,15 @@ fn retry(app: AppHandle) {
 
 /// Tells the app the web Appearance pick (#760) by a navigation the window
 /// turns away, so the page still gets no way to call the app. Checked once a
-/// second because a change in the same tab fires no event.
+/// second because a change in the same tab fires no event. A custom theme
+/// (#584) is light or dark by its own colors, so the page's word for it wins.
 #[cfg(target_os = "linux")]
 const TELL_PICK: &str = r#"if (/^https?:$/.test(location.protocol)) addEventListener('load', () => {
   let last;
   const tell = () => {
     let pick = null;
     try { pick = localStorage.getItem('clrd.theme'); } catch {}
-    pick = pick === 'dark' || pick === 'light' ? pick : 'system';
+    pick = document.documentElement.dataset.scheme || (pick === 'dark' || pick === 'light' ? pick : 'system');
     if (pick !== last) { last = pick; location.href = 'clrd-theme:' + pick; }
   };
   tell();
