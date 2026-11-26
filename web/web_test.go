@@ -202,10 +202,13 @@ func (readOnly) SaveTemplate(*http.Request, Template, string, bool) error { retu
 func (readOnly) SetSenderRules(*http.Request, string, SenderRules, int64) error {
 	return ErrUnauthorized
 }
-func (readOnly) UndoSenderChange(*http.Request, string, int64) error          { return ErrUnauthorized }
-func (readOnly) RenameToken(*http.Request, string, string) error              { return ErrUnauthorized }
-func (readOnly) RotateToken(*http.Request, string) (string, error)            { return "", ErrUnauthorized }
-func (readOnly) RevokeToken(*http.Request, string) error                      { return ErrUnauthorized }
+func (readOnly) UndoSenderChange(*http.Request, string, int64) error { return ErrUnauthorized }
+func (readOnly) RenameToken(*http.Request, string, string) error     { return ErrUnauthorized }
+func (readOnly) RotateToken(*http.Request, string) (string, error)   { return "", ErrUnauthorized }
+func (readOnly) RevokeToken(*http.Request, string) error             { return ErrUnauthorized }
+func (readOnly) AddService(*http.Request, string, string) (string, string, error) {
+	return "", "", ErrUnauthorized
+}
 func (readOnly) DeleteTemplate(*http.Request, string, string) error           { return ErrUnauthorized }
 func (readOnly) SetSubscriptions(*http.Request, *bool, map[string]bool) error { return ErrUnauthorized }
 

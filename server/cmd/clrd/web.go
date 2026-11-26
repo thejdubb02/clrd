@@ -208,7 +208,7 @@ func (a webAPI) Snapshot(r *http.Request, q web.Query) (web.Snapshot, error) {
 		snap.CanApprove = snap.CanApprove || d.CanApprove
 	}
 	// Senders (#119): a full admin only, the same check as the API's.
-	snap.CanSenders = tok.Has(server.ScopeAdmin) && len(tok.Topics) == 0 && len(tok.Grants) == 0
+	snap.CanSenders = fullAdmin(tok)
 	if q.Senders && snap.CanSenders {
 		ss, err := a.s.Senders(ctx, tok)
 		if err != nil {
@@ -509,6 +509,28 @@ func (a webAPI) RevokeToken(r *http.Request, id string) error {
 		return nil // already gone: the page was stale
 	}
 	return webError(err)
+}
+
+// fullAdmin is the check POST /api/v1/tokens and the Senders pages make.
+func fullAdmin(tok *server.Token) bool {
+	return tok.Has(server.ScopeAdmin) && len(tok.Topics) == 0 && len(tok.Grants) == 0
+}
+
+// AddService mints the token the Add a service page shows (#119): what
+// POST /api/v1/tokens makes for {name, scopes:[publish], topics:[topic]}.
+func (a webAPI) AddService(r *http.Request, name, topic string) (string, string, error) {
+	tok := a.s.Authenticate(r)
+	if tok == nil {
+		return "", "", web.ErrUnauthorized
+	}
+	if !fullAdmin(tok) { // CreateToken checks no caller itself
+		return "", "", errors.New("only an admin token for every topic can add a service")
+	}
+	t, raw, err := a.s.CreateToken(r.Context(), name, server.ApproveDenied, []string{server.ScopePublish}, []string{topic})
+	if err != nil {
+		return "", "", webError(err)
+	}
+	return t.ID, raw, nil
 }
 
 func (a webAPI) DeleteTemplate(r *http.Request, topic, name string) error {

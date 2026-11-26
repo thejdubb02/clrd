@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -876,6 +877,95 @@ type API interface {
 	RenameToken(r *http.Request, id, name string) error
 	RotateToken(r *http.Request, id string) (string, error)
 	RevokeToken(r *http.Request, id string) error
+	// AddService mints a token named name that may only publish to topic,
+	// for the Add a service page (#119): its id and its secret, shown once.
+	AddService(r *http.Request, name, topic string) (id, secret string, err error)
+}
+
+// Service is one entry on the Add a service page (#119). Kind is "" for a
+// built-in webhook template named Key, else the snippet's shape.
+type Service struct{ Key, Name, Kind, Doc string }
+
+// services are what clrd can receive, one per docs/integrations page.
+var services = []Service{
+	{"curl", "curl or a script", "curl", "curl"},
+	{"ntfy", "ntfy-compatible sender", "ntfy", "ntfy-clients"},
+	{"gotify", "Gotify sender", "gotify", "gotify"},
+	{"pushover", "Pushover sender", "pushover", "pushover"},
+	{"alertmanager", "Alertmanager", "", "alertmanager"},
+	{"grafana", "Grafana", "", "grafana"},
+	{"github", "GitHub", "", "github"},
+	{"sentry", "Sentry", "", "sentry"},
+	{"stripe", "Stripe", "", "stripe"},
+	{"jira", "Jira", "", "jira"},
+	{"healthchecks", "Healthchecks.io", "", "healthchecks"},
+	{"proxmox", "Proxmox VE", "", "proxmox"},
+	{"zabbix", "Zabbix", "", "zabbix"},
+	{"netdata", "Netdata", "", "netdata"},
+	{"jellyfin", "Jellyfin", "", "jellyfin"},
+	{"arr", "Sonarr, Radarr, Lidarr, Readarr", "", "arr"},
+}
+
+// Services lists them, for tests outside this package.
+func Services() []Service { return slices.Clone(services) }
+
+// Snippet is what to paste into the service, built from the server's public
+// address b: a curl line, or a webhook URL carrying the token in ?auth=.
+func (s Service) Snippet(b, topic, secret string) string {
+	msg := "Hello from clrd"
+	switch s.Kind {
+	case "curl":
+		return "curl -H \"Authorization: Bearer " + secret + "\" \\\n  -d '{\"topic\":\"" + topic + "\",\"message\":\"" + msg + "\"}' \\\n  " + b + "/api/v1/notifications"
+	case "ntfy":
+		return "curl -H \"Authorization: Bearer " + secret + "\" -d \"" + msg + "\" " + b + "/" + topic
+	case "gotify":
+		return "curl \"" + b + "/message?token=" + secret + "\" -F \"message=" + msg + "\""
+	case "pushover":
+		return "curl " + b + "/1/messages.json --form-string \"token=" + secret + "\" \\\n  --form-string \"user=clrd\" --form-string \"message=" + msg + "\""
+	}
+	return b + "/" + topic + "?template=" + s.Key + "&auth=" + base64.RawURLEncoding.EncodeToString([]byte("Bearer "+secret))
+}
+
+// Added is the Add a service page once its token is minted. Secret and
+// Snippet are set only on the page the form post answers, never in a URL.
+type Added struct {
+	Service         Service
+	ID              string
+	Secret, Snippet string
+	Sender          *Sender // its sender once something arrived
+}
+
+// Here is the page's own address without the secret: the live refresh and
+// Check again load it.
+func (a Added) Here() string {
+	return "/app/senders/add?" + url.Values{"id": {a.ID}, "service": {a.Service.Key}}.Encode()
+}
+
+type addedKey struct{}
+
+func service(key string) (Service, bool) {
+	i := slices.IndexFunc(services, func(s Service) bool { return s.Key == key })
+	if i < 0 {
+		return Service{}, false
+	}
+	return services[i], true
+}
+
+// addedFor is the Add a service answer for this request: the one a POST just
+// made (with its secret), or on the waiting page the service and token id
+// from its address (no secret). Sender is set once its first message arrived.
+// A function, not inline in app(), as app()'s closure is copied per route.
+func addedFor(r *http.Request, view string, senders []Sender) *Added {
+	added, _ := r.Context().Value(addedKey{}).(*Added)
+	if sv, ok := service(r.URL.Query().Get("service")); added == nil && ok && view == "add" {
+		added = &Added{Service: sv, ID: r.URL.Query().Get("id")}
+	}
+	for i, s := range senders {
+		if added != nil && s.ID == added.ID && s.Count > 0 {
+			added.Sender = &senders[i]
+		}
+	}
+	return added
 }
 
 var ErrUnauthorized = errors.New("web: unauthorized")
@@ -898,6 +988,7 @@ func templates(base string) *template.Template {
 	t = template.Must(template.New("").Funcs(template.FuncMap{
 		"base":          func() string { return base },
 		"approvalTopic": func() string { return ApprovalTopic },
+		"services":      func() []Service { return services },
 		// static is the URL of a file under static/, named by its content (#410).
 		"static": func(p string) (string, error) {
 			h, ok := staticHash[p]
@@ -1407,7 +1498,7 @@ func Handler(api API, baseURL string) http.Handler {
 				states = []string{}
 			}
 			q := Query{States: states, Topic: r.URL.Query().Get("topic"), Q: strings.TrimSpace(r.URL.Query().Get("q")), Devices: view == "settings",
-				Senders: view == "senders"}
+				Senders: view == "senders" || view == "add"}
 			if view == "sender" {
 				q.Sender = r.PathValue("id")
 			}
@@ -1453,11 +1544,12 @@ func Handler(api API, baseURL string) http.Handler {
 				snap.Items, snap.Seq, snap.Epoch, card = one.Items, one.Seq, one.Epoch, &one.Items[0]
 			}
 			c := snap.Counts
-			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender", "stats": "Stats", "gone": "Not found"}
+			titles := map[string]string{"inbox": "Inbox", "snoozed": "Snoozed", "cleared": "Cleared", "settings": "Settings", "senders": "Senders", "sender": "Sender", "stats": "Stats", "add": "Add a service", "gone": "Not found"}
 			if snap.Sender != nil {
 				titles["sender"] = snap.Sender.Name
 			}
-			if (view == "senders" || view == "sender" || view == "stats") && !snap.CanSenders {
+			added := addedFor(r, view, snap.Senders)
+			if (view == "senders" || view == "sender" || view == "stats" || view == "add") && !snap.CanSenders {
 				status = http.StatusForbidden
 			}
 			if fm, ok := r.Context().Value(rulesFormKey{}).(*RulesForm); ok && snap.Sender != nil && status == 200 {
@@ -1475,19 +1567,21 @@ func Handler(api API, baseURL string) http.Handler {
 				meta
 				View, Heading, Topic, Q, Here string
 				One                           *Notification
+				Added                         *Added
 				Snap                          Snapshot
 				Inbox, Snoozed, Cleared       int
 				Tips                          []Tip
 				Tip                           int
 			}{
 				meta: meta{Title: badge(c["active"]+c["acknowledged"]) + titles[view] + ": clrd", Path: r.URL.Path, Base: base(r)},
-				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), One: card, Snap: snap, Tips: ts, Tip: tip,
+				View: view, Heading: titles[view], Topic: q.Topic, Q: q.Q, Here: r.URL.RequestURI(), One: card, Added: added, Snap: snap, Tips: ts, Tip: tip,
 				Inbox:   c["active"] + c["acknowledged"],
 				Snoozed: c["snoozed"],
 				Cleared: c["dismissed"] + c["resolved"],
 			})
 		}
 	}
+	_ = &app // keeps the compiler from copying app's page code into every route (about 5 KB each)
 	mux.HandleFunc("GET /app", app("inbox"))
 	mux.HandleFunc("GET /app/{$}", app("inbox"))
 	mux.HandleFunc("GET /app/snoozed", app("snoozed"))
@@ -1496,6 +1590,36 @@ func Handler(api API, baseURL string) http.Handler {
 	mux.HandleFunc("GET /app/senders", app("senders"))
 	mux.HandleFunc("GET /app/stats", app("stats"))
 	mux.HandleFunc("GET /app/senders/{id}", app("sender"))
+	// Add a service (#119): pick one, name it, pick its topic; the answer
+	// shows its token once, what to paste, and waits for its first message.
+	addPage := app("add")
+	mux.HandleFunc("GET /app/senders/add", addPage)
+	mux.HandleFunc("POST /app/senders/add", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad form.", http.StatusBadRequest)
+			return
+		}
+		sv, ok := service(r.PostForm.Get("service"))
+		topic, name := strings.TrimSpace(r.PostForm.Get("topic")), strings.TrimSpace(r.PostForm.Get("name"))
+		if name == "" {
+			name = sv.Name
+		}
+		err := errors.New("pick a service from the list")
+		var id, secret string
+		if ok {
+			id, secret, err = api.AddService(r, name, topic)
+		}
+		if errors.Is(err, ErrUnauthorized) {
+			http.Redirect(w, r, "/app/senders/add", http.StatusSeeOther)
+			return
+		} else if err != nil {
+			http.Error(w, "Not added: "+err.Error()+". Go back and try again.", http.StatusBadRequest)
+			return
+		}
+		added := &Added{Service: sv, ID: id, Secret: secret, Snippet: sv.Snippet(base(r), topic, secret)}
+		addPage(w, r.WithContext(context.WithValue(r.Context(), addedKey{}, added)))
+	})
 	// One notification's own address (#814), as a GitHub issue links it: a
 	// page with its card alone, in any state, under the view that state is
 	// in (#822), so a card past a list's newest 500 or cleared on this device

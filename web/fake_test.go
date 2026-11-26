@@ -212,7 +212,10 @@ func (f *Fake) UndoSenderChange(*http.Request, string, int64) error            {
 func (f *Fake) RenameToken(*http.Request, string, string) error                { return nil }
 func (f *Fake) RotateToken(*http.Request, string) (string, error)              { return "clrd_new", nil }
 func (f *Fake) RevokeToken(*http.Request, string) error                        { return nil }
-func (f *Fake) DeleteTemplate(*http.Request, string, string) error             { return nil }
+func (f *Fake) AddService(*http.Request, string, string) (string, string, error) {
+	return "svc1", "clrd_new", nil
+}
+func (f *Fake) DeleteTemplate(*http.Request, string, string) error { return nil }
 
 func (f *Fake) Reply(r *http.Request, id, reply, text string, seq int64) error {
 	f.mu.Lock()
