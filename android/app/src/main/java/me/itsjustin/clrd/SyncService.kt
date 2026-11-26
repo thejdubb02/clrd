@@ -30,7 +30,7 @@ class SyncService : Service() {
         if (app.sync == null) app.status.value = SyncClient.Status.CONNECTING
         foreground()
         // Store and credentials are read together, so a Settings switch cannot pair one server's store with another's API.
-        val (store, api) = synchronized(app.configLock) { if (app.configured) RoomStore(app) to app.api() else null to null }
+        val (store, api) = synchronized(app.configLock) { if (app.configured) RoomStore(app, app.account) to app.api() else null to null }
         if (store == null || api == null) {
             stopSelf()
             return START_NOT_STICKY
