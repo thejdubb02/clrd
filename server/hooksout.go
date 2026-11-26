@@ -74,6 +74,14 @@ var githubAPI = "https://api.github.com/repos/"
 // picked: the delivery stays pending, untouched, for the resume (#796).
 var errGitHubPaused = errors.New("github hooks paused")
 
+// hookWait is a refused send whose receiver said when to try again (#859):
+// Slack, Discord and GitHub all send Retry-After when they rate-limit.
+type hookWait time.Duration
+
+func (r hookWait) Error() string {
+	return fmt.Sprintf("rate limited: retry after %s", time.Duration(r))
+}
+
 // githubHooksPaused reports the server-wide off switch for github hooks (#680).
 func githubHooksPaused(ctx context.Context, q querier) (bool, error) {
 	var v sql.NullInt64
@@ -376,6 +384,16 @@ func (s *Server) hookDo(ctx context.Context, req *http.Request, max int64) (int,
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, max))
+	if ra := resp.Header.Get("Retry-After"); ra != "" && (resp.StatusCode < 200 || resp.StatusCode > 299) {
+		wait, err := strconv.Atoi(ra)
+		d := time.Duration(wait) * time.Second
+		if t, terr := http.ParseTime(ra); err != nil && terr == nil {
+			d = time.Until(t)
+		}
+		if d > 0 {
+			return resp.StatusCode, b, hookWait(min(d, time.Hour)) // a longer wait is the receiver's to lift
+		}
+	}
 	return resp.StatusCode, b, nil
 }
 
@@ -758,6 +776,9 @@ func (s *Server) recordHook(ctx context.Context, j hookJob, code int, sendErr er
 		}
 	}
 	status, next := "pending", t.Add(hookBackoff<<j.attempts)
+	if ra := hookWait(0); errors.As(sendErr, &ra) {
+		next = t.Add(max(time.Duration(ra), hookBackoff<<j.attempts))
+	}
 	if j.attempts+1 >= hookTries {
 		status = "failed"
 	}
