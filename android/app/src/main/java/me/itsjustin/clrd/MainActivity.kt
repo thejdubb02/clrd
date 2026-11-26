@@ -2184,8 +2184,9 @@ internal fun SettingsScreen(app: App, battery: Intent?, resumes: Int, scan: () -
                 Row {
                     TextButton(onClick = {
                         val host = a.serverUrl.toHttpUrlOrNull()
+                        val at = a.certOrigin() // the address the picker shows; a pick that returns after a move is dropped
                         // Android's own picker: the key stays in the key store, clrd only learns its name.
-                        (ctx as? android.app.Activity)?.let { android.security.KeyChain.choosePrivateKeyAlias(it, { pick -> if (pick != null) a.pickClientCert(pick) }, null, null, host?.host, host?.port ?: -1, alias) }
+                        (ctx as? android.app.Activity)?.let { android.security.KeyChain.choosePrivateKeyAlias(it, { pick -> if (pick != null) a.pickClientCert(pick, at) }, null, null, host?.host, host?.port ?: -1, alias) }
                     }) { Text(stringResource(R.string.client_cert_pick), color = b.ink) }
                     if (alias != null) TextButton(onClick = { a.pickClientCert(null) }) { Text(stringResource(R.string.client_cert_remove), color = b.ink) }
                 }

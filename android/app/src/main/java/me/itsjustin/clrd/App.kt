@@ -111,7 +111,7 @@ class App : Application() {
                     // Keep-list, not a list of server keys: a key added later and forgotten here errs toward wiping a token.
                     prefs.edit().apply { prefs.all.keys.filter { it !in PHONE_KEYS }.forEach(::remove) }.commit()
                 }
-                a.clientCert.value = null
+                a.dropClientCert()
                 a.soundNow.value = a.sound
                 a.tray.createChannels() // back on the default sound, whose channels an earlier change may have deleted
                 a.tray.clear()

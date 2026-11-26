@@ -231,12 +231,38 @@ class MultiServerTest {
         assertEquals("key-b", b.clientCert.value)
         assertEquals("https://a.example:443", app.account.prefs.getString("client_cert_origin", null))
         assertEquals("key-b", app.clientCert.value) // the shown server's
+        assertEquals("key-b" to ("b.example" to 8443), b.certOffer())
+        assertEquals("key-a" to ("a.example" to 443), app.account.certOffer())
 
         app.removeAccount(b.id)
         drain()
         val c = app.addAccount("https://b.example:8443", "tc") // same address again, new server: no certificate carried over
         assertNull(c.clientCert.value)
         assertEquals("key-a", app.account.clientCert.value)
+    }
+
+    /** The picker was opened for one address and the server moved before it returned: the pick is dropped, never bound to the new one. */
+    @Test fun aPickForAnAddressTheServerLeftIsDropped() {
+        val b = app.addAccount("https://b.example", "tb")
+        val at = b.certOrigin() // when the picker opens
+        bg { b.saveServer("https://moved.example", "tb") }
+        b.pickClientCert("key-b", at)
+        drain()
+        assertNull(b.clientCert.value)
+        assertFalse(b.prefs.contains("client_cert"))
+        assertNull(b.certOffer())
+    }
+
+    /** Emptying account 0 forgets its pick, so a server set up again at the same address is offered nothing. */
+    @Test fun emptyingAccountZeroForgetsItsPick() {
+        app.token = "t0"
+        app.pickClientCert("key-a")
+        drain()
+        app.removeAccount(0)
+        drain()
+        app.serverUrl = "https://a.example"
+        assertNull(app.account.clientCert.value)
+        assertNull(app.account.certOffer()) // what a handshake reads
     }
 
     /** Removal is marked in the same write that drops the server, before its cleanup is queued. */
