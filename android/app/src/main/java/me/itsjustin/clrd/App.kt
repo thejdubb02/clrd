@@ -95,8 +95,8 @@ class App : Application() {
                 others.remove(id)
                 a.removed = true
             }
-            // At once, before its database closes: the screens move to a server still set up, else account 0.
-            if (shown.value.id == id) show((servers.firstOrNull { it.id != id } ?: account).id)
+            // At once, before its database closes: the screens move to a server still set up, else one still listed (#860), else account 0.
+            if (shown.value.id == id) show((servers.firstOrNull { it.id != id } ?: listed.firstOrNull { it.id != id } ?: account).id)
             saved.value++ // the switcher and the Servers list read the list again
             a
         }
@@ -325,8 +325,8 @@ class App : Application() {
         /** The most days of cleared history this phone keeps, whatever the server keeps. */
         const val KEEP_DAYS = 7
 
-        /** The keys in the "clrd" file that belong to the phone, not to account 0's server (#78). "dnd_lost" is account 0's since #860, kept as before. */
-        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id", "shown_server")
+        /** The keys in the "clrd" file that belong to the phone, not to account 0's server (#78). "dnd_lost" is account 0's since #860, kept as before; "config_gen" is kept so a sign-in number never comes back. */
+        val PHONE_KEYS = setOf("stack", "shade_clears", "fast_swipe", "drop_cleared", "appearance", "dnd_lost", "install_seed", "servers", "next_server_id", "shown_server", "config_gen")
     }
 }
 

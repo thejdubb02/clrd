@@ -53,7 +53,7 @@ class MultiServerEdgeTest {
         lateinit var at: Thread
         synchronized(bTray) { // B's sound change parks in its tray's notice check, after its new channels exist
             bt = Thread { b.saveSound("chime") }.apply { start() }
-            while (bt.state != Thread.State.BLOCKED) Thread.sleep(5)
+            while (bt.isAlive && bt.state != Thread.State.BLOCKED) Thread.sleep(5)
             at = Thread { a.tray.createChannels() }.apply { start() }
             at.join(2000)
         }
@@ -109,6 +109,17 @@ class MultiServerEdgeTest {
         assertEquals(emptyList<Pending>(), bg { app.db.dao().pending() })
         tap(fresh)
         assertEquals(listOf("dismiss"), bg { app.db.dao().pending().map { it.action } })
+        assertEquals("a restart reads the same sign-in, so its tray taps still act", app.account.configGen, Account(app, 0).configGen)
+    }
+
+    /** Removing the shown server moves the screens to one still listed, even with its token cleared, not to an emptied account 0. */
+    @Test fun removingTheShownServerShowsAListedOne() {
+        app.token = "ta"
+        val b = app.addAccount("https://b.example", "")
+        app.removeAccount(0)
+        drain()
+        assertEquals(b.id, app.shown.value.id)
+        b.db.close()
     }
 
     /** One server's send that hangs does not hold back another server's queue. */
