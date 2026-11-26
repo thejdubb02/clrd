@@ -60,3 +60,5 @@ of an existing connection, remove it and connect again with the new options.
 
 Read about [agent invites](../../docs/integrations/agent-invite.md) and the
 [clrd MCP endpoint](../../docs/integrations/mcp.md).
+
+Source: [github.com/thejdubb02/clrd](https://github.com/thejdubb02/clrd)
