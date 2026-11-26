@@ -1210,6 +1210,24 @@ try {
     console.log('ok: start and end a silence in Settings, the inbox stays quiet');
   }
 
+  // Color rules in Settings (#165): a preset fills the list, a rule moves up,
+  // and the saved order comes back after the reload.
+  {
+    const ctx = await browser.newContext();
+    assert.ok((await ctx.request.post(base + '/api/v1/session', { data: { token: laptop, name: 'colors' } })).ok(), 'colors sign-in');
+    const sp = await ctx.newPage();
+    await sp.goto(base + '/app/settings');
+    const form = sp.locator('[data-color-rules]'), rows = form.locator('ol > li');
+    await form.getByRole('button', { name: 'Severity preset' }).click();
+    await rows.nth(2).getByRole('button', { name: 'Up' }).click();
+    await Promise.all([sp.waitForEvent('load'), form.getByRole('button', { name: 'Save rules' }).click()]);
+    assert.deepEqual(await form.locator('ol [name=priority_min]').evaluateAll(s => s.map(e => e.value)), ['5', '3', '4'], 'saved order after reload');
+    const r = await fetch(`${base}/api/v1/settings`, { method: 'PUT', headers: { Authorization: `Bearer ${laptop}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ color_rules: [] }) });
+    assert.equal(r.status, 200, 'clear color rules');
+    await ctx.close();
+    console.log('ok: color rules saved from Settings in order');
+  }
+
   // A topic's own keep for cleared messages (#323): the preview counts that
   // topic only, a save that deletes asks first, No leaves it as it was, and
   // Default drops the topic's own value.
