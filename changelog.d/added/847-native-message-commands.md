@@ -1,0 +1,1 @@
+- The clrd binary can publish notifications, poll retained events, or subscribe to a live JSON stream with `clrd publish`, `clrd poll`, and `clrd subscribe` (#847).
