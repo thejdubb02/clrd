@@ -117,6 +117,48 @@ class PreviewTest {
         assertEquals(2, server.requestCount)
     }
 
+    @Test fun aSettingsMessageDuringTheSaveWinsOverWhatWasSent() { // #818
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                app.saveSettings(JSONObject("""{"link_previews":false}""")) // the web turned it off before this reply came back
+                return MockResponse().setBody("{}")
+            }
+        }
+        assertNull(onIo { app.saveDisplay("link_previews", true) })
+        assertFalse(app.linkPreviews.value)
+        assertFalse(app.prefs.getBoolean("link_previews", true))
+    }
+
+    @Test fun aRedirectedPreviewIsNotFollowed() { // #818
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) =
+                if (request.requestUrl!!.encodedPath == "/api/v1/preview") MockResponse().setResponseCode(302).setHeader("Location", server.url("/elsewhere"))
+                else MockResponse().setBody("""{"title":"Followed"}""")
+        }
+        assertNull(onIo { LinkPreview.load(app, "https://x.example/r", "alerts") })
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun anOpenCardAsksAgainAfterASave() { // #818: the first ask beat the switch to the server
+        onIo { app.saveSettings(JSONObject("""{"link_previews":true}""")) }
+        val on = java.util.concurrent.atomic.AtomicBoolean()
+        val refused = java.util.concurrent.atomic.AtomicInteger()
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = when (request.requestUrl!!.encodedPath) {
+                "/api/v1/settings" -> { on.set(true); MockResponse().setBody("{}") }
+                "/api/v1/preview" -> if (on.get()) MockResponse().setBody("""{"title":"Now on"}""") else { refused.incrementAndGet(); MockResponse().setResponseCode(403) }
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        rule.setContent { Card(row("See https://x.example/d")) }
+        rule.onNodeWithText("T").performClick()
+        rule.waitUntil(5_000) { refused.get() > 0 } // the first ask was answered "off" before the save
+        rule.onNodeWithTag("preview").assertDoesNotExist()
+        onIo { app.saveDisplay("link_previews", true) }
+        rule.waitUntil(5_000) { rule.onAllNodesWithTagCount("preview") == 1 }
+        rule.onNodeWithText("Now on").assertExists()
+    }
+
     @Test fun onlyADataImageIsUsed() {
         assertNull(LinkPreview.picture("https://x.example/p.png"))
         assertNull(LinkPreview.picture("data:image/png,raw")) // not base64
