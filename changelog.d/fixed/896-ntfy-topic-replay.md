@@ -1,0 +1,1 @@
+- ntfy subscriptions read each topic from its own replay position, so an old message on a quiet topic no longer makes the server scan the log between topics.

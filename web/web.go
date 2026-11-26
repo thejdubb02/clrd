@@ -33,6 +33,7 @@ import (
 
 	"github.com/thejdubb02/clrd"
 	"github.com/thejdubb02/clrd/internal/gzfs"
+	"github.com/thejdubb02/clrd/internal/sounds"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
@@ -100,11 +101,13 @@ type Repeat struct {
 	Next  *time.Time `json:"next"`
 }
 
-// Action is a link (URL), an answer button (Reply) or a device action (HTTP
+// Action is a link (URL), an answer button (Reply), clipboard text (Copy) or a device action (HTTP
 // or Broadcast, #401) that only a phone runs; the inbox shows it, never runs it.
 type Action struct {
 	Label     string           `json:"label"`
 	URL       string           `json:"url"`
+	Copy      string           `json:"copy,omitempty"`
+	Clear     bool             `json:"clear,omitempty"`
 	Reply     string           `json:"reply,omitempty"`
 	Text      bool             `json:"text,omitempty"` // answered with typed text (#153)
 	HTTP      *HTTPAction      `json:"http,omitempty"`
@@ -152,6 +155,16 @@ func (a Attachment) Image() bool {
 func (n Notification) Links() (out []Action) {
 	for _, a := range n.Actions {
 		if a.URL != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// Copies are the actions that copy text to the clipboard.
+func (n Notification) Copies() (out []Action) {
+	for _, a := range n.Actions {
+		if a.Copy != "" {
 			out = append(out, a)
 		}
 	}
@@ -1435,6 +1448,18 @@ func Handler(api API, baseURL string) http.Handler {
 		statics.ServeHTTP(w, r)
 	})
 	mux.Handle("GET /assets/", cached("/assets/", assets))
+	// Sounds are rendered on request instead of embedded (#912); ServeContent
+	// answers Range requests, which Safari needs to play audio.
+	mux.HandleFunc("GET /assets/sounds/{file}", func(w http.ResponseWriter, r *http.Request) {
+		name, ok := strings.CutSuffix(r.PathValue("file"), ".wav")
+		b, found := sounds.WAV(name)
+		if !ok || !found {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		http.ServeContent(w, r, name+".wav", time.Time{}, bytes.NewReader(b))
+	})
 	// Card colors (#165): the CSP allows no inline styles, so each color on a
 	// page is a class from here, with the text color that reads on it.
 	mux.HandleFunc("GET /card-colors.css", func(w http.ResponseWriter, r *http.Request) {

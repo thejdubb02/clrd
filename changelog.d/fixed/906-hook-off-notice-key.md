@@ -1,0 +1,1 @@
+- The server keeps webhook turn-off notices separate from publisher alerts, so re-enabling a webhook clears its own notice only.

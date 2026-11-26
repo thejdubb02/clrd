@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"time"
@@ -184,7 +183,10 @@ func (h *Handler) api(r *http.Request, method, path string, body any) (map[strin
 	} else {
 		rd = bytes.NewReader(nil)
 	}
-	req := httptest.NewRequest(method, path, rd).WithContext(r.Context())
+	req, err := http.NewRequestWithContext(r.Context(), method, path, rd)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("Authorization", r.Header.Get("Authorization"))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = r.RemoteAddr
@@ -192,7 +194,7 @@ func (h *Handler) api(r *http.Request, method, path string, body any) (map[strin
 	for _, k := range []string{"Origin", "X-Forwarded-Proto"} {
 		req.Header[k] = r.Header[k]
 	}
-	rec := httptest.NewRecorder()
+	rec := &recorder{h: http.Header{}, Code: 200}
 	h.rest.ServeHTTP(rec, req)
 	var out map[string]any
 	if rec.Body.Len() > 0 {
@@ -219,10 +221,10 @@ func (h *Handler) api(r *http.Request, method, path string, body any) (map[strin
 // cannot exist costs one token lookup and one indexed read: the API answers
 // 401 for a bad token and 404 for any real one, whatever its scopes.
 func (h *Handler) tokenOK(r *http.Request) bool {
-	req := httptest.NewRequest("GET", "/api/v1/notifications/-", nil).WithContext(r.Context())
+	req, _ := http.NewRequestWithContext(r.Context(), "GET", "/api/v1/notifications/-", http.NoBody)
 	req.Header.Set("Authorization", r.Header.Get("Authorization"))
 	req.RemoteAddr = r.RemoteAddr
-	rec := httptest.NewRecorder()
+	rec := &recorder{h: http.Header{}, Code: 200}
 	h.rest.ServeHTTP(rec, req)
 	return rec.Code != http.StatusUnauthorized
 }
@@ -645,3 +647,15 @@ var restTools = map[string]struct {
 	"set_push":            {"PUT", "/api/v1/push", false},
 	"delete_push":         {"DELETE", "/api/v1/push", false},
 }
+
+// recorder holds an in-process REST answer. It stands in for
+// httptest.ResponseRecorder, which drags the test server into the binary.
+type recorder struct {
+	h    http.Header
+	Code int
+	Body bytes.Buffer
+}
+
+func (w *recorder) Header() http.Header         { return w.h }
+func (w *recorder) WriteHeader(code int)        { w.Code = code }
+func (w *recorder) Write(b []byte) (int, error) { return w.Body.Write(b) }

@@ -1,0 +1,1 @@
+- ntfy copy actions: a `copy` action button (ntfy's `copy, Label, value`) copies its value from the web inbox and is sent back to ntfy subscribers (#840).

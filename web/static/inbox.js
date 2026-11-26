@@ -1135,6 +1135,22 @@
     }
   }
 
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-copy-action]');
+    if (!b || b.disabled) return;
+    const id = b.closest('.card').dataset.id;
+    b.disabled = true;
+    try {
+      await copyText(b.dataset.copyAction);
+      say('Copied.');
+      if ('copyClear' in b.dataset) card(id)?.querySelector('[data-act=dismiss]')?.click();
+    } catch {
+      say('Could not copy.');
+    } finally {
+      b.disabled = false;
+    }
+  });
+
   // Settings, format check (#308): copy a topic's fix prompt.
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-format-copy]');

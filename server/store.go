@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   reply_text TEXT NOT NULL DEFAULT '',
   requested_topic TEXT NOT NULL DEFAULT '',
   muted INTEGER NOT NULL DEFAULT 0,
-  cleared_at INTEGER
+  cleared_at INTEGER,
+  hook_notice TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_key ON notifications(topic, external_id)
   WHERE external_id != '' AND state NOT IN ('dismissed', 'resolved');
@@ -89,6 +90,7 @@ CREATE TABLE IF NOT EXISTS events (
   data TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS events_topic_seq ON events(topic, seq);
 CREATE TABLE IF NOT EXISTS tokens (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -259,11 +261,12 @@ CREATE TABLE IF NOT EXISTS hidden (token_id TEXT NOT NULL, notification_id TEXT 
 `
 
 // Action is a button on a notification: a link (URL), an answer (Reply)
-// that POST /api/v1/notifications/{id}/reply records, or a request the
-// reader's device makes (HTTP, Broadcast; deviceactions.go).
+// that POST /api/v1/notifications/{id}/reply records, text to copy (Copy),
+// or a request the reader's device makes (HTTP, Broadcast; deviceactions.go).
 type Action struct {
 	Label     string           `json:"label"`
 	URL       string           `json:"url"`
+	Copy      string           `json:"copy,omitempty"`
 	Reply     string           `json:"reply,omitempty"`
 	HTTP      *HTTPAction      `json:"http,omitempty"`
 	Broadcast *BroadcastAction `json:"broadcast,omitempty"`
@@ -287,6 +290,7 @@ type Notification struct {
 	Actions     []Action    `json:"actions"`
 	Attachment  *Attachment `json:"attachment"`
 	file        string      // uploaded file id, "" for none or external
+	hookNotice  string      // hook name for a server-owned turn-off notice
 	sender      string      // top token of the last sender's tree: it may not answer it (#187)
 	muted       bool        // its sender is muted (#119): stored and shown, never alerts
 	confirm     string      // a confirm prompt: its confirmLink as JSON, "" for any other (#187)
@@ -390,11 +394,16 @@ func openDB(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 	// Databases made before these columns existed.
-	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text", "requested_topic", "color"} {
+	for _, col := range []string{"reply", "state_by_id", "icon", "attachment", "file", "repeat", "sender", "confirm", "marks", "devices", "reply_text", "requested_topic", "color", "hook_notice"} {
 		if err := addColumn(db, `ALTER TABLE notifications ADD COLUMN `+col+` TEXT NOT NULL DEFAULT ''`, "add "+col+" column"); err != nil {
 			db.Close()
 			return nil, err
 		}
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS notifications_open_hook_notice ON notifications(topic, hook_notice)
+		WHERE hook_notice != '' AND state NOT IN ('dismissed', 'resolved')`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("hook notice index: %w", err)
 	}
 	for _, add := range []string{`notifications ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`, `senders ADD COLUMN rules TEXT NOT NULL DEFAULT '{}'`,
 		`senders ADD COLUMN last_topic TEXT NOT NULL DEFAULT ''`, `senders ADD COLUMN alarm_from INTEGER NOT NULL DEFAULT 0`,
@@ -647,7 +656,7 @@ func nullMS(t *time.Time) any {
 
 const notifCols = `id, topic, external_id, title, message, format, priority, tags, click, icon, actions, attachment, file, reply,
   state, state_by, state_by_id, snooze_until, created_at, updated_at, seq, expires_at, silenced, repeat, sender, confirm, marks, devices, reply_text,
-  requested_topic, muted, color`
+  requested_topic, muted, color, hook_notice`
 
 type scanner interface{ Scan(...any) error }
 
@@ -659,7 +668,7 @@ func scanNotification(r scanner) (*Notification, error) {
 	err := r.Scan(&n.ID, &n.Topic, &n.ExternalID, &n.Title, &n.Message, &n.Format, &n.Priority, &tags, &n.Click,
 		&n.Icon, &actions, &att, &n.file, &n.Reply, &n.State, &n.StateBy, &n.StateByID, &snooze, &created, &updated, &n.Seq, &expires,
 		&n.Silenced, &rep, &n.sender, &n.confirm, &marks, &devs, &n.ReplyText,
-		&n.RequestedTopic, &n.muted, &n.Color)
+		&n.RequestedTopic, &n.muted, &n.Color, &n.hookNotice)
 	if err != nil {
 		return nil, err
 	}
@@ -724,7 +733,7 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 	} else {
 		n.Devices = []string{} // every event says [] for everyone, never null
 	}
-	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(32)+`)
+	_, err := tx.Exec(`INSERT INTO notifications (`+notifCols+`) VALUES (`+placeholders(33)+`)
 		ON CONFLICT(id) DO UPDATE SET title=excluded.title, message=excluded.message, format=excluded.format,
 		priority=excluded.priority, tags=excluded.tags, click=excluded.click, icon=excluded.icon, actions=excluded.actions,
 		attachment=excluded.attachment, file=excluded.file,
@@ -733,7 +742,7 @@ func saveNotification(tx *sql.Tx, n *Notification, typ string) error {
 		requested_topic=excluded.requested_topic, muted=excluded.muted, color=excluded.color`,
 		n.ID, n.Topic, n.ExternalID, n.Title, n.Message, n.Format, n.Priority, string(tags), n.Click, n.Icon, string(actions),
 		att, n.file, n.Reply, n.State, n.StateBy, n.StateByID, nullMS(n.SnoozeUntil), ms(n.CreatedAt), ms(n.UpdatedAt), n.Seq, nullMS(n.ExpiresAt),
-		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText, n.RequestedTopic, n.muted, n.Color)
+		n.Silenced, rep, n.sender, n.confirm, marks, devs, n.ReplyText, n.RequestedTopic, n.muted, n.Color, n.hookNotice)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return errf(409, "conflict", "an open notification with external_id %q already exists in %q", n.ExternalID, n.Topic)
 	}
@@ -889,6 +898,7 @@ type PublishInput struct {
 	Attachment  *Attachment `json:"attachment"` // external only: {"url","name"}; uploads go through PublishFile
 	file        string
 	dropDevice  bool       // compat: drop http and broadcast actions a topic does not allow, instead of refusing
+	hookNotice  string     // private hook name for a server-generated notice
 	checkin     bool       // clrd's own missed check-in alert: does not reset the timer
 	template    string     // the webhook template it came through, for the senders list (#119)
 	SnoozeUntil *time.Time `json:"snooze_until"` // optional: deliver later (scheduled send)
@@ -1031,9 +1041,12 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 		} else if ev != nil {
 			extra = append(extra, *ev)
 		}
-		if in.ExternalID != "" {
-			n, err := getNotification(ctx, tx, `topic = ? AND external_id = ? AND state NOT IN ('dismissed', 'resolved')`,
-				in.Topic, in.ExternalID)
+		if in.ExternalID != "" || in.hookNotice != "" {
+			key, where := in.ExternalID, `external_id = ?`
+			if in.hookNotice != "" {
+				key, where = in.hookNotice, `hook_notice = ? AND hook_notice != ''`
+			}
+			n, err := getNotification(ctx, tx, `topic = ? AND state NOT IN ('dismissed', 'resolved') AND `+where, in.Topic, key)
 			if err == nil {
 				n.Title, n.Message, n.Format, n.Priority, n.Tags, n.Click, n.Icon, n.Actions, n.Reply =
 					in.Title, in.Message, format, in.Priority, in.Tags, in.Click, in.Icon, in.Actions, "" // a new question starts unanswered
@@ -1066,7 +1079,7 @@ func (s *Server) publishTo(ctx context.Context, tok *Token, in PublishInput) (*N
 		n := &Notification{ID: s.newID(t), Topic: in.Topic, ExternalID: in.ExternalID, Title: in.Title,
 			Message: in.Message, Format: format, Priority: in.Priority, Tags: in.Tags, Click: in.Click, Icon: in.Icon, Color: in.Color, Actions: in.Actions,
 			Attachment: in.Attachment, file: in.file, State: Active, StateBy: tok.Name, StateByID: tok.ID, CreatedAt: t, ExpiresAt: expires,
-			Repeat: repeat, sender: sender, Devices: in.Devices, muted: in.muted, RequestedTopic: in.requested}
+			Repeat: repeat, sender: sender, hookNotice: in.hookNotice, Devices: in.Devices, muted: in.muted, RequestedTopic: in.requested}
 		if in.SnoozeUntil != nil && in.SnoozeUntil.After(t) {
 			u := in.SnoozeUntil.UTC().Truncate(time.Millisecond)
 			n.State, n.SnoozeUntil = Snoozed, &u
@@ -1294,17 +1307,23 @@ func (s *Server) act(ctx context.Context, tok *Token, action, via string, until 
 // maxReplyText caps a typed answer (#153), in characters.
 const maxReplyText = 1000
 
-// checkActions: each action is one of a link, a reply, an http request or a
-// broadcast; reply values are short, unique, and at most 3 (what an Android
-// tray entry shows). At most one reply action takes typed text.
+// maxCopyText caps a copy action's text (#840), in bytes.
+const maxCopyText = 4096
+
+// checkActions: each action is one of a link, a reply, text to copy, an HTTP
+// request or a broadcast. Reply values are short and unique, with at most 3
+// per notification (what an Android tray entry shows). At most one takes typed text.
 func checkActions(as []Action) error {
 	seen, dev, texts := map[string]bool{}, 0, 0
 	for _, a := range as {
 		if dev += btoi(isDeviceAction(a)); dev > 3 {
 			return errf(400, "bad_request", "at most 3 http or broadcast actions")
 		}
-		if n := btoi(a.URL != "") + btoi(a.Reply != "") + btoi(a.HTTP != nil) + btoi(a.Broadcast != nil); n != 1 {
-			return errf(400, "bad_request", "action %q needs exactly one of url, reply, http or broadcast", a.Label)
+		if n := btoi(a.URL != "") + btoi(a.Reply != "") + btoi(a.Copy != "") + btoi(a.HTTP != nil) + btoi(a.Broadcast != nil); n != 1 {
+			return errf(400, "bad_request", "action %q needs exactly one of url, reply, copy, http or broadcast", a.Label)
+		}
+		if len(a.Copy) > maxCopyText {
+			return errf(400, "bad_request", "action %q: copy must be at most %d bytes", a.Label, maxCopyText)
 		}
 		if err := checkDeviceAction(a); err != nil {
 			return err
@@ -2129,22 +2148,57 @@ func checkImageURL(field, v string) error {
 	return nil
 }
 
-// eventsAfter returns up to limit logged events with seq > since, oldest
-// first. seq has no gaps, so a missing since+1 means a prune ran between the
-// caller's check and this query: that is a 410 reset, never a silent skip.
+// eventsAfter returns up to limit logged events with seq > since, oldest first.
 func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Event, error) {
+	return s.replayEventsAfter(ctx, since, limit, "")
+}
+
+// For ntfy, take the next window at the first eligible seq. Each topic gets
+// its own indexed lower bound. Limiting the window by seq lets SQLite sort at
+// most one batch, even if the remaining history is large. The first row also
+// reports the earliest global seq after since, in the same SQLite snapshot,
+// so a filtered gap can be told from a prune.
+const ntfyReplaySQL = `
+WITH ranges AS MATERIALIZED (
+	SELECT key AS topic, max(value, ? + 1) AS start FROM json_each(?)
+), first AS MATERIALIZED (
+	SELECT MIN((SELECT seq FROM events WHERE topic = r.topic AND seq >= r.start ORDER BY seq LIMIT 1)) AS seq
+	FROM ranges r
+)
+SELECT COALESCE((SELECT MIN(seq) FROM events WHERE seq > ?), 0) AS seq, '' AS topic, '' AS data, 0 AS kind
+UNION ALL
+SELECT e.seq, e.topic, e.data, 1
+FROM first CROSS JOIN ranges r CROSS JOIN events e INDEXED BY events_topic_seq
+WHERE e.topic = r.topic AND e.seq BETWEEN max(first.seq, r.start) AND first.seq + ? - 1
+ORDER BY kind, seq`
+
+func (s *Server) replayEventsAfter(ctx context.Context, since int64, limit int, floors string) ([]Event, error) {
 	head := s.seq.Load() // stored only after commit, so every seq <= head was written
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, topic, data FROM events WHERE seq > ? ORDER BY seq LIMIT ?`, since, limit)
+	q := `SELECT seq, topic, data, 1 FROM events WHERE seq > ? ORDER BY seq LIMIT ?`
+	args := []any{since, limit}
+	if floors != "" {
+		q, args = ntfyReplaySQL, []any{since, floors, since, limit}
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Event
+	var first int64
 	for rows.Next() {
 		var e Event
 		var topic, data string
-		if err := rows.Scan(&e.Seq, &topic, &data); err != nil {
+		var kind int
+		if err := rows.Scan(&e.Seq, &topic, &data, &kind); err != nil {
 			return nil, err
+		}
+		if kind == 0 {
+			first = e.Seq
+			continue
+		}
+		if floors == "" && first == 0 {
+			first = e.Seq
 		}
 		e.Raw, e.Notification = []byte(data), &Notification{Topic: topic}
 		if strings.Contains(data, `"devices":["`) { // only a targeted event pays for a decode (#82)
@@ -2162,7 +2216,9 @@ func (s *Server) eventsAfter(ctx context.Context, since int64, limit int) ([]Eve
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if (len(out) > 0 && out[0].Seq != since+1) || (len(out) == 0 && since < head) {
+	// The global event log has no gaps. A missing since+1 means it was
+	// pruned between the caller's check and this query.
+	if (first != 0 && first != since+1) || (first == 0 && since < head) {
 		return nil, errReset
 	}
 	return out, nil

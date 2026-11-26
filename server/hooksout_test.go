@@ -74,6 +74,10 @@ func TestHooksOut(t *testing.T) {
 		_, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "external_id": key, "message": "m", "actions": actions})
 		return n["id"].(string)
 	}
+	// Existing publishers can use both keys independently of the server notice.
+	for _, key := range []string{"webhook-off-gh", "clrd-webhook-off-gh"} {
+		send(key)
+	}
 	a := send("a")
 	b := send("b", map[string]any{"label": "Yes", "reply": "yes"})
 	c := send("c")
@@ -132,7 +136,7 @@ func TestHooksOut(t *testing.T) {
 	if hk := list["hooks"].([]any)[0].(map[string]any); hk["enabled"] != false {
 		t.Fatalf("hook still on: %v", hk)
 	}
-	if off := one(t, s, "alerts", "webhook-off-gh"); !strings.Contains(off.Message, "127.0.0.1") || !strings.Contains(off.Message, "HTTP 500") {
+	if off := hookNotice(t, s, "alerts", "gh"); !strings.Contains(off.Message, "127.0.0.1") || !strings.Contains(off.Message, "HTTP 500") {
 		t.Fatalf("notice: %q", off.Message)
 	}
 	// Off means nothing is queued or sent; saving again turns it back on.
@@ -145,8 +149,13 @@ func TestHooksOut(t *testing.T) {
 	}
 	status.Store(200)
 	call(t, ts, "PUT", "/api/v1/topics/alerts/hooks/gh", admin, map[string]any{"url": url})
-	if off := one(t, s, "alerts", "webhook-off-gh"); off.State != "resolved" {
+	if off := hookNotice(t, s, "alerts", "gh"); off.State != "resolved" {
 		t.Fatalf("turned back on, notice still %s", off.State) // #893
+	}
+	for _, key := range []string{"webhook-off-gh", "clrd-webhook-off-gh"} {
+		if n := one(t, s, "alerts", key); n.State != Active || n.Message != "m" {
+			t.Fatalf("webhook lifecycle touched publisher alert %q: %+v", key, n)
+		}
 	}
 	s.deliverHooks(ctx)
 	if len(hits()) != before+2 { // the pending one, and the notice resolving
@@ -362,7 +371,7 @@ func TestHooksOutRaces(t *testing.T) {
 	save()
 	c := queued()
 	s.db.Exec(`UPDATE hooks_out SET failing_since = ?`, ms(old))
-	s.db.Exec(`DELETE FROM notifications WHERE external_id = 'webhook-off-gh'`)
+	s.db.Exec(`DELETE FROM notifications WHERE hook_notice = 'gh'`)
 	cut, cancel := context.WithCancel(ctx)
 	cancel()
 	if err := s.recordHook(cut, c, 500, nil); err != nil {
@@ -371,21 +380,21 @@ func TestHooksOutRaces(t *testing.T) {
 	if on, _ := since(); on {
 		t.Fatal("hook still on")
 	}
-	one(t, s, "alerts", "webhook-off-gh")
+	hookNotice(t, s, "alerts", "gh")
 
 	// #893: a save lands between the turn-off and its notice (the trigger
 	// plays it), so the notice it could not clear is cleared after.
 	save()
 	c = queued()
 	s.db.Exec(`UPDATE hooks_out SET failing_since = ?`, ms(old))
-	s.db.Exec(`DELETE FROM notifications WHERE external_id = 'webhook-off-gh'`)
+	s.db.Exec(`DELETE FROM notifications WHERE hook_notice = 'gh'`)
 	s.db.Exec(`CREATE TRIGGER resave AFTER UPDATE OF enabled ON hooks_out WHEN NEW.enabled = 0 BEGIN UPDATE hooks_out SET enabled = 1 WHERE rowid = NEW.rowid; END`)
 	err := s.recordHook(ctx, c, 500, nil)
 	s.db.Exec(`DROP TRIGGER resave`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if off := one(t, s, "alerts", "webhook-off-gh"); off.State != "resolved" {
+	if off := hookNotice(t, s, "alerts", "gh"); off.State != "resolved" {
 		t.Fatalf("hook back on, notice still %s", off.State)
 	}
 
@@ -1656,4 +1665,43 @@ func TestHooksOutGitHubPauseHolds(t *testing.T) {
 	if posts.Load() != 2 || closes.Load() != 1 {
 		t.Fatalf("backlog after resume: posts=%d closes=%d", posts.Load(), closes.Load())
 	}
+}
+
+func TestHookOffLegacyNotice(t *testing.T) {
+	s, ts, _ := newTest(t)
+	ctx := context.Background()
+	pub := mkToken(t, s, "publisher", []string{ScopePublish}, nil)
+	const legacyKey = "webhook-off-gh"
+	code, _ := call(t, ts, "POST", "/api/v1/notifications", pub, map[string]any{
+		"topic": "alerts", "external_id": legacyKey, "title": hookOffTitle, "message": "Publisher alert",
+	})
+	if code != 200 {
+		t.Fatalf("ordinary legacy key: %d", code)
+	}
+	if err := s.clearHookOff(ctx, "alerts", "gh"); err != nil {
+		t.Fatal(err)
+	}
+	if n := one(t, s, "alerts", legacyKey); n.State != Active || n.Message != "Publisher alert" {
+		t.Fatalf("hook touched publisher alert: %+v", n)
+	}
+
+	if _, err := s.Publish(ctx, serverToken, PublishInput{Topic: "alerts", ExternalID: "webhook-off-old",
+		Title: hookOffTitle, Message: "Existing server notice"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.clearHookOff(ctx, "alerts", "old"); err != nil {
+		t.Fatal(err)
+	}
+	if n := one(t, s, "alerts", "webhook-off-old"); n.State != Resolved {
+		t.Fatalf("legacy notice state: %s", n.State)
+	}
+}
+
+func hookNotice(t *testing.T, s *Server, topic, name string) *Notification {
+	t.Helper()
+	n, err := getNotification(context.Background(), s.db, "topic = ? AND hook_notice = ?", topic, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

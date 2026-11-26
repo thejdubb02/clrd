@@ -284,7 +284,7 @@ func TestRotateCutsStaleHolders(t *testing.T) {
 	}
 	sctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := s.follow(sctx, stale, 0, nil, nil, func([]byte, int64) error { return nil }, func() error { return nil }); !errors.Is(err, errRevoked) {
+	if err := s.follow(sctx, stale, 0, nil, "", nil, func([]byte, int64) error { return nil }, func() error { return nil }); !errors.Is(err, errRevoked) {
 		t.Errorf("a stream on the old secret, subscribing after the rotate: %v, want revoked", err)
 	}
 }
