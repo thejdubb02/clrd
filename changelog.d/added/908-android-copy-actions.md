@@ -1,0 +1,1 @@
+- Android: copy a sender's value with one tap from the inbox or notification shade. Android hides the text in its clipboard preview, and an action that asks to clear the notification does so after copying.
