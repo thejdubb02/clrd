@@ -1,0 +1,44 @@
+name: automation nodes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/js/**"
+      - "sdk/n8n/**"
+      - "sdk/node-red/**"
+      - ".github/workflows/automation-nodes.yml"
+  pull_request:
+    paths:
+      - "sdk/js/**"
+      - "sdk/n8n/**"
+      - "sdk/node-red/**"
+      - ".github/workflows/automation-nodes.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nodes:
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: n8n
+        working-directory: sdk/n8n
+        run: |
+          npm ci --ignore-scripts
+          npm run lint
+          npm run build
+          npm test
+          npm pack --dry-run
+      - name: Node-RED
+        working-directory: sdk/node-red
+        run: |
+          npm run lint
+          npm test
+          npm pack --dry-run

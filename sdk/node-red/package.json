@@ -1,0 +1,26 @@
+{
+  "name": "node-red-contrib-clrd",
+  "version": "0.1.0",
+  "description": "Send, manage and receive clrd notifications in Node-RED",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/thejdubb02/clrd",
+  "author": "Justin Willhite",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thejdubb02/clrd.git",
+    "directory": "sdk/node-red"
+  },
+  "keywords": ["node-red", "clrd", "notifications"],
+  "engines": {"node": ">=22"},
+  "files": ["clrd.js", "clrd.html", "dist/client.mjs"],
+  "node-red": {
+    "version": ">=4.0.0",
+    "nodes": {"clrd": "clrd.js"}
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').mkdirSync('dist', { recursive: true }); require('node:fs').copyFileSync('../js/index.js', 'dist/client.mjs')\"",
+    "lint": "node --check clrd.js && node --check test.cjs",
+    "prepack": "npm run build",
+    "test": "npm run build && node --test test.cjs"
+  }
+}
