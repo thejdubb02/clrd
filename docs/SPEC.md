@@ -1116,9 +1116,10 @@ that one topic, and shows the secret and a ready-to-paste URL or command once,
 with a link to the service's guide. The page then waits for the token's first
 message and links its sender page once it arrives (live with JavaScript, a
 Check again link without). The Android app
-lists them in Settings with the same rules (the silence alarm's `expect` and
-`alert_topic` below included, `icon` not yet), change log and Undo, for the same admins, and
-sends one field per change; for anyone else the section stays hidden.
+lists them in Settings with their icons, change log and Undo, for the same
+admins. It edits the same rules, including the silence alarm, and sends one
+field per change. Set the icon from the web, REST or MCP. For anyone else
+the section stays hidden.
 
 The silence alarm: `expect` (a duration, 1m to 8784h, like `"25h"`; `""`
 for off) makes the server watch the sender. When it has sent nothing,

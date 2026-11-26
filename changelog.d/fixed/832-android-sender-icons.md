@@ -1,0 +1,1 @@
+- Android Settings shows configured sender icons beside their names in Senders (#832).
