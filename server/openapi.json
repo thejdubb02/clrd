@@ -297,7 +297,7 @@
       "$ref": "#/components/responses/Error"
      }
     },
-    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; over CLRD_ATTACHMENT_TOTAL_MB is a 507. Over the per-token or per-topic publish rate (CLRD_RATE_TOKEN, CLRD_RATE_TOPIC) is a 429 with Retry-After.",
+    "description": "Scope publish. With status \"resolved\" it resolves the open row with that external_id instead (404 if none). To upload a file, send multipart/form-data: a part named notification holding the JSON first, then a part named file. Over CLRD_ATTACHMENT_MAX_MB is a 413; exceeding CLRD_ATTACHMENT_TOTAL_MB or failing to write the upload to disk returns 507. Over the per-token or per-topic publish rate (CLRD_RATE_TOKEN, CLRD_RATE_TOPIC) is a 429 with Retry-After.",
     "requestBody": {
      "required": true,
      "content": {
@@ -3592,7 +3592,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also X-Title, t"
+      "description": "Also X-Title or query options title, x-title, ti, t."
      },
      {
       "name": "Priority",
@@ -3601,7 +3601,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority or query options priority, x-priority, prio, p."
      },
      {
       "name": "Tags",
@@ -3610,7 +3610,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Comma list. Also X-Tags, ta"
+      "description": "Comma list. Also X-Tags or query options tags, x-tags, tag, ta."
      },
      {
       "name": "Click",
@@ -3775,7 +3775,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also X-Title, t"
+      "description": "Also X-Title or query options title, x-title, ti, t."
      },
      {
       "name": "Priority",
@@ -3784,7 +3784,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority or query options priority, x-priority, prio, p."
      },
      {
       "name": "Tags",
@@ -3793,7 +3793,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Comma list. Also X-Tags, ta"
+      "description": "Comma list. Also X-Tags or query options tags, x-tags, tag, ta."
      },
      {
       "name": "Click",
@@ -3967,7 +3967,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also X-Title, t"
+      "description": "Also X-Title or query options title, x-title, ti, t."
      },
      {
       "name": "Priority",
@@ -3976,7 +3976,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority or query options priority, x-priority, prio, p."
      },
      {
       "name": "Tags",
@@ -3985,7 +3985,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Comma list. Also X-Tags, ta"
+      "description": "Comma list. Also X-Tags or query options tags, x-tags, tag, ta."
      },
      {
       "name": "Click",
@@ -4120,7 +4120,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also X-Title, t"
+      "description": "Also X-Title or query options title, x-title, ti, t."
      },
      {
       "name": "Priority",
@@ -4129,7 +4129,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority, p"
+      "description": "1-5 or min/low/default/high/max/urgent. Also X-Priority or query options priority, x-priority, prio, p."
      },
      {
       "name": "Tags",
@@ -4138,7 +4138,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Comma list. Also X-Tags, ta"
+      "description": "Comma list. Also X-Tags or query options tags, x-tags, tag, ta."
      },
      {
       "name": "Click",
@@ -4539,7 +4539,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also t"
+      "description": "Also x-title, ti, t."
      },
      {
       "name": "priority",
@@ -4548,7 +4548,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also p"
+      "description": "Also x-priority, prio, p."
      },
      {
       "name": "tags",
@@ -4557,7 +4557,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also ta"
+      "description": "Also x-tags, tag, ta."
      }
     ]
    }
@@ -4612,7 +4612,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also t"
+      "description": "Also x-title, ti, t."
      },
      {
       "name": "priority",
@@ -4621,7 +4621,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also p"
+      "description": "Also x-priority, prio, p."
      },
      {
       "name": "tags",
@@ -4630,7 +4630,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also ta"
+      "description": "Also x-tags, tag, ta."
      }
     ]
    }
@@ -4685,7 +4685,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also t"
+      "description": "Also x-title, ti, t."
      },
      {
       "name": "priority",
@@ -4694,7 +4694,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also p"
+      "description": "Also x-priority, prio, p."
      },
      {
       "name": "tags",
@@ -4703,7 +4703,7 @@
       "schema": {
        "type": "string"
       },
-      "description": "Also ta"
+      "description": "Also x-tags, tag, ta."
      }
     ]
    }

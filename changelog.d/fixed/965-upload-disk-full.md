@@ -1,0 +1,1 @@
+- A full disk during an upload now answers 507 storage_full, which senders retry, instead of 400 with the server's folder path in it (#965).

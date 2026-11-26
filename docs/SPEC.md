@@ -916,7 +916,7 @@ Codes: `bad_request` 400, `unauthorized` 401, `forbidden` 403, `not_found`
 404, `conflict` 409, `reset` 410, `gone` 410 (pairing, linking),
 `too_large` 413, `rate_limited` 429 (with `Retry-After` in seconds for
 time-based limits), `busy` 429 (pairing, linking), `internal` 500,
-`storage_full` 507 (the attachment quota is full).
+`storage_full` 507 (attachment quota exceeded or disk write failed).
 
 Stored notifications carry every field except `requested_topic`, `changed`
 and `live`: `""` for unset strings, `[]` for `tags` and `actions`, `null` for
@@ -1234,7 +1234,8 @@ and `initialize` reports `version` as `serverInfo.version`.
   RFC 2047 encoded words (`=?UTF-8?B?...?=`, `=?UTF-8?Q?...?=`), decoded as
   ntfy does; a value that cannot be decoded is kept as sent. On a plain
   publish, the message header or query option expands literal `\n` into a
-  line break. The message body keeps its own escaping.
+  line break. The message body keeps its own escaping. The title, priority
+  and tags also accept the query names `x-title`, `x-priority` and `x-tags`.
   `X-Cache`/`Cache` values `no`, `false` and `0` send only to open ntfy streams.
   `X-Template`/`Template`/`tpl` set
   to yes/true/1 makes the message, title and priority Go templates over the
