@@ -118,18 +118,28 @@ export class Clrd implements INodeType {
 				const operation = this.getNodeParameter('operation', i) as Operation;
 				let result;
 				if (operation === 'send') {
-					const topic = this.getNodeParameter('topic', i) as string;
-					const message = this.getNodeParameter('message', i) as string;
+					const topic = this.getNodeParameter('topic', i);
+					const message = this.getNodeParameter('message', i);
+					if (typeof topic !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(topic)) {
+						throw new Error('Enter a topic using 1 to 64 letters, digits, underscores or hyphens');
+					}
+					if (typeof message !== 'string' || !message.trim()) {
+						throw new Error('Enter a notification message');
+					}
 					const fields = this.getNodeParameter('additionalFields', i);
 					result = await client.send(topic, message, fields);
 				} else {
-					const id = this.getNodeParameter('notificationId', i) as string;
+					const id = this.getNodeParameter('notificationId', i);
+					if (typeof id !== 'string' || !id || /^(?:\.{1,2})$|\s/.test(id)) {
+						throw new Error('Enter a valid notification ID');
+					}
 					const actions = {
 						acknowledge: () => client.ack(id),
 						clear: () => client.dismiss(id),
 						resolve: () => client.resolve(id),
 						snooze: () => client.snooze(id, this.getNodeParameter('duration', i) as string),
 					};
+					if (!Object.hasOwn(actions, operation)) throw new Error('Select a clrd operation');
 					result = await actions[operation]();
 				}
 				output.push({ json: { ...result } as IDataObject, pairedItem: i });

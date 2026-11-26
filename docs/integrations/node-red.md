@@ -57,7 +57,8 @@ topic in `msg.topic`. The event contains `type`, `seq` and
 `notification`.
 
 The event cursor lives in memory. Each deployment starts from the
-server's current position. A temporary request failure
-retries on the next poll. If the server resets its event history or the
+server's current position. After a request failure the node waits longer
+between polls, up to one minute or the configured interval if it is longer.
+A successful poll restores the configured interval. If the server resets its event history or the
 cursor falls outside retention, the node logs a warning and starts at the
 current position again.

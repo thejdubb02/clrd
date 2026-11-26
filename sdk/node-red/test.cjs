@@ -52,6 +52,7 @@ async function runtime(t, reply) {
     configNode = new (types.get('clrd-server'))(serverConfig);
     return {
         requests,
+        configNode,
         node(type, config) {
             const node = new (types.get(type))(config);
             t.after(() => node.emit('close'));
@@ -114,4 +115,45 @@ test('event input skips history and stops polling on close', { timeout: 5000 }, 
         '/api/v1/notifications?state=open&limit=1',
         '/api/v1/events?since=10&subscribed=all&topics=infra',
     ]);
+});
+
+test('action explains an invalid server URL', { timeout: 5000 }, async (t) => {
+    const app = await runtime(t, () => assert.fail('Invalid URL must make no request'));
+    app.configNode.url = 'clrd.example.com';
+    await assert.rejects(input(app.node('clrd', { operation: 'clear' }), { payload: 'id' }),
+        /Enter the clrd HTTP or HTTPS server URL/);
+});
+
+test('event polling backs off on repeated failures and recovers its normal interval', { timeout: 5000 }, async (t) => {
+    const app = await runtime(t, () => assert.fail('Stubbed poll must make no HTTP request'));
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let attempts = 0;
+    app.configNode.connect = async () => {
+        attempts++;
+        if (attempts <= 2) throw new Error('Connection refused');
+        return {
+            async pollEvents() {
+                return {
+                    cursor: { seq: attempts, epoch: 'db' },
+                    events: [{ type: 'created', notification: { topic: 'infra' } }],
+                };
+            },
+        };
+    };
+    const node = app.node('clrd-events', { event: 'created', interval: 1 });
+    await once(node, 'error');
+    t.mock.timers.tick(1999);
+    assert.equal(attempts, 1);
+    const failed = once(node, 'error');
+    t.mock.timers.tick(1);
+    await failed;
+    t.mock.timers.tick(3999);
+    assert.equal(attempts, 2);
+    const recovered = once(node, 'message');
+    t.mock.timers.tick(1);
+    await recovered;
+    const regular = once(node, 'message');
+    t.mock.timers.tick(1000);
+    await regular;
+    assert.equal(attempts, 4);
 });
