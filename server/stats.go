@@ -107,7 +107,8 @@ func (s *Server) GroupedStats(ctx context.Context, tok *Token, from, to time.Tim
 		return nil, errf(400, "bad_request", "group must be topic, sender or priority")
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT n.topic, n.sender, n.external_id, n.priority, n.state_by, n.created_at,
-  n.cleared_at, n.reply != '', COALESCE(n.state_by_id != '' AND n.state_by_id = s.token_id, 0)
+  n.cleared_at, n.reply != '', COALESCE(s.token_id IN (WITH RECURSIVE up(id) AS (SELECT n.state_by_id
+    UNION SELECT parent_id FROM sessions, up WHERE token_id = up.id AND NOT phone) SELECT id FROM up WHERE id != ''), 0)
   FROM notifications n LEFT JOIN senders s ON s.id = n.sender
   WHERE n.created_at >= ? AND n.created_at < ?`, ms(from), ms(to))
 	if err != nil {
@@ -194,12 +195,21 @@ func (s *Server) GroupedStats(ctx context.Context, tok *Token, from, to time.Tim
 	case "sender":
 		foldStatsHours(st.Hours, st.Senders)
 	}
-	prev := ms(from.Add(-to.Sub(from)))
-	if err := s.statsPrevious(ctx, "topic", prev, st.From, st.Topics); err != nil {
+	set, err := s.loadSettings(ctx, s.db)
+	if err != nil {
 		return nil, err
 	}
-	if err := s.statsPrevious(ctx, "sender", prev, st.From, st.Senders); err != nil {
-		return nil, err
+	// No trend when a prune may have emptied the period before.
+	if prev := from.Add(-to.Sub(from)); !prev.Before(time.Now().Add(-s.shortestKeep(set))) {
+		for _, d := range [...]string{"topic", "sender"} {
+			g := st.Topics
+			if d == "sender" {
+				g = st.Senders
+			}
+			if err := s.statsPrevious(ctx, d, ms(prev), st.From, g); err != nil {
+				return nil, err
+			}
+		}
 	}
 	st.Quiet, err = s.statsQuiet(ctx)
 	if err != nil {

@@ -49,7 +49,7 @@ type StatsGroup struct {
 	Key           string `json:"key"`
 	Name          string `json:"-"`
 	Count         int    `json:"count"`
-	Previous      int    `json:"previous"`
+	Previous      *int   `json:"previous"`
 	Open          int    `json:"open"`
 	Cleared       int    `json:"cleared"`
 	ClearMedianMS int64  `json:"clear_median_ms"`
@@ -174,13 +174,16 @@ func (s Stats) GroupColumns() []StatsGroup {
 }
 
 func (g StatsGroup) Trend() string {
-	switch {
-	case g.Previous == 0 && g.Count > 0:
+	if g.Previous == nil { // the server could not tell
+		return ""
+	}
+	switch p := *g.Previous; {
+	case p == 0 && g.Count > 0:
 		return "new"
-	case g.Count > g.Previous:
-		return "up " + strconv.Itoa(g.Count-g.Previous)
-	case g.Count < g.Previous:
-		return "down " + strconv.Itoa(g.Previous-g.Count)
+	case g.Count > p:
+		return "up " + strconv.Itoa(g.Count-p)
+	case g.Count < p:
+		return "down " + strconv.Itoa(p-g.Count)
 	}
 	return ""
 }

@@ -17,6 +17,7 @@ import (
 
 func TestStats(t *testing.T) {
 	s, ts, admin := newTest(t)
+	s.opt.Retention = 100 * 365 * 24 * time.Hour // keeps the 2023 history below, so trends show
 	const base = int64(1_699_999_200_000) // a whole UTC hour
 	pub := func(topic, ext string) string {
 		t.Helper()
@@ -53,6 +54,14 @@ func TestStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(`UPDATE notifications SET state_by_id = 'another-token' WHERE created_at = ?`, base+2*3_600_000); err != nil {
+		t.Fatal(err)
+	}
+	// A browser session of the sender clears one: still cleared by the sender.
+	browser := s.lookupToken(context.Background(), mkToken(t, s, "browser", []string{ScopeAdmin}, nil))
+	if _, err := s.db.Exec(`INSERT INTO sessions (token_id, parent_id) VALUES (?, ?)`, browser.ID, tok.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE notifications SET state_by_id = ? WHERE created_at = ?`, browser.ID, base+3_600_000); err != nil {
 		t.Fatal(err)
 	}
 	_, cancelSub := s.Subscribe()
@@ -119,6 +128,11 @@ func TestStats(t *testing.T) {
 	if s := st["senders"].([]any); len(s) != 1 || s[0].(map[string]any)["count"] != 4.0 || s[0].(map[string]any)["previous"] != 3.0 {
 		t.Fatalf("senders: %v", s)
 	}
+	s.opt.Retention = 30 * 24 * time.Hour // the period before is long pruned now
+	if _, pruned := call(t, ts, "GET", q, admin, nil); pruned["topics"].([]any)[0].(map[string]any)["previous"] != nil {
+		t.Fatalf("trend past retention: %v", pruned["topics"])
+	}
+	s.opt.Retention = 100 * 365 * 24 * time.Hour
 	emptyRange := fmt.Sprintf("/api/v1/stats?from=%d&to=%d", base-2, base-1)
 	if code, empty := call(t, ts, "GET", emptyRange, admin, nil); code != 200 ||
 		empty["total"] != 0.0 || len(empty["quiet"].([]any)) != 1 {
@@ -352,6 +366,7 @@ func TestStatsFloorPre1970(t *testing.T) {
 // and CSV export carries the same numbers (#661).
 func TestStatsDeliveryAndCSV(t *testing.T) {
 	s, ts, admin := newTest(t)
+	s.opt.Retention = 100 * 365 * 24 * time.Hour // keeps the 2023 history, so trends show
 	const base = int64(1_700_000_000_000)
 	code, n := call(t, ts, "POST", "/api/v1/notifications", admin, map[string]any{"topic": "alerts", "message": "m", "external_id": "=SUM(A1)"})
 	if code != 200 {

@@ -25,8 +25,8 @@ func (s statsAPI) Snapshot(_ *http.Request, q Query) (Snapshot, error) {
 			Quiet:      []StatsQuiet{{SenderID: "tok-1", Name: "nas", Topic: "missing-backup"}},
 			Priorities: map[string]int{"5": 2, "3": 1},
 			Hours:      []StatsBucket{{At: from - from%hour, Count: 2}, {At: from - from%hour + 3*hour, Count: 1}},
-			Topics:     []StatsGroup{{Key: "home", Count: 3, Previous: 1, Open: 1, Cleared: 2, ClearMedianMS: 45000, ClearP90MS: 3*3600000 + 5*60000}},
-			Senders:    []StatsGroup{{Key: "", Count: 2, Previous: 3, Open: 2}, {Key: "tok-1", Name: "nas", Count: 1, Cleared: 1}},
+			Topics:     []StatsGroup{{Key: "home", Count: 3, Previous: &prev1, Open: 1, Cleared: 2, ClearMedianMS: 45000, ClearP90MS: 3*3600000 + 5*60000}},
+			Senders:    []StatsGroup{{Key: "", Count: 2, Previous: &prev3, Open: 2}, {Key: "tok-1", Name: "nas", Count: 1, Previous: &prev0, Cleared: 1}},
 			ClearedBy:  []StatsGroup{{Key: "web", Count: 2, Cleared: 2, ClearMedianMS: 60000}},
 			Flappers:   []StatsFlapper{{Topic: "home", ExternalID: "disk-full", Count: 2}},
 			Delivery:   []StatsDelivery{{Topic: "home", Webhooks: 3, WebPush: 1}}}
@@ -38,6 +38,14 @@ func (s statsAPI) Snapshot(_ *http.Request, q Query) (Snapshot, error) {
 		}
 	}
 	return snap, nil
+}
+
+var prev0, prev1, prev3 = 0, 1, 3
+
+func TestStatsTrendUnknown(t *testing.T) {
+	if got := (StatsGroup{Count: 2}).Trend(); got != "" {
+		t.Fatalf("no previous count gave trend %q", got)
+	}
 }
 
 func TestStatsPage(t *testing.T) {
