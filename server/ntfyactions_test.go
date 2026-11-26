@@ -26,7 +26,7 @@ func TestNtfyCopyActions(t *testing.T) {
 	}{
 		{"short", "/short", "x", "copy, Copy code, 123456", "Copy code", "123456", false},
 		{"named", "/named", "x", "copy, Copy code, value=' a,b ', clear=true", "Copy code", " a,b ", true},
-		{"json", "/", `{"topic":"json","message":"x","actions":[{"action":"copy","label":"Copy code","value":"123456","clear":false},{"action":"copy","label":"Empty"}]}`, "", "Copy code", "123456", false},
+		{"json", "/", `{"topic":"json","message":"x","actions":[{"action":"copy","label":"Copy code","value":"123456","clear":false},{"action":"copy","label":"Empty"},{"action":"copy","label":"Big","value":"` + strings.Repeat("x", maxCopyText+1) + `"}]}`, "", "Copy code", "123456", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest("POST", tc.path, strings.NewReader(tc.body))

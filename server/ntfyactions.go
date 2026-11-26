@@ -32,7 +32,7 @@ func (a ntfyAction) action() (Action, bool) {
 		return out, a.URL != ""
 	case "copy":
 		out.Copy = a.Value
-		return out, a.Value != ""
+		return out, a.Value != "" && len(a.Value) <= maxCopyText // dropped, not refused, like other bad ntfy actions
 	case "http":
 		out.HTTP = &HTTPAction{Method: a.Method, URL: a.URL, Headers: a.Headers, Body: a.Body}
 	case "broadcast":
