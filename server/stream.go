@@ -552,6 +552,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, tok *Token
 	out := []json.RawMessage{}
 	next := since
 	for _, e := range evs {
+		if tok.view.all && e.Seq > cur { // check ownership again before advancing past this snapshot
+			break
+		}
 		if !tok.view.all && tok.view.changedBy(e) { // the filtered view changed within this page
 			return errReset
 		}

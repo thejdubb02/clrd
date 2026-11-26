@@ -645,6 +645,16 @@ func TestEventsAllKeepSubscriptionCursor(t *testing.T) {
 			t.Fatalf("event %d: %v", i, event)
 		}
 	}
+	// A committed row can be visible before its head is published. Leave
+	// it for the next poll, which loads the current owner's reset marker.
+	head := s.CurrentSeq()
+	s.seq.Store(head - 1)
+	code, page = call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d&subscribed=all&topics=chat", before), browser, nil)
+	s.seq.Store(head)
+	if code != 200 || page["seq"] != float64(head-1) || len(page["events"].([]any)) != 1 {
+		t.Fatalf("poll advanced beyond its snapshot: %d %v", code, page)
+	}
+
 	code, _ = call(t, ts, "GET", fmt.Sprintf("/api/v1/events?since=%d", before), browser, nil)
 	if code != 410 {
 		t.Fatalf("filtered view should still reset: %d", code)
