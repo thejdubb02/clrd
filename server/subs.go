@@ -32,6 +32,7 @@ type view struct {
 	newTopics bool
 	rows      map[string]bool
 	seq       int64 // the owner's last subscriptions event
+	moved     int64 // the last attach or detach for this owner
 }
 
 func (v *view) subscribed(topic string) bool {
@@ -93,13 +94,12 @@ func (s *Server) withView(ctx context.Context, tok *Token, all bool) (*Token, er
 	// Not filtered, only the last move counts: a token just detached resets
 	// on a stale since, but its browsers changing the set never resets it (#635).
 	var nt bool
-	var moved int64
-	err = tx.QueryRowContext(ctx, `SELECT new_topics, seq, moved FROM sub_owners WHERE owner = ?`, owner).Scan(&nt, &v.seq, &moved)
+	err = tx.QueryRowContext(ctx, `SELECT new_topics, seq, moved FROM sub_owners WHERE owner = ?`, owner).Scan(&nt, &v.seq, &v.moved)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	if !filtered {
-		v.seq = moved
+		v.seq = v.moved
 		return &c, nil
 	}
 	if err == nil {
