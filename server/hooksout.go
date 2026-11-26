@@ -474,15 +474,38 @@ func (s *Server) sendPost(ctx context.Context, j hookJob) (int, error) {
 // still has the URL and kind it was sent with: a save during the send moved
 // it to another channel, where that id means nothing (#795).
 func (s *Server) keepPost(ctx context.Context, j hookJob, id, remote string) error {
-	_, err := s.db.ExecContext(context.WithoutCancel(ctx), `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id)
+	ctx, at := context.WithoutCancel(ctx), j.url
+	if j.kind == "discord" { // a save that only changed wait is the same channel (#816)
+		var now string
+		_ = s.db.QueryRowContext(ctx, `SELECT url FROM hooks_out WHERE topic = ? AND name = ? AND kind = 'discord'`, j.topic, j.name).Scan(&now)
+		if discordURL(now) == discordURL(j.url) {
+			at = now
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO hook_posts (topic, name, id, remote_id)
 		SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ? AND kind = ?)`,
-		j.topic, j.name, id, remote, j.topic, j.name, j.url, j.kind)
+		j.topic, j.name, id, remote, j.topic, j.name, at, j.kind)
 	return err
 }
 
 type hookReq struct {
 	method, url string
 	body        any
+}
+
+// discordURL drops wait from a Discord webhook URL: clrd sets it on each post
+// itself, so a hook saved with or without it is the same channel and keeps its
+// message ids. thread_id stays: another thread is another channel (#816).
+// The query is re-encoded in key order, so reordering it is no change either.
+func discordURL(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || u.RawQuery == "" {
+		return s
+	}
+	q := u.Query()
+	q.Del("wait")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func discordReqs(u url.URL, n *Notification, event, remote string) []hookReq {
@@ -788,6 +811,7 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 	}
 	if h.Kind == "discord" {
 		keepSecret, keepBody = false, false // changing a signed/templated hook to discord drops both (#673)
+		h.URL = discordURL(h.URL)
 	}
 	if h.Kind == "github" {
 		keepBody = false
@@ -817,9 +841,15 @@ func (s *Server) SaveHook(ctx context.Context, tok *Token, topic, name string, h
 		AND EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND kind != ?)`, topic, name, topic, name, h.Kind); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?
-		AND NOT EXISTS (SELECT 1 FROM hooks_out WHERE topic = ? AND name = ? AND url = ? AND kind = ?)`, topic, name, topic, name, h.URL, h.Kind); err != nil {
-		return err
+	var oldURL, oldKind string
+	_ = tx.QueryRowContext(ctx, `SELECT url, kind FROM hooks_out WHERE topic = ? AND name = ?`, topic, name).Scan(&oldURL, &oldKind)
+	if oldKind == "discord" {
+		oldURL = discordURL(oldURL) // a hook saved before #816 may still carry wait
+	}
+	if oldURL != h.URL || oldKind != h.Kind {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM hook_posts WHERE topic = ? AND name = ?`, topic, name); err != nil {
+			return err
+		}
 	}
 	// Saving again turns a hook back on and starts a fresh failure streak.
 	// Keep an existing secret only when the kind stays the same, so switching

@@ -147,6 +147,15 @@ curl -X PUT https://clrd.example.com/api/v1/topics/alerts/hooks/discord \
 A discord hook takes no `body` or `secret`. Mentions like `@everyone` in a
 message are shown but never ping anyone. If someone deletes the message in
 Discord, the edit is skipped.
+clrd adds `?wait=true` to each post itself, so leave it out; saving the URL
+with or without it is the same channel and keeps editing the same messages.
+The URL is saved without `wait` and with its query keys sorted, so a reorder
+is no change either. Changing `thread_id`, or any other part of the URL, is
+a new channel: the next post is a new message there.
+If Discord takes a post but its reply never arrives (on every try), clrd has
+no message id, so a retry or a later wake posts it again and the channel can
+show it twice. A Discord webhook cannot list its own messages, so clrd cannot
+check first the way it does for GitHub issues.
 The webhook URL holds a token, so treat it like a password: only admins can
 see it, and delivery errors leave it out.
 
