@@ -143,6 +143,17 @@ class SwipesTest {
         assertEquals(Swipes(listOf("resolve"), listOf("ack")), app.swipes.value)
     }
 
+    @Test fun aSlowSuccessfulSaveKeepsAMessageThatLandedDuringIt() { // #689
+        server.enqueue(MockResponse().setBody("{}").setBodyDelay(1, TimeUnit.SECONDS))
+        val save = app.io.submit<String?> { app.saveSwipes(Swipes(emptyList(), listOf("clear"))) }
+        server.takeRequest(5, TimeUnit.SECONDS)
+        RoomStore(app).settings(JSONObject("""{"swipe_start":["resolve"],"swipe_end":["ack"]}""")) // another device, while the save waits
+        assertNull(save.get(30, TimeUnit.SECONDS))
+        val newer = Swipes(listOf("resolve"), listOf("ack"))
+        assertEquals(newer, app.swipes.value)
+        assertEquals(newer, Swipes.parse(app.prefs.getString("swipes", null))) // the stored copy a later failed save goes back to
+    }
+
     @Test fun theLabelsFollowTheGesturesInRightToLeft() { // #568: a start swipe goes right there
         rule.setContent { CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { SettingsScreen(app, null, 0) {} } }
         rule.onNodeWithTag("settings-search").performTextReplacement("gesture")
